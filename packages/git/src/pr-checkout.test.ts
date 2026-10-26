@@ -1,9 +1,31 @@
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { fetchPrHead, localPrBranch, prHead, type PrHead } from "./pr-checkout.ts";
+import { fetchPrHead, localPrBranch, prCloneUrl, prHead, type PrHead } from "./pr-checkout.ts";
 import { Proc, ProcLive, type ProcShape } from "./proc.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir } from "./test-utils.ts";
+
+describe("PR clone URLs", () => {
+  it("replaces the first numeric pull suffix on the final line, preserving other inputs", () => {
+    for (const [input, expected] of [
+      ["https://github.com/acme/web/pull/12/files", "https://github.com/acme/web.git"],
+      ["https://github.com/acme/web/pull/0x", "https://github.com/acme/web.git"],
+      ["https://github.com/acme/web/pull/no", "https://github.com/acme/web/pull/no"],
+      ["prefix\nrepo/pull/12", "prefix\nrepo.git"],
+      ["repo/pull/12\n", "repo/pull/12\n"],
+      ["repo/pull/1/again/pull/2", "repo.git"],
+    ])
+      expect(prCloneUrl(input!)).toBe(expected);
+  });
+
+  it("does not backtrack over a long PR number followed by a newline", () => {
+    const url = `https://github.com/acme/web/pull/${"0".repeat(100_000)}`;
+    const started = performance.now();
+    expect(prCloneUrl(`${url}\n`)).toBe(`${url}\n`);
+    expect(prCloneUrl(url)).toBe("https://github.com/acme/web.git");
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
 
 type Reply = { status: number; stdout?: string; stderr?: string };
 

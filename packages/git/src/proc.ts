@@ -187,8 +187,10 @@ export const resolveExecutable = (
   const extensions = pathExt.split(";").filter((ext) => ext !== "");
   for (const dir of pathValue.split(";")) {
     if (dir === "") continue;
+    let end = dir.length;
+    while (end > 0 && (dir[end - 1] === "/" || dir[end - 1] === "\\")) end--;
     for (const ext of extensions) {
-      const candidate = `${dir.replace(/[\\/]+$/, "")}\\${bin}${ext.toLowerCase()}`;
+      const candidate = `${dir.slice(0, end)}\\${bin}${ext.toLowerCase()}`;
       if (exists(candidate)) return candidate;
     }
   }

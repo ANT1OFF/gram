@@ -9,6 +9,15 @@ import type { Proc } from "./proc.ts";
 import { repoFromPrUrl } from "./review-actions.ts";
 import { isValidGitRefCharset } from "./worktrees.ts";
 
+/** The repository clone URL from a PR URL, preserving the old suffix replacement semantics. */
+export const prCloneUrl = (url: string): string => {
+  // `.*$` could only consume the final line. Search there once, without overlapping digit/dot runs.
+  const from =
+    Math.max(...["\n", "\r", "\u2028", "\u2029"].map((mark) => url.lastIndexOf(mark))) + 1;
+  const match = /\/pull\/\d/.exec(url.slice(from));
+  return match === null ? url : `${url.slice(0, from + match.index)}.git`;
+};
+
 /** `gh` couldn't describe the PR, or git couldn't fetch its head. */
 export class PrCheckoutError extends Data.TaggedError("PrCheckoutError")<{
   readonly message: string;
@@ -140,7 +149,7 @@ export const fetchPrHead = (
       yield* run(["branch", "--track", branch, `${remote}/${head.headRefName}`], false);
       return branch;
     }
-    const source = remote ?? head.url.replace(/\/pull\/\d+.*$/, ".git");
+    const source = remote ?? prCloneUrl(head.url);
     // A ref of its own rather than the shared `FETCH_HEAD`, which a sibling worktree's background
     // fetch can overwrite between the fetch and the branch.
     const ref = `refs/gram/pr-checkout/pr-${head.number}-${process.pid}-${Date.now()}`;

@@ -472,6 +472,21 @@ describe("text", () => {
     expect(oneLine("")).toBe("Something went wrong.");
   });
 
+  it("strips notes until stable while keeping escaped examples as literal plain text", () => {
+    expect(plainNotes("<scrip<script>t>safe</script></script>")).toBe("t>safe");
+    expect(plainNotes("<p>One<BR /><br>Two</p><li>Three</li><h2>Four</h2>")).toBe(
+      "One\n\nTwo\nThree\nFour",
+    );
+    expect(
+      plainNotes("<p>&lt;script&gt;example&lt;/script&gt; &quot;x&quot; &#39;y&#39; &amp;lt;</p>"),
+    ).toBe("<script>example</script> \"x\" 'y' &lt;");
+    expect(plainNotes([{ note: "<b>A</b>" }, null, { note: 1 }, { note: "<i>B</i>" }])).toBe(
+      "A\n\nB",
+    );
+    expect(plainNotes("<b></b>")).toBeNull();
+    expect(plainNotes("x".repeat(8_001))).toHaveLength(8_000);
+  });
+
   it("turns the public feed's HTML notes into plain text", () => {
     expect(plainNotes("<p>Fixes &amp; <b>speed</b></p><ul><li>One</li><li>Two</li></ul>")).toBe(
       "Fixes & speed\nOne\nTwo",

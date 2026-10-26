@@ -14,6 +14,17 @@ import {
 import { askQuestion, closeQuestion, parseQuestions, QuestionChoice } from "./questions.ts";
 import { askQuestionProblem } from "./worker-questions.ts";
 
+describe("pathName long separator runs", () => {
+  it("keeps the last component with mixed separators and trims only the ends", () => {
+    const separators = "/\\".repeat(50_000);
+    const started = performance.now();
+    expect(pathName(` /repo/${separators}leaf `)).toBe("leaf");
+    expect(pathName(` /repo/leaf${separators} `)).toBe("leaf");
+    expect(pathName(separators)).toBe("");
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
 // The needs-you-home mock's own files, as the design-brief worker left them.
 const MOCK = "/repo/.worktrees/feat-needs-you-home/docs/design/mocks/needs-you-home";
 const SHOTS = [

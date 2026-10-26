@@ -170,10 +170,17 @@ export function plainNotes(notes: unknown): string | null {
     : typeof notes === "string"
       ? notes
       : "";
-  const plain = text
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|li|h\d)>/gi, "\n")
-    .replace(/<[^>]*>/g, "")
+  let stripped = text;
+  let previous: string;
+  do {
+    previous = stripped;
+    stripped = stripped
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|li|h\d)>/gi, "\n")
+      .replace(/<[^>]*>/g, "");
+  } while (stripped !== previous);
+  // Decode only after stripping: entity-escaped examples remain literal text in the UI.
+  const plain = stripped
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')

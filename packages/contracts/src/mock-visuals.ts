@@ -22,7 +22,10 @@ const BOARD = /^[A-Za-z0-9][\w .·@-]{0,79}$/;
 
 /** `path`'s last segment, the only part of it a card shows. */
 export const pathName = (path: string): string => {
-  const trimmed = path.trim().replace(/[\\/]+$/, "");
+  const value = path.trim();
+  let end = value.length;
+  while (end > 0 && (value[end - 1] === "/" || value[end - 1] === "\\")) end--;
+  const trimmed = value.slice(0, end);
   return trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1);
 };
 

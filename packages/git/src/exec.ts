@@ -135,7 +135,12 @@ export const porcelainPath = (line: string): string | undefined => {
   const rest = trimmedLine.slice(3);
   const code = trimmedLine.slice(0, 2);
   const target = /[RC]/.test(code) ? (rest.split(" -> ").at(-1) ?? rest) : rest;
-  const path = target.trim().replace(/^"+|"+$/g, "");
+  const trimmed = target.trim();
+  let start = 0;
+  let end = trimmed.length;
+  while (start < end && trimmed[start] === '"') start++;
+  while (end > start && trimmed[end - 1] === '"') end--;
+  const path = trimmed.slice(start, end);
   return path === "" ? undefined : path;
 };
 

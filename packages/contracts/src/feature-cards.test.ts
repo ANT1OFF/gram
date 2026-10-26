@@ -214,6 +214,15 @@ describe("now line", () => {
     expect(nowLineOf(running, "Editing src/a.ts")).toBe("editing code");
   });
 
+  it("scans long punctuation runs in reports without retrying every suffix", () => {
+    const punctuation = "!".repeat(100_000);
+    const started = performance.now();
+    expect(reportGist(`Done${punctuation}x`)).toBe(`done${punctuation}x`);
+    expect(reportGist(`Done${punctuation}`)).toBe("done");
+    expect(reportGist(punctuation)).toBe("reported");
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it("caps a long report to four words", () => {
     expect(reportGist("Rewrote the whole retry policy around the dead letter queue")).toBe(
       "rewrote the whole retry…",

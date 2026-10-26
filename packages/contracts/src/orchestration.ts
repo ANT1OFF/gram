@@ -847,7 +847,7 @@ const defuseTags = (text: string): string =>
   text
     .replaceAll(INVISIBLE, "")
     .replaceAll(
-      /[<\uFF1C](?=\s*[/\uFF0F]?\s*(?:worker[-\u2010-\u2015\u2212](?:report|question|message)|thread[-\u2010-\u2015\u2212]message)\b)/gi,
+      /[<\uFF1C](?=(?:\s*[/\uFF0F])?\s*(?:worker[-\u2010-\u2015\u2212](?:report|question|message)|thread[-\u2010-\u2015\u2212]message)\b)/gi,
       "‹",
     );
 

@@ -98,6 +98,16 @@ describe("meta and suggestions", () => {
     expect(performance.now() - started).toBeLessThan(1000);
   });
 
+  it("scans repeated suggestion openers with no newline or closing fence", () => {
+    const repeated = "```suggestion".repeat(100_000);
+    const started = performance.now();
+    expect(extractSuggestion(repeated)).toBeUndefined();
+    expect(extractSuggestion(`${repeated}\nunclosed`)).toBeUndefined();
+    expect(extractSuggestion(`${repeated}\nline\n\n\`\`\``)).toBe("line\n");
+    expect(extractSuggestion("```suggestion:-1+2\r\ncode\r\n``` trailing")).toBe("code\r");
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it("extract suggestion blocks, including deletions", () => {
     expect(
       extractSuggestion('[suggestion] Hint.\n\n```suggestion\n    "openWorldHint": True,\n```'),
