@@ -666,6 +666,20 @@ describe("an app tool's approval", () => {
     expect(screen.getByTestId("approval-allow").textContent).toContain("Apply changes");
   });
 
+  it("scrolls a card's body in the thread and keeps its buttons outside it", () => {
+    const { api } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={workspaceUpdate} active={false} />
+      </ApiProvider>,
+    );
+    const body = screen.getByTestId("request-card-body");
+    expect(body.className).toContain("overflow-y-auto");
+    expect(body.contains(screen.getByTestId("workspace-diff"))).toBe(true);
+    expect(body.contains(screen.getByTestId("approval-allow"))).toBe(false);
+    expect(body.contains(screen.getByTestId("approval-deny"))).toBe(false);
+  });
+
   it("shows a settings change whole in the inbox's compact card too", () => {
     const { api } = fakeApi();
     render(
