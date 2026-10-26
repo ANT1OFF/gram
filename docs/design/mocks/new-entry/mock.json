@@ -1,0 +1,49 @@
+{
+  "title": "New entry points",
+  "slug": "new-entry",
+  "status": "draft",
+  "template": "options",
+  "current": 1,
+  "approved": null,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-10-26"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Menu",
+      "board": "a-menu",
+      "shots": {
+        "dark": "shots/a-menu-dark.png",
+        "light": "shots/a-menu-light.png"
+      }
+    },
+    {
+      "name": "B Composer",
+      "board": "b-composer",
+      "shots": {
+        "dark": "shots/b-composer-dark.png",
+        "light": "shots/b-composer-light.png"
+      }
+    },
+    {
+      "name": "C Split",
+      "board": "c-split",
+      "shots": {
+        "dark": "shots/c-split-dark.png",
+        "light": "shots/c-split-light.png"
+      }
+    },
+    {
+      "name": "D Rows",
+      "board": "d-rows",
+      "shots": {
+        "dark": "shots/d-rows-dark.png",
+        "light": "shots/d-rows-light.png"
+      }
+    }
+  ]
+}
