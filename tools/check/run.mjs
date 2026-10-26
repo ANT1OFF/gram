@@ -17,7 +17,10 @@
 // `bun run check:cancel` stops this checkout's running check and every stage it started, and
 // nothing else: each stage runs in a process group of its own, recorded per checkout.
 //
-//   bun run check [--no-slot] [--workers <n>]
+// CI splits the check across jobs: `--only static` runs the static stages alone, and
+// `--only tests --shard <i>/<n>` one Vitest shard alone, so the jobs together run it all once.
+//
+//   bun run check [--no-slot] [--workers <n>] [--only static|tests] [--shard <i>/<n>]
 //   bun run check:affected [--base <ref>] [--workers <n>]
 //   bun run check:cancel
 import { execFileSync, spawn } from "node:child_process";
@@ -47,6 +50,16 @@ const option = (name) => {
   return i === -1 ? undefined : args[i + 1];
 };
 const affectedMode = flag("--affected");
+const only = option("--only");
+if (only !== undefined && only !== "static" && only !== "tests")
+  throw new Error(`--only must be "static" or "tests", not "${only}"`);
+const shard = option("--shard");
+if (shard !== undefined) {
+  const [index, count] = shard.split("/").map(Number);
+  if (!/^\d+\/\d+$/.test(shard) || index < 1 || index > count)
+    throw new Error(`--shard must be <index>/<count> with 1 <= index <= count, not "${shard}"`);
+  if (only !== "tests") throw new Error("--shard needs --only tests: each shard runs once");
+}
 const ci = Boolean(process.env["CI"]);
 
 const noop = () => {};
@@ -173,13 +186,13 @@ if (affectedMode) {
 }
 
 // Quick, independent stages run side by side; together they take seconds next to the tests.
-say("▸ Static");
-if (!affectedMode) {
+if (only !== "tests") say("▸ Static");
+if (!affectedMode && only !== "tests") {
   const install = await run("install", "bun", ["install", "--frozen-lockfile"]);
   report(install);
   results.push(install);
 }
-if (results.every((result) => result.ok)) {
+if (results.every((result) => result.ok) && only !== "tests") {
   const quick = await Promise.all([
     run("scaffold", "node", ["tools/check-public-scaffold.mjs"]),
     run("docs", "node", ["tools/check-docs.mjs"]),
@@ -192,7 +205,11 @@ if (results.every((result) => result.ok)) {
   results.push(...quick);
 }
 
-if (results.every((result) => result.ok) && (projects === undefined || projects.length > 0)) {
+if (
+  results.every((result) => result.ok) &&
+  only !== "static" &&
+  (projects === undefined || projects.length > 0)
+) {
   const slots = slotCount();
   const workers = Number(
     option("--workers") ?? process.env["GRAM_CHECK_WORKERS"] ?? (ci ? 3 : workersPerSlot(slots)),
@@ -214,11 +231,14 @@ if (results.every((result) => result.ok) && (projects === undefined || projects.
   }
   const reportDir = mkdtempSync(join(tmpdir(), "gram-check-"));
   const reportFile = join(reportDir, "vitest.json");
-  say(`▸ Tests (${workers} workers, ${availableParallelism()} cores)`);
+  say(
+    `▸ Tests (${shard === undefined ? "" : `shard ${shard}, `}${workers} workers, ` +
+      `${availableParallelism()} cores)`,
+  );
   const tests = await run(
     "tests",
     "node",
-    ["node_modules/vitest/vitest.mjs", ...vitestArgs({ workers, projects, reportFile })],
+    ["node_modules/vitest/vitest.mjs", ...vitestArgs({ workers, projects, shard, reportFile })],
     { stream: true },
   );
   free();
