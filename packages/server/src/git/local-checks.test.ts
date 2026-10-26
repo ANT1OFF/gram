@@ -222,9 +222,10 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
         const { dir, repo, head, base } = fixture();
         const pidFile = nodePath.join(dir, "pid");
         const script = nodePath.join(dir, "child.cjs");
+        // It ignores SIGTERM before it writes its pid, so no interruption lands in between.
         write(
           script,
-          `require("node:fs").writeFileSync(process.argv[2], String(process.pid));process.on("SIGTERM",()=>{});setInterval(()=>{},1000);`,
+          `process.on("SIGTERM",()=>{});require("node:fs").writeFileSync(process.argv[2], String(process.pid));setInterval(()=>{},1000);`,
         );
         let worktree: string | undefined;
         let pid: number | undefined;
@@ -904,7 +905,7 @@ describe.skipIf(process.platform === "win32")("a local check that can't finish",
         const script = nodePath.join(dir, "child.cjs");
         write(
           script,
-          `require("node:fs").writeFileSync(process.argv[2], String(process.pid));process.on("SIGTERM",()=>{});setInterval(()=>{},1000);`,
+          `process.on("SIGTERM",()=>{});require("node:fs").writeFileSync(process.argv[2], String(process.pid));setInterval(()=>{},1000);`,
         );
         let pid: number | undefined;
         try {
