@@ -178,6 +178,9 @@ passed on that source. [scaffold.yml](../.github/workflows/scaffold.yml) runs th
 pin checks on every change. [.gram/merge-ci.json](../.gram/merge-ci.json) declares these jobs to
 Gram's merge gate; its `alwaysJobs` (the e2e shards) must pass even when a local check stands in
 for the rest. Pending, skipped, cancelled, failed or stale jobs are not passing CI.
+A newer push cancels a pull request's superseded runs, while every main run that starts
+finishes. [cancel-closed-pr.yml](../.github/workflows/cancel-closed-pr.yml) cancels a closed pull
+request's remaining runs from a GitHub-hosted runner, so they never hold the self-hosted ones.
 
 Workflows keep same-repository guards, read-only token permissions, isolated checkouts and
 caches and pinned frozen installs. They use synthetic agents; Linux CI does not qualify Mac

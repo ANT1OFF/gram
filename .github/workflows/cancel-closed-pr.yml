@@ -1,0 +1,33 @@
+name: Cancel closed pull request runs
+
+# A merged or closed pull request's checks are dead work on the shared runners.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  cancel:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    # GitHub-hosted, so it never waits behind the runs it cancels. No checkout.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+      SELF: ${{ github.run_id }}
+    steps:
+      - run: |
+          for status in queued in_progress waiting pending requested; do
+            gh api -X GET "repos/$GH_REPO/actions/runs" -f branch="$BRANCH" -f event=pull_request \
+              -f status="$status" --paginate --jq '.workflow_runs[].id'
+          done | sort -u | while read -r id; do
+            [ "$id" = "$SELF" ] && continue
+            echo "Cancelling run $id"
+            gh api -X POST "repos/$GH_REPO/actions/runs/$id/cancel" || true
+          done
