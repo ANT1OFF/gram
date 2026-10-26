@@ -5,14 +5,14 @@
 The root README is the entry point. Each topic below owns its facts; other pages link to it
 rather than repeat it.
 
-| Topic                                         | Detailed children                                                                              | What belongs here                                                     |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| [Development](DEVELOPMENT.md)                 | [Testing](VERIFICATION.md), [remote access](REMOTE_ACCESS.md)                                  | Toolchain, install/run setup, packaging and verification              |
-| [Contributing](../CONTRIBUTING.md)            | [AGENTS.md](../AGENTS.md)                                                                      | Branches, pull requests, reviews and merging                          |
-| [Agents and features](AGENTS_AND_FEATURES.md) | [Settings by chat](design/settings-by-chat.md), [worker questions](design/worker-questions.md) | Provider selection, context consent, capability and permission limits |
-| [Architecture](ARCHITECTURE.md)               | Linked package/service implementation                                                          | Dependency direction and state ownership                              |
-| [Releasing](RELEASING.md)                     | [Updates](UPDATES.md)                                                                          | Versions, signing, building and publishing releases                   |
-| [Design notes](../DESIGN.md)                  | [Mock-first playbook](orchestration/playbooks/mock-first.md), [mocks](design/mocks/README.md)  | Gram's look and voice, mock skills and the mock folder convention     |
+| Topic                                         | Detailed children                                                                              | What belongs here                                                       |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [Development](DEVELOPMENT.md)                 | [Testing](VERIFICATION.md), [remote access](REMOTE_ACCESS.md)                                  | Toolchain, install/run setup, packaging and verification                |
+| [Contributing](../CONTRIBUTING.md)            | [AGENTS.md](../AGENTS.md), [security policy](../SECURITY.md)                                   | Branches, pull requests, reviews, merging and reporting vulnerabilities |
+| [Agents and features](AGENTS_AND_FEATURES.md) | [Settings by chat](design/settings-by-chat.md), [worker questions](design/worker-questions.md) | Provider selection, context consent, capability and permission limits   |
+| [Architecture](ARCHITECTURE.md)               | Linked package/service implementation                                                          | Dependency direction and state ownership                                |
+| [Releasing](RELEASING.md)                     | [Updates](UPDATES.md)                                                                          | Versions, signing, building and publishing releases                     |
+| [Design notes](../DESIGN.md)                  | [Mock-first playbook](orchestration/playbooks/mock-first.md), [mocks](design/mocks/README.md)  | Gram's look and voice, mock skills and the mock folder convention       |
 
 Versions come from the version files and manifests; guides explain what they mean. Results of a
 particular change belong in its pull request, not in the docs. Package-local
