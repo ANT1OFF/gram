@@ -143,7 +143,9 @@ describe("git.prCheckDiagnostic RPC handler", () => {
         expect(JSON.stringify(result)).not.toContain("invented-private-token");
         expect(
           h.calls.every(
-            (args) => args[0] === "pr" || (args[0] === "api" && args.includes("github.com")),
+            (args) =>
+              args[0] === "pr" ||
+              (args[0] === "api" && args[args.indexOf("--hostname") + 1] === "github.com"),
           ),
         ).toBe(true);
       }),

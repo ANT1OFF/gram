@@ -54,6 +54,40 @@ describe("Developer ID publisher policy", () => {
     expect(GRAM_MAC_TEAM_ID === null || /^[A-Z0-9]{10}$/.test(GRAM_MAC_TEAM_ID)).toBe(true);
   });
 
+  it("keeps the first matching CodeDirectory line and its last complete flags field", () => {
+    for (const [display, runtime, adhoc] of [
+      ["CodeDirectory flags=0x0(adhoc) flags=0x10000(runtime)", true, false],
+      ["CodeDirectory flags=0x10000(runtime) flags=0x0(adhoc)", false, true],
+      ["CodeDirectory flags=0x0()\nCodeDirectory flags=0x10000(runtime)", false, false],
+      ["CodeDirectory flags=0x(adhoc) flags=0x10000(runtime)", true, false],
+      ["CodeDirectory flags=0xABC(runtime)", false, false],
+      ["CodeDirectory flags=0x0(runtime", false, false],
+      ["CodeDirectory flags=0x0(runtime) flags=0x0(", true, false],
+      ["CodeDirectory flags=0x0(\nruntime)", false, false],
+      ["CodeDirectory flags=0x0(runtime\n)", false, false],
+      ["NotCodeDirectory flags=0x10000(runtime)", false, false],
+      ["CodeDirectory flags=0x0(\nCodeDirectory flags=0x10000(runtime)", false, false],
+      ["ignored\rCodeDirectory flags=0x10000(runtime)", true, false],
+      ["CodeDirectory flags=0x0(adhoc)\u2028CodeDirectory flags=0x10000(runtime)", false, true],
+    ] as const) {
+      expect(parseCodesignDisplay(display), display).toMatchObject({
+        hardenedRuntime: runtime,
+        adhoc,
+      });
+    }
+  });
+
+  it("scans repeated incomplete codesign flags without backtracking", () => {
+    const repeated = "CodeDirectory flags=0x0(" + "flags=0x0((".repeat(100_000);
+    const started = performance.now();
+    expect(parseCodesignDisplay(repeated)).toMatchObject({ hardenedRuntime: false, adhoc: false });
+    expect(parseCodesignDisplay(`${repeated}flags=0x10000(runtime)`)).toMatchObject({
+      hardenedRuntime: true,
+      adhoc: false,
+    });
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it("parses codesign and spctl output", () => {
     expect(
       parseCodesignDisplay(

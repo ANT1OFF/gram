@@ -169,7 +169,9 @@ export const reportGist = (summary: string): string => {
   const count = COUNT.exec(summary);
   if (count !== null && TEST_WORDS.test(summary)) return `tests ${count[1]}/${count[2]}`;
   const clause = summary.trim().split(/[.;:!?\n]\s|[.;:!?\n]$|\s[—–-]\s/)[0] ?? "";
-  const gist = capWords(lowerFirst(clause.replace(/[.,;:!?]+$/, "")));
+  let end = clause.length;
+  while (end > 0 && ".,;:!?".includes(clause[end - 1]!)) end--;
+  const gist = capWords(lowerFirst(clause.slice(0, end)));
   return gist === "" ? "reported" : gist;
 };
 

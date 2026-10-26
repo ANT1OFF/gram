@@ -13,6 +13,17 @@ import {
 const KEY = "sk-litellm-test-key";
 
 describe("anthropicBaseUrl", () => {
+  it("scans long slash runs without retrying every suffix", () => {
+    const slashes = "/".repeat(100_000);
+    const started = performance.now();
+    expect(anthropicBaseUrl(`https://gw.example/${slashes}x`)).toBe(
+      `https://gw.example/${slashes}x`,
+    );
+    expect(anthropicBaseUrl(`https://gw.example/v1${slashes}`)).toBe("https://gw.example");
+    expect(anthropicBaseUrl(slashes)).toBe("");
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it("drops a trailing /v1 and slashes, keeping custom proxy paths", () => {
     expect(anthropicBaseUrl("http://litellm:4000/v1")).toBe("http://litellm:4000");
     expect(anthropicBaseUrl("http://litellm:4000/v1/")).toBe("http://litellm:4000");

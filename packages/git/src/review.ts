@@ -113,9 +113,14 @@ export const stripMeta = (body: string): string => {
 
 /** The text of the first ```suggestion block; `""` means "delete these lines". */
 export const extractSuggestion = (body: string): string | undefined => {
-  const match = /```suggestion[^\n]*\n([\s\S]*?)```/.exec(body);
-  if (match === undefined || match === null) return undefined;
-  return (match[1] ?? "").replace(/\n$/, "");
+  const start = body.indexOf("```suggestion");
+  if (start === -1) return undefined;
+  const newline = body.indexOf("\n", start);
+  if (newline === -1) return undefined;
+  const end = body.indexOf("```", newline + 1);
+  if (end === -1) return undefined;
+  const suggestion = body.slice(newline + 1, end);
+  return suggestion.endsWith("\n") ? suggestion.slice(0, -1) : suggestion;
 };
 
 /**

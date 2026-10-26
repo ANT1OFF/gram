@@ -63,6 +63,22 @@ export interface MacNotarizationOptions {
   readonly notarization: boolean;
 }
 
+/** The first CodeDirectory line's last complete flags field, as codesign's display spells it. */
+const codesignFlags = (text: string): ReadonlyArray<string> => {
+  const lastClose = text.lastIndexOf(")");
+  for (const line of text.matchAll(/^CodeDirectory (.*)$/gm)) {
+    let open: number | undefined;
+    for (const candidate of line[1]!.matchAll(/flags=0x[0-9a-f]+\(/g)) {
+      const after = line.index + "CodeDirectory ".length + candidate.index + candidate[0].length;
+      // The previous capture [^)]* could cross a line boundary. Keep that behavior, and the
+      // greedy prefix's choice of the last complete field on the first matching line.
+      if (after <= lastClose) open = after;
+    }
+    if (open !== undefined) return text.slice(open, text.indexOf(")", open)).split(",");
+  }
+  return [];
+};
+
 /** Fields of `codesign --display --verbose=2` (it writes them to stderr). */
 export function parseCodesignDisplay(text: string): {
   identifier: string | null;
@@ -72,7 +88,7 @@ export function parseCodesignDisplay(text: string): {
 } {
   const field = (key: string) => new RegExp(`^${key}=(.*)$`, "m").exec(text)?.[1]?.trim() ?? null;
   const team = field("TeamIdentifier");
-  const flags = /^CodeDirectory .*flags=0x[0-9a-f]+\(([^)]*)\)/m.exec(text)?.[1]?.split(",") ?? [];
+  const flags = codesignFlags(text);
   return {
     identifier: field("Identifier"),
     teamId: team && team !== "not set" ? team : null,

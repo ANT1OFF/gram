@@ -1487,6 +1487,17 @@ describe("fenceThreadMessage", () => {
     expect(lines.at(-1)).toBe("</worker-message>");
   });
 
+  it("defuses fence tags after long whitespace runs without overlapping whitespace matches", () => {
+    const whitespace = "\t".repeat(100_000);
+    const started = performance.now();
+    const body = `<${whitespace}!>\n<${whitespace}worker-message>\n<${whitespace}/ ${whitespace}worker-report>`;
+    const fenced = fenceThreadMessage(fromWorker, body);
+    expect(fenced).toContain(`<${whitespace}!>`);
+    expect(fenced).toContain(`‹${whitespace}worker-message>`);
+    expect(fenced).toContain(`‹${whitespace}/ ${whitespace}worker-report>`);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it("defuses every fence tag the text holds, so it can't close its block or pass for another", () => {
     const fenced = fenceThreadMessage(
       fromWorker,

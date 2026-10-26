@@ -153,7 +153,10 @@ export const fromGitPath = (path: string, platformPath: typeof nodePath.win32 = 
 
 /** The last path component, tolerating trailing separators. */
 export const basename = (path: string): string => {
-  const trimmed = path.replace(/[\\/]+$/, "");
+  const value = path;
+  let end = value.length;
+  while (end > 0 && (value[end - 1] === "/" || value[end - 1] === "\\")) end--;
+  const trimmed = value.slice(0, end);
   return (
     trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1) || trimmed
   );

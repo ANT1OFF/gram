@@ -47,6 +47,33 @@ const existing =
   (path: string) =>
     paths.includes(path);
 
+describe("long git text runs", () => {
+  it("scans path separators, quotes and PATH directories without retrying suffixes", () => {
+    const quotes = '"'.repeat(100_000);
+    const separators = "/\\".repeat(50_000);
+    const started = performance.now();
+    expect(porcelainPath(`?? file${quotes}x`)).toBe(`file${quotes}x`);
+    expect(porcelainPath(`?? ${quotes}file${quotes}`)).toBe("file");
+    expect(porcelainPath(`?? ${quotes}`)).toBeUndefined();
+    expect(basename(`/repo/${separators}leaf`)).toBe("leaf");
+    expect(basename(`/repo/leaf${separators}`)).toBe("leaf");
+    expect(basename(separators)).toBe("");
+    const dir = `C:\\bin${separators}x`;
+    const executable = `${dir}\\git.exe`;
+    expect(resolveExecutable("git", "win32", dir, existing(executable), ".EXE")).toBe(executable);
+    expect(
+      resolveExecutable(
+        "git",
+        "win32",
+        `C:\\bin${separators}`,
+        existing("C:\\bin\\git.exe"),
+        ".EXE",
+      ),
+    ).toBe("C:\\bin\\git.exe");
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
 describe("names", () => {
   it("composes adjective-animal-hex", () => {
     expect(randomWorktreeName()).toMatch(/^[a-z]+-[a-z]+-[0-9a-f]{6}$/);

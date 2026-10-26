@@ -117,7 +117,7 @@ describe("themeAttributes", () => {
 
 describe("index.html boot script", () => {
   const bootHtml = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
-  const bootSource = /<script>([\s\S]*?)<\/script>/.exec(bootHtml)![1]!;
+  const bootSource = /<script>([\s\S]*?)<\/script\s*>/i.exec(bootHtml)![1]!;
   function boot(saved: string | null, prefersLight = true) {
     const dataset = Object.fromEntries(
       [...bootHtml.matchAll(/data-(look|palette|mode|motion)="([^"]*)"/g)].map((match) => [

@@ -5,8 +5,13 @@ import * as Redacted from "effect/Redacted";
  * `ANTHROPIC_BASE_URL` for a LiteLLM profile. Claude Code appends `/v1/messages`, which LiteLLM
  * serves at its root, so a profile URL ending in `/v1` (the form OpenAI clients use) drops it.
  */
-export const anthropicBaseUrl = (baseURL: string): string =>
-  baseURL.trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+export const anthropicBaseUrl = (baseURL: string): string => {
+  const trimmed = baseURL.trim();
+  let end = trimmed.length;
+  while (end > 0 && trimmed[end - 1] === "/") end--;
+  const base = trimmed.slice(0, end);
+  return base.endsWith("/v1") ? base.slice(0, -3) : base;
+};
 
 /** Claude Code's model aliases, each with the variable that names its model. */
 const FAMILIES = {
