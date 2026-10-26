@@ -29,5 +29,6 @@ jobs:
           done | sort -u | while read -r id; do
             [ "$id" = "$SELF" ] && continue
             echo "Cancelling run $id"
-            gh api -X POST "repos/$GH_REPO/actions/runs/$id/cancel" || true
+            # Force: a plain cancel still queues `if: always()` jobs for a self-hosted runner.
+            gh api -X POST "repos/$GH_REPO/actions/runs/$id/force-cancel" || true
           done
