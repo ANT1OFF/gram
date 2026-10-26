@@ -26,6 +26,8 @@ The orchestrator writes a brief for each piece of work and spawns a worker on it
 back, ask questions and open pull requests; the orchestrator answers what it can and passes the
 rest to you. Between turns, every agent sleeps until an event wakes it.
 
+The orchestrator is meant to be a long-lived thread: you keep one per workspace and come back to it, rather than starting a fresh chat for each task. It is where you talk through priorities and plans, and where results, blockers and decisions come back to you. Its memory and the digests it gets from workers carry it across sessions, so it picks up where it left off.
+
 - **Woken by events, not polling.** The thread that cares wakes when CI checks settle, a review
   lands, a pull request merges, a dependency's pull request moves, or a time it set comes round.
 - **Hands-off or hands-on.** Let it plan and merge on its own, or open any worker's thread to
