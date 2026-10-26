@@ -5,9 +5,11 @@ import type {
   PlanRequest,
   QuestionRequest,
   RequestAnswer,
+  SettingsDiffRow,
   SettingsProposalCard,
   Thread,
   ThreadId,
+  WorkspaceProposalCard,
 } from "@gram/contracts";
 import {
   Check,
@@ -54,6 +56,7 @@ import {
   approvalSubject,
   mustReadDetails,
   settingsProposal,
+  workspaceProposal,
   type ApprovalDetailField,
   type ApprovalDetails,
 } from "./request-model";
@@ -341,6 +344,101 @@ function ApprovalDetailsFold({
 }
 
 /**
+ * A change by chat's rows: each setting as it is now and as it would be, or for something new only
+ * what it will be. Every row is shown, since approving applies exactly these.
+ */
+function DiffTable({ rows, fresh = false }: { rows: readonly SettingsDiffRow[]; fresh?: boolean }) {
+  return (
+    <table className="w-full border-collapse text-xs">
+      <thead>
+        <tr className="text-left text-muted-foreground">
+          <th scope="col" className="pr-3 pb-1 font-normal">
+            Setting
+          </th>
+          {!fresh && (
+            <th scope="col" className="pr-3 pb-1 font-normal">
+              Now
+            </th>
+          )}
+          <th scope="col" className="pb-1 font-normal">
+            {fresh ? "Value" : "After"}
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr
+            key={`${row.key} ${row.label}`}
+            data-testid="settings-diff-row"
+            className="border-t border-border align-top"
+          >
+            <th scope="row" className="py-1 pr-3 text-left font-normal break-words">
+              {row.label}
+            </th>
+            {!fresh && (
+              <td
+                className={cn(
+                  "py-1 pr-3 break-words text-muted-foreground",
+                  row.before !== null && "line-through",
+                )}
+              >
+                {row.before ?? "Not there"}
+              </td>
+            )}
+            <td
+              className={cn(
+                "py-1 break-words",
+                row.after === null ? "text-muted-foreground" : "font-medium",
+              )}
+            >
+              {row.after ?? "Removed"}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** The agent's reason and the server's notes on a change by chat, as plain text. */
+function ProposalWords({
+  summary,
+  reason,
+  children,
+  notes,
+}: {
+  summary: string | undefined;
+  reason: string | undefined;
+  children: ReactNode;
+  notes: readonly string[] | undefined;
+}) {
+  return (
+    <>
+      {summary !== undefined && (
+        <p data-testid="approval-summary" className="break-words">
+          {summary}
+        </p>
+      )}
+      {reason !== undefined && (
+        <p data-testid="settings-reason" className="text-xs break-words text-muted-foreground">
+          Why: {reason}
+        </p>
+      )}
+      {children}
+      {notes !== undefined && notes.length > 0 && (
+        <ul data-testid="settings-notes" className="text-xs text-muted-foreground">
+          {notes.map((note) => (
+            <li key={note} className="break-words">
+              {note}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/**
  * A `settings_propose` card's change set: each setting as it is now and as it would be, every row
  * shown, since Apply changes exactly these. The reason and notes are the agent's and the server's,
  * as plain text.
@@ -354,69 +452,69 @@ function SettingsDiff({
 }) {
   return (
     <div data-testid="settings-diff" className="flex flex-col gap-2">
-      {summary !== undefined && (
-        <p data-testid="approval-summary" className="break-words">
-          {summary}
-        </p>
-      )}
-      {card.reason !== undefined && (
-        <p data-testid="settings-reason" className="text-xs break-words text-muted-foreground">
-          Why: {card.reason}
-        </p>
-      )}
-      <table className="w-full border-collapse text-xs">
-        <thead>
-          <tr className="text-left text-muted-foreground">
-            <th scope="col" className="pr-3 pb-1 font-normal">
-              Setting
-            </th>
-            <th scope="col" className="pr-3 pb-1 font-normal">
-              Now
-            </th>
-            <th scope="col" className="pb-1 font-normal">
-              After
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {card.rows.map((row) => (
-            <tr
-              key={`${row.key} ${row.label}`}
-              data-testid="settings-diff-row"
-              className="border-t border-border align-top"
-            >
-              <th scope="row" className="py-1 pr-3 text-left font-normal break-words">
-                {row.label}
-              </th>
-              <td
-                className={cn(
-                  "py-1 pr-3 break-words text-muted-foreground",
-                  row.before !== null && "line-through",
-                )}
+      <ProposalWords summary={summary} reason={card.reason} notes={card.notes}>
+        <DiffTable rows={card.rows} />
+      </ProposalWords>
+    </div>
+  );
+}
+
+const PROJECT_CHANGE = { added: "Adds", removed: "Removes", kept: "Keeps" } as const;
+
+/**
+ * A `workspace_create` or `workspace_update` card: the workspace's projects by path, each marked
+ * with what happens to it, the home and any Gram doesn't know yet, then its settings. A new
+ * workspace lists what it will have; a change shows before → after.
+ */
+function WorkspaceDiff({
+  card,
+  summary,
+}: {
+  card: WorkspaceProposalCard;
+  summary: string | undefined;
+}) {
+  const fresh = card.action === "create";
+  return (
+    <div data-testid="workspace-diff" className="flex flex-col gap-2">
+      <ProposalWords summary={summary} reason={card.reason} notes={card.notes}>
+        <div>
+          <h4 className="pb-1 text-xs text-muted-foreground">Projects</h4>
+          <ul className="flex flex-col text-xs">
+            {card.projects.map((project) => (
+              <li
+                key={project.root}
+                data-testid="workspace-project"
+                className="flex items-baseline gap-2 border-t border-border py-1"
               >
-                {row.before ?? "Not there"}
-              </td>
-              <td
-                className={cn(
-                  "py-1 break-words",
-                  row.after === null ? "text-muted-foreground" : "font-medium",
+                {!fresh && (
+                  <span className="w-14 shrink-0 text-muted-foreground">
+                    {PROJECT_CHANGE[project.change]}
+                  </span>
                 )}
-              >
-                {row.after ?? "Removed"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {card.notes !== undefined && card.notes.length > 0 && (
-        <ul data-testid="settings-notes" className="text-xs text-muted-foreground">
-          {card.notes.map((note) => (
-            <li key={note} className="break-words">
-              {note}
-            </li>
-          ))}
-        </ul>
-      )}
+                <span className="flex min-w-0 flex-col">
+                  <span
+                    className={cn(
+                      "font-mono break-all",
+                      project.change === "removed" && "text-muted-foreground line-through",
+                      project.change === "added" && !fresh && "font-medium",
+                    )}
+                  >
+                    {project.root}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {[
+                      project.name,
+                      ...(project.home === true ? ["home"] : []),
+                      ...(project.unregistered === true ? ["new to Gram, added as a project"] : []),
+                    ].join(" · ")}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {card.rows.length > 0 && <DiffTable rows={card.rows} fresh={fresh} />}
+      </ProposalWords>
     </div>
   );
 }
@@ -475,6 +573,8 @@ export function ApprovalCard({
   const pause = limitPauseAsk(request);
   // A settings change by chat: the diff is the whole card, and Apply changes applies it.
   const settings = pause === undefined ? settingsProposal(request) : undefined;
+  // A workspace made or changed by chat: the same, with its projects above its settings.
+  const workspace = pause === undefined ? workspaceProposal(request) : undefined;
   // Outward app tools restrict scopes to `["once"]`; absent means every scope is allowed. A browse
   // card's "always" is the host's place in Settings → Agent may browse, not a permission rule.
   const browseHost = request.browseHost;
@@ -522,7 +622,11 @@ export function ApprovalCard({
           ? pause.lead
           : settings !== undefined
             ? "Change Gram settings?"
-            : `Allow ${request.displayName}?`
+            : workspace !== undefined
+              ? workspace.action === "create"
+                ? `Create workspace “${workspace.workspace.name}”?`
+                : `Change workspace “${workspace.workspace.name}”?`
+              : `Allow ${request.displayName}?`
       }
       footer={
         pause !== undefined ? (
@@ -551,7 +655,12 @@ export function ApprovalCard({
                 disabled={pending}
                 onClick={() => allow("once")}
               >
-                {settings === undefined ? "Allow" : "Apply changes"} <CardKbd id="approval.allow" />
+                {workspace?.action === "create"
+                  ? "Create workspace"
+                  : settings !== undefined || workspace !== undefined
+                    ? "Apply changes"
+                    : "Allow"}{" "}
+                <CardKbd id="approval.allow" />
               </Button>
             </PressScale>
             {canAlways && (
@@ -584,6 +693,8 @@ export function ApprovalCard({
         </p>
       ) : settings !== undefined ? (
         <SettingsDiff card={settings} summary={summary} />
+      ) : workspace !== undefined ? (
+        <WorkspaceDiff card={workspace} summary={summary} />
       ) : summary === undefined ? (
         <ApprovalInput request={request} />
       ) : (

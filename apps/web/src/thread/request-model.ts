@@ -3,6 +3,9 @@ import {
   LimitPauseInput,
   SETTINGS_PROPOSE_TOOL,
   SettingsProposalCard,
+  WORKSPACE_CREATE_TOOL,
+  WORKSPACE_UPDATE_TOOL,
+  WorkspaceProposalCard,
   type ApprovalRequest,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
@@ -63,6 +66,23 @@ export const settingsProposal = (request: ApprovalRequest): SettingsProposalCard
   return card._tag === "None" ? undefined : card.value;
 };
 
+const decodeWorkspace = Schema.decodeUnknownOption(WorkspaceProposalCard);
+
+const WORKSPACE_TOOLS = [WORKSPACE_CREATE_TOOL, WORKSPACE_UPDATE_TOOL].map(
+  (name) => `${APP_TOOL_PREFIX}${name}`,
+);
+
+/**
+ * A `workspace_create` or `workspace_update` card's whole change: the projects, then each setting
+ * before → after, or `undefined` for any other approval. A card that doesn't decode reads as any
+ * other app tool's.
+ */
+export const workspaceProposal = (request: ApprovalRequest): WorkspaceProposalCard | undefined => {
+  if (!WORKSPACE_TOOLS.includes(request.toolName)) return undefined;
+  const card = decodeWorkspace(request.input);
+  return card._tag === "None" ? undefined : card.value;
+};
+
 /**
  * The sentence an app tool's card leads with: the server's own description of this call
  * (`describe`), or of the tool. `undefined` for any other tool, and for an app tool that came with
@@ -80,13 +100,16 @@ export const appToolSummary = (request: ApprovalRequest): string | undefined => 
 
 /**
  * An approval whose whole input has to be read before it is answered: a `report_issue` posts that
- * text to a shared repo, a `settings_propose` changes Gram's own settings, and an agent's form submission or held page requests (`browser_*` with a
- * `control`) send what its details list to a public site. It is never answered from its summary
- * alone, so compact cards show its details and the inbox never folds it into an "Allow all".
+ * text to a shared repo, a `settings_propose` changes Gram's own settings, a `workspace_create` or
+ * `workspace_update` decides which repos a workspace reaches and what its agents may do, and an
+ * agent's form submission or held page requests (`browser_*` with a `control`) send what its
+ * details list to a public site. It is never answered from its summary alone, so compact cards show
+ * its details and the inbox never folds it into an "Allow all".
  */
 export const mustReadDetails = (request: ApprovalRequest): boolean =>
   request.toolName === `${APP_TOOL_PREFIX}report_issue` ||
   request.toolName === `${APP_TOOL_PREFIX}${SETTINGS_PROPOSE_TOOL}` ||
+  WORKSPACE_TOOLS.includes(request.toolName) ||
   (request.toolName.startsWith(`${APP_TOOL_PREFIX}browser_`) &&
     typeof request.input["control"] === "string");
 

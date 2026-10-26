@@ -15,6 +15,7 @@ import { ClaudeAiSeenLive } from "../connectors/claude-ai-seen.ts";
 import { McpTokens } from "../app-tools/mcp-tokens.ts";
 import { OrchestrationAppToolsLive } from "../app-tools/orchestration-tools.ts";
 import { SettingsAppToolsLive } from "../settings/chat-tools.ts";
+import { WorkspaceAppToolsLive } from "../settings/workspace-tools.ts";
 import { PrAppToolsLive } from "../app-tools/pr-tools.ts";
 import { ReadAppToolsLive } from "../app-tools/read-tools.ts";
 import { WrapUpAppToolsLive } from "../app-tools/wrap-up-tool.ts";
@@ -329,6 +330,7 @@ export const ServerCore = Layer.unwrap(
         OrchestrationAppToolsLive,
         OrchestratorAppToolsLive,
         SettingsAppToolsLive,
+        WorkspaceAppToolsLive,
         IssueAppToolsLive,
         BrowserAppToolsLive.pipe(Layer.provide(PanePort.layer)),
         DevServerAppToolsLive,

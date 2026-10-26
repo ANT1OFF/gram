@@ -476,7 +476,7 @@ describe("settings_propose", () => {
         const plain = yield* plainThread(world);
         const before = yield* store.getWorkspace(workspaceId);
         const settingsBefore = yield* store.getSettings;
-        for (const { key } of USER_ONLY_SETTINGS) {
+        for (const { key, via } of USER_ONLY_SETTINGS) {
           for (const [caller, audience] of [
             [thread.id, "orchestrator"],
             [plain.id, "plain"],
@@ -484,7 +484,9 @@ describe("settings_propose", () => {
             const error = yield* call(caller, audience, "settings_propose", {
               changes: [{ op: "set", key, value: "full" }],
             }).pipe(Effect.flip);
-            expect(error.message, key).toContain("no agent may change it");
+            expect(error.message, key).toContain(
+              via === undefined ? "no agent may change it" : `propose it with ${via}`,
+            );
           }
         }
         yield* noCard(thread.id);

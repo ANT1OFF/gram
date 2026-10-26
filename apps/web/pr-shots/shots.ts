@@ -550,8 +550,36 @@ const openDirectTask = async (page: Page, width: number) => {
   await page.waitForTimeout(600);
 };
 
+/** A thread whose mock reply raises the change-by-chat card `prompt` asks for. */
+const proposalCard = (prompt: string, title: string, name: string): Shot => ({
+  name,
+  title,
+  open: async (page) => {
+    await page.setViewportSize({ width: 900, height: 1100 });
+    await page.goto("/t/t-deps");
+    const composer = page.getByLabel("Message", { exact: true });
+    await composer.waitFor();
+    await composer.fill(prompt);
+    await composer.press("ControlOrMeta+Enter");
+    await page.getByTestId("approval-card").last().waitFor();
+    await page.waitForTimeout(600);
+  },
+  element: (page) => page.getByTestId("approval-card").last(),
+});
+
 export const SHOTS: readonly Shot[] = [
   ...UPDATE_PILL_SHOTS,
+  proposalCard("Please change the settings", "A settings change by chat's card", "settings-card"),
+  proposalCard(
+    "Please create the workspace",
+    "A new workspace by chat's card: its projects, then what it will have",
+    "workspace-create-card",
+  ),
+  proposalCard(
+    "Please change the workspace",
+    "A workspace change by chat's card: projects kept, removed and added, then before → after",
+    "workspace-update-card",
+  ),
   ...[1200, 520].map((width): Shot => ({
     name: width === 1200 ? "new-task-direct-worker" : "new-task-direct-worker-narrow",
     title: `New task, straight to a worker, at ${width} px: the worker's agent and model`,

@@ -449,7 +449,7 @@ export const OrchestrationLive = Layer.effect(
       routePaused,
     });
 
-    const { setCharter, changeCharter } = makeCharter(kit, { wake });
+    const { setCharter, changeCharter, checkCharter, afterCharter } = makeCharter(kit, { wake });
 
     const {
       noteForNextDigest,
@@ -505,12 +505,15 @@ export const OrchestrationLive = Layer.effect(
       abandonHandoff,
     });
 
-    const { saveWorkspace, whileWorkspaceStays, removeWorkspace, open } = makeWorkspaces(kit, {
-      forgetReasons,
-      openModel,
-      endRecovery,
-      deliveryFor,
-    });
+    const { saveWorkspace, commitWorkspace, whileWorkspaceStays, removeWorkspace, open } =
+      makeWorkspaces(kit, {
+        forgetReasons,
+        openModel,
+        endRecovery,
+        deliveryFor,
+        checkCharter,
+        afterCharter,
+      });
 
     const {
       answerWorker,
@@ -727,6 +730,7 @@ export const OrchestrationLive = Layer.effect(
     return Orchestration.of({
       listWorkspaces: store.listWorkspaces,
       saveWorkspace,
+      commitWorkspace,
       removeWorkspace,
       whileWorkspaceStays,
       open,

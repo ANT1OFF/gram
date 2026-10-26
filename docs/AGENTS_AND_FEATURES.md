@@ -195,8 +195,24 @@ Orchestrators and plain threads can change Gram's settings by chat with
 thread, which shows each setting before → after. That card is raised at every
 autonomy level, `full` included, and in every permission mode. Workers can read
 settings with `settings_read`, but they can't propose changes. Pausing and resuming,
-autonomy, permission modes, connectors, credentials, gateways, folders and consent
-switches are refused even with approval. See [settings by chat](design/settings-by-chat.md).
+default permission modes, connectors, credentials, gateways, folders and consent
+switches are refused even with approval.
+
+They can also set up workspaces by chat. `workspace_list` shows the workspaces with
+their projects and settings. `workspace_create` proposes a new workspace: its name,
+its projects by absolute path, the home project, autonomy, worker mode and charter
+settings. `workspace_update` proposes adding or removing projects, another home, a
+new name, autonomy, worker mode or charter settings. Each project path must be an
+existing git repository's top folder, named by its real path: a path through a link
+is refused, with the real folder to use instead. One Gram doesn't know yet is
+registered as a project when the user approves. The approval grants that folder,
+whatever it holds later. Each call shows the user one card with the whole
+workspace, or the whole change before → after, and nothing changes until they approve
+it. An approved change is applied whole or not at all: if the workspace changed, or a new
+folder stopped being a repository, while the card waited, nothing changes. These cards are never answered by Full Auto, Bypass
+or an earlier approval. An orchestrator may propose changes only to its own
+workspace; workers get none of these tools. See
+[settings by chat](design/settings-by-chat.md).
 
 ## Orchestration tool inputs
 

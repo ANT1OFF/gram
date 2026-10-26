@@ -4,10 +4,11 @@
 [Architecture](../ARCHITECTURE.md)
 
 Gram's agents can read Gram's settings and propose changes to them through the gram MCP
-server (`mcp__gram__*`) that every thread already has. The user approves every change on a
-card in the thread, which shows the change as before → after. Nothing is applied until the
-user approves it. Some settings an agent can never change, even with the user's approval:
-they stay in the Settings UI.
+server (`mcp__gram__*`) that every thread already has. They can also propose new workspaces
+and changes to a workspace's projects, home, autonomy and worker mode. The user approves every
+change on a card in the thread, which shows the change as before → after. Nothing is applied
+until the user approves it. Some settings an agent can never change, even with the user's
+approval: they stay in the Settings UI.
 
 ## Tools
 
@@ -15,9 +16,12 @@ they stay in the Settings UI.
 | ------------------ | ---------------------------------- | --------------------------- | ----------------------------------------------------------------------- |
 | `settings_read`    | read                               | orchestrator, plain, worker | The settings in the caller's scope, with their current values and tiers |
 | `settings_propose` | outwardGated (raises its own card) | orchestrator, plain         | Validates a change set, shows the card, applies the change on Apply     |
+| `workspace_list`   | read                               | orchestrator, plain         | The workspaces in scope, with their projects, autonomy and settings     |
+| `workspace_create` | outwardGated (raises its own card) | orchestrator, plain         | Validates a new workspace, shows it whole, creates it on approval       |
+| `workspace_update` | outwardGated (raises its own card) | orchestrator, plain         | Validates a workspace change, shows it whole, applies it on approval    |
 
-There is no separate `apply` tool. `settings_propose` waits for the user's answer and then
-applies the change in the same call. A separate apply verb would give the agent something it
+There is no separate `apply` tool. `settings_propose` and the workspace tools wait for the
+user's answer and then apply the change in the same call. A separate apply verb would give the agent something it
 could call with a stale, guessed or replayed proposal id. With one call, the agent never holds
 a capability to apply anything: the commit point is the user's click.
 
@@ -185,6 +189,98 @@ as a diff table, open from the start.
     session reloads. Only its commit differs: the compare-and-swap above.
 - The commit and its effects aren't interrupted once begun.
 
+### Workspaces: `workspace_list`, `workspace_create` and `workspace_update`
+
+Which repos a workspace reaches (`workspace.projectIds`, `workspace.homeProjectId`), its
+autonomy and its worker mode decide what its agents reach and may do without asking. So they
+are never a settings change: `settings_propose` refuses them and points to `workspace_update`.
+The workspace tools change them only on a card of their own, which shows the whole workspace.
+
+`workspace_list` takes `{ workspaceId?: string }`. For each workspace in scope it returns the
+id and name, the projects with their id, name and absolute root, the home project, autonomy,
+worker mode, the orchestrator's thread when one is open, the pause reason when paused, and the
+charter rows `settings_read` shows. A plain thread sees every workspace; an orchestrator its
+own.
+
+`workspace_create` takes:
+
+```json
+{
+  "name": "Platform",
+  "projects": ["/absolute/path/to/repo-a", "/absolute/path/to/repo-b"],
+  "home": "/absolute/path/to/repo-a",
+  "autonomy": "publish",
+  "workerMode": "auto",
+  "settings": [{ "op": "set", "key": "workspace.maxConcurrentWorkers", "value": 4 }],
+  "openOrchestrator": true,
+  "reason": "The handoff README lists this workspace."
+}
+```
+
+`workspace_update` takes `workspaceId` (an id or a name; an orchestrator's own by default),
+and any of `name`, `addProjects`, `removeProjects` (a path or a project id), `home` (a path or
+a project id), `autonomy`, `workerMode` (`null` follows the default again) and `settings`.
+
+- **A project is a canonical folder, and the approval grants folders.** Each project path
+  must be absolute, exist, and already be its own real path: a path with a link anywhere in it
+  is refused, with "use the real folder: <real path>". That folder's own `.git` must be a
+  folder, not a linked worktree's or a submodule's file, and `git rev-parse --show-toplevel`
+  must name the folder itself. A subfolder, a linked worktree, a plain folder, a folder with an
+  empty or broken `.git`, a link and a missing path are refused before any card, with the
+  reason. The rule holds for every project of the workspace the card would leave, kept and
+  home ones included, not only the ones it adds: a card over a workspace holding a project
+  stored at a link, or at a folder that is no longer a repository's top, is refused with
+  "<path> isn't its real folder; fix it in Settings or re-add it as <real path>". Gram registers the path the card shows, and a
+  repository it doesn't know yet is registered only once the user approves. Approval grants
+  the folder, not the repository in it: if what the folder holds is replaced, it is the same
+  grant, since an agent that can write there could change it anyway.
+- **The card shows the whole change.** A new workspace's card lists its name, each project path
+  (the home and any new to Gram marked), autonomy, worker mode, every charter field the new
+  workspace stores, and whether its orchestrator opens. An update's card lists each project as
+  kept, removed or added, then name, home, autonomy, worker mode and charter changes before →
+  after. Its input is a typed `WorkspaceProposalCard`.
+- **Validation.** Names are unique, ignoring case and spacing. The home must be one of the
+  projects after the change, and a workspace keeps at least one project. `workerMode` is one of
+  the modes Settings offers: `auto`, `acceptEdits`, `default` or `bypassPermissions`.
+  `settings` takes `settings_propose`'s changes on `workspace.*` keys only, planned and
+  checked the same way, models included. The home can't move while the workspace's
+  orchestrator is open, since it works there; that is refused before any card.
+- **One card per call, the same plumbing.** The card is raised by the tool's own handler
+  through `ThreadRuntimes.requestApproval`, with `once` as its only scope and no rule to
+  remember. It is `mustReadDetails`, so it is never folded into "Allow all", answered in place
+  from the ask stack or answered from a notification. Its buttons are **Create workspace** or
+  **Apply changes**, and **Deny**. Denied, expired or withdrawn, nothing changes.
+- **Applying: all of it or nothing.** The handler keeps the workspace exactly as it read it
+  for the card: name, projects, home and the whole charter, autonomy and worker mode
+  included. After the user approves:
+  1. `Orchestration.commitWorkspace` checks every project of the result against the folder rule
+     again, under the commit's locks just before the transaction. The transaction then requires
+     each known project to still have the root that was checked. A folder that is gone, or no
+     longer a canonical repository top folder, refuses the change.
+  2. It also runs `saveWorkspace`'s and `setCharter`'s checks under
+     their locks: a unique name, a home among the projects, no home move while the orchestrator
+     is open, an orchestrator model that may orchestrate, no lower autonomy a held thread
+     couldn't open under.
+  3. One store transaction registers the new repositories as projects and reads the stored
+     workspace. It writes the new name, projects, home and charter and the audit row, but only
+     if the stored workspace still equals the card's snapshot in every one of those fields and
+     the app settings the card read still hold (the app default model, for a cleared
+     orchestrator model, on a new workspace as on a changed one), and every project it names
+     still exists. Otherwise it rolls back, the projects included, and the agent is told
+     nothing changed.
+
+  What a write sets off follows it, as in Settings. A raised autonomy reloads the orchestrator
+  and its workers once idle, and the orchestrator's folders follow its projects. That sync
+  reads the workspace's membership from the store when it runs, one at a time per workspace,
+  so a sync that runs late applies only what is true then and never grants again a folder a
+  later change took away. Once the
+  write has begun, it and what it sets off can't be cancelled, so a call cancelled after the
+  commit still takes a removed repository's folder from the orchestrator. The snapshot is
+  held by the server; the card's input is only what the user reads, never what is applied.
+
+- **`openOrchestrator`.** With `true`, the new workspace's orchestrator opens once the workspace
+  exists, and the result carries its `orchestratorThreadId`, so the caller can message it.
+
 ## Approval policy tiers
 
 Enforced by the catalogue in `packages/contracts/src/settings-chat.ts`. A key that isn't
@@ -232,6 +328,14 @@ the cost of asking is one click on a card that shows exactly what changes. So in
 differs from tier 1 only in its label. (`agents.workerModels` is the roster a _new_ workspace starts with, so it is
 an app preference here, not a change to a running workspace.)
 
+### Workspace membership, autonomy and worker mode — only on the workspace card
+
+`workspace.projectIds`, `workspace.homeProjectId`, `workspace.autonomy` and
+`workspace.workerMode`. `settings_propose` refuses them and names `workspace_update`, and
+`settings_read` lists them with `userOnly` and a `via`. They change only through
+`workspace_create` or `workspace_update`, whose card shows the whole workspace change. No
+autonomy, permission mode or standing approval answers that card.
+
 ### Tier 3 — never settable by an agent, even with approval
 
 Refused before any card is raised. These stay in the Settings UI only:
@@ -239,11 +343,9 @@ Refused before any card is raised. These stay in the Settings UI only:
 | Key                                                               | Why it is user-only                                                      |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | `workspace.paused`                                                | A pause is how the user stops agents, so only the user pauses or resumes |
-| `workspace.autonomy`                                              | The autonomy level decides what agents may do without asking             |
-| `workspace.workerMode`, `agents.defaultMode`                      | Permission modes                                                         |
+| `agents.defaultMode`                                              | The permission mode new threads start in                                 |
 | `workspace.connectors`, `workspaces.orchestratorConnectors`       | Connectors widen the tools agents get                                    |
 | `workspaces.orchestratorPeerMessaging`                            | It lets an orchestrator send to sessions outside Gram                    |
-| `workspace.projectIds`, `workspace.homeProjectId`                 | The repos a workspace can reach                                          |
 | `agents.defaultFolder`, `agents.cloneFolder`                      | Directories                                                              |
 | `agents.codexRuntime`, `editor.command`, `terminal.shell`         | Programs Gram runs                                                       |
 | `agents.customModels`                                             | Arbitrary model ids sent as written                                      |
@@ -255,17 +357,20 @@ Refused before any card is raised. These stay in the Settings UI only:
 | `notifications.actions`, `reviewBots`                             | How approvals and merge gates are answered                               |
 
 Each one is tested to be refused. In general, anything that widens an agent's own authority
-is tier 3. Raising `maxConcurrentWorkers` is the exception: it is tier 1, because it stays
-within the autonomy the user set.
+is tier 3, or is shown whole on the workspace card. Raising `maxConcurrentWorkers` is the
+exception: it is tier 1, because it stays within the autonomy the user set.
 
 ## Who may call
 
 - **Orchestrators** may read and propose for their own workspace and for app preferences.
+  They may propose a new workspace, and changes to their own workspace's projects, home,
+  autonomy and worker mode, always on the user's card; never to another workspace.
 - **Plain threads** (the user chatting directly) may read and propose for app preferences and
-  for the workspace they joined, or another workspace they name.
-- **Workers** may read only. `settings_propose` isn't bound for them, and the handler checks
-  the caller's audience again at call time, because a Claude session keeps its binding through
-  a turn in which its role can change. The reasons:
+  for the workspace they joined, or another workspace they name. They may list every workspace
+  and propose new ones or changes to any.
+- **Workers** may read settings only. `settings_propose` and the workspace tools aren't bound
+  for them, and each handler checks the caller's audience again at call time, because a Claude
+  session keeps its binding through a turn in which its role can change. The reasons:
   - A worker runs unattended on a narrow brief, often in Bypass. Its approval card would sit
     in a thread the user isn't watching.
   - Most of what a worker could propose (more workers, other models, a looser merge policy)
@@ -287,13 +392,18 @@ Every applied change is written to `settings_audit`:
 - `reason`.
 
 A workspace change is also appended to that workspace's `orchestration_events` as
-`kind: "settings"`, in the same transaction, so its own audit trail has it. Denials and expiries are logged, but not
+`kind: "settings"`, in the same transaction, so its own audit trail has it. A workspace made
+by chat is audited with every field it stores, `before` being `null`. An update writes one row
+with every field it changed, in the same transaction as the change. Denials and expiries are logged, but not
 written as audit rows, since nothing changed.
 
 ## Limits
 
 - The UI's own `settings.set` and `orchestrator.setCharter` keep their last-writer-wins
   behaviour. Only changes by chat compare before they write.
+- A workspace change by chat over a workspace edited in Settings since its card is refused
+  whole, even when the edit and the change touch different fields. The agent proposes again,
+  and the user approves a card drawn from the workspace as it is.
 - A change to the orchestrator's model or effort applies to its next session, as in Settings.
   To switch the running one, use the orchestrator switch or `set_thread_model`.
 - Synthetic tests run on the fake agent. They don't qualify live Claude or Codex transports.

@@ -907,6 +907,111 @@ const settingsChangeSteps = (m: string, callId: string): Step[] => [
   },
 ];
 
+/** A `workspace_create` card as the server raises it: the projects, then what it will have. */
+const MOCK_WORKSPACE_CREATE = {
+  action: "create",
+  workspace: { name: "[Workspace name]" },
+  reason: "The handoff README lists this workspace with these repositories.",
+  projects: [
+    { root: "/Users/dev/code/api", name: "api", change: "added", home: true },
+    { root: "/Users/dev/code/web", name: "web", change: "added", unregistered: true },
+  ],
+  rows: [
+    {
+      key: "workspace.autonomy",
+      label: "Autonomy",
+      before: null,
+      after: "Publish: pushes branches and opens PRs, asks before merging",
+    },
+    { key: "workspace.workerMode", label: "Worker mode", before: null, after: "Auto" },
+    {
+      key: "workspace.maxConcurrentWorkers",
+      label: "Max concurrent workers",
+      before: null,
+      after: "4",
+    },
+    {
+      key: "workspace.mergeReviewPolicy",
+      label: "Merge review policy",
+      before: null,
+      after: "bot",
+    },
+    {
+      key: "workspace.orchestratorModel",
+      label: "Orchestrator model",
+      before: null,
+      after: "claude:opus · high · standard",
+    },
+    {
+      key: "workspace.workerModels",
+      label: "Worker model claude:sonnet",
+      before: null,
+      after: "claude:sonnet · high — reviews and refactors",
+    },
+    {
+      key: "workspace.workerModels",
+      label: "Worker model used when none is named",
+      before: null,
+      after: "claude:sonnet",
+    },
+  ],
+};
+
+/** A `workspace_update` card as the server raises it: the projects, then before → after. */
+const MOCK_WORKSPACE_UPDATE = {
+  action: "update",
+  workspace: { id: "w-api", name: "[Workspace name]" },
+  reason: "You asked to add the web app and let workers edit without asking.",
+  projects: [
+    { root: "/Users/dev/code/api", name: "api", change: "kept", home: true },
+    { root: "/Users/dev/code/docs", name: "docs", change: "removed" },
+    { root: "/Users/dev/code/web", name: "web", change: "added", unregistered: true },
+  ],
+  rows: [
+    {
+      key: "workspace.autonomy",
+      label: "Autonomy",
+      before: "Supervised: asks before anything leaves the machine",
+      after: "Publish: pushes branches and opens PRs, asks before merging",
+    },
+    { key: "workspace.workerMode", label: "Worker mode", before: "Ask", after: "Accept edits" },
+    {
+      key: "workspace.maxConcurrentWorkers",
+      label: "Max concurrent workers",
+      before: "10",
+      after: "4",
+    },
+  ],
+  notes: ["The orchestrator and its workers reopen at the new autonomy once each is idle."],
+};
+
+const workspaceSteps = (m: string, callId: string, create: boolean): Step[] => {
+  const toolName = create ? "mcp__gram__workspace_create" : "mcp__gram__workspace_update";
+  return [
+    ...toolCall(m, callId, toolName, { name: "…" }, 100),
+    {
+      kind: "request",
+      request: {
+        kind: "approval",
+        id: `r-${callId}` as RequestId,
+        toolUseId: callId,
+        toolName,
+        displayName: create ? "Create workspace" : "Change workspace",
+        input: create ? MOCK_WORKSPACE_CREATE : MOCK_WORKSPACE_UPDATE,
+        description: create
+          ? "Create the workspace “[Workspace name]” with 2 projects."
+          : "Change 5 things in the workspace “[Workspace name]”.",
+        suggestions: [],
+        scopes: ["once"],
+      },
+      onAnswer: (answer) =>
+        answer.kind === "approval" && answer.decision === "allow"
+          ? [toolResult(m, callId, { applied: true }), ...text(m, "t2", "Done.")]
+          : [toolError(m, callId, "The user declined the workspace change; nothing changed.")],
+    },
+  ];
+};
+
 export const echoScript: Script = (input, ids) => {
   const m = ids();
   // A prompt that asks for a chart gets one, so the widget card can be seen without a real agent.
@@ -919,6 +1024,9 @@ export const echoScript: Script = (input, ids) => {
   const issueId = /\breport\b.*\bissue\b/i.test(input.text) ? ids() : "";
   // And one that asks to change settings proposes a change, card and all.
   const settingsId = /\bchange\b.*\bsettings\b/i.test(input.text) ? ids() : "";
+  // And one that asks to create or change a workspace proposes it, card and all.
+  const workspaceMatch = /\b(create|change)\b.*\bworkspace\b/i.exec(input.text);
+  const workspaceId = workspaceMatch === null ? "" : ids();
   const { base64: _, ...stored } = MOCK_TOOL_IMAGE;
   return [
     status("running", "Thinking…"),
@@ -938,6 +1046,9 @@ export const echoScript: Script = (input, ids) => {
     ...text(m, "t1", `On it: “${input.text}”. (Mock reply.)`),
     ...(issueId === "" ? [] : reportIssueSteps(m, issueId)),
     ...(settingsId === "" ? [] : settingsChangeSteps(m, settingsId)),
+    ...(workspaceId === ""
+      ? []
+      : workspaceSteps(m, workspaceId, workspaceMatch?.[1]?.toLowerCase() === "create")),
     ...(chart
       ? [
           chunk(m, {

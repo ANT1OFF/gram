@@ -8,10 +8,10 @@ import {
   type RepositoryCandidate,
   type RepositoryCandidates,
 } from "@gram/contracts";
-import { projectRoot, projectRootKey } from "@gram/git";
+import { git as runGit, projectRoot, projectRootKey, realPath, type Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { existsSync, statSync } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
@@ -171,6 +171,68 @@ export const repoFolder = (
       ),
     ),
   );
+
+/** `path` with every link resolved, or why it can't be read. */
+const realFolder = (path: string) =>
+  Effect.tryPromise({ try: () => realPath(path), catch: (error) => folderError(error, path) });
+
+/**
+ * `path` as a folder a change by chat may grant: refused unless it is already canonical (its real
+ * path, no link anywhere in it), its own `.git` is a folder (not a linked worktree's or a
+ * submodule's file), and git names it as the top folder of the repository there. An empty or
+ * broken `.git` isn't one: git reads no repository there, or the one around it. What is approved
+ * is this folder; what it holds can change, as it can for anyone who may write there.
+ */
+export const canonicalRepoFolder = (
+  path: string,
+): Effect.Effect<string, NotFound | InvalidState, Proc> =>
+  Effect.gen(function* () {
+    const real = yield* realFolder(path);
+    if (real !== path) {
+      return yield* new InvalidState({
+        message: `${path} isn't a real folder path: use the real folder: ${real}`,
+      });
+    }
+    const info = yield* Effect.tryPromise({
+      try: () => stat(path),
+      catch: (error) => folderError(error, path),
+    });
+    if (!info.isDirectory()) return yield* new InvalidState({ message: `Not a folder: ${path}` });
+    const dotGit = join(path, ".git");
+    const own = yield* Effect.tryPromise({
+      try: () =>
+        lstat(dotGit).catch((error: { code?: unknown }) => {
+          if (error.code === "ENOENT") return undefined;
+          throw error;
+        }),
+      catch: (error) => folderError(error, dotGit),
+    });
+    if (own === undefined) return yield* new InvalidState({ message: notARepositoryMessage(path) });
+    if (!own.isDirectory()) {
+      return yield* new InvalidState({ message: linkedCheckoutMessage(path) });
+    }
+    // Nothing of Gram's own environment may point git elsewhere.
+    const read = yield* runGit(path, ["rev-parse", "--show-toplevel"], {
+      omitEnv: (name) => name.startsWith("GIT_"),
+      timeoutMs: 15_000,
+    }).pipe(
+      Effect.mapError(
+        () => new InvalidState({ message: `Gram couldn't run git to read ${path}.` }),
+      ),
+    );
+    const top = read.stdout.trim();
+    if (read.status !== 0 || top === "") {
+      return yield* new InvalidState({
+        message: `${path} isn't a git repository's top folder: git reads no repository there.`,
+      });
+    }
+    if (top !== path) {
+      return yield* new InvalidState({
+        message: `${path} isn't a git repository's top folder: git reads it as part of ${top}.`,
+      });
+    }
+    return path;
+  });
 
 /**
  * The project whose root is the repository at `input`, registered if Gram doesn't know it;
