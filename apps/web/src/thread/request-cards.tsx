@@ -239,19 +239,33 @@ function CardShell({
         "border border-status-needs/50 bg-card text-sm",
         compact
           ? "rounded-(--radius-md) p-2"
-          : "rounded-(--radius-lg) p-3 shadow-(--shadow-raised)",
+          : // Above the composer, the card keeps to a share of the pane: its body scrolls and its
+            // buttons stay in view, however tall the request or short the window.
+            "flex max-h-[calc(var(--pane-height,100vh)*0.5)] flex-col rounded-(--radius-lg) p-3 shadow-(--shadow-raised)",
       )}
     >
       <h3
-        className={cn("flex items-center gap-2 font-medium", compact ? "mb-1.5 text-xs" : "mb-2")}
+        className={cn(
+          "flex shrink-0 items-center gap-2 font-medium",
+          compact ? "mb-1.5 text-xs" : "mb-2",
+        )}
       >
         {icon}
         {title}
         {!compact && <RoleChip thread={thread} testId="request-role" />}
       </h3>
-      {children}
+      {compact ? (
+        children
+      ) : (
+        // The inset keeps focus rings inside the scroll box from being cut off.
+        <div data-testid="request-card-body" className="-m-1 min-h-0 overflow-y-auto p-1">
+          {children}
+        </div>
+      )}
       {footer && (
-        <div className={cn("flex flex-wrap items-center gap-2", compact ? "mt-2" : "mt-3")}>
+        <div
+          className={cn("flex shrink-0 flex-wrap items-center gap-2", compact ? "mt-2" : "mt-3")}
+        >
           {footer}
         </div>
       )}
