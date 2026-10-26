@@ -14,164 +14,112 @@ concurrency:
 permissions:
   contents: read
 
+# GitHub-hosted arm64 runners. Every native dependency (sherpa-onnx, node-pty, Electron, the
+# oxc/rolldown/lightningcss/tailwind bindings, native TypeScript) and Playwright's Chromium ship
+# linux-arm64 builds.
 jobs:
   classify:
     timeout-minutes: 5
-    # Only trusted same-repository PRs may execute on owned hardware.
+    # Only same-repository PRs run CI.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Linux, X64, gram-ci]
+    runs-on: ubuntu-24.04-arm
     outputs:
       kind: ${{ steps.classify.outputs.kind }}
     defaults:
       run:
         shell: bash
-        working-directory: ${{ github.workspace }}/ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          path: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-      - name: Use physical checkout directory
-        run: test "$(pwd -P)" = "$PWD"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}/.node-version
+          node-version-file: .node-version
       - id: classify
         run: node tools/classify-ci.mjs
         env:
           CI_EVENT: ${{ github.event_name }}
           CI_BASE: ${{ github.event.pull_request.base.sha }}
           CI_HEAD: ${{ github.event.pull_request.head.sha }}
-      - name: Remove this job's checkout
-        if: always()
-        working-directory: ${{ github.workspace }}
-        run: rm -rf -- "ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"
 
   docs:
     needs: classify
     if: needs.classify.outputs.kind == 'docs' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     timeout-minutes: 5
-    runs-on: [self-hosted, Linux, X64, gram-ci]
+    runs-on: ubuntu-24.04-arm
     defaults:
       run:
         shell: bash
-        working-directory: ${{ github.workspace }}/ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-    env:
-      BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.gram-bun-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.gram-browser-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           fetch-depth: 2
-          path: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-      - name: Use physical checkout directory
-        run: test "$(pwd -P)" = "$PWD"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}/.node-version
+          node-version-file: .node-version
       - name: docs-source [base=${{ github.event.pull_request.base.sha }} head=${{ github.event.pull_request.head.sha }} merge=${{ github.sha }}]
         run: node tools/check-ci-source.mjs
         env:
           CI_BASE: ${{ github.event.pull_request.base.sha }}
           CI_HEAD: ${{ github.event.pull_request.head.sha }}
           CI_MERGE: ${{ github.sha }}
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}/.bun-version
+          bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       - run: bun run check:docs
       - run: bun run fmt:check
-      - name: Remove this job's checkout and download caches
-        if: always()
-        working-directory: ${{ github.workspace }}
-        run: rm -rf -- "ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}" "$BUN_INSTALL_CACHE_DIR" "$PLAYWRIGHT_BROWSERS_PATH"
 
   check:
     needs: classify
     timeout-minutes: 30
-    # Only trusted same-repository PRs may execute on owned hardware.
+    # Only same-repository PRs run CI.
     if: needs.classify.outputs.kind == 'full' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, Linux, X64, gram-ci]
+    runs-on: ubuntu-24.04-arm
     defaults:
       run:
         shell: bash
-        working-directory: ${{ github.workspace }}/ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     env:
-      # Docker has IPv6 loopback without a routed IPv6 interface; align bind/fetch.
+      # Keep Vite's localhost binding consistent with Node fetch.
       NODE_OPTIONS: --dns-result-order=ipv4first
-      BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.gram-bun-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.gram-browser-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+      BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/bun-cache
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          path: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-      - name: Use physical checkout directory
-        run: test "$(pwd -P)" = "$PWD"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}/.node-version
-      - uses: oven-sh/setup-bun@v2
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}/.bun-version
-      # actions/cache hashes its path too: cache stable staging paths, then copy downloads
-      # into the existing per-job writable directory. Never cache source/build results.
-      - name: Clear this runner's cache staging
-        env:
-          GRAM_CI_CACHE_ROOT: ${{ runner.temp }}/gram-download-cache-${{ runner.name }}
-        run: |
-          printf 'GRAM_CI_CACHE_ROOT=%s\n' "$GRAM_CI_CACHE_ROOT" >> "$GITHUB_ENV"
-          rm -rf -- "$GRAM_CI_CACHE_ROOT"
-      - uses: actions/cache/restore@v6
-        id: bun-cache
+          bun-version-file: .bun-version
+      # Cache downloads only, never source or build results.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.GRAM_CI_CACHE_ROOT }}/bun
-          key: gram-bun-v1-${{ runner.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('ci-{0}-{1}-{2}/bun.lock', github.run_id, github.run_attempt, github.job), format('ci-{0}-{1}-{2}/.bun-version', github.run_id, github.run_attempt, github.job), format('ci-{0}-{1}-{2}/.node-version', github.run_id, github.run_attempt, github.job)) }}
-      - name: Seed this job's Bun downloads
-        run: |
-          mkdir -p "$BUN_INSTALL_CACHE_DIR"
-          if test -d "$GRAM_CI_CACHE_ROOT/bun"; then
-            cp -a "$GRAM_CI_CACHE_ROOT/bun/." "$BUN_INSTALL_CACHE_DIR/"
-          fi
+          path: ${{ env.BUN_INSTALL_CACHE_DIR }}
+          key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
       - run: bun install --frozen-lockfile
       # Check every project in the supported bounded compiler mode first. check:ci's normal
       # incremental typecheck then reuses only this same fresh checkout's successful build cache.
-      - name: Typecheck within runner memory budget
+      - name: Typecheck within a bounded memory budget
         run: bun run typecheck --singleThreaded
         env:
-          # Native TypeScript is Go: leave headroom within the 4 GiB CI runner.
+          # Native TypeScript is Go: bound its heap so the typecheck stays predictable.
           GOMEMLIMIT: 2GiB
       - run: bun run check:ci
-
-      # Copy back and save before unconditional cleanup removes owned directories.
-      - name: Stage Bun downloads for saving
-        if: steps.bun-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p "$GRAM_CI_CACHE_ROOT/bun"
-          cp -a "$BUN_INSTALL_CACHE_DIR/." "$GRAM_CI_CACHE_ROOT/bun/"
-      - uses: actions/cache/save@v6
-        if: steps.bun-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ env.GRAM_CI_CACHE_ROOT }}/bun
-          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
-      - name: Remove this job's checkout and download caches
-        if: always()
-        working-directory: ${{ github.workspace }}
-        run: rm -rf -- "ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}" "$BUN_INSTALL_CACHE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" "$GRAM_CI_CACHE_ROOT"
 
   # The whole mock-API Playwright suite, in shards that run beside `check`. It includes the
   # subscription/onboarding smoke set, which no longer needs a job of its own.
   e2e:
     needs: classify
     name: e2e ${{ matrix.shard }}/3
-    # Only trusted same-repository PRs may execute on owned hardware.
+    # Only same-repository PRs run CI.
     if: needs.classify.outputs.kind == 'full' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, Linux, X64, gram-ci]
-    # A shard's specs take 20 to 30 minutes on these runners.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     strategy:
       # Every shard reports, so one red shard doesn't hide another's failures.
@@ -181,124 +129,71 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: ${{ github.workspace }}/ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}
     env:
-      # Keep Vite localhost binding consistent with Node fetch in this container.
+      # Keep Vite's localhost binding consistent with Node fetch.
       NODE_OPTIONS: --dns-result-order=ipv4first
-      BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.gram-bun-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.gram-browser-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}
+      BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/bun-cache
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          path: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}
-      - name: Use physical checkout directory
-        run: test "$(pwd -P)" = "$PWD"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}/.node-version
-      - uses: oven-sh/setup-bun@v2
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}/.bun-version
-      # actions/cache hashes its path too: cache stable staging paths, then copy downloads
-      # into the existing per-job writable directory. Never cache source/build results.
-      - name: Clear this runner's cache staging
-        env:
-          GRAM_CI_CACHE_ROOT: ${{ runner.temp }}/gram-download-cache-${{ runner.name }}
-        run: |
-          printf 'GRAM_CI_CACHE_ROOT=%s\n' "$GRAM_CI_CACHE_ROOT" >> "$GITHUB_ENV"
-          rm -rf -- "$GRAM_CI_CACHE_ROOT"
-      - uses: actions/cache/restore@v6
-        id: bun-cache
+          bun-version-file: .bun-version
+      # Cache downloads only, never source or build results.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.GRAM_CI_CACHE_ROOT }}/bun
-          key: gram-bun-v1-${{ runner.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('ci-{0}-{1}-{2}-{3}/bun.lock', github.run_id, github.run_attempt, github.job, matrix.shard), format('ci-{0}-{1}-{2}-{3}/.bun-version', github.run_id, github.run_attempt, github.job, matrix.shard), format('ci-{0}-{1}-{2}-{3}/.node-version', github.run_id, github.run_attempt, github.job, matrix.shard)) }}
-      - name: Seed this job's Bun downloads
-        run: |
-          mkdir -p "$BUN_INSTALL_CACHE_DIR"
-          if test -d "$GRAM_CI_CACHE_ROOT/bun"; then
-            cp -a "$GRAM_CI_CACHE_ROOT/bun/." "$BUN_INSTALL_CACHE_DIR/"
-          fi
+          path: ${{ env.BUN_INSTALL_CACHE_DIR }}
+          key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
       - run: bun install --frozen-lockfile
-      - uses: actions/cache/restore@v6
-        id: browser-cache
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.GRAM_CI_CACHE_ROOT }}/chromium
-          key: gram-chromium-v1-${{ runner.name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('ci-{0}-{1}-{2}-{3}/bun.lock', github.run_id, github.run_attempt, github.job, matrix.shard), format('ci-{0}-{1}-{2}-{3}/.bun-version', github.run_id, github.run_attempt, github.job, matrix.shard), format('ci-{0}-{1}-{2}-{3}/.node-version', github.run_id, github.run_attempt, github.job, matrix.shard)) }}
-      - name: Seed this job's browser downloads
-        run: |
-          mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
-          if test -d "$GRAM_CI_CACHE_ROOT/chromium"; then
-            cp -a "$GRAM_CI_CACHE_ROOT/chromium/." "$PLAYWRIGHT_BROWSERS_PATH/"
-          fi
+          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
+          key: gram-chromium-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+      # --with-deps installs Chromium's system libraries even when the browser came from cache.
       - run: bun run playwright install --with-deps chromium
-        working-directory: ${{ github.workspace }}/ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}/apps/web
+        working-directory: apps/web
       - run: bun run --filter @gram/web e2e --shard=${{ matrix.shard }}/3 --workers=1
         env:
           GRAM_E2E_SERVER: preview
       - name: Upload the Playwright report and traces
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-${{ github.run_attempt }}-shard-${{ matrix.shard }}
           path: |
-            ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}/apps/web/playwright-report
-            ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}/apps/web/test-results
+            apps/web/playwright-report
+            apps/web/test-results
           retention-days: 14
           if-no-files-found: ignore
       - name: Upload per-spec timings (including successful shards)
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-timings-${{ github.run_attempt }}-shard-${{ matrix.shard }}
-          path: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}/apps/web/test-results/spec-timings.json
+          path: apps/web/test-results/spec-timings.json
           retention-days: 14
           if-no-files-found: ignore
-      # Copy back and save before unconditional cleanup removes owned directories.
-      - name: Stage Bun downloads for saving
-        if: steps.bun-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p "$GRAM_CI_CACHE_ROOT/bun"
-          cp -a "$BUN_INSTALL_CACHE_DIR/." "$GRAM_CI_CACHE_ROOT/bun/"
-      - uses: actions/cache/save@v6
-        if: steps.bun-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ env.GRAM_CI_CACHE_ROOT }}/bun
-          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
-      - name: Stage browser downloads for saving
-        if: steps.browser-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p "$GRAM_CI_CACHE_ROOT/chromium"
-          cp -a "$PLAYWRIGHT_BROWSERS_PATH/." "$GRAM_CI_CACHE_ROOT/chromium/"
-      - uses: actions/cache/save@v6
-        if: steps.browser-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ env.GRAM_CI_CACHE_ROOT }}/chromium
-          key: ${{ steps.browser-cache.outputs.cache-primary-key }}
-      - name: Remove this job's checkout and download caches
-        if: always()
-        working-directory: ${{ github.workspace }}
-        run: rm -rf -- "ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ matrix.shard }}" "$BUN_INSTALL_CACHE_DIR" "$PLAYWRIGHT_BROWSERS_PATH" "$GRAM_CI_CACHE_ROOT"
 
   qualification:
     needs: [classify, docs, check, e2e]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     timeout-minutes: 5
-    runs-on: [self-hosted, Linux, X64, gram-ci]
+    runs-on: ubuntu-24.04-arm
     defaults:
       run:
         shell: bash
-        working-directory: ${{ github.workspace }}/ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          path: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-      - name: Use physical checkout directory
-        run: test "$(pwd -P)" = "$PWD"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}/.node-version
+          node-version-file: .node-version
       - run: node tools/qualify-ci.mjs
         env:
           CI_KIND: ${{ needs.classify.outputs.kind }}
@@ -306,7 +201,3 @@ jobs:
           CI_DOCS_RESULT: ${{ needs.docs.result }}
           CI_CHECK_RESULT: ${{ needs.check.result }}
           CI_E2E_RESULT: ${{ needs.e2e.result }}
-      - name: Remove this job's checkout
-        if: always()
-        working-directory: ${{ github.workspace }}
-        run: rm -rf -- "ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"

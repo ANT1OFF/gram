@@ -180,8 +180,12 @@ Gram's merge gate; its `alwaysJobs` (the e2e shards) must pass even when a local
 for the rest. Pending, skipped, cancelled, failed or stale jobs are not passing CI.
 A newer push cancels a pull request's superseded runs, while every main run that starts
 finishes. [cancel-closed-pr.yml](../.github/workflows/cancel-closed-pr.yml) cancels a closed pull
-request's remaining runs from a GitHub-hosted runner, so they never hold the self-hosted ones.
+request's remaining runs.
 
-Workflows keep same-repository guards, read-only token permissions, isolated checkouts and
-caches and pinned frozen installs. They use synthetic agents; Linux CI does not qualify Mac
-packaging, Windows behaviour or paid providers.
+Every job runs on GitHub-hosted `ubuntu-24.04-arm` runners. Workflows keep same-repository
+guards, read-only token permissions, SHA-pinned actions, download-only caches and pinned frozen
+installs. They use synthetic agents; arm64 Linux CI does not qualify x64 Linux, Mac packaging,
+Windows behaviour or paid providers. [Dependabot](../.github/dependabot.yml) proposes weekly
+updates no younger than 7 days and leaves Electron and its packaging, the Effect family,
+sherpa-onnx and Node type majors to deliberate bumps. CodeQL default setup scans
+JavaScript/TypeScript and Actions.

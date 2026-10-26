@@ -17,30 +17,18 @@ permissions:
 jobs:
   scaffold:
     timeout-minutes: 5
-    # Only trusted same-repository PRs may execute on owned hardware.
+    # Only same-repository PRs run CI.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, Linux, X64, gram-ci]
+    runs-on: ubuntu-24.04-arm
     defaults:
       run:
         shell: bash
-        working-directory: ${{ github.workspace }}/ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-    env:
-      BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.gram-bun-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.gram-browser-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          path: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-      - name: Use physical checkout directory
-        run: test "$(pwd -P)" = "$PWD"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version-file: ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}/.node-version
+          node-version-file: .node-version
       - run: node tools/check-public-scaffold.mjs
       - run: node tools/check-dependency-pins.mjs
-
-      - name: Remove this job's checkout and download caches
-        if: always()
-        working-directory: ${{ github.workspace }}
-        run: rm -rf -- "ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}" "$BUN_INSTALL_CACHE_DIR" "$PLAYWRIGHT_BROWSERS_PATH"

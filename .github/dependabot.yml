@@ -1,0 +1,44 @@
+# Version updates propose only releases at least 7 days old (14 for majors), weekly, with minor
+# and patch bumps grouped. Exact pins stay exact. tools/check-dependency-pins.mjs still gates
+# every proposal in CI.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    versioning-strategy: increase
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+    ignore:
+      # Desktop shell and packaging: bumps need a signed Mac build and update-path qualification.
+      - dependency-name: electron
+      - dependency-name: electron-builder
+      - dependency-name: electron-updater
+      # The Effect family moves as one release, and patches/ pins @effect/platform-node-shared.
+      - dependency-name: effect
+      - dependency-name: "@effect/*"
+      # The darwin-arm64 build in tools/sherpa-onnx/ and the six platform overrides move together.
+      - dependency-name: sherpa-onnx*
+      # Node types follow the .node-version major.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        update-types: [minor, patch, major]
