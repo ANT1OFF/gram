@@ -562,3 +562,26 @@ describe("notes from the release commit", () => {
     });
   }
 });
+
+// The command line itself, as `bun run release:stable` starts it: the phases above call runPhase
+// directly and never load its argument handling.
+describe("the release:stable command line", () => {
+  const cli = (...args) =>
+    spawnSync(process.execPath, [join(HERE, "stable.mjs"), ...args], { encoding: "utf8" });
+
+  it("prints its usage", () => {
+    const r = cli("--help");
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("bun run release:stable validate");
+  });
+
+  it("stops on a work dir with no draft, naming what is missing", () => {
+    const empty = mkdtempSync(join(tmpdir(), "gram-stable-cli-"));
+    const r = cli("validate", "--work", empty);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("release:stable stopped: ");
+    expect(r.stderr).toContain("release.json is missing");
+    expect(r.stderr).not.toContain("Error:");
+  });
+});

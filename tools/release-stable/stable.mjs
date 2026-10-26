@@ -36,6 +36,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { REPO } from "../release-rc/rc-lib.mjs";
 import {
   STATE_FILE,
+  parseStableArgs,
   publicNotesProblems,
   releaseProblems,
   renderPublicNotes,
