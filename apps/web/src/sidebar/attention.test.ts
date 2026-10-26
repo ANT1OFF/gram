@@ -187,6 +187,16 @@ describe("worker-owned CI across badges and notifications", () => {
     expect(ownsCiFailure(red, red.git!.pr!.url)).toBe(false);
   });
 
+  it("leaves an idle worker's unmonitored CI to the worker, not the user", () => {
+    const red = live();
+    setWorker({ pr: { repo: "o/r", number: 12, checks: "failing" } });
+    expect(attentionOf(red)).toBeUndefined();
+    expect(needsYouCount([red])).toBe(0);
+    expect(ownsCiFailure(red, red.git!.pr!.url)).toBe(true);
+    setWorker({ userIntervened: true, pr: { repo: "o/r", number: 12, checks: "failing" } });
+    expect(needsYouCount([red])).toBe(1);
+  });
+
   it("keeps archived workers' unresolved CI in every count while parked solo threads stay parked", () => {
     setWorker({ state: "archived" });
     const red = live();

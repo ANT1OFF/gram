@@ -82,6 +82,29 @@ describe("standingFailures", () => {
     const rest = standingFailures(all, {}, new Set(first!.ids));
     expect(rest.map((item) => item.failure.threadId)).toEqual(["t-red"]);
   });
+
+  it("leaves failing CI to a worker that runs or can be woken, monitored or not", () => {
+    // Working, idle at rest, or not started: the worker fixes its own checks.
+    for (const status of ["running", "idle", "cold"] as const) {
+      expect(redTags({}, solo("t-red", status))).toEqual([]);
+    }
+  });
+
+  it("keeps failing CI with the user when no worker can act on it", () => {
+    const failing = ["#212 checks failing"];
+    // No thread, an archived one, or one stopped.
+    expect(redTags({})).toEqual(failing);
+    expect(redTags({}, solo("t-red", "idle", { parked: true }))).toEqual(failing);
+    expect(redTags({ state: "archived" }, solo("t-red", "idle"))).toEqual(failing);
+    expect(redTags({}, solo("t-red", "ended"))).toEqual(failing);
+    // Blocked, asking, or taken over by the user.
+    expect(redTags({ reportStands: true }, solo("t-red", "idle"))).toEqual(failing);
+    expect(redTags({ userIntervened: true }, solo("t-red", "idle"))).toEqual(failing);
+    expect(redTags({}, solo("t-red", "needsInput"))).toEqual(failing);
+    expect(redTags({ quiet: { kind: "toolStalled", at: 1 } }, solo("t-red", "running"))).toEqual(
+      failing,
+    );
+  });
 });
 
 const solo = (id: string, status: ThreadStatus, thread: Partial<Thread> = {}): ThreadSummary => ({
@@ -105,6 +128,14 @@ const solo = (id: string, status: ThreadStatus, thread: Partial<Thread> = {}): T
     ...thread,
   },
 });
+
+/** The failures of one worker on the red PR, its thread `live` when it has one. */
+const redTags = (patch: Partial<WorkerLedgerEntry>, live?: ThreadSummary) =>
+  standingFailures(
+    ledger([worker("t-red", "mail-trigger", "inReview", { pr: red, ...patch })]),
+    live === undefined ? {} : { "t-red": live },
+    new Set(),
+  ).map((item) => item.failure.tag);
 
 const limit = {
   kind: "costGuard" as const,

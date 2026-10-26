@@ -320,7 +320,7 @@ test("the Failing strip lists a stopped worker and red CI, opens one, and dismis
   await expect(page.getByTestId("view-board")).toHaveCount(0);
 });
 
-test("monitored worker CI leaves the Failing strip and Needs you, and returns when monitoring ends", async ({
+test("a worker's own red CI leaves the Failing strip and Needs you, and returns once the user holds it", async ({
   page,
 }, testInfo) => {
   const made = await start(page, () => window.gramMock!.simulateFailures());
@@ -330,6 +330,7 @@ test("monitored worker CI leaves the Failing strip and Needs you, and returns wh
   );
   const stopped = strip.locator(`[data-testid="board-failure"][data-thread-id="${made.stopped}"]`);
   const pill = page.getByTestId("overview-needs-you");
+  // Taken over, the red build is the user's.
   await expect(failed).toHaveCount(1);
   await expect(stopped).toHaveCount(1);
   const before = Number(await pill.getAttribute("data-count"));
@@ -337,8 +338,8 @@ test("monitored worker CI leaves the Failing strip and Needs you, and returns wh
   await page.screenshot({ path: unownedShot });
   await testInfo.attach("unowned-ci", { path: unownedShot });
 
-  // A live worker owns the red build: it isn't the user's to fix.
-  await page.evaluate((id) => window.gramMock!.threadSetReviewMonitor(id, true), made.failing);
+  // Handed back, the idle worker owns it, monitored or not: it isn't the user's to fix.
+  await page.evaluate((id) => window.gramMock!.releaseWorker(id), made.failing);
   await expect(failed).toHaveCount(0);
   await expect(stopped).toHaveCount(1);
   await expect(pill).toHaveAttribute("data-count", String(before - 1));
@@ -346,7 +347,7 @@ test("monitored worker CI leaves the Failing strip and Needs you, and returns wh
   await page.screenshot({ path: ownedShot });
   await testInfo.attach("worker-owned-ci", { path: ownedShot });
 
-  await page.evaluate((id) => window.gramMock!.threadSetReviewMonitor(id, false), made.failing);
+  await page.evaluate((id) => window.gramMock!.takeOverWorker(id), made.failing);
   await expect(failed).toHaveCount(1);
   await expect(pill).toHaveAttribute("data-count", String(before));
 });

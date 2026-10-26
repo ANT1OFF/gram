@@ -2,37 +2,29 @@ import type { WorkerLedgerEntry, WorkerPr } from "./orchestration.ts";
 
 /** Facts that establish who will act on a failing check, independent of presentation. */
 export type CiFixWorker = Pick<WorkerLedgerEntry, "state" | "status" | "pendingRequests"> &
-  Partial<Pick<WorkerLedgerEntry, "quiet" | "reportStands" | "userIntervened" | "wakes">>;
+  Partial<Pick<WorkerLedgerEntry, "quiet" | "reportStands" | "userIntervened">>;
 
-/** An unreported stop or stalled tool is the ledger's existing escalation bound. */
-export const workerOwnsCiFix = (worker: CiFixWorker | undefined, pr: WorkerPr): boolean => {
-  if (
-    pr.state === "merged" ||
-    pr.state === "closed" ||
-    worker === undefined ||
-    worker.state === "archived" ||
-    worker.state === "error" ||
-    worker.status === "error" ||
-    worker.status === "ended" ||
-    worker.state === "blocked" ||
-    worker.state === "question" ||
-    worker.reportStands === true ||
-    worker.userIntervened ||
-    worker.pendingRequests.length > 0 ||
-    worker.status === "needsInput" ||
-    worker.status === "needsApproval"
-  )
-    return false;
-  const working = worker.status === "running" || worker.status === "starting";
-  if (worker.quiet?.kind === "toolStalled" || (!working && worker.quiet?.kind === "turnEnded"))
-    return false;
-  return (
-    working ||
-    pr.monitored === true ||
-    pr.mergeWhenReady !== undefined ||
-    (worker.wakes?.length ?? 0) > 0
-  );
-};
+/**
+ * A worker that can still act fixes its own failing checks: running, or at rest where its
+ * orchestrator, a monitor or a wake can reach it. The user is the owner once it can't: archived,
+ * stopped on an error or ended, blocked or asking, taken over by the user, or with a tool stalled.
+ */
+export const workerOwnsCiFix = (worker: CiFixWorker | undefined, pr: WorkerPr): boolean =>
+  pr.state !== "merged" &&
+  pr.state !== "closed" &&
+  worker !== undefined &&
+  worker.state !== "archived" &&
+  worker.state !== "error" &&
+  worker.status !== "error" &&
+  worker.status !== "ended" &&
+  worker.state !== "blocked" &&
+  worker.state !== "question" &&
+  worker.reportStands !== true &&
+  worker.userIntervened !== true &&
+  worker.pendingRequests.length === 0 &&
+  worker.status !== "needsInput" &&
+  worker.status !== "needsApproval" &&
+  worker.quiet?.kind !== "toolStalled";
 
 export const ciFixPrKey = (pr: Pick<WorkerPr, "repo" | "number">): string =>
   `${pr.repo.toLowerCase()}#${pr.number}`;

@@ -526,28 +526,35 @@ describe("event budget", () => {
     ]);
   });
 
-  it("says checks failing once, on the digest where they turned", () => {
+  it("says unowned checks failing once, on the digest where they turned", () => {
+    // An ended worker can't fix its PR, so its red CI is the user's.
+    const ended = { state: "inReview", status: "ended" } as const;
     const passing = digest(1, {
-      features: [feature([worker({ state: "inReview", pr: pr({ checks: "pending" }) })])],
+      features: [feature([worker({ ...ended, pr: pr({ checks: "pending" }) })])],
     });
     const failing = digest(2, {
-      features: [feature([worker({ state: "inReview", pr: pr({ checks: "failing" }) })])],
+      features: [feature([worker({ ...ended, pr: pr({ checks: "failing" }) })])],
     });
     const still = digest(3, { features: failing.features });
     expect(streamLinesOf(failing, passing).map((line) => line.words)).toEqual(["checks fail"]);
     expect(streamLinesOf(still, failing)).toEqual([]);
   });
 
-  it("keeps owned CI quiet while away, and speaks when the worker stops without reporting", () => {
+  it("keeps owned CI quiet while away, and speaks when the worker reports itself blocked", () => {
     const monitored = worker({ state: "inReview", pr: pr({ checks: "failing", monitored: true }) });
     const pending = digest(1, {
       features: [feature([{ ...monitored, pr: { ...monitored.pr!, checks: "pending" } }])],
     });
     const owned = digest(2, { features: [feature([monitored])] });
-    const stopped = digest(3, {
-      features: [feature([{ ...monitored, quiet: { kind: "turnEnded", at: 3 } }])],
+    const idle = digest(3, {
+      features: [feature([{ ...monitored, pr: pr({ checks: "failing" }) }])],
+    });
+    const stopped = digest(4, {
+      features: [feature([{ ...monitored, reportStands: true }])],
     });
     expect(streamLinesOf(owned, pending)).toEqual([]);
+    // Idle and unmonitored, it can still be woken to fix them.
+    expect(streamLinesOf(idle, owned)).toEqual([]);
     expect(streamLinesOf(stopped, owned).map((line) => line.words)).toEqual(["checks fail"]);
     expect(
       sinceYouLeftOf(
