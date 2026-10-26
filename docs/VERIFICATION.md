@@ -13,13 +13,13 @@ Vitest file using `-t 'regression name'` when useful. Run, read the result, fix 
 demonstrated cause and rerun affected checks. Expand scope when consumers or
 integration risks changed; do not weaken a failing assertion to obtain green.
 
-| Task                   | Run and inspect                                                                                                                                            | Completion evidence                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Docs/instructions      | `bun run check:scaffold`, `bun run fmt:check`, `bun run check:docs`; compare claims to linked source                                                       | Local links/anchors/scripts resolve; instructions retain boundaries; no full local app rerun for prose alone          |
-| TS runtime/contracts   | `bun run test <changed-or-consumer.test.ts>`, `bun run check:static`, scaffold                                                                             | Actual changed consumers pass with types/static checks; complete integration uses `bun run check`                     |
-| UI                     | Relevant `bun run --filter @gram/web e2e <spec> --workers=1`; mock/server setup below; add smoke for integration risk                                      | Inspect actual screenshots/traces against expected visible state and saved/request behavior, then correct differences |
-| Agent adapters/helpers | Existing `subscription-protocol.test.ts`, `speed-protocol.test.ts`, helper/consent/cancel/resume files under agents/server, run with `bun run test <file>` | Synthetic child policy and observable behavior pass with explicit auth state; no live account probe implied           |
-| Native/release         | Package inspection, native loading and isolated fake-agent smoke per [acceptance](development/ACCEPTANCE.md) and [releasing](RELEASING.md)                 | Actual target artifact and downloaded uploaded assets validate; source review alone is insufficient                   |
+| Task                   | Run and inspect                                                                                                                                                   | Completion evidence                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Docs/instructions      | `bun run check:scaffold`, `bun run fmt:check`, `bun run check:docs`; compare claims to linked source                                                              | Local links/anchors/scripts resolve; instructions retain boundaries; no full local app rerun for prose alone          |
+| TS runtime/contracts   | `bun run test <changed-or-consumer.test.ts>`, `bun run check:static`, scaffold                                                                                    | Actual changed consumers pass with types/static checks; complete integration uses `bun run check`                     |
+| UI                     | Relevant `bun run --filter @gram/web e2e <spec> --workers=1`; mock/server setup below; add smoke for integration risk                                             | Inspect actual screenshots/traces against expected visible state and saved/request behavior, then correct differences |
+| Agent adapters/helpers | Existing `subscription-protocol.test.ts`, `speed-protocol.test.ts`, helper/consent/cancel/resume files under agents/server, run with `bun run test <file>`        | Synthetic child policy and observable behavior pass with explicit auth state; no live account probe implied           |
+| Native/release         | Package inspection, native loading and isolated fake-agent smoke per [development](DEVELOPMENT.md#packaging-and-dependency-notices) and [releasing](RELEASING.md) | Actual target artifact and downloaded uploaded assets validate; source review alone is insufficient                   |
 
 For UI screenshot review, run `bun run --filter @gram/web pr:shots --help` and
 select a shot, for example `bun run --filter @gram/web pr:shots --path /settings/agents --after-only`.
@@ -27,7 +27,7 @@ Use the [PR shots helper](../apps/web/scripts/pr-shots.mjs) output or the change
 Playwright spec's screenshot/retained trace, and view the image.
 A generated screenshot without inspection is not visual verification. Trivial
 prose does not require screenshots. Detailed native/provider opt-ins belong in
-[acceptance](development/ACCEPTANCE.md) and formal release steps in
+[protocol, native and live checks](#protocol-native-and-live-checks) and formal release steps in
 [releasing](RELEASING.md).
 
 ## Local checks
@@ -55,7 +55,8 @@ tracked Markdown file. It fails on any file under `docs/verification/` or
 `docs/releases/`, since a change's results belong in its pull request body, and on a
 committed image outside `apps/` and `packages/` that no tracked Markdown file links or
 embeds; before and after pictures go in the pull request body. The source scaffold
-checker separately validates runtime/configuration invariants.
+checker separately validates runtime/configuration invariants. Its known identifier and
+credential signatures are not a confidentiality review or a security audit.
 
 Run scaffold for every change and affected checks during iteration. Prose-only
 changes need formatting, link/command validation and source readback; a full local
@@ -149,7 +150,7 @@ unless the opt-in variable named in each spec's header is set, and write their r
 temporary file. Their numbers belong to the machine and load they ran on; put them in the pull
 request, not the docs.
 
-## Protocol, native and live acceptance
+## Protocol, native and live checks
 
 Synthetic child-CLI tests exercise actual Claude/Codex adapters, approval/cancel,
 reconnect/resume and protocol ordering without provider credentials or inference.
@@ -157,9 +158,84 @@ Fake protocol success proves adapter behavior, not subscription entitlement.
 Native package inspection/smoke verifies the actual bundle separately from browser
 or unit tests. Real provider turns, gateway requests, microphone/model downloads,
 installation and production restart require their own authorization; leave all
-live opt-ins unset in normal development/CI. Follow
-[desktop/provider acceptance](development/ACCEPTANCE.md) and
-[releasing](RELEASING.md).
+live opt-ins unset in normal development/CI. Isolate packaged GUI checks as described in
+[development](DEVELOPMENT.md#isolated-packaged-gui); follow [releasing](RELEASING.md) for
+release artifacts.
+
+### Synthetic subscription protocols
+
+`packages/agents/src/subscription-protocol.test.ts` starts synthetic child CLIs through
+`ClaudeHostLive` (installed Agent SDK, binary discovery, auth check, hooks and stream-json)
+and `CodexHostLive` (app-server, JSON-RPC, shared-server routing and lifecycle). The invented
+executable protocols under `packages/agents/fixtures/subscriptions/` use synthetic session
+stores, a probe environment and temporary Git repositories/worktrees. They never use
+account credentials, contact providers or substitute Gram's echo agent. Resume/fork,
+model switches, approvals/rejections, cancellation, reconnect, startup/sign-out recovery
+and notification ordering establish adapter behavior, not subscription access. They run
+on Linux/macOS; Windows executable/shim behavior needs separate native checks.
+
+```sh
+bun run test packages/agents/src/subscription-protocol.test.ts
+```
+
+### Live subscription probes
+
+With explicit authorization, each selected adapter makes two tiny turns through the
+desktop's existing CLI login in a temporary Git repository, checking discovery, streaming
+and resume. Probes deny approval requests and ask for no tools. Standard probes use the
+CLI's configured connectors; `GRAM_LIVE_CONFINED=1` requires every external MCP server
+to be disabled and fails closed if one remains on. Credentials are never copied into a
+temporary home; the CLI may retain its own synthetic session history.
+
+```sh
+GRAM_LIVE_SUBSCRIPTIONS=claude,codex bun run test packages/agents/src/subscription.live.test.ts
+GRAM_LIVE_SUBSCRIPTIONS=codex GRAM_LIVE_CONFINED=1 bun run test packages/agents/src/subscription.live.test.ts
+# Separate authorization: one built-in search turn; inherits explicit CLI search policy.
+GRAM_LIVE_CODEX_WEB_SEARCH=1 bun run test packages/agents/src/subscription.live.test.ts
+```
+
+`GRAM_LIVE_CLAUDE_BINARY` and `GRAM_LIVE_CODEX_BINARY` optionally select an absolute
+installed executable without changing PATH, pins or managed runtimes. Record its actual
+version with results. Resolve expired logins, entitlement and upstream failures locally;
+never send credentials to chat. A model listing, login or successful reply does not
+establish Pro/Max or ChatGPT plan tier.
+
+### Manual provider and dictation checks
+
+Choose checks relevant to the change, separately for Claude and Codex in a disposable
+repository, with authorization for each live service or device action:
+
+- Sign in in your terminal (`claude /login` or `codex login`), re-check in Gram without a
+  gateway, verify discovery/defaults and run a short turn on another native model. Visiting
+  Settings must not save an unset model default. A stale Claude login must require
+  `/login`, without a retry loop.
+- Require approval for a benign local command in CLI settings. Approve once and reject
+  another request; execution must follow approval, and rejection must resolve the card
+  without execution. Cancel during streaming and while awaiting approval; a late click
+  must do nothing and a new turn must start normally. Retry a refused turn after changing
+  permission mode or leaving plan mode; the change must apply to the retry.
+- Use a unique synthetic conversation marker, restart Gram and verify resume remembers
+  it. Reopen after child-CLI exit and check stored session identity and missing-transcript
+  errors. In a Git worktree, open/fork a thread, edit a synthetic file and inspect the diff;
+  check its working directory, writable roots, branch and conversation.
+- Check connector restrictions with your CLI config. An excluded MCP server still enabled
+  must refuse startup. Confined Codex threads disable plugins and ChatGPT apps as well as
+  individual MCP servers; app policy alone does not stop the apps server. Built-in search
+  keeps the configured policy, with no always-on override. User config stays unchanged.
+  Never disable a confinement guard to get a pass.
+- For a gateway, select it explicitly and grant helper context consent only to that
+  endpoint. Remove its key and verify launch refuses; switching to a local subscription
+  must use the CLI's own login.
+- Enable local dictation through download/license consent. Check macOS microphone
+  permission, English transcription, cancellation and draft-only insertion. Record any
+  human action still needed. A synthetic 16 kHz mono PCM WAV with recorded source and
+  transcript can check the packaged recognizer, but proves neither microphone capture
+  nor general recognition accuracy. Never upload test audio.
+
+Record commands, CLI versions, results and untested limits in the PR. These checks do not
+prove future CLI compatibility, native writer closure across independent processes or
+exhaustive security; the [Codex ownership contract](AGENTS_AND_FEATURES.md#codex-ownership-and-reopening)
+and [updater limits](UPDATES.md#limits) describe their own boundaries.
 
 ## Results and CI
 

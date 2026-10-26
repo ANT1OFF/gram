@@ -3,8 +3,7 @@
 [Up: Gram](../README.md) · [Docs map](README.md)
 
 This guide owns local setup and run commands. For check selection use
-[testing](VERIFICATION.md); for actual accounts, native GUI and packaging acceptance
-use the separate [acceptance guide](development/ACCEPTANCE.md).
+[testing](VERIFICATION.md), including opt-in provider and native checks.
 
 ## Toolchain and install
 
@@ -55,9 +54,8 @@ pinned Chromium and browser mocks; the launcher owns its Vite/browser cleanup.
 
 Use `GRAM_DATA_DIR=<temporary-folder>` for disposable server data. It does **not**
 isolate Electron's window state, trusted hosts or gateway vault. Isolate the shell
-profile with `--user-data-dir` for packaged GUI acceptance as documented in the
-[acceptance guide](development/ACCEPTANCE.md). Never copy credential stores into
-an acceptance profile.
+profile with `--user-data-dir` as described under [isolated packaged GUI](#isolated-packaged-gui).
+Never copy credential stores into a test profile.
 
 The web loop chooses free ports from server 4317 and web 5173 unless `GRAM_PORT`
 or `GRAM_WEB_PORT` pins them. Desktop uses the same port helper. A boot URL grants
@@ -96,6 +94,14 @@ an occupied one. Real-server setup builds web/server bundles and runs isolated
 temporary repos with fake agents/`gh`, one worker and no retries; it refuses
 Windows. See [testing](VERIFICATION.md#browser-checks) before reusing a build.
 
+## Packaging and dependency notices
+
+MIT covers Gram's own code. Dependencies keep their own licenses: packaged builds carry a
+generated `THIRD-PARTY-NOTICES.txt` ([generator](../tools/notices/generate.mjs)), including the
+[motion kit notices](../apps/web/src/motion/THIRD-PARTY-NOTICES.md) and
+[terminal symbol font notices](../apps/web/src/panels/terminal/fonts/THIRD-PARTY-NOTICES.txt).
+The workspace packages stay `"private": true`; nothing is published to npm.
+
 Local directory packaging never publishes:
 
 ```sh
@@ -116,9 +122,32 @@ Linux smoke may need Xvfb. Native loading is
 separate from real accounts, microphone capture and recognition quality. Releases
 follow [releasing](RELEASING.md).
 
+### Isolated packaged GUI
+
+The unsigned Apple silicon directory build is `apps/desktop/release/mac-arm64/Gram.app`.
+An isolated native smoke can use `GRAM_FAKE_AGENT=1 GRAM_DATA_DIR=<temporary-folder>`
+and run its `Contents/MacOS/Gram --smoke`; that validates boot/native loading, not accounts.
+
+To inspect the GUI alongside your ordinary app, isolate server data and the Electron profile:
+
+```sh
+smokeRoot=$(mktemp -d -t gram-desktop-smoke)
+GRAM_DATA_DIR="$smokeRoot/data" GRAM_FAKE_AGENT=0 \
+  apps/desktop/release/mac-arm64/Gram.app/Contents/MacOS/Gram \
+  --user-data-dir="$smokeRoot/electron"
+```
+
+Use a disposable Git repository for authorized provider turns. Preserve the ordinary app,
+its data and package; quit/restart only your test process. Native automation may select the
+ordinary window when two processes have the same bundle identifier. Verify the window's
+Diagnostics data folder before any mutation. A temporary app copy with a distinct bundle
+identifier can resolve that ambiguity, but record the identity change and compare its
+executable/`app.asar` hashes with the original. It does not verify the original bundle's
+signing or microphone permission identity. Use installed CLIs through their existing
+logins; never copy credential stores into the test profile or publish raw logs.
+
 ## Continue work
 
 [Architecture](ARCHITECTURE.md) maps the packages and boundary owners.
 [Contributing](../CONTRIBUTING.md) covers PRs, reviews and merging.
-[Public readiness](PUBLIC_RELEASE.md) lists qualification limits, and
-[releasing](RELEASING.md) covers versions and publication.
+[Releasing](RELEASING.md) covers versions and publication.
