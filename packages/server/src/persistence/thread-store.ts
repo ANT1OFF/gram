@@ -717,6 +717,8 @@ export interface ThreadStoreShape {
     readonly unchanged: (current: WorkspaceState | undefined) => boolean;
     /** At their canonical roots, in the order `next` receives their projects. */
     readonly register: ReadonlyArray<{ readonly root: string; readonly name: string }>;
+    /** The root each known project had when its folder was checked; it must still have it. */
+    readonly roots?: Readonly<Record<string, string>>;
     readonly next: (
       current: WorkspaceState | undefined,
       projects: ReadonlyArray<Project>,
@@ -2931,8 +2933,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               // Every project it names still exists, read in this transaction: one forgotten
               // while the card waited fails the whole change.
               for (const id of next.workspace.projectIds) {
-                const [row] = yield* sql<{ id: string }>`SELECT id FROM projects WHERE id = ${id}`;
-                if (row === undefined) {
+                const [row] = yield* sql<{
+                  root: string;
+                }>`SELECT root FROM projects WHERE id = ${id}`;
+                const checked = change.roots?.[id];
+                if (row === undefined || (checked !== undefined && row.root !== checked)) {
                   return yield* new NotFound({
                     entity: "project",
                     id,

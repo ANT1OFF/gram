@@ -261,6 +261,11 @@ export interface OrchestrationShape {
     /** One of `projects`, by the same id or root. */
     readonly home: { readonly projectId: ProjectId } | { readonly root: string };
     readonly charter: OrchestratorCharter;
+    /**
+     * Refuses a folder the workspace may not grant. Run under the commit's locks for every
+     * project of the result, kept, added and home alike, just before its transaction.
+     */
+    readonly grant: (root: string) => Effect.Effect<void, InvalidState | NotFound>;
     readonly audit: (state: WorkspaceState) => SettingsAuditEntry;
     /** App settings the card was drawn from; checked in the same transaction. */
     readonly requires?: ReadonlyArray<SettingsRequirement> | undefined;

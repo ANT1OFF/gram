@@ -32,6 +32,7 @@ import {
   type OrchestrationKit,
 } from "./kit.ts";
 import type { Charter } from "./charter.ts";
+import { makeKeyedLock } from "../../git/keyed-lock.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 import type { Pauses } from "./pauses.ts";
@@ -82,15 +83,30 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
   } = kit;
   const { forgetReasons, openModel, endRecovery, deliveryFor, checkCharter, afterCharter } = deps;
 
+  /** One membership sync at a time per workspace. */
+  const membershipLock = makeKeyedLock<WorkspaceId>();
+
   /**
-   * The orchestrator's folders after its workspace's projects changed from `before`: a repo that
-   * left takes its folder with it, the others are granted, and the session reloads to read them.
+   * The orchestrator's folders after its workspace's projects changed from `before`, made to
+   * agree with the workspace as it is stored when this runs, never with a copy taken earlier: a
+   * repo that left takes its folder with it, the others are granted, and the session reloads to
+   * read them. One at a time per workspace, so a sync that runs late only applies what is true
+   * then, and can't grant again a folder a later change took away.
    */
-  const followMembership = (
-    holder: ThreadId,
-    before: ReadonlyArray<ProjectId>,
-    state: WorkspaceState,
-  ) =>
+  const followMembership = (workspaceId: WorkspaceId, before: ReadonlyArray<ProjectId>) =>
+    membershipLock.withLock(
+      workspaceId,
+      Effect.gen(function* () {
+        const state = yield* store
+          .getWorkspace(workspaceId)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        const holder = state?.workspace.orchestratorThreadId;
+        if (state === undefined || holder === undefined) return;
+        yield* syncFolders(holder, before, state);
+      }),
+    );
+
+  const syncFolders = (holder: ThreadId, before: ReadonlyArray<ProjectId>, state: WorkspaceState) =>
     Effect.gen(function* () {
       const { projectIds, homeProjectId } = state.workspace;
       const all = yield* store.listProjects;
@@ -209,7 +225,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           }));
           yield* workspacesChanged;
           if (holder !== undefined) {
-            yield* followMembership(holder, before.workspace.projectIds, state);
+            yield* followMembership(input.id, before.workspace.projectIds);
           }
           return state;
         }),
@@ -264,6 +280,26 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           });
         }
         yield* checkCharter(standing, change.charter);
+        // Every folder the workspace will grant, checked again now, under the locks: kept, added
+        // and home alike. The transaction then holds each project to the root checked here.
+        const known = yield* store.listProjects;
+        const roots: Record<string, string> = {};
+        for (const each of change.projects) {
+          if ("root" in each) {
+            yield* change.grant(each.root);
+            continue;
+          }
+          const project = known.find((row) => row.id === each.projectId);
+          if (project === undefined) {
+            return yield* new NotFound({
+              entity: "project",
+              id: each.projectId,
+              message: "A project on the card no longer exists in Gram.",
+            });
+          }
+          yield* change.grant(project.root);
+          roots[project.id] = project.root;
+        }
         const createdAt = yield* Clock.currentTimeMillis;
         return yield* store.commitWorkspaceAudited({
           id,
@@ -272,6 +308,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               ? current === undefined
               : current !== undefined && sameWorkspace(current, expected),
           register,
+          roots,
           next: (current, registered) => {
             const ids = change.projects.map((each) =>
               "projectId" in each ? each.projectId : registered[register.indexOf(each)]!.id,
@@ -306,13 +343,11 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           if (expected === undefined) return;
           yield* orchestrationChanged(id);
           yield* afterCharter(id, done.state, expected.charter);
-          const holder = done.state.workspace.orchestratorThreadId;
           if (
-            holder !== undefined &&
-            (!sameValue(expected.workspace.projectIds, done.state.workspace.projectIds) ||
-              expected.workspace.homeProjectId !== done.state.workspace.homeProjectId)
+            !sameValue(expected.workspace.projectIds, done.state.workspace.projectIds) ||
+            expected.workspace.homeProjectId !== done.state.workspace.homeProjectId
           ) {
-            yield* followMembership(holder, expected.workspace.projectIds, done.state);
+            yield* followMembership(id, expected.workspace.projectIds);
           }
         });
       // Task startups, spawns and saves of this workspace, then names across workspaces: the

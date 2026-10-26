@@ -623,7 +623,7 @@ describe("workspace changes by chat: what the review found", () => {
           const card = yield* cardIn(plain.id);
           fs.rmSync(cParent, { recursive: true, force: true });
           yield* answer(plain.id, card, "allow");
-          expect((yield* Fiber.join(asked)).message).toContain("nothing changed");
+          expect((yield* Fiber.join(asked)).message).toMatch(/nothing changed/i);
           const after = yield* store.getWorkspace(saved.workspace.id);
           expect(after).toEqual(saved);
           expect(yield* projectAt(c)).toBeUndefined();
@@ -675,7 +675,7 @@ describe("workspace changes by chat: what the review found", () => {
             workspaceId: "W",
             home: linked.id,
           }).pipe(Effect.flip);
-          expect(home.message).toContain(`use the real folder: ${a}`);
+          expect(home.message).toContain(`fix it in Settings or re-add it as ${a}`);
           yield* noCard(plain.id);
           expect(yield* projectAt(a)).toBeUndefined();
           expect(yield* workspaceNamed("Linked")).toBeUndefined();
@@ -794,6 +794,106 @@ describe("workspace changes by chat: what the review found", () => {
           expect(error.message, path).toContain(says);
         }
         yield* noCard(plain.id);
+      }),
+    ),
+  );
+});
+
+describe("workspace changes by chat: the scoped review", () => {
+  it.effect(
+    "refuses a card over any project that isn't its real folder, kept ones too, before and at the commit",
+    () =>
+      inWorkspaces((world) =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          // The workspace already holds a project Gram knows at a link L → A.
+          const a = newRepo(world, "a");
+          const b = newRepo(world, "b");
+          const link = nodePath.join(world.dir, "link");
+          fs.symlinkSync(a, link);
+          const shop = yield* store.ensureProject({ root: world.repo, name: "shop" });
+          const linked = yield* store.ensureProject({ root: link, name: "linked" });
+          const saved = yield* supervisedOver("W", [shop, linked]);
+          const plain = yield* plainThread(world);
+          // A card that only raises autonomy would grant Full over whatever L points at.
+          const refused = yield* call(plain.id, "plain", "workspace_update", {
+            workspaceId: "W",
+            autonomy: "full",
+          }).pipe(Effect.flip);
+          expect(refused.message).toContain(
+            `${link} isn't its real folder; fix it in Settings or re-add it as ${a}`,
+          );
+          yield* noCard(plain.id);
+          fs.unlinkSync(link);
+          fs.symlinkSync(b, link);
+          expect((yield* store.getWorkspace(saved.workspace.id)).charter.autonomy).toBe(
+            "supervised",
+          );
+
+          // A kept folder that turns into a link while the card waits is refused at the commit.
+          const cParent = nodePath.join(world.dir, "c");
+          const c = yield* store.ensureProject({ root: newRepo(world, "c"), name: "c" });
+          const other = yield* supervisedOver("V", [shop, c]);
+          const asked = yield* call(plain.id, "plain", "workspace_update", {
+            workspaceId: "V",
+            autonomy: "full",
+          }).pipe(Effect.flip, Effect.forkScoped);
+          const card = yield* cardIn(plain.id);
+          fs.rmSync(cParent, { recursive: true, force: true });
+          fs.mkdirSync(cParent);
+          fs.symlinkSync(b, c.root);
+          yield* answer(plain.id, card, "allow");
+          const error = yield* Fiber.join(asked);
+          expect(error.message).toContain(`${c.root} isn't its real folder`);
+          expect(error.message).toContain("Nothing changed");
+          expect(yield* store.getWorkspace(other.workspace.id)).toEqual(other);
+          expect(yield* store.listSettingsAudit(5)).toEqual([]);
+        }),
+      ),
+  );
+
+  it.effect("never grants again, from a late sync, a folder a later change took away", () =>
+    inWorkspaces((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const orchestration = yield* Orchestration;
+        const { thread, project, other, workspaceId } = yield* openOrchestratorAcross(world);
+        const c = newRepo(world, "c");
+        const plain = yield* plainThread(world);
+        // Change A adds C; what its commit sets off is held at its first step.
+        const asked = yield* call(plain.id, "plain", "workspace_update", {
+          workspaceId,
+          addProjects: [c],
+        }).pipe(Effect.forkScoped);
+        const card = yield* cardIn(plain.id);
+        const reached = Deferred.makeUnsafe<void>();
+        const release = Deferred.makeUnsafe<void>();
+        let held = false;
+        world.onPublish = (event) => {
+          if (event.type !== "workspaces.changed" || held) return Effect.void;
+          held = true;
+          return Deferred.succeed(reached, undefined).pipe(Effect.andThen(Deferred.await(release)));
+        };
+        yield* answer(plain.id, card, "allow");
+        yield* Deferred.await(reached);
+        const registered = (yield* projectAt(c))!;
+        expect((yield* store.getWorkspace(workspaceId)).workspace.projectIds).toContain(
+          registered.id,
+        );
+        // Save B, in Settings, takes C away again and syncs.
+        yield* orchestration.saveWorkspace({
+          id: workspaceId,
+          name: "platform",
+          projectIds: [project.id, other.id],
+          homeProjectId: project.id,
+        });
+        // A's sync runs late, after B's.
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(asked);
+        world.onPublish = undefined;
+        const directories = (yield* store.getThread(thread.id)).additionalDirectories ?? [];
+        expect(directories).not.toContain(c);
+        expect(directories).toContain(other.root);
       }),
     ),
   );

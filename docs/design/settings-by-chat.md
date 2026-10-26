@@ -227,8 +227,10 @@ a project id), `autonomy`, `workerMode` (`null` follows the default again) and `
   folder, not a linked worktree's or a submodule's file, and `git rev-parse --show-toplevel`
   must name the folder itself. A subfolder, a linked worktree, a plain folder, a folder with an
   empty or broken `.git`, a link and a missing path are refused before any card, with the
-  reason. A project Gram already knows is used only when its stored root passes the same rule,
-  so one stored at a link is refused too. Gram registers the path the card shows, and a
+  reason. The rule holds for every project of the workspace the card would leave, kept and
+  home ones included, not only the ones it adds: a card over a workspace holding a project
+  stored at a link, or at a folder that is no longer a repository's top, is refused with
+  "<path> isn't its real folder; fix it in Settings or re-add it as <real path>". Gram registers the path the card shows, and a
   repository it doesn't know yet is registered only once the user approves. Approval grants
   the folder, not the repository in it: if what the folder holds is replaced, it is the same
   grant, since an agent that can write there could change it anyway.
@@ -251,10 +253,11 @@ a project id), `autonomy`, `workerMode` (`null` follows the default again) and `
 - **Applying: all of it or nothing.** The handler keeps the workspace exactly as it read it
   for the card: name, projects, home and the whole charter, autonomy and worker mode
   included. After the user approves:
-  1. Every folder the card takes in that Gram doesn't know yet is checked again by the same
-     rule. One that is gone, or no longer a canonical repository top folder, refuses the
-     change.
-  2. `Orchestration.commitWorkspace` runs `saveWorkspace`'s and `setCharter`'s checks under
+  1. `Orchestration.commitWorkspace` checks every project of the result against the folder rule
+     again, under the commit's locks just before the transaction. The transaction then requires
+     each known project to still have the root that was checked. A folder that is gone, or no
+     longer a canonical repository top folder, refuses the change.
+  2. It also runs `saveWorkspace`'s and `setCharter`'s checks under
      their locks: a unique name, a home among the projects, no home move while the orchestrator
      is open, an orchestrator model that may orchestrate, no lower autonomy a held thread
      couldn't open under.
@@ -267,7 +270,10 @@ a project id), `autonomy`, `workerMode` (`null` follows the default again) and `
      nothing changed.
 
   What a write sets off follows it, as in Settings. A raised autonomy reloads the orchestrator
-  and its workers once idle, and the orchestrator's folders follow its projects. Once the
+  and its workers once idle, and the orchestrator's folders follow its projects. That sync
+  reads the workspace's membership from the store when it runs, one at a time per workspace,
+  so a sync that runs late applies only what is true then and never grants again a folder a
+  later change took away. Once the
   write has begun, it and what it sets off can't be cancelled, so a call cancelled after the
   commit still takes a removed repository's folder from the orchestrator. The snapshot is
   held by the server; the card's input is only what the user reads, never what is applied.

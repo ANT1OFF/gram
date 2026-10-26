@@ -5,6 +5,7 @@
 
 import {
   applyCharterWrites,
+  InvalidState,
   autonomyOf,
   autonomyText,
   charterRows,
@@ -32,7 +33,7 @@ import {
   type WorkspaceState,
   sameValue,
 } from "@gram/contracts";
-import { Proc, projectRootKey } from "@gram/git";
+import { canonicalizeOrOwned, Proc, projectRootKey } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -194,22 +195,24 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
         });
 
       /**
-       * Each folder the card takes in that Gram doesn't know yet, read again once the user approved
-       * it: still a canonical repository top folder at the path the card showed. What it holds may
-       * have changed; the grant is the folder.
+       * Refuses a project root the workspace may not grant: one that isn't its own real folder, or
+       * isn't a git repository's top folder. Checked for every project of the result before the
+       * card, and again under the commit's locks just before its transaction.
        */
-      const stillGrantable = (tool: string, repos: ReadonlyArray<Repo>) =>
-        Effect.gen(function* () {
-          for (const repo of repos) {
-            if (repo.project !== undefined) continue;
-            yield* canonicalRepoFolder(repo.root).pipe(
-              Effect.provideService(Proc, proc),
-              Effect.mapError((e) =>
-                fail(tool, `${e.message} It changed since the card was shown; nothing changed.`),
-              ),
-            );
-          }
-        });
+      const grantFolder = (root: string) =>
+        canonicalRepoFolder(root).pipe(
+          Effect.provideService(Proc, proc),
+          Effect.asVoid,
+          Effect.mapError((e) => {
+            const real = canonicalizeOrOwned(root);
+            return new InvalidState({
+              message:
+                real !== root
+                  ? `${root} isn't its real folder; fix it in Settings or re-add it as ${real}.`
+                  : `${root} can't be granted: ${e.message} Fix it in Settings.`,
+            });
+          }),
+        );
 
       /** Each path as a repository, the same one named twice kept once. */
       const reposAt = (tool: string, paths: ReadonlyArray<string>) =>
@@ -436,7 +439,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 "This thread's role changed while the card waited, so the approval no longer applies; nothing changed.",
               );
             }
-            yield* stillGrantable(tool, repos);
             const appliedAt = yield* Clock.currentTimeMillis;
             const saved = yield* service
               .commitWorkspace({
@@ -449,6 +451,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 home:
                   home.project === undefined ? { root: home.root } : { projectId: home.project.id },
                 charter,
+                grant: grantFolder,
                 requires: planned?.plan.requires,
                 audit: (made) =>
                   auditOf(caller, role, answered, appliedAt, card, [
@@ -609,6 +612,24 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 "Nothing was proposed: a workspace keeps at least one project.",
               );
             }
+            // Every folder of the result is granted by this card, kept ones included, so each must
+            // be one a card may grant, as an added one must.
+            const removedIds = new Set(removed.map((each) => each.project!.id));
+            if (
+              workspace.projectIds.some(
+                (id) => !removedIds.has(id) && !known.some((each) => each.id === id),
+              )
+            ) {
+              return yield* fail(
+                tool,
+                "Nothing was proposed: a project of this workspace no longer exists in Gram. Fix the workspace in Settings.",
+              );
+            }
+            for (const each of kept) {
+              yield* grantFolder(each.root).pipe(
+                Effect.mapError((e) => fail(tool, `Nothing was proposed: ${e.message}`)),
+              );
+            }
             const homeBefore = current.find((each) => each.project?.id === workspace.homeProjectId);
             const home =
               input.home === undefined
@@ -623,14 +644,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               );
             }
             const homeMoves = home !== homeBefore;
-            // A known project the card makes home is granted anew: its stored root has to be a
-            // canonical repository folder like any path the card takes in.
-            if (homeMoves && home.project !== undefined && !fresh.includes(home)) {
-              const root = yield* grantable(tool, home.root);
-              if (root !== home.project.root) {
-                return yield* fail(tool, `Nothing was proposed: use the real folder: ${root}`);
-              }
-            }
             const holder =
               workspace.orchestratorThreadId === undefined
                 ? undefined
@@ -772,8 +785,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 "This thread's role or workspace changed while the card waited, so the approval no longer applies; nothing changed.",
               );
             }
-            yield* stillGrantable(tool, fresh);
-            const removedIds = new Set(removed.map((each) => each.project!.id));
             const appliedAt = yield* Clock.currentTimeMillis;
             // All of it in one transaction, over the workspace as the card read it, or nothing.
             const saved = yield* service
@@ -794,6 +805,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 home:
                   home.project === undefined ? { root: home.root } : { projectId: home.project.id },
                 charter: nextCharter,
+                grant: grantFolder,
                 audit: (next) =>
                   auditOf(caller, role, answered, appliedAt, card, [
                     ...(next.workspace.name === workspace.name
