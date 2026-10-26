@@ -3,6 +3,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { openOrchestrator, pressFirstWorkspaceKey, threadRow } from "../e2e/thread-row";
 import { seedNativeUpdate } from "../e2e/native-update-fixture";
 import { seedDesktopShell } from "../e2e/desktop-shell-fixture";
+import { openOverviewDensity } from "../e2e/overview-density";
 
 // The screens `bun run --filter @gram/web pr:shots` can capture for a PR's before/after images.
 // The working tree's list drives both runs: the base checkout serves the app, these drive it. So a
@@ -550,6 +551,44 @@ const openDirectTask = async (page: Page, width: number) => {
   await page.waitForTimeout(600);
 };
 
+/** The overview's New menu over the board scenario's workspace, opened from the header's `+`. */
+const openNewEntry = async (page: Page) => {
+  await openOverviewDensity(page, 280);
+  await page.setViewportSize({ width: 1440, height: 860 });
+  await page.getByTestId("new-entry").click();
+  await page.getByTestId("new-entry-menu").waitFor();
+  await page.getByTestId("new-entry-task").hover();
+  await page.getByTestId("new-entry-task-to").waitFor();
+  await page.waitForTimeout(400);
+};
+
+/**
+ * Each first screen the New menu lands on, reached by its route in the page (a reload would drop
+ * the seeded workspace), so the base can show it too.
+ */
+const NEW_ENTRY_LANDINGS: readonly Shot[] = (
+  [
+    ["new-entry-task", "the task for an orchestrator", "/new-task"],
+    ["new-entry-worker", "the worker straight away", "/new-task?way=direct"],
+    ["new-entry-one-off", "the one-off thread", "/new"],
+    ["new-entry-workspace", "the new workspace", "/new-workspace"],
+  ] as const
+).map(([name, what, path]) => ({
+  name,
+  title: `The New menu's landing: ${what} (${path})`,
+  open: async (page) => {
+    await openOverviewDensity(page, 280);
+    await page.setViewportSize({ width: 1440, height: 860 });
+    await page.evaluate((to) => {
+      history.pushState({}, "", to);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, path);
+    await expect(page).toHaveURL(new RegExp(`${path.replace("?", "\\?")}$`));
+    await page.mouse.move(1100, 700);
+    await page.waitForTimeout(800);
+  },
+}));
+
 /** A thread whose mock reply raises the change-by-chat card `prompt` asks for. */
 const proposalCard = (prompt: string, title: string, name: string): Shot => ({
   name,
@@ -569,6 +608,21 @@ const proposalCard = (prompt: string, title: string, name: string): Shot => ({
 
 export const SHOTS: readonly Shot[] = [
   ...UPDATE_PILL_SHOTS,
+  {
+    name: "new-entry-header",
+    title: "The overview header with its New control, at the 180 px minimum width",
+    open: async (page) => {
+      await openOverviewDensity(page, 180);
+      await page.mouse.move(1400, 1300);
+    },
+    element: (page) => page.getByTestId("overview-hide").locator(".."),
+  },
+  {
+    name: "new-entry-menu",
+    title: "The header's New menu, with the task's Send to submenu open",
+    open: openNewEntry,
+  },
+  ...NEW_ENTRY_LANDINGS,
   proposalCard("Please change the settings", "A settings change by chat's card", "settings-card"),
   proposalCard(
     "Please create the workspace",

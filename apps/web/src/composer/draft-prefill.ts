@@ -1,7 +1,7 @@
 import type { Attachment, DraftId } from "@gram/contracts";
 import { useCallback, useState, useSyncExternalStore } from "react";
 
-import type { TaskTarget, TaskWay } from "@/orchestration/task-model";
+import type { TaskTarget } from "@/orchestration/task-model";
 
 /** What the next draft starts on. */
 let pendingRoot: string | undefined;
@@ -92,11 +92,14 @@ export function dropTaskTarget() {
   pendingTarget = undefined;
 }
 
-/** The route's entry mode, or the user's subsequent pick; a new entry mode replaces the pick. */
-export function useTaskWayPrefill(initialWay: TaskWay | undefined) {
-  const [choice, setChoice] = useState(() => ({ initialWay, way: initialWay }));
-  if (choice.initialWay !== initialWay) setChoice({ initialWay, way: initialWay });
-  const way = choice.initialWay !== initialWay ? initialWay : choice.way;
-  const setWay = (next: TaskWay | undefined) => setChoice({ initialWay, way: next });
-  return [way, setWay] as const;
+/**
+ * The user's pick on a draft, starting at `initial`, until the route's entry (`entry`, as a key)
+ * changes: a new entry from the New menu replaces the pick.
+ */
+export function useRoutePick<T>(entry: string, initial: () => T | undefined) {
+  const [choice, setChoice] = useState(() => ({ entry, picked: initial() }));
+  if (choice.entry !== entry) setChoice({ entry, picked: undefined });
+  const picked = choice.entry === entry ? choice.picked : undefined;
+  const setPicked = (next: T | undefined) => setChoice({ entry, picked: next });
+  return [picked, setPicked] as const;
 }

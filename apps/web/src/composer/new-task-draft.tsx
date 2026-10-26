@@ -6,11 +6,12 @@ import {
   type DraftId,
   type ProjectId,
   type StartTaskInput,
+  type WorkspaceId,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderGit2 } from "lucide-react";
-import { createElement, useEffect, useId, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
@@ -39,7 +40,7 @@ import {
 } from "@/dictation/composer-dictation";
 import { DictationButton } from "@/dictation/dictation-button";
 import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
-import { PressScale, SegmentSlab, Spinner } from "@/motion";
+import { PressScale, Spinner } from "@/motion";
 import { AUTONOMY_ICON, AutonomyChip } from "@/orchestration/autonomy-chip";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import {
@@ -66,7 +67,7 @@ import {
   prefillDraftProject,
   dropTaskTarget,
   pendingTaskTarget,
-  useTaskWayPrefill,
+  useRoutePick,
 } from "./draft-prefill";
 import { inOpenFence } from "./mention";
 import { MentionMenu } from "./mention-menu";
@@ -79,19 +80,20 @@ import { WorkerFields } from "./worker-fields";
 
 const labelCls = "text-xs font-medium text-muted-foreground";
 
-const WAYS: readonly { value: TaskWay; label: string }[] = [
-  { value: "plan", label: "Orchestrator plans it" },
-  { value: "direct", label: "Straight to a worker" },
-];
-
 /**
- * ⌘N's `/new-task` draft: what needs doing, for a workspace's orchestrator to plan or for one worker
- * to start on at once. A repo with no workspace gets one on send. The one-off thread is the other
- * draft, one pick of the target away.
+ * ⌘N's `/new-task` draft: what needs doing, for a workspace's orchestrator to plan or, with
+ * `initialWay` "direct" (⌥⌘N), for one worker to start on at once. The sidebar's New menu picks the
+ * way and can name the workspace. A repo with no workspace gets one on send. The one-off thread is
+ * the other draft, one pick of the target away.
  */
-export function NewTaskDraft({ initialWay }: { initialWay?: TaskWay | undefined } = {}) {
+export function NewTaskDraft({
+  initialWay,
+  initialWorkspace,
+}: {
+  initialWay?: TaskWay | undefined;
+  initialWorkspace?: WorkspaceId | undefined;
+} = {}) {
   const api = useApi();
-  const waySlab = useId();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: projects = [] } = useQuery({
@@ -108,20 +110,26 @@ export function NewTaskDraft({ initialWay }: { initialWay?: TaskWay | undefined 
     currentId === undefined ? undefined : s.byId[currentId]?.thread,
   );
   const last = useTaskDraftStore((s) => s.last);
-  const ways = useTaskDraftStore((s) => s.ways);
   const pickedAutonomy = useTaskDraftStore((s) => s.autonomy);
   const rememberedWorkers = useTaskDraftStore((s) => s.workers);
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
 
-  const [picked, setPicked] = useState<TaskTarget | undefined>(pendingTaskTarget);
+  const way: TaskWay = initialWay ?? "plan";
+  // A pick in the target picker holds until the menu starts another way or workspace.
+  const [picked, setPicked] = useRoutePick<TaskTarget>(
+    `${way}:${initialWorkspace ?? ""}`,
+    pendingTaskTarget,
+  );
   useEffect(dropTaskTarget, []);
+  const named: TaskTarget | undefined =
+    initialWorkspace !== undefined &&
+    (!settled || workspaces.some((state) => state.workspace.id === initialWorkspace))
+      ? { kind: "workspace", workspaceId: initialWorkspace }
+      : undefined;
   const target = settledTaskTarget(
-    picked ?? defaultTaskTarget({ current, workspaces, projects, last }),
+    picked ?? named ?? defaultTaskTarget({ current, workspaces, projects, last }),
     workspaces,
   );
-  const [pickedWay, setWay] = useTaskWayPrefill(initialWay);
-  const way =
-    pickedWay ?? (target === undefined ? undefined : ways[taskTargetKey(target)]) ?? "plan";
   const repos = target === undefined ? [] : taskRepos(target, workspaces, projects);
   const [repoId, setRepoId] = useState<ProjectId>();
   const repo = repos.find((each) => each.id === repoId) ?? repos[0];
@@ -289,11 +297,7 @@ export function NewTaskDraft({ initialWay }: { initialWay?: TaskWay | undefined 
       });
       useTaskDraftStore
         .getState()
-        .remember(
-          target,
-          way,
-          chosenWorker === undefined ? undefined : workerChoiceKey(chosenWorker),
-        );
+        .remember(target, chosenWorker === undefined ? undefined : workerChoiceKey(chosenWorker));
       void navigate({ to: "/t/$threadId", params: { threadId: thread.id } });
     } catch (e) {
       setSending(false);
@@ -345,10 +349,13 @@ export function NewTaskDraft({ initialWay }: { initialWay?: TaskWay | undefined 
           void send();
         }}
       >
-        <h1 className="font-heading text-base font-medium">New task</h1>
+        <h1 className="font-heading text-base font-medium">
+          {way === "direct" ? "New worker" : "New task"}
+        </h1>
 
         <TaskTargetPicker
           value={target}
+          way={way}
           disabled={attachments.uploading}
           workspaces={workspaces}
           projects={projects}
@@ -356,7 +363,6 @@ export function NewTaskDraft({ initialWay }: { initialWay?: TaskWay | undefined 
             if (next.kind === "oneOff") return toOneOff();
             if (next.kind === "newWorkspace") return toNewWorkspace();
             setPicked(next);
-            setWay(initialWay);
             setRepoId(undefined);
           }}
         />
@@ -368,25 +374,6 @@ export function NewTaskDraft({ initialWay }: { initialWay?: TaskWay | undefined 
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            <div
-              role="radiogroup"
-              aria-label="Who picks it up"
-              className="isolate flex w-fit gap-1 rounded-md border border-border p-0.5 text-xs"
-            >
-              {WAYS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={way === option.value}
-                  onClick={() => setWay(option.value)}
-                  className="relative rounded-sm px-2.5 py-1 text-muted-foreground transition-colors duration-(--dur-fast) outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-checked:text-foreground"
-                >
-                  {way === option.value && <SegmentSlab group={waySlab} className="bg-accent" />}
-                  {option.label}
-                </button>
-              ))}
-            </div>
             {way === "direct" && repo !== undefined && (
               <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 in

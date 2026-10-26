@@ -676,8 +676,9 @@ test("hidden, the title bar's button shows the overview again", async ({ page })
   await expect.poll(() => storedOverview(page)).toBeUndefined();
 
   // On a page with no composer, hiding hands the focus to the button that shows it again.
-  await overview(page).getByLabel("New task").click();
-  await expect(page).toHaveURL(/\/new-task$/);
+  await overview(page).getByLabel("New", { exact: true }).click();
+  await page.getByTestId("new-entry-workspace").click();
+  await expect(page).toHaveURL(/\/new-workspace$/);
   await overview(page).getByTestId("overview-hide").click();
   await expect(overview(page)).toHaveCount(0);
   await expect(show).toBeFocused();

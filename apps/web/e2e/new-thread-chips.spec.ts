@@ -52,7 +52,6 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
   // The current thread's repo has no workspace yet, so one is made on send.
   await expect(page.getByTestId("task-target")).toHaveText("api");
-  await expect(page.getByRole("radio", { name: "Orchestrator plans it" })).toBeChecked();
   const send = page.getByRole("button", { name: /Start workspace and send/ });
   await expect(send).toBeDisabled();
   await page.getByLabel("What needs doing").fill("Add a retry to the mail trigger");
@@ -71,13 +70,19 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByLabel("Message", { exact: true })).toBeFocused();
   expect(page.url()).toBe(orchestrator);
 
-  // From the orchestrator the overview's New task draft is aimed at its workspace; a worker starts
-  // at once.
-  await page.getByTestId("overview-sidebar").getByRole("button", { name: "New task" }).click();
-  await expect(page).toHaveURL(/\/new-task$/);
-  await expect(page.getByTestId("task-target")).toHaveText("api");
+  // From the orchestrator the overview's New menu aims at its workspace; a worker starts at once.
+  const add = page
+    .getByTestId("overview-sidebar")
+    .getByRole("button", { name: "New", exact: true });
+  await add.click();
+  await expect(page.getByTestId("new-entry-task")).toHaveText(/Task for api's orchestrator/);
+  await page.getByTestId("new-entry-task").click();
+  await expect(page).toHaveURL(/\/new-task\?workspace=/);
+  await expect(page.getByTestId("task-target")).toHaveText("api's orchestrator");
   await expect(page.getByRole("button", { name: /Send to orchestrator/ })).toBeVisible();
-  await page.getByRole("radio", { name: "Straight to a worker" }).click();
+  await add.click();
+  await page.getByTestId("new-entry-worker").click();
+  await expect(page.getByTestId("task-target")).toHaveText("Worker in api");
   await expect(page.getByTestId("task-way-note")).toContainText("Starts one worker now");
   await page.getByLabel("What needs doing").fill("Fix the retry test on Windows");
   await page.getByRole("button", { name: /Start worker/ }).click();
@@ -86,9 +91,9 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   // You wrote its first input, so it starts yours.
   await expect(page.getByTestId("worker-hold")).toBeVisible();
 
-  // The way is remembered for the workspace.
-  await page.keyboard.press("ControlOrMeta+KeyN");
-  await expect(page.getByRole("radio", { name: "Straight to a worker" })).toBeChecked();
+  // The New menu opens on the way used last.
+  await add.click();
+  await expect(page.getByTestId("new-entry-worker")).toHaveAttribute("data-highlighted", "");
 });
 
 test("the target picker turns a task into a one-off thread and back, keeping what was typed", async ({
