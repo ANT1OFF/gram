@@ -11,6 +11,7 @@ const build = {
   teamId: signed.teamId,
   requirementSha256: signed.requirementSha256,
   bundleId: "io.github.ant1off.gram",
+  repositoryPrivate: false,
   developerIdSigned: true,
   notarized: true,
   stapled: true,
@@ -20,7 +21,7 @@ describe("mandatory Mac bundle schema policy", () => {
   it("keeps unsigned flags strict while signed requires separate metadata", () => {
     expect(() =>
       validateMacBuildMethod(
-        { developerIdSigned: false, notarized: false },
+        { developerIdSigned: false, notarized: false, repositoryPrivate: true },
         { method: "unsigned-private-helper" },
       ),
     ).not.toThrow();
@@ -38,11 +39,22 @@ describe("mandatory Mac bundle schema policy", () => {
     "teamId",
     "requirementSha256",
     "bundleId",
+    "repositoryPrivate",
     "developerIdSigned",
     "notarized",
     "stapled",
     "notarizationStatus",
   ])("requires signed %s independently", (key) => {
     expect(() => validateMacBuildMethod({ ...build, [key]: undefined }, signed)).toThrow();
+  });
+  it("takes a signed release from a public or private repository, an unsigned one only private", () => {
+    for (const repositoryPrivate of [false, true])
+      expect(() => validateMacBuildMethod({ ...build, repositoryPrivate }, signed)).not.toThrow();
+    expect(() =>
+      validateMacBuildMethod(
+        { developerIdSigned: false, notarized: false, repositoryPrivate: false },
+        { method: "unsigned-private-helper" },
+      ),
+    ).toThrow("unsigned");
   });
 });

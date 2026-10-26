@@ -119,13 +119,20 @@ export function validateMacBuildMethod(
   build: Record<string, unknown>,
   policy: MacBundlePolicy,
 ): void {
+  // An unsigned build is a private RC, cut only from a private repository; a signed release may
+  // come from the public one.
   if (policy.method === "unsigned-private-helper") {
-    if (build.developerIdSigned !== false || build.notarized !== false)
+    if (
+      build.developerIdSigned !== false ||
+      build.notarized !== false ||
+      build.repositoryPrivate !== true
+    )
       throw new Error("Unexpected private unsigned build metadata");
     return;
   }
   if (
     policy.method !== "signed-native-macos-v1" ||
+    typeof build.repositoryPrivate !== "boolean" ||
     !/^[A-Z0-9]{10}$/.test(policy.teamId) ||
     !/^[a-f0-9]{64}$/.test(policy.requirementSha256) ||
     build.schema !== "gram.signed-build/v1" ||
@@ -178,10 +185,9 @@ export async function verifyMacBundleForMethod(
     build.tag !== `v${version}` ||
     build.repository !== "ANT1OFF/gram" ||
     build.platform !== "darwin-arm64" ||
-    build.sourceCommit !== sourceCommit ||
-    build.repositoryPrivate !== true
+    build.sourceCommit !== sourceCommit
   )
-    throw new Error("Unexpected private unsigned build metadata");
+    throw new Error("Unexpected build metadata");
   validateMacBuildMethod(build, policy);
   for (const [file, field] of [
     ["BUNDLE-SHA256SUMS.txt", "bundleChecksumManifestSha256"],
