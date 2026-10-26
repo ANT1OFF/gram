@@ -56,6 +56,11 @@ const base = {
         ? 0
         : Math.min(9, Math.max(-8, webFrame.getZoomLevel() + (step === "in" ? 0.5 : -0.5))),
     ),
+  zoomFactor: () => webFrame.getZoomFactor(),
+  fullScreen: {
+    get: () => ipcRenderer.invoke(Channels.windowFullScreenGet),
+    onChange: (callback) => subscribe<boolean>(Channels.windowFullScreenChanged, callback),
+  },
   setMenuShortcuts: (shortcuts) => ipcRenderer.send(Channels.setMenuShortcuts, shortcuts),
   appIcon: {
     get: () => ipcRenderer.invoke(Channels.appIconGet),

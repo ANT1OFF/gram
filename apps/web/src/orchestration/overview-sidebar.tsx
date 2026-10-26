@@ -26,7 +26,6 @@ import { useShallow } from "zustand/react/shallow";
 import { AgentIcon } from "@/agents/agent-display";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { isMac } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { formatClockTime, formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -222,7 +221,6 @@ const focusVirtualRow = async (list: HTMLElement, index: number, last: boolean) 
 export function OverviewSidebar() {
   const hideHint = useShortcutHint("sidebar.toggle");
   const newHint = useShortcutHint("thread.new");
-  const underLights = isMac() && window.gram !== undefined;
   // The optional sections Settings → General turned off.
   const hidden = useLayoutStore((s) => s.overviewHidden);
   return (
@@ -234,13 +232,9 @@ export function OverviewSidebar() {
       className="flex min-h-0 flex-1 flex-col border-r border-border bg-sidebar text-sidebar-foreground"
     >
       {/* The title bar's height. Hide sidebar leads, after macOS's window buttons, in the spot the
-          title bar's Show sidebar takes while it is hidden, so the toggle never moves. */}
-      <div
-        className={cn(
-          "flex h-(--titlebar-height) shrink-0 items-center gap-1 px-2 [-webkit-app-region:drag]",
-          underLights && "pl-20",
-        )}
-      >
+          title bar's Show sidebar takes while it is hidden, so the toggle never moves. Too narrow
+          for them all beside the buttons, the rest wrap to a row below rather than clip. */}
+      <div className="flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-2 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
         <Button
           variant="ghost"
           size="icon-xs"

@@ -20,7 +20,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { AgentIcon } from "@/agents/agent-display";
 import { Button } from "@/components/ui/button";
-import { isMac } from "@/keyboard/registry";
+import { useWindowLights } from "@/desktop/window-lights";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { CARD_SURFACE } from "@/reviews/pr-display";
@@ -78,7 +78,7 @@ const STOP = { [OVERVIEW_STOP]: "" };
 export function OverviewRail() {
   const hideHint = useShortcutHint("sidebar.toggle");
   // Under macOS's window buttons the title bar's row is theirs; the toggle leads the column below.
-  const underLights = isMac() && window.gram !== undefined;
+  const underLights = useWindowLights((s) => s.inset > 0);
   const hide = (
     <Button
       variant="ghost"

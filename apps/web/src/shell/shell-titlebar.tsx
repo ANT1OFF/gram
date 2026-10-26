@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { isMac } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
 import { TitlebarTidyUp } from "@/orchestration/tidy-up-button";
 import { WorkersButton } from "@/orchestration/workers-list";
@@ -70,10 +69,6 @@ export function ShellTitlebar({
 
   // With no panel to its right, the chat's titlebar runs under Windows' window controls.
   const titlebarAtEdge = panelLeft || !panelShown;
-  // With no sidebar (or overview) to its left, the title bar starts under macOS's window buttons.
-  const titlebarUnderLights = !sidebarShown && isMac() && window.gram !== undefined;
-  // Beside the compact rail, narrower than macOS's window buttons, it starts clear of them.
-  const titlebarBesideRail = compactRail && isMac() && window.gram !== undefined;
 
   return (
     <div
@@ -87,8 +82,10 @@ export function ShellTitlebar({
       className={cn(
         "@container/titlebar relative flex h-(--titlebar-height) shrink-0 items-center justify-end gap-1 border-b border-border px-2 [-webkit-app-region:drag]",
         titlebarAtEdge && "pr-[calc(var(--window-controls-inset)+--spacing(2))]",
-        titlebarUnderLights && "pl-20",
-        titlebarBesideRail && "pl-6",
+        // With no sidebar (or overview) to its left, the title bar starts under macOS's window
+        // buttons; beside the compact rail, narrower than them, it starts clear of them.
+        !sidebarShown && "pl-[max(--spacing(2),var(--window-lights-inset))]",
+        compactRail && "pl-[max(--spacing(2),calc(var(--window-lights-inset)-60px+--spacing(1)))]",
       )}
     >
       <div className={cn("mr-auto flex min-w-0 items-center gap-1", carried && "flex-1")}>
