@@ -11,8 +11,7 @@
       "skip-github-release": true,
       "draft-pull-request": true,
       "extra-files": [
-        { "type": "json", "path": "apps/desktop/package.json", "jsonpath": "$.version" },
-        { "type": "generic", "path": "bun.lock" }
+        { "type": "json", "path": "apps/desktop/package.json", "jsonpath": "$.version" }
       ],
       "pull-request-header": "Desktop release metadata proposal only. Merging this PR does not publish or tag Gram; follow docs/RELEASING.md to release."
     }

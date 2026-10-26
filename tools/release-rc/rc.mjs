@@ -204,7 +204,6 @@ try {
         manifest: readFileSync(join(source, ".release-please-manifest.json"), "utf8"),
         rootPackage: readFileSync(join(source, "package.json"), "utf8"),
         desktopPackage: readFileSync(join(source, "apps/desktop/package.json"), "utf8"),
-        lock: readFileSync(join(source, "bun.lock"), "utf8"),
       }),
     });
   else validateTarget({ version, publish: publishing, tags, mainVersion: pkg.version });

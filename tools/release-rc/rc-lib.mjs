@@ -66,22 +66,20 @@ const STABLE_PATH =
   "Stable releases take bun run release:rc --stable <version>; see docs/RELEASING.md.";
 
 /**
- * The version each of main's four version fields carries: the release-please manifest, the root
- * and desktop `package.json`, and the desktop entry in `bun.lock` (whose text is JSON with
- * trailing commas, so it is matched rather than parsed).
+ * The version each of main's three version fields carries: the release-please manifest and the root
+ * and desktop `package.json`.
  */
-export function versionFields({ manifest, rootPackage, desktopPackage, lock }) {
+export function versionFields({ manifest, rootPackage, desktopPackage }) {
   return {
     manifest: JSON.parse(manifest)["."],
     root: JSON.parse(rootPackage).version,
     desktop: JSON.parse(desktopPackage).version,
-    lock: /"apps\/desktop": \{\s*"name": "@gram\/desktop",\s*"version": "([^"]+)"/.exec(lock)?.[1],
   };
 }
 
 /**
  * Refuses a stable version the stable path must not cut: not stable, a tag that exists, not newer
- * than every tag, or not what all four of main's version fields say (the release PR sets them).
+ * than every tag, or not what all three of main's version fields say (the release PR sets them).
  */
 export function validateStableTarget({ version, tags, fields }) {
   const parsed = parseVersion(version);

@@ -17,9 +17,11 @@ published release.
 
 [Release-please](https://github.com/googleapis/release-please)
 ([release-please.yml](../.github/workflows/release-please.yml)) keeps a draft metadata PR on
-`main` with the changelog, the root and desktop package versions, the desktop entry in `bun.lock`
-and `.release-please-manifest.json`. Its baseline is the latest release's tag; no
-`bootstrap-sha` pins history to a commit. Conventional squash titles decide the next
+`main` with the changelog, the root and desktop package versions and
+`.release-please-manifest.json`. It leaves `bun.lock` alone: Dependabot reads that file as YAML,
+so it carries no annotation, and Bun's frozen install ignores the desktop version recorded there.
+Its baseline is the latest release's tag; no `bootstrap-sha` pins history to a commit.
+Conventional squash titles decide the next
 version: `fix:` proposes a patch, `feat:` a minor, and `docs:`, `refactor:` and `chore:` add no
 entry. Merging that PR publishes nothing: `skip-github-release` is on, and no tag or release is
 made.
@@ -39,7 +41,7 @@ installed in a temporary directory with `npm ci --ignore-scripts --omit=dev`.
 - **Signing:** the Developer ID identity and the `gram-notary` notarytool profile in your
   keychain (see [Developer ID signing](UPDATES.md#developer-id-signing)). Every release
   is Developer ID signed, notarized and stapled; there is no unsigned stable path.
-- **Source:** the release PR is merged, all four version fields read the version, the exact
+- **Source:** the release PR is merged, all three version fields read the version, the exact
   merged source has passed its checks, and nobody else is cutting this version.
 
 ## 1. Build and draft: `bun run release:rc --stable <version>`

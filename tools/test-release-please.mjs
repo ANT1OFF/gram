@@ -18,13 +18,9 @@ assert.equal(VERSION, "17.6.0", "Test the runtime bundled in the pinned action")
 // The repository's single first commit, which the v1.0.0 release is tagged on. Invented.
 const baseline = "1".repeat(40);
 const silent = { info() {}, warn() {}, debug() {}, error() {} };
-const versioned = [
-  ".release-please-manifest.json",
-  "package.json",
-  "apps/desktop/package.json",
-  "bun.lock",
-];
-const paths = ["release-please-config.json", ...versioned];
+const versioned = [".release-please-manifest.json", "package.json", "apps/desktop/package.json"];
+// bun.lock rides along unversioned, so the cases prove release-please leaves it alone.
+const paths = ["release-please-config.json", "bun.lock", ...versioned];
 /** `files` with every version field moved from `from` to `to`, and nothing else touched. */
 const withVersion = (files, from, to) =>
   Object.fromEntries(
@@ -154,10 +150,9 @@ test("upstream proposes 1.0.1 after v1.0.0, updates only the version fields, and
     ".release-please-manifest.json",
     "CHANGELOG.md",
     "apps/desktop/package.json",
-    "bun.lock",
     "package.json",
   ]);
-  for (const path of ["package.json", "apps/desktop/package.json", "bun.lock"]) {
+  for (const path of ["package.json", "apps/desktop/package.json"]) {
     assert.equal(
       changed[path],
       state.files[path].replace('"version": "1.0.0"', '"version": "1.0.1"'),
@@ -290,7 +285,6 @@ test("metadata preflight refuses desynchronized, malformed or widened updates", 
     ],
     [".release-please-manifest.json", '{".":"0.0.1"}'],
     ["package.json", "{broken"],
-    ["bun.lock", read("bun.lock").replace(" // x-release-please-version", "")],
     ["bun.lock", read("bun.lock") + "\n// x-release-please-version\n"],
     [
       "release-please-config.json",
