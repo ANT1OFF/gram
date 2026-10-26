@@ -75,6 +75,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   { id: "sidebar.focus", keys: "mod+alt+s", label: "Focus sidebar", group: "App" },
   { id: "panel.focus", keys: "mod+alt+p", label: "Focus right panel", group: "App" },
   { id: "thread.new", keys: "mod+n", label: "New task", group: "Navigation" },
+  { id: "thread.newWorker", keys: "mod+alt+n", label: "New worker", group: "Navigation" },
   {
     id: "thread.newInProject",
     keys: "mod+t",

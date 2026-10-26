@@ -15,7 +15,8 @@ import { switchOrder, useThreadHistory } from "@/stores/thread-history";
 import { useThreadsStore } from "@/stores/threads";
 import { reopenLastClosed } from "@/thread/reopen-closed";
 
-const focusedThreadId = (): ThreadId | undefined => {
+/** The thread in the focused pane. */
+export const focusedThreadId = (): ThreadId | undefined => {
   const { grid } = useLayoutStore.getState();
   return grid.panes[grid.focused] ?? undefined;
 };

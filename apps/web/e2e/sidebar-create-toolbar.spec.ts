@@ -3,61 +3,90 @@ import { expect, test } from "@playwright/test";
 import { openOverviewDensity } from "./overview-density";
 import { seedTheme } from "./seed-theme";
 
-// The overview header's New task is the one way in to a new task's draft: the orchestrator plans
-// it or it goes straight to a worker. Its place in the header at each width is in
-// sidebar-top-utilities.spec.ts.
+// The overview header's `+` opens the New menu: a task for a workspace's orchestrator, a worker in
+// one, a one-off thread, or a new workspace, each landing on its own first screen. Its place in the
+// header at each width is in sidebar-top-utilities.spec.ts.
 
-test("New task explains itself on hover and Tab and opens a reviewable draft", async ({
+test("New explains itself, works from the keyboard, lands each pick and opens on the last one", async ({
   page,
-  context,
 }) => {
   await seedTheme(page, { palette: "minimal-ocean", mode: "dark", motion: "off" });
-  await openOverviewDensity(page, 180);
+  const board = await openOverviewDensity(page, 180);
   const before = await page.evaluate(async () => ({
     threads: window.gramMock!.world.threads().length,
     workspaces: (await window.gramMock!.listWorkspaces()).length,
   }));
   const sidebar = page.getByTestId("overview-sidebar");
-  const task = sidebar.getByRole("button", { name: "New task", exact: true });
-  await expect(task).toHaveAttribute("title", /^New task \(.+\)$/);
+  const add = sidebar.getByRole("button", { name: "New", exact: true });
+  await expect(add).toHaveAttribute("title", "New task, worker, one-off thread or workspace");
+  await expect(add).toHaveAttribute("aria-haspopup", "menu");
   await sidebar.getByRole("button", { name: "Compact overview", exact: true }).focus();
   await page.keyboard.press("Tab");
-  await expect(task).toBeFocused();
-  expect(await task.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/new-task$/);
-  const draft = page.getByRole("form", { name: "New task" });
-  await draft.getByRole("radio", { name: "Straight to a worker" }).click();
-  await expect(draft.getByRole("radio", { name: "Straight to a worker" })).toBeChecked();
-  await expect(draft.getByRole("button", { name: "Start worker", exact: false })).toBeDisabled();
-  await draft.getByLabel("What needs doing").fill("Synthetic draft kept for review");
-  await draft.getByLabel("What needs doing").evaluate((element) => {
-    const files = new DataTransfer();
-    files.items.add(
-      new File(["Invented attachment content"], "synthetic-brief.txt", { type: "text/plain" }),
-    );
-    element.dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: files }));
-  });
-  await expect(draft.getByTestId("attachment-chip")).toHaveAttribute("data-status", "ready");
-  const targetBefore = await draft.getByTestId("task-target").textContent();
+  await expect(add).toBeFocused();
+  expect(await add.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
 
-  // New task again, by its button or ⌘N, keeps the draft as it was.
-  await task.click();
-  await expect(page).toHaveURL(/\/new-task$/);
+  // Enter opens it on the task row; each row says where it goes and its shortcut.
+  await page.keyboard.press("Enter");
+  const menu = page.getByTestId("new-entry-menu");
+  await expect(menu).toBeVisible();
+  const task = page.getByTestId("new-entry-task");
+  await expect(task).toHaveAttribute("data-highlighted", "");
+  await expect(task).toContainText(/Task for .+'s orchestrator|New task/);
+  await expect(page.getByTestId("new-entry-worker")).toContainText(/Worker in .+|New worker/);
+  await expect(page.getByTestId("new-entry-oneOff")).toContainText("One-off thread");
+  await expect(page.getByTestId("new-entry-workspace")).toContainText("New workspace…");
+  await expect(menu.getByRole("separator")).toHaveCount(1);
+
+  // → opens Send to on the worker row, ← comes back, and a workspace there is the target.
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("new-entry-worker")).toHaveAttribute("data-highlighted", "");
+  await page.keyboard.press("ArrowRight");
+  const sendTo = page.getByTestId("new-entry-worker-to");
+  await expect(sendTo).toBeVisible();
+  await expect(sendTo).toContainText("Send to");
+  await page.keyboard.press("ArrowLeft");
+  await expect(sendTo).toBeHidden();
+  await page.keyboard.press("ArrowRight");
+  await expect(sendTo.getByRole("menuitem", { name: "agent-platform" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(
+    new RegExp(`/new-task\\?way=direct&workspace=${board.workspaceId}$`),
+  );
+  const draft = page.getByRole("form", { name: "New task" });
+  await expect(draft.getByRole("heading", { name: "New worker" })).toBeVisible();
+  await expect(draft.getByTestId("task-target")).toHaveText("Worker in agent-platform");
+  await expect(draft.getByRole("radiogroup")).toHaveCount(0);
+  await draft.getByLabel("What needs doing").fill("Synthetic draft kept for review");
+
+  // Opened again, the menu starts on the worker row, so Enter repeats it and keeps the draft.
+  await add.click();
+  await expect(page.getByTestId("new-entry-worker")).toHaveAttribute("data-highlighted", "");
+  await page.keyboard.press("Enter");
+  await expect(menu).toBeHidden();
+  await expect(draft.getByRole("heading", { name: "New worker" })).toBeVisible();
+  await expect(draft.getByLabel("What needs doing")).toHaveValue("Synthetic draft kept for review");
+
+  // ⌘N is still the task, ⌥⌘N the worker.
   await page.keyboard.press("ControlOrMeta+n");
   await expect(page).toHaveURL(/\/new-task$/);
-  await expect(draft.getByLabel("What needs doing")).toHaveValue("Synthetic draft kept for review");
-  await expect(draft.getByTestId("task-target")).toHaveText(targetBefore!);
-  await expect(draft.getByTestId("attachment-chip")).toContainText("synthetic-brief.txt");
+  await expect(draft.getByRole("heading", { name: "New task" })).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Alt+n");
+  await expect(page).toHaveURL(/\/new-task\?way=direct$/);
+  await expect(draft.getByRole("heading", { name: "New worker" })).toBeVisible();
 
-  // A middle-click opens the draft page in a window of its own.
-  const popupPromise = context.waitForEvent("page");
-  await task.click({ button: "middle" });
-  const popup = await popupPromise;
-  await popup.waitForLoadState();
-  await expect(popup).toHaveURL(/\/new-task$/);
-  await expect(popup.getByRole("form", { name: "New task" })).toBeVisible();
-  await popup.close();
+  // The other two rows land on their own first screens.
+  await add.click();
+  await page.getByTestId("new-entry-oneOff").click();
+  await expect(page).toHaveURL(/\/new$/);
+  await add.click();
+  await expect(page.getByTestId("new-entry-oneOff")).toHaveAttribute("data-highlighted", "");
+  await page.getByTestId("new-entry-workspace").click();
+  await expect(page).toHaveURL(/\/new-workspace$/);
+  await add.click();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(add).toBeFocused();
+
   const after = await page.evaluate(async () => ({
     threads: window.gramMock!.world.threads().length,
     workspaces: (await window.gramMock!.listWorkspaces()).length,
@@ -88,17 +117,17 @@ test("worker draft keeps the selected unavailable provider blocked without creat
   const before = await page.evaluate(() => window.gramMock!.world.threads().length);
   await page
     .getByTestId("overview-sidebar")
-    .getByRole("button", { name: "New task", exact: true })
+    .getByRole("button", { name: "New", exact: true })
     .click();
+  await page.getByTestId("new-entry-worker").click();
   const draft = page.getByRole("form", { name: "New task" });
-  await draft.getByRole("radio", { name: "Straight to a worker" }).click();
-  await expect(draft.getByRole("radio", { name: "Straight to a worker" })).toBeChecked();
+  await expect(draft.getByRole("heading", { name: "New worker" })).toBeVisible();
   await draft.getByLabel("What needs doing").fill("Synthetic refusal fixture");
   await expect(
     draft.getByText("Synthetic provider is signed out; log in explicitly.").first(),
   ).toBeVisible();
   await expect(draft.getByRole("button", { name: /Start.*worker/ })).toBeDisabled();
   await page.keyboard.press("ControlOrMeta+Enter");
-  await expect(page).toHaveURL(/\/new-task$/);
+  await expect(page).toHaveURL(/\/new-task\?way=direct/);
   expect(await page.evaluate(() => window.gramMock!.world.threads().length)).toBe(before);
 });

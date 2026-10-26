@@ -9,8 +9,8 @@ import {
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { Link, useParams } from "@tanstack/react-router";
-import { ChevronDown, PanelLeftClose, PanelLeftDashed, Plus, Users } from "lucide-react";
+import { useParams } from "@tanstack/react-router";
+import { ChevronDown, PanelLeftClose, PanelLeftDashed, Users } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -57,6 +57,7 @@ import { parkedSoloThreads, soloThreads } from "@/views/solo-threads";
 import { useViewWorkspace } from "@/views/view-workspace";
 
 import { askKeysByThread } from "./ask-model";
+import { NewEntryMenu } from "./new-entry-menu";
 import { useWorkspaceAsks } from "./ask-stack";
 import { PAUSE_WORD, useWorkerPause, WorkerPauseMark, type WorkerPauseState } from "./worker-pause";
 import { keepBeside } from "./beside-store";
@@ -220,7 +221,6 @@ const focusVirtualRow = async (list: HTMLElement, index: number, last: boolean) 
 /** The Orchestrator layout's left column: what needs you, the orchestrators and the solo threads. */
 export function OverviewSidebar() {
   const hideHint = useShortcutHint("sidebar.toggle");
-  const newHint = useShortcutHint("thread.new");
   // The optional sections Settings → General turned off.
   const hidden = useLayoutStore((s) => s.overviewHidden);
   return (
@@ -258,17 +258,7 @@ export function OverviewSidebar() {
         >
           <PanelLeftDashed />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="New task"
-          title={withHint("New task", newHint)}
-          className="ml-auto text-muted-foreground [-webkit-app-region:no-drag]"
-          render={<Link to="/new-task" />}
-          nativeButton={false}
-        >
-          <Plus />
-        </Button>
+        <NewEntryMenu />
       </div>
       <div
         onKeyDown={overviewKeys}

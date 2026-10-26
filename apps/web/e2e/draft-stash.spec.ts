@@ -34,7 +34,10 @@ test("⌘S doesn't stash while focus is outside the composer", async ({ page }) 
   await page.goto("/t/t-release");
   const composer = page.getByLabel("Message", { exact: true });
   await composer.fill("stay put");
-  await page.getByTestId("overview-sidebar").getByRole("button", { name: "New task" }).focus();
+  await page
+    .getByTestId("overview-sidebar")
+    .getByRole("button", { name: "New", exact: true })
+    .focus();
   await page.keyboard.press("ControlOrMeta+s");
 
   await expect(composer).toHaveValue("stay put");

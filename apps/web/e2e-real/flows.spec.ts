@@ -200,14 +200,15 @@ test("⌘N's New task makes the repo's workspace, hands its orchestrator the tas
     timeout: 30_000,
   });
 
-  // On an orchestrator, New task's shortcut now focuses its composer; the sidebar opens the draft.
+  // On an orchestrator, New task's shortcut now focuses its composer; the sidebar's New menu opens
+  // the worker's draft.
   const orchestratorUrl = page.url();
   await page.keyboard.press("ControlOrMeta+KeyN");
   await expect(page.getByRole("combobox", { name: "Message", exact: true })).toBeFocused();
   await expect(page).toHaveURL(orchestratorUrl);
-  await page.getByRole("button", { name: "New task", exact: true }).click();
-  await expect(page).toHaveURL(/\/new-task$/);
-  await page.getByRole("radio", { name: "Straight to a worker" }).click();
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await page.getByTestId("new-entry-worker").click();
+  await expect(page).toHaveURL(/\/new-task\?way=direct/);
   await page.getByLabel("What needs doing").fill("Write the needle notes");
   await page.getByRole("button", { name: /Start worker/ }).click();
   await expect(page.getByTestId("pane-header")).toContainText("Write the needle notes", {

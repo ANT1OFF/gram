@@ -9,8 +9,8 @@ import { seedTheme } from "./seed-theme";
 test.use({ channel: "chromium" });
 
 // The overview's header row, left to right: Hide sidebar, Usage and Settings (the top-left nav),
-// Compact overview, and New task at the far end.
-const names = ["Hide sidebar", "Usage", "Settings", "Compact overview", "New task"];
+// Compact overview, and New at the far end.
+const names = ["Hide sidebar", "Usage", "Settings", "Compact overview", "New"];
 
 for (const mode of ["light", "dark"] as const) {
   for (const width of [180, 280, 380]) {

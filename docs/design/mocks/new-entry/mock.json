@@ -1,10 +1,11 @@
 {
   "title": "New entry points",
   "slug": "new-entry",
-  "status": "draft",
+  "status": "approved",
   "template": "options",
   "current": 1,
-  "approved": null,
+  "approved": 1,
+  "approvedDirection": "A Menu",
   "versions": [
     {
       "n": 1,

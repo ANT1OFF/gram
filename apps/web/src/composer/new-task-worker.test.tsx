@@ -47,7 +47,12 @@ const sol: TaskWorkerChoice = {
 afterEach(() => {
   cleanup();
   useServerSettings.setState({ settings: undefined });
-  useTaskDraftStore.setState({ last: undefined, autonomy: undefined, ways: {}, workers: {} });
+  useTaskDraftStore.setState({
+    last: undefined,
+    autonomy: undefined,
+    entry: undefined,
+    workers: {},
+  });
 });
 
 const setup = (choices: TaskWorkerChoice[], workers: Record<string, string> = {}) => {
@@ -78,7 +83,7 @@ const setup = (choices: TaskWorkerChoice[], workers: Record<string, string> = {}
     availability: { state: "available" },
   }));
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
-  useTaskDraftStore.setState({ last: target, autonomy: undefined, ways: {}, workers });
+  useTaskDraftStore.setState({ last: target, autonomy: undefined, entry: undefined, workers });
   renderWithApi(<NewTaskDraft initialWay="direct" />, api);
   return { preview, start };
 };

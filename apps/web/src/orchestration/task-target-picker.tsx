@@ -1,11 +1,11 @@
 import { Menu } from "@base-ui/react/menu";
 import type { Project, WorkspaceState } from "@gram/contracts";
-import { Check, ChevronDown, FolderGit2, MessageSquare, Network, Plus } from "lucide-react";
+import { Check, ChevronDown, FolderGit2, MessageSquare, Network, Plus, User } from "lucide-react";
 
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 
-import { reposWithoutWorkspace, taskTargetKey, type TaskTarget } from "./task-model";
+import { reposWithoutWorkspace, taskTargetKey, type TaskTarget, type TaskWay } from "./task-model";
 
 const POPUP =
   "z-50 w-80 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
@@ -31,12 +31,15 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
  */
 export function TaskTargetPicker({
   value,
+  way,
   disabled = false,
   workspaces,
   projects,
   onPick,
 }: {
   value: TaskTarget | { readonly kind: "oneOff" } | undefined;
+  /** On New task, who picks it up, which the chip names with a workspace. */
+  way?: TaskWay | undefined;
   /** While a file is still uploading, which the other draft couldn't take with it. */
   disabled?: boolean;
   workspaces: readonly WorkspaceState[];
@@ -52,11 +55,24 @@ export function TaskTargetPicker({
       : undefined;
   const repo = value?.kind === "repo" ? projects.find((p) => p.id === value.projectId) : undefined;
   const Icon =
-    value?.kind === "oneOff" ? MessageSquare : value?.kind === "repo" ? FolderGit2 : Network;
+    value?.kind === "oneOff"
+      ? MessageSquare
+      : value?.kind === "repo"
+        ? FolderGit2
+        : way === "direct"
+          ? User
+          : Network;
+  const name = workspace?.workspace.name;
   const label =
     value?.kind === "oneOff"
       ? "One-off thread"
-      : (workspace?.workspace.name ?? repo?.name ?? "Choose where it goes");
+      : name === undefined
+        ? (repo?.name ?? "Choose where it goes")
+        : way === "direct"
+          ? `Worker in ${name}`
+          : way === "plan"
+            ? `${name}'s orchestrator`
+            : name;
 
   return (
     <Menu.Root>

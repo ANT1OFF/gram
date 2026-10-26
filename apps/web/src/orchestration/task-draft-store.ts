@@ -2,14 +2,15 @@ import type { Autonomy } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import type { TaskTarget, TaskWay } from "./task-model";
+import type { NewEntry } from "./new-entry";
+import type { TaskTarget } from "./task-model";
 import { taskTargetKey } from "./task-model";
 
 interface TaskDraftState {
   /** The target the last task went to, which a later draft starts on when nothing nearer says. */
   readonly last?: TaskTarget | undefined;
-  /** The way each target's last task went, by `taskTargetKey`. */
-  readonly ways: Readonly<Record<string, TaskWay>>;
+  /** What the sidebar's New menu was last used for, which it highlights when it opens. */
+  readonly entry?: NewEntry | undefined;
   /** The worker model last picked for each target's direct task, by `taskTargetKey`. */
   readonly workers: Readonly<Record<string, string>>;
   /**
@@ -18,31 +19,30 @@ interface TaskDraftState {
    */
   readonly autonomy?: Autonomy | undefined;
   /** `worker` is the picked model's `workerChoiceKey`, for a task that went to a worker. */
-  remember: (target: TaskTarget, way: TaskWay, worker?: string) => void;
+  remember: (target: TaskTarget, worker?: string) => void;
   rememberAutonomy: (autonomy: Autonomy) => void;
+  rememberEntry: (entry: NewEntry) => void;
 }
 
 /** What New task remembers between drafts, kept on this machine. */
 export const useTaskDraftStore = create<TaskDraftState>()(
   persist(
     (set) => ({
-      ways: {},
       workers: {},
-      remember: (target, way, worker) =>
-        set((s) => {
-          const key = taskTargetKey(target);
-          return {
-            last: target,
-            ways: { ...s.ways, [key]: way },
-            ...(worker === undefined ? {} : { workers: { ...s.workers, [key]: worker } }),
-          };
-        }),
+      remember: (target, worker) =>
+        set((s) => ({
+          last: target,
+          ...(worker === undefined
+            ? {}
+            : { workers: { ...s.workers, [taskTargetKey(target)]: worker } }),
+        })),
       rememberAutonomy: (autonomy) => set({ autonomy }),
+      rememberEntry: (entry) => set({ entry }),
     }),
     {
       name: "gram.task-draft",
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ last, ways, workers, autonomy }) => ({ last, ways, workers, autonomy }),
+      partialize: ({ last, entry, workers, autonomy }) => ({ last, entry, workers, autonomy }),
     },
   ),
 );
