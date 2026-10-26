@@ -565,10 +565,10 @@ describe("notes from the release commit", () => {
 
 // The command line itself, as `bun run release:stable` starts it: the phases above call runPhase
 // directly and never load its argument handling.
-describe("the release:stable command line", () => {
-  const cli = (...args) =>
-    spawnSync(process.execPath, [join(HERE, "stable.mjs"), ...args], { encoding: "utf8" });
+const cli = (...args) =>
+  spawnSync(process.execPath, [join(HERE, "stable.mjs"), ...args], { encoding: "utf8" });
 
+describe("the release:stable command line", () => {
   it("prints its usage", () => {
     const r = cli("--help");
     expect(r.stderr).toBe("");
