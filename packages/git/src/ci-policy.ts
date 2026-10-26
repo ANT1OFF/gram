@@ -60,10 +60,12 @@ export function qualifiedCiResults(kind: string, results: Record<string, string 
     (kind === "docs"
       ? results["docs"] === "success" &&
         results["check"] === "skipped" &&
-        results["e2e"] === "skipped"
+        results["e2e"] === "skipped" &&
+        results["macos"] === "skipped"
       : kind === "full" &&
         results["docs"] === "skipped" &&
         results["check"] === "success" &&
-        results["e2e"] === "success")
+        results["e2e"] === "success" &&
+        results["macos"] === "success")
   );
 }

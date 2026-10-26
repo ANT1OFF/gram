@@ -173,15 +173,22 @@ signing/pin assertions meaningful. Never remove an assertion simply to obtain a 
 [check.yml](../.github/workflows/check.yml) classifies each change. Ordinary prose gets a docs
 job (frozen install, `bun run check:docs` and `bun run fmt:check`); everything else gets a
 bounded typecheck, `bun run check:ci` and the mock e2e suite in three shards, `e2e 1/3` to
-`e2e 3/3`. A final `qualification` job passes only when the jobs the classification needs
-passed on that source. [scaffold.yml](../.github/workflows/scaffold.yml) runs the scaffold and dependency
+`e2e 3/3`. A `macos` job runs `bun run check:ci` on macOS and packages the unsigned app with
+`electron-builder --dir`, then checks it with `verify:package`; the e2e shards run on Linux only.
+A final `qualification` job passes only when the jobs the classification needs passed on that
+source. [scaffold.yml](../.github/workflows/scaffold.yml) runs the scaffold and dependency
 pin checks on every change. [.gram/merge-ci.json](../.gram/merge-ci.json) declares these jobs to
 Gram's merge gate; its `alwaysJobs` (the e2e shards) must pass even when a local check stands in
 for the rest. Pending, skipped, cancelled, failed or stale jobs are not passing CI.
 A newer push cancels a pull request's superseded runs, while every main run that starts
 finishes. [cancel-closed-pr.yml](../.github/workflows/cancel-closed-pr.yml) cancels a closed pull
-request's remaining runs from a GitHub-hosted runner, so they never hold the self-hosted ones.
+request's remaining runs.
 
-Workflows keep same-repository guards, read-only token permissions, isolated checkouts and
-caches and pinned frozen installs. They use synthetic agents; Linux CI does not qualify Mac
-packaging, Windows behaviour or paid providers.
+The `macos` job runs on GitHub-hosted `macos-15`; every other job runs on `ubuntu-24.04-arm`.
+No signing or notarization secret reaches CI: releases are signed on the publisher's Mac. Workflows keep same-repository
+guards, read-only token permissions, SHA-pinned actions, download-only caches and pinned frozen
+installs. They use synthetic agents; CI does not qualify x64 Linux, signed or notarized Mac
+builds, Windows behaviour or paid providers. [Dependabot](../.github/dependabot.yml) proposes weekly
+updates no younger than 7 days and leaves Electron and its packaging, the Effect family,
+sherpa-onnx and Node type majors to deliberate bumps. CodeQL default setup scans
+JavaScript/TypeScript and Actions.

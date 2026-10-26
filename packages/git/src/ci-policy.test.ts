@@ -135,12 +135,14 @@ describe("always-running qualification gate", () => {
     docs: "skipped",
     check: "success",
     e2e: "success",
+    macos: "success",
   };
   const docs = {
     classify: "success",
     docs: "success",
     check: "skipped",
     e2e: "skipped",
+    macos: "skipped",
   };
   it("accepts only the explicitly selected successful lane", () => {
     expect(qualifiedCiResults("full", full)).toBe(true);
@@ -153,7 +155,7 @@ describe("always-running qualification gate", () => {
   it.each(["failure", "cancelled", "skipped", "", undefined])(
     "refuses non-successful required jobs: %s",
     (result) => {
-      for (const name of ["classify", "check", "e2e"]) {
+      for (const name of ["classify", "check", "e2e", "macos"]) {
         expect(qualifiedCiResults("full", { ...full, [name]: result })).toBe(false);
       }
       for (const name of ["classify", "docs"]) {
