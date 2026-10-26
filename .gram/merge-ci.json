@@ -4,9 +4,36 @@
     {
       "path": ".github/workflows/check.yml",
       "event": "pull_request",
-      "jobs": ["classify", "qualification", "check", "macos", "e2e 1/3", "e2e 2/3", "e2e 3/3"],
+      "jobs": [
+        "classify",
+        "qualification",
+        "check static",
+        "check tests 1/2",
+        "check tests 2/2",
+        "macos tests 1/3",
+        "macos tests 2/3",
+        "macos tests 3/3",
+        "macos package",
+        "e2e 1/8",
+        "e2e 2/8",
+        "e2e 3/8",
+        "e2e 4/8",
+        "e2e 5/8",
+        "e2e 6/8",
+        "e2e 7/8",
+        "e2e 8/8"
+      ],
       "docsJobs": ["classify", "qualification", "docs"],
-      "alwaysJobs": ["e2e 1/3", "e2e 2/3", "e2e 3/3"]
+      "alwaysJobs": [
+        "e2e 1/8",
+        "e2e 2/8",
+        "e2e 3/8",
+        "e2e 4/8",
+        "e2e 5/8",
+        "e2e 6/8",
+        "e2e 7/8",
+        "e2e 8/8"
+      ]
     },
     {
       "path": ".github/workflows/scaffold.yml",

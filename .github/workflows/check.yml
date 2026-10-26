@@ -74,12 +74,19 @@ jobs:
       - run: bun run check:docs
       - run: bun run fmt:check
 
+  # `bun run check:ci` split across runners: the static stages and bundle build in one job, and the
+  # Vitest suite in shards beside it, so together they run every stage once.
   check:
     needs: classify
+    name: check ${{ matrix.part }}
     timeout-minutes: 30
     # Only same-repository PRs run CI.
     if: needs.classify.outputs.kind == 'full' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [static, tests 1/2, tests 2/2]
     defaults:
       run:
         shell: bash
@@ -102,29 +109,38 @@ jobs:
           path: ~/.bun/install/cache
           key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
       - run: bun install --frozen-lockfile
-      # Check every project in the supported bounded compiler mode first. check:ci's normal
+      # Check every project in the supported bounded compiler mode first. The static stages'
       # incremental typecheck then reuses only this same fresh checkout's successful build cache.
       - name: Typecheck within a bounded memory budget
+        if: matrix.part == 'static'
         run: bun run typecheck --singleThreaded
         env:
           # Native TypeScript is Go: bound its heap so the typecheck stays predictable.
           GOMEMLIMIT: 2GiB
-      - run: bun run check:ci
+      - if: matrix.part == 'static'
+        run: node tools/check/run.mjs --only static
+      - if: matrix.part == 'static'
+        run: bun run build:bundles
+      - if: startsWith(matrix.part, 'tests ')
+        run: node tools/check/run.mjs --only tests --shard "${PART#tests }"
+        env:
+          PART: ${{ matrix.part }}
 
   # The whole mock-API Playwright suite, in shards that run beside `check`. It includes the
-  # subscription/onboarding smoke set, which no longer needs a job of its own.
+  # subscription/onboarding smoke set, which no longer needs a job of its own. Each shard spends
+  # about a minute and a half on setup and its preview build, so more shards cost little.
   e2e:
     needs: classify
-    name: e2e ${{ matrix.shard }}/3
+    name: e2e ${{ matrix.shard }}/8
     # Only same-repository PRs run CI.
     if: needs.classify.outputs.kind == 'full' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 45
+    timeout-minutes: 30
     strategy:
       # Every shard reports, so one red shard doesn't hide another's failures.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     defaults:
       run:
         shell: bash
@@ -154,7 +170,7 @@ jobs:
       # --with-deps installs Chromium's system libraries even when the browser came from cache.
       - run: bun run playwright install --with-deps chromium
         working-directory: apps/web
-      - run: bun run --filter @gram/web e2e --shard=${{ matrix.shard }}/3 --workers=1
+      - run: bun run --filter @gram/web e2e --shard=${{ matrix.shard }}/8 --workers=1
         env:
           GRAM_E2E_SERVER: preview
       - name: Upload the Playwright report and traces
@@ -176,15 +192,22 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-  # The suite and an unsigned package on the platform Gram ships for. Packaging never signs (see
-  # apps/desktop/electron-builder.yml), so no signing or notarization secret reaches CI. The e2e
-  # shards stay on Linux: in series on this 3-core runner they would take over an hour.
+  # The Vitest suite and an unsigned package on the platform Gram ships for, in parallel jobs: the
+  # suite in three shards (in one job on this 3-core runner it took 14 minutes) and the package
+  # beside them. Static stages are platform-independent and stay in `check static`. Packaging never
+  # signs (see apps/desktop/electron-builder.yml), so no signing or notarization secret reaches CI.
+  # The e2e shards stay on Linux: in series on this 3-core runner they would take over an hour.
   macos:
     needs: classify
+    name: macos ${{ matrix.part }}
     # Only same-repository PRs run CI.
     if: needs.classify.outputs.kind == 'full' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [tests 1/3, tests 2/3, tests 3/3, package]
     defaults:
       run:
         shell: bash
@@ -204,12 +227,18 @@ jobs:
           path: ~/.bun/install/cache
           key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
       - run: bun install --frozen-lockfile
-      # check:ci builds the web and desktop bundles the package below is made from.
-      - run: bun run check:ci
+      - if: startsWith(matrix.part, 'tests ')
+        run: node tools/check/run.mjs --only tests --shard "${PART#tests }"
+        env:
+          PART: ${{ matrix.part }}
+      - if: matrix.part == 'package'
+        run: bun run build:bundles
       - name: Package the unsigned app
+        if: matrix.part == 'package'
         run: bun run electron-builder --dir --publish never
         working-directory: apps/desktop
-      - run: bun run verify:package
+      - if: matrix.part == 'package'
+        run: bun run verify:package
         working-directory: apps/desktop
 
   qualification:

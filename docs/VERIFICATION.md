@@ -96,7 +96,7 @@ bun run e2e:real
 ```
 
 `e2e:smoke` is the configured four-spec subscription/onboarding set, one worker.
-CI runs the whole mock suite in three preview shards (`--shard=N/3`, one worker,
+CI runs the whole mock suite in eight preview shards (`--shard=N/8`, one worker,
 one retry); see [CI](#ci).
 Mock setup builds its own `VITE_API=mock` preview into `dist-e2e`, verifies a random
 run token, refuses a pinned occupied port and warms cold routes. It listens and is
@@ -247,10 +247,14 @@ signing/pin assertions meaningful. Never remove an assertion simply to obtain a 
 ### CI
 
 [check.yml](../.github/workflows/check.yml) classifies each change. Ordinary prose gets a docs
-job (frozen install, `bun run check:docs` and `bun run fmt:check`); everything else gets a
-bounded typecheck, `bun run check:ci` and the mock e2e suite in three shards, `e2e 1/3` to
-`e2e 3/3`. A `macos` job runs `bun run check:ci` on macOS and packages the unsigned app with
-`electron-builder --dir`, then checks it with `verify:package`; the e2e shards run on Linux only.
+job (frozen install, `bun run check:docs` and `bun run fmt:check`); everything else gets
+`bun run check:ci` split across parallel jobs. `check static` runs a bounded typecheck, the
+check's static stages (`node tools/check/run.mjs --only static`) and the bundle build;
+`check tests 1/2` and `2/2` run the Vitest suite in shards (`--only tests --shard N/2`); and the
+mock e2e suite runs in eight shards, `e2e 1/8` to `e2e 8/8`. On macOS, `macos tests 1/3` to
+`3/3` run the Vitest suite in shards, and `macos package` builds the bundles, packages the
+unsigned app with `electron-builder --dir` and checks it with `verify:package`; the e2e shards
+run on Linux only. Gram's local check still runs the whole `check:ci` in one place.
 A final `qualification` job passes only when the jobs the classification needs passed on that
 source. [scaffold.yml](../.github/workflows/scaffold.yml) runs the scaffold and dependency
 pin checks on every change. [.gram/merge-ci.json](../.gram/merge-ci.json) declares these jobs to
@@ -260,7 +264,7 @@ A newer push cancels a pull request's superseded runs, while every main run that
 finishes. [cancel-closed-pr.yml](../.github/workflows/cancel-closed-pr.yml) cancels a closed pull
 request's remaining runs.
 
-The `macos` job runs on GitHub-hosted `macos-15`; every other job runs on `ubuntu-24.04-arm`.
+The `macos` jobs run on GitHub-hosted `macos-15`; every other job runs on `ubuntu-24.04-arm`.
 No signing or notarization secret reaches CI: releases are signed on the publisher's Mac. Workflows keep same-repository
 guards, read-only token permissions, SHA-pinned actions, download-only caches and pinned frozen
 installs. They use synthetic agents; CI does not qualify x64 Linux, signed or notarized Mac
