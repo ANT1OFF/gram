@@ -12,20 +12,21 @@ const pr: WorkerPr = {
 };
 
 describe("CI fix ownership", () => {
-  it("requires a live owner with an active follow-up", () => {
+  it("is the worker's while it runs or can be woken, monitored or not", () => {
+    const bare: WorkerPr = { repo: pr.repo, number: pr.number, state: "open", checks: "failing" };
     expect(workerOwnsCiFix(undefined, pr)).toBe(false);
-    expect(workerOwnsCiFix(worker, { repo: pr.repo, number: pr.number })).toBe(false);
     expect(workerOwnsCiFix(worker, pr)).toBe(true);
-    expect(workerOwnsCiFix(worker, { ...pr, mergeWhenReady: {} })).toBe(true);
-    expect(
-      workerOwnsCiFix({ ...worker, status: "running" }, { repo: pr.repo, number: pr.number }),
-    ).toBe(true);
-    expect(
-      workerOwnsCiFix(
-        { ...worker, wakes: [{ id: "wake", at: 1, note: "Fix CI" }] },
-        { repo: pr.repo, number: pr.number },
-      ),
-    ).toBe(true);
+    expect(workerOwnsCiFix(worker, bare)).toBe(true);
+    expect(workerOwnsCiFix({ ...worker, status: "cold" }, bare)).toBe(true);
+    expect(workerOwnsCiFix({ ...worker, status: "running" }, bare)).toBe(true);
+    expect(workerOwnsCiFix(worker, { ...bare, mergeWhenReady: {} })).toBe(true);
+    // A turn that ended without a report is its orchestrator's to follow up, not the user's.
+    expect(workerOwnsCiFix({ ...worker, quiet: { kind: "turnEnded", at: 1 } }, bare)).toBe(true);
+  });
+
+  it("is nobody's once the PR is merged or closed", () => {
+    expect(workerOwnsCiFix(worker, { ...pr, state: "merged" })).toBe(false);
+    expect(workerOwnsCiFix(worker, { ...pr, state: "closed" })).toBe(false);
   });
 
   it.each([
@@ -40,16 +41,12 @@ describe("CI fix ownership", () => {
     { status: "needsApproval" },
     { status: "needsInput" },
     { pendingRequests: [{ kind: "approval", ageMin: 0 }] },
-    { quiet: { kind: "turnEnded", at: 1 } },
     { quiet: { kind: "toolStalled", at: 1 } },
   ] satisfies Partial<CiFixWorker>[])("escalates a failed follow-up: %j", (over) => {
     expect(workerOwnsCiFix({ ...worker, ...over }, pr)).toBe(false);
   });
 
-  it("clears a previous unreported stop when another turn starts, but keeps stalled tools actionable", () => {
-    expect(
-      workerOwnsCiFix({ ...worker, status: "running", quiet: { kind: "turnEnded", at: 1 } }, pr),
-    ).toBe(true);
+  it("keeps a stalled tool the user's, running or not", () => {
     expect(
       workerOwnsCiFix({ ...worker, status: "running", quiet: { kind: "toolStalled", at: 1 } }, pr),
     ).toBe(false);
