@@ -73,7 +73,7 @@ describe("versions", () => {
 });
 
 describe("stable versions", () => {
-  const fields = { manifest: "1.0.0", root: "1.0.0", desktop: "1.0.0", lock: "1.0.0" };
+  const fields = { manifest: "1.0.0", root: "1.0.0", desktop: "1.0.0" };
   const tags = ["v0.3.1", "v0.4.0-rc.2"];
 
   it("accepts a newer stable version that every version field carries", () => {
@@ -89,23 +89,21 @@ describe("stable versions", () => {
       /not newer/,
     );
     expect(() =>
-      validateStableTarget({ version: "1.0.0", tags, fields: { ...fields, lock: "0.3.1" } }),
-    ).toThrow(/merge the release PR first.*lock is 0\.3\.1/);
+      validateStableTarget({ version: "1.0.0", tags, fields: { ...fields, desktop: "0.3.1" } }),
+    ).toThrow(/merge the release PR first.*desktop is 0\.3\.1/);
     expect(() =>
-      validateStableTarget({ version: "1.0.0", tags, fields: { ...fields, lock: undefined } }),
-    ).toThrow(/lock is missing/);
+      validateStableTarget({ version: "1.0.0", tags, fields: { ...fields, desktop: undefined } }),
+    ).toThrow(/desktop is missing/);
   });
 
-  it("reads the four version fields, the lock's by its desktop entry", () => {
-    const lock = `{\n  "workspaces": {\n    "apps/desktop": {\n      "name": "@gram/desktop",\n      "version": "1.0.0",\n    },\n  },\n}`;
+  it("reads the three version fields", () => {
     expect(
       versionFields({
         manifest: '{ ".": "1.0.0" }',
         rootPackage: '{ "version": "1.0.0" }',
         desktopPackage: '{ "version": "0.9.0" }',
-        lock,
       }),
-    ).toEqual({ manifest: "1.0.0", root: "1.0.0", desktop: "0.9.0", lock: "1.0.0" });
+    ).toEqual({ manifest: "1.0.0", root: "1.0.0", desktop: "0.9.0" });
   });
 
   it("takes the stable path's first phase: signed, a draft at most", () => {

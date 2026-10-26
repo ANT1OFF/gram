@@ -23,7 +23,6 @@ export function validateReleaseMetadata(read) {
   assert.equal(options["include-v-in-tag"], true);
   assert.deepEqual(options["extra-files"], [
     { type: "json", path: "apps/desktop/package.json", jsonpath: "$.version" },
-    { type: "generic", path: "bun.lock" },
   ]);
   assert(!options["release-as"], "Do not leave a forced version in subsequent cycles");
   // The repository starts at one commit, and the v1.0.0 release on it is the baseline.
@@ -38,14 +37,8 @@ export function validateReleaseMetadata(read) {
   assert.match(pkg.version, /^\d+\.\d+\.\d+(?:-rc\.\d+)?$/, "Stable or explicit RC only");
   assert.equal(desktop.version, pkg.version, "Root and desktop versions must agree");
   assert.equal(manifest["."], pkg.version, "Manifest baseline must match metadata");
-  const lock = read("bun.lock");
-  assert.equal((lock.match(/x-release-please/g) ?? []).length, 1, "Exactly one lock annotation");
-  // Bun's JSONC cannot use GenericJson. Fail closed if the one annotated field moves.
-  const field = lock.match(
-    /^    "apps\/desktop": \{\n      "name": "@gram\/desktop",\n      "version": "([^"]+)", \/\/ x-release-please-version$/m,
-  );
-  assert(field, "Annotate only the desktop workspace version");
-  assert.equal(field[1], pkg.version, "Lock workspace version must match metadata");
+  // Dependabot parses bun.lock as YAML, which has no comments, and Bun drops them on every write.
+  assert.doesNotMatch(read("bun.lock"), /x-release-please/, "bun.lock carries no annotation");
   return pkg.version;
 }
 

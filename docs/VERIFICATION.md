@@ -270,5 +270,7 @@ guards, read-only token permissions, SHA-pinned actions, download-only caches an
 installs. They use synthetic agents; CI does not qualify x64 Linux, signed or notarized Mac
 builds, Windows behaviour or paid providers. [Dependabot](../.github/dependabot.yml) proposes weekly
 updates no younger than 7 days and leaves Electron and its packaging, the Effect family,
-sherpa-onnx and Node type majors to deliberate bumps. CodeQL default setup scans
+sherpa-onnx and Node type majors to deliberate bumps. Its security updates arrive through
+`npm_and_yarn` with only `package.json` changed, because GitHub has no Bun security updates;
+update the matching `bun.lock` entry before the local check can pass. CodeQL default setup scans
 JavaScript/TypeScript and Actions.
