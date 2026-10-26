@@ -97,11 +97,21 @@ const waitStatus = (threadId: ThreadId, status: string) =>
     );
   });
 
+let threadCount = 0;
+/**
+ * A fixed id for each thread the file creates. A thread's resume jitter comes from its id, from 0
+ * to `LIMIT_RESUME_JITTER_MS`, and at 0 an early release resumes it at once: random ids made about
+ * one run in 10,000 fail where a test reads the wait between that release and its resume.
+ */
+const nextThreadId = () =>
+  `00000000-0000-4000-8000-${(++threadCount).toString(16).padStart(12, "0")}` as ThreadId;
+
 /** A thread mid-way through the user's first turn, "one". */
 const running = (role?: "orchestrator") =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
     const thread = yield* runtimes.create({
+      id: nextThreadId(),
       projectRoot: "/work/repo",
       checkout: { kind: "main", path: "/work/repo" },
       input: { text: "one" },
@@ -476,6 +486,7 @@ describe("limit wait", () => {
       yield* fail(first, CLAUDE_LIMIT);
       const origin = { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 };
       const spawned = yield* runtimes.create({
+        id: nextThreadId(),
         projectRoot: "/work/repo",
         checkout: { kind: "main", path: "/work/repo" },
         input: { text: "brief", origin },
@@ -779,6 +790,7 @@ describe("a limit that no longer applies", () => {
       expect(yield* waitOf(held)).toBeDefined();
       const origin = { threadId: "orch" as ThreadId, title: "Orchestrator", depth: 1 };
       const spawned = yield* runtimes.create({
+        id: nextThreadId(),
         projectRoot: "/work/repo",
         checkout: { kind: "main", path: "/work/repo" },
         input: { text: "brief", origin },
@@ -829,6 +841,7 @@ describe("a limit that no longer applies", () => {
         // While that turn runs, a new worker is held back with the account: it met no limit.
         yield* TestClock.adjust("1 minute");
         const spawned = yield* runtimes.create({
+          id: nextThreadId(),
           projectRoot: "/work/repo",
           checkout: { kind: "main", path: "/work/repo" },
           input: {
@@ -856,6 +869,7 @@ describe("a limit that no longer applies", () => {
       yield* fail(opus, CLAUDE_LIMIT);
       yield* TestClock.adjust("1 minute");
       const haiku = yield* runtimes.create({
+        id: nextThreadId(),
         projectRoot: "/work/repo",
         checkout: { kind: "main", path: "/work/repo" },
         model: { agent: "claude", model: "fake-haiku" },
@@ -891,6 +905,7 @@ describe("a limit that no longer applies", () => {
       for (const id of ids) resumeAts.set(id, (yield* waitOf(id))!.resumeAt);
       // No reading came: the turn alone said the account takes turns.
       const spawned = yield* runtimes.create({
+        id: nextThreadId(),
         projectRoot: "/work/repo",
         checkout: { kind: "main", path: "/work/repo" },
         input: {
@@ -925,6 +940,7 @@ describe("a limit that no longer applies", () => {
       });
       yield* settle;
       const spawned = yield* runtimes.create({
+        id: nextThreadId(),
         projectRoot: "/work/repo",
         checkout: { kind: "main", path: "/work/repo" },
         input: {
