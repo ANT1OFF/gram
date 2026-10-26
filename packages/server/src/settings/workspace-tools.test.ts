@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   AppToolError,
+  DEFAULT_CHARTER,
   type ApprovalRequest,
+  type ProjectId,
   type ThreadId,
   type WorkspaceId,
   type WorkspaceProposalCard,
@@ -404,9 +406,9 @@ describe("workspace_update", () => {
         expect(after.charter.autonomy).toBe("publish");
         expect(after.charter).not.toHaveProperty("workerMode");
         expect(after.charter.maxConcurrentWorkers).toBe(4);
-        // The charter and the membership each have their audit, both from this card.
+        // One change, one transaction, one audit row from this card.
         const audits = yield* store.listSettingsAudit(5);
-        expect(audits.map((audit) => audit.requestId)).toEqual([card.id, card.id]);
+        expect(audits.map((audit) => audit.requestId)).toEqual([card.id]);
         expect(
           audits.flatMap((audit) => audit.changes.map((change) => change.key)).toSorted(),
         ).toEqual([
@@ -447,7 +449,9 @@ describe("workspace_update", () => {
           homeProjectId: shop.id,
         });
         yield* answer(plain.id, card, "allow");
-        expect((yield* Fiber.join(asked)).message).toContain("changed while the card waited");
+        expect((yield* Fiber.join(asked)).message).toContain(
+          "The workspace changed since this card was shown, so nothing changed.",
+        );
         const after = yield* store.getWorkspace(saved.workspace.id);
         expect(after.workspace).toMatchObject({ name: "Storefront", projectIds: [shop.id] });
         expect(yield* store.listSettingsAudit(5)).toEqual([]);
@@ -542,6 +546,172 @@ describe("workspace_update", () => {
         }
         yield* noCard(worker.id);
         expect(yield* store.getWorkspace(workspaceId)).toEqual(before);
+      }),
+    ),
+  );
+});
+
+/** A workspace without an orchestrator, at `supervised`, over `projects`; home the first. */
+const supervisedOver = (name: string, projects: ReadonlyArray<{ readonly id: ProjectId }>) =>
+  Effect.gen(function* () {
+    const orchestration = yield* Orchestration;
+    return yield* orchestration.saveWorkspace({
+      name,
+      projectIds: projects.map((project) => project.id) as never,
+      homeProjectId: projects[0]!.id,
+      charter: { ...DEFAULT_CHARTER, autonomy: "supervised", workerMode: "default" },
+    });
+  });
+
+describe("workspace changes by chat: what the review found", () => {
+  it.effect(
+    "applies nothing when the user swapped the workspace's repos while the card waited",
+    () =>
+      inWorkspaces((world) =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const orchestration = yield* Orchestration;
+          const a = yield* store.ensureProject({ root: world.repo, name: "a" });
+          const b = yield* store.ensureProject({ root: newRepo(world, "b"), name: "b" });
+          const saved = yield* supervisedOver("W", [a]);
+          const plain = yield* plainThread(world);
+          const asked = yield* call(plain.id, "plain", "workspace_update", {
+            workspaceId: "W",
+            autonomy: "full",
+          }).pipe(Effect.flip, Effect.forkScoped);
+          const card = yield* cardIn(plain.id);
+          // The card was drawn over repo A; in Settings the user swaps it for B, home and all.
+          yield* orchestration.saveWorkspace({
+            id: saved.workspace.id,
+            name: "W",
+            projectIds: [b.id],
+            homeProjectId: b.id,
+          });
+          yield* answer(plain.id, card, "allow");
+          expect((yield* Fiber.join(asked)).message).toContain(
+            "The workspace changed since this card was shown, so nothing changed.",
+          );
+          const after = yield* store.getWorkspace(saved.workspace.id);
+          expect(after.workspace.projectIds).toEqual([b.id]);
+          // B never gets the Full autonomy the card offered over A.
+          expect(after.charter.autonomy).toBe("supervised");
+          expect(yield* store.listSettingsAudit(5)).toEqual([]);
+        }),
+      ),
+  );
+
+  it.effect(
+    "applies all of a change or none of it: a vanished repo leaves autonomy as it was",
+    () =>
+      inWorkspaces((world) =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const a = yield* store.ensureProject({ root: world.repo, name: "a" });
+          const b = yield* store.ensureProject({ root: newRepo(world, "b"), name: "b" });
+          const cParent = nodePath.join(world.dir, "c");
+          const c = newRepo(world, "c");
+          const saved = yield* supervisedOver("W", [a, b]);
+          const plain = yield* plainThread(world);
+          const asked = yield* call(plain.id, "plain", "workspace_update", {
+            workspaceId: "W",
+            removeProjects: [b.root],
+            addProjects: [c],
+            autonomy: "full",
+          }).pipe(Effect.flip, Effect.forkScoped);
+          const card = yield* cardIn(plain.id);
+          fs.rmSync(cParent, { recursive: true, force: true });
+          yield* answer(plain.id, card, "allow");
+          expect((yield* Fiber.join(asked)).message).toContain("nothing changed");
+          const after = yield* store.getWorkspace(saved.workspace.id);
+          expect(after).toEqual(saved);
+          expect(yield* projectAt(c)).toBeUndefined();
+          expect(yield* store.listSettingsAudit(5)).toEqual([]);
+
+          // And the store's own transaction: a workspace that moved rolls back the projects it
+          // registered with it.
+          const d = newRepo(world, "d");
+          const done = yield* store.commitWorkspaceAudited({
+            id: saved.workspace.id,
+            unchanged: () => false,
+            register: [{ root: d, name: "d" }],
+            next: (current) => current!,
+            audit: () => {
+              throw new Error("no audit for a change that moved");
+            },
+          });
+          expect(done).toBeUndefined();
+          expect(yield* projectAt(d)).toBeUndefined();
+        }),
+      ),
+  );
+
+  it.effect("shows and registers a linked path at its real root, and refuses a swapped repo", () =>
+    inWorkspaces((world) =>
+      Effect.gen(function* () {
+        const a = newRepo(world, "a");
+        const b = newRepo(world, "b");
+        const link = nodePath.join(world.dir, "link");
+        fs.symlinkSync(a, link);
+        const plain = yield* plainThread(world);
+        const asked = yield* call(plain.id, "plain", "workspace_create", {
+          name: "Linked",
+          projects: [link],
+        }).pipe(Effect.forkScoped);
+        const card = yield* cardIn(plain.id);
+        // The card names where the repository is, never the link.
+        expect((card.input as unknown as WorkspaceProposalCard).projects).toEqual([
+          expect.objectContaining({ root: a, unregistered: true, home: true }),
+        ]);
+        // The link is pointed at B while the card waits.
+        fs.unlinkSync(link);
+        fs.symlinkSync(b, link);
+        yield* answer(plain.id, card, "allow");
+        yield* Fiber.join(asked);
+        const made = (yield* workspaceNamed("Linked"))!;
+        const registered = (yield* projectAt(a))!;
+        expect(made.workspace.projectIds).toEqual([registered.id]);
+        expect(yield* projectAt(b)).toBeUndefined();
+        expect(yield* projectAt(link)).toBeUndefined();
+
+        // A repository swapped for another at the card's own path is refused.
+        const cParent = nodePath.join(world.dir, "c");
+        const c = newRepo(world, "c");
+        const swapped = yield* call(plain.id, "plain", "workspace_create", {
+          name: "Swapped",
+          projects: [c],
+        }).pipe(Effect.flip, Effect.forkScoped);
+        const second = yield* cardIn(plain.id);
+        fs.rmSync(cParent, { recursive: true, force: true });
+        expect(newRepo(world, "c")).toBe(c);
+        yield* answer(plain.id, second, "allow");
+        expect((yield* Fiber.join(swapped)).message).toContain(
+          "is no longer the repository the card showed; nothing changed",
+        );
+        expect(yield* workspaceNamed("Swapped")).toBeUndefined();
+        expect(yield* projectAt(c)).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("refuses a folder with an empty .git, alone or inside another repository", () =>
+    inWorkspaces((world) =>
+      Effect.gen(function* () {
+        const plain = yield* plainThread(world);
+        const alone = nodePath.join(world.dir, "hollow");
+        fs.mkdirSync(nodePath.join(alone, ".git"), { recursive: true });
+        const inside = nodePath.join(world.repo, "nested");
+        fs.mkdirSync(nodePath.join(inside, ".git"), { recursive: true });
+        for (const [path, says] of [
+          [alone, "git reads no repository there"],
+          [inside, `git reads it as part of ${world.repo}`],
+        ] as const) {
+          const error = yield* call(plain.id, "plain", "workspace_create", {
+            name: "Hollow",
+            projects: [path],
+          }).pipe(Effect.flip);
+          expect(error.message, path).toContain(says);
+        }
+        yield* noCard(plain.id);
       }),
     ),
   );

@@ -15,6 +15,7 @@ import {
   type OrchestratorCharter,
   type OrchestratorLedger,
   type JoinTarget,
+  type Project,
   type ProjectId,
   type ReasoningVariant,
   type Thread,
@@ -243,16 +244,33 @@ export interface OrchestrationShape {
     readonly charter?: OrchestratorCharter | undefined;
   }): Effect.Effect<WorkspaceState, NotFound | InvalidState>;
   /**
-   * `saveWorkspace` for a change by chat the user approved, its audit row written in the same
-   * transaction: a new workspace, or with `id` one whose name, projects and home still hold
-   * `before`. `undefined` when they have moved: nothing was written.
+   * A workspace made or changed by chat that the user approved, all of it or nothing. With
+   * `expected` it is applied only while the stored workspace still equals it in name, projects,
+   * home and charter; without, a new workspace is made. The repositories in `register` become
+   * projects in the same transaction as the workspace and its audit. The checks are
+   * `saveWorkspace`'s and `setCharter`'s, and what each sets off follows the write. `undefined`
+   * when the workspace moved: nothing was written.
    */
-  saveWorkspaceApproved(
-    input: Parameters<OrchestrationShape["saveWorkspace"]>[0],
-    audit: SettingsAuditEntry,
-    before?: Pick<WorkspaceState["workspace"], "name" | "projectIds" | "homeProjectId">,
-  ): Effect.Effect<
-    { readonly state: WorkspaceState; readonly auditSeq: number } | undefined,
+  commitWorkspace(change: {
+    readonly expected?: WorkspaceState | undefined;
+    readonly name: string;
+    /** In order: a project Gram knows, or a repository to register at its canonical root. */
+    readonly projects: ReadonlyArray<
+      { readonly projectId: ProjectId } | { readonly root: string; readonly name: string }
+    >;
+    /** One of `projects`, by the same id or root. */
+    readonly home: { readonly projectId: ProjectId } | { readonly root: string };
+    readonly charter: OrchestratorCharter;
+    readonly audit: (state: WorkspaceState) => SettingsAuditEntry;
+    /** App settings the card was drawn from; checked in the same transaction. */
+    readonly requires?: ReadonlyArray<SettingsRequirement> | undefined;
+  }): Effect.Effect<
+    | {
+        readonly state: WorkspaceState;
+        readonly auditSeq: number;
+        readonly projects: ReadonlyArray<Project>;
+      }
+    | undefined,
     NotFound | InvalidState
   >;
   /**

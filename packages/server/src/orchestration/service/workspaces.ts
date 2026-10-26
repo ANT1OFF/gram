@@ -6,6 +6,7 @@ import {
   InvalidState,
   NotFound,
   sameValue,
+  settingsHold,
   WorkspaceId,
   type Autonomy,
   type ModelRef,
@@ -22,14 +23,15 @@ import { randomUUID } from "node:crypto";
 import { subscriptionTaskCharter } from "../task-models.ts";
 import { sameTaskModel } from "../task-selection.ts";
 import { outboxForNewOrchestrator } from "../outbox.ts";
-import type { SettingsAuditEntry } from "../../persistence/thread-store.ts";
 import { admittedForRole, kindName } from "../rules.ts";
 import {
   OUTBOX_UNREADABLE_DETAIL,
   DIGEST_KEY,
   refuseConnectorEntries,
+  underKeysOf,
   type OrchestrationKit,
 } from "./kit.ts";
+import type { Charter } from "./charter.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 import type { Pauses } from "./pauses.ts";
@@ -41,7 +43,16 @@ export interface WorkspacesDeps {
   readonly openModel: TaskStartup["openModel"];
   readonly endRecovery: Pauses["endRecovery"];
   readonly deliveryFor: Digests["deliveryFor"];
+  readonly checkCharter: Charter["checkCharter"];
+  readonly afterCharter: Charter["afterCharter"];
 }
+
+/** Whether two reads of a workspace agree in all an approval was given against. */
+const sameWorkspace = (a: WorkspaceState, b: WorkspaceState) =>
+  a.workspace.name === b.workspace.name &&
+  a.workspace.homeProjectId === b.workspace.homeProjectId &&
+  sameValue(a.workspace.projectIds, b.workspace.projectIds) &&
+  sameValue(a.charter, b.charter);
 
 /** Saving, removing and opening workspaces. */
 export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
@@ -66,8 +77,44 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
     memory,
     orchestrationChanged,
     reasons,
+    taskStartupLock,
+    workspaceStartupKeys,
   } = kit;
-  const { forgetReasons, openModel, endRecovery, deliveryFor } = deps;
+  const { forgetReasons, openModel, endRecovery, deliveryFor, checkCharter, afterCharter } = deps;
+
+  /**
+   * The orchestrator's folders after its workspace's projects changed from `before`: a repo that
+   * left takes its folder with it, the others are granted, and the session reloads to read them.
+   */
+  const followMembership = (
+    holder: ThreadId,
+    before: ReadonlyArray<ProjectId>,
+    state: WorkspaceState,
+  ) =>
+    Effect.gen(function* () {
+      const { projectIds, homeProjectId } = state.workspace;
+      const all = yield* store.listProjects;
+      // A repo that left takes its folder with it: the grant outlives the session otherwise.
+      const left = all
+        .filter((project) => before.includes(project.id) && !projectIds.includes(project.id))
+        .map((project) => project.root);
+      if (left.length > 0) {
+        yield* runtimes
+          .updateThread(holder, (thread) => ({
+            ...thread,
+            additionalDirectories: (thread.additionalDirectories ?? []).filter(
+              (folder) => !left.some((root) => samePath(root, folder)),
+            ),
+          }))
+          .pipe(Effect.ignore);
+      }
+      // The orchestrator reads the other repos as extra folders, and its prompt names them.
+      const roots = all
+        .filter((project) => projectIds.includes(project.id) && project.id !== homeProjectId)
+        .map((project) => project.root);
+      yield* runtimes.addDirectories(holder, roots).pipe(Effect.ignore);
+      yield* reload(holder);
+    });
 
   // Under the workspace's spawn lock: a spawn joining a repo to the workspace, and an edit taking
   // one out, each leave the workspace and the orchestrator's folders agreeing only when neither
@@ -77,15 +124,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
   const saveWorkspaceWithName = (
     input: Parameters<OrchestrationShape["saveWorkspace"]>[0],
     namePolicy: "exact" | "available",
-    /** A change by chat: its audit, and for an edit the membership the card was drawn from. */
-    approved?: {
-      readonly audit: SettingsAuditEntry;
-      readonly before?: Parameters<OrchestrationShape["saveWorkspaceApproved"]>[2];
-    },
-  ): Effect.Effect<
-    { readonly state: WorkspaceState; readonly auditSeq: number | undefined } | undefined,
-    NotFound | InvalidState
-  > =>
+  ): ReturnType<OrchestrationShape["saveWorkspace"]> =>
     spawnLock.withLocks(
       input.id === undefined ? [] : [input.id],
       registryLock.withPermits(1)(
@@ -116,7 +155,8 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               message: "The home project has to be one of the workspace's projects.",
             });
           }
-          const projects = yield* projectsOf(projectIds);
+          // Every one of them a project Gram knows.
+          yield* projectsOf(projectIds);
           const given = input.charter;
           if (given !== undefined) {
             if (input.id !== undefined) {
@@ -144,11 +184,9 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               },
               charter,
             };
-            let auditSeq: number | undefined;
-            if (approved === undefined) yield* store.putWorkspace(state);
-            else auditSeq = (yield* store.putWorkspaceAudited(state, approved.audit)).auditSeq;
+            yield* store.putWorkspace(state);
             yield* workspacesChanged;
-            return { state, auditSeq };
+            return state;
           }
           const before = yield* store.getWorkspace(input.id);
           const holder = before.workspace.orchestratorThreadId;
@@ -160,7 +198,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               threadId: holder,
             });
           }
-          const edit = (current: WorkspaceState): WorkspaceState => ({
+          const state = yield* store.updateWorkspace(input.id, (current) => ({
             ...current,
             workspace: {
               ...current.workspace,
@@ -168,79 +206,122 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               projectIds,
               homeProjectId: input.homeProjectId,
             },
-          });
-          let state: WorkspaceState;
-          let auditSeq: number | undefined;
-          if (approved === undefined) {
-            state = yield* store.updateWorkspace(input.id, edit);
-          } else {
-            // Only over the membership the card showed: an edit made meanwhile is never undone.
-            const was = approved.before;
-            const done = yield* store.updateWorkspaceAudited(
-              input.id,
-              (current) =>
-                was === undefined ||
-                (current.workspace.name === was.name &&
-                  current.workspace.homeProjectId === was.homeProjectId &&
-                  sameValue(current.workspace.projectIds.toSorted(), was.projectIds.toSorted()))
-                  ? edit(current)
-                  : undefined,
-              approved.audit,
-            );
-            if (done === undefined) return undefined;
-            state = done.state;
-            auditSeq = done.auditSeq;
-          }
+          }));
           yield* workspacesChanged;
           if (holder !== undefined) {
-            // A repo that left takes its folder with it: the grant outlives the session otherwise.
-            const left = (yield* store.listProjects)
-              .filter(
-                (project) =>
-                  before.workspace.projectIds.includes(project.id) &&
-                  !projectIds.includes(project.id),
-              )
-              .map((project) => project.root);
-            if (left.length > 0) {
-              yield* runtimes
-                .updateThread(holder, (thread) => ({
-                  ...thread,
-                  additionalDirectories: (thread.additionalDirectories ?? []).filter(
-                    (folder) => !left.some((root) => samePath(root, folder)),
-                  ),
-                }))
-                .pipe(Effect.ignore);
-            }
-            // The orchestrator reads the other repos as extra folders, and its prompt names them.
-            const roots = projects
-              .filter((project) => project.id !== input.homeProjectId)
-              .map((project) => project.root);
-            yield* runtimes.addDirectories(holder, roots).pipe(Effect.ignore);
-            yield* reload(holder);
+            yield* followMembership(holder, before.workspace.projectIds, state);
           }
-          return { state, auditSeq };
+          return state;
         }),
       ),
     );
 
   const saveWorkspace: OrchestrationShape["saveWorkspace"] = (input) =>
-    saveWorkspaceWithName(input, "exact").pipe(Effect.map((saved) => saved!.state));
+    saveWorkspaceWithName(input, "exact");
 
-  const saveWorkspaceApproved: OrchestrationShape["saveWorkspaceApproved"] = (
-    input,
-    audit,
-    before,
-  ) =>
-    Effect.uninterruptible(
-      saveWorkspaceWithName(input, "exact", {
-        audit,
-        ...(before === undefined ? {} : { before }),
-      }),
-    ).pipe(
-      Effect.map((saved) =>
-        saved === undefined ? undefined : { state: saved.state, auditSeq: saved.auditSeq! },
-      ),
-    );
+  const commitWorkspace: OrchestrationShape["commitWorkspace"] = (change) =>
+    Effect.gen(function* () {
+      const expected = change.expected;
+      const id = expected?.workspace.id ?? Schema.decodeSync(WorkspaceId)(randomUUID());
+      const write = Effect.gen(function* () {
+        const name = change.name.trim();
+        if (name === "") return yield* new InvalidState({ message: "A workspace needs a name." });
+        const others = (yield* store.listWorkspaces).filter(({ workspace }) => workspace.id !== id);
+        if (
+          others.some(({ workspace }) => workspace.name.trim().toLowerCase() === name.toLowerCase())
+        ) {
+          return yield* new InvalidState({ message: "A workspace with that name already exists." });
+        }
+        if (change.projects.length === 0) {
+          return yield* new InvalidState({ message: "A workspace keeps at least one project." });
+        }
+        const register = change.projects.flatMap((each) => ("root" in each ? [each] : []));
+        const home = change.home;
+        const homeAt = change.projects.findIndex((each) =>
+          "projectId" in home
+            ? "projectId" in each && each.projectId === home.projectId
+            : "root" in each && each.root === home.root,
+        );
+        if (homeAt < 0) {
+          return yield* new InvalidState({
+            message: "The home project has to be one of the workspace's projects.",
+          });
+        }
+        // Read before anything is checked, and compared again inside the write's transaction.
+        const standing = expected === undefined ? undefined : yield* store.getWorkspace(id);
+        if (expected !== undefined && !sameWorkspace(standing!, expected)) return undefined;
+        const holder = standing?.workspace.orchestratorThreadId;
+        const homeMoves =
+          expected !== undefined &&
+          !(
+            "projectId" in change.home && change.home.projectId === expected.workspace.homeProjectId
+          );
+        if (homeMoves && holder !== undefined && (yield* findThread(holder)) !== undefined) {
+          return yield* new InvalidState({
+            message:
+              "The orchestrator works in the home project. Close it before choosing another home.",
+            threadId: holder,
+          });
+        }
+        yield* checkCharter(standing, change.charter);
+        const createdAt = yield* Clock.currentTimeMillis;
+        return yield* store.commitWorkspaceAudited({
+          id,
+          unchanged: (current) =>
+            expected === undefined
+              ? current === undefined
+              : current !== undefined && sameWorkspace(current, expected),
+          register,
+          next: (current, registered) => {
+            const ids = change.projects.map((each) =>
+              "projectId" in each ? each.projectId : registered[register.indexOf(each)]!.id,
+            );
+            const projectIds = [
+              ...new Set(ids),
+            ] as unknown as WorkspaceState["workspace"]["projectIds"];
+            const homeProjectId = ids[homeAt]!;
+            return current === undefined
+              ? {
+                  workspace: { id, name, projectIds, homeProjectId, createdAt },
+                  charter: change.charter,
+                }
+              : {
+                  ...current,
+                  workspace: { ...current.workspace, name, projectIds, homeProjectId },
+                  charter: change.charter,
+                };
+          },
+          audit: change.audit,
+          holds: (settings) => settingsHold(settings, change.requires ?? []),
+        });
+      });
+      // Task startups, spawns and saves of this workspace, then names across workspaces: the
+      // order every other path takes them in.
+      const done = yield* Effect.uninterruptible(
+        expected === undefined
+          ? registryLock.withPermits(1)(write)
+          : underKeysOf(
+              taskStartupLock,
+              workspaceStartupKeys(id),
+              spawnLock.withLocks([id], registryLock.withPermits(1)(write)),
+            ),
+      );
+      if (done === undefined) return undefined;
+      yield* workspacesChanged;
+      if (expected !== undefined) {
+        yield* orchestrationChanged(id);
+        yield* afterCharter(id, done.state, expected.charter);
+        const holder = done.state.workspace.orchestratorThreadId;
+        if (
+          holder !== undefined &&
+          (!sameValue(expected.workspace.projectIds, done.state.workspace.projectIds) ||
+            expected.workspace.homeProjectId !== done.state.workspace.homeProjectId)
+        ) {
+          yield* followMembership(holder, expected.workspace.projectIds, done.state);
+        }
+      }
+      return done;
+    });
 
   const whileWorkspaceStays: OrchestrationShape["whileWorkspaceStays"] = (workspaceId, effect) =>
     removalLock.withLock(workspaceId, store.getWorkspace(workspaceId).pipe(Effect.andThen(effect)));
@@ -312,7 +393,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           autonomy,
           selected,
         );
-        const saved = yield* saveWorkspaceWithName(
+        return yield* saveWorkspaceWithName(
           {
             name: project!.name,
             projectIds: [projectId],
@@ -321,7 +402,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           },
           "available",
         );
-        return saved!.state;
       }),
     );
 
@@ -426,5 +506,5 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       return thread;
     });
 
-  return { saveWorkspace, saveWorkspaceApproved, whileWorkspaceStays, removeWorkspace, open };
+  return { saveWorkspace, commitWorkspace, whileWorkspaceStays, removeWorkspace, open };
 };

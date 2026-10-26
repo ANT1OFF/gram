@@ -221,10 +221,15 @@ own.
 and any of `name`, `addProjects`, `removeProjects` (a path or a project id), `home` (a path or
 a project id), `autonomy`, `workerMode` (`null` follows the default again) and `settings`.
 
-- **Paths are checked before any card.** Each project path must be absolute, exist and be a
-  git repository's top folder, as `projects.add` checks it. A subfolder, a linked worktree, a
-  plain folder or a missing path is refused, with the reason. A repository Gram doesn't know
-  yet is marked on the card and registered as a project only once the user approves.
+- **Paths are checked before any card, at their real place.** Each project path must be
+  absolute and exist. It is resolved to its canonical path, every link in it resolved, and
+  that folder's own `.git` must be a folder, not a link or a linked worktree's or a
+  submodule's file. Git itself must name it as the repository's top folder: `git rev-parse
+  --show-toplevel` and `--absolute-git-dir` must give that path and its `.git`. A subfolder,
+  a linked worktree, a plain folder, a folder with an empty or broken `.git` and a missing
+  path are refused, with the reason. The card shows the canonical path, and that is the path
+  Gram registers, never the path as written. A repository Gram doesn't know yet is marked on
+  the card and registered as a project only once the user approves.
 - **The card shows the whole change.** A new workspace's card lists its name, each project path
   (the home and any new to Gram marked), autonomy, worker mode, every charter field the new
   workspace stores, and whether its orchestrator opens. An update's card lists each project as
@@ -241,13 +246,27 @@ a project id), `autonomy`, `workerMode` (`null` follows the default again) and `
   remember. It is `mustReadDetails`, so it is never folded into "Allow all", answered in place
   from the ask stack or answered from a notification. Its buttons are **Create workspace** or
   **Apply changes**, and **Deny**. Denied, expired or withdrawn, nothing changes.
-- **Applying.** The target workspace is pinned by id when the change is proposed. A new
-  workspace is written with its audit row in one transaction, through `saveWorkspace`'s own
-  checks. An update writes the charter (autonomy, worker mode and settings) through
-  `Orchestration.changeCharter`, then the name, projects and home through `saveWorkspace`, each
-  only while the fields it writes still hold what the card showed. A raised autonomy reloads
-  the orchestrator and its workers once idle, as in Settings; a lowered one can be refused
-  while a thread couldn't open under the new gate.
+- **Applying: all of it or nothing.** The handler keeps the workspace exactly as it read it
+  for the card: name, projects, home and the whole charter, autonomy and worker mode
+  included. After the user approves:
+  1. Every repository the card takes in is read again. It must still be at the canonical path
+     the card showed, and still be the same repository: its `.git` folder keeps the device and
+     inode it had. A link retargeted, a folder swapped for another repository or a folder gone
+     refuses the change.
+  2. `Orchestration.commitWorkspace` runs `saveWorkspace`'s and `setCharter`'s checks under
+     their locks: a unique name, a home among the projects, no home move while the orchestrator
+     is open, an orchestrator model that may orchestrate, no lower autonomy a held thread
+     couldn't open under.
+  3. One store transaction registers the new repositories as projects and reads the stored
+     workspace. It writes the new name, projects, home and charter and the audit row, but only
+     if the stored workspace still equals the card's snapshot in every one of those fields and
+     the app settings the card read still hold. Otherwise it rolls back, the projects included,
+     and the agent is told the workspace changed since the card was shown.
+
+  What a write sets off follows it, as in Settings. A raised autonomy reloads the orchestrator
+  and its workers once idle, and the orchestrator's folders follow its projects. The snapshot is
+  held by the server; the card's input is only what the user reads, never what is applied.
+
 - **`openOrchestrator`.** With `true`, the new workspace's orchestrator opens once the workspace
   exists, and the result carries its `orchestratorThreadId`, so the caller can message it.
 
@@ -364,19 +383,16 @@ Every applied change is written to `settings_audit`:
 A workspace change is also appended to that workspace's `orchestration_events` as
 `kind: "settings"`, in the same transaction, so its own audit trail has it. A workspace made
 by chat is audited with every field it stores, `before` being `null`. An update writes one row
-for its charter and one for its name, projects and home, both with the card's request id. Denials and expiries are logged, but not
+with every field it changed, in the same transaction as the change. Denials and expiries are logged, but not
 written as audit rows, since nothing changed.
 
 ## Limits
 
 - The UI's own `settings.set` and `orchestrator.setCharter` keep their last-writer-wins
   behaviour. Only changes by chat compare before they write.
-- A `workspace_update` that changes both the charter and the projects applies them in two
-  transactions, the charter first. If the second is refused after the first was written (the
-  workspace changed meanwhile, or a new folder vanished), the call says which part was
-  applied.
-- A project registered on approval stays registered if the workspace write after it is
-  refused, as one added in the UI before a workspace is saved does.
+- A workspace change by chat over a workspace edited in Settings since its card is refused
+  whole, even when the edit and the change touch different fields. The agent proposes again,
+  and the user approves a card drawn from the workspace as it is.
 - A change to the orchestrator's model or effort applies to its next session, as in Settings.
   To switch the running one, use the orchestrator switch or `set_thread_model`.
 - Synthetic tests run on the fake agent. They don't qualify live Claude or Codex transports.

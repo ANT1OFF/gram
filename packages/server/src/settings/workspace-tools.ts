@@ -30,8 +30,9 @@ import {
   type WorkspaceProposalCard,
   type WorkspaceProposalProject,
   type WorkspaceState,
+  sameValue,
 } from "@gram/contracts";
-import { projectRootKey } from "@gram/git";
+import { canonicalizeOrOwned, Proc, projectRootKey } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -40,9 +41,9 @@ import * as Option from "effect/Option";
 import { basename, isAbsolute, resolve } from "node:path";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
-import { registerRepo, repoFolder } from "../fs/folders.ts";
+import { canonicalRepo } from "../fs/folders.ts";
 import { subscriptionTaskCharter } from "../orchestration/task-models.ts";
-import { CHARTER_MOVED, Orchestration } from "../orchestration/service.ts";
+import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { ServerApprovalAnswer } from "../runtime/server-approvals.ts";
@@ -55,14 +56,22 @@ const WORKER_REFUSAL =
 
 const NOT_HERE = "Workspaces can't be created or changed here.";
 
-/** A repository a card names: a project Gram knows, or a top folder it would register. */
+/**
+ * A repository a card names: a project Gram knows, or a top folder it would register. `root` is
+ * canonical, every link resolved; `identity` is what `canonicalRepo` read on disk for one this card
+ * takes in, checked again when the user approves.
+ */
 interface Repo {
   readonly root: string;
   readonly name: string;
   readonly project?: Project | undefined;
+  readonly identity?: string | undefined;
 }
 
-const sameRoot = (a: string, b: string) => projectRootKey(a) === projectRootKey(b);
+/** Whether two paths are one folder: as written, or once their links are resolved. */
+const sameRoot = (a: string, b: string) =>
+  projectRootKey(a) === projectRootKey(b) ||
+  projectRootKey(canonicalizeOrOwned(a)) === projectRootKey(canonicalizeOrOwned(b));
 
 /** `named` among `projects`: by project id, or by path. */
 const matchProject = <P extends Repo>(projects: ReadonlyArray<P>, named: string): P | undefined => {
@@ -91,25 +100,6 @@ const projectRows = (projects: ReadonlyArray<WorkspaceProposalProject>): Array<S
         ? null
         : `${each.name}${each.home === true ? " · home" : ""}${each.unregistered === true ? " · new to Gram" : ""}`,
   }));
-
-/** A path as a project root, refused unless it is a git repository's top folder now. */
-const repoAt = (tool: string, path: string, known: ReadonlyArray<Project>) =>
-  Effect.gen(function* () {
-    const given = path.trim();
-    if (!isAbsolute(given)) {
-      return yield* fail(
-        tool,
-        `${given} isn't an absolute path. Name each project by the absolute path of its git repository's top folder.`,
-      );
-    }
-    const root = yield* repoFolder(given).pipe(
-      Effect.mapError((e) => fail(tool, `Nothing was proposed: ${e.message}`)),
-    );
-    const project = known.find((each) => sameRoot(each.root, root));
-    return project === undefined
-      ? { root, name: basename(root) || root }
-      : { root: project.root, name: project.name, project };
-  });
 
 /** A change by chat's audit row, from the card the user approved. */
 const auditOf = (
@@ -148,6 +138,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
       // Absent in runtime-only layers, which have no workspaces to change.
       const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
       const hosts = Option.getOrUndefined(yield* Effect.serviceOption(AgentHosts));
+      const proc = yield* Proc;
       const ttl = Duration.fromInputUnsafe(options.proposalTtl ?? SETTINGS_PROPOSAL_TTL_MS);
 
       /** The caller as it is now, refused unless it is a thread the user chats with or directs. */
@@ -168,6 +159,58 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
         store
           .getThread(caller)
           .pipe(Effect.mapError((e) => fail(tool, `Couldn't read this thread: ${e.message}`)));
+
+      /**
+       * A path as a project root, refused unless it is a git repository's top folder now: at its
+       * canonical path, which the card shows and Gram registers, never the path as written.
+       */
+      const repoAt = (tool: string, path: string, known: ReadonlyArray<Project>) =>
+        Effect.gen(function* () {
+          const given = path.trim();
+          if (!isAbsolute(given)) {
+            return yield* fail(
+              tool,
+              `${given} isn't an absolute path. Name each project by the absolute path of its git repository's top folder.`,
+            );
+          }
+          const { root, identity } = yield* canonicalRepo(given).pipe(
+            Effect.provideService(Proc, proc),
+            Effect.mapError((e) => fail(tool, `Nothing was proposed: ${e.message}`)),
+          );
+          const project = known.find((each) => sameRoot(each.root, root));
+          return {
+            root,
+            name: project?.name ?? (basename(root) || root),
+            identity,
+            ...(project === undefined ? {} : { project }),
+          } satisfies Repo;
+        });
+
+      /**
+       * Each repository the card takes in, read again once the user approved it: still at the
+       * root the card showed, every link resolved, and still the same repository there.
+       */
+      const sameAsShown = (tool: string, repos: ReadonlyArray<Repo>) =>
+        Effect.gen(function* () {
+          for (const repo of repos) {
+            if (repo.identity === undefined) continue;
+            const now = yield* canonicalRepo(repo.root).pipe(
+              Effect.provideService(Proc, proc),
+              Effect.mapError((e) =>
+                fail(
+                  tool,
+                  `${repo.root} changed since the card was shown (${e.message}); nothing changed. Propose it again.`,
+                ),
+              ),
+            );
+            if (now.root !== repo.root || now.identity !== repo.identity) {
+              return yield* fail(
+                tool,
+                `${repo.root} is no longer the repository the card showed; nothing changed. Propose it again.`,
+              );
+            }
+          }
+        });
 
       /** Each path as a repository, the same one named twice kept once. */
       const reposAt = (tool: string, paths: ReadonlyArray<string>) =>
@@ -222,23 +265,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           }
           const notes = yield* checkModels(store, hosts, tool, result.plan.models);
           return { plan: result.plan, notes };
-        });
-
-      /** Registers each repository Gram doesn't know yet, after the user approved the card. */
-      const registerAll = (tool: string, repos: ReadonlyArray<Repo>) =>
-        Effect.gen(function* () {
-          // Every folder checked again first, so a vanished one stops the change before anything.
-          for (const repo of repos) {
-            yield* repoFolder(repo.root).pipe(Effect.mapError((e) => fail(tool, e.message)));
-          }
-          const projects: Array<Project> = [];
-          for (const repo of repos) {
-            const { project } = yield* registerRepo(store, repo.root).pipe(
-              Effect.mapError((e) => fail(tool, e.message)),
-            );
-            projects.push(project);
-          }
-          return projects;
         });
 
       const workspaceList = defineAppTool({
@@ -411,39 +437,54 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 "This thread's role changed while the card waited, so the approval no longer applies; nothing changed.",
               );
             }
-            const projects = yield* registerAll(tool, repos).pipe(
-              Effect.mapError((e) => fail(tool, `${e.message} The workspace wasn't created.`)),
-            );
-            const homeProject = projects[repos.indexOf(home)]!;
-            const projectIds = projects.map(
-              (project) => project.id,
-            ) as unknown as WorkspaceState["workspace"]["projectIds"];
+            yield* sameAsShown(tool, repos);
             const appliedAt = yield* Clock.currentTimeMillis;
-            const audit = auditOf(caller, role, answered, appliedAt, card, [
-              { key: "workspace.name", before: null, after: name },
-              { key: "workspace.projectIds", before: null, after: projectIds },
-              { key: "workspace.homeProjectId", before: null, after: homeProject.id },
-              ...Object.entries(charter).map(([field, value]) => ({
-                key: `workspace.${field}`,
-                before: null,
-                after: value ?? null,
-              })),
-            ]);
             const saved = yield* service
-              .saveWorkspaceApproved(
-                { name, projectIds, homeProjectId: homeProject.id, charter },
-                audit,
-              )
-              .pipe(
-                Effect.mapError((e) => fail(tool, `${e.message} The workspace wasn't created.`)),
+              .commitWorkspace({
+                name,
+                projects: repos.map((repo) =>
+                  repo.project === undefined
+                    ? { root: repo.root, name: repo.name }
+                    : { projectId: repo.project.id },
+                ),
+                home:
+                  home.project === undefined ? { root: home.root } : { projectId: home.project.id },
+                charter,
+                audit: (made) =>
+                  auditOf(caller, role, answered, appliedAt, card, [
+                    { key: "workspace.name", before: null, after: made.workspace.name },
+                    {
+                      key: "workspace.projectIds",
+                      before: null,
+                      after: made.workspace.projectIds,
+                    },
+                    {
+                      key: "workspace.homeProjectId",
+                      before: null,
+                      after: made.workspace.homeProjectId,
+                    },
+                    ...Object.entries(made.charter).map(([field, value]) => ({
+                      key: `workspace.${field}`,
+                      before: null,
+                      after: value ?? null,
+                    })),
+                  ]),
+              })
+              .pipe(Effect.mapError((e) => fail(tool, `${e.message} Nothing changed.`)));
+            if (saved === undefined) {
+              return yield* fail(
+                tool,
+                "The workspace couldn't be made as the card showed it; nothing changed. Propose it again.",
               );
-            const state = saved!.state;
+            }
+            const { state, projects } = saved;
+            const homeProjectId = state.workspace.homeProjectId;
             yield* Effect.logInfo("workspace created by chat").pipe(
               Effect.annotateLogs({
                 threadId: caller,
                 role,
                 workspaceId: state.workspace.id,
-                auditSeq: saved!.auditSeq,
+                auditSeq: saved.auditSeq,
               }),
             );
             const opened =
@@ -462,14 +503,18 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             return {
               applied: true,
               workspace: { id: state.workspace.id, name: state.workspace.name },
-              projects: projects.map((project) => ({
-                id: project.id,
-                name: project.name,
-                root: project.root,
-                ...(project.id === homeProject.id ? { home: true } : {}),
-              })),
+              projects: state.workspace.projectIds.map((id) => {
+                const project =
+                  projects.find((each) => each.id === id) ??
+                  repos.find((repo) => repo.project?.id === id)?.project;
+                return {
+                  id,
+                  ...(project === undefined ? {} : { name: project.name, root: project.root }),
+                  ...(id === homeProjectId ? { home: true } : {}),
+                };
+              }),
               ...opened,
-              auditSeq: saved!.auditSeq,
+              auditSeq: saved.auditSeq,
               ...(notes.length === 0 ? {} : { notes }),
             };
           }),
@@ -531,10 +576,6 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 ? []
                 : [{ root: project.root, name: project.name, project }];
             });
-            // A project Gram no longer lists stays as it is: the card can't show it, so it can't go.
-            const unlisted = workspace.projectIds.filter(
-              (id) => !known.some((each) => each.id === id),
-            );
             const removed: Array<Repo> = [];
             for (const each of input.removeProjects ?? []) {
               const found = matchProject(current, each);
@@ -654,6 +695,8 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               });
             }
             rows.push(...(planned?.plan.rows ?? []));
+            // The charter the card shows, made once from the workspace as it was read now.
+            const nextCharter = applyCharterWrites(charter, writes) ?? charter;
             const projects: Array<WorkspaceProposalProject> = [
               ...current.map((each) => ({
                 root: each.root,
@@ -721,103 +764,87 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 "This thread's role or workspace changed while the card waited, so the approval no longer applies; nothing changed.",
               );
             }
-            const moved = (what: string) =>
-              fail(
-                tool,
-                `The workspace changed while the card waited, so what was approved no longer matches; ${what}. Read it again with workspace_list and propose anew.`,
-              );
+            yield* sameAsShown(tool, fresh);
+            const removedIds = new Set(removed.map((each) => each.project!.id));
             const appliedAt = yield* Clock.currentTimeMillis;
-            const auditSeqs: Array<number> = [];
-            // The charter first: the change most likely to be refused at the last moment (a field
-            // moved, or a lower autonomy a thread can't open under), refused before anything else.
-            if (writes.length > 0) {
-              const done = yield* service
-                .changeCharter(
-                  pinned,
-                  writes,
-                  auditOf(caller, role, answered, appliedAt, card, auditChanges(writes)),
-                  planned?.plan.requires ?? [],
-                )
-                .pipe(
-                  Effect.mapError((e) =>
-                    e._tag === "InvalidState" && e.message === CHARTER_MOVED
-                      ? moved("nothing changed")
-                      : e._tag === "NotFound"
-                        ? fail(tool, `The workspace “${workspace.name}” is gone; nothing changed.`)
-                        : fail(tool, `${e.message} Nothing changed.`),
+            // All of it in one transaction, over the workspace as the card read it, or nothing.
+            const saved = yield* service
+              .commitWorkspace({
+                expected: state,
+                name,
+                projects: [
+                  // A project Gram no longer lists stays as it is: the card can't show it.
+                  ...workspace.projectIds
+                    .filter((id) => !removedIds.has(id))
+                    .map((projectId) => ({ projectId })),
+                  ...fresh.map((repo) =>
+                    repo.project === undefined
+                      ? { root: repo.root, name: repo.name }
+                      : { projectId: repo.project.id },
                   ),
-                );
-              auditSeqs.push(done.auditSeq);
-            }
-            const charterApplied =
-              writes.length > 0
-                ? " The charter changes on the card were applied; the name, projects and home weren't."
-                : " Nothing changed.";
-            if (membershipChanges || name !== workspace.name || homeMoves) {
-              const registered = yield* registerAll(tool, fresh).pipe(
-                Effect.mapError((e) => fail(tool, `${e.message}${charterApplied}`)),
-              );
-              const projectIds = [
-                ...kept.map((each) => each.project!.id),
-                ...unlisted,
-                ...registered.map((project) => project.id),
-              ] as unknown as WorkspaceState["workspace"]["projectIds"];
-              const homeProjectId = home.project?.id ?? registered[fresh.indexOf(home)]!.id;
-              const saved = yield* service
-                .saveWorkspaceApproved(
-                  { id: pinned, name, projectIds, homeProjectId },
+                ],
+                home:
+                  home.project === undefined ? { root: home.root } : { projectId: home.project.id },
+                charter: nextCharter,
+                audit: (next) =>
                   auditOf(caller, role, answered, appliedAt, card, [
-                    ...(name === workspace.name
+                    ...(next.workspace.name === workspace.name
                       ? []
-                      : [{ key: "workspace.name", before: workspace.name, after: name }]),
-                    ...(membershipChanges
-                      ? [
+                      : [
+                          {
+                            key: "workspace.name",
+                            before: workspace.name,
+                            after: next.workspace.name,
+                          },
+                        ]),
+                    ...(sameValue(next.workspace.projectIds, workspace.projectIds)
+                      ? []
+                      : [
                           {
                             key: "workspace.projectIds",
                             before: workspace.projectIds,
-                            after: projectIds,
+                            after: next.workspace.projectIds,
                           },
-                        ]
-                      : []),
-                    ...(homeMoves
-                      ? [
+                        ]),
+                    ...(next.workspace.homeProjectId === workspace.homeProjectId
+                      ? []
+                      : [
                           {
                             key: "workspace.homeProjectId",
                             before: workspace.homeProjectId,
-                            after: homeProjectId,
+                            after: next.workspace.homeProjectId,
                           },
-                        ]
-                      : []),
+                        ]),
+                    ...auditChanges(writes),
                   ]),
-                  {
-                    name: workspace.name,
-                    projectIds: workspace.projectIds,
-                    homeProjectId: workspace.homeProjectId,
-                  },
-                )
-                .pipe(Effect.mapError((e) => fail(tool, `${e.message}${charterApplied}`)));
-              if (saved === undefined) {
-                return yield* moved(
-                  writes.length > 0
-                    ? "the charter changes on the card were applied, the name, projects and home weren't"
-                    : "nothing changed",
-                );
-              }
-              auditSeqs.push(saved.auditSeq);
+                requires: planned?.plan.requires,
+              })
+              .pipe(
+                Effect.mapError((e) =>
+                  e._tag === "NotFound"
+                    ? fail(tool, `The workspace “${workspace.name}” is gone; nothing changed.`)
+                    : fail(tool, `${e.message} Nothing changed.`),
+                ),
+              );
+            if (saved === undefined) {
+              return yield* fail(
+                tool,
+                "The workspace changed since this card was shown, so nothing changed. Read it again with workspace_list and propose anew.",
+              );
             }
             yield* Effect.logInfo("workspace changed by chat").pipe(
               Effect.annotateLogs({
                 threadId: caller,
                 role,
                 workspaceId: pinned,
-                auditSeqs: auditSeqs.join(","),
+                auditSeq: saved.auditSeq,
               }),
             );
             return {
               applied: true,
               workspace: { id: pinned, name },
               changes: [...projectRows(projects.filter((each) => each.change !== "kept")), ...rows],
-              auditSeqs,
+              auditSeq: saved.auditSeq,
               ...(notes.length === 0 ? {} : { notes }),
             };
           }),

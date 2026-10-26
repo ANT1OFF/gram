@@ -8,10 +8,10 @@ import {
   type RepositoryCandidate,
   type RepositoryCandidates,
 } from "@gram/contracts";
-import { projectRoot, projectRootKey } from "@gram/git";
+import { git as runGit, projectRoot, projectRootKey, realPath, type Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { existsSync, statSync } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
@@ -171,6 +171,86 @@ export const repoFolder = (
       ),
     ),
   );
+
+/** `path` with every link resolved, or why it can't be read. */
+const realFolder = (path: string) =>
+  Effect.tryPromise({ try: () => realPath(path), catch: (error) => folderError(error, path) });
+
+/** A repository's top folder as a change by chat names it: where it really is, and which it is. */
+export interface CanonicalRepo {
+  /** The real path, every link in it resolved. */
+  readonly root: string;
+  /**
+   * The device and inode of its `.git` folder: a link retargeted, or a folder swapped for
+   * another repository at the same path, changes it.
+   */
+  readonly identity: string;
+}
+
+/**
+ * The absolute `path` as a repository's top folder, read the way git reads it: its real path, with
+ * every link resolved, whose own `.git` is a folder (not a link, nor a linked worktree's or a
+ * submodule's file), and which git names as the top folder of the repository there. An empty or
+ * broken `.git` isn't one: git reads no repository there, or the one around it.
+ */
+export const canonicalRepo = (
+  path: string,
+): Effect.Effect<CanonicalRepo, NotFound | InvalidState, Proc> =>
+  Effect.gen(function* () {
+    const root = yield* realFolder(path);
+    const info = yield* Effect.tryPromise({
+      try: () => stat(root),
+      catch: (error) => folderError(error, root),
+    });
+    if (!info.isDirectory()) return yield* new InvalidState({ message: `Not a folder: ${root}` });
+    const dotGit = join(root, ".git");
+    const own = yield* Effect.tryPromise({
+      try: () =>
+        lstat(dotGit).catch((error: { code?: unknown }) => {
+          if (error.code === "ENOENT") return undefined;
+          throw error;
+        }),
+      catch: (error) => folderError(error, dotGit),
+    });
+    if (own === undefined) return yield* new InvalidState({ message: notARepositoryMessage(root) });
+    if (own.isSymbolicLink()) {
+      return yield* new InvalidState({
+        message: `${root} isn't a repository's top folder: its .git is a link.`,
+      });
+    }
+    if (!own.isDirectory())
+      return yield* new InvalidState({ message: linkedCheckoutMessage(root) });
+    // Nothing of Gram's own environment may point git elsewhere.
+    const read = yield* runGit(root, ["rev-parse", "--show-toplevel", "--absolute-git-dir"], {
+      omitEnv: (name) => name.startsWith("GIT_"),
+      timeoutMs: 15_000,
+    }).pipe(
+      Effect.mapError(
+        () => new InvalidState({ message: `Gram couldn't run git to read ${root}.` }),
+      ),
+    );
+    const [top, gitDir] = read.stdout.trim().split(/\r?\n/);
+    if (read.status !== 0 || top === undefined || gitDir === undefined || top === "") {
+      return yield* new InvalidState({
+        message: `${root} isn't a git repository's top folder: git reads no repository there.`,
+      });
+    }
+    const realTop = yield* realFolder(top);
+    const realGitDir = yield* realFolder(gitDir);
+    if (
+      projectRootKey(realTop) !== projectRootKey(root) ||
+      projectRootKey(realGitDir) !== projectRootKey(dotGit)
+    ) {
+      return yield* new InvalidState({
+        message: `${root} isn't a git repository's top folder: git reads it as part of ${realTop}.`,
+      });
+    }
+    const id = yield* Effect.tryPromise({
+      try: () => stat(dotGit, { bigint: true }),
+      catch: (error) => folderError(error, dotGit),
+    });
+    return { root, identity: `${id.dev}:${id.ino}` };
+  });
 
 /**
  * The project whose root is the repository at `input`, registered if Gram doesn't know it;

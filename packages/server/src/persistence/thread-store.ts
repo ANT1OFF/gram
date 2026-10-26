@@ -706,13 +706,32 @@ export interface ThreadStoreShape {
     NotFound
   >;
   /**
-   * A workspace made by chat and its audit, in one transaction, with the workspace's own `settings`
-   * orchestration event.
+   * A workspace made or changed by chat, all of it or nothing, in one transaction: the
+   * repositories it takes in registered as projects where Gram doesn't know them, the workspace
+   * as `next` makes it, and its audit with the workspace's own `settings` event. `unchanged` reads
+   * what is stored now (absent for a new workspace); when it answers `false`, or `holds` does,
+   * nothing is written, the projects included, and the answer is `undefined`.
    */
-  putWorkspaceAudited(
-    state: WorkspaceState,
-    audit: SettingsAuditEntry,
-  ): Effect.Effect<{ readonly auditSeq: number }>;
+  commitWorkspaceAudited(change: {
+    readonly id: WorkspaceId;
+    readonly unchanged: (current: WorkspaceState | undefined) => boolean;
+    /** At their canonical roots, in the order `next` receives their projects. */
+    readonly register: ReadonlyArray<{ readonly root: string; readonly name: string }>;
+    readonly next: (
+      current: WorkspaceState | undefined,
+      projects: ReadonlyArray<Project>,
+    ) => WorkspaceState;
+    readonly audit: (state: WorkspaceState) => SettingsAuditEntry;
+    /** Read against the app settings in the same transaction; `false` writes nothing. */
+    readonly holds?: (settings: Settings) => boolean;
+  }): Effect.Effect<
+    | {
+        readonly state: WorkspaceState;
+        readonly auditSeq: number;
+        readonly projects: ReadonlyArray<Project>;
+      }
+    | undefined
+  >;
   /** The latest `limit` settings changes by chat, newest first. */
   listSettingsAudit(limit: number): Effect.Effect<ReadonlyArray<SettingsAuditRecord>>;
   /** The workspace's audit entries at or after `since` (epoch ms), oldest first. */
@@ -848,6 +867,9 @@ const PageCache = Layer.effectDiscard(
     yield* sql.unsafe(`PRAGMA mmap_size = ${MMAP_SIZE_BYTES}`);
   }),
 );
+
+/** What rolls back a workspace change by chat whose workspace moved; never leaves the store. */
+const WORKSPACE_MOVED = { _tag: "WorkspaceMoved" } as const;
 
 /** A broken database is a defect, not something callers can handle. */
 const run = <A, E, R>(
@@ -1106,28 +1128,29 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }),
         );
 
-      const registerProject: ThreadStoreShape["registerProject"] = (input) =>
-        tx(
-          Effect.gen(function* () {
-            const root = projectRoot(input.root);
-            const { name } = input;
-            const repoRoot = input.repoRoot === undefined ? undefined : projectRoot(input.repoRoot);
-            const row = yield* projectAt(root);
-            if (row !== undefined) return { project: toProject(row), created: false };
-            const id = Schema.decodeSync(ProjectId)(randomUUID());
-            yield* sql`INSERT INTO projects (id, root, name, repo_root, bookmarked)
+      /** `registerProject` inside a transaction of the caller's. */
+      const registerIn = (input: Parameters<ThreadStoreShape["registerProject"]>[0]) =>
+        Effect.gen(function* () {
+          const root = projectRoot(input.root);
+          const { name } = input;
+          const repoRoot = input.repoRoot === undefined ? undefined : projectRoot(input.repoRoot);
+          const row = yield* projectAt(root);
+          if (row !== undefined) return { project: toProject(row), created: false };
+          const id = Schema.decodeSync(ProjectId)(randomUUID());
+          yield* sql`INSERT INTO projects (id, root, name, repo_root, bookmarked)
               VALUES (${id}, ${root}, ${name}, ${repoRoot ?? null}, 0)`;
-            const project = toProject({
-              id,
-              root,
-              name,
-              repo_root: repoRoot ?? null,
-              bookmarked: 0,
-              last_opened_at: null,
-            });
-            return { project, created: true };
-          }),
-        );
+          const project = toProject({
+            id,
+            root,
+            name,
+            repo_root: repoRoot ?? null,
+            bookmarked: 0,
+            last_opened_at: null,
+          });
+          return { project, created: true };
+        });
+
+      const registerProject: ThreadStoreShape["registerProject"] = (input) => tx(registerIn(input));
 
       const ensureProject: ThreadStoreShape["ensureProject"] = (input) =>
         registerProject(input).pipe(Effect.map(({ project }) => project));
@@ -2886,16 +2909,37 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               return { state: next, auditSeq };
             }),
           ),
-        putWorkspaceAudited: (state, audit) =>
+        commitWorkspaceAudited: (change) =>
           tx(
             Effect.gen(function* () {
-              yield* writeWorkspace(state);
+              if (change.holds !== undefined && !change.holds(yield* readSettings)) {
+                return yield* Effect.fail(WORKSPACE_MOVED);
+              }
+              const current = yield* readWorkspace(change.id).pipe(
+                Effect.catchTag("NotFound", () => Effect.succeed(undefined)),
+              );
+              if (!change.unchanged(current)) return yield* Effect.fail(WORKSPACE_MOVED);
+              const projects: Array<Project> = [];
+              for (const repo of change.register) {
+                projects.push((yield* registerIn({ ...repo, repoRoot: repo.root })).project);
+              }
+              const next = change.next(current, projects);
+              if (next.workspace.id !== change.id) {
+                return yield* Effect.die(new Error(`workspace ${change.id} cannot change its id`));
+              }
+              yield* writeWorkspace(next);
               const auditSeq = yield* insertSettingsAudit({
-                ...audit,
-                workspaceId: state.workspace.id,
+                ...change.audit(next),
+                workspaceId: change.id,
               });
-              return { auditSeq };
+              return { state: next, auditSeq, projects };
             }),
+          ).pipe(
+            // A failure rolls the transaction back, the projects it registered included.
+            Effect.catchIf(
+              (e): e is typeof WORKSPACE_MOVED => e === WORKSPACE_MOVED,
+              () => Effect.succeed(undefined),
+            ),
           ),
         listSettingsAudit: (limit) =>
           run(

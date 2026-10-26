@@ -6,7 +6,6 @@ import {
   InvalidState,
   connectorSetOf,
   type ConnectorSet,
-  type Autonomy,
   type OrchestratorCharter,
   type Thread,
   type WorkspaceState,
@@ -85,133 +84,80 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
   const { wake } = deps;
 
   /**
-   * The charter's one write path. `compute` makes the charter to store from the one standing; it
-   * answers `undefined` when that charter has moved from what an approval was given against. With
-   * `audit` (a change by chat) the charter is computed again inside the write's transaction, from
-   * what is stored then, and its audit row goes in the same transaction: fields the change doesn't
-   * name are never written back from an older read.
+   * What a charter must pass to be stored over `standing` (absent for a new workspace), checked
+   * where the user can still do something about it: no orchestrator switch under way, an
+   * orchestrator model that may orchestrate, connector entries that can be kept, and no lower
+   * autonomy a held thread couldn't open under.
    */
-  const writeCharter = (
-    workspaceId: WorkspaceId,
-    compute: (standing: OrchestratorCharter) => OrchestratorCharter | undefined,
-    audit?: SettingsAuditEntry,
-    requires: ReadonlyArray<SettingsRequirement> = [],
-  ) =>
+  const checkCharter = (standing: WorkspaceState | undefined, charter: OrchestratorCharter) =>
     Effect.gen(function* () {
-      const switchHolder = (yield* store.getWorkspace(workspaceId)).workspace.orchestratorThreadId;
+      const switchHolderNow = standing?.workspace.orchestratorThreadId;
       if (
-        switchHolder !== undefined &&
-        (yield* findThread(switchHolder))?.sessionSwitch !== undefined
+        switchHolderNow !== undefined &&
+        (yield* findThread(switchHolderNow))?.sessionSwitch !== undefined
       )
         return yield* new InvalidState({
           message: "Wait for the orchestrator switch before editing this workspace's charter.",
         });
+      const orchestratorModel = charter.orchestratorModel;
+      if (
+        orchestratorModel !== undefined &&
+        !admittedForRole(orchestratorModel.agent, "orchestrator")
+      ) {
+        return yield* new InvalidState({
+          message: `${kindName(orchestratorModel.agent)} threads can't be orchestrators yet.`,
+        });
+      }
+      yield* refuseConnectorEntries(charter);
+      if (standing === undefined) return;
+      const gate = gateOfAutonomy(autonomyOf(charter));
+      if (gateOfAutonomy(autonomyOf(standing.charter)) === undefined && gate !== undefined) {
+        // The reload below would reopen each of these under a gate its adapter refuses to open
+        // with, so the change is refused here, where the user can still do something about it.
+        const holder = standing.workspace.orchestratorThreadId;
+        const threads = yield* store.listThreads;
+        const held = [
+          ...threads.filter((thread) => thread.id === holder),
+          ...workersOf(threads, standing).filter(
+            (worker) => !worker.parked && worker.completedReason === undefined,
+          ),
+        ];
+        const inTheWay: Array<{ readonly thread: Thread; readonly why: string }> = [];
+        for (const thread of held) {
+          const needs = yield* needsUnderGate(thread.model, gate, thread.mode, thread);
+          if (needs !== undefined) {
+            inTheWay.push({
+              thread,
+              why: gateNeedsReason(needs, thread.model.agent, thread.mode),
+            });
+          }
+        }
+        if (inTheWay.length > 0) {
+          const names = inTheWay.map(({ thread }) => `“${thread.title}”`).join(", ");
+          const whys = [...new Set(inTheWay.map(({ why }) => why))].join(" ");
+          return yield* new InvalidState({
+            message: `Autonomy can't go from full to ${autonomyOf(charter)} yet, because ${names} couldn't ask before a push. ${whys} Prepare their native approval home and start fresh sessions, choose a prepared gateway home or a mode that can ask, detach them, or let them finish, and then change it.`,
+          });
+        }
+      }
+    });
 
-      const { state, auditSeq, before, rosterBefore, connectorsBefore, routingBefore } =
-        yield* underKeysOf(
-          taskStartupLock,
-          workspaceStartupKeys(workspaceId),
-          Effect.gen(function* () {
-            const standing = yield* store.getWorkspace(workspaceId);
-            const switchHolderNow = standing.workspace.orchestratorThreadId;
-            if (
-              switchHolderNow !== undefined &&
-              (yield* findThread(switchHolderNow))?.sessionSwitch !== undefined
-            )
-              return yield* new InvalidState({
-                message:
-                  "Wait for the orchestrator switch before editing this workspace's charter.",
-              });
-
-            const charter = compute(standing.charter);
-            if (charter === undefined) return yield* new InvalidState({ message: CHARTER_MOVED });
-            const orchestratorModel = charter.orchestratorModel;
-            if (
-              orchestratorModel !== undefined &&
-              !admittedForRole(orchestratorModel.agent, "orchestrator")
-            ) {
-              return yield* new InvalidState({
-                message: `${kindName(orchestratorModel.agent)} threads can't be orchestrators yet.`,
-              });
-            }
-            yield* refuseConnectorEntries(charter);
-            const gate = gateOfAutonomy(autonomyOf(charter));
-            if (gateOfAutonomy(autonomyOf(standing.charter)) === undefined && gate !== undefined) {
-              // The reload below would reopen each of these under a gate its adapter refuses to open
-              // with, so the change is refused here, where the user can still do something about it.
-              const holder = standing.workspace.orchestratorThreadId;
-              const threads = yield* store.listThreads;
-              const held = [
-                ...threads.filter((thread) => thread.id === holder),
-                ...workersOf(threads, standing).filter(
-                  (worker) => !worker.parked && worker.completedReason === undefined,
-                ),
-              ];
-              const inTheWay: Array<{ readonly thread: Thread; readonly why: string }> = [];
-              for (const thread of held) {
-                const needs = yield* needsUnderGate(thread.model, gate, thread.mode, thread);
-                if (needs !== undefined) {
-                  inTheWay.push({
-                    thread,
-                    why: gateNeedsReason(needs, thread.model.agent, thread.mode),
-                  });
-                }
-              }
-              if (inTheWay.length > 0) {
-                const names = inTheWay.map(({ thread }) => `“${thread.title}”`).join(", ");
-                const whys = [...new Set(inTheWay.map(({ why }) => why))].join(" ");
-                return yield* new InvalidState({
-                  message: `Autonomy can't go from full to ${autonomyOf(charter)} yet, because ${names} couldn't ask before a push. ${whys} Prepare their native approval home and start fresh sessions, choose a prepared gateway home or a mode that can ask, detach them, or let them finish, and then change it.`,
-                });
-              }
-            }
-            let priorAutonomy: Autonomy | undefined;
-            let priorRoster: OrchestratorCharter["workerModels"];
-            let priorConnectors: ConnectorSet | undefined;
-            let priorRouting: Pick<OrchestratorCharter, "workerBriefFooter" | "routeAtLimit"> = {};
-            const prior = (current: WorkspaceState) => {
-              priorAutonomy = autonomyOf(current.charter);
-              priorRoster = current.charter.workerModels;
-              priorConnectors = connectorSetOf(current.charter);
-              priorRouting = current.charter;
-            };
-            let committedState: WorkspaceState;
-            let committedAudit: number | undefined;
-            if (audit === undefined) {
-              committedState = yield* store.updateWorkspace(workspaceId, (current) => {
-                prior(current);
-                return { ...current, charter };
-              });
-            } else {
-              const done = yield* store.updateWorkspaceAudited(
-                workspaceId,
-                (current) => {
-                  const next = compute(current.charter);
-                  if (next === undefined) return undefined;
-                  prior(current);
-                  return { ...current, charter: next };
-                },
-                audit,
-                (settings) => settingsHold(settings, requires),
-              );
-              if (done === undefined) return yield* new InvalidState({ message: CHARTER_MOVED });
-              committedState = done.state;
-              committedAudit = done.auditSeq;
-            }
-            return {
-              state: committedState,
-              auditSeq: committedAudit,
-              before: priorAutonomy,
-              rosterBefore: priorRoster,
-              connectorsBefore: priorConnectors,
-              routingBefore: priorRouting,
-            };
-          }),
-        );
+  /**
+   * What a stored charter change sets off, from `prior`, the charter it replaced: the roster,
+   * footer and routing notes to an open orchestrator, and a reopen of the sessions a new autonomy
+   * or connector set must reach.
+   */
+  const afterCharter = (
+    workspaceId: WorkspaceId,
+    state: WorkspaceState,
+    prior: OrchestratorCharter,
+  ) =>
+    Effect.gen(function* () {
+      const before = autonomyOf(prior);
+      const rosterBefore = prior.workerModels;
+      const connectorsBefore: ConnectorSet | undefined = connectorSetOf(prior);
       // What was stored: with an audit, the change applied to the charter as it stood then.
       const charter = state.charter;
-      yield* workspacesChanged;
-      yield* orchestrationChanged(workspaceId);
       const holder = state.workspace.orchestratorThreadId;
       if (
         holder !== undefined &&
@@ -237,7 +183,7 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
         }
       }
       // The boot digest named the footer and routing once too; an open session hears of a change.
-      const changed = charterChangeNotes(routingBefore, charter);
+      const changed = charterChangeNotes(prior, charter);
       if (holder !== undefined && changed.length > 0) {
         yield* updateOutbox(workspaceId, (outbox) => [withNotes(outbox, changed), undefined]);
         yield* wake(workspaceId, "the user changed how workers are briefed or routed", true);
@@ -273,6 +219,69 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
           yield* runtimes.mcpConfigChanged({ agent: "codex", threads: codex, always: true });
         }
       }
+    });
+
+  /**
+   * The charter's one write path. `compute` makes the charter to store from the one standing; it
+   * answers `undefined` when that charter has moved from what an approval was given against. With
+   * `audit` (a change by chat) the charter is computed again inside the write's transaction, from
+   * what is stored then, and its audit row goes in the same transaction: fields the change doesn't
+   * name are never written back from an older read.
+   */
+  const writeCharter = (
+    workspaceId: WorkspaceId,
+    compute: (standing: OrchestratorCharter) => OrchestratorCharter | undefined,
+    audit?: SettingsAuditEntry,
+    requires: ReadonlyArray<SettingsRequirement> = [],
+  ) =>
+    Effect.gen(function* () {
+      const switchHolder = (yield* store.getWorkspace(workspaceId)).workspace.orchestratorThreadId;
+      if (
+        switchHolder !== undefined &&
+        (yield* findThread(switchHolder))?.sessionSwitch !== undefined
+      )
+        return yield* new InvalidState({
+          message: "Wait for the orchestrator switch before editing this workspace's charter.",
+        });
+
+      const { state, auditSeq, prior } = yield* underKeysOf(
+        taskStartupLock,
+        workspaceStartupKeys(workspaceId),
+        Effect.gen(function* () {
+          const standing = yield* store.getWorkspace(workspaceId);
+          const charter = compute(standing.charter);
+          if (charter === undefined) return yield* new InvalidState({ message: CHARTER_MOVED });
+          yield* checkCharter(standing, charter);
+          let priorCharter: OrchestratorCharter = standing.charter;
+          let committedState: WorkspaceState;
+          let committedAudit: number | undefined;
+          if (audit === undefined) {
+            committedState = yield* store.updateWorkspace(workspaceId, (current) => {
+              priorCharter = current.charter;
+              return { ...current, charter };
+            });
+          } else {
+            const done = yield* store.updateWorkspaceAudited(
+              workspaceId,
+              (current) => {
+                const next = compute(current.charter);
+                if (next === undefined) return undefined;
+                priorCharter = current.charter;
+                return { ...current, charter: next };
+              },
+              audit,
+              (settings) => settingsHold(settings, requires),
+            );
+            if (done === undefined) return yield* new InvalidState({ message: CHARTER_MOVED });
+            committedState = done.state;
+            committedAudit = done.auditSeq;
+          }
+          return { state: committedState, auditSeq: committedAudit, prior: priorCharter };
+        }),
+      );
+      yield* workspacesChanged;
+      yield* orchestrationChanged(workspaceId);
+      yield* afterCharter(workspaceId, state, prior);
       return { state, auditSeq };
     });
 
@@ -294,5 +303,8 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
       ),
     ).pipe(Effect.map(({ state, auditSeq }) => ({ state, auditSeq: auditSeq! })));
 
-  return { setCharter, changeCharter };
+  return { setCharter, changeCharter, checkCharter, afterCharter };
 };
+
+/** What `makeCharter` makes, for the parts whose `deps` take some of it. */
+export type Charter = ReturnType<typeof makeCharter>;
