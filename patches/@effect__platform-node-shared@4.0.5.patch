@@ -1,0 +1,28 @@
+diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
+index 16dedd52262a0343df11fb14496f5f9f2a0f1e92..e374df9ab80794ef41e5212506665aac40704598 100644
+--- a/dist/NodeChildProcessSpawner.js
++++ b/dist/NodeChildProcessSpawner.js
+@@ -306,7 +306,13 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+     }
+     return Effect.try({
+       try: () => {
+-        globalThis.process.kill(-childProcess.pid, signal);
++        try {
++          globalThis.process.kill(-childProcess.pid, signal);
++        } catch (error) {
++          // Patched (Gram): the group can exit between the liveness check and the signal.
++          // ESRCH means it is already gone; still await exitSignal so the leader is reaped.
++          if (error?.code !== "ESRCH") throw error;
++        }
+       },
+       catch: error => toPlatformError("kill", toError(error), command)
+     });
+@@ -325,7 +331,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+   };
+   const killProcess = (command, childProcess, signal) => Effect.suspend(() => {
+     const killed = childProcess.kill(signal);
+-    if (!killed) {
++    if (!killed && childProcess.exitCode === null && childProcess.signalCode === null) {
+       const error = new globalThis.Error("Failed to kill child process");
+       return Effect.fail(toPlatformError("kill", error, command));
+     }

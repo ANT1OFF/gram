@@ -1,0 +1,418 @@
+{
+ "scenario": "cx12-gateway-key-disabled",
+ "cliVersion": "0.158.0",
+ "messages": [
+  {
+   "dir": "out",
+   "msg": {
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "clientInfo": {
+      "name": "gram",
+      "title": "Gram",
+      "version": "0.0.0"
+     },
+     "capabilities": {
+      "experimentalApi": true,
+      "requestAttestation": false
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 1,
+    "result": {
+     "userAgent": "gram/0.158.0",
+     "codexHome": "$CODEX_HOME",
+     "platformFamily": "unix",
+     "platformOs": "macos"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "method": "initialized"
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 2,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "on-request",
+     "sandbox": "workspace-write"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "remoteControl/status/changed",
+    "params": {
+     "status": "disabled",
+     "serverName": "$HOST",
+     "installationId": "$INSTALLATION",
+     "environmentId": null
+    },
+    "emittedAtMs": 1790807963411
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 2,
+    "result": {
+     "thread": {
+      "id": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1790807963,
+      "updatedAt": 1790807963,
+      "recencyAt": 1790807963,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/10/01/rollout-2026-10-01T00-39-23-01a0f478-f722-7ba0-b0a7-8bb17dfec767.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.158.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "disabledPluginIds": [],
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 3,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "input": [
+      {
+       "type": "text",
+       "text": "Say hi",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1790807963,
+      "updatedAt": 1790807963,
+      "recencyAt": 1790807963,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/10/01/rollout-2026-10-01T00-39-23-01a0f478-f722-7ba0-b0a7-8bb17dfec767.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.158.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1790807963603
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 3,
+    "result": {
+     "turn": {
+      "id": "01a0f478-f7d4-71d1-8cbc-83a8e9d0e8fc",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1790807963759
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "turn": {
+      "id": "01a0f478-f7d4-71d1-8cbc-83a8e9d0e8fc",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1790807963,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1790807963759
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0f478-f887-74e1-8a05-2dc9abcc1031",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Say hi",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "turnId": "01a0f478-f7d4-71d1-8cbc-83a8e9d0e8fc",
+     "startedAtMs": 1790807963787
+    },
+    "emittedAtMs": 1790807963787
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0f478-f887-74e1-8a05-2dc9abcc1031",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Say hi",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "turnId": "01a0f478-f7d4-71d1-8cbc-83a8e9d0e8fc",
+     "completedAtMs": 1790807963787
+    },
+    "emittedAtMs": 1790807963826
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "error",
+    "params": {
+     "error": {
+      "message": "Reconnecting... 1/2",
+      "codexErrorInfo": {
+       "responseStreamDisconnected": {
+        "httpStatusCode": 403
+       }
+      },
+      "additionalDetails": "unexpected status 403 Forbidden: API key is disabled. Contact AI team., url: http://127.0.0.1:$PORT/v1/responses",
+      "misalignment": null
+     },
+     "willRetry": true,
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "turnId": "01a0f478-f7d4-71d1-8cbc-83a8e9d0e8fc"
+    },
+    "emittedAtMs": 1790807963832
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "error",
+    "params": {
+     "error": {
+      "message": "Reconnecting... 2/2",
+      "codexErrorInfo": {
+       "responseStreamDisconnected": {
+        "httpStatusCode": 403
+       }
+      },
+      "additionalDetails": "unexpected status 403 Forbidden: API key is disabled. Contact AI team., url: http://127.0.0.1:$PORT/v1/responses",
+      "misalignment": null
+     },
+     "willRetry": true,
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "turnId": "01a0f478-f7d4-71d1-8cbc-83a8e9d0e8fc"
+    },
+    "emittedAtMs": 1790807964035
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "status": {
+      "type": "systemError"
+     }
+    },
+    "emittedAtMs": 1790807964424
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "error",
+    "params": {
+     "error": {
+      "message": "unexpected status 403 Forbidden: API key is disabled. Contact AI team., url: http://127.0.0.1:$PORT/v1/responses",
+      "codexErrorInfo": {
+       "httpConnectionFailed": {
+        "httpStatusCode": 403
+       }
+      },
+      "additionalDetails": null,
+      "misalignment": null
+     },
+     "willRetry": false,
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "turnId": "01a0f478-f7d4-71d1-8cbc-83a8e9d0e8fc"
+    },
+    "emittedAtMs": 1790807964424
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0f478-f722-7ba0-b0a7-8bb17dfec767",
+     "turn": {
+      "id": "01a0f478-f7d4-71d1-8cbc-83a8e9d0e8fc",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "failed",
+      "error": {
+       "message": "unexpected status 403 Forbidden: API key is disabled. Contact AI team., url: http://127.0.0.1:$PORT/v1/responses",
+       "codexErrorInfo": {
+        "httpConnectionFailed": {
+         "httpStatusCode": 403
+        }
+       },
+       "additionalDetails": null,
+       "misalignment": null
+      },
+      "startedAt": 1790807963,
+      "completedAt": 1790807964,
+      "durationMs": 819
+     }
+    },
+    "emittedAtMs": 1790807964429
+   }
+  }
+ ]
+}

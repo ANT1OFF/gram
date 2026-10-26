@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "import", "unicorn", "oxc"],
+  "jsPlugins": ["./tools/oxlint/gram.mjs"],
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2024": true
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-unassigned-import": ["warn", { "allow": ["**/*.css"] }],
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    "react/react-in-jsx-scope": "off",
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-explicit-any": "error",
+    "no-underscore-dangle": ["warn", { "allow": ["_tag", "__flicker", "__gutters"] }],
+    "gram/no-bare-fork": "error",
+    "gram/no-focused-tests": "error"
+  },
+  "overrides": [
+    {
+      "files": ["packages/server/src/**", "packages/git/src/**"],
+      "rules": {
+        "gram/no-raw-path": "error",
+        "gram/no-day-math": "error",
+        "gram/no-adhoc-lock": "error"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/out/**",
+    "**/release/**",
+    "**/routeTree.gen.ts",
+    "packages/agents/src/codex/protocol/**"
+  ]
+}

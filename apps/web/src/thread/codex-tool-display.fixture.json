@@ -1,0 +1,43 @@
+{
+  "file": {
+    "id": "audit",
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "dynamic-tool",
+        "toolName": "Write",
+        "toolCallId": "patch",
+        "state": "output-available",
+        "input": { "file_path": "/repo/new.ts", "content": "export const value = 1;" },
+        "providerExecuted": true,
+        "output": {
+          "type": "update",
+          "structuredPatch": [
+            {
+              "oldStart": 0,
+              "oldLines": 0,
+              "newStart": 1,
+              "newLines": 1,
+              "lines": ["+export const value = 1;"]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "failure": {
+    "id": "audit",
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "dynamic-tool",
+        "toolName": "synthetic_tool",
+        "toolCallId": "dynamic",
+        "state": "output-error",
+        "input": { "path": "" },
+        "providerExecuted": true,
+        "errorText": "Required path is missing\nChoose a source file."
+      }
+    ]
+  }
+}

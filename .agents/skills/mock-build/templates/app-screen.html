@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Template: one product screen in its states. Replace every [BRACKETED] fact with real copy from
+         the brief or the codebase, or keep it bracketed as a visible gap. Delete what the brief
+         doesn't need. Keep the kit links and the body class. -->
+    <title>[Mock title] · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <script type="application/json" id="mock-tweaks">
+      {
+        "density": {
+          "label": "Density",
+          "type": "enum",
+          "options": ["compact", "comfortable"],
+          "default": "compact"
+        }
+      }
+    </script>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">[One sentence: what this screen is for and what to look at.]</p>
+
+      <section
+        class="board"
+        data-name="[Screen]"
+        data-size="1280x800"
+        data-states="full,empty,loading,error"
+      >
+        <div class="board-frame">
+          <div class="app">
+            <div class="titlebar">
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span>[Workspace name]</span>
+            </div>
+            <div class="app-body">
+              <nav class="sidebar" aria-label="Primary">
+                <div class="section-label">[Section]</div>
+                <a class="nav-item" href="#" aria-current="page"
+                  ><i data-icon="home"></i>[Current place]<span class="count">12</span></a
+                >
+                <a class="nav-item" href="#"><i data-icon="file"></i>[Other place]</a>
+                <a class="nav-item" href="#"><i data-icon="settings"></i>Settings</a>
+              </nav>
+              <div class="main">
+                <header class="topbar">
+                  <h2>[Screen title]</h2>
+                  <span class="grow"></span>
+                  <label class="search">
+                    <i data-icon="search"></i>
+                    <span class="sr-only">Search</span>
+                    <input class="input" type="search" placeholder="Search" />
+                  </label>
+                  <button class="btn primary" type="button">
+                    <i data-icon="plus"></i>[Primary action]
+                  </button>
+                </header>
+
+                <div class="content" data-when="full">
+                  <div class="table-wrap">
+                    <table class="table">
+                      <thead>
+                        <tr>
+                          <th>[Name]</th>
+                          <th>[Status]</th>
+                          <th class="num">[Updated]</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>[A real-looking row from the domain]</td>
+                          <td><span class="badge success">[Done]</span></td>
+                          <td class="num">09:42</td>
+                        </tr>
+                        <tr>
+                          <td>[Another row]</td>
+                          <td><span class="badge warning">[Waiting]</span></td>
+                          <td class="num">Yesterday 17:05</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="content" data-when="empty">
+                  <div class="empty">
+                    <span class="empty-icon"><i data-icon="file"></i></span>
+                    <h3>[Nothing here yet]</h3>
+                    <p>[What fills this, and the one action that starts it.]</p>
+                    <button class="btn primary" type="button">[Primary action]</button>
+                  </div>
+                </div>
+
+                <div class="content" data-when="loading" aria-busy="true">
+                  <div class="skeleton" style="height: 28px"></div>
+                  <div class="skeleton" style="height: 28px"></div>
+                  <div class="skeleton" style="height: 28px; width: 60%"></div>
+                </div>
+
+                <div class="content" data-when="error">
+                  <div class="callout danger" role="alert">
+                    <i data-icon="xcircle"></i>
+                    <div class="stack">
+                      <strong>[What failed, in the user's words]</strong>
+                      <span>[What they can do about it.]</span>
+                    </div>
+                    <button class="btn sm" type="button">Try again</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

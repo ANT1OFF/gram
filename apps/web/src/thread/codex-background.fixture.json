@@ -1,0 +1,156 @@
+{
+  "background": {
+    "id": "codex-parent",
+    "role": "assistant",
+    "metadata": {
+      "agent": "codex",
+      "agentMessageIds": ["parent-turn"],
+      "agentSessionId": "provider-parent"
+    },
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "dynamic-tool",
+        "toolName": "Bash",
+        "toolCallId": "command-1",
+        "state": "output-available",
+        "providerExecuted": true,
+        "input": {
+          "command": "printf ready; sleep 30; printf done",
+          "cwd": "/synthetic/project"
+        },
+        "output": {
+          "stdout": "ready\n",
+          "stderr": "",
+          "interrupted": false
+        },
+        "preliminary": true
+      }
+    ]
+  },
+  "completed": {
+    "id": "codex-parent",
+    "role": "assistant",
+    "metadata": {
+      "agent": "codex",
+      "agentMessageIds": ["parent-turn"],
+      "agentSessionId": "provider-parent"
+    },
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "dynamic-tool",
+        "toolName": "Bash",
+        "toolCallId": "command-1",
+        "state": "output-available",
+        "providerExecuted": true,
+        "input": {
+          "command": "printf ready; sleep 30; printf done",
+          "cwd": "/synthetic/project"
+        },
+        "output": {
+          "stdout": "ready\ndone\n",
+          "stderr": "",
+          "interrupted": false,
+          "exitCode": 0
+        }
+      }
+    ]
+  },
+  "collaboration": {
+    "id": "codex-collaboration",
+    "role": "assistant",
+    "metadata": {
+      "agent": "codex",
+      "agentMessageIds": ["collab-turn"]
+    },
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "dynamic-tool",
+        "toolName": "codex_agent",
+        "toolCallId": "spawn-1",
+        "title": "Spawn agent",
+        "state": "output-available",
+        "providerExecuted": true,
+        "input": {
+          "tool": "spawnAgent",
+          "receiverThreadIds": ["child-1"],
+          "prompt": "Inspect the synthetic parser",
+          "model": "synthetic-model",
+          "reasoningEffort": "high"
+        },
+        "output": {
+          "toolStatus": "completed",
+          "lastKnownAgentStates": {
+            "child-1": {
+              "status": "running",
+              "message": null
+            }
+          }
+        }
+      }
+    ]
+  },
+  "retainedReplay": [
+    {
+      "type": "start",
+      "messageId": "codex-parent",
+      "messageMetadata": {
+        "agent": "codex",
+        "agentMessageIds": ["parent-turn"],
+        "agentSessionId": "provider-parent"
+      }
+    },
+    {
+      "type": "start-step"
+    },
+    {
+      "type": "tool-input-start",
+      "toolCallId": "command-1",
+      "toolName": "Bash",
+      "dynamic": true,
+      "providerExecuted": true
+    },
+    {
+      "type": "tool-input-available",
+      "toolCallId": "command-1",
+      "toolName": "Bash",
+      "input": {
+        "command": "printf ready; sleep 30; printf done",
+        "cwd": "/synthetic/project"
+      },
+      "dynamic": true,
+      "providerExecuted": true
+    },
+    {
+      "type": "finish-step"
+    },
+    {
+      "type": "tool-output-available",
+      "toolCallId": "command-1",
+      "output": {
+        "stdout": "ready\n",
+        "stderr": "",
+        "interrupted": false
+      },
+      "preliminary": true,
+      "dynamic": true,
+      "providerExecuted": true
+    },
+    {
+      "type": "finish",
+      "messageMetadata": {
+        "agent": "codex",
+        "agentMessageIds": ["parent-turn"],
+        "agentSessionId": "provider-parent"
+      }
+    }
+  ]
+}

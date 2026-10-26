@@ -1,0 +1,955 @@
+{
+ "scenario": "cx08-mcp-config",
+ "cliVersion": "0.154.0",
+ "messages": [
+  {
+   "dir": "out",
+   "msg": {
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "clientInfo": {
+      "name": "gram",
+      "title": "Gram",
+      "version": "0.0.0"
+     },
+     "capabilities": {
+      "experimentalApi": true,
+      "requestAttestation": false
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 1,
+    "result": {
+     "userAgent": "gram/0.154.0",
+     "codexHome": "$CODEX_HOME",
+     "platformFamily": "unix",
+     "platformOs": "macos"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "method": "initialized"
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 2,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "on-request",
+     "sandbox": "workspace-write",
+     "config": {
+      "mcp_servers": {
+       "gram": {
+        "url": "http://127.0.0.1:$PORT/mcp",
+        "http_headers": {
+         "authorization": "Bearer thread-a"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "remoteControl/status/changed",
+    "params": {
+     "status": "disabled",
+     "serverName": "$HOST",
+     "installationId": "$INSTALLATION",
+     "environmentId": null
+    },
+    "emittedAtMs": 1789585703779
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 2,
+    "result": {
+     "thread": {
+      "id": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789585704,
+      "updatedAt": 1789585704,
+      "recencyAt": 1789585704,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T21-08-23-01a0ab9e-c3e8-7d71-9e15-c7248c5ea612.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789585704,
+      "updatedAt": 1789585704,
+      "recencyAt": 1789585704,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T21-08-23-01a0ab9e-c3e8-7d71-9e15-c7248c5ea612.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1789585704020
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "mcpServer/startupStatus/updated",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "name": "gram",
+     "status": "starting",
+     "error": null,
+     "failureReason": null
+    },
+    "emittedAtMs": 1789585704020
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 3,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "on-request",
+     "sandbox": "workspace-write",
+     "config": {
+      "mcp_servers": {
+       "gram": {
+        "url": "http://127.0.0.1:$PORT/mcp",
+        "http_headers": {
+         "authorization": "Bearer thread-b"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "mcpServer/startupStatus/updated",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "name": "gram",
+     "status": "ready",
+     "error": null,
+     "failureReason": null
+    },
+    "emittedAtMs": 1789585704022
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 3,
+    "result": {
+     "thread": {
+      "id": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789585704,
+      "updatedAt": 1789585704,
+      "recencyAt": 1789585704,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T21-08-24-01a0ab9e-c457-71c0-8131-e57456dbf05d.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789585704,
+      "updatedAt": 1789585704,
+      "recencyAt": 1789585704,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T21-08-24-01a0ab9e-c457-71c0-8131-e57456dbf05d.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1789585704038
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "mcpServer/startupStatus/updated",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "name": "gram",
+     "status": "starting",
+     "error": null,
+     "failureReason": null
+    },
+    "emittedAtMs": 1789585704038
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "mcpServer/startupStatus/updated",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "name": "gram",
+     "status": "ready",
+     "error": null,
+     "failureReason": null
+    },
+    "emittedAtMs": 1789585704041
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 4,
+    "method": "mcpServerStatus/list",
+    "params": {}
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 4,
+    "result": {
+     "data": [],
+     "nextCursor": null
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 5,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "input": [
+      {
+       "type": "text",
+       "text": "hi from a",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 5,
+    "result": {
+     "turn": {
+      "id": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1789585705683
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "turn": {
+      "id": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1789585705,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1789585705683
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9e-cb22-78a0-9a1f-065be4a35ff3",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "hi from a",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "turnId": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+     "startedAtMs": 1789585705762
+    },
+    "emittedAtMs": 1789585705762
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9e-cb22-78a0-9a1f-065be4a35ff3",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "hi from a",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "turnId": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+     "completedAtMs": 1789585705762
+    },
+    "emittedAtMs": 1789585705768
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_1",
+      "text": "",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "turnId": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+     "startedAtMs": 1789585705773
+    },
+    "emittedAtMs": 1789585705773
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "turnId": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+     "itemId": "msg_1",
+     "delta": "Hello A."
+    },
+    "emittedAtMs": 1789585705773
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_1",
+      "text": "Hello A.",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "turnId": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+     "completedAtMs": 1789585705773
+    },
+    "emittedAtMs": 1789585705787
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "turnId": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1789585705918
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1789585705918
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "status": {
+      "type": "idle"
+     }
+    },
+    "emittedAtMs": 1789585705975
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0ab9e-c3e8-7d71-9e15-c7248c5ea612",
+     "turn": {
+      "id": "01a0ab9e-ca50-70c1-a478-6a9d50ebe14e",
+      "items": [
+       {
+        "type": "agentMessage",
+        "id": "msg_1",
+        "text": "Hello A.",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+       }
+      ],
+      "itemsView": "summary",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1789585705,
+      "completedAt": 1789585705,
+      "durationMs": 355
+     }
+    },
+    "emittedAtMs": 1789585705975
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 6,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "input": [
+      {
+       "type": "text",
+       "text": "hi from b",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 6,
+    "result": {
+     "turn": {
+      "id": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1789585705985
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "turn": {
+      "id": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1789585705,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1789585705985
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9e-cc67-7660-8060-a9d77367230f",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "hi from b",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "turnId": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+     "startedAtMs": 1789585706087
+    },
+    "emittedAtMs": 1789585706088
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9e-cc67-7660-8060-a9d77367230f",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "hi from b",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "turnId": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+     "completedAtMs": 1789585706087
+    },
+    "emittedAtMs": 1789585706158
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_2",
+      "text": "",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "turnId": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+     "startedAtMs": 1789585706173
+    },
+    "emittedAtMs": 1789585706174
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "turnId": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+     "itemId": "msg_2",
+     "delta": "Hello B."
+    },
+    "emittedAtMs": 1789585706174
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_2",
+      "text": "Hello B.",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "turnId": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+     "completedAtMs": 1789585706174
+    },
+    "emittedAtMs": 1789585706187
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "turnId": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1789585706404
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1789585706404
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "status": {
+      "type": "idle"
+     }
+    },
+    "emittedAtMs": 1789585706424
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0ab9e-c457-71c0-8131-e57456dbf05d",
+     "turn": {
+      "id": "01a0ab9e-cbf7-7a41-92e9-c8cfa5f9b2fd",
+      "items": [
+       {
+        "type": "agentMessage",
+        "id": "msg_2",
+        "text": "Hello B.",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+       }
+      ],
+      "itemsView": "summary",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1789585705,
+      "completedAt": 1789585706,
+      "durationMs": 429
+     }
+    },
+    "emittedAtMs": 1789585706425
+   }
+  }
+ ]
+}

@@ -1,0 +1,545 @@
+/*
+ * CSS side of the motion primitives in src/motion, plus view-transition rules. Every animation here
+ * reads the motion setting through data-motion or the scaled duration tokens.
+ */
+
+/* Shimmer — a band of light across the glyphs, moved by the shared clock in src/motion/shimmer.tsx.
+   The gradient is clipped to the text, so no box shows around it, and away from the band it is the
+   label's own colour. The band shifts that colour's lightness rather than mixing in --fg, which a
+   muted label can sit too close to for the band to show. Reduced and Off leave the label still. */
+.gram-shimmer {
+  --gram-shimmer-lift: 0.3;
+  display: inline-block;
+  overflow: clip;
+}
+
+[data-mode="light"] .gram-shimmer {
+  --gram-shimmer-lift: -0.3;
+}
+
+[data-motion="full"] .gram-shimmer[data-active="true"] {
+  background-image: linear-gradient(
+    90deg,
+    currentColor 40%,
+    oklch(from currentColor calc(l + var(--gram-shimmer-lift)) c h) 50%,
+    currentColor 60%
+  );
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+  /* At 0 % the band sits past the right edge: what shows while the clock holds. */
+  background-position-x: 0%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Forced colours drop the gradient, which would leave the transparent fill showing nothing. */
+@media (forced-colors: active) {
+  [data-motion="full"] .gram-shimmer[data-active="true"] {
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* Expand — height: auto via interpolate-size (set on :root in tokens.css). */
+.gram-expand {
+  height: 0;
+  opacity: 0;
+  overflow: clip;
+  transition:
+    height var(--dur-move-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.gram-expand[data-open="true"] {
+  height: auto;
+  opacity: 1;
+}
+
+/* Collapse — the same, for a Base UI Collapsible panel, which measures its own height. */
+.gram-collapse {
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  transition:
+    height var(--dur-move-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.gram-collapse[data-starting-style],
+.gram-collapse[data-ending-style] {
+  height: 0;
+  opacity: 0;
+}
+
+/* Flash — a tint that fades out once, for a row that just changed for the worse. */
+.gram-flash {
+  animation: gram-flash calc(var(--dur-slow) * 8) var(--ease-in-out) both;
+}
+
+@keyframes gram-flash {
+  0%,
+  30% {
+    background-color: color-mix(in oklch, var(--color-destructive) 20%, transparent);
+  }
+}
+
+/* Arrive — a card that lands in the transcript while it is being watched fades up into place. The
+   duration tokens scale with the motion setting; only Full moves it. */
+.gram-arrive {
+  animation: gram-fade-in var(--dur-move-base) var(--ease-out) both;
+}
+
+[data-motion="full"] .gram-arrive {
+  animation-name: gram-arrive;
+}
+
+@keyframes gram-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Fade — words that replace other words in the same place, keyed by what they say. */
+.gram-fade {
+  animation: gram-fade-in var(--dur-base) var(--ease-out) both;
+}
+
+/* Swap — for content that replaces other content in the same place (a glyph, a word, a label):
+   keyed by what it shows, the new one fades in where the old one stood. Opacity and a scale that
+   settles only, so nothing around it is measured differently; only Full scales. */
+.gram-swap {
+  animation: gram-fade-in var(--dur-base) var(--ease-out) both;
+}
+
+[data-motion="full"] .gram-swap {
+  animation-name: gram-swap;
+}
+
+@keyframes gram-swap {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+
+/* Breathe — the Following live dot, only while text streams in: it dims and settles, then rises
+   again, and stops the moment streaming does. Full only; Reduced and Off show a still dot. */
+[data-motion="full"] .gram-breathe {
+  animation: gram-breathe calc(var(--dur-slow) * 8) var(--ease-in-out) infinite;
+}
+
+@keyframes gram-breathe {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+}
+
+/* Working — a worker's dot in the overview while its turn runs: a slow, soft pulse of opacity only,
+   so nothing is measured or moved. Full only; Reduced and Off show a still dot. */
+[data-motion="full"] .gram-working {
+  animation: gram-working 2s ease-in-out infinite;
+}
+
+@keyframes gram-working {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Ring breathe — the compact overview's ring round a tile while its orchestrator works: it fades
+   down and back, in place. Full only; Reduced and Off show a still ring. */
+[data-motion="full"] .gram-ring-breathe {
+  animation: gram-ring-breathe calc(var(--dur-slow) * 8) var(--ease-in-out) infinite;
+}
+
+@keyframes gram-ring-breathe {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Pulse once — PulseOnce's ring: invisible at rest, so Off (which stops every animation) shows
+   nothing; it widens and fades a single time. Reduced fades without widening. */
+.gram-pulse-once {
+  --pulse: var(--accent);
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: 0 0 0 1.5px var(--pulse);
+  animation: gram-pulse-fade calc(var(--dur-slow) * 4) var(--ease-out) 1 both;
+}
+
+.gram-pulse-once[data-tone="needs"] {
+  --pulse: var(--status-needs);
+}
+
+.gram-pulse-once[data-tone="success"] {
+  --pulse: var(--success-text);
+}
+
+.gram-pulse-once[data-tone="merged"] {
+  --pulse: var(--merged);
+}
+
+[data-motion="full"] .gram-pulse-once {
+  animation-name: gram-pulse-ring;
+}
+
+/* The sparks of a burst: one dot whose shadows are the others, flung outward as it fades. */
+[data-motion="full"] .gram-pulse-once[data-burst]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 2px;
+  margin: -1px;
+  border-radius: 9999px;
+  color: var(--pulse);
+  box-shadow:
+    0 -9px currentColor,
+    8px -4px currentColor,
+    8px 5px currentColor,
+    0 9px currentColor,
+    -8px 5px currentColor,
+    -8px -4px currentColor;
+  animation: gram-pulse-sparks calc(var(--dur-slow) * 4) var(--ease-out) 1 both;
+}
+
+@keyframes gram-pulse-fade {
+  from {
+    opacity: 0.85;
+  }
+}
+
+@keyframes gram-pulse-ring {
+  from {
+    opacity: 0.85;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+
+@keyframes gram-pulse-sparks {
+  from {
+    opacity: 1;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+/* Wake — one sheen across a row the moment its thread was woken (an orchestrator's digest).
+   Invisible at rest, so Reduced and Off show nothing. */
+.gram-wake-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--sidebar-row-radius);
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--accent) 24%, transparent),
+      transparent
+    )
+    no-repeat;
+  background-size: 45% 100%;
+}
+
+[data-motion="full"] .gram-wake-sheen {
+  animation: gram-wake calc(var(--dur-slow) * 5) var(--ease-in-out) 1 both;
+}
+
+@keyframes gram-wake {
+  0% {
+    opacity: 0;
+    background-position: -80% 0;
+  }
+  15%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    background-position: 180% 0;
+  }
+}
+
+/* Streaming text — new chunks fade in; the Terminal look steps them in and blinks the caret. */
+.gram-stream-chunk {
+  animation: gram-fade-in var(--dur-slow) var(--ease-out) both;
+}
+
+.gram-stream[data-reveal="typewriter"] .gram-stream-chunk {
+  animation-timing-function: steps(3, end);
+}
+
+.gram-stream[data-reveal="crossfade"] .gram-stream-chunk {
+  animation-duration: calc(var(--dur-slow) * 1.25);
+}
+
+.gram-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.1em;
+  margin-inline-start: 1px;
+  vertical-align: text-bottom;
+  background-color: currentColor;
+  opacity: 0.6;
+}
+
+[data-motion="full"] .gram-stream[data-caret-blink="true"] .gram-caret {
+  animation: gram-blink 1s steps(1, end) infinite;
+}
+
+@keyframes gram-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes gram-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Theme switch — the new snapshot is revealed by a clip-path animation from src/theme/transition. */
+html[data-theme-switching]::view-transition-old(root),
+html[data-theme-switching]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Boot too: the first theme sync must not animate from index.html's attributes into the real theme. */
+html[data-theme-switching] *,
+html[data-theme-switching] *::before,
+html[data-theme-switching] *::after,
+html[data-theme-booting] *,
+html[data-theme-booting] *::before,
+html[data-theme-booting] *::after {
+  transition: none !important;
+}
+
+/* Reduced keeps view-transition crossfades but not the geometry morph; Off has none at all. */
+html[data-motion="reduced"]::view-transition-group(*) {
+  animation: none;
+}
+
+html[data-motion="off"]::view-transition-group(*),
+html[data-motion="off"]::view-transition-old(*),
+html[data-motion="off"]::view-transition-new(*) {
+  animation: none !important;
+}
+
+/* Off is authoritative over component utilities too: spinners, enter/exit keyframes, transitions. */
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Reduced keeps enter/exit fades but drops their zoom, slide, rotation and blur. */
+html[data-motion="reduced"] * {
+  --tw-enter-scale: 1 !important;
+  --tw-exit-scale: 1 !important;
+  --tw-enter-translate-x: 0 !important;
+  --tw-enter-translate-y: 0 !important;
+  --tw-exit-translate-x: 0 !important;
+  --tw-exit-translate-y: 0 !important;
+  --tw-enter-rotate: 0 !important;
+  --tw-exit-rotate: 0 !important;
+  --tw-enter-blur: 0 !important;
+  --tw-exit-blur: 0 !important;
+}
+
+/* Running edge — the composer's border while the agent works. The mask leaves only the border, as
+   the turn-complete sheen's does. The light is moved by the shared clock in src/motion/spin.ts
+   rather than a CSS animation, which would keep the compositor at 60 frames a second all turn. */
+.gram-running-edge {
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  overflow: hidden;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.gram-running-tint {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0.35;
+}
+
+.gram-running-light {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 25%;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  will-change: translate, opacity;
+}
+
+/* Status mark — src/motion/status-mark.tsx. Each phase is a set of dashes, and the moves between
+   them are transitions, so they play only on a change. The arc closing and the check drawing take
+   the motion-scaled duration, so Reduced lands them at once and fades the check in instead; Off has
+   no transitions at all. */
+.gram-mark {
+  overflow: visible;
+  transition: color var(--dur-base) var(--ease-out);
+}
+
+.gram-mark-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  stroke-dasharray: 100 0;
+  transition: stroke-dasharray calc(var(--dur-move-base) * 1.2) var(--ease-out);
+}
+
+.gram-mark[data-phase="pending"] .gram-mark-ring {
+  stroke-dasharray: 5.5 7;
+}
+
+.gram-mark[data-phase="running"] .gram-mark-ring {
+  stroke-dasharray: 26 74;
+}
+
+.gram-mark-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  scale: 0;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    scale var(--dur-move-base) var(--ease-out);
+}
+
+.gram-mark[data-phase="active"] .gram-mark-dot {
+  opacity: 1;
+  scale: 1;
+}
+
+.gram-mark-check,
+.gram-mark-cross {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  transition:
+    stroke-dashoffset calc(var(--dur-move-base) * 1.4) var(--ease-out)
+      calc(var(--dur-move-base) * 0.5),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.gram-mark[data-phase="done"] .gram-mark-check,
+.gram-mark[data-phase="error"] .gram-mark-cross {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+
+/* Segment slab — src/motion/segment-slab.tsx. Forced colours drop its background, which was all
+   that marked the selection, so it takes a system-colour outline there instead. */
+@media (forced-colors: active) {
+  .gram-segment-slab {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+}
+
+/* Draw-on — a stroke that draws itself once as it mounts (src/motion/drawn-check.tsx). At rest it
+   is whole, so Off, which drops every animation, shows the mark drawn; Reduced fades it in. */
+.gram-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: gram-draw calc(var(--dur-move-base) * 1.6) var(--ease-out) both;
+}
+
+[data-motion="reduced"] .gram-draw {
+  animation: gram-fade-in var(--dur-base) var(--ease-out) both;
+  /* One fade for the whole icon: staggered, its strokes would still read as being drawn. */
+  animation-delay: 0s !important;
+}
+
+@keyframes gram-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+/* Level bars — src/motion/level-bars.tsx. Where the bars stand at rest, which is all Reduced and
+   Off show; the shared clock scales them with the microphone's loudness at Full. */
+.gram-level-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  scale: 1 0.45;
+}
+
+.gram-level-bar:nth-child(2) {
+  scale: 1 0.7;
+}
+
+/* Reduced keeps a popup's fade in and out but not its settle from 98 %: every Base UI popup
+   (menus, popovers, selects, tooltips, dialogs) enters and leaves through these two attributes. */
+html[data-motion="reduced"] [data-starting-style],
+html[data-motion="reduced"] [data-ending-style] {
+  scale: none !important;
+}
+
+/* List highlight — src/motion/list-highlight.tsx. Placed by script; it glides only for a deliberate
+   move, on the motion-scaled duration, so Reduced and Off jump. Forced colours drop its background,
+   so it outlines the active option there instead. */
+.gram-list-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.gram-list-highlight[data-glide="true"] {
+  transition:
+    translate var(--dur-move-fast) var(--ease-out),
+    width var(--dur-move-fast) var(--ease-out),
+    height var(--dur-move-fast) var(--ease-out);
+}
+
+@media (forced-colors: active) {
+  .gram-list-highlight {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+}
+
+/* Pop — a floating list that appears in place (the composer's slash and @ menus) fades up from just
+   below as it mounts. The rise takes the motion-scaled duration, so only Full moves it. */
+.gram-pop {
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    translate var(--dur-move-fast) var(--ease-out),
+    scale var(--dur-move-fast) var(--ease-out);
+  transform-origin: bottom center;
+}
+
+@starting-style {
+  .gram-pop {
+    opacity: 0;
+    translate: 0 4px;
+    scale: 0.98;
+  }
+}

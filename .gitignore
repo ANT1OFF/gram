@@ -1,0 +1,38 @@
+node_modules/
+dist/
+out/
+release/
+*.tsbuildinfo
+.vite/
+coverage/
+.env
+.env.*
+.DS_Store
+*.log
+
+# Playwright run outputs (both the mock-API and real-server configs)
+apps/web/test-results*/
+apps/web/playwright-report*/
+apps/web/playwright-results.json
+apps/web/dist-e2e/
+
+# CI's unpacked-app archive
+*.tgz
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Process core dumps hold process memory, credentials included; they must never be committed.
+core.[0-9]*
+
+# Local source archives and credentials
+*.zip
+*.pem
+*.key
+*.p12
+*.pfx
+!.env.example
+
+# Mock screenshots are local working files for review cards; pictures go in the PR body
+docs/design/mocks/*/shots/

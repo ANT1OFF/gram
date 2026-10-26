@@ -1,0 +1,133 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Studio */
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+/* Glass */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+/* Additional bundled fonts remain available for saved font overrides. */
+@import "@fontsource/commit-mono/400.css";
+@import "@fontsource/commit-mono/700.css";
+@import "@fontsource/vt323/400.css";
+@import "@fontsource/instrument-serif/400.css";
+@import "@fontsource/instrument-serif/400-italic.css";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+@import "./generated/themes.css";
+@import "./tokens.css";
+@import "./motion.css";
+@import "./looks.css";
+
+@custom-variant dark (&:where([data-mode="dark"], [data-mode="dark"] *));
+/* Only for looks that are structurally different, not just re-tokened. */
+@custom-variant look-glass (&:where([data-look="glass"], [data-look="glass"] *));
+/* Motion utilities follow the app's Motion setting, not the OS preference alone. */
+@custom-variant motion-safe (&:where([data-motion="full"], [data-motion="full"] *));
+@custom-variant motion-reduce (&:where([data-motion="reduced"], [data-motion="reduced"] *, [data-motion="off"], [data-motion="off"] *));
+
+@theme inline {
+  --font-sans: var(--font-ui);
+  --font-heading: var(--font-display);
+  --font-caption: var(--font-label);
+
+  --shadow-card: var(--shadow-raised);
+  --shadow-popover: var(--shadow-overlay);
+
+  /* shadcn names → semantic tokens */
+  --color-background: var(--surface-2);
+  --color-foreground: var(--fg);
+  --color-card: var(--surface-3);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--surface-3);
+  --color-popover-foreground: var(--fg);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--surface-3);
+  --color-secondary-foreground: var(--fg);
+  --color-muted: var(--surface-3);
+  --color-muted-foreground: var(--fg-muted);
+  --color-accent: var(--surface-hover);
+  --color-accent-foreground: var(--fg);
+  --color-destructive: var(--danger-text);
+  --color-destructive-tint: var(--danger-tint);
+  --color-destructive-tint-hover: var(--danger-tint-hover);
+  --color-border: var(--border-subtle);
+  --color-input: var(--border-strong);
+  --color-ring: var(--focus-ring);
+  --color-scrim: var(--scrim);
+
+  /* Semantic */
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border-strong: var(--border-strong);
+  --color-link: var(--accent-text);
+  --color-subtle: var(--fg-subtle);
+  --color-highlight: var(--highlight);
+  /* Components use these as text as well as glyphs, so they take the text-grade tokens. */
+  --color-success: var(--success-text);
+  --color-warning: var(--warning-text);
+  --color-info: var(--info-text);
+  --color-danger-text: var(--danger-text);
+  --color-success-text: var(--success-text);
+  --color-warning-text: var(--warning-text);
+  --color-info-text: var(--info-text);
+  --color-status-needs: var(--status-needs);
+  --color-status-working: var(--status-working);
+  --color-status-idle: var(--status-idle);
+  --color-merged: var(--merged);
+  --color-diff-add: var(--diff-add-bg);
+  --color-diff-del: var(--diff-del-bg);
+  --color-diff-add-foreground: var(--diff-add-fg);
+  --color-diff-del-foreground: var(--diff-del-fg);
+
+  /* Shell components */
+  --color-sidebar: var(--sidebar-bg);
+  --color-sidebar-foreground: var(--sidebar-fg);
+  --color-sidebar-row-hover: var(--sidebar-row-hover);
+  --color-sidebar-row-active: var(--sidebar-row-active);
+  --color-sidebar-block: var(--sidebar-block-bg);
+  --color-sidebar-block-border: var(--sidebar-block-border);
+  --color-thread: var(--thread-bg);
+  --color-panel: var(--panel-bg);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    transition:
+      background-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
+  }
+  ::selection {
+    background-color: var(--selection);
+  }
+  .lucide {
+    stroke-width: var(--icon-stroke);
+  }
+  /* A setting a link into Settings points at (`?highlight=`), marked until a click or a key. */
+  [data-setting-spotlight] {
+    border-radius: var(--radius-md);
+    background-color: color-mix(in oklab, var(--color-primary) 10%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-primary) 10%, transparent);
+    scroll-margin-top: 1.5rem;
+  }
+  /* The card a Needs you jump lands on (orchestration/use-needs-you.ts), ringed for a moment. */
+  [data-needs-you-flash="true"] {
+    outline: 2px solid var(--color-status-needs);
+    outline-offset: 2px;
+  }
+}

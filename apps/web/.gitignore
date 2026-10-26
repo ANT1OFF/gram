@@ -1,0 +1,9 @@
+test-results/
+playwright-report/
+test-results-real/
+playwright-report-real/
+e2e/__screenshots__/
+dist-e2e/
+playwright-results.json
+# pr:shots output: PR images are attached with `gh --attach`, never committed.
+pr-shots/out/

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://unpkg.com/knip@6.42.1/schema.json",
+  "workspaces": {
+    ".": {
+      "project": ["tools/**/*.{mjs,cjs,mts,ts}"],
+      "entry": [
+        "tools/qualify-ci.mjs",
+        "tools/test-release-please.mjs",
+        "tools/release-rc/native-probe.cjs",
+        "tools/release-stable/update-check.mjs",
+        "tools/release-stable/testing/fake-gh.mjs"
+      ]
+    },
+    "apps/desktop": {
+      "entry": [
+        "electron.vite*.config.ts!",
+        "build/afterPack.cjs!",
+        "scripts/sign-mac.mjs!",
+        "scripts/verify-browser-toolkit.mjs",
+        "scripts/verify-local-browser.mjs",
+        "src/main/index.ts!",
+        "src/preload/index.ts!"
+      ]
+    },
+    "apps/web": {
+      "entry": ["src/main.tsx!", "pr-shots/playwright.config.ts", "pr-shots/**/*.ts"]
+    },
+    "packages/agents": {
+      "entry": ["scripts/*.mjs"],
+      "ignore": ["src/codex/protocol/**"]
+    },
+    "packages/*": {}
+  }
+}

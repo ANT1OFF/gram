@@ -1,0 +1,12 @@
+{
+  "source": "../../../apps/web/src/styles/generated/themes.css",
+  "base": ":root",
+  "light": "[data-palette=\"neutral\"]",
+  "dark": "[data-palette=\"neutral-dark\"]",
+  "fonts": {
+    "ui": "Inter",
+    "mono": "JetBrains Mono",
+    "googleFonts": "family=Inter:wght@400..700&family=JetBrains+Mono:wght@400..600"
+  },
+  "map": {}
+}

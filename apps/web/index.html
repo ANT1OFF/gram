@@ -1,0 +1,40 @@
+<!doctype html>
+<html
+  lang="en"
+  data-look="glass"
+  data-palette="neutral-dark"
+  data-mode="dark"
+  data-motion="system"
+  data-theme-booting
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gram</title>
+    <link rel="icon" href="/favicon.ico" sizes="16x16 24x24 32x32 48x48 64x64 128x128 256x256" />
+    <link rel="icon" type="image/png" href="/gram-icon.png" sizes="256x256" />
+    <script>
+      // First paint in the stored theme rather than the defaults above, so nothing fades into it.
+      // ThemeRoot finishes the job (palette pairing, contrast) and clears data-theme-booting.
+      try {
+        var state = JSON.parse(localStorage.getItem("gram.theme") || "{}").state || {};
+        var root = document.documentElement;
+        if (typeof state.palette === "string" && state.palette)
+          root.dataset.palette = state.palette;
+        var mode = state.mode === "light" || state.mode === "dark" ? state.mode : "dark";
+        if (state.mode === "system" && typeof matchMedia === "function")
+          mode = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        root.dataset.mode = mode;
+        // An unset palette uses the default's light partner only for an explicit Light/System.
+        if (!(typeof state.palette === "string" && state.palette) && mode === "light")
+          root.dataset.palette = "neutral";
+        if (/^(reduced|off)$/.test(state.motion)) root.dataset.motion = state.motion;
+      } catch (error) {}
+    </script>
+    <script src="/asset-guard.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

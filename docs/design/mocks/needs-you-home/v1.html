@@ -1,0 +1,1486 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Needs you home directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+    <script type="application/json" id="mock-tweaks">
+      {
+        "density": {
+          "label": "Density",
+          "type": "enum",
+          "options": ["compact", "comfortable"],
+          "default": "compact"
+        },
+        "actions": {
+          "label": "Row actions",
+          "type": "enum",
+          "options": ["hover", "always"],
+          "default": "hover"
+        }
+      }
+    </script>
+    <style>
+      /* ---------- Shell ---------- */
+      .ny-app {
+        min-height: inherit;
+      }
+      .ny-app .app-body {
+        flex-wrap: nowrap;
+        position: relative;
+      }
+      .ny-side {
+        flex: 0 0 248px;
+        gap: 1px;
+        font-size: var(--text-sm);
+      }
+      .ny-side .nav-item {
+        min-height: calc(var(--row) - 2px);
+      }
+      .ny-side .nav-item.sub {
+        padding-left: 26px;
+      }
+      .ny-side .nav-item .icon {
+        width: 14px;
+        height: 14px;
+        color: var(--fg-subtle);
+      }
+      .ny-side .side-top {
+        display: flex;
+        gap: 2px;
+        padding: 0 2px 8px;
+        color: var(--fg-subtle);
+      }
+      .ny-side .side-top .push {
+        margin-left: auto;
+      }
+      .ny-count {
+        margin-left: auto;
+        min-width: 18px;
+        padding: 0 5px;
+        border-radius: 999px;
+        background: var(--needs-tint);
+        color: var(--status-needs);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        line-height: 18px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+      .ny-side .dot {
+        margin-left: auto;
+      }
+
+      /* The pill: today's shape, kept. */
+      .ny-pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        min-height: 30px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: var(--needs-tint);
+        color: var(--status-needs);
+        font: 550 var(--text-sm) / 1 var(--font-ui);
+        text-align: left;
+        cursor: pointer;
+      }
+      .ny-pill[aria-expanded="true"],
+      .ny-pill[aria-current] {
+        box-shadow: 0 0 0 1px var(--status-needs);
+      }
+      .ny-pill .grow {
+        flex: 1;
+      }
+      .ny-pill .kbd {
+        background: none;
+        border-color: transparent;
+        color: inherit;
+        opacity: 0.8;
+      }
+      .ny-pill.quiet {
+        background: none;
+        color: var(--fg-subtle);
+        font-weight: 400;
+      }
+
+      .titlebar .segmented button {
+        padding: 1px 10px;
+      }
+      .titlebar .where {
+        margin-left: auto;
+        color: var(--fg-subtle);
+      }
+
+      /* ---------- Needs-you rows (A view, C panel) ---------- */
+      .ny-list {
+        display: flex;
+        flex-direction: column;
+        container-type: inline-size;
+      }
+      .ny-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: var(--row);
+        padding: 8px 8px 2px;
+        font-size: var(--text-xs);
+        font-weight: 600;
+        color: var(--fg-subtle);
+      }
+      .ny-group .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .ny-group .orch {
+        font-weight: 400;
+      }
+      .ny-group .end {
+        margin-left: auto;
+      }
+      .ny-row {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) minmax(0, 220px) 104px 108px;
+        align-items: center;
+        gap: 8px;
+        min-height: calc(var(--row) + 4px);
+        padding: 2px 8px;
+        border-radius: var(--radius-md);
+        font-size: var(--text-sm);
+        color: var(--fg);
+      }
+      .ny-row:hover,
+      .ny-row:focus-within,
+      .ny-row[aria-selected="true"] {
+        background: var(--surface-hover);
+      }
+      .ny-kind {
+        display: grid;
+        place-items: center;
+        color: var(--status-needs);
+      }
+      .ny-kind.fail {
+        color: var(--danger-text);
+      }
+      .ny-kind.wait {
+        color: var(--fg-muted);
+      }
+      .ny-kind .icon {
+        width: 16px;
+        height: 16px;
+      }
+      .ny-what {
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        border: 0;
+        background: none;
+        padding: 0;
+        font: inherit;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .ny-what code,
+      .ny-pop code,
+      .turn code {
+        font: 500 0.92em var(--font-mono);
+      }
+      .ny-where {
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: var(--fg-muted);
+        text-decoration: none;
+        font-size: var(--text-xs);
+      }
+      a.ny-where:hover {
+        color: var(--fg);
+        text-decoration: underline;
+      }
+      .ny-where.none {
+        color: var(--fg-subtle);
+        font-style: italic;
+      }
+      .ny-age {
+        color: var(--fg-subtle);
+        font-size: var(--text-xs);
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        white-space: nowrap;
+      }
+      .ny-acts {
+        display: flex;
+        gap: 2px;
+        justify-content: flex-end;
+        opacity: 0;
+      }
+      html[data-tweak-actions="always"] .ny-acts,
+      .ny-row:hover .ny-acts,
+      .ny-row:focus-within .ny-acts,
+      .ny-row[aria-selected="true"] .ny-acts {
+        opacity: 1;
+      }
+      .ny-acts .btn.sm.icon {
+        width: 24px;
+        height: 24px;
+        color: var(--fg-muted);
+      }
+      .ny-acts .btn .icon {
+        width: 15px;
+        height: 15px;
+      }
+      .ny-acts .sep {
+        width: 1px;
+        margin: 4px 2px;
+        background: var(--border-subtle);
+      }
+      /* Answer in place: the row's body. */
+      .ny-answer {
+        grid-column: 2 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 0 8px;
+      }
+      .ny-answer .input {
+        flex: 1 1 200px;
+        height: 26px;
+        font-size: var(--text-xs);
+      }
+      .choice {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .choice .kbd {
+        min-width: 16px;
+        height: 16px;
+      }
+      /* Narrow lists: the thread goes under the text, actions stay icons. */
+      @container (max-width: 520px) {
+        .ny-row {
+          grid-template-columns: 20px minmax(0, 1fr) auto;
+          grid-template-areas: "k w a" "k t x";
+          row-gap: 0;
+          padding-block: 4px;
+        }
+        .ny-row > .ny-kind {
+          grid-area: k;
+          align-self: start;
+          padding-top: 2px;
+        }
+        .ny-row > .ny-what {
+          grid-area: w;
+        }
+        .ny-row > .ny-where {
+          grid-area: t;
+        }
+        .ny-row > .ny-age {
+          grid-area: a;
+        }
+        .ny-row > .ny-acts {
+          grid-area: x;
+        }
+        .ny-answer {
+          grid-column: 2 / -1;
+        }
+      }
+
+      /* ---------- A: the view ---------- */
+      .ny-view {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .ny-view .topbar h3 {
+        margin: 0;
+        font-size: var(--text-md);
+        font-weight: 600;
+      }
+      .ny-view .topbar .num {
+        color: var(--fg-subtle);
+        font-weight: 400;
+      }
+      .ny-view .topbar .push {
+        margin-left: auto;
+      }
+      .ny-view .segmented .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .ny-view .segmented button {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .ny-view .body {
+        padding: 8px 12px 16px;
+        overflow: auto;
+      }
+      .ny-later {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 10px;
+        padding: 6px 8px;
+        border-top: 1px solid var(--border-subtle);
+        font-size: var(--text-xs);
+        color: var(--fg-subtle);
+      }
+      .ny-later .icon {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* ---------- Thread (B, C landed) ---------- */
+      .thread {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .thread .topbar {
+        gap: 6px;
+      }
+      .thread .topbar strong {
+        font-size: var(--text-md);
+        font-weight: 600;
+      }
+      .thread .topbar .muted {
+        font-size: var(--text-xs);
+      }
+      .stepper {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        padding: 1px 2px 1px 8px;
+        border-radius: 999px;
+        background: var(--needs-tint);
+        color: var(--status-needs);
+        font-size: var(--text-xs);
+        font-weight: 550;
+        font-variant-numeric: tabular-nums;
+      }
+      .stepper .btn.sm.icon {
+        width: 22px;
+        height: 22px;
+        color: inherit;
+      }
+      .transcript {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 24px;
+        max-width: 760px;
+        width: 100%;
+        margin: 0 auto;
+        overflow: auto;
+        font-size: var(--text-sm);
+      }
+      .turn {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        color: var(--fg-muted);
+      }
+      .turn.user {
+        align-self: flex-end;
+        max-width: 80%;
+        padding: 8px 12px;
+        border-radius: var(--radius-lg);
+        background: var(--surface-hover);
+        color: var(--fg);
+      }
+      .turn .tool {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--text-xs);
+        color: var(--fg-subtle);
+      }
+      .turn .tool .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .turn.faded {
+        opacity: 0.55;
+      }
+      .ask-card {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: var(--radius-lg);
+        background: var(--surface-3);
+        border: 1px solid var(--border-subtle);
+        color: var(--fg);
+      }
+      /* Where a jump lands: the turn that asked, ringed for a moment. */
+      .ask-card.landed {
+        box-shadow: 0 0 0 1px var(--status-needs);
+        border-color: var(--status-needs);
+      }
+      .ask-card .head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--text-xs);
+        color: var(--status-needs);
+        font-weight: 600;
+      }
+      .ask-card .head .icon {
+        width: 14px;
+        height: 14px;
+      }
+      .ask-card .head .muted {
+        margin-left: auto;
+        font-weight: 400;
+      }
+      .ask-card .choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .composer {
+        margin: 0 24px 16px;
+        max-width: 712px;
+        align-self: center;
+        width: calc(100% - 48px);
+        min-height: 64px;
+        padding: 10px 12px;
+        border: 1px solid var(--border-subtle);
+        border-radius: 16px;
+        background: var(--surface-3);
+        color: var(--fg-subtle);
+        font-size: var(--text-sm);
+      }
+
+      /* ---------- Popover (B, C) ---------- */
+      .ny-pop {
+        position: absolute;
+        top: 46px;
+        left: 252px;
+        z-index: 4;
+        width: min(380px, calc(100% - 264px));
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 4px;
+        border-radius: var(--radius-xl);
+        background: var(--surface-3);
+        box-shadow: var(--shadow-overlay);
+        font-size: var(--text-sm);
+      }
+      .ny-pop .pop-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px 4px;
+        font-size: var(--text-xs);
+        color: var(--fg-subtle);
+      }
+      .ny-pop .pop-head strong {
+        color: var(--fg);
+        font-size: var(--text-sm);
+      }
+      .ny-pop .pop-head .push {
+        margin-left: auto;
+      }
+      .ny-pop .ws {
+        padding: 6px 8px 2px;
+        font-size: var(--text-xs);
+        font-weight: 600;
+        color: var(--fg-subtle);
+      }
+      .pop-row {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 8px;
+        padding: 4px 8px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: none;
+        color: var(--fg);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        width: 100%;
+      }
+      .pop-row:hover,
+      .pop-row[aria-selected="true"] {
+        background: var(--surface-hover);
+      }
+      .pop-row .ny-kind {
+        grid-row: span 2;
+        align-self: start;
+        padding-top: 2px;
+      }
+      .pop-row .ny-kind .icon {
+        width: 15px;
+        height: 15px;
+      }
+      .pop-row .t {
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .pop-row .s {
+        grid-column: 2;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        font-size: var(--text-xs);
+        color: var(--fg-muted);
+      }
+      .pop-row .ny-age {
+        grid-row: 1;
+        grid-column: 3;
+      }
+      .pop-row .quick {
+        grid-row: 2;
+        grid-column: 3;
+        display: flex;
+        gap: 2px;
+      }
+      .pop-row .quick .btn.sm {
+        height: 22px;
+        padding: 0 6px;
+      }
+      .ny-pop .pop-foot {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 6px 8px 4px;
+        border-top: 1px solid var(--border-subtle);
+        font-size: var(--text-xs);
+        color: var(--fg-subtle);
+      }
+      .ny-pop .pop-foot .push {
+        margin-left: auto;
+      }
+      .ny-pop .pop-empty {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 8px;
+        color: var(--fg-muted);
+      }
+      .ny-pop .pop-empty .icon {
+        color: var(--success-text);
+      }
+
+      /* ---------- C: side panel ---------- */
+      .ny-panel {
+        flex: 0 0 340px;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid var(--border-subtle);
+        background: var(--surface-1);
+      }
+      .ny-panel .topbar {
+        padding: 6px 8px 6px 12px;
+        gap: 4px;
+      }
+      .ny-panel .topbar strong {
+        font-size: var(--text-sm);
+      }
+      .ny-panel .topbar .push {
+        margin-left: auto;
+      }
+      .ny-panel .body {
+        padding: 4px 6px 12px;
+        overflow: auto;
+      }
+      .ny-panel .ny-row {
+        grid-template-columns: 20px minmax(0, 1fr) auto;
+      }
+      .ny-panel .empty {
+        padding: 32px 16px;
+      }
+
+      @container (max-width: 820px) {
+        .ny-side {
+          display: none;
+        }
+        .ny-pop {
+          left: 8px;
+          width: calc(100% - 16px);
+        }
+        .ny-panel {
+          flex-basis: 280px;
+        }
+      }
+      @container (max-width: 600px) {
+        .ny-panel {
+          position: absolute;
+          inset: 0 0 0 auto;
+          width: min(340px, 100%);
+          box-shadow: var(--shadow-overlay);
+        }
+      }
+    </style>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        Where does what needs you live, and how fast do you get to its thread? A brings back a
+        lighter Inbox as a view. B is a popover that jumps to the exact turn, plus a Next shortcut.
+        C uses B's popover for quick answers and adds a side panel that stays open while you go
+        through threads. Pick one by name. Each board has an Empty state; use the bar for dark and
+        light. Gram items come from this repo; Arb bot items are bracketed gaps.
+      </p>
+
+      <!-- ================= A Inbox ================= -->
+      <section class="board" data-name="A Inbox" data-size="1280x720" data-states="full,empty">
+        <div class="board-frame">
+          <div class="app ny-app">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="segmented" role="group" aria-label="View">
+                <button type="button">Chat</button><button type="button">Board</button
+                ><button type="button" aria-pressed="true">Needs you</button>
+              </span>
+              <span class="where">Gram</span>
+            </div>
+            <div class="app-body">
+              <aside class="sidebar ny-side" aria-label="Overview">
+                <button
+                  class="ny-pill"
+                  type="button"
+                  aria-current="page"
+                  title="Needs you (⌥⌘3)"
+                  data-when="full"
+                >
+                  <span class="dot needs"></span><span class="grow">6 need you</span
+                  ><span class="kbd">⌥⌘3</span>
+                </button>
+                <button
+                  class="ny-pill quiet"
+                  type="button"
+                  aria-current="page"
+                  title="Needs you (⌥⌘3)"
+                  data-when="empty"
+                >
+                  <span class="grow">Nothing needs you</span>
+                </button>
+                <div class="section-label">Orchestrators</div>
+                <a class="nav-item" href="#"
+                  ><i data-icon="down"></i>Gram<span class="ny-count" data-when="full">4</span></a
+                >
+                <a class="nav-item sub" href="#"
+                  >Orchestrator rows collapse<span class="dot needs" data-when="full"></span
+                ></a>
+                <a class="nav-item sub" href="#"
+                  >Usage clocks<span class="dot needs" data-when="full"></span
+                ></a>
+                <a class="nav-item sub" href="#">Needs you home<span class="dot working"></span></a>
+                <a class="nav-item" href="#"
+                  ><i data-icon="right"></i>Arb bot<span class="ny-count" data-when="full"
+                    >2</span
+                  ></a
+                >
+                <div class="section-label">Threads</div>
+                <a class="nav-item" href="#">[Solo thread]</a>
+              </aside>
+
+              <div class="ny-view">
+                <div class="topbar">
+                  <h3>Needs you <span class="num" data-when="full">6</span></h3>
+                  <span class="segmented push" role="group" aria-label="Show" data-when="full">
+                    <button type="button" aria-pressed="true">All</button>
+                    <button type="button" title="Approvals and questions">
+                      <i data-icon="help"></i>4
+                    </button>
+                    <button type="button" title="Waiting on you"><i data-icon="hand"></i>1</button>
+                    <button type="button" title="Failing, no owner">
+                      <i data-icon="xcircle"></i>1
+                    </button>
+                  </span>
+                </div>
+
+                <div class="body" data-when="full">
+                  <div class="ny-list" role="list">
+                    <div class="ny-group">
+                      <i data-icon="down"></i>Gram<span class="orch">· Orchestrator · Gram</span>
+                      <button class="btn sm ghost icon end" type="button" title="Open the Board">
+                        <i data-icon="grid"></i>
+                      </button>
+                    </div>
+
+                    <div class="ny-row" role="listitem" aria-selected="true">
+                      <span class="ny-kind" title="Worker question"><i data-icon="help"></i></span>
+                      <button class="ny-what" type="button" title="Answer here">
+                        Should a collapsed orchestrator row keep its needs-you count?
+                      </button>
+                      <a class="ny-where" href="#" title="Open the thread at this question"
+                        >Orchestrator rows collapse</a
+                      >
+                      <span class="ny-age">4 min</span>
+                      <span class="ny-acts">
+                        <button
+                          class="btn sm ghost icon"
+                          type="button"
+                          title="Open thread at the question"
+                        >
+                          <i data-icon="external"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Later (1 hour)">
+                          <i data-icon="snooze"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Dismiss">
+                          <i data-icon="x"></i>
+                        </button>
+                      </span>
+                      <div class="ny-answer">
+                        <button class="btn sm choice" type="button">
+                          <span class="kbd">1</span>Keep the count
+                        </button>
+                        <button class="btn sm choice" type="button">
+                          <span class="kbd">2</span>Dot only
+                        </button>
+                        <input class="input" placeholder="Or reply in words" aria-label="Reply" />
+                      </div>
+                    </div>
+
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind" title="Approval"><i data-icon="shield"></i></span>
+                      <button class="ny-what" type="button" title="Answer here">
+                        Run <code>bun run check</code>
+                      </button>
+                      <a class="ny-where" href="#" title="Open the thread at this approval"
+                        >Usage clocks</a
+                      >
+                      <span class="ny-age">11 min</span>
+                      <span class="ny-acts">
+                        <button class="btn sm ghost icon" type="button" title="Allow (⏎)">
+                          <i data-icon="check"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Deny">
+                          <i data-icon="x"></i></button
+                        ><span class="sep"></span
+                        ><button
+                          class="btn sm ghost icon"
+                          type="button"
+                          title="Open thread at the approval"
+                        >
+                          <i data-icon="external"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Later (1 hour)">
+                          <i data-icon="snooze"></i>
+                        </button>
+                      </span>
+                    </div>
+
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind" title="Orchestrator question"
+                        ><i data-icon="orch"></i
+                      ></span>
+                      <button class="ny-what" type="button" title="Answer here">
+                        Cut 0.2.1 as a private prerelease now, or wait for the Usage clocks fix?
+                      </button>
+                      <a class="ny-where" href="#" title="Open the orchestrator at this question"
+                        >Orchestrator · questions.md</a
+                      >
+                      <span class="ny-age">16:02</span>
+                      <span class="ny-acts">
+                        <button
+                          class="btn sm ghost icon"
+                          type="button"
+                          title="Open the orchestrator at the question"
+                        >
+                          <i data-icon="external"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Later (1 hour)">
+                          <i data-icon="snooze"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Dismiss">
+                          <i data-icon="x"></i>
+                        </button>
+                      </span>
+                    </div>
+
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind wait" title="Review"><i data-icon="eye"></i></span>
+                      <button class="ny-what" type="button" title="Open the link">
+                        Review the mock: needs-you-home v1
+                      </button>
+                      <a class="ny-where" href="#" title="Open the thread at this item"
+                        >Orchestrator · Gram</a
+                      >
+                      <span class="ny-age">15:40</span>
+                      <span class="ny-acts">
+                        <button class="btn sm ghost icon" type="button" title="Done">
+                          <i data-icon="check"></i></button
+                        ><button
+                          class="btn sm ghost icon"
+                          type="button"
+                          title="Open thread at the item"
+                        >
+                          <i data-icon="external"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Later (1 hour)">
+                          <i data-icon="snooze"></i>
+                        </button>
+                      </span>
+                    </div>
+
+                    <div class="ny-group">
+                      <i data-icon="down"></i>Arb bot<span class="orch"
+                        >· Orchestrator · Arb bot</span
+                      >
+                      <button class="btn sm ghost icon end" type="button" title="Open the Board">
+                        <i data-icon="grid"></i>
+                      </button>
+                    </div>
+
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind fail" title="Failing CI, no live worker"
+                        ><i data-icon="xcircle"></i
+                      ></span>
+                      <button class="ny-what" type="button" title="Open the PR">
+                        #[PR] checks failing
+                      </button>
+                      <span class="ny-where none" title="Its worker was archived"
+                        >No owner · was [archived worker]</span
+                      >
+                      <span class="ny-age">09:42</span>
+                      <span class="ny-acts">
+                        <button
+                          class="btn sm ghost icon"
+                          type="button"
+                          title="Ask the orchestrator to fix it"
+                        >
+                          <i data-icon="orch"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Open the PR">
+                          <i data-icon="pr"></i></button
+                        ><button
+                          class="btn sm ghost icon"
+                          type="button"
+                          title="Dismiss until it fails again"
+                        >
+                          <i data-icon="x"></i>
+                        </button>
+                      </span>
+                    </div>
+
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind wait" title="Draft to send"
+                        ><i data-icon="pencil"></i
+                      ></span>
+                      <button class="ny-what" type="button" title="Show the draft">
+                        Draft to send: [message for an outside service]
+                      </button>
+                      <a class="ny-where" href="#" title="Open the thread at this item"
+                        >Orchestrator · Arb bot</a
+                      >
+                      <span class="ny-age">Yesterday 17:05</span>
+                      <span class="ny-acts">
+                        <button class="btn sm ghost icon" type="button" title="Copy draft">
+                          <i data-icon="copy"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Done">
+                          <i data-icon="check"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Later (1 hour)">
+                          <i data-icon="snooze"></i>
+                        </button>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="ny-later">
+                    <i data-icon="snooze"></i>Later · 1, back at 18:20
+                    <button class="btn sm ghost" type="button">Show</button>
+                  </div>
+                </div>
+
+                <div class="empty" data-when="empty">
+                  <div class="empty-icon"><i data-icon="check"></i></div>
+                  <strong>Nothing needs you</strong>
+                  <span class="small"
+                    >Questions, approvals, waits and failing CI from every workspace land
+                    here.</span
+                  >
+                  <button class="btn sm ghost" type="button">
+                    <i data-icon="snooze"></i>Later · 1
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= B Jump ================= -->
+      <section
+        class="board"
+        data-name="B Jump · popover"
+        data-size="1280x640"
+        data-states="full,empty"
+      >
+        <div class="board-frame">
+          <div class="app ny-app">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="segmented" role="group" aria-label="View">
+                <button type="button" aria-pressed="true">Chat</button
+                ><button type="button">Board</button>
+              </span>
+              <span class="where">Gram</span>
+            </div>
+            <div class="app-body">
+              <aside class="sidebar ny-side" aria-label="Overview">
+                <button
+                  class="ny-pill"
+                  type="button"
+                  aria-expanded="true"
+                  title="Needs you (⌥⌘3)"
+                  data-when="full"
+                >
+                  <span class="dot needs"></span><span class="grow">6 need you</span
+                  ><span class="kbd">⌥⌘3</span>
+                </button>
+                <button class="ny-pill quiet" type="button" aria-expanded="true" data-when="empty">
+                  <span class="grow">Nothing needs you</span>
+                </button>
+                <div class="section-label">Orchestrators</div>
+                <a class="nav-item" href="#"
+                  ><i data-icon="down"></i>Gram<span class="ny-count" data-when="full">4</span></a
+                >
+                <a class="nav-item sub" href="#"
+                  >Orchestrator rows collapse<span class="dot needs" data-when="full"></span
+                ></a>
+                <a class="nav-item sub" href="#"
+                  >Usage clocks<span class="dot needs" data-when="full"></span
+                ></a>
+                <a class="nav-item sub" href="#">Needs you home<span class="dot working"></span></a>
+                <a class="nav-item" href="#"
+                  ><i data-icon="right"></i>Arb bot<span class="ny-count" data-when="full"
+                    >2</span
+                  ></a
+                >
+                <div class="section-label">Threads</div>
+                <a class="nav-item" href="#">[Solo thread]</a>
+              </aside>
+
+              <div class="thread">
+                <div class="topbar"><strong>Orchestrator · Gram</strong></div>
+                <div class="transcript">
+                  <div class="turn faded">[Earlier turns of the orchestrator]</div>
+                </div>
+                <div class="composer">Message the orchestrator</div>
+              </div>
+
+              <div class="ny-pop" role="dialog" aria-label="Needs you">
+                <div data-when="full">
+                  <div class="pop-head">
+                    <strong>Needs you</strong>oldest last
+                    <span class="push">⏎ open · ⌥⌘↓ next</span>
+                  </div>
+                  <div class="ws">Gram</div>
+                  <button
+                    class="pop-row"
+                    type="button"
+                    aria-selected="true"
+                    title="Open at the question"
+                  >
+                    <span class="ny-kind" title="Worker question"><i data-icon="help"></i></span>
+                    <span class="t">Should a collapsed orchestrator row keep its count?</span>
+                    <span class="ny-age">4 min</span>
+                    <span class="s">Orchestrator rows collapse</span>
+                  </button>
+                  <button class="pop-row" type="button" title="Open at the approval">
+                    <span class="ny-kind" title="Approval"><i data-icon="shield"></i></span>
+                    <span class="t">Run <code>bun run check</code></span>
+                    <span class="ny-age">11 min</span>
+                    <span class="s">Usage clocks</span>
+                  </button>
+                  <button
+                    class="pop-row"
+                    type="button"
+                    title="Open the orchestrator at the question"
+                  >
+                    <span class="ny-kind" title="Orchestrator question"
+                      ><i data-icon="orch"></i
+                    ></span>
+                    <span class="t">Cut 0.2.1 now, or wait for the Usage clocks fix?</span>
+                    <span class="ny-age">16:02</span>
+                    <span class="s">Orchestrator · questions.md</span>
+                  </button>
+                  <button class="pop-row" type="button" title="Open at the item">
+                    <span class="ny-kind wait" title="Review"><i data-icon="eye"></i></span>
+                    <span class="t">Review the mock: needs-you-home v1</span>
+                    <span class="ny-age">15:40</span>
+                    <span class="s">Orchestrator · Gram</span>
+                  </button>
+                  <div class="ws">Arb bot</div>
+                  <button
+                    class="pop-row"
+                    type="button"
+                    title="No live worker: opens the orchestrator with the failure"
+                  >
+                    <span class="ny-kind fail" title="Failing CI, no live worker"
+                      ><i data-icon="xcircle"></i
+                    ></span>
+                    <span class="t">#[PR] checks failing</span>
+                    <span class="ny-age">09:42</span>
+                    <span class="s">No owner · opens Orchestrator · Arb bot</span>
+                  </button>
+                  <button class="pop-row" type="button" title="Open at the item">
+                    <span class="ny-kind wait" title="Draft to send"
+                      ><i data-icon="pencil"></i
+                    ></span>
+                    <span class="t">Draft to send: [message]</span>
+                    <span class="ny-age">Yesterday</span>
+                    <span class="s">Orchestrator · Arb bot</span>
+                  </button>
+                </div>
+                <div class="pop-empty" data-when="empty">
+                  <i data-icon="okcircle"></i>Nothing needs you
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="B Jump · landed" data-size="1280x640">
+        <div class="board-frame">
+          <div class="app ny-app">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="segmented" role="group" aria-label="View">
+                <button type="button" aria-pressed="true">Chat</button
+                ><button type="button">Board</button>
+              </span>
+              <span class="where">Gram</span>
+            </div>
+            <div class="app-body">
+              <aside class="sidebar ny-side" aria-label="Overview">
+                <button class="ny-pill" type="button" title="Needs you (⌥⌘3)">
+                  <span class="dot needs"></span><span class="grow">6 need you</span
+                  ><span class="kbd">⌥⌘3</span>
+                </button>
+                <div class="section-label">Orchestrators</div>
+                <a class="nav-item" href="#"
+                  ><i data-icon="down"></i>Gram<span class="ny-count">4</span></a
+                >
+                <a class="nav-item sub" href="#" aria-current="page"
+                  >Orchestrator rows collapse<span class="dot needs"></span
+                ></a>
+                <a class="nav-item sub" href="#">Usage clocks<span class="dot needs"></span></a>
+                <a class="nav-item sub" href="#">Needs you home<span class="dot working"></span></a>
+                <a class="nav-item" href="#"
+                  ><i data-icon="right"></i>Arb bot<span class="ny-count">2</span></a
+                >
+              </aside>
+              <div class="thread">
+                <div class="topbar">
+                  <strong>Orchestrator rows collapse</strong>
+                  <span class="muted">Gram · worker</span>
+                  <span class="stepper" title="Needs you: 1 of 6">
+                    1 of 6
+                    <button
+                      class="btn sm ghost icon"
+                      type="button"
+                      title="Previous needs-you (⌥⌘↑)"
+                    >
+                      <i data-icon="up"></i></button
+                    ><button class="btn sm ghost icon" type="button" title="Next needs-you (⌥⌘↓)">
+                      <i data-icon="down"></i>
+                    </button>
+                  </span>
+                </div>
+                <div class="transcript">
+                  <div class="turn faded">
+                    <span class="tool"><i data-icon="terminal"></i>Read overview-sidebar.tsx</span>
+                    <span class="tool"
+                      ><i data-icon="diff"></i>Edited overview-sidebar.tsx +48 −6</span
+                    >
+                  </div>
+                  <div class="turn">
+                    Rows now fold under their orchestrator. One thing changes what a folded row
+                    shows, so I asked before going on.
+                  </div>
+                  <div class="ask-card landed">
+                    <div class="head">
+                      <i data-icon="help"></i>Question for you<span class="muted">17:16</span>
+                    </div>
+                    <div>Should a collapsed orchestrator row keep its needs-you count?</div>
+                    <div class="choices">
+                      <button class="btn sm choice" type="button">
+                        <span class="kbd">1</span>Keep the count
+                      </button>
+                      <button class="btn sm choice" type="button">
+                        <span class="kbd">2</span>Dot only
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer">Or reply in words</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= C Hybrid ================= -->
+      <section
+        class="board"
+        data-name="C Hybrid · popover"
+        data-size="1280x640"
+        data-states="full,empty"
+      >
+        <div class="board-frame">
+          <div class="app ny-app">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="segmented" role="group" aria-label="View">
+                <button type="button" aria-pressed="true">Chat</button
+                ><button type="button">Board</button>
+              </span>
+              <span class="where">Gram</span>
+            </div>
+            <div class="app-body">
+              <aside class="sidebar ny-side" aria-label="Overview">
+                <button
+                  class="ny-pill"
+                  type="button"
+                  aria-expanded="true"
+                  title="Needs you (⌥⌘3)"
+                  data-when="full"
+                >
+                  <span class="dot needs"></span><span class="grow">6 need you</span
+                  ><span class="kbd">⌥⌘3</span>
+                </button>
+                <button class="ny-pill quiet" type="button" aria-expanded="true" data-when="empty">
+                  <span class="grow">Nothing needs you</span>
+                </button>
+                <div class="section-label">Orchestrators</div>
+                <a class="nav-item" href="#"
+                  ><i data-icon="down"></i>Gram<span class="ny-count" data-when="full">4</span></a
+                >
+                <a class="nav-item sub" href="#"
+                  >Orchestrator rows collapse<span class="dot needs" data-when="full"></span
+                ></a>
+                <a class="nav-item sub" href="#"
+                  >Usage clocks<span class="dot needs" data-when="full"></span
+                ></a>
+                <a class="nav-item sub" href="#">Needs you home<span class="dot working"></span></a>
+                <a class="nav-item" href="#"
+                  ><i data-icon="right"></i>Arb bot<span class="ny-count" data-when="full"
+                    >2</span
+                  ></a
+                >
+                <div class="section-label">Threads</div>
+                <a class="nav-item" href="#">[Solo thread]</a>
+              </aside>
+
+              <div class="thread">
+                <div class="topbar"><strong>Orchestrator · Gram</strong></div>
+                <div class="transcript">
+                  <div class="turn faded">[Earlier turns of the orchestrator]</div>
+                </div>
+                <div class="composer">Message the orchestrator</div>
+              </div>
+
+              <div class="ny-pop" role="dialog" aria-label="Needs you">
+                <div data-when="full">
+                  <div class="pop-head">
+                    <strong>Needs you</strong>
+                    <span class="push">⏎ open · ⌥⌘↓ next</span>
+                  </div>
+                  <div class="ws">Gram</div>
+                  <button
+                    class="pop-row"
+                    type="button"
+                    aria-selected="true"
+                    title="Open at the question"
+                  >
+                    <span class="ny-kind" title="Worker question"><i data-icon="help"></i></span>
+                    <span class="t">Should a collapsed orchestrator row keep its count?</span>
+                    <span class="ny-age">4 min</span>
+                    <span class="s">Orchestrator rows collapse</span>
+                    <span class="quick">
+                      <span class="btn sm" title="Keep the count (1)">1</span
+                      ><span class="btn sm" title="Dot only (2)">2</span>
+                    </span>
+                  </button>
+                  <button class="pop-row" type="button" title="Open at the approval">
+                    <span class="ny-kind" title="Approval"><i data-icon="shield"></i></span>
+                    <span class="t">Run <code>bun run check</code></span>
+                    <span class="ny-age">11 min</span>
+                    <span class="s">Usage clocks</span>
+                    <span class="quick">
+                      <span class="btn sm" title="Allow"><i data-icon="check"></i></span
+                      ><span class="btn sm" title="Deny"><i data-icon="x"></i></span>
+                    </span>
+                  </button>
+                  <button
+                    class="pop-row"
+                    type="button"
+                    title="Open the orchestrator at the question"
+                  >
+                    <span class="ny-kind" title="Orchestrator question"
+                      ><i data-icon="orch"></i
+                    ></span>
+                    <span class="t">Cut 0.2.1 now, or wait for the Usage clocks fix?</span>
+                    <span class="ny-age">16:02</span>
+                    <span class="s">Orchestrator · questions.md</span>
+                  </button>
+                  <div class="ws">Arb bot</div>
+                  <button
+                    class="pop-row"
+                    type="button"
+                    title="No live worker: opens the orchestrator with the failure"
+                  >
+                    <span class="ny-kind fail" title="Failing CI, no live worker"
+                      ><i data-icon="xcircle"></i
+                    ></span>
+                    <span class="t">#[PR] checks failing</span>
+                    <span class="ny-age">09:42</span>
+                    <span class="s">No owner · was [archived worker]</span>
+                  </button>
+                  <div class="pop-foot">
+                    <span>2 more · Later 1</span>
+                    <button
+                      class="btn sm ghost push"
+                      type="button"
+                      title="Open the Needs you panel (⇧⌥⌘3)"
+                    >
+                      See all 6<i data-icon="panel"></i>
+                    </button>
+                  </div>
+                </div>
+                <div data-when="empty">
+                  <div class="pop-empty"><i data-icon="okcircle"></i>Nothing needs you</div>
+                  <div class="pop-foot">
+                    <span>Later 1, back at 18:20</span>
+                    <button class="btn sm ghost push" type="button">Show</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="board"
+        data-name="C Hybrid · panel"
+        data-size="1280x640"
+        data-states="full,empty"
+      >
+        <div class="board-frame">
+          <div class="app ny-app">
+            <div class="titlebar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="segmented" role="group" aria-label="View">
+                <button type="button" aria-pressed="true">Chat</button
+                ><button type="button">Board</button>
+              </span>
+              <span class="where">Gram</span>
+            </div>
+            <div class="app-body">
+              <aside class="sidebar ny-side" aria-label="Overview">
+                <button
+                  class="ny-pill"
+                  type="button"
+                  aria-current="page"
+                  title="Needs you (⌥⌘3)"
+                  data-when="full"
+                >
+                  <span class="dot needs"></span><span class="grow">5 need you</span
+                  ><span class="kbd">⌥⌘3</span>
+                </button>
+                <button class="ny-pill quiet" type="button" data-when="empty">
+                  <span class="grow">Nothing needs you</span>
+                </button>
+                <div class="section-label">Orchestrators</div>
+                <a class="nav-item" href="#"
+                  ><i data-icon="down"></i>Gram<span class="ny-count" data-when="full">3</span></a
+                >
+                <a class="nav-item sub" href="#">Orchestrator rows collapse</a>
+                <a class="nav-item sub" href="#" aria-current="page"
+                  >Usage clocks<span class="dot needs" data-when="full"></span
+                ></a>
+                <a class="nav-item sub" href="#">Needs you home<span class="dot working"></span></a>
+                <a class="nav-item" href="#"
+                  ><i data-icon="right"></i>Arb bot<span class="ny-count" data-when="full"
+                    >2</span
+                  ></a
+                >
+              </aside>
+
+              <div class="thread">
+                <div class="topbar">
+                  <strong>Usage clocks</strong><span class="muted">Gram · worker</span>
+                </div>
+                <div class="transcript">
+                  <div class="turn faded">
+                    <span class="tool"><i data-icon="terminal"></i>bun run test apps/web</span>
+                    <span class="tool"><i data-icon="check"></i>214 passed</span>
+                  </div>
+                  <div class="turn">Focused tests pass. The full integration check is next.</div>
+                  <div class="ask-card landed" data-when="full">
+                    <div class="head">
+                      <i data-icon="shield"></i>Approval<span class="muted">17:09</span>
+                    </div>
+                    <div>Run <code>bun run check</code></div>
+                    <div class="choices">
+                      <button class="btn sm primary" type="button">Allow</button>
+                      <button class="btn sm" type="button">Deny</button>
+                      <button class="btn sm ghost" type="button">
+                        Always allow in this thread
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="composer">Message Usage clocks</div>
+              </div>
+
+              <aside class="ny-panel" aria-label="Needs you">
+                <div class="topbar">
+                  <strong>Needs you</strong>
+                  <span class="muted small" data-when="full">5 · oldest last</span>
+                  <button class="btn sm ghost icon push" type="button" title="Show Later">
+                    <i data-icon="snooze"></i></button
+                  ><button class="btn sm ghost icon" type="button" title="Filter">
+                    <i data-icon="filter"></i></button
+                  ><button class="btn sm ghost icon" type="button" title="Close panel">
+                    <i data-icon="x"></i>
+                  </button>
+                </div>
+                <div class="body" data-when="full">
+                  <div class="ny-list" role="list">
+                    <div class="ny-group">
+                      <i data-icon="down"></i>Gram<span class="end">3</span>
+                    </div>
+                    <div class="ny-row" role="listitem" aria-selected="true">
+                      <span class="ny-kind" title="Approval"><i data-icon="shield"></i></span>
+                      <button class="ny-what" type="button" title="Open at the approval">
+                        Run <code>bun run check</code>
+                      </button>
+                      <span class="ny-where">Usage clocks</span>
+                      <span class="ny-age">11 min</span>
+                      <span class="ny-acts">
+                        <button class="btn sm ghost icon" type="button" title="Allow (⏎)">
+                          <i data-icon="check"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Later (1 hour)">
+                          <i data-icon="snooze"></i>
+                        </button>
+                      </span>
+                    </div>
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind" title="Orchestrator question"
+                        ><i data-icon="orch"></i
+                      ></span>
+                      <button
+                        class="ny-what"
+                        type="button"
+                        title="Open the orchestrator at the question"
+                      >
+                        Cut 0.2.1 now, or wait for the Usage clocks fix?
+                      </button>
+                      <span class="ny-where">Orchestrator · questions.md</span>
+                      <span class="ny-age">16:02</span>
+                      <span class="ny-acts">
+                        <button class="btn sm ghost icon" type="button" title="Later (1 hour)">
+                          <i data-icon="snooze"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Dismiss">
+                          <i data-icon="x"></i>
+                        </button>
+                      </span>
+                    </div>
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind wait" title="Review"><i data-icon="eye"></i></span>
+                      <button class="ny-what" type="button" title="Open at the item">
+                        Review the mock: needs-you-home v1
+                      </button>
+                      <span class="ny-where">Orchestrator · Gram</span>
+                      <span class="ny-age">15:40</span>
+                      <span class="ny-acts">
+                        <button class="btn sm ghost icon" type="button" title="Done">
+                          <i data-icon="check"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Later (1 hour)">
+                          <i data-icon="snooze"></i>
+                        </button>
+                      </span>
+                    </div>
+                    <div class="ny-group">
+                      <i data-icon="down"></i>Arb bot<span class="end">2</span>
+                    </div>
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind fail" title="Failing CI, no live worker"
+                        ><i data-icon="xcircle"></i
+                      ></span>
+                      <button class="ny-what" type="button" title="Open the PR">
+                        #[PR] checks failing
+                      </button>
+                      <span class="ny-where none">No owner · was [archived worker]</span>
+                      <span class="ny-age">09:42</span>
+                      <span class="ny-acts">
+                        <button
+                          class="btn sm ghost icon"
+                          type="button"
+                          title="Ask the orchestrator to fix it"
+                        >
+                          <i data-icon="orch"></i></button
+                        ><button
+                          class="btn sm ghost icon"
+                          type="button"
+                          title="Dismiss until it fails again"
+                        >
+                          <i data-icon="x"></i>
+                        </button>
+                      </span>
+                    </div>
+                    <div class="ny-row" role="listitem">
+                      <span class="ny-kind wait" title="Draft to send"
+                        ><i data-icon="pencil"></i
+                      ></span>
+                      <button class="ny-what" type="button" title="Show the draft">
+                        Draft to send: [message]
+                      </button>
+                      <span class="ny-where">Orchestrator · Arb bot</span>
+                      <span class="ny-age">Yesterday</span>
+                      <span class="ny-acts">
+                        <button class="btn sm ghost icon" type="button" title="Copy draft">
+                          <i data-icon="copy"></i></button
+                        ><button class="btn sm ghost icon" type="button" title="Done">
+                          <i data-icon="check"></i>
+                        </button>
+                      </span>
+                    </div>
+                  </div>
+                  <div class="ny-later">
+                    <i data-icon="check"></i>Answered: Should a collapsed row keep its count? · Keep
+                    the count
+                    <button class="btn sm ghost" type="button" title="Undo (⌘Z)">Undo</button>
+                  </div>
+                </div>
+                <div class="empty" data-when="empty">
+                  <div class="empty-icon"><i data-icon="check"></i></div>
+                  <strong>Nothing needs you</strong>
+                  <span class="small"
+                    >Every workspace is clear. The panel closes on its own in a moment.</span
+                  >
+                  <button class="btn sm ghost" type="button">
+                    <i data-icon="snooze"></i>Later · 1
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

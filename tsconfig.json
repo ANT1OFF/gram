@@ -1,0 +1,29 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/agents"
+    },
+    {
+      "path": "./packages/contracts"
+    },
+    {
+      "path": "./packages/git"
+    },
+    {
+      "path": "./packages/server"
+    },
+    {
+      "path": "./packages/shell"
+    },
+    {
+      "path": "./packages/themes"
+    },
+    {
+      "path": "./apps/web"
+    },
+    {
+      "path": "./apps/desktop"
+    }
+  ]
+}

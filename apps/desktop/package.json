@@ -1,0 +1,36 @@
+{
+  "name": "@gram/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gram desktop shell",
+  "license": "MIT",
+  "author": "Gram contributors",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "install-electron && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.server.config.ts && GRAM_READABLE_BUNDLES=1 electron-vite build -c electron.vite.speech.config.ts && node scripts/dev.mjs",
+    "build": "electron-vite build && electron-vite build -c electron.vite.server.config.ts && electron-vite build -c electron.vite.speech.config.ts && node ../../tools/notices/generate.mjs",
+    "dist": "bun run --filter @gram/web build && bun run build && electron-builder --publish never",
+    "dist:dir": "bun run --filter @gram/web build && bun run build && electron-builder --dir --publish never",
+    "verify:package": "node scripts/verify-package.mjs",
+    "generate:icon": "node scripts/generate-icon.mjs"
+  },
+  "dependencies": {
+    "node-pty": "catalog:",
+    "sherpa-onnx-node": "catalog:"
+  },
+  "devDependencies": {
+    "@gram/contracts": "workspace:*",
+    "@gram/git": "workspace:*",
+    "@gram/server": "workspace:*",
+    "@gram/shell": "workspace:*",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "electron": "catalog:",
+    "electron-builder": "catalog:",
+    "electron-updater": "catalog:",
+    "electron-vite": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  },
+  "productName": "Gram"
+}

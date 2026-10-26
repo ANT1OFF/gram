@@ -1,0 +1,78 @@
+{
+  "$comment": "Libraries compiled into the sherpa-onnx darwin-arm64 build Gram ships: tools/sherpa-onnx/darwin-arm64, built from sherpa-onnx 1.13.8 with text-to-speech off (tools/sherpa-onnx/build-darwin-arm64.sh), so no espeak-ng or piper-phonemize. Versions are the ones sherpa-onnx 1.13.8's cmake/ pins; each was confirmed by its symbols in that build's libsherpa-onnx-c-api.dylib. Recheck when the sherpa-onnx-node catalog pin changes: generate.mjs fails if it does.",
+  "sherpaOnnx": "1.13.8",
+  "components": [
+    {
+      "name": "ONNX Runtime",
+      "version": "1.28.2",
+      "license": "MIT",
+      "source": "https://github.com/microsoft/onnxruntime",
+      "where": "libonnxruntime (a separate library beside the addon)",
+      "texts": ["onnxruntime-LICENSE.txt", "onnxruntime-ThirdPartyNotices.txt"]
+    },
+    {
+      "name": "OpenFst",
+      "version": "1.8.5-2026-07-09",
+      "license": "Apache-2.0",
+      "source": "https://github.com/csukuangfj/openfst",
+      "where": "statically linked into libsherpa-onnx-c-api",
+      "texts": ["openfst-COPYING.txt", "Apache-2.0.txt"]
+    },
+    {
+      "name": "kaldi-native-fbank",
+      "version": "1.22.3",
+      "license": "Apache-2.0",
+      "source": "https://github.com/csukuangfj/kaldi-native-fbank",
+      "where": "statically linked into libsherpa-onnx-c-api",
+      "texts": ["Apache-2.0.txt"]
+    },
+    {
+      "name": "KISS FFT",
+      "version": "febd4caeed32e33ad8b2e0bb5ea77542c40f18ec",
+      "license": "BSD-3-Clause",
+      "source": "https://github.com/mborgerding/kissfft",
+      "where": "statically linked into libsherpa-onnx-c-api (through kaldi-native-fbank)",
+      "texts": ["kissfft-COPYING.txt"]
+    },
+    {
+      "name": "kaldi-decoder (with kaldifst)",
+      "version": "0.3.0",
+      "license": "Apache-2.0",
+      "source": "https://github.com/k2-fsa/kaldi-decoder",
+      "where": "statically linked into libsherpa-onnx-c-api",
+      "texts": ["Apache-2.0.txt"]
+    },
+    {
+      "name": "simple-sentencepiece",
+      "version": "0.7",
+      "license": "Apache-2.0",
+      "source": "https://github.com/pkufool/simple-sentencepiece",
+      "where": "statically linked into libsherpa-onnx-c-api",
+      "texts": ["Apache-2.0.txt"]
+    },
+    {
+      "name": "hclust-cpp (fastcluster)",
+      "version": "2026-02-25",
+      "license": "BSD-2-Clause",
+      "source": "https://github.com/csukuangfj/hclust-cpp",
+      "where": "statically linked into libsherpa-onnx-c-api",
+      "texts": ["hclust-cpp-LICENSE.txt"]
+    },
+    {
+      "name": "nlohmann/json",
+      "version": "3.12.0",
+      "license": "MIT",
+      "source": "https://github.com/nlohmann/json",
+      "where": "compiled into libsherpa-onnx-c-api",
+      "texts": ["nlohmann-json-LICENSE.txt"]
+    },
+    {
+      "name": "Eigen",
+      "version": "5.0.1",
+      "license": "MPL-2.0",
+      "source": "https://gitlab.com/libeigen/eigen (source code form available there)",
+      "where": "compiled into libsherpa-onnx-c-api",
+      "texts": ["MPL-2.0.txt"]
+    }
+  ]
+}

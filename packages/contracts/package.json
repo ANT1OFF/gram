@@ -1,0 +1,74 @@
+{
+  "name": "@gram/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./core": {
+      "types": "./src/entries/core.ts",
+      "default": "./src/entries/core.ts"
+    },
+    "./agent-support": {
+      "types": "./src/agent-support.ts",
+      "default": "./src/agent-support.ts"
+    },
+    "./link-trust": {
+      "types": "./src/entries/link-trust.ts",
+      "default": "./src/entries/link-trust.ts"
+    },
+    "./threads": {
+      "types": "./src/entries/threads.ts",
+      "default": "./src/entries/threads.ts"
+    },
+    "./git": {
+      "types": "./src/entries/git.ts",
+      "default": "./src/entries/git.ts"
+    },
+    "./settings": {
+      "types": "./src/entries/settings.ts",
+      "default": "./src/entries/settings.ts"
+    },
+    "./orchestration": {
+      "types": "./src/entries/orchestration.ts",
+      "default": "./src/entries/orchestration.ts"
+    },
+    "./desktop": {
+      "types": "./src/entries/desktop.ts",
+      "default": "./src/entries/desktop.ts"
+    },
+    "./desktop-bridge": {
+      "types": "./src/entries/desktop-bridge.ts",
+      "default": "./src/entries/desktop-bridge.ts"
+    },
+    "./shell": {
+      "types": "./src/entries/shell.ts",
+      "default": "./src/entries/shell.ts"
+    },
+    "./rpc": {
+      "types": "./src/entries/rpc.ts",
+      "default": "./src/entries/rpc.ts"
+    },
+    "./testing": {
+      "types": "./src/testing/long-transcript.ts",
+      "default": "./src/testing/long-transcript.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "ai": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

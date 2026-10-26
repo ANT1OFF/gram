@@ -1,0 +1,44 @@
+name: Release metadata proposals
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-please-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.repository == 'ANT1OFF/gram' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, gram-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - run: node tools/check-release-please.mjs
+
+  propose:
+    needs: validate
+    if: github.repository == 'ANT1OFF/gram' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, gram-ci]
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      # API-only: no checkout, dependency install or repository script with the write token.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0; release-please 17.6.0
+        with:
+          token: ${{ github.token }}
+          target-branch: main
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true

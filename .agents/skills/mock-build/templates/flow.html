@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Template: a flow, one board per step, linked with a[data-goto="Board name@state"] so the
+         reviewer can click through it full window. Replace every [BRACKETED] fact or keep it as a
+         visible gap. Add or remove steps; keep the kit links and the body class. -->
+    <title>[Flow title] · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        [What the flow does, start to finish.] Click a step's name to go full window, then follow
+        the buttons; Esc returns to the canvas.
+      </p>
+
+      <section class="board" data-name="1 Start" data-size="720x520">
+        <div class="board-frame">
+          <div class="content narrow">
+            <h2>[Step one title]</h2>
+            <p class="muted">[Why the user is here and what happens next.]</p>
+            <label class="field">
+              [Field label]
+              <input class="input" type="text" placeholder="[Example value]" />
+              <span class="hint">[What a good value looks like.]</span>
+            </label>
+            <div class="row">
+              <span class="grow"></span>
+              <a class="btn primary" href="#" data-goto="2 Confirm">Continue</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="2 Confirm" data-size="720x520" data-states="ready,working">
+        <div class="board-frame">
+          <div class="content narrow">
+            <h2>[Step two title]</h2>
+            <div class="card">
+              <div class="row between">
+                <span class="muted">[Label]</span><strong>[Value]</strong>
+              </div>
+              <div class="divider"></div>
+              <div class="row between">
+                <span class="muted">[Label]</span><strong>[Value]</strong>
+              </div>
+            </div>
+            <div class="row" data-when="ready">
+              <a class="btn ghost" href="#" data-goto="1 Start">Back</a>
+              <span class="grow"></span>
+              <a class="btn primary" href="#" data-goto="2 Confirm@working">[Confirm action]</a>
+            </div>
+            <div class="row" data-when="working">
+              <span class="spinner" aria-hidden="true"></span>
+              <span class="muted">[What is happening]</span>
+              <span class="grow"></span>
+              <a class="btn sm ghost" href="#" data-goto="3 Done">Skip to result</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="3 Done" data-size="720x520" data-states="success,failed">
+        <div class="board-frame">
+          <div class="content narrow">
+            <div class="empty" data-when="success">
+              <span class="empty-icon"><i data-icon="okcircle"></i></span>
+              <h3>[It worked, said plainly]</h3>
+              <p>[What changed and where to see it.]</p>
+              <a class="btn" href="#" data-goto="1 Start">Start again</a>
+            </div>
+            <div class="callout danger" role="alert" data-when="failed">
+              <i data-icon="xcircle"></i>
+              <div class="stack">
+                <strong>[What failed]</strong>
+                <span>[What the user can do.]</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

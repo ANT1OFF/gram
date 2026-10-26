@@ -1,0 +1,704 @@
+{
+ "scenario": "cx04-steer",
+ "cliVersion": "0.154.0",
+ "messages": [
+  {
+   "dir": "out",
+   "msg": {
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "clientInfo": {
+      "name": "gram",
+      "title": "Gram",
+      "version": "0.0.0"
+     },
+     "capabilities": {
+      "experimentalApi": true,
+      "requestAttestation": false
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 1,
+    "result": {
+     "userAgent": "gram/0.154.0",
+     "codexHome": "$CODEX_HOME",
+     "platformFamily": "unix",
+     "platformOs": "macos"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "method": "initialized"
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 2,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "on-request",
+     "sandbox": "workspace-write"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "remoteControl/status/changed",
+    "params": {
+     "status": "disabled",
+     "serverName": "$HOST",
+     "installationId": "$INSTALLATION",
+     "environmentId": null
+    },
+    "emittedAtMs": 1789585470981
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 2,
+    "result": {
+     "thread": {
+      "id": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789585471,
+      "updatedAt": 1789585471,
+      "recencyAt": 1789585471,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T21-04-31-01a0ab9b-36e8-7873-805b-525c9c9605ae.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789585471,
+      "updatedAt": 1789585471,
+      "recencyAt": 1789585471,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T21-04-31-01a0ab9b-36e8-7873-805b-525c9c9605ae.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1789585471820
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 3,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "input": [
+      {
+       "type": "text",
+       "text": "Write a long story",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 3,
+    "result": {
+     "turn": {
+      "id": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1789585472171
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turn": {
+      "id": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1789585471,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1789585472171
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9b-3bb5-73d0-87a8-b4be4e032cd6",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Write a long story",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "startedAtMs": 1789585472437
+    },
+    "emittedAtMs": 1789585472437
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9b-3bb5-73d0-87a8-b4be4e032cd6",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Write a long story",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "completedAtMs": 1789585472437
+    },
+    "emittedAtMs": 1789585472456
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_1",
+      "text": "",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "startedAtMs": 1789585472462
+    },
+    "emittedAtMs": 1789585472462
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "itemId": "msg_1",
+     "delta": "Once upo"
+    },
+    "emittedAtMs": 1789585472462
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 4,
+    "method": "turn/steer",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "expectedTurnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "input": [
+      {
+       "type": "text",
+       "text": "Make it short",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 4,
+    "result": {
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "itemId": "msg_1",
+     "delta": "n a time"
+    },
+    "emittedAtMs": 1789585473962
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "itemId": "msg_1",
+     "delta": ", far aw"
+    },
+    "emittedAtMs": 1789585473962
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "itemId": "msg_1",
+     "delta": "ay"
+    },
+    "emittedAtMs": 1789585473962
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_1",
+      "text": "Once upon a time, far away",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "completedAtMs": 1789585473962
+    },
+    "emittedAtMs": 1789585474009
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1789585474076
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1789585474076
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9b-4233-7890-88e9-314912314cb5",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Make it short",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "startedAtMs": 1789585474099
+    },
+    "emittedAtMs": 1789585474099
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9b-4233-7890-88e9-314912314cb5",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Make it short",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "completedAtMs": 1789585474099
+    },
+    "emittedAtMs": 1789585474110
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_2",
+      "text": "",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "startedAtMs": 1789585474115
+    },
+    "emittedAtMs": 1789585474116
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "itemId": "msg_2",
+     "delta": "Short ve"
+    },
+    "emittedAtMs": 1789585474116
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "itemId": "msg_2",
+     "delta": "rsion: t"
+    },
+    "emittedAtMs": 1789585474116
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "itemId": "msg_2",
+     "delta": "he end."
+    },
+    "emittedAtMs": 1789585474116
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_2",
+      "text": "Short version: the end.",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "completedAtMs": 1789585474116
+    },
+    "emittedAtMs": 1789585474140
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turnId": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 98,
+       "inputTokens": 84,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 14,
+       "reasoningOutputTokens": 6
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1789585474278
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1789585474278
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "status": {
+      "type": "idle"
+     }
+    },
+    "emittedAtMs": 1789585474294
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0ab9b-36e8-7873-805b-525c9c9605ae",
+     "turn": {
+      "id": "01a0ab9b-394d-7912-b14f-189fcb2accf7",
+      "items": [
+       {
+        "type": "agentMessage",
+        "id": "msg_2",
+        "text": "Short version: the end.",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+       }
+      ],
+      "itemsView": "summary",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1789585471,
+      "completedAt": 1789585474,
+      "durationMs": 2457
+     }
+    },
+    "emittedAtMs": 1789585474294
+   }
+  }
+ ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@gram/git",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./proc": {
+      "types": "./src/proc.ts",
+      "default": "./src/proc.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@gram/contracts": "workspace:*",
+    "@parcel/watcher": "2.6.0",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

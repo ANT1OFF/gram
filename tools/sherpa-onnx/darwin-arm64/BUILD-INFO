@@ -1,0 +1,9 @@
+Built by tools/sherpa-onnx/build-darwin-arm64.sh; SHA256SUMS lists the files.
+sherpa-onnx: https://github.com/k2-fsa/sherpa-onnx v1.13.8 (11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf) + node-addon.patch
+cmake flags: -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DBUILD_SHARED_LIBS=ON -DSHERPA_ONNX_ENABLE_TTS=OFF -DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF -DSHERPA_ONNX_ENABLE_BINARY=OFF -DCMAKE_C_FLAGS=-ffile-prefix-map=<src>=/sherpa-onnx -DCMAKE_CXX_FLAGS=-ffile-prefix-map=<src>=/sherpa-onnx
+addon: cmake-js 7.4.0, node-addon-api 8.9.2, --runtime node --runtime-version 26.11.1 --arch arm64 --CDCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+macOS: 27.0.1 (26A434) arm64, SDK 27.0
+compiler: Apple clang version 21.0.0 (clang-2100.3.34.2)
+cmake: cmake version 4.4.3
+node: v26.11.1, npm 11.20.0
+libonnxruntime.dylib (the npm package's, unchanged): b0613d0ae53199a83b05fa48e169211498e9d40d54beaa372068ebe5ec5b0929

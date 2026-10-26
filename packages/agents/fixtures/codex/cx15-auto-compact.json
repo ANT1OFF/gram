@@ -1,0 +1,947 @@
+{
+ "scenario": "cx15-auto-compact",
+ "cliVersion": "0.158.0",
+ "messages": [
+  {
+   "dir": "out",
+   "msg": {
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "clientInfo": {
+      "name": "gram",
+      "title": "Gram",
+      "version": "0.0.0"
+     },
+     "capabilities": {
+      "experimentalApi": true,
+      "requestAttestation": false
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 1,
+    "result": {
+     "userAgent": "gram/0.158.0",
+     "codexHome": "$CODEX_HOME",
+     "platformFamily": "unix",
+     "platformOs": "macos"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "method": "initialized"
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 2,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "on-request",
+     "sandbox": "workspace-write"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "remoteControl/status/changed",
+    "params": {
+     "status": "disabled",
+     "serverName": "$HOST",
+     "installationId": "$INSTALLATION",
+     "environmentId": null
+    },
+    "emittedAtMs": 1790846774934
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 2,
+    "result": {
+     "thread": {
+      "id": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1790846775,
+      "updatedAt": 1790846775,
+      "recencyAt": 1790846775,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/10/01/rollout-2026-10-01T11-26-15-01a0f6c9-2ea3-76d2-b802-78461e5f0544.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.158.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "disabledPluginIds": [],
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 3,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "input": [
+      {
+       "type": "text",
+       "text": "Name three primary colours",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1790846775,
+      "updatedAt": 1790846775,
+      "recencyAt": 1790846775,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/10/01/rollout-2026-10-01T11-26-15-01a0f6c9-2ea3-76d2-b802-78461e5f0544.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.158.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1790846775814
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 3,
+    "result": {
+     "turn": {
+      "id": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1790846776471
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turn": {
+      "id": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1790846775,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1790846776471
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0f6c9-3547-7073-8049-55ec9e75f19f",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Name three primary colours",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+     "startedAtMs": 1790846776740
+    },
+    "emittedAtMs": 1790846776740
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0f6c9-3547-7073-8049-55ec9e75f19f",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Name three primary colours",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+     "completedAtMs": 1790846776740
+    },
+    "emittedAtMs": 1790846776770
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_1",
+      "text": "",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+     "startedAtMs": 1790846776892
+    },
+    "emittedAtMs": 1790846776892
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+     "itemId": "msg_1",
+     "delta": "Red, yel"
+    },
+    "emittedAtMs": 1790846776892
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+     "itemId": "msg_1",
+     "delta": "low and "
+    },
+    "emittedAtMs": 1790846776892
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+     "itemId": "msg_1",
+     "delta": "blue."
+    },
+    "emittedAtMs": 1790846776892
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_1",
+      "text": "Red, yellow and blue.",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+     "completedAtMs": 1790846776893
+    },
+    "emittedAtMs": 1790846776912
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1790846777041
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1790846777041
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "status": {
+      "type": "idle"
+     }
+    },
+    "emittedAtMs": 1790846777087
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turn": {
+      "id": "01a0f6c9-320e-7933-8c18-ecf909bad11d",
+      "items": [
+       {
+        "type": "agentMessage",
+        "id": "msg_1",
+        "text": "Red, yellow and blue.",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+       }
+      ],
+      "itemsView": "summary",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1790846775,
+      "completedAt": 1790846777,
+      "durationMs": 1181
+     }
+    },
+    "emittedAtMs": 1790846777087
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 4,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "input": [
+      {
+       "type": "text",
+       "text": "And one secondary colour",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 4,
+    "result": {
+     "turn": {
+      "id": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1790846777177
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turn": {
+      "id": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1790846777,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1790846777177
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "contextCompaction",
+      "id": "01a0f6c9-375b-76b0-98d4-a94dbc8cb3e6"
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "startedAtMs": 1790846777179
+    },
+    "emittedAtMs": 1790846777180
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1790846777226
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1790846777226
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 98,
+       "inputTokens": 84,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 14,
+       "reasoningOutputTokens": 6
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1790846777389
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1790846777389
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 98,
+       "inputTokens": 84,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 14,
+       "reasoningOutputTokens": 6
+      },
+      "last": {
+       "totalTokens": 5496,
+       "inputTokens": 0,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 0,
+       "reasoningOutputTokens": 0
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1790846777772
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1790846777772
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "contextCompaction",
+      "id": "01a0f6c9-375b-76b0-98d4-a94dbc8cb3e6"
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "completedAtMs": 1790846777772
+    },
+    "emittedAtMs": 1790846777796
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "warning",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "message": "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted."
+    },
+    "emittedAtMs": 1790846777796
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0f6c9-3a3b-7861-a2b1-76627e4c0153",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "And one secondary colour",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "startedAtMs": 1790846777939
+    },
+    "emittedAtMs": 1790846777939
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0f6c9-3a3b-7861-a2b1-76627e4c0153",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "And one secondary colour",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "completedAtMs": 1790846777939
+    },
+    "emittedAtMs": 1790846777999
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_3",
+      "text": "",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "startedAtMs": 1790846778006
+    },
+    "emittedAtMs": 1790846778006
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "itemId": "msg_3",
+     "delta": "Green."
+    },
+    "emittedAtMs": 1790846778006
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_3",
+      "text": "Green.",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "completedAtMs": 1790846778006
+    },
+    "emittedAtMs": 1790846778026
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turnId": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 147,
+       "inputTokens": 126,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 21,
+       "reasoningOutputTokens": 9
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1790846778153
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1790846778153
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "status": {
+      "type": "idle"
+     }
+    },
+    "emittedAtMs": 1790846778177
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0f6c9-2ea3-76d2-b802-78461e5f0544",
+     "turn": {
+      "id": "01a0f6c9-3700-7bf2-8c5c-578d3e0cc94f",
+      "items": [
+       {
+        "type": "agentMessage",
+        "id": "msg_3",
+        "text": "Green.",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+       }
+      ],
+      "itemsView": "summary",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1790846777,
+      "completedAt": 1790846778,
+      "durationMs": 1065
+     }
+    },
+    "emittedAtMs": 1790846778177
+   }
+  }
+ ]
+}

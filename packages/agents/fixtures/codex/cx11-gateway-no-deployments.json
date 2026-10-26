@@ -1,0 +1,374 @@
+{
+ "scenario": "cx11-gateway-no-deployments",
+ "cliVersion": "0.158.0",
+ "messages": [
+  {
+   "dir": "out",
+   "msg": {
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "clientInfo": {
+      "name": "gram",
+      "title": "Gram",
+      "version": "0.0.0"
+     },
+     "capabilities": {
+      "experimentalApi": true,
+      "requestAttestation": false
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 1,
+    "result": {
+     "userAgent": "gram/0.158.0",
+     "codexHome": "$CODEX_HOME",
+     "platformFamily": "unix",
+     "platformOs": "macos"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "method": "initialized"
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 2,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "on-request",
+     "sandbox": "workspace-write"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "remoteControl/status/changed",
+    "params": {
+     "status": "disabled",
+     "serverName": "$HOST",
+     "installationId": "$INSTALLATION",
+     "environmentId": null
+    },
+    "emittedAtMs": 1790807961585
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 2,
+    "result": {
+     "thread": {
+      "id": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1790807961,
+      "updatedAt": 1790807961,
+      "recencyAt": 1790807961,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/10/01/rollout-2026-10-01T00-39-21-01a0f478-f002-7e30-8095-e3933b27a2c9.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.158.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "disabledPluginIds": [],
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 3,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+     "input": [
+      {
+       "type": "text",
+       "text": "Say hi",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1790807961,
+      "updatedAt": 1790807961,
+      "recencyAt": 1790807961,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/10/01/rollout-2026-10-01T00-39-21-01a0f478-f002-7e30-8095-e3933b27a2c9.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.158.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1790807961914
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 3,
+    "result": {
+     "turn": {
+      "id": "01a0f478-f145-7382-a876-d27dfe5b03a7",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1790807962167
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+     "turn": {
+      "id": "01a0f478-f145-7382-a876-d27dfe5b03a7",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1790807961,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1790807962167
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0f478-f272-75d3-b882-59cd29508923",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Say hi",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+     "turnId": "01a0f478-f145-7382-a876-d27dfe5b03a7",
+     "startedAtMs": 1790807962257
+    },
+    "emittedAtMs": 1790807962257
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0f478-f272-75d3-b882-59cd29508923",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Say hi",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+     "turnId": "01a0f478-f145-7382-a876-d27dfe5b03a7",
+     "completedAtMs": 1790807962257
+    },
+    "emittedAtMs": 1790807962273
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+     "status": {
+      "type": "systemError"
+     }
+    },
+    "emittedAtMs": 1790807962292
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "error",
+    "params": {
+     "error": {
+      "message": "exceeded retry limit, last status: 429 Too Many Requests",
+      "codexErrorInfo": {
+       "responseTooManyFailedAttempts": {
+        "httpStatusCode": 429
+       }
+      },
+      "additionalDetails": null,
+      "misalignment": null
+     },
+     "willRetry": false,
+     "threadId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+     "turnId": "01a0f478-f145-7382-a876-d27dfe5b03a7"
+    },
+    "emittedAtMs": 1790807962292
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0f478-f002-7e30-8095-e3933b27a2c9",
+     "turn": {
+      "id": "01a0f478-f145-7382-a876-d27dfe5b03a7",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "failed",
+      "error": {
+       "message": "exceeded retry limit, last status: 429 Too Many Requests",
+       "codexErrorInfo": {
+        "responseTooManyFailedAttempts": {
+         "httpStatusCode": 429
+        }
+       },
+       "additionalDetails": null,
+       "misalignment": null
+      },
+      "startedAt": 1790807961,
+      "completedAt": 1790807962,
+      "durationMs": 335
+     }
+    },
+    "emittedAtMs": 1790807962361
+   }
+  }
+ ]
+}

@@ -1,0 +1,843 @@
+{
+ "scenario": "cx10-mcp-status",
+ "cliVersion": "0.154.0",
+ "messages": [
+  {
+   "dir": "out",
+   "msg": {
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "clientInfo": {
+      "name": "gram",
+      "title": "Gram",
+      "version": "0.0.0"
+     },
+     "capabilities": {
+      "experimentalApi": true,
+      "requestAttestation": false
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 1,
+    "result": {
+     "userAgent": "gram/0.154.0",
+     "codexHome": "$CODEX_HOME",
+     "platformFamily": "unix",
+     "platformOs": "macos"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "remoteControl/status/changed",
+    "params": {
+     "status": "disabled",
+     "serverName": "$HOST",
+     "installationId": "$INSTALLATION",
+     "environmentId": null
+    },
+    "emittedAtMs": 1789590593947
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "method": "initialized"
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 2,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "on-request",
+     "sandbox": "workspace-write",
+     "config": {
+      "mcp_servers": {
+       "gram": {
+        "url": "http://127.0.0.1:$PORT/mcp",
+        "http_headers": {
+         "authorization": "Bearer thread-a"
+        },
+        "default_tools_approval_mode": "approve"
+       },
+       "docs": {
+        "enabled": false
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 2,
+    "result": {
+     "thread": {
+      "id": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789590594,
+      "updatedAt": 1789590594,
+      "recencyAt": 1789590594,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T22-29-53-01a0abe9-61c1-7101-a7be-35ea5edb4468.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 3,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "on-request",
+     "sandbox": "workspace-write"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789590594,
+      "updatedAt": 1789590594,
+      "recencyAt": 1789590594,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T22-29-53-01a0abe9-61c1-7101-a7be-35ea5edb4468.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1789590594478
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "mcpServer/startupStatus/updated",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "name": "gram",
+     "status": "starting",
+     "error": null,
+     "failureReason": null
+    },
+    "emittedAtMs": 1789590594478
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "mcpServer/startupStatus/updated",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "name": "gram",
+     "status": "ready",
+     "error": null,
+     "failureReason": null
+    },
+    "emittedAtMs": 1789590594478
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 3,
+    "result": {
+     "thread": {
+      "id": "01a0abe9-63b1-78b2-9ee7-354f96bd6934",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0abe9-63b1-78b2-9ee7-354f96bd6934",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789590594,
+      "updatedAt": 1789590594,
+      "recencyAt": 1789590594,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T22-29-54-01a0abe9-63b1-78b2-9ee7-354f96bd6934.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "on-request",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0abe9-63b1-78b2-9ee7-354f96bd6934",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0abe9-63b1-78b2-9ee7-354f96bd6934",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789590594,
+      "updatedAt": 1789590594,
+      "recencyAt": 1789590594,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T22-29-54-01a0abe9-63b1-78b2-9ee7-354f96bd6934.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1789590594513
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "mcpServer/startupStatus/updated",
+    "params": {
+     "threadId": "01a0abe9-63b1-78b2-9ee7-354f96bd6934",
+     "name": "docs",
+     "status": "starting",
+     "error": null,
+     "failureReason": null
+    },
+    "emittedAtMs": 1789590594514
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "mcpServer/startupStatus/updated",
+    "params": {
+     "threadId": "01a0abe9-63b1-78b2-9ee7-354f96bd6934",
+     "name": "docs",
+     "status": "ready",
+     "error": null,
+     "failureReason": null
+    },
+    "emittedAtMs": 1789590594518
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 4,
+    "method": "mcpServerStatus/list",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "detail": "toolsAndAuthOnly"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 4,
+    "result": {
+     "data": [
+      {
+       "name": "docs",
+       "runtimeStatus": "disabled",
+       "pluginId": null,
+       "serverInfo": null,
+       "tools": {},
+       "toolsError": null,
+       "resources": [],
+       "resourceTemplates": [],
+       "authStatus": "unsupported"
+      },
+      {
+       "name": "gram",
+       "runtimeStatus": "connected",
+       "pluginId": null,
+       "serverInfo": {
+        "name": "gram",
+        "title": null,
+        "version": "0.0.0",
+        "description": null,
+        "icons": null,
+        "websiteUrl": null
+       },
+       "tools": {
+        "rename_thread": {
+         "name": "rename_thread",
+         "description": "Rename this thread.",
+         "inputSchema": {
+          "type": "object",
+          "properties": {
+           "title": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "title"
+          ]
+         }
+        }
+       },
+       "toolsError": null,
+       "resources": [],
+       "resourceTemplates": [],
+       "authStatus": "bearerToken"
+      }
+     ],
+     "nextCursor": null
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 5,
+    "method": "mcpServerStatus/list",
+    "params": {
+     "threadId": "01a0abe9-63b1-78b2-9ee7-354f96bd6934",
+     "detail": "toolsAndAuthOnly"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 5,
+    "result": {
+     "data": [
+      {
+       "name": "docs",
+       "runtimeStatus": "connected",
+       "pluginId": null,
+       "serverInfo": {
+        "name": "gram",
+        "title": null,
+        "version": "0.0.0",
+        "description": null,
+        "icons": null,
+        "websiteUrl": null
+       },
+       "tools": {
+        "rename_thread": {
+         "name": "rename_thread",
+         "description": "Rename this thread.",
+         "inputSchema": {
+          "type": "object",
+          "properties": {
+           "title": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "title"
+          ]
+         }
+        }
+       },
+       "toolsError": null,
+       "resources": [],
+       "resourceTemplates": [],
+       "authStatus": "unsupported"
+      }
+     ],
+     "nextCursor": null
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 6,
+    "method": "mcpServerStatus/list",
+    "params": {
+     "detail": "toolsAndAuthOnly"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 6,
+    "result": {
+     "data": [
+      {
+       "name": "docs",
+       "runtimeStatus": null,
+       "pluginId": null,
+       "serverInfo": {
+        "name": "gram",
+        "title": null,
+        "version": "0.0.0",
+        "description": null,
+        "icons": null,
+        "websiteUrl": null
+       },
+       "tools": {
+        "rename_thread": {
+         "name": "rename_thread",
+         "description": "Rename this thread.",
+         "inputSchema": {
+          "type": "object",
+          "properties": {
+           "title": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "title"
+          ]
+         }
+        }
+       },
+       "toolsError": null,
+       "resources": [],
+       "resourceTemplates": [],
+       "authStatus": "unsupported"
+      }
+     ],
+     "nextCursor": null
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 7,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "input": [
+      {
+       "type": "text",
+       "text": "hi",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 7,
+    "result": {
+     "turn": {
+      "id": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1789590596823
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "turn": {
+      "id": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1789590596,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1789590596823
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0abe9-6ee2-7ea1-b2c7-2b5a5eaa31f3",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "hi",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "turnId": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+     "startedAtMs": 1789590597346
+    },
+    "emittedAtMs": 1789590597348
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0abe9-6ee2-7ea1-b2c7-2b5a5eaa31f3",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "hi",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "turnId": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+     "completedAtMs": 1789590597346
+    },
+    "emittedAtMs": 1789590597393
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_11",
+      "text": "",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "turnId": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+     "startedAtMs": 1789590597410
+    },
+    "emittedAtMs": 1789590597410
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "turnId": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+     "itemId": "msg_11",
+     "delta": "Hi."
+    },
+    "emittedAtMs": 1789590597410
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_11",
+      "text": "Hi.",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "turnId": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+     "completedAtMs": 1789590597410
+    },
+    "emittedAtMs": 1789590597481
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "turnId": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1789590597912
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1789590597912
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "status": {
+      "type": "idle"
+     }
+    },
+    "emittedAtMs": 1789590598098
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0abe9-61c1-7101-a7be-35ea5edb4468",
+     "turn": {
+      "id": "01a0abe9-6a14-72d0-9274-1ed227cac50e",
+      "items": [
+       {
+        "type": "agentMessage",
+        "id": "msg_11",
+        "text": "Hi.",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+       }
+      ],
+      "itemsView": "summary",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1789590596,
+      "completedAt": 1789590597,
+      "durationMs": 1716
+     }
+    },
+    "emittedAtMs": 1789590598098
+   }
+  }
+ ]
+}

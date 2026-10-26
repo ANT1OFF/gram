@@ -1,0 +1,10 @@
+# Check every text file out with LF, whatever `core.autocrlf` says. oxfmt --check fails on CRLF,
+# bash can't run a CRLF script, and Git for Windows defaults `autocrlf` to true, so without this a
+# plain Windows clone fails `bun run check` on every file.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary
+*.dylib binary
+*.node binary

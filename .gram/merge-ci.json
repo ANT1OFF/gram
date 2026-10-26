@@ -1,0 +1,17 @@
+{
+  "documentationPolicy": "gram-prose-v2",
+  "workflows": [
+    {
+      "path": ".github/workflows/check.yml",
+      "event": "pull_request",
+      "jobs": ["classify", "qualification", "check", "e2e 1/3", "e2e 2/3", "e2e 3/3"],
+      "docsJobs": ["classify", "qualification", "docs"],
+      "alwaysJobs": ["e2e 1/3", "e2e 2/3", "e2e 3/3"]
+    },
+    {
+      "path": ".github/workflows/scaffold.yml",
+      "event": "pull_request",
+      "jobs": ["scaffold"]
+    }
+  ]
+}

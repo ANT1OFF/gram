@@ -1,0 +1,4 @@
+# electron-updater reads only its cache directory's name from this file. The feed is always set in
+# code before a check (apps/desktop/src/main/update/native-port.ts), so no provider is named here:
+# a check that somehow ran without one fails instead of guessing a feed.
+updaterCacheDirName: gram-updater

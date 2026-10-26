@@ -1,0 +1,113 @@
+{
+  "name": "gram",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "effect": "4.0.5",
+      "@effect/platform-node": "4.0.5",
+      "@effect/sql-sqlite-node": "4.0.5",
+      "@effect/vitest": "4.0.5",
+      "ai": "7.0.143",
+      "@modelcontextprotocol/sdk": "1.32.1",
+      "node-pty": "1.1.0",
+      "sherpa-onnx-node": "1.13.8",
+      "ghostty-web": "0.4.0",
+      "@types/node": "26.6.5",
+      "oxfmt": "0.73.0",
+      "oxlint": "1.88.0",
+      "oxlint-tsgolint": "7.0.2004",
+      "typescript": "7.0.2",
+      "vitest": "5.0.5",
+      "@babel/core": "8.0.7",
+      "@base-ui/react": "1.9.0",
+      "@fontsource-variable/geist": "5.3.0",
+      "@fontsource-variable/geist-mono": "5.3.0",
+      "@rolldown/plugin-babel": "0.2.4",
+      "@tailwindcss/vite": "4.3.3",
+      "@tanstack/react-query": "5.104.4",
+      "@tanstack/react-router": "1.170.45",
+      "@tanstack/router-plugin": "1.168.47",
+      "@types/react": "19.3.0",
+      "@types/react-dom": "19.3.0",
+      "@vitejs/plugin-react": "6.1.2",
+      "babel-plugin-react-compiler": "1.0.0",
+      "class-variance-authority": "0.7.1",
+      "cn": "0.5.0",
+      "lucide-react": "1.59.0",
+      "motion": "14.3.0",
+      "react": "19.3.1",
+      "react-dom": "19.3.1",
+      "shadcn": "4.22.0",
+      "tailwindcss": "4.3.3",
+      "tw-animate-css": "1.4.0",
+      "vite": "8.3.4",
+      "zustand": "5.0.15",
+      "electron": "44.9.0",
+      "electron-builder": "26.17.0",
+      "electron-updater": "6.8.10",
+      "electron-vite": "6.0.0"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "postinstall": "node tools/sherpa-onnx/install.mjs",
+    "dev": "bun run --filter @gram/web dev",
+    "dev:desktop": "bun run --filter @gram/desktop dev",
+    "build": "bun run typecheck && bun run build:bundles",
+    "build:bundles": "bun run --filter @gram/web build && bun run --filter @gram/desktop build",
+    "check": "node tools/check/run.mjs",
+    "check:affected": "node tools/check/run.mjs --affected",
+    "check:cancel": "node tools/check/run.mjs --cancel",
+    "check:static": "bun run lint && bun run fmt:check && bun run typecheck",
+    "check:ci": "bun run check && bun run build:bundles",
+    "lint": "node tools/check-dependency-pins.mjs && oxlint --deny-warnings",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "typecheck": "tsc -b",
+    "test": "vitest run --maxWorkers=3",
+    "test:loop": "node tools/check/test-loop.mjs",
+    "check:scaffold": "node tools/check-public-scaffold.mjs",
+    "check:docs": "node tools/check-docs.mjs",
+    "release:rc": "node tools/release-rc/rc.mjs",
+    "release:stable": "node tools/release-stable/stable.mjs",
+    "mocks:tokens": "node .agents/skills/mock-build/scripts/mock-tokens.mjs docs/design/mocks/tokens.config.json",
+    "dev:mock": "VITE_API=mock bun run --filter @gram/web dev:web",
+    "dev:preview": "node apps/web/scripts/isolated-preview.mjs",
+    "e2e:real": "bun run --filter @gram/web e2e:real",
+    "e2e:smoke": "bun run --filter @gram/web e2e subscription-agents.spec.ts launch-checks.spec.ts gateways.spec.ts new-thread-folder.spec.ts --workers=1"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "node-gyp": "13.1.0",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "overrides": {
+    "sherpa-onnx-darwin-arm64": "1.13.8",
+    "sherpa-onnx-darwin-x64": "1.13.8",
+    "sherpa-onnx-linux-arm64": "1.13.8",
+    "sherpa-onnx-linux-x64": "1.13.8",
+    "sherpa-onnx-win-ia32": "1.13.8",
+    "sherpa-onnx-win-x64": "1.13.8"
+  },
+  "engines": {
+    "bun": ">=1.4.3",
+    "node": ">=26"
+  },
+  "packageManager": "bun@1.4.3",
+  "patchedDependencies": {
+    "@effect/platform-node-shared@4.0.5": "patches/@effect__platform-node-shared@4.0.5.patch"
+  },
+  "trustedDependencies": [
+    "electron",
+    "node-pty"
+  ]
+}

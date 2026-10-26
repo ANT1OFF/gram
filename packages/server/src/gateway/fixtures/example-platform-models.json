@@ -1,0 +1,659 @@
+[
+  {
+    "name": "gpt-6.1-sol",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true,
+      "supports_none_reasoning_effort": false
+    },
+    "limits": {
+      "max_input_tokens": 922000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "gpt-6.1-sol-eu",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true,
+      "supports_none_reasoning_effort": false
+    },
+    "limits": {
+      "max_input_tokens": 922000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "gpt-6-sol",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true
+    },
+    "limits": {
+      "max_input_tokens": 922000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "gpt-6-sol-eu",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true
+    },
+    "limits": {
+      "max_input_tokens": 922000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "gpt-6-astra",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true,
+      "supports_none_reasoning_effort": false
+    },
+    "limits": {
+      "max_input_tokens": 922000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "gpt-6-luna",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true
+    },
+    "limits": {
+      "max_input_tokens": 922000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "gpt-latest",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true,
+      "supports_none_reasoning_effort": false
+    },
+    "limits": {
+      "max_input_tokens": 922000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "gpt-5.5",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": false,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true
+    }
+  },
+  {
+    "name": "gpt-4.1",
+    "deprecated": true,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_reasoning": false,
+      "supports_xhigh_reasoning_effort": false,
+      "supports_max_reasoning_effort": false,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true
+    }
+  },
+  {
+    "name": "a-claude-opus-5.5",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "opus-latest",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "sonnet-latest",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "a-claude-sonnet-5.5",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "a-claude-haiku-4.5",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": false,
+      "supports_max_reasoning_effort": false,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": true,
+      "supports_adaptive_thinking": false,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    }
+  },
+  {
+    "name": "a-claude-opus-4.6",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": false,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    }
+  },
+  {
+    "name": "claude-opus-5.5-eu",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": false,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "claude-opus-5.5",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": false,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "claude-haiku-4.5",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": false,
+      "supports_max_reasoning_effort": false,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": true,
+      "supports_adaptive_thinking": false,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    }
+  },
+  {
+    "name": "claude-haiku-4.5-eu",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": false,
+      "supports_max_reasoning_effort": false,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": true,
+      "supports_adaptive_thinking": false,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    }
+  },
+  {
+    "name": "a-claude-haiku-5.5",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "thinking_always_on": true,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true,
+      "supports_native_structured_output": true,
+      "supports_mid_conversation_system": true
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "max_tokens": 128000
+    }
+  },
+  {
+    "name": "claude-haiku-5.5",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "thinking_always_on": true,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": false,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true,
+      "supports_native_structured_output": false,
+      "supports_tool_search": true,
+      "supports_mid_conversation_system": true,
+      "bedrock_converse_supports_strict_tools": false
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "max_tokens": 128000
+    }
+  },
+  {
+    "name": "claude-haiku-5.5-eu",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "thinking_always_on": true,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": false,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true,
+      "supports_native_structured_output": false,
+      "supports_tool_search": true,
+      "supports_mid_conversation_system": true,
+      "bedrock_converse_supports_strict_tools": false
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "max_tokens": 128000
+    }
+  },
+  {
+    "name": "claude-sonnet-5-eu",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": true,
+      "supports_max_reasoning_effort": true,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": false,
+      "supports_adaptive_thinking": true,
+      "supports_computer_use": true,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    },
+    "limits": {
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000
+    }
+  },
+  {
+    "name": "fusion",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": false,
+      "supports_pdf_input": false,
+      "supports_function_calling": false,
+      "supports_tool_choice": false,
+      "supports_reasoning": false,
+      "supports_prompt_caching": false,
+      "supports_response_schema": false,
+      "supports_assistant_prefill": false,
+      "supports_computer_use": false,
+      "supports_audio_input": false,
+      "supports_system_messages": true
+    }
+  },
+  {
+    "name": "jev-1.13",
+    "mode": "evaluation",
+    "deprecated": false,
+    "restricted": true,
+    "limits": {
+      "max_input_tokens": 32000,
+      "max_output_tokens": 28800
+    }
+  },
+  {
+    "name": "glm-5.3",
+    "mode": "chat",
+    "deprecated": false,
+    "restricted": true,
+    "supports": {
+      "supports_web_search": false,
+      "supports_vision": false,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": false,
+      "supports_max_reasoning_effort": false,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_response_schema": true
+    },
+    "limits": {
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 131072
+    }
+  },
+  {
+    "name": "qwen3-embedding-8b",
+    "mode": "embedding",
+    "deprecated": false,
+    "restricted": true,
+    "limits": {
+      "max_input_tokens": 32000
+    }
+  },
+  {
+    "name": "mistral-ocr-latest",
+    "mode": "ocr",
+    "deprecated": false,
+    "restricted": false
+  },
+  {
+    "name": "whisper",
+    "mode": "audio_transcription",
+    "deprecated": false,
+    "restricted": false
+  },
+  {
+    "name": "gpt-image-2",
+    "mode": "image_generation",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_vision": false,
+      "supports_pdf_input": false
+    }
+  },
+  {
+    "name": "gemini-tts-flash-3.1",
+    "mode": "audio_speech",
+    "deprecated": false,
+    "restricted": false
+  },
+  {
+    "name": "cohere-rerank-3.5",
+    "mode": "rerank",
+    "deprecated": false,
+    "restricted": false
+  },
+  {
+    "name": "gemini-pro-3.1",
+    "deprecated": false,
+    "restricted": false,
+    "supports": {
+      "supports_web_search": true,
+      "supports_vision": true,
+      "supports_pdf_input": true,
+      "supports_function_calling": true,
+      "supports_tool_choice": true,
+      "supports_reasoning": true,
+      "supports_xhigh_reasoning_effort": false,
+      "supports_max_reasoning_effort": false,
+      "supports_prompt_caching": true,
+      "supports_response_schema": true,
+      "supports_assistant_prefill": false,
+      "supports_computer_use": false,
+      "supports_audio_input": true,
+      "supports_system_messages": true
+    }
+  }
+]

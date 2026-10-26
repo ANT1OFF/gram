@@ -1,0 +1,16 @@
+# A user's Codex config with its own `gram` MCP entry.
+model_provider = "corp"
+
+[model_providers.corp]
+name = "Corp gateway"
+base_url = "https://gateway.example/v1"
+env_key = "LLM_API_KEY"
+
+[mcp_servers.gram]
+command = "node"
+args = ["/opt/old-gram/mcp.js"]
+env = { GRAM_TOKEN = "stale" }
+
+[mcp_servers.docs]
+command = "npx"
+args = ["docs-mcp"]

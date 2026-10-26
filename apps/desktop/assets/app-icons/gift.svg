@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-12.82 -12.82 145.64 145.64">
+
+  <defs>
+    <linearGradient id="bg-gift-dark" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#1d2233"/><stop offset="1" stop-color="#121521"/></linearGradient>
+    
+    <clipPath id="cp-gift-dark"><rect width="120" height="120" rx="27"/></clipPath>
+  </defs>
+  <g clip-path="url(#cp-gift-dark)">
+    <rect width="120" height="120" fill="url(#bg-gift-dark)"/>
+  </g>
+  <rect x=".75" y=".75" width="118.5" height="118.5" rx="26.25" fill="none" stroke="rgb(255 255 255 / .08)" stroke-width="1.5"/>
+  <g fill="none" stroke="#56c2ff" stroke-width="10" stroke-linecap="round"><mask id="cut-gift-dark" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120"><rect width="120" height="120" fill="#fff"/><path d="M38 30 82 90" stroke="#000" stroke-width="19"/></mask><path d="M82 30 38 90" mask="url(#cut-gift-dark)"/><path d="M38 30 82 90"/></g>
+
+</svg>

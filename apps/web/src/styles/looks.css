@@ -1,0 +1,93 @@
+/*
+ * Look structure beyond tokens. Glass is the only look; these blocks give it its
+ * shape and surface treatment. Colour always comes from palette tokens, and the backdrop wash
+ * strength is a look token the contrast matrix in @gram/themes checks.
+ *
+ * Hooks: `data-surface` = chrome | titlebar | card | composer | overlay, `data-slot="message-content"`
+ * on message bodies, and the shell's test ids (app shell, transcript, pane, pane header, tool card,
+ * plan) where a component has no better handle.
+ */
+
+/* ------------------------------------------------------------------------------------------------
+ * Glass: translucent chrome over a tinted backdrop, blur and layered elevation, soft radii.
+ * Blur stays on chrome and overlays, never over streaming content.
+ * ---------------------------------------------------------------------------------------------- */
+
+[data-look="glass"] {
+  --backdrop-wash: color-mix(
+    in oklab,
+    var(--accent) calc(var(--wash-strength) * 100%),
+    var(--surface-2)
+  );
+  --backdrop-wash-2: color-mix(
+    in oklab,
+    var(--info) calc(var(--wash-strength) * 100%),
+    var(--surface-2)
+  );
+}
+
+[data-look="glass"] body {
+  background:
+    radial-gradient(70rem 48rem at 0% 0%, var(--backdrop-wash), transparent 72%),
+    radial-gradient(60rem 40rem at 100% 100%, var(--backdrop-wash-2), transparent 70%),
+    var(--surface-2);
+}
+
+/* With native vibrancy the window material shows through the backdrop instead. */
+[data-look="glass"][data-vibrancy="native"] body {
+  background:
+    radial-gradient(70rem 48rem at 0% 0%, var(--backdrop-wash), transparent 72%),
+    color-mix(in srgb, var(--surface-2) 60%, transparent);
+}
+
+/* Only the thread grid shows the backdrop; other routes (Settings, /new) keep a surface, so
+   scrolling content never paints straight over the body backdrop. */
+[data-look="glass"] main:has([data-testid="thread-grid"]) {
+  background-color: transparent;
+}
+
+/* Over native vibrancy the window is transparent and nothing clears it, so main paints the backdrop
+   on an opaque surface beneath the title bar and the panes; the sidebar and right panel stay
+   translucent. */
+[data-look="glass"][data-vibrancy="native"] main:has([data-testid="thread-grid"]) {
+  background:
+    radial-gradient(70rem 48rem at 0% 0%, var(--backdrop-wash), transparent 72%), var(--surface-2);
+}
+
+[data-look="glass"] [data-surface="chrome"],
+[data-look="glass"] [data-surface="titlebar"] {
+  background-color: var(--chrome-bg);
+  backdrop-filter: blur(var(--surface-blur)) saturate(1.5);
+}
+
+[data-look="glass"] [data-surface="overlay"] {
+  background-color: color-mix(
+    in srgb,
+    var(--surface-3) calc(var(--surface-alpha) * 100%),
+    transparent
+  );
+  backdrop-filter: blur(var(--surface-blur)) saturate(1.5);
+}
+
+@media (forced-colors: active) {
+  [data-look="glass"] body {
+    background: Canvas;
+  }
+}
+
+[data-look="glass"] [data-testid="tool-card"],
+[data-look="glass"] [data-testid="plan"],
+[data-look="glass"] [data-surface="card"] {
+  border-color: color-mix(in oklab, var(--border-subtle) 60%, transparent);
+  box-shadow: var(--shadow-raised);
+}
+
+[data-look="glass"] .is-user [data-slot="message-content"] {
+  border-radius: var(--radius-xl);
+  border-end-end-radius: var(--radius-xs);
+  box-shadow: var(--shadow-raised);
+}
+
+[data-look="glass"] [data-surface="overlay"] {
+  border-radius: var(--radius-xl);
+}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Template: a page (a site, a docs page, a release note) as a fill-width board plus a phone
+         board. No invented numbers, logos or quotes: keep [BRACKETED] gaps until the brief gives the
+         real ones. -->
+    <title>[Page title] · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">[Who reads this page, and the one thing they should do.]</p>
+
+      <section class="board" data-name="Desktop" data-size="fill">
+        <div class="board-frame">
+          <header class="topbar page" style="max-width: none">
+            <strong>[Product]</strong>
+            <span class="grow"></span>
+            <a class="btn ghost sm" href="#">[Docs]</a>
+            <a class="btn primary sm" href="#">[Call to action]</a>
+          </header>
+          <div class="page">
+            <section class="hero">
+              <h1>[A headline that says what it does]</h1>
+              <p class="lede">[Who it is for and the outcome they get, in one or two sentences.]</p>
+              <div class="row wrap">
+                <a class="btn primary lg" href="#">[Call to action]</a>
+                <a class="btn lg" href="#">[Secondary action]</a>
+              </div>
+            </section>
+            <div class="placeholder" style="min-height: 360px">[Product screenshot]</div>
+            <section class="band">
+              <div class="grid">
+                <div class="stack">
+                  <h3>[Benefit]</h3>
+                  <p class="muted">[One concrete sentence, from the brief.]</p>
+                </div>
+                <div class="stack">
+                  <h3>[Benefit]</h3>
+                  <p class="muted">[One concrete sentence, from the brief.]</p>
+                </div>
+                <div class="stack">
+                  <h3>[Benefit]</h3>
+                  <p class="muted">[One concrete sentence, from the brief.]</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="Phone" data-size="390x844">
+        <div class="board-frame">
+          <div class="phone">
+            <header class="topbar">
+              <strong>[Product]</strong>
+              <span class="grow"></span>
+              <button class="btn icon ghost" type="button" aria-label="Menu">
+                <i data-icon="menu"></i>
+              </button>
+            </header>
+            <div class="content">
+              <h1>[A headline that says what it does]</h1>
+              <p class="muted">[Who it is for, shorter.]</p>
+              <a class="btn primary" href="#">[Call to action]</a>
+              <div class="placeholder" style="min-height: 220px">[Product screenshot]</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,3 @@
+# Electron and native lifecycle scripts resolve build tools from the root install.
+[install]
+linker = "hoisted"

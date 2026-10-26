@@ -1,0 +1,689 @@
+{
+ "scenario": "cx02-approval",
+ "cliVersion": "0.154.0",
+ "messages": [
+  {
+   "dir": "out",
+   "msg": {
+    "id": 1,
+    "method": "initialize",
+    "params": {
+     "clientInfo": {
+      "name": "gram",
+      "title": "Gram",
+      "version": "0.0.0"
+     },
+     "capabilities": {
+      "experimentalApi": true,
+      "requestAttestation": false
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 1,
+    "result": {
+     "userAgent": "gram/0.154.0",
+     "codexHome": "$CODEX_HOME",
+     "platformFamily": "unix",
+     "platformOs": "macos"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "remoteControl/status/changed",
+    "params": {
+     "status": "disabled",
+     "serverName": "$HOST",
+     "installationId": "$INSTALLATION",
+     "environmentId": null
+    },
+    "emittedAtMs": 1789585728448
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "method": "initialized"
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 2,
+    "method": "thread/start",
+    "params": {
+     "cwd": "$CWD",
+     "approvalPolicy": "untrusted",
+     "sandbox": "workspace-write"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 2,
+    "result": {
+     "thread": {
+      "id": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789585728,
+      "updatedAt": 1789585728,
+      "recencyAt": 1789585728,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T21-08-48-01a0ab9f-23ec-7410-b0ba-53e72a4b8a46.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     },
+     "model": "gpt-5.5",
+     "modelProvider": "gram",
+     "serviceTier": null,
+     "cwd": "$CWD",
+     "runtimeWorkspaceRoots": [
+      "$CWD"
+     ],
+     "instructionSources": [],
+     "approvalPolicy": "untrusted",
+     "approvalsReviewer": "user",
+     "sandbox": {
+      "type": "workspaceWrite",
+      "writableRoots": [],
+      "networkAccess": false,
+      "excludeTmpdirEnvVar": false,
+      "excludeSlashTmp": false
+     },
+     "activePermissionProfile": null,
+     "reasoningEffort": null,
+     "multiAgentMode": "explicitRequestOnly"
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 3,
+    "method": "turn/start",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "input": [
+      {
+       "type": "text",
+       "text": "Print hello",
+       "text_elements": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/started",
+    "params": {
+     "thread": {
+      "id": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+      "environments": [
+       {
+        "environmentId": "local",
+        "cwd": "$CWD",
+        "runtimeWorkspaceRoots": [
+         "$CWD"
+        ]
+       }
+      ],
+      "extra": null,
+      "sessionId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+      "forkedFromId": null,
+      "parentThreadId": null,
+      "preview": "",
+      "ephemeral": false,
+      "section": null,
+      "sectionEnteredAt": null,
+      "projectId": null,
+      "historyMode": "paginated",
+      "modelProvider": "gram",
+      "model": "gpt-5.5",
+      "reasoningEffort": null,
+      "createdAt": 1789585728,
+      "updatedAt": 1789585728,
+      "recencyAt": 1789585728,
+      "status": {
+       "type": "idle"
+      },
+      "path": "$CODEX_HOME/sessions/2026/09/16/rollout-2026-09-16T21-08-48-01a0ab9f-23ec-7410-b0ba-53e72a4b8a46.jsonl",
+      "cwd": "$CWD",
+      "cliVersion": "0.154.0",
+      "originator": "gram",
+      "source": "vscode",
+      "canAcceptDirectInput": true,
+      "threadSource": null,
+      "agentNickname": null,
+      "agentRole": null,
+      "gitInfo": null,
+      "name": null,
+      "daybreakEnabled": null,
+      "turns": []
+     }
+    },
+    "emittedAtMs": 1789585728605
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "id": 3,
+    "result": {
+     "turn": {
+      "id": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": null,
+      "completedAt": null,
+      "durationMs": null
+     }
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1789585728763
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/started",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turn": {
+      "id": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+      "items": [],
+      "itemsView": "notLoaded",
+      "status": "inProgress",
+      "error": null,
+      "startedAt": 1789585728,
+      "completedAt": null,
+      "durationMs": null
+     }
+    },
+    "emittedAtMs": 1789585728763
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9f-259a-7512-8e52-536600c36088",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Print hello",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "startedAtMs": 1789585728922
+    },
+    "emittedAtMs": 1789585728922
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "userMessage",
+      "id": "01a0ab9f-259a-7512-8e52-536600c36088",
+      "clientId": null,
+      "content": [
+       {
+        "type": "text",
+        "text": "Print hello",
+        "text_elements": []
+       }
+      ]
+     },
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "completedAtMs": 1789585728922
+    },
+    "emittedAtMs": 1789585728935
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "status": {
+      "type": "active",
+      "activeFlags": [
+       "waitingOnApproval"
+      ]
+     }
+    },
+    "emittedAtMs": 1789585729066
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "commandExecution",
+      "id": "call_1",
+      "pluginId": null,
+      "scriptPath": null,
+      "command": "/bin/zsh -lc 'echo hello'",
+      "cwd": "$CWD",
+      "processId": null,
+      "source": "agent",
+      "status": "inProgress",
+      "commandActions": [
+       {
+        "type": "unknown",
+        "command": "echo hello"
+       }
+      ],
+      "aggregatedOutput": null,
+      "exitCode": null,
+      "durationMs": null
+     },
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "startedAtMs": 1789585729067
+    },
+    "emittedAtMs": 1789585729067
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/commandExecution/requestApproval",
+    "id": 0,
+    "params": {
+     "kind": "command",
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "itemId": "call_1",
+     "startedAtMs": 1789585729066,
+     "environmentId": "local",
+     "reason": "Print a greeting",
+     "command": "/bin/zsh -lc 'echo hello'",
+     "cwd": "$CWD",
+     "commandActions": [
+      {
+       "type": "unknown",
+       "command": "echo hello"
+      }
+     ],
+     "proposedExecpolicyAmendment": [
+      "echo",
+      "hello"
+     ],
+     "availableDecisions": [
+      "accept",
+      {
+       "acceptWithExecpolicyAmendment": {
+        "execpolicy_amendment": [
+         "echo",
+         "hello"
+        ]
+       }
+      },
+      "cancel"
+     ]
+    }
+   }
+  },
+  {
+   "dir": "out",
+   "msg": {
+    "id": 0,
+    "result": {
+     "decision": "accept"
+    }
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "serverRequest/resolved",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "requestId": 0
+    },
+    "emittedAtMs": 1789585729067
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "status": {
+      "type": "active",
+      "activeFlags": []
+     }
+    },
+    "emittedAtMs": 1789585729067
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "commandExecution",
+      "id": "call_1",
+      "pluginId": null,
+      "scriptPath": null,
+      "command": "/bin/zsh -lc 'echo hello'",
+      "cwd": "$CWD",
+      "processId": "96277",
+      "source": "unifiedExecStartup",
+      "status": "completed",
+      "commandActions": [
+       {
+        "type": "unknown",
+        "command": "echo hello"
+       }
+      ],
+      "aggregatedOutput": "hello\n",
+      "exitCode": 0,
+      "durationMs": 0
+     },
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "completedAtMs": 1789585729184
+    },
+    "emittedAtMs": 1789585729219
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1789585729289
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1789585729289
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/started",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_2",
+      "text": "",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "startedAtMs": 1789585729297
+    },
+    "emittedAtMs": 1789585729297
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "itemId": "msg_2",
+     "delta": "It print"
+    },
+    "emittedAtMs": 1789585729298
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "itemId": "msg_2",
+     "delta": "ed hello"
+    },
+    "emittedAtMs": 1789585729298
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/agentMessage/delta",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "itemId": "msg_2",
+     "delta": "."
+    },
+    "emittedAtMs": 1789585729298
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "item/completed",
+    "params": {
+     "item": {
+      "type": "agentMessage",
+      "id": "msg_2",
+      "text": "It printed hello.",
+      "phase": null,
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     },
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "completedAtMs": 1789585729297
+    },
+    "emittedAtMs": 1789585729333
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/tokenUsage/updated",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turnId": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+     "tokenUsage": {
+      "total": {
+       "totalTokens": 98,
+       "inputTokens": 84,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 14,
+       "reasoningOutputTokens": 6
+      },
+      "last": {
+       "totalTokens": 49,
+       "inputTokens": 42,
+       "cachedInputTokens": 0,
+       "cacheWriteInputTokens": 0,
+       "outputTokens": 7,
+       "reasoningOutputTokens": 3
+      },
+      "modelContextWindow": 258400
+     }
+    },
+    "emittedAtMs": 1789585729373
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "account/rateLimits/updated",
+    "params": {
+     "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": null,
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": null,
+      "rateLimitReachedType": null
+     }
+    },
+    "emittedAtMs": 1789585729373
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "thread/status/changed",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "status": {
+      "type": "idle"
+     }
+    },
+    "emittedAtMs": 1789585729498
+   }
+  },
+  {
+   "dir": "in",
+   "msg": {
+    "method": "turn/completed",
+    "params": {
+     "threadId": "01a0ab9f-23ec-7410-b0ba-53e72a4b8a46",
+     "turn": {
+      "id": "01a0ab9f-245d-7dc3-ab75-9d3db4a20297",
+      "items": [
+       {
+        "type": "agentMessage",
+        "id": "msg_2",
+        "text": "It printed hello.",
+        "phase": null,
+        "memoryCitation": null,
+        "delivery": null,
+        "questions": null
+       }
+      ],
+      "itemsView": "summary",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1789585728,
+      "completedAt": 1789585729,
+      "durationMs": 768
+     }
+    },
+    "emittedAtMs": 1789585729498
+   }
+  }
+ ]
+}

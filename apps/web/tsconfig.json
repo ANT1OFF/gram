@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    "noEmit": true,
+    "tsBuildInfoFile": "node_modules/.tmp/tsconfig.tsbuildinfo",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "src",
+    "e2e",
+    "e2e-real",
+    "pr-shots",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ],
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/themes" },
+    { "path": "../../packages/shell" }
+  ]
+}

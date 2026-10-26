@@ -1,0 +1,473 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "number": 1943,
+        "state": "OPEN",
+        "url": "https://github.com/acme/widgets/pull/1943",
+        "title": "Synthetic review scenario: changes-requested",
+        "isDraft": false,
+        "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "headRefName": "feature/synthetic",
+        "baseRefName": "main",
+        "updatedAt": "2026-01-02T12:00:00Z",
+        "reviewDecision": "CHANGES_REQUESTED",
+        "mergeStateStatus": "UNKNOWN",
+        "reviews": {
+          "nodes": [
+            {
+              "id": "REVIEW_1943_0",
+              "author": {
+                "login": "example-code-review"
+              },
+              "state": "CHANGES_REQUESTED",
+              "submittedAt": "2026-01-02T10:00:00Z",
+              "commit": {
+                "oid": "1111111111111111111111111111111111111111"
+              },
+              "body": "Synthetic review summary.\n\n<!-- code-review-meta: model=test/reviewer effort=high scope=interdiff -->"
+            },
+            {
+              "id": "REVIEW_1943_1",
+              "author": {
+                "login": "example-code-review"
+              },
+              "state": "DISMISSED",
+              "submittedAt": "2026-01-02T10:01:00Z",
+              "commit": {
+                "oid": "2222222222222222222222222222222222222222"
+              },
+              "body": "Synthetic review summary.\n\n<!-- code-review-meta: model=test/reviewer effort=high scope=interdiff -->"
+            },
+            {
+              "id": "REVIEW_1943_2",
+              "author": {
+                "login": "example-code-review"
+              },
+              "state": "DISMISSED",
+              "submittedAt": "2026-01-02T10:02:00Z",
+              "commit": {
+                "oid": "3333333333333333333333333333333333333333"
+              },
+              "body": "Synthetic review summary.\n\n<!-- code-review-meta: model=test/reviewer effort=high scope=interdiff -->"
+            },
+            {
+              "id": "REVIEW_1943_3",
+              "author": {
+                "login": "example-code-review"
+              },
+              "state": "COMMENTED",
+              "submittedAt": "2026-01-02T10:03:00Z",
+              "commit": {
+                "oid": "4444444444444444444444444444444444444444"
+              },
+              "body": "Synthetic review summary.\n\n<!-- code-review-meta: model=test/reviewer effort=high scope=interdiff -->"
+            },
+            {
+              "id": "REVIEW_1943_4",
+              "author": {
+                "login": "example-code-review"
+              },
+              "state": "DISMISSED",
+              "submittedAt": "2026-01-02T10:04:00Z",
+              "commit": {
+                "oid": "5555555555555555555555555555555555555555"
+              },
+              "body": "Synthetic review summary.\n\n<!-- code-review-meta: model=test/reviewer effort=high scope=interdiff -->"
+            },
+            {
+              "id": "REVIEW_1943_5",
+              "author": {
+                "login": "example-code-review"
+              },
+              "state": "CHANGES_REQUESTED",
+              "submittedAt": "2026-01-02T10:05:00Z",
+              "commit": {
+                "oid": "6666666666666666666666666666666666666666"
+              },
+              "body": "Synthetic review summary.\n\n<!-- code-review-meta: model=test/reviewer effort=high scope=interdiff -->"
+            },
+            {
+              "id": "REVIEW_1943_6",
+              "author": {
+                "login": "example-code-review"
+              },
+              "state": "COMMENTED",
+              "submittedAt": "2026-01-02T10:06:00Z",
+              "commit": {
+                "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "body": "Synthetic review summary.\n\n<!-- code-review-meta: model=test/reviewer effort=high scope=interdiff -->"
+            },
+            {
+              "id": "REVIEW_1943_7",
+              "author": {
+                "login": "example-code-review"
+              },
+              "state": "CHANGES_REQUESTED",
+              "submittedAt": "2026-01-02T10:07:00Z",
+              "commit": {
+                "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              "body": "Synthetic review summary.\n\n<!-- code-review-meta: model=test/reviewer effort=high scope=interdiff -->"
+            }
+          ]
+        },
+        "reviewThreads": {
+          "nodes": [
+            {
+              "id": "THREAD_1943_0",
+              "isResolved": true,
+              "isOutdated": false,
+              "path": "src/widget.ts",
+              "line": 110,
+              "originalLine": 54,
+              "startLine": 110,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "id": "COMMENT_1943_0_0",
+                    "databaseId": 4024247869,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "[suggestion] Synthetic finding 0: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
+                    "createdAt": "2026-01-02T11:00:00Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-0-0",
+                    "commit": {
+                      "oid": "b04f64e70cadf434a215a3032c98262066fc4f77"
+                    },
+                    "originalCommit": {
+                      "oid": "eb6481e6fa4363303b75048c538d4f3cc6cf8b32"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:00:00Z"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "THREAD_1943_1",
+              "isResolved": false,
+              "isOutdated": true,
+              "path": "src/widget.ts",
+              "line": null,
+              "originalLine": 3,
+              "startLine": null,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "id": "COMMENT_1943_1_0",
+                    "databaseId": 4025554440,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "[blocker] Synthetic finding 1: handle the widget input.",
+                    "createdAt": "2026-01-02T11:01:00Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-1-0",
+                    "commit": {
+                      "oid": "8a3cef7c17a522aee2b302ab99adc89da91b4353"
+                    },
+                    "originalCommit": {
+                      "oid": "8a3cef7c17a522aee2b302ab99adc89da91b4353"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:01:00Z"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "THREAD_1943_2",
+              "isResolved": false,
+              "isOutdated": true,
+              "path": "src/widget.ts",
+              "line": null,
+              "originalLine": 31,
+              "startLine": null,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "id": "COMMENT_1943_2_0",
+                    "databaseId": 4025554452,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "[blocker] Synthetic finding 2: handle the widget input.",
+                    "createdAt": "2026-01-02T11:02:00Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-2-0",
+                    "commit": {
+                      "oid": "8a3cef7c17a522aee2b302ab99adc89da91b4353"
+                    },
+                    "originalCommit": {
+                      "oid": "8a3cef7c17a522aee2b302ab99adc89da91b4353"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:02:00Z"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "THREAD_1943_3",
+              "isResolved": false,
+              "isOutdated": false,
+              "path": "src/widget.ts",
+              "line": 73,
+              "originalLine": 70,
+              "startLine": 73,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "id": "COMMENT_1943_3_0",
+                    "databaseId": 4026253961,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "[suggestion] Synthetic finding 3: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
+                    "createdAt": "2026-01-02T11:03:00Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-3-0",
+                    "commit": {
+                      "oid": "b04f64e70cadf434a215a3032c98262066fc4f77"
+                    },
+                    "originalCommit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:03:00Z"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "THREAD_1943_4",
+              "isResolved": false,
+              "isOutdated": true,
+              "path": "src/widget.ts",
+              "line": null,
+              "originalLine": 41,
+              "startLine": null,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "id": "COMMENT_1943_4_0",
+                    "databaseId": 4026253967,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "[suggestion] Synthetic finding 4: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
+                    "createdAt": "2026-01-02T11:04:00Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-4-0",
+                    "commit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "originalCommit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:04:00Z"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "THREAD_1943_5",
+              "isResolved": false,
+              "isOutdated": true,
+              "path": "src/widget.ts",
+              "line": null,
+              "originalLine": 112,
+              "startLine": null,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "id": "COMMENT_1943_5_0",
+                    "databaseId": 4026253981,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "[suggestion] Synthetic finding 5: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
+                    "createdAt": "2026-01-02T11:05:00Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-5-0",
+                    "commit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "originalCommit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:05:00Z"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "THREAD_1943_6",
+              "isResolved": false,
+              "isOutdated": true,
+              "path": "src/widget.ts",
+              "line": null,
+              "originalLine": 83,
+              "startLine": null,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "id": "COMMENT_1943_6_0",
+                    "databaseId": 4026253992,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "[suggestion] Synthetic finding 6: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
+                    "createdAt": "2026-01-02T11:06:00Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-6-0",
+                    "commit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "originalCommit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:06:00Z"
+                  },
+                  {
+                    "id": "COMMENT_1943_6_1",
+                    "databaseId": 4026927211,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "[suggestion] Synthetic finding 6: handle the widget input.\n```suggestion\nexport const widget = \"ready\";\n```",
+                    "createdAt": "2026-01-02T11:06:01Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-6-1",
+                    "commit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "originalCommit": {
+                      "oid": "f7a517c32a49c93af5bd94224287846f4ab400c3"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:06:01Z"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "THREAD_1943_7",
+              "isResolved": false,
+              "isOutdated": false,
+              "path": "src/widget.ts",
+              "line": 118,
+              "originalLine": 118,
+              "startLine": 115,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "id": "COMMENT_1943_7_0",
+                    "databaseId": 4026930835,
+                    "author": {
+                      "login": "example-code-review"
+                    },
+                    "body": "Synthetic finding 7: handle the widget input.",
+                    "createdAt": "2026-01-02T11:07:00Z",
+                    "url": "https://github.com/acme/widgets/pull/1943#discussion-7-0",
+                    "commit": {
+                      "oid": "b04f64e70cadf434a215a3032c98262066fc4f77"
+                    },
+                    "originalCommit": {
+                      "oid": "b04f64e70cadf434a215a3032c98262066fc4f77"
+                    },
+                    "diffHunk": "@@ -1 +1 @@\n-export let widget = \"ready\";\n+export const widget = \"ready\";",
+                    "updatedAt": "2026-01-02T11:07:00Z"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "comments": {
+          "nodes": [
+            {
+              "id": "ISSUE_COMMENT_1943_0",
+              "author": {
+                "login": "synthetic-user"
+              },
+              "body": "Synthetic discussion: test the widget.",
+              "createdAt": "2026-09-16T08:57:20Z",
+              "url": "https://github.com/acme/widgets/pull/1943#issuecomment-0"
+            },
+            {
+              "id": "ISSUE_COMMENT_1943_1",
+              "author": {
+                "login": "synthetic-user"
+              },
+              "body": "Synthetic discussion: test the widget.",
+              "createdAt": "2026-09-16T09:23:34Z",
+              "url": "https://github.com/acme/widgets/pull/1943#issuecomment-1"
+            },
+            {
+              "id": "ISSUE_COMMENT_1943_2",
+              "author": {
+                "login": "synthetic-user"
+              },
+              "body": "Synthetic discussion: test the widget.",
+              "createdAt": "2026-09-16T09:24:44Z",
+              "url": "https://github.com/acme/widgets/pull/1943#issuecomment-2"
+            },
+            {
+              "id": "ISSUE_COMMENT_1943_3",
+              "author": {
+                "login": "synthetic-user"
+              },
+              "body": "Synthetic discussion: test the widget.",
+              "createdAt": "2026-09-16T09:45:26Z",
+              "url": "https://github.com/acme/widgets/pull/1943#issuecomment-3"
+            },
+            {
+              "id": "ISSUE_COMMENT_1943_4",
+              "author": {
+                "login": "synthetic-user"
+              },
+              "body": "Synthetic discussion: test the widget.",
+              "createdAt": "2026-09-16T11:37:20Z",
+              "url": "https://github.com/acme/widgets/pull/1943#issuecomment-4"
+            },
+            {
+              "id": "ISSUE_COMMENT_1943_5",
+              "author": {
+                "login": "synthetic-user"
+              },
+              "body": "Synthetic discussion: test the widget.",
+              "createdAt": "2026-09-16T12:14:40Z",
+              "url": "https://github.com/acme/widgets/pull/1943#issuecomment-5"
+            },
+            {
+              "id": "ISSUE_COMMENT_1943_6",
+              "author": {
+                "login": "synthetic-user"
+              },
+              "body": "Synthetic discussion: test the widget.",
+              "createdAt": "2026-09-16T12:53:36Z",
+              "url": "https://github.com/acme/widgets/pull/1943#issuecomment-6"
+            },
+            {
+              "id": "ISSUE_COMMENT_1943_7",
+              "author": {
+                "login": "synthetic-user"
+              },
+              "body": "Synthetic discussion: test the widget.",
+              "createdAt": "2026-09-16T14:03:35Z",
+              "url": "https://github.com/acme/widgets/pull/1943#issuecomment-7"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

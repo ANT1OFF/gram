@@ -1,0 +1,88 @@
+{
+  "name": "@gram/shell",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./channels": {
+      "types": "./src/channels.ts",
+      "default": "./src/channels.ts"
+    },
+    "./core": {
+      "types": "./src/core/index.ts",
+      "default": "./src/core/index.ts"
+    },
+    "./electron": {
+      "types": "./src/electron/index.ts",
+      "default": "./src/electron/index.ts"
+    },
+    "./modules/agent-browser": {
+      "types": "./src/modules/agent-browser/main.ts",
+      "default": "./src/modules/agent-browser/main.ts"
+    },
+    "./modules/connection": {
+      "types": "./src/modules/connection/main.ts",
+      "default": "./src/modules/connection/main.ts"
+    },
+    "./modules/fonts": {
+      "types": "./src/modules/fonts/main.ts",
+      "default": "./src/modules/fonts/main.ts"
+    },
+    "./modules/ipc": {
+      "types": "./src/modules/ipc.ts",
+      "default": "./src/modules/ipc.ts"
+    },
+    "./modules/key-vault": {
+      "types": "./src/modules/key-vault/index.ts",
+      "default": "./src/modules/key-vault/index.ts"
+    },
+    "./modules/preview": {
+      "types": "./src/modules/preview/main.ts",
+      "default": "./src/modules/preview/main.ts"
+    },
+    "./modules/speech": {
+      "types": "./src/modules/speech/main.ts",
+      "default": "./src/modules/speech/main.ts"
+    },
+    "./modules/tray": {
+      "types": "./src/modules/tray/main.ts",
+      "default": "./src/modules/tray/main.ts"
+    },
+    "./modules/update": {
+      "types": "./src/modules/update/index.ts",
+      "default": "./src/modules/update/index.ts"
+    },
+    "./preload": {
+      "types": "./src/preload.ts",
+      "default": "./src/preload.ts"
+    },
+    "./speech-process": {
+      "types": "./src/speech-process/index.ts",
+      "default": "./src/speech-process/index.ts"
+    },
+    "./speech-process/main": {
+      "types": "./src/speech-process/main.ts",
+      "default": "./src/speech-process/main.ts"
+    },
+    "./window-arg": {
+      "types": "./src/window-arg.ts",
+      "default": "./src/window-arg.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@gram/contracts": "workspace:*",
+    "@gram/git": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "electron": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

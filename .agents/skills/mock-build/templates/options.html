@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Template: two to four genuinely different directions, low fidelity, side by side. Each board
+         keeps a stable name ("A Inline", "B Panel") that the review uses to pick one. The trade-offs
+         go in your reply, not on the boards. Replace every [BRACKETED] fact or keep it as a gap. -->
+    <title>[Mock title] directions · v1</title>
+    <link rel="stylesheet" href="kit/tokens.css" />
+    <link rel="stylesheet" href="kit/kit.css" />
+    <script src="kit/kit.js" defer></script>
+  </head>
+  <body class="mock">
+    <main class="mock-canvas">
+      <p class="mock-note">
+        [The decision these directions explore, in one sentence.] Pick one by name.
+      </p>
+
+      <section class="board" data-name="A [Name]" data-size="560x420">
+        <div class="board-frame">
+          <div class="content">
+            <div class="row between">
+              <h3>[Screen title]</h3>
+              <button class="btn sm primary" type="button">[Action]</button>
+            </div>
+            <div class="list">
+              <button class="list-row" type="button" aria-selected="true">
+                [Row]<span class="meta">[Meta]</span>
+              </button>
+              <button class="list-row" type="button">[Row]<span class="meta">[Meta]</span></button>
+              <button class="list-row" type="button">[Row]<span class="meta">[Meta]</span></button>
+            </div>
+            <div class="placeholder" style="min-height: 140px">[Where the new part lives in A]</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="B [Name]" data-size="560x420">
+        <div class="board-frame">
+          <div class="app-body" style="min-height: 420px">
+            <div class="content" style="flex: 1 1 260px">
+              <h3>[Screen title]</h3>
+              <div class="list">
+                <button class="list-row" type="button" aria-selected="true">[Row]</button>
+                <button class="list-row" type="button">[Row]</button>
+              </div>
+            </div>
+            <aside class="content" style="flex: 1 1 200px; background: var(--surface-1)">
+              <div class="placeholder" style="flex: 1">[The new part as a side panel in B]</div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="board" data-name="C [Name]" data-size="560x420">
+        <div class="board-frame">
+          <div class="content">
+            <h3>[Screen title]</h3>
+            <div class="grid" style="--min: 140px">
+              <div class="card">
+                <strong>[Card]</strong><span class="muted small">[Detail]</span>
+              </div>
+              <div class="card">
+                <strong>[Card]</strong><span class="muted small">[Detail]</span>
+              </div>
+              <div class="card">
+                <strong>[Card]</strong><span class="muted small">[Detail]</span>
+              </div>
+            </div>
+            <div class="placeholder">[The new part as cards in C]</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,50 @@
+diff --git a/harmony-os/SherpaOnnxHar/sherpa_onnx/src/main/cpp/sherpa-onnx-node-addon-api.cc b/harmony-os/SherpaOnnxHar/sherpa_onnx/src/main/cpp/sherpa-onnx-node-addon-api.cc
+index 78b04b9..369e91f 100644
+--- a/harmony-os/SherpaOnnxHar/sherpa_onnx/src/main/cpp/sherpa-onnx-node-addon-api.cc
++++ b/harmony-os/SherpaOnnxHar/sherpa_onnx/src/main/cpp/sherpa-onnx-node-addon-api.cc
+@@ -7,8 +7,6 @@ void InitStreamingAsr(Napi::Env env, Napi::Object exports);
+ 
+ void InitNonStreamingAsr(Napi::Env env, Napi::Object exports);
+ 
+-void InitNonStreamingTts(Napi::Env env, Napi::Object exports);
+-
+ void InitVad(Napi::Env env, Napi::Object exports);
+ 
+ void InitWaveReader(Napi::Env env, Napi::Object exports);
+@@ -44,7 +42,6 @@ void InitUtils(Napi::Env env, Napi::Object exports);
+ Napi::Object Init(Napi::Env env, Napi::Object exports) {
+   InitStreamingAsr(env, exports);
+   InitNonStreamingAsr(env, exports);
+-  InitNonStreamingTts(env, exports);
+   InitVad(env, exports);
+   InitWaveReader(env, exports);
+   InitWaveWriter(env, exports);
+diff --git a/scripts/node-addon-api/CMakeLists.txt b/scripts/node-addon-api/CMakeLists.txt
+index 64616d8..2c4d332 100644
+--- a/scripts/node-addon-api/CMakeLists.txt
++++ b/scripts/node-addon-api/CMakeLists.txt
+@@ -14,7 +14,7 @@ project(sherpa-onnx)
+ set(CMAKE_CXX_STANDARD 17)
+ 
+ if(NOT WIN32)
+-  set(CMAKE_SKIP_BUILD_RPATH FALSE)
++  set(CMAKE_SKIP_BUILD_RPATH TRUE)
+   set(BUILD_RPATH_USE_ORIGIN TRUE)
+   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+ endif()
+@@ -38,7 +38,6 @@ set(srcs
+   src/non-streaming-asr.cc
+   src/non-streaming-speaker-diarization.cc
+   src/non-streaming-speech-denoiser.cc
+-  src/non-streaming-tts.cc
+   src/offline-punctuation.cc
+   src/online-punctuation.cc
+   src/streaming-speech-denoiser.cc
+@@ -89,7 +88,6 @@ target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
+ target_link_libraries(${PROJECT_NAME}
+   sherpa-onnx-c-api
+   onnxruntime
+-  -Wl,-rpath,$ENV{SHERPA_ONNX_INSTALL_DIR}/lib
+   -Wl,-rpath,${SHERPA_ONNX_RPATH_ORIGIN}
+ )
+ 

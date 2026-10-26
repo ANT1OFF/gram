@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "ignorePatterns": [
+    "packages/agents/fixtures/**",
+    "**/dist/**",
+    "**/out/**",
+    "**/release/**",
+    "**/routeTree.gen.ts",
+    "packages/agents/src/codex/protocol/**",
+    "pnpm-lock.yaml",
+    "CHANGELOG.md"
+  ]
+}
