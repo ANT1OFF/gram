@@ -86,7 +86,6 @@ jobs:
     env:
       # Keep Vite's localhost binding consistent with Node fetch.
       NODE_OPTIONS: --dns-result-order=ipv4first
-      BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/bun-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,7 +99,7 @@ jobs:
       # Cache downloads only, never source or build results.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.BUN_INSTALL_CACHE_DIR }}
+          path: ~/.bun/install/cache
           key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
       - run: bun install --frozen-lockfile
       # Check every project in the supported bounded compiler mode first. check:ci's normal
@@ -132,8 +131,6 @@ jobs:
     env:
       # Keep Vite's localhost binding consistent with Node fetch.
       NODE_OPTIONS: --dns-result-order=ipv4first
-      BUN_INSTALL_CACHE_DIR: ${{ runner.temp }}/bun-cache
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -147,12 +144,12 @@ jobs:
       # Cache downloads only, never source or build results.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.BUN_INSTALL_CACHE_DIR }}
+          path: ~/.bun/install/cache
           key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
       - run: bun install --frozen-lockfile
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
+          path: ~/.cache/ms-playwright
           key: gram-chromium-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
       # --with-deps installs Chromium's system libraries even when the browser came from cache.
       - run: bun run playwright install --with-deps chromium
