@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/ANT1OFF/gram/compare/v1.0.0...v1.1.0) (2026-10-26)
+
+
+### Features
+
+* let agents create and update workspaces with the user's approval ([#4](https://github.com/ANT1OFF/gram/issues/4)) ([3cbb9cb](https://github.com/ANT1OFF/gram/commit/3cbb9cb88cd54eb052f6c6f06c004386c78e9dcf))
+
 ## 1.0.0
 
 Gram's first release: a desktop app for developers who run their own installed Claude Code and
