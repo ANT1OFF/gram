@@ -44,12 +44,3 @@ Developer ID signed macOS builds update through Electron's updater from `ANT1OFF
 reading them anonymously. A signed install only accepts a release
 signed by the same team, and nothing installs without the user's click. Automatic checks are off
 by default. Unsigned builds don't update themselves. See the [updater contract](UPDATES.md).
-
-## Not yet verified
-
-- **Provider terms.** The bundled Claude Agent SDK is under Anthropic's own terms, and whether
-  they allow redistributing it inside Gram is unconfirmed. Whether running Claude Code against
-  your own login, and Codex against your ChatGPT login, through a distributed third-party app
-  fits Anthropic's and OpenAI's terms is for you to check; this is not legal advice.
-- **First run on a fresh account.** The welcome screen, empty states, missing CLIs and a clone
-  without `gh` have been exercised against the mock's seeded data, not on a new macOS account.
