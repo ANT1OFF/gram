@@ -505,12 +505,13 @@ export const OrchestrationLive = Layer.effect(
       abandonHandoff,
     });
 
-    const { saveWorkspace, whileWorkspaceStays, removeWorkspace, open } = makeWorkspaces(kit, {
-      forgetReasons,
-      openModel,
-      endRecovery,
-      deliveryFor,
-    });
+    const { saveWorkspace, saveWorkspaceApproved, whileWorkspaceStays, removeWorkspace, open } =
+      makeWorkspaces(kit, {
+        forgetReasons,
+        openModel,
+        endRecovery,
+        deliveryFor,
+      });
 
     const {
       answerWorker,
@@ -727,6 +728,7 @@ export const OrchestrationLive = Layer.effect(
     return Orchestration.of({
       listWorkspaces: store.listWorkspaces,
       saveWorkspace,
+      saveWorkspaceApproved,
       removeWorkspace,
       whileWorkspaceStays,
       open,

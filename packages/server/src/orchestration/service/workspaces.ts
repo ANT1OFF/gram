@@ -5,6 +5,7 @@ import {
   autonomyOf,
   InvalidState,
   NotFound,
+  sameValue,
   WorkspaceId,
   type Autonomy,
   type ModelRef,
@@ -21,6 +22,7 @@ import { randomUUID } from "node:crypto";
 import { subscriptionTaskCharter } from "../task-models.ts";
 import { sameTaskModel } from "../task-selection.ts";
 import { outboxForNewOrchestrator } from "../outbox.ts";
+import type { SettingsAuditEntry } from "../../persistence/thread-store.ts";
 import { admittedForRole, kindName } from "../rules.ts";
 import {
   OUTBOX_UNREADABLE_DETAIL,
@@ -75,7 +77,15 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
   const saveWorkspaceWithName = (
     input: Parameters<OrchestrationShape["saveWorkspace"]>[0],
     namePolicy: "exact" | "available",
-  ): ReturnType<OrchestrationShape["saveWorkspace"]> =>
+    /** A change by chat: its audit, and for an edit the membership the card was drawn from. */
+    approved?: {
+      readonly audit: SettingsAuditEntry;
+      readonly before?: Parameters<OrchestrationShape["saveWorkspaceApproved"]>[2];
+    },
+  ): Effect.Effect<
+    { readonly state: WorkspaceState; readonly auditSeq: number | undefined } | undefined,
+    NotFound | InvalidState
+  > =>
     spawnLock.withLocks(
       input.id === undefined ? [] : [input.id],
       registryLock.withPermits(1)(
@@ -134,9 +144,11 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               },
               charter,
             };
-            yield* store.putWorkspace(state);
+            let auditSeq: number | undefined;
+            if (approved === undefined) yield* store.putWorkspace(state);
+            else auditSeq = (yield* store.putWorkspaceAudited(state, approved.audit)).auditSeq;
             yield* workspacesChanged;
-            return state;
+            return { state, auditSeq };
           }
           const before = yield* store.getWorkspace(input.id);
           const holder = before.workspace.orchestratorThreadId;
@@ -148,7 +160,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               threadId: holder,
             });
           }
-          const state = yield* store.updateWorkspace(input.id, (current) => ({
+          const edit = (current: WorkspaceState): WorkspaceState => ({
             ...current,
             workspace: {
               ...current.workspace,
@@ -156,7 +168,29 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
               projectIds,
               homeProjectId: input.homeProjectId,
             },
-          }));
+          });
+          let state: WorkspaceState;
+          let auditSeq: number | undefined;
+          if (approved === undefined) {
+            state = yield* store.updateWorkspace(input.id, edit);
+          } else {
+            // Only over the membership the card showed: an edit made meanwhile is never undone.
+            const was = approved.before;
+            const done = yield* store.updateWorkspaceAudited(
+              input.id,
+              (current) =>
+                was === undefined ||
+                (current.workspace.name === was.name &&
+                  current.workspace.homeProjectId === was.homeProjectId &&
+                  sameValue(current.workspace.projectIds.toSorted(), was.projectIds.toSorted()))
+                  ? edit(current)
+                  : undefined,
+              approved.audit,
+            );
+            if (done === undefined) return undefined;
+            state = done.state;
+            auditSeq = done.auditSeq;
+          }
           yield* workspacesChanged;
           if (holder !== undefined) {
             // A repo that left takes its folder with it: the grant outlives the session otherwise.
@@ -184,13 +218,29 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             yield* runtimes.addDirectories(holder, roots).pipe(Effect.ignore);
             yield* reload(holder);
           }
-          return state;
+          return { state, auditSeq };
         }),
       ),
     );
 
   const saveWorkspace: OrchestrationShape["saveWorkspace"] = (input) =>
-    saveWorkspaceWithName(input, "exact");
+    saveWorkspaceWithName(input, "exact").pipe(Effect.map((saved) => saved!.state));
+
+  const saveWorkspaceApproved: OrchestrationShape["saveWorkspaceApproved"] = (
+    input,
+    audit,
+    before,
+  ) =>
+    Effect.uninterruptible(
+      saveWorkspaceWithName(input, "exact", {
+        audit,
+        ...(before === undefined ? {} : { before }),
+      }),
+    ).pipe(
+      Effect.map((saved) =>
+        saved === undefined ? undefined : { state: saved.state, auditSeq: saved.auditSeq! },
+      ),
+    );
 
   const whileWorkspaceStays: OrchestrationShape["whileWorkspaceStays"] = (workspaceId, effect) =>
     removalLock.withLock(workspaceId, store.getWorkspace(workspaceId).pipe(Effect.andThen(effect)));
@@ -262,7 +312,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           autonomy,
           selected,
         );
-        return yield* saveWorkspaceWithName(
+        const saved = yield* saveWorkspaceWithName(
           {
             name: project!.name,
             projectIds: [projectId],
@@ -271,6 +321,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           },
           "available",
         );
+        return saved!.state;
       }),
     );
 
@@ -375,5 +426,5 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       return thread;
     });
 
-  return { saveWorkspace, whileWorkspaceStays, removeWorkspace, open };
+  return { saveWorkspace, saveWorkspaceApproved, whileWorkspaceStays, removeWorkspace, open };
 };

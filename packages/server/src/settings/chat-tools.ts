@@ -12,7 +12,6 @@ import {
   SETTINGS_READ_TOOL,
   SettingsProposeInput,
   settingsProposalSummary,
-  type ModelRef,
   type Project,
   type SettingsChange,
   type SettingsProposalCard,
@@ -32,16 +31,14 @@ import { rosterOf } from "../orchestration/rules.ts";
 import { CHARTER_MOVED, Orchestration } from "../orchestration/service.ts";
 import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-store.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
-import { selectableModels } from "../runtime/model-efforts.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { askUser, checkModels, fail } from "./approval.ts";
 import { makeSettingsWriter } from "./writer.ts";
 
 export interface SettingsToolsOptions {
   /** How long a card waits for the user; `SETTINGS_PROPOSAL_TTL_MS` unless a test says. */
   readonly proposalTtl?: Duration.Input;
 }
-
-const fail = (tool: string, message: string) => new AppToolError({ tool, message });
 
 const WORKER_REFUSAL =
   "Workers can read Gram's settings but not propose changes to them: a change to the workspace's settings is the user's, asked for by the orchestrator in the thread the user watches. Tell your orchestrator what you need with report or message_orchestrator.";
@@ -173,7 +170,7 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           name: SETTINGS_READ_TOOL,
           class: "read",
           description:
-            "Gram's settings you may see, with each value as it stands: `project` (the local check: a command with optional setup, and timeoutMs; without a command the local gate is off), `app` (appearance, motion, notifications, update channel, default models and the like) and, when this thread has one, its `workspace` (worker models with useFor, default and availability, max concurrent workers, merge review policy, the orchestrator's model and effort, pause). Each row's `tier` says how it changes: `project`, `workspace` and `preference` keys change through settings_propose, with the user's approval on a card every time; `userOnly` lists what no agent may change, with why. Secrets, keys, gateway profiles, folders and connectors are never read. Use projectId to name a workspace project by id or name; otherwise the current project is read. A plain thread may name another workspace by id or name with `workspaceId`.",
+            "Gram's settings you may see, with each value as it stands: `project` (the local check: a command with optional setup, and timeoutMs; without a command the local gate is off), `app` (appearance, motion, notifications, update channel, default models and the like) and, when this thread has one, its `workspace` (worker models with useFor, default and availability, max concurrent workers, merge review policy, the orchestrator's model and effort, pause). Each row's `tier` says how it changes: `project`, `workspace` and `preference` keys change through settings_propose, with the user's approval on a card every time; `userOnly` lists what settings_propose can't change, with why; where another tool changes it on its own card, `via` names it. Secrets, keys, gateway profiles, folders and connectors are never read. Use projectId to name a workspace project by id or name; otherwise the current project is read. A plain thread may name another workspace by id or name with `workspaceId`.",
         },
         audience: ["orchestrator", "plain", "worker"],
         input: Schema.Struct({
@@ -228,55 +225,13 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           }),
       });
 
-      /** The models a plan names, checked against what their agent lists, as the pickers do. */
-      const checkModels = (tool: string, models: ReadonlyArray<ModelRef>) =>
-        Effect.gen(function* () {
-          const notes: Array<string> = [];
-          if (hosts === undefined) return notes;
-          for (const model of models) {
-            const listed = yield* selectableModels(store, hosts, model.agent, model.profileId).pipe(
-              Effect.map((choices) => ({ ok: true as const, choices })),
-              Effect.catchCause(() => Effect.succeed({ ok: false as const })),
-            );
-            if (!listed.ok) {
-              notes.push(
-                `Gram couldn't list ${model.agent}'s models just now, so ${model.agent}:${model.model} wasn't checked.`,
-              );
-              continue;
-            }
-            const found = listed.choices.find(
-              (option) => option.id === model.model || option.resolvedId === model.model,
-            );
-            if (found === undefined) {
-              return yield* fail(
-                tool,
-                `${model.agent} has no model ${model.model}. It lists: ${listed.choices
-                  .slice(0, 16)
-                  .map((option) => option.id)
-                  .join(", ")}.`,
-              );
-            }
-            if (
-              model.variant !== undefined &&
-              found.efforts.length > 0 &&
-              !found.efforts.includes(model.variant)
-            ) {
-              return yield* fail(
-                tool,
-                `${model.agent}:${model.model} has no ${model.variant} effort; it supports ${found.efforts.join(", ")}.`,
-              );
-            }
-          }
-          return notes;
-        });
-
       const settingsPropose = defineAppTool({
         descriptor: {
           name: SETTINGS_PROPOSE_TOOL,
           // It raises its own card on every call, whatever the binding, mode or autonomy.
           class: "outwardGated",
           description:
-            'Propose a change to Gram\'s settings. Gram checks it, shows the user a before → after card in this thread, and applies it only when they approve; this call waits for that answer and says whether it was applied, declined or expired (after 15 minutes). Each change is `{op: "set", key, value}` (`null` clears an optional key), or for a list key (`workspace.workerModels`, `agents.workerModels`) `{op: "add", key, item: {agent, model, variant?, speed?, useFor?, default?}}`, `{op: "update", key, match: "agent:model", item: {useFor?, default?, variant?, speed?}}` or `{op: "remove", key, match: "agent:model"}`. One proposal changes app settings, one workspace, or one project. projectId selects a project in this thread’s workspace; omit it for this thread’s project. settings_read lists the keys; pausing and resuming, autonomy, permission modes, connectors, credentials, gateways, folders and consent switches are the user\'s alone and are refused. Say why in `reason`, which the card shows.',
+            'Propose a change to Gram\'s settings. Gram checks it, shows the user a before → after card in this thread, and applies it only when they approve; this call waits for that answer and says whether it was applied, declined or expired (after 15 minutes). Each change is `{op: "set", key, value}` (`null` clears an optional key), or for a list key (`workspace.workerModels`, `agents.workerModels`) `{op: "add", key, item: {agent, model, variant?, speed?, useFor?, default?}}`, `{op: "update", key, match: "agent:model", item: {useFor?, default?, variant?, speed?}}` or `{op: "remove", key, match: "agent:model"}`. One proposal changes app settings, one workspace, or one project. projectId selects a project in this thread’s workspace; omit it for this thread’s project. settings_read lists the keys. A workspace\'s projects, home, autonomy and worker mode change with workspace_update instead; pausing and resuming, default permission modes, connectors, credentials, gateways, folders and consent switches are the user\'s alone and are refused. Say why in `reason`, which the card shows.',
         },
         audience: ["orchestrator", "plain"],
         input: SettingsProposeInput,
@@ -299,7 +254,7 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
             // The target is fixed now, by id: a rename, or another workspace taking this one's
             // name, never moves the approval elsewhere.
             const pinned = proposed.scope === "workspace" ? state?.workspace.id : undefined;
-            const checked = yield* checkModels(tool, proposed.models);
+            const checked = yield* checkModels(store, hosts, tool, proposed.models);
             const notes = [...proposed.notes, ...checked];
             const trimmed = reason?.replace(/\s+/g, " ").trim();
             const card: SettingsProposalCard = {
@@ -315,53 +270,19 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               ...(notes.length === 0 ? {} : { notes }),
             };
 
-            const answer = yield* runtimes
-              .requestApproval(caller, {
-                toolName: `mcp__gram__${tool}`,
+            const answered = yield* askUser(
+              runtimes,
+              caller,
+              tool,
+              ttl,
+              "settings",
+              {
                 displayName: "Change settings",
                 input: card as unknown as Record<string, unknown>,
                 description: settingsProposalSummary(card),
-                suggestions: [],
-                scopes: ["once"],
-              })
-              .pipe(
-                // The timeout interrupts the wait, which withdraws the card.
-                Effect.timeoutOption(ttl),
-                Effect.catchTag("ThreadNotFound", () =>
-                  Effect.fail(fail(tool, "Gram couldn't show the card: this thread is gone.")),
-                ),
-              );
-            if (Option.isNone(answer)) {
-              yield* Effect.logInfo("settings proposal expired").pipe(
-                Effect.annotateLogs({ threadId: caller, scope: proposed.scope }),
-              );
-              return yield* fail(
-                tool,
-                `The settings proposal expired: the user didn't answer within ${Duration.format(ttl)}, so the card was withdrawn and nothing changed. Propose it again if it's still wanted.`,
-              );
-            }
-            const answered = answer.value;
-            if (answered.decision !== "allow") {
-              const resolution = answered.resolution;
-              const userDeclined =
-                resolution === undefined ||
-                (resolution.origin === "user" && resolution.reason === "rejected");
-              yield* Effect.logInfo("settings proposal declined").pipe(
-                Effect.annotateLogs({
-                  threadId: caller,
-                  scope: proposed.scope,
-                  reason: resolution?.reason ?? "rejected",
-                }),
-              );
-              return yield* new AppToolError({
-                tool,
-                message: userDeclined
-                  ? "The user declined the settings change; nothing changed."
-                  : `The settings card was withdrawn (${resolution.reason}); nothing changed.`,
-                approvalRequired: true,
-                ...(resolution === undefined ? {} : { approvalResolution: resolution }),
-              });
-            }
+              },
+              { scope: proposed.scope },
+            );
 
             // The approval is for this card's writes, on this card's target, by this caller as it
             // was when it asked: nothing is planned or resolved again.

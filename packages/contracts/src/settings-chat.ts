@@ -325,6 +325,11 @@ export interface UserOnlyKey {
   readonly reason: string;
   /** Its value, where showing it is harmless; absent, `settings_read` names the key only. */
   readonly read?: (world: SettingsWorld) => unknown;
+  /**
+   * The tool that changes it instead, on a card of its own that shows the whole workspace change;
+   * absent, only the user changes it, in Settings.
+   */
+  readonly via?: string;
 }
 
 /**
@@ -342,11 +347,13 @@ export const USER_ONLY_SETTINGS: ReadonlyArray<UserOnlyKey> = [
     key: "workspace.autonomy",
     reason: "the autonomy level decides what agents may do without asking",
     read: (w) => (w.workspace === undefined ? undefined : autonomyOf(w.workspace.charter)),
+    via: "workspace_update",
   },
   {
     key: "workspace.workerMode",
     reason: "it is the permission mode workers start in",
     read: (w) => w.workspace?.charter.workerMode,
+    via: "workspace_update",
   },
   {
     key: "agents.defaultMode",
@@ -360,8 +367,16 @@ export const USER_ONLY_SETTINGS: ReadonlyArray<UserOnlyKey> = [
     reason: "it lets an orchestrator send to sessions outside Gram",
     read: (w) => w.settings.workspaces?.orchestratorPeerMessaging === true,
   },
-  { key: "workspace.projectIds", reason: "it is the repos a workspace can reach" },
-  { key: "workspace.homeProjectId", reason: "it is the repos a workspace can reach" },
+  {
+    key: "workspace.projectIds",
+    reason: "it is the repos a workspace can reach",
+    via: "workspace_update",
+  },
+  {
+    key: "workspace.homeProjectId",
+    reason: "it is the repos a workspace can reach",
+    via: "workspace_update",
+  },
   { key: "agents.defaultFolder", reason: "it is a directory agents start in" },
   { key: "agents.cloneFolder", reason: "it is a directory Gram writes clones to" },
   { key: "agents.codexRuntime", reason: "it chooses the program Gram runs for Codex" },
@@ -484,6 +499,7 @@ export const readUserOnlyRows = (world: SettingsWorld) =>
       key: each.key,
       reason: each.reason,
       ...(value === undefined ? {} : { value }),
+      ...(each.via === undefined ? {} : { via: each.via }),
     };
   });
 
@@ -640,6 +656,10 @@ const listRows = (
 export const planSettingsChanges = (
   world: SettingsWorld,
   changes: ReadonlyArray<SettingsChange>,
+  options: {
+    /** A set that changes nothing is a plan with no writes, for a card that shows more besides. */
+    readonly allowUnchanged?: boolean;
+  } = {},
 ): SettingsPlanResult => {
   const errors: Array<string> = [];
   const keys: Array<string> = [];
@@ -662,7 +682,9 @@ export const planSettingsChanges = (
     const userOnly = userOnlySetting(key);
     if (userOnly !== undefined) {
       errors.push(
-        `${key} is the user's alone (${userOnly.reason}); no agent may change it, with approval or without. The user changes it in Settings.`,
+        userOnly.via === undefined
+          ? `${key} is the user's alone (${userOnly.reason}); no agent may change it, with approval or without. The user changes it in Settings.`
+          : `${key} isn't a settings change (${userOnly.reason}): propose it with ${userOnly.via}, whose card shows the user the whole workspace change.`,
       );
       continue;
     }
@@ -1029,7 +1051,7 @@ export const planSettingsChanges = (
       (scope === "project" && world.project?.localCheckUnavailable !== undefined) ||
       !sameValue(write.before, write.after),
   );
-  if (writes.length === 0) {
+  if (writes.length === 0 && options.allowUnchanged !== true) {
     return { ok: false, errors: ["This proposal changes nothing: every value is already so."] };
   }
   // A field outside the catalogue never changes: the planner only writes what it was asked to.
@@ -1126,6 +1148,45 @@ const rowsFor = (
       after: write.after === undefined ? null : JSON.stringify(write.after),
     },
   ];
+};
+
+/**
+ * A new workspace's charter as its card shows it: a row for each catalogue field it stores, a worker
+ * model to a row, and the worker model used when none is named. `before` is `null` throughout,
+ * since nothing stood there. The fields outside the catalogue that a card names itself (autonomy,
+ * the worker mode) aren't here.
+ */
+export const charterRows = (world: SettingsWorld): Array<SettingsDiffRow> => {
+  const charter = charterOf(world);
+  if (charter === undefined) return [];
+  const stored = charter as Record<string, unknown>;
+  return SETTINGS_CATALOGUE.filter(
+    (entry) =>
+      entry.scope === "workspace" &&
+      // The effort is shown on the orchestrator model it is stored with.
+      entry.key !== "workspace.orchestratorEffort" &&
+      stored[entry.key.slice("workspace.".length)] !== undefined,
+  ).flatMap((entry): Array<SettingsDiffRow> => {
+    const value = stored[entry.key.slice("workspace.".length)];
+    if (entry.list !== true) {
+      return [{ key: entry.key, label: entry.label, before: null, after: valueText(entry, value) }];
+    }
+    const roster = value as ReadonlyArray<WorkerModel>;
+    return [
+      ...roster.map((model) => ({
+        key: entry.key,
+        label: `${entry.label} ${identity(model)}`,
+        before: null,
+        after: workerText(model),
+      })),
+      {
+        key: entry.key,
+        label: "Worker model used when none is named",
+        before: null,
+        after: fallbackText(entry, world),
+      },
+    ];
+  });
 };
 
 /** The model a worker of this list gets with none named, for the orchestrator `world` holds. */

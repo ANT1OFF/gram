@@ -705,6 +705,14 @@ export interface ThreadStoreShape {
     { readonly state: WorkspaceState; readonly auditSeq: number } | undefined,
     NotFound
   >;
+  /**
+   * A workspace made by chat and its audit, in one transaction, with the workspace's own `settings`
+   * orchestration event.
+   */
+  putWorkspaceAudited(
+    state: WorkspaceState,
+    audit: SettingsAuditEntry,
+  ): Effect.Effect<{ readonly auditSeq: number }>;
   /** The latest `limit` settings changes by chat, newest first. */
   listSettingsAudit(limit: number): Effect.Effect<ReadonlyArray<SettingsAuditRecord>>;
   /** The workspace's audit entries at or after `since` (epoch ms), oldest first. */
@@ -2876,6 +2884,17 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               yield* writeWorkspace(next);
               const auditSeq = yield* insertSettingsAudit({ ...audit, workspaceId: id });
               return { state: next, auditSeq };
+            }),
+          ),
+        putWorkspaceAudited: (state, audit) =>
+          tx(
+            Effect.gen(function* () {
+              yield* writeWorkspace(state);
+              const auditSeq = yield* insertSettingsAudit({
+                ...audit,
+                workspaceId: state.workspace.id,
+              });
+              return { auditSeq };
             }),
           ),
         listSettingsAudit: (limit) =>

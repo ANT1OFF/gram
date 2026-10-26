@@ -23,6 +23,7 @@ import {
   approvalExtras,
   mustReadDetails,
   settingsProposal,
+  workspaceProposal,
 } from "./request-model";
 
 const T = "t1" as ThreadId;
@@ -134,6 +135,47 @@ const settingsChange: Extract<PendingRequest, { kind: "approval" }> = {
   description: "Change 3 settings in the workspace “shop”.",
   suggestions: [],
   scopes: ["once"],
+};
+
+const workspaceCreate: Extract<PendingRequest, { kind: "approval" }> = {
+  kind: "approval",
+  id: "r-ws-create" as RequestId,
+  toolName: "mcp__gram__workspace_create",
+  displayName: "Create workspace",
+  input: {
+    action: "create",
+    workspace: { name: "platform" },
+    projects: [
+      { root: "/repos/shop", name: "shop", change: "added", home: true },
+      { root: "/repos/warehouse", name: "warehouse", change: "added", unregistered: true },
+    ],
+    rows: [
+      { key: "workspace.autonomy", label: "Autonomy", before: null, after: "Supervised" },
+      { key: "workspace.workerMode", label: "Worker mode", before: null, after: "Auto" },
+    ],
+  },
+  description: "Create the workspace “platform” with 2 projects.",
+  suggestions: [],
+  scopes: ["once"],
+};
+
+const workspaceUpdate: Extract<PendingRequest, { kind: "approval" }> = {
+  ...workspaceCreate,
+  id: "r-ws-update" as RequestId,
+  toolName: "mcp__gram__workspace_update",
+  displayName: "Change workspace",
+  input: {
+    action: "update",
+    workspace: { id: "w1", name: "shop" },
+    reason: "You asked for the warehouse repo.",
+    projects: [
+      { root: "/repos/shop", name: "shop", change: "kept", home: true },
+      { root: "/repos/old", name: "old", change: "removed" },
+      { root: "/repos/warehouse", name: "warehouse", change: "added", unregistered: true },
+    ],
+    rows: [{ key: "workspace.autonomy", label: "Autonomy", before: "Full", after: "Publish" }],
+  },
+  description: "Change 3 things in the workspace “shop”.",
 };
 
 describe("RequestCards", () => {
@@ -561,6 +603,67 @@ describe("an app tool's approval", () => {
         scope: "once",
       }),
     );
+  });
+
+  it("shows a new workspace whole: its projects, marking the new ones, then its settings", async () => {
+    expect(mustReadDetails(workspaceCreate)).toBe(true);
+    expect(mustReadDetails(workspaceUpdate)).toBe(true);
+    expect(workspaceProposal({ ...workspaceCreate, input: { action: "nope" } })).toBeUndefined();
+    // Only the workspace tools' cards read as one.
+    expect(workspaceProposal({ ...workspaceCreate, toolName: "mcp__gram__other" })).toBeUndefined();
+    const { api, respond } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={workspaceCreate} active />
+      </ApiProvider>,
+    );
+    expect(screen.getByTestId("approval-card").textContent).toContain(
+      "Create workspace “platform”?",
+    );
+    expect(screen.getAllByTestId("workspace-project").map((row) => row.textContent)).toEqual([
+      "/repos/shopshop · home",
+      "/repos/warehousewarehouse · new to Gram, added as a project",
+    ]);
+    // A new workspace lists what it will have: no "Now" column.
+    expect(screen.queryByText("Now")).toBeNull();
+    expect(screen.getAllByTestId("settings-diff-row").map((row) => row.textContent)).toEqual([
+      "AutonomySupervised",
+      "Worker modeAuto",
+    ]);
+    expect(screen.queryByTestId("approval-always")).toBeNull();
+    expect(screen.getByTestId("approval-allow").textContent).toContain("Create workspace");
+    fireEvent.click(screen.getByTestId("approval-allow"));
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith(T, "r-ws-create", {
+        kind: "approval",
+        decision: "allow",
+        scope: "once",
+      }),
+    );
+  });
+
+  it("shows a workspace change as projects kept, removed and added, and settings before → after", () => {
+    const { api } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <CompactRequestCards>
+          <ApprovalCard threadId={T} request={workspaceUpdate} active={false} />
+        </CompactRequestCards>
+      </ApiProvider>,
+    );
+    expect(screen.getByTestId("approval-card").textContent).toContain("Change workspace “shop”?");
+    expect(screen.getByTestId("settings-reason").textContent).toBe(
+      "Why: You asked for the warehouse repo.",
+    );
+    expect(screen.getAllByTestId("workspace-project").map((row) => row.textContent)).toEqual([
+      "Keeps/repos/shopshop · home",
+      "Removes/repos/oldold",
+      "Adds/repos/warehousewarehouse · new to Gram, added as a project",
+    ]);
+    expect(screen.getAllByTestId("settings-diff-row").map((row) => row.textContent)).toEqual([
+      "AutonomyFullPublish",
+    ]);
+    expect(screen.getByTestId("approval-allow").textContent).toContain("Apply changes");
   });
 
   it("shows a settings change whole in the inbox's compact card too", () => {

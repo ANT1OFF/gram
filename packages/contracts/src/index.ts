@@ -78,6 +78,7 @@ export * from "./pr-people.ts";
 export * from "./folder-access.ts";
 export * from "./settings.ts";
 export * from "./settings-chat.ts";
+export * from "./workspace-chat.ts";
 export * from "./shell-check.ts";
 export * from "./speech-bridge.ts";
 export * from "./thread-plan.ts";

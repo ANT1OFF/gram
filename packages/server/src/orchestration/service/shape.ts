@@ -243,6 +243,19 @@ export interface OrchestrationShape {
     readonly charter?: OrchestratorCharter | undefined;
   }): Effect.Effect<WorkspaceState, NotFound | InvalidState>;
   /**
+   * `saveWorkspace` for a change by chat the user approved, its audit row written in the same
+   * transaction: a new workspace, or with `id` one whose name, projects and home still hold
+   * `before`. `undefined` when they have moved: nothing was written.
+   */
+  saveWorkspaceApproved(
+    input: Parameters<OrchestrationShape["saveWorkspace"]>[0],
+    audit: SettingsAuditEntry,
+    before?: Pick<WorkspaceState["workspace"], "name" | "projectIds" | "homeProjectId">,
+  ): Effect.Effect<
+    { readonly state: WorkspaceState; readonly auditSeq: number } | undefined,
+    NotFound | InvalidState
+  >;
+  /**
    * The workspace's memory directory stays on disk: what an orchestrator learned is the user's,
    * and removing a workspace is no request to delete it.
    */

@@ -59,13 +59,22 @@ const errorsOf = (changes: ReadonlyArray<SettingsChange>, against?: SettingsWorl
 
 describe("settings by chat: tiers", () => {
   it("refuses every user-only key, and whatever lies under it, whatever the spelling", () => {
-    for (const { key } of USER_ONLY_SETTINGS) {
+    for (const { key, via } of USER_ONLY_SETTINGS) {
       for (const spelled of [key, key.toUpperCase(), `${key}.anything`]) {
         expect(errorsOf([{ op: "set", key: spelled, value: true }])).toContain(
-          "no agent may change it",
+          // A workspace's repos, autonomy and worker mode change only on workspace_update's card.
+          via === undefined ? "no agent may change it" : `propose it with ${via}`,
         );
       }
     }
+    expect(
+      USER_ONLY_SETTINGS.filter((each) => each.via !== undefined).map((each) => each.key),
+    ).toEqual([
+      "workspace.autonomy",
+      "workspace.workerMode",
+      "workspace.projectIds",
+      "workspace.homeProjectId",
+    ]);
     expect(userOnlySetting("profiles.p1.key")?.key).toBe("profiles");
   });
 
