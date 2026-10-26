@@ -5,7 +5,7 @@
 // stands in for them here; everything else is the tool's real code.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -561,4 +561,31 @@ describe("notes from the release commit", () => {
       );
     });
   }
+});
+
+// The command line itself, as `bun run release:stable` starts it: the phases above call runPhase
+// directly and never load its argument handling. No host GitHub state reaches it.
+const cli = (...args) =>
+  spawnSync(process.execPath, [join(HERE, "stable.mjs"), ...args], {
+    encoding: "utf8",
+    env: { PATH: process.env.PATH },
+  });
+
+describe("the release:stable command line", () => {
+  it("prints its usage", () => {
+    const r = cli("--help");
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("bun run release:stable validate");
+  });
+
+  it("stops on a work dir with no draft, naming what is missing", () => {
+    const empty = mkdtempSync(join(tmpdir(), "gram-stable-cli-"));
+    const r = cli("validate", "--work", empty);
+    rmSync(empty, { recursive: true });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("release:stable stopped: ");
+    expect(r.stderr).toContain("release.json is missing");
+    expect(r.stderr).not.toContain("Error:");
+  });
 });
