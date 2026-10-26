@@ -137,6 +137,9 @@
 
   --shell-divider: var(--border-subtle);
   --titlebar-height: 2.5rem;
+  /* What macOS's window buttons cover at the window's top left, in CSS pixels at the page's zoom;
+     0 in full screen and wherever there are none. `watchWindowLights` sets it. */
+  --window-lights-inset: 0px;
   /* What Windows' title bar overlay (minimise, maximise, close) covers at the window's top right;
      0 wherever there is none, since the titlebar area then defaults to the whole width. */
   --window-controls-inset: calc(

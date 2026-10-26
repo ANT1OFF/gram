@@ -106,6 +106,14 @@ export function createWindow({
     });
   }
   if (vibrancyWanted) applyAppearance(win);
+  // Full screen hides macOS's window buttons, so the renderer stops keeping room for them.
+  if (isMac) {
+    const sendFullScreen = (fullScreen: boolean) => () => {
+      if (!win.isDestroyed()) win.webContents.send(Channels.windowFullScreenChanged, fullScreen);
+    };
+    win.on("enter-full-screen", sendFullScreen(true));
+    win.on("leave-full-screen", sendFullScreen(false));
+  }
 
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     void context.openLink(target, win);

@@ -353,6 +353,20 @@ export interface DesktopBridge extends DesktopWindows {
    */
   zoom?(step: WindowZoomStep): void;
   /**
+   * This window's zoom factor, 1 at actual size. Zoom scales CSS pixels but not macOS's window
+   * buttons, so the room kept for them divides by it. Absent in shells older than it.
+   */
+  zoomFactor?(): number;
+  /**
+   * Whether this window is full screen, where macOS hides its window buttons. Absent in shells
+   * older than it.
+   */
+  readonly fullScreen?: {
+    get(): Promise<boolean>;
+    /** Subscribes to this window entering and leaving full screen; returns the unsubscribe. */
+    onChange(callback: (fullScreen: boolean) => void): () => void;
+  };
+  /**
    * Opens an http(s) URL in the default browser. The shell asks first, in a native dialog, unless
    * the link is https to a host in `trustedLinks`; resolves false when nothing opened.
    */

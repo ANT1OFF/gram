@@ -101,6 +101,10 @@ export function registerIpc({
     if (theme) setTitleBarTheme(theme);
   });
   on(Channels.setVibrancy, (_event, enabled) => setVibrancy(enabled === true));
+  handle(
+    Channels.windowFullScreenGet,
+    (_arg, event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false,
+  );
   on(Channels.setMenuShortcuts, (_event, input) => setMenuShortcuts(parseMenuShortcuts(input)));
   handle(Channels.appIconGet, () => appIcon.get());
   handle(Channels.appIconSet, (icon) => {

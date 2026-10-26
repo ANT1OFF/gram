@@ -46,6 +46,8 @@ export const Channels = {
   windowLayoutGet: "gram:window-layout-get",
   windowLayoutSet: "gram:window-layout-set",
   windowOpenThread: "gram:window-open-thread",
+  windowFullScreenGet: "gram:window-full-screen-get",
+  windowFullScreenChanged: "gram:window-full-screen-changed",
   speechOpen: "gram:speech-open",
   speechPrewarm: "gram:speech-prewarm",
   speechShutdown: "gram:speech-shutdown",

@@ -28,6 +28,7 @@ import { scheduleChime } from "./chime";
 import { awayEventOf, interrupts } from "./interrupt-policy";
 import { menuShortcuts } from "./menu-shortcuts";
 import { vibrancyAttribute } from "./vibrancy";
+import { watchWindowLights } from "./window-lights";
 import { windowZoomStep } from "./window-zoom-keys";
 import { startNewTask } from "@/shell/new-task";
 import { useThreadsStore } from "@/stores/threads";
@@ -237,6 +238,13 @@ export function useDesktopBridge() {
       window.removeEventListener("keydown", onZoomKey);
     };
   }, [navigate, api]);
+
+  // macOS's window buttons keep their room in the overview's header and the title bar.
+  useEffect(() => {
+    const bridge = window.gram;
+    if (!bridge) return;
+    return watchWindowLights(bridge);
+  }, []);
 
   // The menu's accelerators follow keybindings.json, like the renderer's shortcuts.
   useEffect(() => {
