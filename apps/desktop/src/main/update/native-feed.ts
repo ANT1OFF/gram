@@ -21,14 +21,15 @@ import {
   type NativeRelease,
   type RunGh,
 } from "@gram/shell/modules/update";
+import type { AppUpdater, ResolvedUpdateFileInfo, UpdateInfo } from "electron-updater";
+// The provider's own module, not the package's main: under Bun (the release tool's update check),
+// a value import from the main builds its `autoUpdater`, which loads the `electron` package, and
+// that downloads Electron's binary when it isn't there yet, as after any fresh install.
 import {
+  parseUpdateInfo,
   Provider,
-  type AppUpdater,
-  type ResolvedUpdateFileInfo,
-  type UpdateInfo,
-} from "electron-updater";
-import type { ProviderRuntimeOptions } from "electron-updater/out/providers/Provider";
-import { parseUpdateInfo } from "electron-updater/out/providers/Provider";
+  type ProviderRuntimeOptions,
+} from "electron-updater/out/providers/Provider";
 
 /** What electron-updater's provider reads: the release a check picks, and where its ZIP is. */
 export interface ReleaseFeed {

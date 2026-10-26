@@ -217,6 +217,24 @@ afterEach(async () => {
 });
 
 describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
+  // Loading `electron` downloads its binary when node_modules has none (Electron 44 has no
+  // postinstall), which made every check after a fresh install fetch it from GitHub.
+  it("loads the app's feed for the update check without the electron package", () => {
+    const feed = pathToFileURL(join(SOURCE, "apps/desktop/src/main/update/native-feed.ts")).href;
+    const r = spawnSync(
+      bunPath,
+      [
+        "-e",
+        `await import(${JSON.stringify(feed)}); console.log(JSON.stringify(Object.keys(require.cache)));`,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(r.status, r.stderr).toBe(0);
+    const loaded = JSON.parse(r.stdout);
+    expect(loaded.some((path) => path.includes("electron-updater"))).toBe(true);
+    expect(loaded.filter((path) => /node_modules\/electron\//.test(path))).toEqual([]);
+  });
+
   it("validates, checks and publishes with your own login", async () => {
     await runPhase(options("validate"), seams());
     expect(appChecks).toHaveLength(1);
@@ -381,6 +399,22 @@ const notesRepo = () => {
   return { dir, commit: git("rev-parse", "HEAD").stdout.trim(), git, cards };
 };
 
+/**
+ * One notes repository with a committed notes file per sentence (`Gram 1.0.0. <sentence>`), in a
+ * single commit: each case is read from the commit as release notes, without a repository each.
+ */
+const committedNotes = (sentences) => {
+  const repo = notesRepo();
+  const files = sentences.map((sentence, i) => {
+    const file = join(repo.dir, "notes", `case-${i}.md`);
+    writeFileSync(file, `Gram 1.0.0. ${sentence}\n`);
+    return file;
+  });
+  repo.git("add", ".");
+  repo.git("-c", "user.name=S", "-c", "user.email=s@example.invalid", "commit", "-qm", "cases");
+  return { repo, commit: repo.git("rev-parse", "HEAD").stdout.trim(), files };
+};
+
 const notesOptions = (repo, extra = {}) => ({
   source: repo.dir,
   commit: repo.commit,
@@ -425,30 +459,24 @@ describe("notes from the release commit", () => {
   });
 
   it("lets ordinary product sentences with numbers through", async () => {
-    for (const fine of [
+    const fines = [
       "Failed 2FA requests now show a helpful error.",
       "Fixed 2 failed uploads.",
       "Retries 3 times, then says what failed.",
       "Shows the 5 newest threads first.",
       "Uploads that failed 3 times now retry later.",
       "Lists 4 skipped steps in the summary.",
-    ]) {
-      const repo = notesRepo();
-      writeFileSync(join(repo.dir, "notes", "1.0.0.md"), `Gram 1.0.0. ${fine}\n`);
-      repo.git("add", ".");
-      repo.git("-c", "user.name=S", "-c", "user.email=s@example.invalid", "commit", "-qm", "ok");
-      const commit = repo.git("rev-parse", "HEAD").stdout.trim();
+    ];
+    const { repo, commit, files } = committedNotes(fines);
+    for (const [i, fine] of fines.entries())
       expect(
-        await readPublicNotes(
-          notesOptions({ ...repo, commit }, { notesFile: join(repo.dir, "notes/1.0.0.md") }),
-        ),
+        await readPublicNotes(notesOptions({ ...repo, commit }, { notesFile: files[i] })),
         fine,
       ).toBe(`Gram 1.0.0. ${fine}\n`);
-    }
   });
 
   it("refuses committed notes that carry PR references, test counts or SHAs in ordinary forms", async () => {
-    for (const leak of [
+    const leaks = [
       "Tests: 9613 passed; PR: 287.",
       "PR-287 and PRs 288.",
       "Pull request no. 12.",
@@ -465,19 +493,13 @@ describe("notes from the release commit", () => {
       "Test results: 9,613 passed successfully.",
       "Passed 9613 checks.",
       "9613 successfully passed.",
-    ]) {
-      const repo = notesRepo();
-      writeFileSync(join(repo.dir, "notes", "1.0.0.md"), `Gram 1.0.0. ${leak}\n`);
-      repo.git("add", ".");
-      repo.git("-c", "user.name=S", "-c", "user.email=s@example.invalid", "commit", "-qm", "leak");
-      const commit = repo.git("rev-parse", "HEAD").stdout.trim();
+    ];
+    const { repo, commit, files } = committedNotes(leaks);
+    for (const [i, leak] of leaks.entries())
       await expect(
-        readPublicNotes(
-          notesOptions({ ...repo, commit }, { notesFile: join(repo.dir, "notes/1.0.0.md") }),
-        ),
+        readPublicNotes(notesOptions({ ...repo, commit }, { notesFile: files[i] })),
         leak,
       ).rejects.toThrow(/the notes carry/);
-    }
   });
 
   it("reads committed notes and cards from the commit itself", async () => {

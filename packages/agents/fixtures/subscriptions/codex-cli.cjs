@@ -246,16 +246,15 @@ require("node:readline")
         }
         if (prompt === "late") {
           const path = process.env.GRAM_FIXTURE_RELEASE_REPLY;
-          let replied = false;
+          // Polled, not fs.watch: macOS's FSEvents can drop a directory event (about 1 in 1500
+          // under parallel test load), which left this reply, and the test, waiting forever. A
+          // release before, during or after the first check is seen by the next one.
           const replyIfReleased = () => {
-            if (replied || !fs.existsSync(path)) return;
-            replied = true;
-            watching.close();
+            if (!fs.existsSync(path)) return;
+            clearInterval(polling);
             respond({ turn: turn("inProgress") });
           };
-          const watching = fs.watch(require("node:path").dirname(path), replyIfReleased);
-          // Completion can reach the parent before this watcher is installed. Check after arming
-          // it so a release before, during or after registration cannot be lost.
+          const polling = setInterval(replyIfReleased, 10);
           replyIfReleased();
         }
         break;
