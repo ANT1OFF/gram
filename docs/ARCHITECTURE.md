@@ -82,7 +82,9 @@ at the changed boundary.
 
 ## Local trust boundaries
 
-The local HTTP server uses boot-token/cookie authentication and origin checks;
+The renderer is sandboxed and context-isolated, with no Node integration and DevTools only
+in development. The local HTTP server listens on loopback and uses per-launch
+boot-token/cookie authentication with Host and Origin checks;
 see [HTTP auth](../packages/server/src/http/auth.ts). Desktop IPC and app tools
 validate requests again at their authoritative owner. Browser document/access
 freshness, helper scope/provider consent, agent approval, worker ownership and
@@ -92,5 +94,8 @@ not replace them.
 Gram reads no Claude Code login token and calls no Anthropic API itself; the palette only
 opens claude.ai/code. Agents fetch the web through their own native tools.
 
-See [contributing](../CONTRIBUTING.md) for review/integration rules and
-[public readiness](PUBLIC_RELEASE.md) for security and distribution limits.
+Phone access over Tailscale is opt-in; see [remote access](REMOTE_ACCESS.md). Gram has no
+telemetry, analytics or crash reporting.
+
+See [contributing](../CONTRIBUTING.md) for review/integration rules,
+[verification](VERIFICATION.md) for test limits and [releasing](RELEASING.md) for distribution.

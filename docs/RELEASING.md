@@ -1,6 +1,6 @@
 # Releasing Gram
 
-[Up: docs map](README.md) · [Updates](UPDATES.md) · [Public readiness](PUBLIC_RELEASE.md)
+[Up: docs map](README.md) · [Updates](UPDATES.md)
 
 Releases, the update feed and issues all live in `ANT1OFF/gram`. A release is built and signed
 once on an Apple silicon Mac, then goes through separate runs, each checked before the next:
@@ -18,10 +18,8 @@ published release.
 [Release-please](https://github.com/googleapis/release-please)
 ([release-please.yml](../.github/workflows/release-please.yml)) keeps a draft metadata PR on
 `main` with the changelog, the root and desktop package versions, the desktop entry in `bun.lock`
-and `.release-please-manifest.json`. Its baseline is the latest release's tag: no
-`bootstrap-sha` pins history to a commit, so it counts the commits after `v1.0.0`, and before
-that release exists, the repository's first commit, which is not a conventional commit and adds
-nothing. Conventional squash titles decide the next
+and `.release-please-manifest.json`. Its baseline is the latest release's tag; no
+`bootstrap-sha` pins history to a commit. Conventional squash titles decide the next
 version: `fix:` proposes a patch, `feat:` a minor, and `docs:`, `refactor:` and `chore:` add no
 entry. Merging that PR publishes nothing: `skip-github-release` is on, and no tag or release is
 made.

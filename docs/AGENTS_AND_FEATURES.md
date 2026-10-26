@@ -4,7 +4,7 @@
 
 Gram's primary workflow is your own installed Claude Code or Codex CLI using its
 existing subscription login. This guide owns feature and permission distinctions;
-[public readiness](PUBLIC_RELEASE.md) owns what has actually been qualified.
+[verification](VERIFICATION.md#protocol-native-and-live-checks) covers testing and its limits.
 
 ## Overview
 
@@ -96,6 +96,7 @@ API-key sessions follow API billing. Gram preserves provider availability checks
 Gateways are opt-in URL/key profiles, selected explicitly. Saved keys or gateway
 defaults never silently replace a local subscription. Gateway children keep their
 credential homes isolated; local CLI authentication is not copied into them.
+Gateway keys stay in Gram's local vault; subscription credentials stay isolated per provider.
 Manual MCP configuration and each agent's own sign-in remain available. Restricted
 Codex sessions disable plugin/apps loading and refuse excluded MCP servers that
 remain enabled, while preserving the configured built-in search policy.
@@ -509,7 +510,7 @@ open conservatively requires owner exit too. This is not an OS-wide ownership lo
 across independent server layers or Gram processes.
 
 Source: [thread ownership](../packages/agents/src/codex/thread-ownership.ts).
-Actual lifecycle acceptance limits are in [public readiness](PUBLIC_RELEASE.md).
+See [verification](VERIFICATION.md#protocol-native-and-live-checks) for synthetic and live lifecycle checks.
 
 ## Worktree storage and cleanup
 
@@ -570,7 +571,7 @@ Notifications retain sanitized history and quiet startup diagnostics; saved
 notifications omit sensitive runtime details. Dictation runs locally with NVIDIA
 Nemotron through sherpa-onnx, after explicit verified-download/license consent and
 microphone permission, and inserts draft text only. English is supported. Native loading does not prove
-microphone or recognition quality; see [acceptance](development/ACCEPTANCE.md).
+microphone or recognition quality; see [verification](VERIFICATION.md#manual-provider-and-dictation-checks).
 
 Source: [browser bridge](../packages/server/src/browser),
 [notifications](../apps/web/src/stores/notifications.ts),

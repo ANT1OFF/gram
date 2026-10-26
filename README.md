@@ -66,11 +66,10 @@ See [development](docs/DEVELOPMENT.md) for prerequisites and every run and check
 - [Updates](docs/UPDATES.md) and [releasing](docs/RELEASING.md)
 - [Contributing](CONTRIBUTING.md)
 - [Design notes](DESIGN.md)
-- [Public readiness](docs/PUBLIC_RELEASE.md)
 
 The [docs map](docs/README.md) lists every page and what it covers.
 
 ## License
 
 [MIT](LICENSE). Bundled dependencies keep their own licenses; see
-[public readiness](docs/PUBLIC_RELEASE.md).
+[packaged dependency notices](docs/DEVELOPMENT.md#packaging-and-dependency-notices).

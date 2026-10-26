@@ -37,4 +37,4 @@ not verification.
 
 Native thread-writer closure, future CLI
 versions, live-provider/Windows behavior and exhaustive security remain separate
-qualification as listed in [public readiness](../../docs/PUBLIC_RELEASE.md).
+checks as described in [verification](../../docs/VERIFICATION.md#protocol-native-and-live-checks).

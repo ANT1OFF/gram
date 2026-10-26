@@ -1,4 +1,4 @@
-// Dependency-free checks for the boundaries of this private public-release scaffold.
+// Dependency-free checks for repository privacy, runtime and packaging boundaries.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
