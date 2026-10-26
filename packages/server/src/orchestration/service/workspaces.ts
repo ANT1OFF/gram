@@ -295,31 +295,42 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           holds: (settings) => settingsHold(settings, change.requires ?? []),
         });
       });
+      /**
+       * What a committed change sets off: the windows told, a charter change's notes and reloads,
+       * and the orchestrator's folders made to follow its projects, so a repo that left takes its
+       * grant with it.
+       */
+      const follow = (done: { readonly state: WorkspaceState }) =>
+        Effect.gen(function* () {
+          yield* workspacesChanged;
+          if (expected === undefined) return;
+          yield* orchestrationChanged(id);
+          yield* afterCharter(id, done.state, expected.charter);
+          const holder = done.state.workspace.orchestratorThreadId;
+          if (
+            holder !== undefined &&
+            (!sameValue(expected.workspace.projectIds, done.state.workspace.projectIds) ||
+              expected.workspace.homeProjectId !== done.state.workspace.homeProjectId)
+          ) {
+            yield* followMembership(holder, expected.workspace.projectIds, done.state);
+          }
+        });
       // Task startups, spawns and saves of this workspace, then names across workspaces: the
-      // order every other path takes them in.
+      // order every other path takes them in. Once the write has begun, neither it nor what it
+      // sets off can be cut short: a call cancelled after the commit still takes a removed repo's
+      // folder from the orchestrator.
       const done = yield* Effect.uninterruptible(
-        expected === undefined
+        (expected === undefined
           ? registryLock.withPermits(1)(write)
           : underKeysOf(
               taskStartupLock,
               workspaceStartupKeys(id),
               spawnLock.withLocks([id], registryLock.withPermits(1)(write)),
-            ),
+            )
+        ).pipe(
+          Effect.tap((committed) => (committed === undefined ? Effect.void : follow(committed))),
+        ),
       );
-      if (done === undefined) return undefined;
-      yield* workspacesChanged;
-      if (expected !== undefined) {
-        yield* orchestrationChanged(id);
-        yield* afterCharter(id, done.state, expected.charter);
-        const holder = done.state.workspace.orchestratorThreadId;
-        if (
-          holder !== undefined &&
-          (!sameValue(expected.workspace.projectIds, done.state.workspace.projectIds) ||
-            expected.workspace.homeProjectId !== done.state.workspace.homeProjectId)
-        ) {
-          yield* followMembership(holder, expected.workspace.projectIds, done.state);
-        }
-      }
       return done;
     });
 

@@ -83,6 +83,8 @@ export interface World {
    * fiber, so what is offered meanwhile queues behind it.
    */
   stall: Effect.Effect<void> | undefined;
+  /** Runs before each event the server publishes, for a test to hold one. */
+  onPublish?: ((event: ServerEvent) => Effect.Effect<void>) | undefined;
   /**
    * What GitHub says of a PR some thread waits on, by `owner/repo#N` lower-cased: `lookupPr` and
    * `watchedBadge` answer from it, and `watchedPr` publishes a new one to the observers.
@@ -140,6 +142,22 @@ export const makeWorld = Effect.gen(function* () {
   };
   return world;
 });
+
+/** The server's event hub, running `world.onPublish` first when a test set one. */
+const hubOf = (world: World) =>
+  Layer.effect(
+    EventHub,
+    Effect.gen(function* () {
+      const hub = yield* EventHub;
+      return EventHub.of({
+        ...hub,
+        publish: (event) =>
+          Effect.suspend(() => world.onPublish?.(event) ?? Effect.void).pipe(
+            Effect.andThen(hub.publish(event)),
+          ),
+      });
+    }),
+  ).pipe(Layer.provide(EventHub.layer));
 
 const fakePublisher = (world: World) =>
   Layer.sync(GitStatePublisher, () => {
@@ -292,7 +310,7 @@ export const serverLayer = (
     // As the server has it: the runtime reads the limits (`limitedUntil`, early releases).
     Layer.provideMerge(ThreadRuntimes.layer.pipe(Layer.provideMerge(UsageLimitReadings.layer))),
     Layer.provideMerge(GitCheckoutLive),
-    Layer.provideMerge(EventHub.layer),
+    Layer.provideMerge(hubOf(world)),
     Layer.provideMerge(ThreadStore.layerSqlite(nodePath.join(world.dir, "gram.db"))),
     Layer.provideMerge(agents),
     Layer.provideMerge(TurnHooks.layerNoop),

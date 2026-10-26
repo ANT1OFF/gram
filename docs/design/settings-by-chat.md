@@ -221,15 +221,17 @@ own.
 and any of `name`, `addProjects`, `removeProjects` (a path or a project id), `home` (a path or
 a project id), `autonomy`, `workerMode` (`null` follows the default again) and `settings`.
 
-- **Paths are checked before any card, at their real place.** Each project path must be
-  absolute and exist. It is resolved to its canonical path, every link in it resolved, and
-  that folder's own `.git` must be a folder, not a link or a linked worktree's or a
-  submodule's file. Git itself must name it as the repository's top folder: `git rev-parse
-  --show-toplevel` and `--absolute-git-dir` must give that path and its `.git`. A subfolder,
-  a linked worktree, a plain folder, a folder with an empty or broken `.git` and a missing
-  path are refused, with the reason. The card shows the canonical path, and that is the path
-  Gram registers, never the path as written. A repository Gram doesn't know yet is marked on
-  the card and registered as a project only once the user approves.
+- **A project is a canonical folder, and the approval grants folders.** Each project path
+  must be absolute, exist, and already be its own real path: a path with a link anywhere in it
+  is refused, with "use the real folder: <real path>". That folder's own `.git` must be a
+  folder, not a linked worktree's or a submodule's file, and `git rev-parse --show-toplevel`
+  must name the folder itself. A subfolder, a linked worktree, a plain folder, a folder with an
+  empty or broken `.git`, a link and a missing path are refused before any card, with the
+  reason. A project Gram already knows is used only when its stored root passes the same rule,
+  so one stored at a link is refused too. Gram registers the path the card shows, and a
+  repository it doesn't know yet is registered only once the user approves. Approval grants
+  the folder, not the repository in it: if what the folder holds is replaced, it is the same
+  grant, since an agent that can write there could change it anyway.
 - **The card shows the whole change.** A new workspace's card lists its name, each project path
   (the home and any new to Gram marked), autonomy, worker mode, every charter field the new
   workspace stores, and whether its orchestrator opens. An update's card lists each project as
@@ -249,10 +251,9 @@ a project id), `autonomy`, `workerMode` (`null` follows the default again) and `
 - **Applying: all of it or nothing.** The handler keeps the workspace exactly as it read it
   for the card: name, projects, home and the whole charter, autonomy and worker mode
   included. After the user approves:
-  1. Every repository the card takes in is read again. It must still be at the canonical path
-     the card showed, and still be the same repository: its `.git` folder keeps the device and
-     inode it had. A link retargeted, a folder swapped for another repository or a folder gone
-     refuses the change.
+  1. Every folder the card takes in that Gram doesn't know yet is checked again by the same
+     rule. One that is gone, or no longer a canonical repository top folder, refuses the
+     change.
   2. `Orchestration.commitWorkspace` runs `saveWorkspace`'s and `setCharter`'s checks under
      their locks: a unique name, a home among the projects, no home move while the orchestrator
      is open, an orchestrator model that may orchestrate, no lower autonomy a held thread
@@ -260,11 +261,15 @@ a project id), `autonomy`, `workerMode` (`null` follows the default again) and `
   3. One store transaction registers the new repositories as projects and reads the stored
      workspace. It writes the new name, projects, home and charter and the audit row, but only
      if the stored workspace still equals the card's snapshot in every one of those fields and
-     the app settings the card read still hold. Otherwise it rolls back, the projects included,
-     and the agent is told the workspace changed since the card was shown.
+     the app settings the card read still hold (the app default model, for a cleared
+     orchestrator model, on a new workspace as on a changed one), and every project it names
+     still exists. Otherwise it rolls back, the projects included, and the agent is told
+     nothing changed.
 
   What a write sets off follows it, as in Settings. A raised autonomy reloads the orchestrator
-  and its workers once idle, and the orchestrator's folders follow its projects. The snapshot is
+  and its workers once idle, and the orchestrator's folders follow its projects. Once the
+  write has begun, it and what it sets off can't be cancelled, so a call cancelled after the
+  commit still takes a removed repository's folder from the orchestrator. The snapshot is
   held by the server; the card's input is only what the user reads, never what is applied.
 
 - **`openOrchestrator`.** With `true`, the new workspace's orchestrator opens once the workspace

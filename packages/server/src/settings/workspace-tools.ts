@@ -32,7 +32,7 @@ import {
   type WorkspaceState,
   sameValue,
 } from "@gram/contracts";
-import { canonicalizeOrOwned, Proc, projectRootKey } from "@gram/git";
+import { Proc, projectRootKey } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -41,7 +41,7 @@ import * as Option from "effect/Option";
 import { basename, isAbsolute, resolve } from "node:path";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
-import { canonicalRepo } from "../fs/folders.ts";
+import { canonicalRepoFolder } from "../fs/folders.ts";
 import { subscriptionTaskCharter } from "../orchestration/task-models.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore, type SettingsAuditEntry } from "../persistence/thread-store.ts";
@@ -57,21 +57,17 @@ const WORKER_REFUSAL =
 const NOT_HERE = "Workspaces can't be created or changed here.";
 
 /**
- * A repository a card names: a project Gram knows, or a top folder it would register. `root` is
- * canonical, every link resolved; `identity` is what `canonicalRepo` read on disk for one this card
- * takes in, checked again when the user approves.
+ * A repository a card names: a project Gram knows, or a top folder it would register. A card
+ * takes in only canonical folders (`canonicalRepoFolder`): what the user approves is the folder.
  */
 interface Repo {
   readonly root: string;
   readonly name: string;
   readonly project?: Project | undefined;
-  readonly identity?: string | undefined;
 }
 
-/** Whether two paths are one folder: as written, or once their links are resolved. */
-const sameRoot = (a: string, b: string) =>
-  projectRootKey(a) === projectRootKey(b) ||
-  projectRootKey(canonicalizeOrOwned(a)) === projectRootKey(canonicalizeOrOwned(b));
+/** Whether two roots name one folder, as the store compares them. */
+const sameRoot = (a: string, b: string) => projectRootKey(a) === projectRootKey(b);
 
 /** `named` among `projects`: by project id, or by path. */
 const matchProject = <P extends Repo>(projects: ReadonlyArray<P>, named: string): P | undefined => {
@@ -160,9 +156,18 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           .getThread(caller)
           .pipe(Effect.mapError((e) => fail(tool, `Couldn't read this thread: ${e.message}`)));
 
+      /** `root` as a folder a card may grant, or why not. */
+      const grantable = (tool: string, root: string) =>
+        canonicalRepoFolder(root).pipe(
+          Effect.provideService(Proc, proc),
+          Effect.mapError((e) => fail(tool, `Nothing was proposed: ${e.message}`)),
+        );
+
       /**
-       * A path as a project root, refused unless it is a git repository's top folder now: at its
-       * canonical path, which the card shows and Gram registers, never the path as written.
+       * A path as a project root, refused unless it is already the canonical path of a git
+       * repository's top folder: links are refused, never followed, so the folder the card shows is
+       * the folder Gram registers and grants. A known project is used only when its own stored root
+       * is that same canonical folder.
        */
       const repoAt = (tool: string, path: string, known: ReadonlyArray<Project>) =>
         Effect.gen(function* () {
@@ -173,42 +178,36 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               `${given} isn't an absolute path. Name each project by the absolute path of its git repository's top folder.`,
             );
           }
-          const { root, identity } = yield* canonicalRepo(given).pipe(
-            Effect.provideService(Proc, proc),
-            Effect.mapError((e) => fail(tool, `Nothing was proposed: ${e.message}`)),
-          );
+          const root = yield* grantable(tool, given);
           const project = known.find((each) => sameRoot(each.root, root));
+          if (project !== undefined && project.root !== root) {
+            return yield* fail(
+              tool,
+              `Nothing was proposed: Gram knows ${root} as ${project.root}; use the real folder: ${root}`,
+            );
+          }
           return {
             root,
             name: project?.name ?? (basename(root) || root),
-            identity,
             ...(project === undefined ? {} : { project }),
           } satisfies Repo;
         });
 
       /**
-       * Each repository the card takes in, read again once the user approved it: still at the
-       * root the card showed, every link resolved, and still the same repository there.
+       * Each folder the card takes in that Gram doesn't know yet, read again once the user approved
+       * it: still a canonical repository top folder at the path the card showed. What it holds may
+       * have changed; the grant is the folder.
        */
-      const sameAsShown = (tool: string, repos: ReadonlyArray<Repo>) =>
+      const stillGrantable = (tool: string, repos: ReadonlyArray<Repo>) =>
         Effect.gen(function* () {
           for (const repo of repos) {
-            if (repo.identity === undefined) continue;
-            const now = yield* canonicalRepo(repo.root).pipe(
+            if (repo.project !== undefined) continue;
+            yield* canonicalRepoFolder(repo.root).pipe(
               Effect.provideService(Proc, proc),
               Effect.mapError((e) =>
-                fail(
-                  tool,
-                  `${repo.root} changed since the card was shown (${e.message}); nothing changed. Propose it again.`,
-                ),
+                fail(tool, `${e.message} It changed since the card was shown; nothing changed.`),
               ),
             );
-            if (now.root !== repo.root || now.identity !== repo.identity) {
-              return yield* fail(
-                tool,
-                `${repo.root} is no longer the repository the card showed; nothing changed. Propose it again.`,
-              );
-            }
           }
         });
 
@@ -437,7 +436,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 "This thread's role changed while the card waited, so the approval no longer applies; nothing changed.",
               );
             }
-            yield* sameAsShown(tool, repos);
+            yield* stillGrantable(tool, repos);
             const appliedAt = yield* Clock.currentTimeMillis;
             const saved = yield* service
               .commitWorkspace({
@@ -450,6 +449,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 home:
                   home.project === undefined ? { root: home.root } : { projectId: home.project.id },
                 charter,
+                requires: planned?.plan.requires,
                 audit: (made) =>
                   auditOf(caller, role, answered, appliedAt, card, [
                     { key: "workspace.name", before: null, after: made.workspace.name },
@@ -623,6 +623,14 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               );
             }
             const homeMoves = home !== homeBefore;
+            // A known project the card makes home is granted anew: its stored root has to be a
+            // canonical repository folder like any path the card takes in.
+            if (homeMoves && home.project !== undefined && !fresh.includes(home)) {
+              const root = yield* grantable(tool, home.root);
+              if (root !== home.project.root) {
+                return yield* fail(tool, `Nothing was proposed: use the real folder: ${root}`);
+              }
+            }
             const holder =
               workspace.orchestratorThreadId === undefined
                 ? undefined
@@ -764,7 +772,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 "This thread's role or workspace changed while the card waited, so the approval no longer applies; nothing changed.",
               );
             }
-            yield* sameAsShown(tool, fresh);
+            yield* stillGrantable(tool, fresh);
             const removedIds = new Set(removed.map((each) => each.project!.id));
             const appliedAt = yield* Clock.currentTimeMillis;
             // All of it in one transaction, over the workspace as the card read it, or nothing.
@@ -821,7 +829,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               })
               .pipe(
                 Effect.mapError((e) =>
-                  e._tag === "NotFound"
+                  e._tag === "NotFound" && e.entity === "workspace"
                     ? fail(tool, `The workspace “${workspace.name}” is gone; nothing changed.`)
                     : fail(tool, `${e.message} Nothing changed.`),
                 ),

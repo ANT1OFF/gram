@@ -730,7 +730,8 @@ export interface ThreadStoreShape {
         readonly auditSeq: number;
         readonly projects: ReadonlyArray<Project>;
       }
-    | undefined
+    | undefined,
+    NotFound
   >;
   /** The latest `limit` settings changes by chat, newest first. */
   listSettingsAudit(limit: number): Effect.Effect<ReadonlyArray<SettingsAuditRecord>>;
@@ -2926,6 +2927,18 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const next = change.next(current, projects);
               if (next.workspace.id !== change.id) {
                 return yield* Effect.die(new Error(`workspace ${change.id} cannot change its id`));
+              }
+              // Every project it names still exists, read in this transaction: one forgotten
+              // while the card waited fails the whole change.
+              for (const id of next.workspace.projectIds) {
+                const [row] = yield* sql<{ id: string }>`SELECT id FROM projects WHERE id = ${id}`;
+                if (row === undefined) {
+                  return yield* new NotFound({
+                    entity: "project",
+                    id,
+                    message: "A project on the card no longer exists in Gram.",
+                  });
+                }
               }
               yield* writeWorkspace(next);
               const auditSeq = yield* insertSettingsAudit({

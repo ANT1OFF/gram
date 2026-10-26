@@ -9,6 +9,7 @@ import {
   type WorkspaceProposalCard,
 } from "@gram/contracts";
 import type { ToolAudience } from "@gram/agents";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -22,6 +23,7 @@ import {
   atAutonomy,
   makeWorld,
   openOrchestrator,
+  openOrchestratorAcross,
   serverLayer,
   settle,
   spawn,
@@ -645,50 +647,130 @@ describe("workspace changes by chat: what the review found", () => {
       ),
   );
 
-  it.effect("shows and registers a linked path at its real root, and refuses a swapped repo", () =>
+  it.effect(
+    "refuses a link before any card, naming the real folder, and a project stored at one",
+    () =>
+      inWorkspaces((world) =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const a = newRepo(world, "a");
+          const link = nodePath.join(world.dir, "link");
+          fs.symlinkSync(a, link);
+          // A link anywhere in the path, not only at its end.
+          const parentLink = nodePath.join(world.dir, "parent-link");
+          fs.symlinkSync(nodePath.dirname(a), parentLink);
+          const plain = yield* plainThread(world);
+          for (const path of [link, nodePath.join(parentLink, "repo")]) {
+            const refused = yield* call(plain.id, "plain", "workspace_create", {
+              name: "Linked",
+              projects: [path],
+            }).pipe(Effect.flip);
+            expect(refused.message, path).toContain(`use the real folder: ${a}`);
+          }
+          // A project Gram knows by a link (stored before) is no folder a card may grant either.
+          const shop = yield* store.ensureProject({ root: world.repo, name: "shop" });
+          const linked = yield* store.ensureProject({ root: link, name: "linked" });
+          yield* supervisedOver("W", [shop, linked]);
+          const home = yield* call(plain.id, "plain", "workspace_update", {
+            workspaceId: "W",
+            home: linked.id,
+          }).pipe(Effect.flip);
+          expect(home.message).toContain(`use the real folder: ${a}`);
+          yield* noCard(plain.id);
+          expect(yield* projectAt(a)).toBeUndefined();
+          expect(yield* workspaceNamed("Linked")).toBeUndefined();
+        }),
+      ),
+  );
+
+  it.effect(
+    "takes a removed repo's folder from the orchestrator even when the call is cancelled after the commit",
+    () =>
+      inWorkspaces((world) =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const { thread, other, workspaceId } = yield* openOrchestratorAcross(world);
+          expect((yield* store.getThread(thread.id)).additionalDirectories).toContain(other.root);
+          const plain = yield* plainThread(world);
+          const asked = yield* call(plain.id, "plain", "workspace_update", {
+            workspaceId,
+            removeProjects: [other.root],
+          }).pipe(Effect.forkScoped);
+          const card = yield* cardIn(plain.id);
+          // Held at the first thing the commit sets off, after the transaction is written.
+          const reached = Deferred.makeUnsafe<void>();
+          const release = Deferred.makeUnsafe<void>();
+          world.onPublish = (event) =>
+            event.type === "workspaces.changed"
+              ? Deferred.succeed(reached, undefined).pipe(Effect.andThen(Deferred.await(release)))
+              : Effect.void;
+          yield* answer(plain.id, card, "allow");
+          yield* Deferred.await(reached);
+          const interrupting = yield* Fiber.interrupt(asked).pipe(Effect.forkScoped);
+          for (let turn = 0; turn < 100; turn++) yield* Effect.yieldNow;
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(interrupting);
+          world.onPublish = undefined;
+          expect((yield* store.getWorkspace(workspaceId)).workspace.projectIds).not.toContain(
+            other.id,
+          );
+          expect((yield* store.getThread(thread.id)).additionalDirectories ?? []).not.toContain(
+            other.root,
+          );
+        }),
+      ),
+  );
+
+  it.effect("refuses a new workspace whose card read an app default that changed meanwhile", () =>
     inWorkspaces((world) =>
       Effect.gen(function* () {
-        const a = newRepo(world, "a");
-        const b = newRepo(world, "b");
-        const link = nodePath.join(world.dir, "link");
-        fs.symlinkSync(a, link);
+        const store = yield* ThreadStore;
+        yield* store.updateSettings((settings) => ({
+          ...settings,
+          agents: { ...settings.agents, defaultModel: { agent: "claude", model: "fake-haiku" } },
+        }));
+        const fresh = newRepo(world, "fresh");
         const plain = yield* plainThread(world);
+        // Cleared, the orchestrator model follows the app default the card was drawn from.
         const asked = yield* call(plain.id, "plain", "workspace_create", {
-          name: "Linked",
-          projects: [link],
-        }).pipe(Effect.forkScoped);
-        const card = yield* cardIn(plain.id);
-        // The card names where the repository is, never the link.
-        expect((card.input as unknown as WorkspaceProposalCard).projects).toEqual([
-          expect.objectContaining({ root: a, unregistered: true, home: true }),
-        ]);
-        // The link is pointed at B while the card waits.
-        fs.unlinkSync(link);
-        fs.symlinkSync(b, link);
-        yield* answer(plain.id, card, "allow");
-        yield* Fiber.join(asked);
-        const made = (yield* workspaceNamed("Linked"))!;
-        const registered = (yield* projectAt(a))!;
-        expect(made.workspace.projectIds).toEqual([registered.id]);
-        expect(yield* projectAt(b)).toBeUndefined();
-        expect(yield* projectAt(link)).toBeUndefined();
-
-        // A repository swapped for another at the card's own path is refused.
-        const cParent = nodePath.join(world.dir, "c");
-        const c = newRepo(world, "c");
-        const swapped = yield* call(plain.id, "plain", "workspace_create", {
-          name: "Swapped",
-          projects: [c],
+          name: "Follows",
+          projects: [fresh],
+          settings: [{ op: "set", key: "workspace.orchestratorModel", value: null }],
         }).pipe(Effect.flip, Effect.forkScoped);
-        const second = yield* cardIn(plain.id);
-        fs.rmSync(cParent, { recursive: true, force: true });
-        expect(newRepo(world, "c")).toBe(c);
-        yield* answer(plain.id, second, "allow");
-        expect((yield* Fiber.join(swapped)).message).toContain(
-          "is no longer the repository the card showed; nothing changed",
-        );
-        expect(yield* workspaceNamed("Swapped")).toBeUndefined();
-        expect(yield* projectAt(c)).toBeUndefined();
+        const card = yield* cardIn(plain.id);
+        yield* store.updateSettings((settings) => ({
+          ...settings,
+          agents: { ...settings.agents, defaultModel: { agent: "claude", model: "fake-opus" } },
+        }));
+        yield* answer(plain.id, card, "allow");
+        expect((yield* Fiber.join(asked)).message).toContain("nothing changed");
+        expect(yield* workspaceNamed("Follows")).toBeUndefined();
+        expect(yield* projectAt(fresh)).toBeUndefined();
+        expect(yield* store.listSettingsAudit(5)).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("refuses a change naming a project forgotten while the card waited", () =>
+    inWorkspaces((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const a = yield* store.ensureProject({ root: world.repo, name: "a" });
+        const b = yield* store.ensureProject({ root: newRepo(world, "b"), name: "b" });
+        const saved = yield* supervisedOver("W", [a, b]);
+        const plain = yield* plainThread(world);
+        const asked = yield* call(plain.id, "plain", "workspace_update", {
+          workspaceId: "W",
+          name: "W2",
+        }).pipe(Effect.flip, Effect.forkScoped);
+        const card = yield* cardIn(plain.id);
+        yield* store.forgetProject(b.id);
+        yield* answer(plain.id, card, "allow");
+        const error = yield* Fiber.join(asked);
+        expect(error.message).toContain("A project on the card no longer exists in Gram");
+        expect(error.message).toContain("Nothing changed");
+        expect(yield* store.getWorkspace(saved.workspace.id)).toEqual(saved);
+        expect(yield* store.listSettingsAudit(5)).toEqual([]);
       }),
     ),
   );
