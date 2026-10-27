@@ -2,7 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import { seedTheme } from "./seed-theme";
 
-const families = ["Neutral", "Rose", "Forest", "Ocean", "Ember", "Violet"];
+// The behaviour doesn't depend on the family: one non-default family runs it end to end. Every
+// family's tokens, pairing and contrast are unit-tested in packages/themes, and every palette's
+// find highlights in terminal-theme.test.ts.
+const families = ["Rose"];
+const terminalFamilies = ["Ocean"];
 const launchChecks = {
   tools: [
     { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.273" },
@@ -110,7 +114,7 @@ for (const name of families) {
   });
 }
 
-for (const name of families) {
+for (const name of terminalFamilies) {
   for (const mode of ["light", "dark"] as const) {
     test(`${name} ${mode} terminal retains input and distinct search highlights`, async ({
       page,
