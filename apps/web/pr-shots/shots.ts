@@ -707,6 +707,26 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "merged-pr-row",
+    title: "A worker whose PR merged: its PR strip row and the worktree cleanup above the composer",
+    open: async (page) => {
+      await seedMockSettings(page, { appearance: { mode: "system" } });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      const merged = await page.evaluate(
+        async () => (await window.gramMock!.simulateFinishedWork()).merged[2]!,
+      );
+      // In-app, since a reload loses the seeded mock.
+      await page.evaluate((id) => {
+        history.pushState({}, "", `/t/${id}`);
+        dispatchEvent(new PopStateEvent("popstate"));
+      }, merged);
+      await page.getByTestId("pr-row").waitFor();
+      await page.waitForTimeout(800);
+    },
+  },
+  {
     name: "quiet-busy",
     title:
       "Quiet over `casefiles`, its workers peeked: two running, three waiting on CI, the review bot or a dependency, one on a conflict",

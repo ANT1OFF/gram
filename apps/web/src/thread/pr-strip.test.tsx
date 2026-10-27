@@ -1,16 +1,19 @@
 // @vitest-environment happy-dom
-import { hiddenEntryOf, type BoundPr, type ThreadId } from "@gram/contracts";
+import { DEFAULT_SETTINGS, hiddenEntryOf, type BoundPr, type ThreadId } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mockExtraBadge } from "@/api/mock-extra-prs";
 import { mockGitState, mockPrDetail } from "@/api/mock-git";
 import { renderWithApi } from "@/panels/test-utils";
+import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
+import { MergedCleanupNotice, useCleanupDismissed } from "./merged-cleanup-notice";
 import { PrStrip } from "./pr-strip";
 import { usePrStripFold } from "./pr-strip-fold";
+import { useThreadDialogs } from "./thread-dialogs-store";
 
 const T = "t-flaky" as ThreadId;
 
@@ -32,6 +35,9 @@ afterEach(() => {
   cleanup();
   useThreadsStore.setState({ byId: {} });
   usePrStripFold.setState({ expanded: [] });
+  useCleanupDismissed.setState({ ids: [] });
+  useThreadDialogs.setState({ dialog: undefined });
+  useServerSettings.setState({ settings: undefined });
 });
 
 const FOLLOWED = [
@@ -54,6 +60,40 @@ const setStrip = (fields: { boundPr?: BoundPr; extraPrs?: BoundPr[]; hiddenPrs?:
       },
     });
   });
+
+/** A merged thread in a worktree whose clean, pushed branch the sweep will remove. */
+const setMerged = (fields: { state?: "OPEN" | "MERGED"; hiddenPrs?: unknown[] } = {}) => {
+  const git = mockGitState(T, undefined)!;
+  act(() => {
+    useServerSettings.setState({ settings: DEFAULT_SETTINGS });
+    useThreadsStore.setState({
+      byId: {
+        [T]: {
+          thread: {
+            id: T,
+            completedReason: "prMerged",
+            checkout: { kind: "worktree", path: "/repo", branch: "fix/flaky" },
+            hiddenPrs: fields.hiddenPrs,
+          },
+          git: {
+            ...git,
+            changedFiles: 0,
+            upstream: "synced",
+            pr: { ...git.pr!, state: fields.state ?? "MERGED" },
+          },
+        } as never,
+      },
+    });
+  });
+};
+const renderBottom = (api: Parameters<typeof renderWithApi>[1] = {}) =>
+  renderWithApi(
+    <>
+      <MergedCleanupNotice threadId={T} />
+      <PrStrip threadId={T} focused={false} />
+    </>,
+    api,
+  );
 
 describe("PrStrip", () => {
   it("renders nothing for a thread without a PR", () => {
@@ -314,5 +354,73 @@ describe("PrStrip", () => {
     expect(screen.queryByTestId("pr-row")).toBeNull();
     expect(screen.queryByTestId("pr-strip-fold")).toBeNull();
     expect(screen.getByRole("button", { name: "Show 1 hidden PR" }).textContent).toBe("1 hidden");
+  });
+
+  describe("once the thread's PR merged", () => {
+    it("shows the PR once, its row carrying the cleanup instead of a notice", () => {
+      setMerged();
+      renderBottom();
+      expect(screen.queryByTestId("merged-cleanup-notice")).toBeNull();
+      expect(screen.getAllByTestId("pr-row")).toHaveLength(1);
+      expect(screen.getByRole("img", { name: "Merged" })).toBeTruthy();
+      const chip = screen.getByTestId("pr-row-cleanup");
+      expect(chip.getAttribute("aria-label")).toBe("Clean up now…");
+      expect(chip.title).toBe("#412 merged. Its worktree is removed soon.\nClean up now…");
+
+      fireEvent.click(chip);
+      expect(useThreadDialogs.getState().dialog).toEqual({
+        kind: "close",
+        threadId: T,
+        preset: { removeWorktree: true, deleteBranch: true },
+      });
+    });
+
+    it("asks before cleaning up a worktree the sweep won't remove", () => {
+      setMerged();
+      act(() =>
+        useServerSettings.setState({
+          settings: {
+            ...DEFAULT_SETTINGS,
+            workspaces: { ...DEFAULT_SETTINGS.workspaces, worktreeSweep: false },
+          },
+        }),
+      );
+      renderBottom();
+      const chip = screen.getByTestId("pr-row-cleanup");
+      expect(chip.getAttribute("aria-label")).toBe("Clean up…");
+      expect(chip.title).toBe(
+        "#412 merged. Remove its worktree and the branch fix/flaky?\nClean up…",
+      );
+    });
+
+    it("dismisses the cleanup with the row's ×, without a notice taking its place", async () => {
+      setMerged();
+      const prHide = vi.fn(async () => undefined);
+      renderBottom({ prHide });
+      fireEvent.click(screen.getByRole("button", { name: "Hide #412 from this thread's PR list" }));
+      await waitFor(() => expect(useCleanupDismissed.getState().ids).toEqual([T]));
+      expect(prHide).toHaveBeenCalled();
+      setMerged({ hiddenPrs: [{ ...hidden412(), state: "MERGED" }] });
+      expect(screen.queryByTestId("pr-row")).toBeNull();
+      expect(screen.queryByTestId("merged-cleanup-notice")).toBeNull();
+    });
+
+    it("keeps the notice for a merged PR whose row is hidden, and hides it on request", () => {
+      setMerged({ hiddenPrs: [{ ...hidden412(), state: "MERGED" }] });
+      renderBottom();
+      expect(screen.queryByTestId("pr-row")).toBeNull();
+      const notice = screen.getByTestId("merged-cleanup-notice");
+      expect(notice.textContent).toContain("#412 merged. Its worktree is removed soon.");
+      fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+      expect(screen.queryByTestId("merged-cleanup-notice")).toBeNull();
+    });
+
+    it("offers no cleanup on a PR that hasn't merged", () => {
+      setMerged({ state: "OPEN" });
+      renderBottom();
+      expect(screen.getAllByTestId("pr-row")).toHaveLength(1);
+      expect(screen.queryByTestId("pr-row-cleanup")).toBeNull();
+      expect(screen.queryByTestId("merged-cleanup-notice")).toBeNull();
+    });
   });
 });
