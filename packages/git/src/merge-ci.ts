@@ -188,13 +188,21 @@ export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
       });
       // A lane the diff can't affect, by this reproduction, not by what the run chose, needs none
       // of its jobs: skipped, or shown under a skipped matrix's unexpanded name. Its run still had
-      // to succeed above, which its own qualification job decides.
+      // to succeed above, which its own qualification job decides. A job some selected lane names
+      // is always needed, and a job named by two lanes makes the declaration malformed.
+      const laneJobs = "laneJobs" in workflow ? workflow.laneJobs : undefined;
+      const declared = CI_LANES.flatMap((lane) => laneJobs?.[lane] ?? []);
+      if (new Set(declared).size !== declared.length)
+        throw new Error("Merge CI policy names a job in more than one lane");
+      const needed = new Set(
+        lanes === "docs" ? [] : [...lanes].flatMap((lane) => laneJobs?.[lane] ?? []),
+      );
       const unneeded = new Set(
         lanes === "docs"
           ? []
-          : CI_LANES.filter((lane) => !lanes.has(lane)).flatMap(
-              (lane) => ("laneJobs" in workflow ? workflow.laneJobs?.[lane] : undefined) ?? [],
-            ),
+          : CI_LANES.filter((lane) => !lanes.has(lane))
+              .flatMap((lane) => laneJobs?.[lane] ?? [])
+              .filter((name) => !needed.has(name)),
       );
       let requiredJobs: ReadonlyArray<string> = workflow.jobs.filter((name) => !unneeded.has(name));
       if (docs && !fullSucceeded && "docsJobs" in workflow && workflow.docsJobs !== undefined) {

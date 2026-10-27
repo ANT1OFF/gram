@@ -14,42 +14,41 @@ const ordinaryPath = (path: string) =>
   /^[\w@+.-]+(\/[\w@+.-]+)*$/.test(path) &&
   !path.split("/").some((segment) => segment === "." || segment === "..");
 
-/** Files in the docs tree that tests read: the mock the e2e suite loads, and the mock tokens. */
-const DOCS_READ_BY_TESTS: ReadonlyArray<readonly [RegExp, ReadonlyArray<CiLane>]> = [
-  [/^docs\/design\/mocks\/needs-you-home\//, ["static", "e2e"]],
-  [/^docs\/design\/mocks\/tokens\.(config\.json|css)$/, ["static", "tests"]],
+/**
+ * Prose-shaped paths that tests read, checked before the prose rule: the mock the e2e suite loads
+ * (`mock-presentation`, `needs-you`), the mock tokens, and the whole mock-build skill, whose
+ * templates `tools/mock-kit/mock-kit.test.mjs` lists by directory. Each is code, with the lanes
+ * beyond `static` and `tests` that read it.
+ */
+const READ_BY_TESTS: ReadonlyArray<readonly [RegExp, ReadonlyArray<CiLane>]> = [
+  [/^docs\/design\/mocks\/needs-you-home\//, ["e2e"]],
+  [/^docs\/design\/mocks\/tokens\.(config\.json|css)$/, []],
+  [/^\.agents\/skills\/mock-build\/kit\//, ["e2e"]],
+  [/^\.agents\/skills\/mock-build\//, []],
 ];
 
 /**
  * Prose nothing builds, bundles or tests: Markdown outside the workspaces and tools, and the docs
- * tree but what `DOCS_READ_BY_TESTS` names. Markdown inside a workspace or `tools/` stays code (a
- * fixture can be prose-shaped).
+ * tree. Markdown inside a workspace or `tools/` stays code (a fixture can be prose-shaped).
  */
 const prose = (path: string) =>
-  ordinaryPath(path) &&
-  !DOCS_READ_BY_TESTS.some(([pattern]) => pattern.test(path)) &&
-  (path.startsWith("docs/") || (path.endsWith(".md") && !/^(apps|packages|tools)\//.test(path)));
+  path.startsWith("docs/") || (path.endsWith(".md") && !/^(apps|packages|tools)\//.test(path));
 
 /**
- * The lanes one non-prose path can affect, by the workspace dependency graph. The e2e suite reaches
- * every workspace but `apps/desktop` (web uses contracts, themes and shell, shell uses git, and the
- * specs import agents and server sources), and the package bundles every workspace; test files
- * reach only Vitest. Anything not named here runs everything. `tools/check/affected.test.mjs`
- * keeps this table honest against the real graph.
+ * The lanes beyond `static` and `tests` one non-prose path can affect, by the workspace dependency
+ * graph; `undefined` means every lane. Every non-prose path runs the static stages and Vitest, since
+ * tests read sources as text (`catalog-coverage.test.ts` reads the e2e specs, for one). The e2e
+ * suite reaches every workspace but `apps/desktop` (web uses contracts, themes and shell, shell
+ * uses git, and the specs import agents and server sources), and the package bundles every
+ * workspace. `tools/check/ci-lanes.test.mjs` keeps this table honest against the real graph.
  */
-const ALL: ReadonlyArray<CiLane> = CI_LANES;
-const pathLanes = (path: string): ReadonlyArray<CiLane> => {
-  if (!ordinaryPath(path)) return ALL;
-  if (/^(apps|packages)\/[\w-]+\/(src|scripts)\/.+\.test\.(ts|tsx|mjs)$/.test(path))
-    return ["static", "tests"];
-  if (/^tools\/.+\.test\.mjs$/.test(path)) return ["static", "tests"];
-  if (path.startsWith("apps/web/e2e/")) return ["static", "e2e"];
-  if (/^apps\/web\/(e2e-real|pr-shots)\//.test(path)) return ["static"];
-  for (const [pattern, lanes] of DOCS_READ_BY_TESTS) if (pattern.test(path)) return lanes;
-  // The mock kit's tests read its scripts, templates and kit; the e2e suite loads the kit too.
-  if (path.startsWith(".agents/skills/mock-build/kit/")) return ["static", "tests", "e2e"];
-  if (/^\.agents\/skills\/mock-build\/(scripts|templates)\//.test(path)) return ["static", "tests"];
-  if (path.startsWith("apps/desktop/")) return ["static", "tests", "package"];
+const extraLanes = (path: string): ReadonlyArray<CiLane> | undefined => {
+  for (const [pattern, lanes] of READ_BY_TESTS) if (pattern.test(path)) return lanes;
+  if (/^(apps|packages)\/[\w-]+\/(src|scripts)\/.+\.test\.(ts|tsx|mjs)$/.test(path)) return [];
+  if (/^tools\/.+\.test\.mjs$/.test(path)) return [];
+  if (path.startsWith("apps/web/e2e/")) return ["e2e"];
+  if (/^apps\/web\/(e2e-real|pr-shots)\//.test(path)) return [];
+  if (path.startsWith("apps/desktop/")) return ["package"];
   // Release and repository tools: not built into the app, run by their own tests and the static stages.
   if (
     /^tools\/(release-rc|release-stable|mock-kit|dead-code)\//.test(path) ||
@@ -57,8 +56,16 @@ const pathLanes = (path: string): ReadonlyArray<CiLane> => {
       path,
     )
   )
-    return ["static", "tests"];
-  return ALL;
+    return [];
+  return undefined;
+};
+
+/** `docs` for prose, else the lanes the path can affect; an unordinary name runs every lane. */
+const pathLanes = (path: string): "docs" | ReadonlyArray<CiLane> => {
+  if (!ordinaryPath(path)) return CI_LANES;
+  const extra = extraLanes(path);
+  if (extra === undefined) return prose(path) ? "docs" : CI_LANES;
+  return ["static", "tests", ...extra];
 };
 
 /**
@@ -67,16 +74,17 @@ const pathLanes = (path: string): ReadonlyArray<CiLane> => {
  * matter; malformed, empty or unknown input always selects every lane.
  */
 export function ciLanes(raw: string): "docs" | ReadonlySet<CiLane> {
-  const all = new Set(ALL);
+  const all = new Set(CI_LANES);
   if (raw === "" || !raw.endsWith("\0")) return all;
   const fields = raw.slice(0, -1).split("\0");
   const lanes = new Set<CiLane>();
   let docs = true;
   const add = (path: string | undefined) => {
     if (path === undefined || path === "") return false;
-    if (prose(path)) return true;
+    const selected = pathLanes(path);
+    if (selected === "docs") return true;
     docs = false;
-    for (const lane of pathLanes(path)) lanes.add(lane);
+    for (const lane of selected) lanes.add(lane);
     return true;
   };
   for (let i = 0; i < fields.length;) {

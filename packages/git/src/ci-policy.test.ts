@@ -26,7 +26,7 @@ describe("prose policy", () => {
     "CHANGELOG.md",
     "notes.md",
     ".github/pull_request_template.md",
-    ".agents/skills/mock-build/SKILL.md",
+    ".agents/skills/design-brief/SKILL.md",
     "docs/VERIFICATION.md",
     "docs/RELEASING.md",
     "docs/new-area/notes.md",
@@ -72,14 +72,17 @@ describe("prose policy", () => {
     ["tools/release-stable/stable.test.mjs", ["static", "tests"]],
     ["tools/release-stable/stable.mjs", ["static", "tests"]],
     ["tools/check-docs.mjs", ["static", "tests"]],
-    ["apps/web/e2e/approval-card-fit.spec.ts", ["static", "e2e"]],
-    ["apps/web/e2e-real/flows.spec.ts", ["static"]],
-    ["apps/web/pr-shots/shots.ts", ["static"]],
-    ["docs/design/mocks/needs-you-home/v1.html", ["static", "e2e"]],
-    ["docs/design/mocks/needs-you-home/brief.md", ["static", "e2e"]],
+    ["apps/web/e2e/approval-card-fit.spec.ts", ["static", "tests", "e2e"]],
+    ["apps/web/e2e-real/flows.spec.ts", ["static", "tests"]],
+    ["apps/web/pr-shots/shots.ts", ["static", "tests"]],
+    ["docs/design/mocks/needs-you-home/v1.html", ["static", "tests", "e2e"]],
+    ["docs/design/mocks/needs-you-home/brief.md", ["static", "tests", "e2e"]],
     ["docs/design/mocks/tokens.css", ["static", "tests"]],
     [".agents/skills/mock-build/kit/kit.js", ["static", "tests", "e2e"]],
     [".agents/skills/mock-build/templates/options.html", ["static", "tests"]],
+    // mock-kit.test.mjs lists the templates directory: a README there is not prose.
+    [".agents/skills/mock-build/templates/README.md", ["static", "tests"]],
+    [".agents/skills/mock-build/SKILL.md", ["static", "tests"]],
     ["apps/desktop/src/main/ipc.ts", ["static", "tests", "package"]],
     ["apps/desktop/assets/README.md", ["static", "tests", "package"]],
     ["apps/web/src/thread/request-cards.tsx", ALL],
@@ -89,8 +92,30 @@ describe("prose policy", () => {
     expect(classifyCiDiff(raw(path))).toBe("full");
     expect(lanes(raw(path))).toEqual(expected);
   });
+  it("runs Vitest for an e2e spec, deleted ones too: catalog-coverage.test.ts reads the specs", () => {
+    expect(lanes(raw("apps/web/e2e/keyboard-nav.spec.ts", "D", "100644", "000000"))).toEqual([
+      "static",
+      "tests",
+      "e2e",
+    ]);
+  });
+  it("runs Vitest for every path that isn't prose", () => {
+    for (const path of [
+      "apps/web/e2e/smoke.spec.ts",
+      "apps/web/pr-shots/shots.ts",
+      "apps/desktop/src/main/ipc.ts",
+      "tools/release-rc/rc.mjs",
+      "docs/design/mocks/needs-you-home/v1.html",
+      ".agents/skills/mock-build/templates/README.md",
+    ])
+      expect(lanes(raw(path)), path).toEqual(expect.arrayContaining(["static", "tests"]));
+  });
   it("runs the union of every path's lanes, and prose adds none", () => {
-    expect(lanes(raw("README.md") + raw("apps/web/e2e/smoke.spec.ts"))).toEqual(["static", "e2e"]);
+    expect(lanes(raw("README.md") + raw("apps/web/e2e/smoke.spec.ts"))).toEqual([
+      "static",
+      "tests",
+      "e2e",
+    ]);
     expect(lanes(raw("apps/desktop/src/main/ipc.ts") + raw("apps/web/e2e/smoke.spec.ts"))).toEqual(
       ALL,
     );

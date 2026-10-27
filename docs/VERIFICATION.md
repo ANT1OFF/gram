@@ -249,16 +249,16 @@ signing/pin assertions meaningful. Never remove an assertion simply to obtain a 
 [check.yml](../.github/workflows/check.yml) classifies each pull request by its diff against the
 actual base ([ci-policy.ts](../packages/git/src/ci-policy.ts)) and runs only the lanes it can
 affect; main pushes and manual runs run every lane. Prose (Markdown outside `apps/`, `packages/`
-and `tools/`, and everything under `docs/` but the mock files tests read) gets a docs job: frozen
+and `tools/`, and everything under `docs/`, but the mock files and the mock-build skill that tests read) gets a docs job: frozen
 install, `bun run check:docs` and `bun run fmt:check`. Everything else runs `check static` (a
 bounded typecheck, the check's static stages via `node tools/check/run.mjs --only static`, and the
 bundle build) and whichever of these lanes its paths reach:
 
-| Lane      | Jobs                                                                  | Skipped when the change only touches                              |
-| --------- | --------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `tests`   | `check tests 1/2`–`2/2`, `macos tests 1/3`–`3/3` (Vitest)             | e2e specs, `e2e-real`/`pr-shots`, the e2e mock                    |
-| `package` | `macos package` (bundles, `electron-builder --dir`, `verify:package`) | test files, release and repository tools, e2e specs, the mock kit |
-| `e2e`     | `e2e 1/8`–`8/8` (mock-API Playwright, Linux only)                     | test files, `apps/desktop`, release and repository tools          |
+| Lane      | Jobs                                                                  | Skipped when the change only touches                       |
+| --------- | --------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `tests`   | `check tests 1/2`–`2/2`, `macos tests 1/3`–`3/3` (Vitest)             | prose: tests read sources as text, e2e specs included      |
+| `package` | `macos package` (bundles, `electron-builder --dir`, `verify:package`) | test files, release and repository tools, e2e specs, mocks |
+| `e2e`     | `e2e 1/8`–`8/8` (mock-API Playwright, Linux only)                     | test files, `apps/desktop`, release and repository tools   |
 
 Every other path, including workflows, `.gram/`, root configuration, the lockfile and any shared
 package source, runs every lane. The e2e suite reaches every workspace but `apps/desktop`, and

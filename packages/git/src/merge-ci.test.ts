@@ -396,6 +396,53 @@ describe("lanes at the independent merge gate", () => {
     }),
   );
 
+  it.effect("keeps a job a selected lane names even when an unselected lane names it too", () =>
+    Effect.gen(function* () {
+      const shared = {
+        ...laned,
+        workflows: [
+          {
+            ...laned.workflows[0]!,
+            jobs: ["classify", "qualification", "check static", "T"],
+            laneJobs: { static: ["check static"], tests: ["T"], package: ["T"], e2e: [] },
+            alwaysJobs: [],
+          },
+        ],
+      };
+      // A test change selects tests, not package: T must still have run, so this fails closed.
+      const result = yield* verify(
+        "packages/server/src/a.test.ts",
+        [job("classify"), job("qualification"), job("check static")],
+        shared as unknown as typeof laned,
+      );
+      expect(result).not.toMatchObject({ _tag: "Success", success: "passing" });
+    }),
+  );
+
+  it.effect("refuses a declaration that names a job in two lanes", () =>
+    Effect.gen(function* () {
+      const overlapping = {
+        ...laned,
+        workflows: [
+          {
+            ...laned.workflows[0]!,
+            laneJobs: {
+              ...laned.workflows[0]!.laneJobs,
+              package: ["macos package", "check static"],
+            },
+          },
+        ],
+      };
+      // Even with every job green, an ambiguous lane table is never authority.
+      const result = yield* verify(
+        "apps/web/src/app.tsx",
+        [...ran, job("macos package"), ...e2e.map((name) => job(name))],
+        overlapping as unknown as typeof laned,
+      );
+      expect(result).toMatchObject({ _tag: "Failure" });
+    }),
+  );
+
   it.effect("needs every job when the base declares no lanes", () =>
     Effect.gen(function* () {
       const { laneJobs: _, ...bare } = laned.workflows[0]!;
