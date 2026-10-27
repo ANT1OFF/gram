@@ -5,8 +5,9 @@ import type { ChecksRollup, PrStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ghApi, git } from "./exec.ts";
-import { ciDiffArgs, classifyCiDiff, DOCUMENTATION_POLICY } from "./ci-policy.ts";
+import { CI_LANES, ciDiffArgs, ciLanes, DOCUMENTATION_POLICY } from "./ci-policy.ts";
 
+const Names = Schema.Array(Schema.NonEmptyString).check(Schema.isMaxLength(100));
 const Policy = Schema.Struct({
   documentationPolicy: Schema.optionalKey(Schema.Literal(DOCUMENTATION_POLICY)),
   workflows: Schema.Array(
@@ -19,6 +20,15 @@ const Policy = Schema.Struct({
       ),
       docsJobs: Schema.optionalKey(
         Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+      ),
+      // Each lane's jobs (see ci-policy.ts): a lane the diff can't affect needs none of them.
+      laneJobs: Schema.optionalKey(
+        Schema.Struct({
+          static: Schema.optionalKey(Names),
+          tests: Schema.optionalKey(Names),
+          package: Schema.optionalKey(Names),
+          e2e: Schema.optionalKey(Names),
+        }),
       ),
       // Jobs a passing local check doesn't stand in for: verified on the exact head even then.
       alwaysJobs: Schema.optionalKey(
@@ -137,16 +147,17 @@ export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
     if (policy === undefined && badge.requiredChecks !== undefined) return "passing" as const;
     // Independently reproduce the classification. A workflow's skipped checks or reported output
     // is never authority. Missing local commit objects/output limits conservatively require full.
-    const docs =
+    const lanes =
       policy?.documentationPolicy === DOCUMENTATION_POLICY
         ? yield* git(cwd, ciDiffArgs(badge.baseRefOid, badge.headRefOid)).pipe(
-            Effect.map(
-              (out) => out.status === 0 && !out.truncated && classifyCiDiff(out.stdout) === "docs",
+            Effect.map((out) =>
+              out.status === 0 && !out.truncated ? ciLanes(out.stdout) : new Set(CI_LANES),
             ),
-            Effect.catchDefect(() => Effect.succeed(false)),
-            Effect.orElseSucceed(() => false),
+            Effect.catchDefect(() => Effect.succeed(new Set(CI_LANES))),
+            Effect.orElseSucceed(() => new Set(CI_LANES)),
           )
-        : false;
+        : new Set(CI_LANES);
+    const docs = lanes === "docs";
     const latest = yield* latestRuns(cwd, repo, badge.headRefOid, badge.headRef);
     const required =
       policy?.workflows ??
@@ -175,7 +186,25 @@ export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
           matches.every((job) => job["status"] === "completed" && job["conclusion"] === "success")
         );
       });
-      let requiredJobs = workflow.jobs;
+      // A lane the diff can't affect, by this reproduction, not by what the run chose, needs none
+      // of its jobs: skipped, or shown under a skipped matrix's unexpanded name. Its run still had
+      // to succeed above, which its own qualification job decides. A job some selected lane names
+      // is always needed, and a job named by two lanes makes the declaration malformed.
+      const laneJobs = "laneJobs" in workflow ? workflow.laneJobs : undefined;
+      const declared = CI_LANES.flatMap((lane) => laneJobs?.[lane] ?? []);
+      if (new Set(declared).size !== declared.length)
+        throw new Error("Merge CI policy names a job in more than one lane");
+      const needed = new Set(
+        lanes === "docs" ? [] : [...lanes].flatMap((lane) => laneJobs?.[lane] ?? []),
+      );
+      const unneeded = new Set(
+        lanes === "docs"
+          ? []
+          : CI_LANES.filter((lane) => !lanes.has(lane))
+              .flatMap((lane) => laneJobs?.[lane] ?? [])
+              .filter((name) => !needed.has(name)),
+      );
+      let requiredJobs: ReadonlyArray<string> = workflow.jobs.filter((name) => !unneeded.has(name));
       if (docs && !fullSucceeded && "docsJobs" in workflow && workflow.docsJobs !== undefined) {
         // The success of this exact job/attempt must contain immutable event-source proof. Mutable
         // run.pull_requests associations cannot establish what its checkout actually tested.

@@ -3,55 +3,123 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ciDiffArgs, classifyCiDiff, qualifiedCiResults } from "./ci-policy.ts";
+import { CI_LANES, ciDiffArgs, ciLanes, classifyCiDiff, qualifiedCiResults } from "./ci-policy.ts";
 
 const oid = "a".repeat(40);
 const raw = (path: string, status = "M", before = "100644", after = "100644", target?: string) =>
   `:${before} ${after} ${oid} ${oid} ${status}\0${path}\0${target === undefined ? "" : `${target}\0`}`;
 
-describe("conservative prose policy", () => {
-  it.each(["README.md", "docs/README.md"])("allows audited ordinary prose %s", (path) => {
-    expect(classifyCiDiff(raw(path))).toBe("docs");
-  });
+const lanes = (input: string) => {
+  const result = ciLanes(input);
+  return result === "docs" ? "docs" : [...CI_LANES].filter((lane) => result.has(lane));
+};
+const ALL = ["static", "tests", "package", "e2e"];
+
+describe("prose policy", () => {
   it.each([
+    "README.md",
+    "docs/README.md",
     "CONTRIBUTING.md",
-    "docs/DEVELOPMENT.md",
-    "docs/HANDOFF.md",
-    "docs/WORKFLOW.md",
-    "docs/ARCHITECTURE.md",
-    "docs/AGENTS_AND_FEATURES.md",
-    "docs/guides/local-cli.md",
-    "docs/verification/docs-aware-ci.md",
-    "docs/verification/archive/old/history.md",
-    "docs/development/testing.md",
-    "docs/VERIFICATION.md",
     "AGENTS.md",
     "CLAUDE.md",
-    "docs/guides/AGENTS.md",
-    "docs/guides/SKILL.md",
-    "docs/orchestration/playbooks/cut-rc.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "notes.md",
+    ".github/pull_request_template.md",
+    ".agents/skills/design-brief/SKILL.md",
+    "docs/VERIFICATION.md",
     "docs/RELEASING.md",
-    "docs/releases/README.md",
-    "docs/releases/0.1.0-rc.3.md",
+    "docs/new-area/notes.md",
+    "docs/images/how-it-works-dark.svg",
+    "docs/design/mocks/new-entry/v1.html",
+    "docs/design/mocks/new-entry/shots/a-dark.png",
+  ])("runs only the docs lane for prose %s", (path) => {
+    expect(classifyCiDiff(raw(path))).toBe("docs");
+    expect(lanes(raw(path))).toBe("docs");
+  });
+  it.each([
     "packages/git/README.md",
     "packages/git/src/fixtures/review-bot/README.md",
-    "apps/desktop/assets/README.md",
+    "tools/notes.md",
     "apps/web/src/whats-new/release-notes.tsx",
     ".github/workflows/check.yml",
     ".gram/merge-ci.json",
     "tools/classify-ci.mjs",
+    "tools/qualify-ci.mjs",
+    "tools/check/run.mjs",
+    "tools/notices/generate.mjs",
     "packages/git/src/ci-policy.ts",
     "package.json",
     "bun.lock",
     ".node-version",
     ".bun-version",
     "patches/effect.patch",
-    "notes.md",
-    "docs/new-area/notes.md",
+    "LICENSE",
+    ".agents/skills/other/script.mjs",
     "docs/../README.md",
+    "./README.md",
+    "docs//README.md",
     "docs/odd\nname.md",
-  ])("requires application qualification for %s", (path) => {
+    "docs/My Notes.md",
+  ])("runs every lane for %s", (path) => {
     expect(classifyCiDiff(raw(path))).toBe("full");
+    expect(lanes(raw(path))).toEqual(ALL);
+  });
+  it.each([
+    ["packages/server/src/runtime/limit-wait-runtime.test.ts", ["static", "tests"]],
+    ["apps/web/src/thread/request-cards.test.tsx", ["static", "tests"]],
+    ["apps/web/scripts/e2e-timings.test.mjs", ["static", "tests"]],
+    ["tools/release-stable/stable.test.mjs", ["static", "tests"]],
+    ["tools/release-stable/stable.mjs", ["static", "tests"]],
+    ["tools/check-docs.mjs", ["static", "tests"]],
+    ["apps/web/e2e/approval-card-fit.spec.ts", ["static", "tests", "e2e"]],
+    ["apps/web/e2e-real/flows.spec.ts", ["static", "tests"]],
+    ["apps/web/pr-shots/shots.ts", ["static", "tests"]],
+    ["docs/design/mocks/needs-you-home/v1.html", ["static", "tests", "e2e"]],
+    ["docs/design/mocks/needs-you-home/brief.md", ["static", "tests", "e2e"]],
+    ["docs/design/mocks/tokens.css", ["static", "tests"]],
+    [".agents/skills/mock-build/kit/kit.js", ["static", "tests", "e2e"]],
+    [".agents/skills/mock-build/templates/options.html", ["static", "tests"]],
+    // mock-kit.test.mjs lists the templates directory: a README there is not prose.
+    [".agents/skills/mock-build/templates/README.md", ["static", "tests"]],
+    [".agents/skills/mock-build/SKILL.md", ["static", "tests"]],
+    ["apps/desktop/src/main/ipc.ts", ["static", "tests", "package"]],
+    ["apps/desktop/assets/README.md", ["static", "tests", "package"]],
+    ["apps/web/src/thread/request-cards.tsx", ALL],
+    ["packages/server/src/runtime/test-harness.ts", ALL],
+    ["packages/server/src/runtime/limit-wait.ts", ALL],
+  ])("runs only what %s can affect", (path, expected) => {
+    expect(classifyCiDiff(raw(path))).toBe("full");
+    expect(lanes(raw(path))).toEqual(expected);
+  });
+  it("runs Vitest for an e2e spec, deleted ones too: catalog-coverage.test.ts reads the specs", () => {
+    expect(lanes(raw("apps/web/e2e/keyboard-nav.spec.ts", "D", "100644", "000000"))).toEqual([
+      "static",
+      "tests",
+      "e2e",
+    ]);
+  });
+  it("runs Vitest for every path that isn't prose", () => {
+    for (const path of [
+      "apps/web/e2e/smoke.spec.ts",
+      "apps/web/pr-shots/shots.ts",
+      "apps/desktop/src/main/ipc.ts",
+      "tools/release-rc/rc.mjs",
+      "docs/design/mocks/needs-you-home/v1.html",
+      ".agents/skills/mock-build/templates/README.md",
+    ])
+      expect(lanes(raw(path)), path).toEqual(expect.arrayContaining(["static", "tests"]));
+  });
+  it("runs the union of every path's lanes, and prose adds none", () => {
+    expect(lanes(raw("README.md") + raw("apps/web/e2e/smoke.spec.ts"))).toEqual([
+      "static",
+      "tests",
+      "e2e",
+    ]);
+    expect(lanes(raw("apps/desktop/src/main/ipc.ts") + raw("apps/web/e2e/smoke.spec.ts"))).toEqual(
+      ALL,
+    );
+    expect(lanes(raw("tools/check-docs.mjs") + raw("apps/web/src/app.tsx"))).toEqual(ALL);
   });
   it("includes additions/deletions and both sides of renames", () => {
     expect(classifyCiDiff(raw("README.md", "A", "000000"))).toBe("docs");
@@ -78,8 +146,11 @@ describe("conservative prose policy", () => {
     raw("README.md", "M", "160000", "160000"),
     raw("README.md", "A"),
     raw("README.md") + "garbage\0",
+    raw("apps/web/e2e/smoke.spec.ts", "M", "100644", "100755"),
+    raw("packages/server/src/a.test.ts", "A", "000000", "120000"),
   ])("fails closed for malformed/special diff %#", (input) => {
     expect(classifyCiDiff(input)).toBe("full");
+    expect(lanes(input)).toEqual(ALL);
   });
   it("classifies a real complete two-tip diff, including a deleted runtime file and executable prose", () => {
     const cwd = mkdtempSync(join(tmpdir(), "gram-ci-policy-"));
@@ -129,38 +200,52 @@ describe("conservative prose policy", () => {
   });
 });
 
+const job = (lane: string, result: string | undefined) => ({ lane, result });
+
+const run = (selected: ReadonlyArray<string>, docs = false) => [
+  job("docs", docs ? "success" : "skipped"),
+  ...["static", "tests", "tests", "package", ...Array(8).fill("e2e")].map((lane) =>
+    job(lane, selected.includes(lane) ? "success" : "skipped"),
+  ),
+];
 describe("always-running qualification gate", () => {
-  const full = {
-    classify: "success",
-    docs: "skipped",
-    check: "success",
-    e2e: "success",
-    macos: "success",
-  };
-  const docs = {
-    classify: "success",
-    docs: "success",
-    check: "skipped",
-    e2e: "skipped",
-    macos: "skipped",
-  };
-  it("accepts only the explicitly selected successful lane", () => {
-    expect(qualifiedCiResults("full", full)).toBe(true);
-    expect(qualifiedCiResults("docs", docs)).toBe(true);
-    expect(qualifiedCiResults("full", docs)).toBe(false);
-    expect(qualifiedCiResults("docs", full)).toBe(false);
-    expect(qualifiedCiResults("", docs)).toBe(false);
-    expect(qualifiedCiResults("unknown", full)).toBe(false);
+  it("accepts only the lanes classification selected, each successful, the rest skipped", () => {
+    expect(qualifiedCiResults("code", ALL, "success", run(ALL))).toBe(true);
+    expect(qualifiedCiResults("docs", [], "success", run([], true))).toBe(true);
+    expect(
+      qualifiedCiResults("code", ["static", "tests"], "success", run(["static", "tests"])),
+    ).toBe(true);
+    // A job skipped though its lane was selected, or run though it wasn't.
+    expect(qualifiedCiResults("code", ALL, "success", run(["static", "tests"]))).toBe(false);
+    expect(qualifiedCiResults("code", ["static"], "success", run(ALL))).toBe(false);
+    expect(qualifiedCiResults("docs", [], "success", run(ALL))).toBe(false);
+    expect(qualifiedCiResults("code", ALL, "success", run(ALL, true))).toBe(false);
+    expect(qualifiedCiResults("docs", ALL, "success", run([], true))).toBe(false);
+    expect(qualifiedCiResults("code", [], "success", run([]))).toBe(false);
+    expect(qualifiedCiResults("", [], "success", run([], true))).toBe(false);
+    expect(qualifiedCiResults("full", ALL, "success", run(ALL))).toBe(false);
+    expect(qualifiedCiResults("code", ["static", "lint"], "success", run(["static"]))).toBe(false);
+    expect(qualifiedCiResults("code", ["static", "static"], "success", run(["static"]))).toBe(
+      false,
+    );
+    // A selected lane with no job, or a job of no known lane.
+    expect(qualifiedCiResults("code", ["static"], "success", [job("docs", "skipped")])).toBe(false);
+    expect(
+      qualifiedCiResults("code", ALL, "success", [...run(ALL), job("unknown job x", "success")]),
+    ).toBe(false);
   });
   it.each(["failure", "cancelled", "skipped", "", undefined])(
     "refuses non-successful required jobs: %s",
     (result) => {
-      for (const name of ["classify", "check", "e2e", "macos"]) {
-        expect(qualifiedCiResults("full", { ...full, [name]: result })).toBe(false);
+      expect(qualifiedCiResults("code", ALL, result, run(ALL))).toBe(false);
+      expect(qualifiedCiResults("docs", [], result, run([], true))).toBe(false);
+      const full = run(ALL);
+      for (let i = 1; i < full.length; i++) {
+        const jobs = full.map((j, k) => (k === i ? job(j.lane, result) : j));
+        expect(qualifiedCiResults("code", ALL, "success", jobs)).toBe(false);
       }
-      for (const name of ["classify", "docs"]) {
-        expect(qualifiedCiResults("docs", { ...docs, [name]: result })).toBe(false);
-      }
+      const docs = run([], true).map((j, k) => (k === 0 ? job("docs", result) : j));
+      expect(qualifiedCiResults("docs", [], "success", docs)).toBe(false);
     },
   );
 });

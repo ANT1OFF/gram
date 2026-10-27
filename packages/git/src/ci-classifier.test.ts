@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DOCUMENTATION_POLICY } from "./ci-policy.ts";
 
+const DOCS = "kind=docs\nlanes=[]\n";
+const FULL = `kind=code\nlanes=${JSON.stringify(["static", "tests", "package", "e2e"])}\n`;
+
 it("the Actions entrypoint uses actual base policy/diff and defaults main/manual/errors to full", () => {
   const cwd = mkdtempSync(join(tmpdir(), "gram-ci-entrypoint-"));
   const script = fileURLToPath(new URL("../../../tools/classify-ci.mjs", import.meta.url));
@@ -46,16 +49,25 @@ it("the Actions entrypoint uses actual base policy/diff and defaults main/manual
       });
       return readFileSync(output, "utf8");
     };
-    expect(classify("pull_request")).toBe("kind=docs\n");
-    expect(classify("pull_request", unpolicied)).toBe("kind=full\n");
-    expect(classify("push")).toBe("kind=full\n");
-    expect(classify("workflow_dispatch")).toBe("kind=full\n");
-    expect(classify("pull_request", "c".repeat(40))).toBe("kind=full\n");
-    expect(classify("pull_request", "--invalid")).toBe("kind=full\n");
-    expect(classify("pull_request", base, base)).toBe("kind=full\n");
+    expect(classify("pull_request")).toBe(DOCS);
+    mkdirSync(join(cwd, "packages/server/src"), { recursive: true });
+    writeFileSync(join(cwd, "packages/server/src/a.test.ts"), "export {};\n");
+    git(["add", "packages"]);
+    git(["commit", "-qm", "a test"]);
+    expect(classify("pull_request", base, git(["rev-parse", "HEAD"]))).toBe(
+      `kind=code\nlanes=${JSON.stringify(["static", "tests"])}\n`,
+    );
+    expect(classify("push", base, git(["rev-parse", "HEAD"]))).toBe(FULL);
+    git(["reset", "-q", "--hard", head]);
+    expect(classify("pull_request", unpolicied)).toBe(FULL);
+    expect(classify("push")).toBe(FULL);
+    expect(classify("workflow_dispatch")).toBe(FULL);
+    expect(classify("pull_request", "c".repeat(40))).toBe(FULL);
+    expect(classify("pull_request", "--invalid")).toBe(FULL);
+    expect(classify("pull_request", base, base)).toBe(FULL);
     writeFileSync(join(cwd, ".gram/merge-ci.json"), "{}\n");
     git(["commit", "-qam", "policy edit"]);
-    expect(classify("pull_request", base, git(["rev-parse", "HEAD"]))).toBe("kind=full\n");
+    expect(classify("pull_request", base, git(["rev-parse", "HEAD"]))).toBe(FULL);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -100,4 +112,61 @@ it("the docs source step requires the actual event merge checkout and ordered ba
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+const lane = (id: string) =>
+  id === "docs"
+    ? "docs"
+    : id.startsWith("e2e-")
+      ? "e2e"
+      : id === "macos-package"
+        ? "package"
+        : id === "check-static"
+          ? "static"
+          : "tests";
+it("the qualification entrypoint passes only the lanes classify selected, every job accounted for", () => {
+  const script = fileURLToPath(new URL("../../../tools/qualify-ci.mjs", import.meta.url));
+  const ids = [
+    "docs",
+    "check-static",
+    "check-tests",
+    "macos-tests",
+    "macos-package",
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map((shard) => `e2e-${shard}`),
+  ];
+  const needs = (kind: string, lanes: string[], override: Record<string, unknown> = {}) => ({
+    classify: { result: "success", outputs: { kind, lanes: JSON.stringify(lanes) } },
+    ...Object.fromEntries(
+      ids.map((id) => [
+        id,
+        {
+          result: (kind === "docs" ? id === "docs" : lanes.includes(lane(id)))
+            ? "success"
+            : "skipped",
+        },
+      ]),
+    ),
+    ...override,
+  });
+  const qualify = (value: unknown) =>
+    execFileSync(process.execPath, [script], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, CI_NEEDS: JSON.stringify(value) },
+    });
+  const all = ["static", "tests", "package", "e2e"];
+  expect(qualify(needs("code", all))).toContain("Qualified");
+  expect(qualify(needs("docs", []))).toContain("Qualified");
+  expect(qualify(needs("code", ["static", "tests"]))).toContain("Qualified");
+  expect(() => qualify(needs("code", ["static"], { "e2e-3": { result: "success" } }))).toThrow();
+  expect(() => qualify(needs("code", all, { "e2e-3": { result: "skipped" } }))).toThrow();
+  expect(() => qualify(needs("code", all, { "macos-tests": { result: "failure" } }))).toThrow();
+  expect(() => qualify(needs("code", all, { "new-job": { result: "success" } }))).toThrow();
+  const missing: Record<string, unknown> = needs("code", all);
+  delete missing["e2e-8"];
+  expect(() => qualify(missing)).toThrow();
+  expect(() =>
+    qualify(needs("code", all, { classify: { result: "success", outputs: { kind: "code" } } })),
+  ).toThrow();
+  expect(() => qualify({})).toThrow();
 });

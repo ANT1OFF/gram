@@ -246,20 +246,32 @@ signing/pin assertions meaningful. Never remove an assertion simply to obtain a 
 
 ### CI
 
-[check.yml](../.github/workflows/check.yml) classifies each change. Ordinary prose gets a docs
-job (frozen install, `bun run check:docs` and `bun run fmt:check`); everything else gets
-`bun run check:ci` split across parallel jobs. `check static` runs a bounded typecheck, the
-check's static stages (`node tools/check/run.mjs --only static`) and the bundle build;
-`check tests 1/2` and `2/2` run the Vitest suite in shards (`--only tests --shard N/2`); and the
-mock e2e suite runs in eight shards, `e2e 1/8` to `e2e 8/8`. On macOS, `macos tests 1/3` to
-`3/3` run the Vitest suite in shards, and `macos package` builds the bundles, packages the
-unsigned app with `electron-builder --dir` and checks it with `verify:package`; the e2e shards
-run on Linux only. Gram's local check still runs the whole `check:ci` in one place.
-A final `qualification` job passes only when the jobs the classification needs passed on that
-source. [scaffold.yml](../.github/workflows/scaffold.yml) runs the scaffold and dependency
+[check.yml](../.github/workflows/check.yml) classifies each pull request by its diff against the
+actual base ([ci-policy.ts](../packages/git/src/ci-policy.ts)) and runs only the lanes it can
+affect; main pushes and manual runs run every lane. Prose (Markdown outside `apps/`, `packages/`
+and `tools/`, and everything under `docs/`, but the mock files and the mock-build skill that tests read) gets a docs job: frozen
+install, `bun run check:docs` and `bun run fmt:check`. Everything else runs `check static` (a
+bounded typecheck, the check's static stages via `node tools/check/run.mjs --only static`, and the
+bundle build) and whichever of these lanes its paths reach:
+
+| Lane      | Jobs                                                                  | Skipped when the change only touches                       |
+| --------- | --------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `tests`   | `check tests 1/2`–`2/2`, `macos tests 1/3`–`3/3` (Vitest)             | prose: tests read sources as text, e2e specs included      |
+| `package` | `macos package` (bundles, `electron-builder --dir`, `verify:package`) | test files, release and repository tools, e2e specs, mocks |
+| `e2e`     | `e2e 1/8`–`8/8` (mock-API Playwright, Linux only)                     | test files, `apps/desktop`, release and repository tools   |
+
+Every other path, including workflows, `.gram/`, root configuration, the lockfile and any shared
+package source, runs every lane. The e2e suite reaches every workspace but `apps/desktop`, and
+[ci-lanes.test.mjs](../tools/check/ci-lanes.test.mjs) keeps the table true to the workspace graph.
+Gram's local check still runs the whole `check:ci` in one place.
+A final `qualification` job passes only when every selected lane's jobs passed and every other
+job was skipped.
+[scaffold.yml](../.github/workflows/scaffold.yml) runs the scaffold and dependency
 pin checks on every change. [.gram/merge-ci.json](../.gram/merge-ci.json) declares these jobs to
-Gram's merge gate; its `alwaysJobs` (the e2e shards) must pass even when a local check stands in
-for the rest. Pending, skipped, cancelled, failed or stale jobs are not passing CI.
+Gram's merge gate; its `laneJobs` map each lane to its jobs, so the gate, which reproduces the
+lanes from the diff itself, needs none of a lane it finds unaffected, and its `alwaysJobs` (the e2e
+shards) must pass, or be skipped in a successful run, even when a local check stands in for the
+rest. Pending, skipped, cancelled, failed or stale jobs are not passing CI.
 A newer push cancels a pull request's superseded runs, while every main run that starts
 finishes. [cancel-closed-pr.yml](../.github/workflows/cancel-closed-pr.yml) cancels a closed pull
 request's remaining runs.
