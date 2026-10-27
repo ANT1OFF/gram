@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { terminalSearchColors } from "./terminal-theme";
 
-const system = { prefersDark: false, prefersMoreContrast: false } as const;
+const system = { prefersDark: false, prefersReducedMotion: false, prefersMoreContrast: false };
 
 describe("terminal find highlights", () => {
   // e2e paints one palette's highlights; every preset in both modes keeps the two apart here.
