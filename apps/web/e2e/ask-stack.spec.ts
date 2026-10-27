@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { flakyAsked, flakyAsks } from "./seed-asks";
+import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // The ask stack above the orchestrator's composer. Mock state lives
@@ -233,8 +234,11 @@ test("→ and the arrows step; 1 and 2 pick an option and send exactly it", asyn
   await blur(page);
   await page.keyboard.press("2");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Keep both");
-  await page.clock.runFor(SENT_MS);
-  await expect.poll(() => pending(page, made.choosing)).toEqual([]);
+  // In real time: a clock jump here leaves the expanded stack unable to collapse below, which
+  // nothing in the product does, so this one wait stays real.
+  await expect
+    .poll(() => pending(page, made.choosing), { timeout: SENT_MS * slowdown })
+    .toEqual([]);
   expect(await sentAnswers(page)).toEqual([
     {
       requestId: `r-question-${made.choosing}`,
