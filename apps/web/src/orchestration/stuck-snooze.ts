@@ -42,7 +42,9 @@ export const useStuckSnoozes = create<StuckSnoozeState>()(
     {
       name: "gram.stuckSnooze",
       version: 1,
-      storage: createJSONStorage(() => globalThis.localStorage),
+      // `window`, not `globalThis`: under Node, reading `globalThis.localStorage` warns that it has no
+      // backing file, while a missing `window` throws, which zustand takes as no storage.
+      storage: createJSONStorage(() => window.localStorage),
       partialize: ({ until }) => ({ until }),
       merge: (persisted, current) => ({
         ...current,

@@ -7,7 +7,7 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcClient from "effect/rpc/RpcClient";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Socket from "effect/socket/Socket";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { getEventListeners } from "node:events";
 
 import { createChannel } from "./channel";
@@ -84,10 +84,13 @@ describe("resubscribing", () => {
   it("reopens a failed or ended stream and reports the connection state", async () => {
     const monitor = createConnectionMonitor();
     const abort = new AbortController();
+    const closed = new Error("socket closed");
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warned.mockRestore());
     let opens = 0;
     const open = async function* (): AsyncGenerator<string> {
       opens++;
-      if (opens === 1) throw new Error("socket closed");
+      if (opens === 1) throw closed;
       yield `snapshot-${opens}`;
       if (opens === 2) return; // ends on its own: also a drop
       yield "live";
@@ -109,6 +112,8 @@ describe("resubscribing", () => {
     expect(opens).toBe(3);
     expect(states).toEqual(new Set(["reconnecting", "open"]));
     expect(monitor.get().status).toBe("open");
+    // A stream that ends on its own reconnects quietly; only the thrown error is reported.
+    expect(warned).toHaveBeenCalledExactlyOnceWith("server stream dropped", closed);
   });
 
   it("retries immediately on retryNow instead of waiting out the backoff", async () => {
@@ -166,10 +171,13 @@ describe("resubscribing", () => {
     const monitor = createConnectionMonitor();
     const abort = new AbortController();
     const gone = Object.assign(new Error("gone"), { _tag: "ThreadNotFound" });
+    const closed = new Error("socket closed");
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    onTestFinished(() => warned.mockRestore());
     let opens = 0;
     const open = async function* (): AsyncGenerator<string> {
       opens++;
-      if (opens === 1) throw new Error("socket closed");
+      if (opens === 1) throw closed;
       yield "snapshot";
       throw gone;
     };
@@ -188,6 +196,7 @@ describe("resubscribing", () => {
     expect(seen).toEqual(["snapshot"]);
     expect(opens).toBe(2);
     expect(states).toEqual(["reconnecting", "open"]);
+    expect(warned).toHaveBeenCalledExactlyOnceWith("server stream dropped", closed);
   });
 });
 
@@ -273,6 +282,8 @@ async function stalledServer(feeds = 1) {
       }),
     ),
   );
+  // `resubscribing` warns once per feed per drop; the tests below assert those reports.
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const scope = await Effect.runPromise(Scope.make());
   const context = await Effect.runPromise(
     Layer.buildWithScope(rpcProtocolLayer(socket, connection), scope),
@@ -305,6 +316,12 @@ async function stalledServer(feeds = 1) {
     sockets,
     seen,
     seenByFeed,
+    /** The reason tag of each reported drop, in order. */
+    drops: () =>
+      warn.mock.calls.map(([message, error]) => {
+        expect(message).toBe("server stream dropped");
+        return (error as { reason: { _tag: string } }).reason._tag;
+      }),
     stall: () => {
       answering = false;
     },
@@ -313,9 +330,13 @@ async function stalledServer(feeds = 1) {
       for (const ws of sockets) ws.resume();
     },
     close: async () => {
-      abort.abort();
-      await consume;
-      await Effect.runPromise(Scope.close(scope, Exit.void));
+      try {
+        abort.abort();
+        await consume;
+        await Effect.runPromise(Scope.close(scope, Exit.void));
+      } finally {
+        warn.mockRestore();
+      }
     },
   };
 }
@@ -336,6 +357,7 @@ describe("RPC transport recovery", () => {
       expect(socket.requests).toBe(2);
       expect(server.seenByFeed).toEqual([["1"], ["1"]]);
       expect(states).toEqual([]);
+      expect(server.drops()).toEqual([]);
     } finally {
       await server.close();
       vi.useRealTimers();
@@ -356,6 +378,7 @@ describe("RPC transport recovery", () => {
       expect(server.sockets).toHaveLength(1);
       expect(server.connection.get().status).toBe("open");
       expect(states).toEqual([]);
+      expect(server.drops()).toEqual([]);
     } finally {
       await server.close();
       vi.useRealTimers();
@@ -375,6 +398,7 @@ describe("RPC transport recovery", () => {
       await vi.advanceTimersByTimeAsync(500);
       expect(server.seen).toEqual(["1", "2"]);
       expect(server.connection.get().status).toBe("open");
+      expect(server.drops()).toEqual(["SocketReadError"]);
     } finally {
       await server.close();
       vi.useRealTimers();
@@ -400,6 +424,8 @@ describe("RPC transport recovery", () => {
       expect(server.seen).toHaveLength(11);
       expect(server.seenByFeed[1]).toHaveLength(11);
       expect(server.connection.get().status).toBe("open");
+      // Both feeds drop on each of the ten closes and on each of the four refused handshakes.
+      expect(server.drops()).toEqual(Array(28).fill("SocketCloseError"));
     } finally {
       await server.close();
       vi.useRealTimers();
@@ -434,6 +460,8 @@ describe("RPC transport recovery", () => {
       // A new failure after both feeds answered starts a fresh quick retry wave.
       await refuse(500);
       expect(server.connection.get().status).toBe("open");
+      // Both feeds drop on each of the eight closes.
+      expect(server.drops()).toEqual(Array(16).fill("SocketCloseError"));
     } finally {
       await server.close();
       vi.useRealTimers();

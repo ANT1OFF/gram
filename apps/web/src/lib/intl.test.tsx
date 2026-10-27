@@ -70,7 +70,8 @@ describe("shared Intl formatters", () => {
     const models = ["model-a", "model-b", "model-c", "model-d", "model-e", "model-f"];
     const rows: UsageOverviewRow[] = Array.from({ length: 90 }, (_, d) =>
       models.map((model, m) => ({
-        day: `2026-0${7 + Math.floor(d / 31)}-${String((d % 28) + 1).padStart(2, "0")}`,
+        // 90 distinct days from 1 July, as the server keeps one row per day, provider and model.
+        day: new Date(Date.UTC(2026, 6, 1 + d)).toISOString().slice(0, 10),
         provider: m % 2 === 0 ? ("claude" as const) : ("codex" as const),
         model,
         turns: d + m,
