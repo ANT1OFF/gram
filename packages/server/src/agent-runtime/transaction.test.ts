@@ -12,6 +12,7 @@ import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { RuntimeInstallRefused, RuntimeInstallState } from "@gram/contracts";
 import { ProcSpawnError, type ProcError, type ProcOutput, type ProcShape } from "@gram/git";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { afterEach, describe, expect, it } from "vitest";
 import { npmPackDownloader, packFailure } from "./npm-pack.ts";
 import { REGISTRY_SIGN_IN_EXPIRED, REGISTRY_UNREADABLE } from "./npm-registry.ts";
@@ -636,7 +637,13 @@ describe("ManagedRuntimes", () => {
           const updated = (yield* runtimes.codexSource.resolve)!;
           expect(updated.version).toBe("0.161.0");
           // A pre-turn startup failure of a version that has never started a session rolls back.
-          expect(yield* updated.failed("initialize: no answer")).toBe(true);
+          const logs = captureLogs();
+          expect(
+            yield* updated.failed("initialize: no answer").pipe(Effect.provide(logs.layer)),
+          ).toBe(true);
+          expect(logs.warnings().map((log) => log.message)).toEqual([
+            "managed Codex 0.161.0 didn't start; rolled back to 0.160.0",
+          ]);
           updated.release();
           const state = yield* runtimes.state("codex");
           expect(state).toMatchObject({ state: "rolledBack", from: "0.161.0" });

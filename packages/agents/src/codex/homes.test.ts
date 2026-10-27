@@ -18,6 +18,7 @@ import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { GatewayKeyProvider } from "../gateway.ts";
 import type { AgentHost, OpenSessionOptions } from "../host.ts";
+import { captureLogs } from "../testing/logs.ts";
 import { outwardPromptRules } from "./gate-rules.ts";
 import { CodexServersLive } from "./servers.ts";
 import { CodexHost, CodexHostLayer } from "./session.ts";
@@ -657,9 +658,13 @@ describe.skipIf(process.platform === "win32")("Codex homes over real app-servers
           rmSync(config);
           rmSync(join(gatewayHome, "gram-models"), { recursive: true });
 
-          yield* identityOf(host, { model });
+          const logs = captureLogs();
+          yield* identityOf(host, { model }).pipe(Effect.provide(logs.layer));
           expect(existsSync(config)).toBe(true);
           expect(existsSync(catalog)).toBe(true);
+          expect(logs.warnings().map((log) => log.message)).toEqual([
+            `codex gateway home lost ${config}, ${catalog} while its app-server ran; writing them again`,
+          ]);
           expect(servers().filter((s) => s.home === gatewayHome)).toHaveLength(1);
         }),
       ),
@@ -677,7 +682,15 @@ describe.skipIf(process.platform === "win32")("Codex homes over real app-servers
           // Unwritable, so the catalog can't come back.
           writeFileSync(catalogs, "");
 
-          const failed = yield* Effect.flip(identityOf(host, { model }));
+          const logs = captureLogs();
+          const failed = yield* Effect.flip(identityOf(host, { model })).pipe(
+            Effect.provide(logs.layer),
+          );
+          const catalog = join(catalogs, "litellm.json");
+          expect(logs.warnings().map((log) => log.message)).toEqual([
+            `codex gateway home lost ${catalog} while its app-server ran; writing it again`,
+            expect.stringContaining("couldn't write the gateway model catalog: EEXIST"),
+          ]);
           expect(failed).toMatchObject({
             _tag: "AgentUnavailable",
             message: `Codex couldn't open the thread: failed to load configuration: No such file or directory (os error 2); missing /repo, ${join(catalogs, "litellm.json")}`,

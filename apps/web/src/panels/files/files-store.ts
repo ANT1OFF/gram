@@ -171,7 +171,9 @@ export const useFilesStore = create<FilesState>()(
     {
       name: "gram.files",
       version: 1,
-      storage: createJSONStorage(() => globalThis.localStorage),
+      // `window`, not `globalThis`: under Node, reading `globalThis.localStorage` warns that it has no
+      // backing file, while a missing `window` throws, which zustand takes as no storage.
+      storage: createJSONStorage(() => window.localStorage),
       partialize: ({ treeShare }) => ({ treeShare }),
       merge: (persisted, current) => ({
         ...current,

@@ -23,6 +23,7 @@ import { GitStatePublisher } from "../git/publisher.ts";
 import { PrReviews } from "../git/review.ts";
 import { eventually, removeDir, run, tempDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { RuntimeTestLayer } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { ReviewAppToolsLive } from "./review-tools.ts";
@@ -193,6 +194,8 @@ const TestLayer = ReviewAppToolsLive.pipe(
   Layer.provideMerge(FakePublisher),
   Layer.provideMerge(RuntimeTestLayer),
   Layer.provideMerge(gitPlatformTest({ pr: MockPr, prReviews: FakeReviews })),
+  // Each approval logs its request and answer; a warning would be news.
+  Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
 );
 
 /** A thread in `default` mode bound to #12, with its tools as the in-process host sees them. */

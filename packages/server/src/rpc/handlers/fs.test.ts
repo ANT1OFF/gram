@@ -6,6 +6,7 @@ import { afterAll, describe, expect, layer } from "@effect/vitest";
 import { isPreviewFilesUrl, GramRpcs, type GramUIMessage } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { ServerConfig } from "../../config.ts";
 import { gitPlatformTest } from "../../git/platform.ts";
 import { hasGit, makeRepo, removeDir, tempDir } from "../../git/test-repo.ts";
@@ -22,6 +23,8 @@ const TestServer = ServerLayer.pipe(
   Layer.provide(gitPlatformTest()),
   Layer.provide(ServerConfig.layer(TEST_CONFIG)),
   Layer.orDie,
+  // Turns and restores log as they go; a warning would be news.
+  Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
 );
 
 /** Performs the boot navigation and returns the session cookie. */

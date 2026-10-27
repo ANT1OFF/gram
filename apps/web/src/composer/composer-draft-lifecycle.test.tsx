@@ -75,6 +75,8 @@ const setup = (saved: readonly DraftStash[] = []) => {
     mediaType: file.mediaType,
   }));
   vi.spyOn(api, "listStashes").mockResolvedValue(saved);
+  // The threads live only in the store, so the mock server would answer ThreadNotFound.
+  vi.spyOn(api, "threadSuggestions").mockResolvedValue(null);
   const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
   const steer = vi.spyOn(api, "steer").mockResolvedValue(undefined);
   const stashDraft = vi.spyOn(api, "stashDraft");

@@ -123,16 +123,6 @@ describe("app approval post-answer interruption", () => {
                 sent: session.sent.length,
                 completed,
               };
-              console.info("invented post-answer lifecycle receipt", {
-                decision,
-                lifecycle,
-                completed,
-                sentBeforeRelease: observed.sent,
-                responderSettled: observed.responder !== undefined,
-                cancellationSettled: observed.cancel !== undefined,
-                duplicateSettled: observed.duplicate !== undefined,
-                lifecycleSettled: observed.ending !== undefined,
-              });
               // Release before assertions: unchanged failing source must also tear down safely.
               armed = false;
               yield* Deferred.succeed(release, undefined);

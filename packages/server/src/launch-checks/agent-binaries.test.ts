@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import * as Effect from "effect/Effect";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { runLaunchChecks } from "./checks.ts";
 import { pathLookup } from "./handler.ts";
 
@@ -32,6 +33,7 @@ describe.skipIf(process.platform === "win32")("launch checks over fake agent bin
             fakeBinary(join(first, "codex"), "codex-cli 0.153.4");
             fakeBinary(join(second, "codex"), "0.153.3");
 
+            // It logs what it found, which `checks.test.ts` asserts; a warning would be news.
             const checks = yield* runLaunchChecks({
               path: Effect.succeed(`${first}:${second}`),
               ...pathLookup,
@@ -41,7 +43,7 @@ describe.skipIf(process.platform === "win32")("launch checks over fake agent bin
                   Effect.map(({ stdout }) => ({ status: 0, stdout })),
                 ),
               now: () => 1,
-            });
+            }).pipe(Effect.provide(captureLogs({ printWarnings: true }).layer));
             const byTool = new Map(checks.tools.map((tool) => [tool.tool, tool]));
 
             expect(byTool.get("codex")).toEqual({

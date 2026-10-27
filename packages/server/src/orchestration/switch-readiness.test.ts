@@ -1,7 +1,9 @@
 import { expect, it } from "@effect/vitest";
+import { vi } from "vitest";
 import { AgentUnavailable, DEFAULT_CHARTER } from "@gram/contracts";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
 import { GatewayKeyProvider, type AgentHost } from "@gram/agents";
+import { captureLogs } from "@gram/agents/testing/logs";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -138,9 +140,12 @@ for (const reload of [false, true]) {
       withTarget((real, f) =>
         Effect.gen(function* () {
           const world = yield* makeWorld;
+          const logs = captureLogs();
           yield* Effect.scoped(
             Effect.gen(function* () {
-              const context = yield* Layer.build(serverLayer(world, {}, adapters(real)));
+              const context = yield* Layer.build(
+                serverLayer(world, {}, adapters(real)).pipe(Layer.provideMerge(logs.layer)),
+              );
               yield* Effect.gen(function* () {
                 const project = yield* openProject(world),
                   orchestration = yield* Orchestration,
@@ -183,6 +188,16 @@ for (const reload of [false, true]) {
               }).pipe(Effect.provide(context));
             }),
           );
+          // The refused handoff is the one warning: the held input waited for the switch, not on a
+          // path that forgot it.
+          expect(logs.warnings().map(({ message, annotations }) => [message, annotations])).toEqual(
+            [
+              [
+                "orchestration handoff abandoned",
+                expect.objectContaining({ why: expect.stringContaining("isn't logged in") }),
+              ],
+            ],
+          );
         }),
       ),
     30000,
@@ -195,6 +210,22 @@ it.live(
     withTarget((real, f) =>
       Effect.gen(function* () {
         const world = yield* makeWorld;
+        const logs = captureLogs();
+        // The repaired target starts in `bypassPermissions` with Gram's `canUseTool`, which the SDK
+        // warns will never be asked: Gram gates calls in its `PreToolUse` hook, so that is meant.
+        const emitWarning = process.emitWarning;
+        const warned = vi
+          .spyOn(process, "emitWarning")
+          .mockImplementation((warning: string | Error, ...rest: Array<unknown>) => {
+            const [options] = rest;
+            const code =
+              typeof options === "object" && options !== null && "code" in options
+                ? options.code
+                : undefined;
+            if (code !== "CLAUDE_SDK_CAN_USE_TOOL_SHADOWED")
+              Reflect.apply(emitWarning, process, [warning, ...rest]);
+          });
+        yield* Effect.addFinalizer(() => Effect.sync(() => warned.mockRestore()));
         let revoke = true;
         const target: AgentHost = {
           ...real,
@@ -205,7 +236,9 @@ it.live(
         };
         yield* Effect.scoped(
           Effect.gen(function* () {
-            const context = yield* Layer.build(serverLayer(world, {}, adapters(target)));
+            const context = yield* Layer.build(
+              serverLayer(world, {}, adapters(target)).pipe(Layer.provideMerge(logs.layer)),
+            );
             yield* Effect.gen(function* () {
               const project = yield* openProject(world),
                 orchestration = yield* Orchestration,
@@ -272,6 +305,18 @@ it.live(
               ).toBe(thread.id);
             }).pipe(Effect.provide(context));
           }),
+        );
+        // The revoked sign-in fails the first target, which is the warning this test is about.
+        expect(logs.warnings().map(({ message, annotations }) => [message, annotations])).toEqual([
+          [
+            "agent unavailable",
+            expect.objectContaining({ agent: "claude", reason: "not-logged-in" }),
+          ],
+          ["orchestrator switch did not complete", expect.anything()],
+        ]);
+        expect(warned).toHaveBeenCalledWith(
+          expect.stringContaining("canUseTool will not be invoked"),
+          expect.objectContaining({ code: "CLAUDE_SDK_CAN_USE_TOOL_SHADOWED" }),
         );
       }),
     ),

@@ -7,6 +7,7 @@ import {
   type GramUIMessage,
   type ThreadId,
 } from "@gram/contracts";
+import { captureLogs } from "@gram/agents/testing/logs";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -318,8 +319,18 @@ describe("copyForkedAttachments", () => {
         { id: "m3", role: "assistant", parts: [{ type: "text", text: "untouched" }] },
       ];
 
-      const changed = await Effect.runPromise(copyForkedAttachments(dir, t1, t2, messages));
+      const logs = captureLogs();
+      const changed = await Effect.runPromise(
+        copyForkedAttachments(dir, t1, t2, messages).pipe(Effect.provide(logs.layer)),
+      );
       expect(changed.map((m) => m.id)).toEqual([messages[0]!.id, "m2"]);
+      // The lost one is counted, not named.
+      expect(logs.warnings()).toMatchObject([
+        {
+          message: "couldn't copy a fork's attachments",
+          annotations: { from: t1, to: t2, files: 1 },
+        },
+      ]);
       expect([...referencedAttachments(changed)].toSorted()).toEqual(
         [
           join(dir, t2, "0f0f0f0f-shot.png"),

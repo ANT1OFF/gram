@@ -31,6 +31,7 @@ import { ClaudeHostLive } from "./claude/live.ts";
 import { ClaudeHost } from "./claude/session.ts";
 import { CodexHostLive } from "./codex/live.ts";
 import { CodexHost } from "./codex/session.ts";
+import { captureLogs } from "./testing/logs.ts";
 
 interface Fixture {
   readonly root: string;
@@ -195,6 +196,8 @@ const withHost = <A, E>(
               ),
             ),
       ).pipe(
+        // The adapters log each result as it lands; a warning would be news.
+        Effect.provide(captureLogs({ printWarnings: true }).layer),
         Effect.tap(() =>
           Effect.sync(() => {
             if (options.gateway || options.inheritedOverrides) return;

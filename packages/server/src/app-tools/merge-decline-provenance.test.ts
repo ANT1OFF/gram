@@ -58,7 +58,6 @@ describe("merge decline provenance oracle", () => {
         const session = yield* (yield* FakeAgentControl).latest(thread.id);
         yield* session.emit({ type: "turnEnd", reason });
         const result = yield* Fiber.join(call);
-        console.info("synthetic-permission-receipt", JSON.stringify(result));
         expect(result).toMatchObject({
           isError: true,
           structuredContent: {
@@ -82,7 +81,6 @@ describe("merge decline provenance oracle", () => {
       const { runtimes, thread, call, executed } = yield* setup();
       yield* runtimes.close(thread.id);
       const result = yield* Fiber.join(call);
-      console.info("synthetic-permission-receipt", JSON.stringify(result));
       expect(JSON.stringify(result.content)).not.toContain("The user declined");
       expect(result).toMatchObject({
         isError: true,
@@ -103,7 +101,6 @@ describe("merge decline provenance oracle", () => {
         scope: "once",
       });
       const result = yield* Fiber.join(call);
-      console.info("synthetic-permission-receipt", JSON.stringify(result));
       expect(result).toMatchObject({
         isError: true,
         content: [{ type: "text", text: "The user declined merge_when_ready." }],
@@ -120,7 +117,6 @@ describe("merge decline provenance oracle", () => {
       const { runtimes, thread, call, executed } = yield* setup();
       yield* runtimes.interrupt(thread.id);
       const result = yield* Fiber.join(call);
-      console.info("synthetic-permission-receipt", JSON.stringify(result));
       expect(result).toMatchObject({
         isError: true,
         structuredContent: {
@@ -136,7 +132,6 @@ describe("merge decline provenance oracle", () => {
       const { thread, call, executed } = yield* setup(false);
       yield* (yield* (yield* FakeAgentControl).latest(thread.id)).end();
       const result = yield* Fiber.join(call);
-      console.info("synthetic-permission-receipt", JSON.stringify(result));
       expect(result).toMatchObject({
         isError: true,
         structuredContent: {
@@ -167,7 +162,6 @@ describe("merge decline provenance oracle", () => {
       );
       yield* TestClock.adjust(RETRY_DEADLINE);
       const result = yield* Fiber.join(call);
-      console.info("synthetic-permission-receipt", JSON.stringify(result));
       expect(result).toMatchObject({
         isError: true,
         structuredContent: {
@@ -183,7 +177,6 @@ describe("merge decline provenance oracle", () => {
       const { runtimes, call, executed } = yield* setup();
       yield* runtimes.shutdown;
       const result = yield* Fiber.join(call);
-      console.info("synthetic-permission-receipt", JSON.stringify(result));
       expect(result).toMatchObject({
         isError: true,
         structuredContent: {

@@ -30,7 +30,9 @@ export const usePrStripFold = create<PrStripFoldState>()(
     {
       name: "gram.prStrip",
       version: 1,
-      storage: createJSONStorage(() => globalThis.localStorage),
+      // `window`, not `globalThis`: under Node, reading `globalThis.localStorage` warns that it has no
+      // backing file, while a missing `window` throws, which zustand takes as no storage.
+      storage: createJSONStorage(() => window.localStorage),
       partialize: ({ expanded }) => ({ expanded }),
       merge: (persisted, current) => ({
         ...current,

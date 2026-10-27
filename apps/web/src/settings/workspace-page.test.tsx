@@ -99,7 +99,10 @@ describe("a workspace's settings page", () => {
       true,
     );
     expect(current.textContent).toBe(identity);
-    await act(() => pending.resolve());
+    // An async callback keeps the act scope, and the act environment, open while the save that
+    // was waiting on `pending` goes on; a sync one returns at once and leaves React's flush of that
+    // work to run outside the act environment, which React reports.
+    await act(async () => pending.resolve());
     await waitFor(() => expect(useUndoToasts.getState().toasts.at(-1)?.title).toBe("Models saved"));
     expect((screen.getByTestId("switch-orchestrator-open") as HTMLButtonElement).disabled).toBe(
       false,

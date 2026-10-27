@@ -828,6 +828,8 @@ const make = Effect.gen(function* () {
     publishFailure,
     turnHeld,
     limitWaitOf,
+    queueHeld,
+    switchHold,
     hitAt,
     startRelease,
     enterWait,

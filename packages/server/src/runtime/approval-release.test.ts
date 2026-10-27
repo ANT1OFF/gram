@@ -301,7 +301,6 @@ describe("orphan routing retains server-card ownership", () => {
           h.inject("none");
           for (const call of calls) {
             const receipt = yield* settled(call);
-            console.info("invented denied app waiter receipt", receipt);
             expect(receipt).toMatchObject({
               _tag: "Success",
               value: { decision: "deny" },
@@ -316,14 +315,6 @@ describe("orphan routing retains server-card ownership", () => {
                 const result = yield* Effect.exit(
                   rt.respond(id, card.id, { ...answer(decision), scope }),
                 );
-                console.info("invented orphan routing receipt", {
-                  fault,
-                  scope,
-                  decision,
-                  wrongThread: id !== thread.id,
-                  failed: Exit.isFailure(result),
-                  nativeForwarded: native.responses.length - forwardedBefore,
-                });
                 expect(Exit.isFailure(result)).toBe(true);
               }
             }

@@ -48,6 +48,26 @@ const e2eTokenEndpoint = (token: string): Plugin => {
   };
 };
 
+/**
+ * Entry chunks load before the first paint, so they keep a budget of their own (the main entry is
+ * about 580 kB minified). Lazily loaded chunks get Vite's general limit below.
+ */
+const ENTRY_BUDGET_KB = 700;
+const entryBudget: Plugin = {
+  name: "gram-entry-budget",
+  apply: "build",
+  generateBundle(_options, bundle) {
+    for (const chunk of Object.values(bundle)) {
+      if (chunk.type !== "chunk" || !chunk.isEntry) continue;
+      const kb = Buffer.byteLength(chunk.code) / 1000;
+      if (kb > ENTRY_BUDGET_KB)
+        this.warn(
+          `entry chunk ${chunk.fileName} is ${kb.toFixed(0)} kB, over its ${ENTRY_BUDGET_KB} kB budget`,
+        );
+    }
+  },
+};
+
 export default defineConfig({
   ...(previewTemp ? { cacheDir: join(previewTemp, "vite-cache"), envDir: false as const } : {}),
   plugins: [
@@ -62,8 +82,18 @@ export default defineConfig({
     tailwindcss(),
     // For the packaged app's third-party notices; see tools/notices.
     bundledPackages("web"),
+    entryBudget,
     ...(e2eToken ? [e2eTokenEndpoint(e2eToken)] : []),
   ],
+  build: {
+    // Above Shiki's largest language grammars (emacs-lisp and cpp, about 790 kB each) and the
+    // ghostty-web terminal (about 640 kB): each loads lazily, only when a code block or terminal
+    // needs it, and the app reads them from disk. `entryBudget` above keeps the entry in check.
+    chunkSizeWarningLimit: 1000,
+    // The React Compiler's Babel pass is most of every build by design; the timing notice it
+    // triggers on each build says nothing new.
+    rolldownOptions: { checks: { pluginTimings: false } },
+  },
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },

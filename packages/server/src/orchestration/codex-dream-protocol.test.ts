@@ -1,6 +1,7 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { describe, expect, it } from "@effect/vitest";
 import { GatewayKeyProvider } from "@gram/agents";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { CodexHost, CodexHostLive } from "@gram/agents/codex";
 import { AgentUnavailable, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -110,7 +111,11 @@ describe.skipIf(!hasGit || process.platform === "win32")(
         const server = HttpRouter.serve(McpRoute, {
           disableListenLog: true,
           disableLogger: true,
-        }).pipe(Layer.provideMerge(dreams));
+        }).pipe(
+          Layer.provideMerge(dreams),
+          // The dream logs its steps as it goes; a warning would be news.
+          Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
+        );
         yield* Effect.gen(function* () {
           const { workspaceId } = yield* openOrchestrator(world);
           const service = yield* Dreams;

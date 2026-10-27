@@ -7,6 +7,7 @@ import {
   type CodexServer,
 } from "@gram/agents/codex";
 import { GatewayKeyProvider } from "@gram/agents";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { AgentUnavailable, ProfileId, ThreadId } from "@gram/contracts";
 import {
   chmodSync,
@@ -518,7 +519,22 @@ describe.skipIf(process.platform === "win32")("worker partition ownership bounda
                 pid = pidFor(f, saved);
               expect(session.configOwner).toBe(server);
               for (const path of server.generated) rmSync(path);
-              expect(yield* servers.acquire(f.profile, home, threadId)).toBe(server);
+              // The next acquire writes them again, and says it did.
+              const restored = captureLogs();
+              expect(
+                yield* servers
+                  .acquire(f.profile, home, threadId)
+                  .pipe(Effect.provide(restored.layer)),
+              ).toBe(server);
+              expect(restored.warnings().map((log) => log.message)).toEqual(
+                server.generated.length === 0
+                  ? []
+                  : [
+                      expect.stringContaining(
+                        `codex gateway home lost ${server.generated.join(", ")} while`,
+                      ),
+                    ],
+              );
               expect(server.generated.every((path) => existsSync(path))).toBe(true);
               entries.push({ home, partition: threadId, server, scope, pid });
             }

@@ -61,18 +61,7 @@ for (const switching of [false, true])
             );
             const queued = yield* store.listQueue(thread.id);
             expect(queued).toHaveLength(1);
-            const result = yield* Effect.exit(rt.steerQueued(thread.id, queued[0]!.id));
-            console.log(
-              "PROBE",
-              JSON.stringify({
-                switching,
-                result: result._tag,
-                checkpoint: (session.sent[1]?.notice as { variant?: string } | undefined)?.variant,
-                steered: session.steered.map((x) => x.text),
-                queue: (yield* store.listQueue(thread.id)).map((x) => x.input.text),
-                phase: (yield* store.getThread(thread.id)).sessionSwitch?.phase,
-              }),
-            );
+            yield* Effect.exit(rt.steerQueued(thread.id, queued[0]!.id));
             if (switching) {
               expect(session.steered).toEqual([]);
               expect((yield* store.listQueue(thread.id)).map((x) => x.input.text)).toEqual([
@@ -112,16 +101,6 @@ for (const switching of [false, true])
             const result = yield* rt.sendNotice(thread.id, "independent-monitor", {
               text: "Independent automatic notice",
             });
-            console.log(
-              "NOTICE",
-              JSON.stringify({
-                switching,
-                result,
-                checkpoint: (session.sent[1]?.notice as { variant?: string } | undefined)?.variant,
-                steered: session.steered.map((x) => x.text),
-                queue: (yield* store.listQueue(thread.id)).map((x) => x.input.text),
-              }),
-            );
             if (switching) {
               expect(result.queued).toBe(true);
               expect(session.steered).toEqual([]);
@@ -212,16 +191,6 @@ for (const switching of [false, true])
               );
               const current = yield* store.getThread(thread.id),
                 state = yield* store.getWorkspace(workspaceId);
-              console.log(
-                "MODEL-RACE",
-                JSON.stringify({
-                  result: result._tag,
-                  threadModel: current.model,
-                  charterModel: state.charter.orchestratorModel,
-                  targetOpen: fake.sessions[1]!.options.model,
-                  targetModelCalls: fake.sessions[1]!.models,
-                }),
-              );
               expect(current.model).toEqual({ agent: "claude", model: "fake-haiku" });
               expect(current.model).toEqual(state.charter.orchestratorModel);
             } else {

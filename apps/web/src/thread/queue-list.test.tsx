@@ -8,7 +8,7 @@ import type {
 } from "@gram/contracts";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
@@ -136,10 +136,14 @@ describe("QueueList", () => {
 
   it("puts a rejected steer back on the list", async () => {
     const { api, ops } = fakeApi();
-    ops.queueSteer.mockRejectedValueOnce(new Error("InvalidState"));
+    const refused = new Error("InvalidState");
+    ops.queueSteer.mockRejectedValueOnce(refused);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    onTestFinished(() => logged.mockRestore());
     renderQueue(api);
     fireEvent.click(steerOf(0));
     await waitFor(() => expect(itemTexts()).toEqual(["one", "two"]));
+    await waitFor(() => expect(logged).toHaveBeenCalledExactlyOnceWith("queue", refused));
   });
 
   it("sends an item now when no turn is running, whatever the agent can steer", async () => {

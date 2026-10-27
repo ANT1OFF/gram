@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { CodexHost, CodexHostLayer, CodexServers, CodexServersLive } from "@gram/agents/codex";
 import { GatewayKeyProvider } from "@gram/agents";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { AgentUnavailable, ProfileId, ThreadId, type WorkspaceId } from "@gram/contracts";
 import {
   chmodSync,
@@ -181,7 +182,22 @@ describe.skipIf(process.platform === "win32")("orchestrator acquisition boundari
                 );
                 expect(yield* servers.acquire(f.profile, home, partition)).toBe(server);
                 for (const path of server.generated) rmSync(path);
-                expect(yield* servers.acquire(f.profile, home, partition)).toBe(server);
+                // The next acquire writes them again, and says it did.
+                const restored = captureLogs();
+                expect(
+                  yield* servers
+                    .acquire(f.profile, home, partition)
+                    .pipe(Effect.provide(restored.layer)),
+                ).toBe(server);
+                expect(restored.warnings().map((log) => log.message)).toEqual(
+                  server.generated.length === 0
+                    ? []
+                    : [
+                        expect.stringContaining(
+                          `codex gateway home lost ${server.generated.join(", ")} while`,
+                        ),
+                      ],
+                );
                 expect(server.generated.every((path) => existsSync(path))).toBe(true);
                 entries.push({ home, partition, server, scope });
               }
@@ -485,7 +501,10 @@ describe.skipIf(process.platform === "win32")("owned orchestrator child recovery
               world,
               { idleEvictAfter: Duration.millis(500), orchestrationDebounce: Duration.millis(10) },
               f.agents,
-            ).pipe(Layer.provideMerge(f.agents)),
+            ).pipe(
+              Layer.provideMerge(f.agents),
+              Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
+            ),
           ),
         );
       }),

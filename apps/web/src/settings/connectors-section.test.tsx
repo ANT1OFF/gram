@@ -352,15 +352,7 @@ describe("ConnectorsSettings", () => {
     const mock = {
       ...api(),
       listConfiguredConnectors: vi.fn(async () => ({
-        agents: [
-          AGENTS[0]!,
-          {
-            target: "codex",
-            signIn: "onRequest",
-            servers: [remote("example", { signedIn: false })],
-          },
-          AGENTS[1]!,
-        ] satisfies ReadonlyArray<AgentConfiguredServers>,
+        agents: AGENTS,
       })),
     };
     renderWithApi(<ConnectorsSettings />, mock);
@@ -598,7 +590,6 @@ describe("ConnectorsSettings", () => {
           servers: [{ ...linear, seenAt }],
         },
         AGENTS[1]!,
-        AGENTS[1]!,
       ]);
       renderWithApi(<ConnectorsSettings />, mock);
       expect(await screen.findByText("as of 5m ago")).toBeTruthy();
@@ -628,7 +619,6 @@ describe("ConnectorsSettings", () => {
             },
           ],
         },
-        AGENTS[1]!,
         AGENTS[1]!,
       ]),
     });
