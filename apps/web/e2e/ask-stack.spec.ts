@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { slowdown } from "./slowdown";
 import { flakyAsked, flakyAsks } from "./seed-asks";
 import { openOrchestrator, threadRow } from "./thread-row";
 
@@ -9,7 +8,7 @@ import { openOrchestrator, threadRow } from "./thread-row";
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 /** The stack's undo window (`UNDO_MS`) and then some, for an answer to have gone out. */
-const SENT_MS = 8_000 * slowdown;
+const SENT_MS = 8_000;
 /** Past the stack's settle time (`SETTLE_MS`), so a key isn't taken for a slip. */
 const SETTLED_MS = 400;
 
@@ -21,6 +20,8 @@ const start = async (page: Page, settings: Record<string, unknown> = {}) => {
     MOCK_SETTINGS_KEY,
     settings,
   ] as const);
+  // The undo window runs on the installed clock, so waiting past it takes no real time.
+  await page.clock.install();
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await page.evaluate(() => {
@@ -135,8 +136,9 @@ test("each ask shows once with what its Allow covers, and Enter allows all three
   await expect(count(page)).toHaveText(String(before - 1));
   // Held for the undo window, then sent to all three at once, as Allow, once.
   expect(await pending(page, made.pushers[0])).toHaveLength(1);
+  await page.clock.runFor(SENT_MS);
   for (const worker of made.pushers) {
-    await expect.poll(() => pending(page, worker), { timeout: SENT_MS }).toEqual([]);
+    await expect.poll(() => pending(page, worker)).toEqual([]);
   }
   expect(await sentAnswers(page)).toEqual(
     made.pushers.map((worker) => ({
@@ -231,7 +233,8 @@ test("→ and the arrows step; 1 and 2 pick an option and send exactly it", asyn
   await blur(page);
   await page.keyboard.press("2");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Keep both");
-  await expect.poll(() => pending(page, made.choosing), { timeout: SENT_MS }).toEqual([]);
+  await page.clock.runFor(SENT_MS);
+  await expect.poll(() => pending(page, made.choosing)).toEqual([]);
   expect(await sentAnswers(page)).toEqual([
     {
       requestId: `r-question-${made.choosing}`,
@@ -275,7 +278,7 @@ test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async
   await expect(count(page)).toHaveText(before!);
 
   // Past the window, the pushes still wait on the user, and nothing went out.
-  await page.waitForTimeout(SENT_MS);
+  await page.clock.runFor(SENT_MS);
   for (const worker of made.pushers) expect(await pending(page, worker)).toHaveLength(1);
   expect(await sentAnswers(page)).toEqual([]);
 });
@@ -329,8 +332,9 @@ test("the orchestrator's own questions are asks, and Enter takes its pick", asyn
   await blur(page);
   await page.keyboard.press("Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Retry with backoff");
+  await page.clock.runFor(SENT_MS);
   await expect
-    .poll(() => sentAnswers(page), { timeout: SENT_MS })
+    .poll(() => sentAnswers(page))
     .toEqual([{ questionId: "Q1", answer: "Retry with backoff" }]);
   // Answered, it leaves the stack for good.
   await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
@@ -360,7 +364,8 @@ test("a free-form question offers the helper's short replies, which fill the fie
   );
   await currentAsk(page).getByTestId("ask-reply-input").press("Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Replied");
-  await expect.poll(() => pending(page, made.freeForm.threadId), { timeout: SENT_MS }).toEqual([]);
+  await page.clock.runFor(SENT_MS);
+  await expect.poll(() => pending(page, made.freeForm.threadId)).toEqual([]);
 });
 
 test("with helpers off the free-form question has no chips and no placeholder", async ({

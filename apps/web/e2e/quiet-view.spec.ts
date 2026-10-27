@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // Quiet: one ask card at a time over an empty field, a strip with
@@ -11,7 +10,7 @@ const MOCK_SETTINGS_KEY = "gram.mock.settings";
 /** Past the settle time (`SETTLE_MS`), so a key isn't taken for a slip. */
 const SETTLED_MS = 400;
 /** The undo window (`UNDO_MS`) and then some, for an answer to have gone out. */
-const SENT_MS = 8_000 * slowdown;
+const SENT_MS = 8_000;
 const PUSH = "git push -u origin feat/mail-trigger";
 
 const seed = async (page: Page, settings: object = {}) => {
@@ -69,6 +68,8 @@ const pending = (page: Page, threadId: string) =>
 test("one card at a time: Enter answers it everywhere, and undo brings it back", async ({
   page,
 }) => {
+  // The undo window runs on the installed clock, so waiting past it takes no real time.
+  await page.clock.install();
   const made = await start(page);
   const before = await total(page);
   expect(before).toBeGreaterThan(2);
@@ -90,8 +91,9 @@ test("one card at a time: Enter answers it everywhere, and undo brings it back",
   // Answered again, it goes out, and the orchestrator's stack doesn't show it either.
   await goTo(page, PUSH);
   await page.keyboard.press("Enter");
+  await page.clock.runFor(SENT_MS);
   for (const worker of made.pushers) {
-    await expect.poll(() => pending(page, worker), { timeout: SENT_MS }).toEqual([]);
+    await expect.poll(() => pending(page, worker)).toEqual([]);
   }
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("quiet-layer")).toBeHidden();

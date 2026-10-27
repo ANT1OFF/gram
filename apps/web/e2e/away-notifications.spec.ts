@@ -1,7 +1,6 @@
 import type { DesktopNotification, DesktopNotificationAction, RequestId } from "@gram/contracts";
 import { expect, test, type Page } from "@playwright/test";
 
-import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // Asks as desktop notifications while the window is away.
@@ -10,10 +9,11 @@ import { openOrchestrator, threadRow } from "./thread-row";
 // reads the host's notification permission.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
+// Both waits run on the page's installed clock, so they take no real time.
 /** Past the app's startup grace (`STARTUP_GRACE_MS`), when asks start to be news. */
 const AFTER_GRACE_MS = 5_500;
 /** The stack's undo window (`UNDO_MS`) and then some, for an answer to have gone out. */
-const SENT_MS = 8_000 * slowdown;
+const SENT_MS = 8_000;
 const PUSH = "git push -u origin feat/mail-trigger";
 const LONG = `${PUSH} && npm run release -- --tag next --dry-run=false`;
 
@@ -87,10 +87,11 @@ const start = async (page: Page, settings: Record<string, unknown> = {}) => {
     },
     [MOCK_SETTINGS_KEY, settings] as const,
   );
+  await page.clock.install();
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   // Asks open as the window loads are the stack's; these arrive once it has settled.
-  await page.waitForTimeout(AFTER_GRACE_MS);
+  await page.clock.runFor(AFTER_GRACE_MS);
   return page.evaluate(() => {
     const mock = window.gramMock!;
     const sent = (window as unknown as { away: Recorded }).away.sent;
@@ -139,7 +140,7 @@ test("Allow on a notification answers the ask through the stack, and it is gone 
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
   await expect(stack.getByTestId("ask-command").filter({ hasText: PUSH })).toHaveCount(0);
 
-  await page.waitForTimeout(SENT_MS);
+  await page.clock.runFor(SENT_MS);
   const after = await recorded(page);
   const answers = after.sent.slice(sentBefore) as {
     requestId: RequestId;
@@ -152,7 +153,7 @@ test("Allow on a notification answers the ask through the stack, and it is gone 
 
   // A second press of the same notification finds nothing to answer and sends nothing.
   await act(page, { id: note.id!, action: 0 });
-  await page.waitForTimeout(SENT_MS);
+  await page.clock.runFor(SENT_MS);
   expect((await recorded(page)).sent).toHaveLength(after.sent.length);
 });
 
