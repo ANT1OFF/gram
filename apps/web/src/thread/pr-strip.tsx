@@ -15,6 +15,7 @@ import {
   ArrowUpToLine,
   ExternalLink,
   EyeOff,
+  FolderX,
   GitPullRequest,
   Unlink,
   X,
@@ -36,6 +37,7 @@ import { ToggleSwitch } from "@/panels/review/toggle-switch";
 import { usePrDetailPrewarm } from "@/panels/use-pr-detail-prewarm";
 import { useThreadsStore } from "@/stores/threads";
 
+import { useMergedCleanup, type MergedCleanup } from "./merged-cleanup-notice";
 import { keepSamePrChecks, prChecksQuery } from "./pr-checks-query";
 import { BranchLink, PrNumberLink, RepoLink } from "./pr-row-links";
 import { usePrStripFold } from "./pr-strip-fold";
@@ -82,7 +84,8 @@ const BUCKET_DISPLAY: Record<CheckBucketKind, { icon: LucideIcon; tone: string }
  * the diff size, where the review bot stands, a CI menu and an × that hides the row without
  * unbinding it. More than one row folds behind "Show N more", per thread. Hidden rows wait behind
  * "N hidden" until something new needs the user, and then show even folded. Nothing while the
- * thread has no PR. The rows are drawn from the badge; only the menu's per-check counts are
+ * thread has no PR. Once the thread's PR merged, its row carries the offer to clean up the worktree,
+ * and its × dismisses that offer with the row. The rows are drawn from the badge; only the menu's per-check counts are
  * fetched, and only for the focused pane, so a grid of threads doesn't multiply the GitHub requests.
  */
 export function PrStrip({ threadId, focused }: { threadId: ThreadId; focused: boolean }) {
@@ -101,6 +104,7 @@ export function PrStrip({ threadId, focused }: { threadId: ThreadId; focused: bo
   const expanded = usePrStripFold((s) => s.expanded.includes(threadId));
   const setExpanded = usePrStripFold((s) => s.setExpanded);
   const prewarm = usePrDetailPrewarm(threadId);
+  const cleanup = useMergedCleanup(threadId);
   const showHidden = useReviewAction();
   const { visible, hidden } = stripLayout(
     prRowOf(boundPr, git),
@@ -126,6 +130,7 @@ export function PrStrip({ threadId, focused }: { threadId: ThreadId; focused: bo
             row={item.row}
             runs={checks.data?.checks ?? []}
             prewarm={prewarm}
+            cleanup={cleanup?.onStrip ? cleanup : undefined}
           />
         ) : (
           <ExtraRow
@@ -181,11 +186,13 @@ function OwnRow({
   row,
   runs,
   prewarm,
+  cleanup,
 }: {
   threadId: ThreadId;
   row: PrRow;
   runs: Parameters<typeof checkBuckets>[0];
   prewarm: ReturnType<typeof usePrDetailPrewarm>;
+  cleanup: MergedCleanup | undefined;
 }) {
   const api = useApi();
   const repo = row.fullRepo;
@@ -205,13 +212,17 @@ function OwnRow({
         <RepoLink threadId={threadId} place={row} />
         <BranchLink threadId={threadId} place={row} />
       </div>
+      {cleanup !== undefined && <CleanupChip cleanup={cleanup} />}
       <DiffChip additions={row.additions} deletions={row.deletions} />
       <ReviewChip threadId={threadId} review={row.status?.review} />
       <CiMenu threadId={threadId} row={row} runs={runs} />
       {repo !== undefined && (
         <RowClose
           label={hideLabel(row.number)}
-          run={() => api.prHide(threadId, hiddenEntryOf({ repo, number: row.number }, row.status))}
+          run={async () => {
+            await api.prHide(threadId, hiddenEntryOf({ repo, number: row.number }, row.status));
+            cleanup?.dismiss();
+          }}
         />
       )}
     </div>
@@ -255,6 +266,23 @@ function ExtraRow({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow }) {
         }
       />
     </div>
+  );
+}
+
+/** The merged PR's cleanup: the close dialog, preset to remove the worktree; the hover says what's due. */
+function CleanupChip({ cleanup }: { cleanup: MergedCleanup }) {
+  return (
+    <button
+      type="button"
+      data-testid="pr-row-cleanup"
+      aria-label={cleanup.actionLabel}
+      title={`${cleanup.status}\n${cleanup.actionLabel}`}
+      className={cn(CHIP, FOCUS, "hover:bg-accent")}
+      onClick={cleanup.open}
+    >
+      <FolderX aria-hidden className="size-3.5 text-muted-foreground" />
+      <span className="@max-lg:hidden">Clean up</span>
+    </button>
   );
 }
 
