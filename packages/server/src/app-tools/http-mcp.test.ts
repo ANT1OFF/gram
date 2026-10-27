@@ -26,6 +26,7 @@ import { HttpRouter, HttpServer } from "../platform/unstable.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { McpRoute } from "./http-mcp.ts";
 import { mcpConnectionFor, McpTokens } from "./mcp-tokens.ts";
@@ -469,8 +470,12 @@ describe("mounted in ServerLayer", () => {
     Layer.provide(ServerConfig.layer(TEST_CONFIG)),
     Layer.orDie,
   );
+  // Turns log as they end; a warning would be news.
+  const QuietServer = TestServer.pipe(
+    Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
+  );
 
-  layer(TestServer, { excludeTestServices: true })("ServerLayer", (it) => {
+  layer(QuietServer, { excludeTestServices: true })("ServerLayer", (it) => {
     it.effect("serves /mcp behind the bearer token", () =>
       Effect.gen(function* () {
         const p = yield* port;
@@ -539,7 +544,7 @@ describe("mounted in ServerLayer", () => {
             if (outcome === "defect") return yield* Effect.die("owned fixture failure");
             if (outcome === "interruption") return yield* Effect.never;
           }).pipe(
-            Effect.provide(Layer.fresh(TestServer)),
+            Effect.provide(Layer.fresh(QuietServer)),
             Effect.scoped,
             Effect.onExit((exit) =>
               Exit.isFailure(exit)
@@ -571,6 +576,7 @@ describe("mounted in ServerLayer", () => {
         for (const agent of ["claude", "codex"] as const) {
           // The policy setter has no getter. Own a fresh server instead of inventing a default
           // replacement; an explicit scope finalizes it on success, failure and interruption.
+          const logs = captureLogs();
           yield* Effect.gen(function* () {
             const runtimes = yield* ThreadRuntimes;
             const fake = yield* FakeAgentControl;
@@ -634,7 +640,20 @@ describe("mounted in ServerLayer", () => {
               "dream_write",
             ]);
             yield* runtimes.close(thread.id);
-          }).pipe(Effect.provide(Layer.fresh(TestServer)), Effect.scoped);
+            // The failed policy is logged, and the dream reopened with its own bounds anyway.
+            expect(logs.warnings()).toMatchObject([
+              {
+                message: "session policy failed",
+                annotations: {
+                  threadId: thread.id,
+                  cause: expect.stringContaining("workspace unavailable"),
+                },
+              },
+            ]);
+          }).pipe(
+            Effect.provide(Layer.fresh(TestServer).pipe(Layer.provideMerge(logs.layer))),
+            Effect.scoped,
+          );
         }
       }),
     );

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { GrokHost, GrokHostLive, GROK_SUBSCRIPTION_BLOCKER } from "@gram/agents/grok";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,8 +46,9 @@ describe("public Grok production registry never executes without route proof", (
     (kind) =>
       Effect.acquireUseRelease(
         Effect.sync(fixture),
-        (f) =>
-          Effect.gen(function* () {
+        (f) => {
+          const logs = captureLogs();
+          return Effect.gen(function* () {
             const hosts = yield* AgentHosts;
             const runtime = yield* ThreadRuntimes;
             const store = yield* ThreadStore;
@@ -88,7 +90,21 @@ describe("public Grok production registry never executes without route proof", (
               );
             expect(existsSync(f.home)).toBe(false);
             expect(fake.sessions).toEqual([]);
-          }).pipe(Effect.provide(f.layer)),
+            // The refusal is logged once, with why, as any agent that can't start is.
+            expect(logs.warnings()).toMatchObject([
+              {
+                message: "agent unavailable",
+                annotations: {
+                  threadId: thread.id,
+                  agent: "grok",
+                  unavailable: expect.stringContaining(
+                    "cannot enforce subscription-only inference routing",
+                  ),
+                },
+              },
+            ]);
+          }).pipe(Effect.provide(f.layer.pipe(Layer.provideMerge(logs.layer))));
+        },
         (f) => Effect.sync(() => rmSync(f.root, { recursive: true, force: true })),
       ),
   );

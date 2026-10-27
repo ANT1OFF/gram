@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { CodexHost, CodexHostLayer, CodexServers, CodexServersLive } from "@gram/agents/codex";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
 import { GatewayKeyProvider } from "@gram/agents";
+import { captureLogs, type CapturedLogs } from "@gram/agents/testing/logs";
 import { AgentUnavailable, ProfileId, type ThreadId } from "@gram/contracts";
 import {
   chmodSync,
@@ -30,7 +31,8 @@ import { EventHub } from "../events/event-hub.ts";
 import { CheckoutService, TurnHooks } from "./hooks.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
-const fixture = () => {
+/** `logs` takes the runtime's log lines; by default it keeps them, printing only warnings. */
+const fixture = (logs: CapturedLogs) => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "gram-mcp-restart-")));
   const binary = join(root, "codex"),
     shell = join(root, "shell"),
@@ -199,9 +201,11 @@ const fixture = () => {
           ServerConfig.layer({ ...TEST_CONFIG, dataDir: root, databaseFile: file }),
         ),
         Layer.orDie,
+        Layer.provideMerge(logs.layer),
       ),
     layer: makeRuntimeTestLayer(undefined, undefined, undefined, agents).pipe(
       Layer.provideMerge(agents),
+      Layer.provideMerge(logs.layer),
     ),
     log: () =>
       readFileSync(log, "utf8")
@@ -228,9 +232,12 @@ const fixture = () => {
         ),
   };
 };
-const withFixture = <A, E, R>(body: (f: ReturnType<typeof fixture>) => Effect.Effect<A, E, R>) =>
+const withFixture = <A, E, R>(
+  body: (f: ReturnType<typeof fixture>) => Effect.Effect<A, E, R>,
+  logs: CapturedLogs = captureLogs({ printWarnings: true }),
+) =>
   Effect.acquireUseRelease(
-    Effect.sync(fixture),
+    Effect.sync(() => fixture(logs)),
     (f) => body(f).pipe(Effect.provide(f.layer)),
     (f) => Effect.sync(() => rmSync(f.root, { recursive: true, force: true })),
   );
@@ -714,7 +721,7 @@ describe.skipIf(process.platform === "win32")("MCP restart across a shared owned
     "recovers saved provider identity and queued work after an owned server scope stops during the wait",
     () =>
       Effect.acquireUseRelease(
-        Effect.sync(fixture),
+        Effect.sync(() => fixture(captureLogs({ printWarnings: true }))),
         (f) =>
           Effect.gen(function* () {
             const file = join(f.root, "owned-gram.db");
@@ -929,39 +936,55 @@ describe.skipIf(process.platform === "win32")("MCP restart across a shared owned
 
   it.live(
     "contains restart initialization and session-finalizer failures to the requested session",
-    () =>
-      withFixture((f) =>
-        Effect.gen(function* () {
-          const r = yield* ThreadRuntimes,
-            store = yield* ThreadStore,
-            servers = yield* CodexServers;
-          const first = yield* create("saved exchange", f.root),
-            held = yield* create("hold sibling", f.root);
-          yield* status(first.id, "idle");
-          yield* status(held.id, "running");
-          const saved = (yield* store.getThread(first.id)).agentSessionId!;
-          const old = yield* servers.acquire(undefined, "user");
-          f.failFinalizer(first.id);
-          writeFileSync(join(f.root, "invented-refuse-start"), "invented");
-          yield* r.restartSession(first.id);
-          yield* status(first.id, "error");
-          expect(yield* r.status(held.id)).toBe("running");
-          expect(f.log().filter((v) => v.msg.method === "thread/resume")).toHaveLength(0);
-          rmSync(join(f.root, "invented-refuse-start"));
-          f.failFinalizer(undefined);
-          const heldId = (yield* store.getThread(held.id)).agentSessionId!;
-          yield* old.rpc.request("thread/read", { threadId: `stream:${heldId}` });
-          // The failed replacement child's exit does not release the previous child's writer.
-          const refused = yield* (yield* CodexHost)
-            .open({ threadId: first.id, cwd: f.root, resumeId: saved })
-            .pipe(Effect.scoped, Effect.flip);
-          expect(refused.message).toContain("Resume was refused");
-          yield* r.close(held.id);
-          yield* r.restartSession(first.id);
-          yield* status(first.id, "idle");
-          expect((yield* store.getThread(first.id)).agentSessionId).toBe(saved);
-        }),
-      ),
+    () => {
+      const logs = captureLogs();
+      return withFixture(
+        (f) =>
+          Effect.gen(function* () {
+            const r = yield* ThreadRuntimes,
+              store = yield* ThreadStore,
+              servers = yield* CodexServers;
+            const first = yield* create("saved exchange", f.root),
+              held = yield* create("hold sibling", f.root);
+            yield* status(first.id, "idle");
+            yield* status(held.id, "running");
+            const saved = (yield* store.getThread(first.id)).agentSessionId!;
+            const old = yield* servers.acquire(undefined, "user");
+            f.failFinalizer(first.id);
+            writeFileSync(join(f.root, "invented-refuse-start"), "invented");
+            yield* r.restartSession(first.id);
+            yield* status(first.id, "error");
+            expect(yield* r.status(held.id)).toBe("running");
+            expect(f.log().filter((v) => v.msg.method === "thread/resume")).toHaveLength(0);
+            rmSync(join(f.root, "invented-refuse-start"));
+            f.failFinalizer(undefined);
+            const heldId = (yield* store.getThread(held.id)).agentSessionId!;
+            yield* old.rpc.request("thread/read", { threadId: `stream:${heldId}` });
+            // The failed replacement child's exit does not release the previous child's writer.
+            const refused = yield* (yield* CodexHost)
+              .open({ threadId: first.id, cwd: f.root, resumeId: saved })
+              .pipe(Effect.scoped, Effect.flip);
+            expect(refused.message).toContain("Resume was refused");
+            yield* r.close(held.id);
+            yield* r.restartSession(first.id);
+            yield* status(first.id, "idle");
+            expect((yield* store.getThread(first.id)).agentSessionId).toBe(saved);
+            // The refused start is the one warning, and only for the restarted thread.
+            expect(logs.warnings()).toMatchObject([
+              {
+                message: "agent unavailable",
+                annotations: {
+                  threadId: first.id,
+                  agent: "codex",
+                  reason: "startup-failed",
+                  unavailable: expect.stringContaining("Invented initialization failure"),
+                },
+              },
+            ]);
+          }),
+        logs,
+      );
+    },
     15000,
   );
 

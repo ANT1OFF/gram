@@ -2,6 +2,7 @@
 import { afterAll, expect } from "@effect/vitest";
 import { MAX_RUN_WATCHES, type PrStatus, type ProjectId } from "@gram/contracts";
 import { Pr, Proc } from "@gram/git";
+import { captureLogs } from "@gram/agents/testing/logs";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -85,11 +86,15 @@ const FakeGh = Layer.succeed(Proc, {
     }),
 });
 
+// Approvals, turns and merges log as they go; a warning would be news.
+const quietLogs = captureLogs({ printWarnings: true }).layer;
+
 export const TestLayer = PrAppToolsLive.pipe(
   Layer.provide(FakeGh),
   Layer.provideMerge(GitStatePublisherLive),
   Layer.provideMerge(RuntimeTestLayer),
   Layer.provideMerge(gitPlatformTest({ pr: MockPr })),
+  Layer.provideMerge(quietLogs),
 );
 
 /** A `gh pr merge` call on acme/web. */
@@ -168,6 +173,7 @@ export const RunTestLayer = PrAppToolsLive.pipe(
   Layer.provideMerge(
     gitPlatformTest({ pr: MockPr, config: { runPollInterval: Duration.hours(1) } }),
   ),
+  Layer.provideMerge(quietLogs),
 );
 
 /** The monitor's own reads of the thread store, through `CountedStore`. */
@@ -200,6 +206,7 @@ export const RunLoopTestLayer = PrAppToolsLive.pipe(
   Layer.provideMerge(
     gitPlatformTest({ pr: MockPr, config: { runPollInterval: Duration.millis(20) } }),
   ),
+  Layer.provideMerge(quietLogs),
 );
 
 /** The `gh api` lookups of run `id` itself, not its jobs. */
@@ -237,6 +244,7 @@ export const MergeTestLayer = PrAppToolsLive.pipe(
   Layer.provideMerge(GitStatePublisherLive),
   Layer.provideMerge(RuntimeTestLayer),
   Layer.provideMerge(gitPlatformTest({ pr: MockPr })),
+  Layer.provideMerge(quietLogs),
 );
 
 /** A badge the bot approved on its head, green and clean: ready to merge. */

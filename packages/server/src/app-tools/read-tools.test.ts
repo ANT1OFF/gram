@@ -3,6 +3,7 @@ import type { PrStatus, ThreadId } from "@gram/contracts";
 import { Pr } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { captureLogs } from "@gram/agents/testing/logs";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { ServerConfig } from "../config.ts";
@@ -57,6 +58,8 @@ const TestLayer = ServerCore.pipe(
   Layer.provideMerge(gitPlatformTest({ pr: MockPr })),
   Layer.provideMerge(ServerConfig.layer(TEST_CONFIG)),
   Layer.orDie,
+  // Boots and turns log as they go; a warning would be news.
+  Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
 );
 
 /** Runs a tool through the HTTP transport's binding, where the registry enforces the classes. */

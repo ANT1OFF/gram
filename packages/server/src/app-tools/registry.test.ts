@@ -10,6 +10,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { eventually } from "../git/test-repo.ts";
@@ -17,6 +18,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { ThreadWaits } from "../waits/service.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { RuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {
@@ -33,6 +35,11 @@ import {
 import { WAIT_DECISION_NEEDS_ASK_USER, waitAge } from "./wait-tools.ts";
 
 /** Waits for the thread to rest after its turn. */
+// Each approval logs its request and answer; a warning would be news.
+const TestLayer = RuntimeTestLayer.pipe(
+  Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
+);
+
 const waitStatusIdle = (threadId: ThreadId) =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
@@ -424,7 +431,7 @@ describe("the approval gate", () => {
         scope: "once",
       });
       expect(yield* Fiber.join(call)).toMatchObject({ approvalRequired: true });
-    }).pipe(Effect.scoped, Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
   it("names the review tools that write to the calling thread's own PR, and nothing else", () => {
@@ -458,7 +465,7 @@ describe("the approval gate", () => {
       }
       const orchestrator = yield* threadAs("orchestrator", "bypassPermissions");
       expect(yield* asks(orchestrator, reply, bot)).toBe(true);
-    }).pipe(Effect.scoped, Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
   it.live("lets a worker's own-PR review write follow its mode, and nothing else it does", () =>
@@ -472,7 +479,7 @@ describe("the approval gate", () => {
       expect(yield* asks(bypass, send, { workerOwnPr: true })).toBe(true);
       const byDefault = yield* threadAs("worker", "default");
       expect(yield* asks(byDefault, reply, { workerOwnPr: true })).toBe(true);
-    }).pipe(Effect.scoped, Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
   it.live("asks an orchestrator on every call in bypass, whatever the call claims", () =>
@@ -481,7 +488,7 @@ describe("the approval gate", () => {
       expect(yield* asks(orchestrator, spawn, { workerOwnPr: true })).toBe(true);
       expect(yield* asks(orchestrator, send)).toBe(true);
       expect(yield* asks(orchestrator, reply, { workerOwnPr: true })).toBe(true);
-    }).pipe(Effect.scoped, Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
   it.live("writes a card's text plain, so agent-authored text can't reorder or hide it", () =>
@@ -504,7 +511,7 @@ describe("the approval gate", () => {
         scope: "once",
       });
       yield* Fiber.join(call).pipe(Effect.flip);
-    }).pipe(Effect.scoped, Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
   it.live("asks a plain thread by its mode, as before", () =>
@@ -515,7 +522,7 @@ describe("the approval gate", () => {
       expect(yield* asks(bypass, reply, { forced: true })).toBe(true);
       const byDefault = yield* threadAs("plain", "default");
       expect(yield* asks(byDefault, reply, { workerOwnPr: true })).toBe(true);
-    }).pipe(Effect.scoped, Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 });
 
@@ -540,7 +547,7 @@ describe("tool audiences", () => {
         ]);
         expect(added(bind(threadId, "worker"))).toEqual(["for_both", "for_everyone", "for_worker"]);
       }
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("asks the session policy who a thread is, for the HTTP transport", () =>
@@ -558,7 +565,7 @@ describe("tool audiences", () => {
       });
       expect(yield* registry.audienceOf(thread.id)).toBe("worker");
       expect(yield* registry.audienceOf("nobody" as ThreadId)).toBe("plain");
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 });
 
@@ -591,7 +598,7 @@ describe("M1 core app tools", () => {
       ]);
       const error = yield* registry.register(registry.definitions.slice(0, 1)).pipe(Effect.exit);
       expect(error._tag).toBe("Failure");
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("set_title names the thread unless the user already did", () =>
@@ -610,7 +617,7 @@ describe("M1 core app tools", () => {
         title: "Mine",
         applied: false,
       });
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("set_plan keeps the agent's plan, and the steps the user edited, across reloads", () =>
@@ -674,7 +681,7 @@ describe("M1 core app tools", () => {
         [second!.id, "No hosted web search", "user"],
         [third!.id, "Merge #235 after jordan's review", "user"],
       ]);
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("spawn_task persists a task chip that dismiss_task withdraws", () =>
@@ -697,7 +704,7 @@ describe("M1 core app tools", () => {
       expect((yield* store.getTask(thread.id, taskId)).task.status).toBe("dismissed");
       const error = yield* runTool(thread.id, "dismiss_task", { taskId: "nope" }).pipe(Effect.flip);
       expect(error.message).toBe("unknown task nope");
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("spawn_task asks an orchestrator for a reason, and puts it on the chip", () =>
@@ -752,7 +759,7 @@ describe("M1 core app tools", () => {
       for (const bound of ["plain", "worker"] as const) {
         expect(described(bound)).toEqual([expect.not.stringContaining("spawn_worker")]);
       }
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect(
@@ -816,7 +823,7 @@ describe("M1 core app tools", () => {
         }).pipe(Effect.flip);
         expect(full.message).toContain("resolve_wait");
         expect(yield* store.listWaits(thread.id)).toHaveLength(MAX_OPEN_WAITS);
-      }).pipe(Effect.provide(RuntimeTestLayer)),
+      }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("resolve_wait closes an item, and says when the user got there first", () =>
@@ -866,7 +873,7 @@ describe("M1 core app tools", () => {
       const refused = yield* waits.resolve(thread.id, first, undefined).pipe(Effect.flip);
       expect(refused._tag).toBe("WaitsFull");
       expect(yield* store.listWaits(thread.id)).toHaveLength(MAX_OPEN_WAITS);
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("the user's next message tells the agent what they changed there, once", () =>
@@ -1023,7 +1030,7 @@ describe("M1 core app tools", () => {
       expect((yield* waits.draftNote(thread.id, []))?.note).toContain(
         `The user added to Waiting on you, to act on themselves: "Suggested reply"`,
       );
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("wait_on_user sends an orchestrator's decision to ask_user", () =>
@@ -1039,7 +1046,7 @@ describe("M1 core app tools", () => {
       );
       expect(refused.message).toBe(WAIT_DECISION_NEEDS_ASK_USER);
       yield* runTool(thread.id, "wait_on_user", { ...decision, kind: "draft" }, "orchestrator");
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("mark_completed and set_unread update the thread flags", () =>
@@ -1051,6 +1058,6 @@ describe("M1 core app tools", () => {
       const updated = yield* store.getThread(thread.id);
       expect(updated.completedAt).toBeTypeOf("number");
       expect(updated.unread).toBe(true);
-    }).pipe(Effect.provide(RuntimeTestLayer)),
+    }).pipe(Effect.provide(TestLayer)),
   );
 });

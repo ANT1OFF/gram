@@ -46,6 +46,7 @@ import { FakeAgentAdapter } from "../runtime/fake-agent.ts";
 import { TurnHooks } from "../runtime/hooks.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { attestShutdown, stopForShutdown } from "../runtime/shutdown.ts";
 import { remoteCookieName } from "./remote-access.ts";
 import { tokenCookieName } from "./auth.ts";
@@ -150,6 +151,8 @@ const testServer = (remoteOrigin?: string) =>
       }),
     ),
     Layer.orDie,
+    // Shutdown logs its steps; a warning would be news.
+    Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
   );
 
 const TestServer = testServer();

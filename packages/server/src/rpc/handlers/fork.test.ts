@@ -13,6 +13,7 @@ import { GitTurnHooksLive } from "../../git/turn-hooks.ts";
 import { ServerCore } from "../../http/server.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "../../runtime/fake-agent.ts";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { TEST_CONFIG } from "../../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import { threadHandlers } from "./threads.ts";
@@ -23,6 +24,8 @@ const TestLayer = ServerCore.pipe(
   Layer.provideMerge(gitPlatformTest()),
   Layer.provideMerge(ServerConfig.layer(TEST_CONFIG)),
   Layer.orDie,
+  // The boot's resend logs what it sent; a warning would be news.
+  Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
 );
 
 const tempRepo = Effect.gen(function* () {

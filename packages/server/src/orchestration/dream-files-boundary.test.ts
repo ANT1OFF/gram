@@ -1,6 +1,7 @@
 import type * as NativeFiles from "./anchored-files.ts";
 import type * as FsPromises from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
+import { captureLogs } from "@gram/agents/testing/logs";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as fs from "node:fs";
@@ -170,6 +171,7 @@ it("adoption anchors candidate copying and rollback against version ancestor swa
 
 it("adoption anchors CURRENT's rename against a workspace ancestor swap", async () => {
   const dir = root();
+  const logs = captureLogs();
   await run(
     dir,
     Effect.gen(function* () {
@@ -200,7 +202,13 @@ it("adoption anchors CURRENT's rename against a workspace ancestor swap", async 
       expect(swapped).toBe(true);
       expect(fs.readFileSync(join(outside, "CURRENT"), "utf8")).toBe("outside-current");
       expect(fs.readFileSync(join(`${workspace}-saved`, "CURRENT"), "utf8")).toBe("0002\n");
-    }),
+      // The swapped-in link refuses the prune after it too, which leaves old versions behind.
+      expect(logs.warnings().map((log) => log.message)).toEqual([
+        expect.stringContaining(
+          "orchestration memory: pruning old versions failed Confined file operation refused",
+        ),
+      ]);
+    }).pipe(Effect.provide(logs.layer)),
   );
 });
 

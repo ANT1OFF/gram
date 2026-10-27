@@ -1,4 +1,5 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -23,12 +24,16 @@ const databaseFile = () => {
 
 type Seen = WalCheckpointer.CheckpointEvent | { readonly kind: "stale" };
 
-/** The main connection with a checkpointer on `workerFile` (the same file unless a test breaks it). */
+/**
+ * The main connection with a checkpointer on `workerFile` (the same file unless a test breaks it),
+ * its log lines kept in `logs`.
+ */
 const build = (
   file: string,
   options: WalCheckpointer.CheckpointerOptions & { readonly workerFile?: string } = {},
 ) => {
   const seen: Array<Seen> = [];
+  const logs = captureLogs();
   const layer = WalCheckpointer.layer(options.workerFile ?? file, {
     // Without the idle back-off unless a test asks for it: these follow the reports closely.
     intervalMs: 20,
@@ -38,9 +43,18 @@ const build = (
       seen.push(event);
       options.onEvent?.(event);
     },
-  }).pipe(Layer.provideMerge(SqliteClient.layer({ filename: file })));
-  return { seen, layer };
+  }).pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: file })),
+    Layer.provideMerge(logs.layer),
+  );
+  return { seen, layer, logs };
 };
+
+/** The fallback's warning, saying `why` the main connection checkpoints. */
+const fellBack = (why: string, detail: Record<string, unknown>) => ({
+  message: `wal checkpointer ${why}; the server checkpoints itself`,
+  annotations: detail,
+});
 
 const autocheckpoint = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -200,19 +214,23 @@ describe("WAL checkpointer", () => {
   it.live(
     "checkpoints the WAL on its own connection, with the main one's autocheckpoint off",
     () => {
-      const { seen, layer } = build(databaseFile());
+      const { seen, layer, logs } = build(databaseFile());
       return Effect.gen(function* () {
         expect(yield* autocheckpoint).toBe(0);
         yield* write(20, 4000);
         yield* until("a full checkpoint", () => caughtUp(seen));
         expect(yield* autocheckpoint).toBe(0);
+        expect(logs.warnings()).toEqual([]);
       }).pipe(Effect.provide(layer));
     },
   );
 
   it.live("checkpoints on the main connection past the cap, and stops once it is caught up", () => {
     const diagnostic = walFailureDiagnostic();
-    const { seen, layer } = build(databaseFile(), { capFrames: 40, onEvent: diagnostic.onEvent });
+    const { seen, layer, logs } = build(databaseFile(), {
+      capFrames: 40,
+      onEvent: diagnostic.onEvent,
+    });
     return Effect.gen(function* () {
       yield* write(100, 4000);
       diagnostic.bulkCompleted(seen.length);
@@ -269,6 +287,15 @@ describe("WAL checkpointer", () => {
       diagnostic.phase("worker alone");
       yield* until("the worker alone", () =>
         autocheckpoint.pipe(Effect.map((n) => diagnostic.check(n === 0, n))),
+      );
+      expect(logs.logs).toContainEqual(
+        expect.objectContaining({
+          level: "Warn",
+          ...fellBack("fell behind", { log: expect.any(Number), capFrames: 40 }),
+        }),
+      );
+      expect(logs.logs).toContainEqual(
+        expect.objectContaining({ level: "Info", message: "wal checkpointer caught up" }),
       );
     }).pipe(reportWalFailure(diagnostic), Effect.provide(layer));
   });
@@ -333,7 +360,7 @@ describe("WAL checkpointer", () => {
   );
 
   it.live("backs off while nothing is written, and checkpoints a write after it", () => {
-    const { seen, layer } = build(databaseFile(), { intervalMs: 20, maxIntervalMs: 160 });
+    const { seen, layer, logs } = build(databaseFile(), { intervalMs: 20, maxIntervalMs: 160 });
     const reports = () => seen.filter((e) => e.kind === "checkpoint").length;
     return Effect.gen(function* () {
       yield* write(1, 10);
@@ -351,21 +378,23 @@ describe("WAL checkpointer", () => {
           .slice(at)
           .some((e) => e.kind === "checkpoint" && e.log > 0 && e.checkpointed === e.log),
       );
+      expect(logs.warnings()).toEqual([]);
     }).pipe(Effect.provide(layer));
   });
 
   it.live("checkpoints on the main connection when the worker stops reporting", () => {
-    const { seen, layer } = build(databaseFile(), { intervalMs: 60_000, staleMs: 50 });
+    const { seen, layer, logs } = build(databaseFile(), { intervalMs: 60_000, staleMs: 50 });
     return Effect.gen(function* () {
       yield* until("a stale report", () => seen.some((e) => e.kind === "stale"));
       expect(yield* autocheckpoint).toBe(1000);
       expect(seen.some((e) => e.kind === "checkpoint")).toBe(false);
+      expect(logs.warnings()).toMatchObject([fellBack("stopped reporting", { staleMs: 50 })]);
     }).pipe(Effect.provide(layer));
   });
 
   it.live("leaves checkpointing to the main connection for good when the worker dies", () => {
     const file = databaseFile();
-    const { seen, layer } = build(file, { workerFile: join(file, "missing", "x.db") });
+    const { seen, layer, logs } = build(file, { workerFile: join(file, "missing", "x.db") });
     return Effect.gen(function* () {
       // A failed report enables the fallback before the worker's final event, exit, arrives.
       yield* until("the worker's exit", () => seen.some((e) => e.kind === "exit"));
@@ -374,6 +403,10 @@ describe("WAL checkpointer", () => {
       // A short WAL doesn't bring the worker back: it is gone.
       yield* write(1, 10);
       expect(yield* autocheckpoint).toBe(1000);
+      // The failed open is the one warning; the exit after it finds the fallback already on.
+      expect(logs.warnings()).toMatchObject([
+        fellBack("failed to checkpoint", { error: expect.stringContaining("unable to open") }),
+      ]);
     }).pipe(Effect.provide(layer));
   });
 
@@ -383,13 +416,16 @@ describe("WAL checkpointer", () => {
         "new Error('checkpoint worker failed')",
         "'checkpoint worker failed'",
       ]) {
-        const { seen, layer } = build(databaseFile(), {
+        const { seen, layer, logs } = build(databaseFile(), {
           spawn: () => new Worker(`throw ${thrown};`, { eval: true }),
         });
         yield* Effect.gen(function* () {
           yield* until("the worker's exit", () => seen.some((e) => e.kind === "exit"));
           yield* until("the fallback", () => autocheckpoint.pipe(Effect.map((n) => n === 1000)));
           expect(seen).toContainEqual({ kind: "error", message: "checkpoint worker failed" });
+          expect(logs.warnings()).toMatchObject([
+            fellBack("failed to checkpoint", { error: "checkpoint worker failed" }),
+          ]);
           yield* write(1, 10);
         }).pipe(Effect.provide(layer));
       }
@@ -397,16 +433,19 @@ describe("WAL checkpointer", () => {
   );
 
   it.live("checkpoints on the main connection while the worker's checkpoints fail", () => {
-    const { seen, layer } = build(databaseFile(), { staleMs: 60_000, spawn: failing });
+    const { seen, layer, logs } = build(databaseFile(), { staleMs: 60_000, spawn: failing });
     return Effect.gen(function* () {
       yield* until("the fallback", () => autocheckpoint.pipe(Effect.map((n) => n === 1000)));
       expect(seen.some((e) => e.kind === "error")).toBe(true);
       expect(seen.some((e) => e.kind === "stale")).toBe(false);
+      expect(logs.warnings()).toMatchObject([
+        fellBack("failed to checkpoint", { error: "disk I/O error" }),
+      ]);
     }).pipe(Effect.provide(layer));
   });
 
   it.live("leaves SQLite's autocheckpoint on and the database usable when no worker starts", () => {
-    const { seen, layer } = build(databaseFile(), {
+    const { seen, layer, logs } = build(databaseFile(), {
       spawn: () => {
         throw new Error("ERR_WORKER_INIT_FAILED");
       },
@@ -415,13 +454,16 @@ describe("WAL checkpointer", () => {
       expect(yield* autocheckpoint).toBe(1000);
       yield* write(5, 100);
       expect(seen).toEqual([]);
+      expect(logs.warnings()).toMatchObject([
+        { message: "wal checkpointer didn't start; the server checkpoints itself" },
+      ]);
     }).pipe(Effect.provide(layer));
   });
 
   it.live("runs a last checkpoint and stops the worker before the main connection closes", () =>
     Effect.gen(function* () {
       const file = databaseFile();
-      const { seen, layer } = build(file, { intervalMs: 60_000 });
+      const { seen, layer, logs } = build(file, { intervalMs: 60_000 });
       const scope = yield* Scope.make();
       const context = yield* Layer.buildWithScope(layer, scope);
       yield* write(20, 4000).pipe(Effect.provide(context));
@@ -434,6 +476,7 @@ describe("WAL checkpointer", () => {
       expect(seen.at(-1)).toEqual({ kind: "exit", code: 0 });
       // SQLite removes the WAL only when its last connection closes, so the worker's was first.
       expect(existsSync(`${file}-wal`)).toBe(false);
+      expect(logs.warnings()).toEqual([]);
     }),
   );
 });

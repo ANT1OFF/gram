@@ -95,7 +95,6 @@ for (const mode of modes)
             expect(
               (yield* sql<{ usage: string }>`SELECT usage FROM turns WHERE id='gram'`)[0]!.usage,
             ).toBe(stored);
-            console.log("copy-rpc", mode, reversed, JSON.stringify(results));
             for (const x of results) {
               expect(x.history?.selectedGramTurns).toBe(1);
               expect(x.history?.unmatchedGramTurns).toBe(mode === "covered" ? 0 : 1);

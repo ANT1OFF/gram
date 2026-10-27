@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl } from "./fake-agent.ts";
+import { captureLogs, type CapturedLogs } from "@gram/agents/testing/logs";
 import { makeRuntimeTestLayer, TEST_CONFIG } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
 
@@ -20,7 +21,8 @@ const { makeUnqualifiedGrokProtocolFixture }: typeof GrokFixture = await import(
   new URL("../../../agents/src/grok/protocol.test-support.ts", import.meta.url).href
 );
 const peer = fileURLToPath(new URL("../../../agents/fixtures/grok/cli.cjs", import.meta.url));
-const fixture = () => {
+/** `logs` takes the runtime's log lines. */
+const fixture = (logs: CapturedLogs) => {
   const root = mkdtempSync(join(tmpdir(), "gram-grok-restart-"));
   const control = join(root, "control");
   mkdirSync(control);
@@ -46,7 +48,12 @@ const fixture = () => {
     root,
     control,
     host,
-    layer: makeRuntimeTestLayer(undefined, undefined, { ...TEST_CONFIG, dataDir: root }, agents),
+    layer: makeRuntimeTestLayer(
+      undefined,
+      undefined,
+      { ...TEST_CONFIG, dataDir: root },
+      agents,
+    ).pipe(Layer.provideMerge(logs.layer)),
     read: () =>
       readFileSync(log, "utf8")
         .trim()
@@ -63,9 +70,13 @@ const fixture = () => {
         ),
   };
 };
-const withFixture = <A, E, R>(body: (f: ReturnType<typeof fixture>) => Effect.Effect<A, E, R>) =>
+/** By default the runtime's info lines are kept and its warnings printed. */
+const withFixture = <A, E, R>(
+  body: (f: ReturnType<typeof fixture>) => Effect.Effect<A, E, R>,
+  logs: CapturedLogs = captureLogs({ printWarnings: true }),
+) =>
   Effect.acquireUseRelease(
-    Effect.sync(fixture),
+    Effect.sync(() => fixture(logs)),
     (f) => body(f).pipe(Effect.provide(f.layer)),
     (f) => Effect.sync(() => rmSync(f.root, { recursive: true, force: true })),
   );
@@ -145,27 +156,42 @@ describe("runtime to unqualified Grok protocol fixture restart lifecycle (offlin
 
   it.live(
     "contains failed replacement authentication and retries the same saved conversation",
-    () =>
-      withFixture((f) =>
-        Effect.gen(function* () {
-          const runtime = yield* ThreadRuntimes;
-          const store = yield* ThreadStore;
-          const thread = yield* create(f.root);
-          yield* status(thread.id, "idle");
-          const saved = (yield* store.getThread(thread.id)).agentSessionId;
-          writeFileSync(join(f.control, "refuse-auth"), "synthetic");
-          yield* runtime.restartSession(thread.id);
-          expect(yield* settledRestart(thread.id)).toBe("error");
-          expect(f.read().filter((row) => row.method === "authenticate")).toHaveLength(2);
-          expect(f.read().some((row) => row.method === "session/load")).toBe(false);
-          expect((yield* store.getThread(thread.id)).agentSessionId).toBe(saved);
-          rmSync(join(f.control, "refuse-auth"));
-          yield* runtime.restartSession(thread.id);
-          expect(yield* settledRestart(thread.id)).toBe("idle");
-          expect((yield* store.getThread(thread.id)).agentSessionId).toBe(saved);
-          expectExitBeforeLoad(f.read());
-        }),
-      ),
+    () => {
+      const logs = captureLogs();
+      return withFixture(
+        (f) =>
+          Effect.gen(function* () {
+            const runtime = yield* ThreadRuntimes;
+            const store = yield* ThreadStore;
+            const thread = yield* create(f.root);
+            yield* status(thread.id, "idle");
+            const saved = (yield* store.getThread(thread.id)).agentSessionId;
+            writeFileSync(join(f.control, "refuse-auth"), "synthetic");
+            yield* runtime.restartSession(thread.id);
+            expect(yield* settledRestart(thread.id)).toBe("error");
+            expect(f.read().filter((row) => row.method === "authenticate")).toHaveLength(2);
+            expect(f.read().some((row) => row.method === "session/load")).toBe(false);
+            expect((yield* store.getThread(thread.id)).agentSessionId).toBe(saved);
+            rmSync(join(f.control, "refuse-auth"));
+            yield* runtime.restartSession(thread.id);
+            expect(yield* settledRestart(thread.id)).toBe("idle");
+            expect((yield* store.getThread(thread.id)).agentSessionId).toBe(saved);
+            expectExitBeforeLoad(f.read());
+            // The refused sign-in is the one warning.
+            expect(logs.warnings()).toMatchObject([
+              {
+                message: "agent unavailable",
+                annotations: {
+                  threadId: thread.id,
+                  agent: "grok",
+                  unavailable: expect.stringContaining("Grok Build authenticate failed"),
+                },
+              },
+            ]);
+          }),
+        logs,
+      );
+    },
     15_000,
   );
 
@@ -194,29 +220,40 @@ describe("runtime to unqualified Grok protocol fixture restart lifecycle (offlin
   );
   it.live(
     "recovers a hung cancellation at the unchanged watchdog and resumes only after old EXIT",
-    () =>
-      withFixture((f) =>
-        Effect.gen(function* () {
-          const runtime = yield* ThreadRuntimes;
-          const store = yield* ThreadStore;
-          writeFileSync(join(f.control, "ignore-cancel"), "synthetic");
-          const thread = yield* create(f.root, "hold synthetic turn");
-          yield* waitFor(
-            "prompt delivered",
-            Effect.sync(() => f.read().some((row) => row.method === "session/prompt")),
-          );
-          const saved = (yield* store.getThread(thread.id)).agentSessionId;
-          yield* runtime.restartSession(thread.id, "interrupt");
-          expect(yield* settledRestart(thread.id)).toBe("idle");
-          expect((yield* store.getThread(thread.id)).agentSessionId).toBe(saved);
-          expect(f.read().some((row) => row.method === "session/cancel")).toBe(true);
-          expectExitBeforeLoad(f.read());
-          rmSync(join(f.control, "ignore-cancel"));
-          yield* runtime.send(thread.id, { text: "Synthetic retry after hung cancellation" });
-          yield* status(thread.id, "idle");
-          expect(f.read().filter((row) => row.method === "session/prompt")).toHaveLength(2);
-        }),
-      ),
+    () => {
+      const logs = captureLogs();
+      return withFixture(
+        (f) =>
+          Effect.gen(function* () {
+            const runtime = yield* ThreadRuntimes;
+            const store = yield* ThreadStore;
+            writeFileSync(join(f.control, "ignore-cancel"), "synthetic");
+            const thread = yield* create(f.root, "hold synthetic turn");
+            yield* waitFor(
+              "prompt delivered",
+              Effect.sync(() => f.read().some((row) => row.method === "session/prompt")),
+            );
+            const saved = (yield* store.getThread(thread.id)).agentSessionId;
+            yield* runtime.restartSession(thread.id, "interrupt");
+            expect(yield* settledRestart(thread.id)).toBe("idle");
+            expect((yield* store.getThread(thread.id)).agentSessionId).toBe(saved);
+            expect(f.read().some((row) => row.method === "session/cancel")).toBe(true);
+            expectExitBeforeLoad(f.read());
+            rmSync(join(f.control, "ignore-cancel"));
+            yield* runtime.send(thread.id, { text: "Synthetic retry after hung cancellation" });
+            yield* status(thread.id, "idle");
+            expect(f.read().filter((row) => row.method === "session/prompt")).toHaveLength(2);
+            // The watchdog is what recovered it, and says so.
+            expect(logs.warnings()).toMatchObject([
+              {
+                message: "interrupt watchdog fired; closing and resuming the session",
+                annotations: { threadId: thread.id },
+              },
+            ]);
+          }),
+        logs,
+      );
+    },
     15_000,
   );
 });

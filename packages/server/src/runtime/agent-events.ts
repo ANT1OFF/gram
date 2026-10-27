@@ -55,6 +55,7 @@ import type { UsageLimitReadingsShape } from "../usage/limit-readings.ts";
 import type { FeedWriter } from "./feed-writer.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type { LimitResume } from "./limit-resume.ts";
+import type { MessageQueue } from "./message-queue.ts";
 
 /** What an agent's events reach: nearly every other part of `ThreadRuntimes`. */
 export interface AgentEventsDeps {
@@ -89,6 +90,8 @@ export interface AgentEventsDeps {
   readonly publishFailure: TurnLifecycle["publishFailure"];
   readonly turnHeld: LimitResume["turnHeld"];
   readonly limitWaitOf: LimitResume["limitWaitOf"];
+  readonly queueHeld: LimitResume["queueHeld"];
+  readonly switchHold: MessageQueue["switchHold"];
   readonly hitAt: LimitResume["hitAt"];
   readonly startRelease: LimitResume["startRelease"];
   readonly enterWait: LimitResume["enterWait"];
@@ -140,6 +143,8 @@ export const makeAgentEvents = ({
   publishFailure,
   turnHeld,
   limitWaitOf,
+  queueHeld,
+  switchHold,
   hitAt,
   startRelease,
   enterWait,
@@ -154,9 +159,10 @@ export const makeAgentEvents = ({
   setCurrentCheckout,
 }: AgentEventsDeps) => {
   /**
-   * Called with the runtime lock held. A queue waits only on something running, and an idle
-   * session with input queued is a path that forgot to drain it (a card that closed with no turn,
-   * once): this says so, without the input, and sends it as `becomeIdle` would.
+   * Called with the runtime lock held. A queue waits only on something running or on a hold, and
+   * an idle session with input queued and nothing holding it is a path that forgot to drain it (a
+   * card that closed with no turn, once): this says so, without the input, and sends it as
+   * `becomeIdle` would.
    */
   const healQueue = (rt: Runtime) =>
     Effect.gen(function* () {
@@ -180,9 +186,18 @@ export const makeAgentEvents = ({
         );
         if (parked) return;
       }
-      yield* Effect.logWarning("queued input waited on an idle thread; sending it").pipe(
-        Effect.annotateLogs({ threadId: rt.threadId, queued: rt.queue.length }),
-      );
+      // A switch under way, a limit's wait and a queue hold each keep the queue on purpose, and
+      // send it when they let go: nothing forgot it, so there is nothing to warn about. Only the
+      // warning depends on this, so a failed read warns rather than keeping the input from going.
+      const held =
+        (yield* switchHold(rt).pipe(Effect.orElseSucceed(() => undefined))) !== undefined ||
+        rt.limitWait !== undefined ||
+        (yield* queueHeld(rt));
+      if (!held) {
+        yield* Effect.logWarning("queued input waited on an idle thread; sending it").pipe(
+          Effect.annotateLogs({ threadId: rt.threadId, queued: rt.queue.length }),
+        );
+      }
       yield* becomeIdle(rt);
     });
 

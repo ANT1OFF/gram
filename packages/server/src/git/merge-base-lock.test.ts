@@ -15,6 +15,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { captureLogs } from "@gram/agents/testing/logs";
 import { RuntimeTestLayer } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { waitReal } from "../orchestration/test-harness.ts";
@@ -149,6 +150,8 @@ describe("merges onto one base from two workspaces", () => {
         Layer.provideMerge(checks),
         Layer.provideMerge(GitRefresh.layer),
         Layer.provideMerge(RuntimeTestLayer),
+        // Turns and merges log as they go; a warning would be news.
+        Layer.provideMerge(captureLogs({ printWarnings: true }).layer),
       );
       yield* Effect.gen(function* () {
         const runtimes = yield* ThreadRuntimes;

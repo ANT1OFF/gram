@@ -334,13 +334,17 @@ export const BACKGROUND_OUTPUT_CHARS = 8_192;
 export const feedLocked = <A, E, R>(rt: Runtime, effect: Effect.Effect<A, E, R>) =>
   rt.feedLock.withPermits(1)(effect);
 
-/** Another subsystem's code, whose failure is logged and never becomes the runtime's. */
+/**
+ * Another subsystem's code, whose failure is logged and never becomes the runtime's. An interrupt
+ * alone is no failure: the server shutting down stops a callback under way, and says nothing wrong.
+ */
 export const guarded = (threadId: ThreadId, what: string, effect: Effect.Effect<void>) =>
   effect.pipe(
     Effect.catchCause((cause) =>
-      Effect.logWarning(`${what} failed`).pipe(
-        Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) }),
-      ),
+      (Cause.hasInterruptsOnly(cause)
+        ? Effect.logDebug(`${what} interrupted`)
+        : Effect.logWarning(`${what} failed`)
+      ).pipe(Effect.annotateLogs({ threadId, cause: Cause.pretty(cause) })),
     ),
   );
 
