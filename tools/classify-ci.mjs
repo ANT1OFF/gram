@@ -1,9 +1,16 @@
 // No install or new dependency is needed for classification on pinned Node 26.
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
-import { ciDiffArgs, classifyCiDiff, DOCUMENTATION_POLICY } from "../packages/git/src/ci-policy.ts";
+import {
+  CI_LANES,
+  ciDiffArgs,
+  ciLanes,
+  DOCUMENTATION_POLICY,
+} from "../packages/git/src/ci-policy.ts";
 
-let kind = "full";
+// Main pushes, manual runs and anything this can't classify run every lane.
+let selected = new Set(CI_LANES);
+let kind = "code";
 const { CI_EVENT, CI_BASE, CI_HEAD, GITHUB_OUTPUT } = process.env;
 if (
   CI_EVENT === "pull_request" &&
@@ -17,17 +24,23 @@ if (
       }),
     );
     if (policy.documentationPolicy === DOCUMENTATION_POLICY) {
-      kind = classifyCiDiff(
+      const lanes = ciLanes(
         execFileSync("git", ciDiffArgs(CI_BASE, CI_HEAD), {
           encoding: "utf8",
           maxBuffer: 2 * 1024 * 1024,
         }),
       );
+      if (lanes === "docs") {
+        kind = "docs";
+        selected = new Set();
+      } else selected = new Set(lanes);
     }
   } catch {
     // Missing objects/policy, command errors and output limits never authorize skipping tests.
-    kind = "full";
+    kind = "code";
+    selected = new Set(CI_LANES);
   }
 }
-console.log(`CI qualification: ${kind}`);
-if (GITHUB_OUTPUT) appendFileSync(GITHUB_OUTPUT, `kind=${kind}\n`);
+const lanes = CI_LANES.filter((lane) => selected.has(lane));
+console.log(`CI qualification: ${kind}${kind === "docs" ? "" : ` (${lanes.join(", ")})`}`);
+if (GITHUB_OUTPUT) appendFileSync(GITHUB_OUTPUT, `kind=${kind}\nlanes=${JSON.stringify(lanes)}\n`);

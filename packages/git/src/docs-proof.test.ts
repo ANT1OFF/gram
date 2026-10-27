@@ -80,12 +80,12 @@ const output = (body: unknown, status = 0, truncated = false) => ({
   stderr: "",
 });
 
-describe("review regressions: governance and unknown prose", () => {
+describe("review regressions: prose that code or tests read", () => {
   it.each([
-    "docs/UPDATES.md",
-    "docs/VERIFICATION.md",
-    "docs/new-governance.md",
-    "docs/verification/release-qualification.md",
+    "docs/design/mocks/needs-you-home/v1.html",
+    "docs/design/mocks/tokens.css",
+    "packages/git/src/fixtures/review-bot/README.md",
+    ".github/workflows/check.yml",
   ])("requires full for %s", (path) => {
     expect(classifyCiDiff(`:100644 100644 ${base} ${head} M\0${path}\0`)).toBe("full");
   });

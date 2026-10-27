@@ -248,10 +248,13 @@ const github = (
   jobs: ReadonlyArray<ReturnType<typeof job>>,
   runStatus = "completed",
   calls: string[][] = [],
+  changed?: string,
 ) =>
   Layer.succeed(Proc, {
-    run: (_bin, args) => {
+    run: (bin, args) => {
       calls.push([...args]);
+      if (bin === "git" && changed !== undefined)
+        return Effect.succeed({ status: 0, stdout: diff(changed), stderr: "", truncated: false });
       let body: unknown;
       if (args.some((arg) => arg.startsWith("ref="))) {
         expect(args).toContain(`ref=${base}:.gram/merge-ci.json`);
@@ -318,6 +321,90 @@ describe("a local check of the head at the merge launch", () => {
       // classify, qualification, check and subscription-smoke are missing: not passing.
       expect(result).not.toMatchObject({ _tag: "Success", success: "passing" });
       expect(calls.some((args) => args[1]?.includes("actions/runs?"))).toBe(true);
+    }),
+  );
+});
+
+describe("lanes at the independent merge gate", () => {
+  const e2e = ["e2e 1/2", "e2e 2/2"];
+  const laned = {
+    ...policy,
+    workflows: [
+      {
+        path: ".github/workflows/check.yml",
+        event: "pull_request",
+        jobs: [
+          "classify",
+          "qualification",
+          "check static",
+          "check tests 1/1",
+          "macos package",
+          ...e2e,
+        ],
+        docsJobs: ["classify", "qualification", "docs"],
+        laneJobs: {
+          static: ["check static"],
+          tests: ["check tests 1/1"],
+          package: ["macos package"],
+          e2e,
+        },
+        alwaysJobs: e2e,
+      },
+    ],
+  };
+  const verify = (changed: string, jobs: ReadonlyArray<ReturnType<typeof job>>, declared = laned) =>
+    verifyMergeCi("/repo", "example/project", badge).pipe(
+      Effect.provide(github(declared, jobs, "completed", [], changed)),
+      Effect.result,
+    );
+  const ran = [job("classify"), job("qualification"), job("check static"), job("check tests 1/1")];
+  const skipped = [job("macos package", "skipped"), ...e2e.map((name) => job(name, "skipped"))];
+
+  it.effect("needs none of the jobs of a lane the diff can't affect, by its own reproduction", () =>
+    Effect.gen(function* () {
+      const test = "packages/server/src/a.test.ts";
+      expect(yield* verify(test, [...ran, ...skipped])).toMatchObject({ success: "passing" });
+      // A skipped matrix shows one job under its unexpanded name, and none under the declared ones.
+      expect(
+        yield* verify(test, [...ran, job("e2e ${{ matrix.shard }}/2", "skipped")]),
+      ).toMatchObject({ success: "passing" });
+      // The lanes it did select still have to pass.
+      expect(
+        yield* verify(test, [...ran.slice(0, 3), job("check tests 1/1", "skipped"), ...skipped]),
+      ).toMatchObject({ success: "failing" });
+    }),
+  );
+
+  it.effect("needs every lane's jobs for a change the diff says can reach them", () =>
+    Effect.gen(function* () {
+      for (const changed of [
+        "packages/server/src/runtime.ts",
+        "docs/../x.ts",
+        ".github/workflows/check.yml",
+      ])
+        expect(yield* verify(changed, [...ran, ...skipped])).toMatchObject({ success: "failing" });
+      expect(yield* verify("apps/desktop/src/main/ipc.ts", [...ran, ...skipped])).toMatchObject({
+        success: "failing",
+      });
+      expect(
+        yield* verify("apps/desktop/src/main/ipc.ts", [
+          ...ran,
+          job("macos package"),
+          ...e2e.map((name) => job(name, "skipped")),
+        ]),
+      ).toMatchObject({ success: "passing" });
+    }),
+  );
+
+  it.effect("needs every job when the base declares no lanes", () =>
+    Effect.gen(function* () {
+      const { laneJobs: _, ...bare } = laned.workflows[0]!;
+      expect(
+        yield* verify("packages/server/src/a.test.ts", [...ran, ...skipped], {
+          ...laned,
+          workflows: [bare],
+        } as typeof laned),
+      ).toMatchObject({ success: "failing" });
     }),
   );
 });
