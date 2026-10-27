@@ -33,23 +33,57 @@ it("the Actions entrypoint uses actual base policy/diff and defaults main/manual
     writeFileSync(join(cwd, "README.md"), "edited prose\n");
     git(["commit", "-qam", "prose"]);
     const head = git(["rev-parse", "HEAD"]);
-    const classify = (event: string, baseSha = base, headSha = head) => {
+    /** The event's merge of `b` and `h`, as Actions checks it out; `undefined` when git can't. */
+    const mergeOf = (b: string, h: string) => {
+      try {
+        const tree = git(["merge-tree", "--write-tree", b, h]);
+        return execFileSync("git", ["commit-tree", tree, "-p", b, "-p", h], {
+          cwd,
+          input: "event merge\n",
+          encoding: "utf8",
+          stdio: ["pipe", "pipe", "ignore"],
+        }).trim();
+      } catch {
+        return undefined;
+      }
+    };
+    /** Runs the classifier from the event's merge checkout, or from `checkout` instead. */
+    const classify = (
+      event: string,
+      baseSha = base,
+      headSha = head,
+      { checkout, merge }: { checkout?: string; merge?: string } = {},
+    ) => {
+      const before = git(["rev-parse", "HEAD"]);
+      const made = mergeOf(baseSha, headSha);
+      const at = checkout ?? made ?? headSha;
       writeFileSync(output, "");
-      execFileSync(process.execPath, [script], {
-        cwd,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          CI_EVENT: event,
-          CI_BASE: baseSha,
-          CI_HEAD: headSha,
-          GITHUB_OUTPUT: output,
-        },
-      });
+      try {
+        if (/^[a-f0-9]{40}$/.test(at)) git(["checkout", "-q", "--detach", at]);
+        execFileSync(process.execPath, [script], {
+          cwd,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+          env: {
+            ...process.env,
+            CI_EVENT: event,
+            CI_BASE: baseSha,
+            CI_HEAD: headSha,
+            CI_MERGE: merge ?? made ?? headSha,
+            GITHUB_OUTPUT: output,
+          },
+        });
+      } finally {
+        git(["checkout", "-q", "--detach", before]);
+      }
       return readFileSync(output, "utf8");
     };
     expect(classify("pull_request")).toBe(DOCS);
+    // Only the event's merge decides lanes: the branch alone, or a merge Actions didn't name, runs
+    // every lane.
+    expect(classify("pull_request", base, head, { checkout: head })).toBe(FULL);
+    expect(classify("pull_request", base, head, { merge: "d".repeat(40) })).toBe(FULL);
+    expect(classify("pull_request", base, head, { checkout: head, merge: head })).toBe(FULL);
     mkdirSync(join(cwd, "packages/server/src"), { recursive: true });
     writeFileSync(join(cwd, "packages/server/src/a.test.ts"), "export {};\n");
     git(["add", "packages"]);

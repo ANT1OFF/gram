@@ -248,7 +248,9 @@ signing/pin assertions meaningful. Never remove an assertion simply to obtain a 
 
 [check.yml](../.github/workflows/check.yml) classifies each pull request by its diff against the
 actual base ([ci-policy.ts](../packages/git/src/ci-policy.ts)) and runs only the lanes it can
-affect; main pushes and manual runs run every lane. Prose (Markdown outside `apps/`, `packages/`
+affect; main pushes and manual runs run every lane. Classification runs from the event's merge
+commit, the source the jobs' conditions come from, and falls back to every lane on any other
+checkout, so a branch's own copy of the classifier never picks its lanes. Prose (Markdown outside `apps/`, `packages/`
 and `tools/`, and everything under `docs/`, but the mock files and the mock-build skill that tests read) gets a docs job: frozen
 install, `bun run check:docs` and `bun run fmt:check`. Everything else runs `check static` (a
 bounded typecheck, the check's static stages via `node tools/check/run.mjs --only static`, and the
