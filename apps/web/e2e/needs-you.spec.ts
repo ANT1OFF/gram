@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { slowdown } from "./slowdown";
 import { parkSeedAsks } from "./seed-asks";
 import { threadRow } from "./thread-row";
 
@@ -14,7 +13,7 @@ import { threadRow } from "./thread-row";
 // every step after the seed navigates inside the app; nothing reloads.
 
 /** The stack's undo window (`UNDO_MS`) and then some, for an answer to have gone out. */
-const SENT_MS = 8_000 * slowdown;
+const SENT_MS = 8_000;
 
 interface Seeded {
   readonly workspaceId: string;
@@ -100,6 +99,8 @@ test("the pill opens every workspace's items, and a row opens its thread at the 
 test("quick answers: an option, Allow and Deny go out through the stack's path, with Undo", async ({
   page,
 }) => {
+  // The undo window runs on the installed clock, so waiting past it takes no real time.
+  await page.clock.install();
   const made = await start(page);
   await seeAll(page);
   const question = row(panel(page), "Keep both, or uv only?");
@@ -121,8 +122,9 @@ test("quick answers: an option, Allow and Deny go out through the stack's path, 
   await push.getByTestId("needs-you-answer").and(page.locator('[data-option="Deny"]')).click();
   await expect(push).toHaveCount(0);
 
+  await page.clock.runFor(SENT_MS);
   await expect
-    .poll(() => sent(page), { timeout: SENT_MS })
+    .poll(() => sent(page))
     .toEqual(
       expect.arrayContaining([
         `r-merge-${made.other.asking} allow`,

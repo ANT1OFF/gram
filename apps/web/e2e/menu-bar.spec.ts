@@ -1,7 +1,6 @@
 import type { RequestId, TrayAction, TrayMenu } from "@gram/contracts";
 import { expect, test, type Page } from "@playwright/test";
 
-import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // The menu bar's (tray's) asks. The desktop shell is a fake:
@@ -9,7 +8,7 @@ import { openOrchestrator, threadRow } from "./thread-row";
 // reads the host's tray, menu bar or account state.
 
 /** The stack's undo window (`UNDO_MS`) and then some, for an answer to have gone out. */
-const SENT_MS = 8_000 * slowdown;
+const SENT_MS = 8_000;
 const PUSH = "git push -u origin feat/mail-trigger";
 const LONG = `${PUSH} && npm run release -- --tag next --dry-run=false`;
 
@@ -83,6 +82,8 @@ const start = async (page: Page, { trayOn = true } = {}) => {
       },
     });
   }, trayOn);
+  // The undo window runs on the installed clock, so waiting past it takes no real time.
+  await page.clock.install();
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   return page.evaluate(() => {
@@ -121,7 +122,7 @@ test("Allow in the menu answers the ask through the stack, and it leaves the men
   const stack = page.getByTestId("ask-stack");
   // The stack's own undo line: the same held answer, not a second path.
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
-  await page.waitForTimeout(SENT_MS);
+  await page.clock.runFor(SENT_MS);
   const answers = (await recorded(page)).sent.slice(sentBefore);
   expect(answers).toHaveLength(3);
   for (const each of answers) {
@@ -130,7 +131,7 @@ test("Allow in the menu answers the ask through the stack, and it leaves the men
 
   // The same pick again finds nothing to answer and sends nothing.
   await pick(page, { kind: "answer", id: push.id });
-  await page.waitForTimeout(SENT_MS);
+  await page.clock.runFor(SENT_MS);
   expect((await recorded(page)).sent.length).toBe(sentBefore + 3);
 });
 

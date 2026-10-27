@@ -71,7 +71,7 @@ export function useTerminalTheme(): TerminalTheme {
  * Find highlights for the active palette, translucent because they lie over the text rather than
  * under it: the warning colour on every match, the accent on the active one.
  */
-function terminalSearchColors(
+export function terminalSearchColors(
   prefs: Pick<ThemePrefs, "palette" | "mode" | "contrast">,
   customPalettes: readonly Palette[],
   system: SystemPrefs,
