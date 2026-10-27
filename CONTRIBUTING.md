@@ -50,6 +50,14 @@ they merge. Re-review fixes that change the result. While reviewing, check at le
   and never duplicate a publication.
 - **Regressions.** Commit each reproduction as a test that fails before the fix and passes after.
 
+## CI
+
+A pull request runs only the CI lanes its diff can affect: prose alone (Markdown outside `apps/`,
+`packages/` and `tools/`, and `docs/`) runs only the docs, format and scaffold checks, and a test
+file, an e2e spec or `apps/desktop` skips the jobs it can't reach. Workflows, root configuration
+and shared package sources run everything, as every push to `main` does. The lanes and what selects
+them are in [verification](docs/VERIFICATION.md#ci).
+
 ## Merging with Gram
 
 Gram can gate its own merges on a local check of the PR's head merged onto its base. That is
