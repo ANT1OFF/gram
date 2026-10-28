@@ -3,15 +3,7 @@ import { LimitCleared, LimitWait, ThreadError } from "./agent-failure.ts";
 import { BabysitState, HumanReviewNotice, ReviewNotice } from "./babysit.ts";
 import { CodexHome } from "./codex-home.ts";
 import { ChecksRollup, PrState } from "./git.ts";
-import {
-  LabelId,
-  ProfileId,
-  ProjectId,
-  RequestId,
-  ThreadId,
-  TurnId,
-  WorkspaceId,
-} from "./ids.ts";
+import { LabelId, ProfileId, ProjectId, RequestId, ThreadId, TurnId, WorkspaceId } from "./ids.ts";
 import {
   MessageOrigin,
   OrchestrationDigest,
@@ -42,14 +34,7 @@ export const PermissionMode = Schema.Literals([
 export type PermissionMode = typeof PermissionMode.Type;
 
 /** Reasoning efforts, lowest first; a gateway takes `max` only on `/responses` (see `gatewayEfforts`). */
-export const ReasoningVariant = Schema.Literals([
-  "none",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
+export const ReasoningVariant = Schema.Literals(["none", "low", "medium", "high", "xhigh", "max"]);
 export type ReasoningVariant = typeof ReasoningVariant.Type;
 
 /** Provider processing speed, independent of reasoning effort. */
@@ -78,9 +63,7 @@ export const SupportedModelRef = ModelRef.check(
   Schema.makeFilter(
     (model) =>
       model.agent !== "grok" ||
-      (model.profileId === undefined &&
-        model.variant === undefined &&
-        model.speed !== "fast") ||
+      (model.profileId === undefined && model.variant === undefined && model.speed !== "fast") ||
       "Grok Build requires its local CLI login without gateway, effort or Fast overrides.",
   ),
 );
@@ -151,20 +134,14 @@ export const GatewayProfile = Schema.Struct({
    */
   helperFallback: Schema.optionalKey(
     Schema.NullOr(
-      Schema.Struct({
-        model: Schema.String,
-        effort: Schema.optionalKey(ReasoningVariant),
-      }),
+      Schema.Struct({ model: Schema.String, effort: Schema.optionalKey(ReasoningVariant) }),
     ),
   ),
 });
 export type GatewayProfile = typeof GatewayProfile.Type;
 
 /** A key or a recognised hostname never grants permission to send conversation context. */
-export const helperContextAllowed = (
-  profile: GatewayProfile,
-  kind: string,
-): boolean =>
+export const helperContextAllowed = (profile: GatewayProfile, kind: string): boolean =>
   profile.helperContext?.baseURL === profile.baseURL &&
   (profile.helperContext.scope === "conversation" || kind === "title");
 
@@ -186,11 +163,8 @@ const NOT_FOR_AGENTS =
 export const gatewayModelUsable = (model: GatewayModel): boolean => {
   const info = model.info;
   if (info === undefined) return !NOT_FOR_AGENTS.test(model.id);
-  if (info.mode !== undefined && !CONVERSATION_MODES.has(info.mode))
-    return false;
-  return (
-    info.deprecated !== true && info.restricted !== true && info.tools !== false
-  );
+  if (info.mode !== undefined && !CONVERSATION_MODES.has(info.mode)) return false;
+  return info.deprecated !== true && info.restricted !== true && info.tools !== false;
 };
 
 /** A synthetic gateway profile on a reserved host, for tests and examples. */
@@ -210,10 +184,7 @@ export const GATEWAY_PROVIDER_ID = "gram";
  * What helper jobs run on when the profile lists it and the user picked nothing else: a
  * recommended small model. Its name makes no data-residency or privacy promise.
  */
-export const DEFAULT_HELPER = {
-  model: "claude-haiku-5.5-eu",
-  effort: "high",
-} as const satisfies {
+export const DEFAULT_HELPER = { model: "claude-haiku-5.5-eu", effort: "high" } as const satisfies {
   readonly model: string;
   readonly effort: ReasoningVariant;
 };
@@ -237,8 +208,7 @@ export const helperChoice = (
   }
   // Only what an agent could run: the first model is otherwise often an embedding model.
   const usable = profile.models.filter(gatewayModelUsable);
-  if (usable.some((model) => model.id === DEFAULT_HELPER.model))
-    return DEFAULT_HELPER;
+  if (usable.some((model) => model.id === DEFAULT_HELPER.model)) return DEFAULT_HELPER;
   const first = usable[0];
   return first === undefined ? undefined : { model: first.id };
 };
@@ -258,17 +228,13 @@ export const DEFAULT_HELPER_FALLBACK = {
  * {@link DEFAULT_HELPER_FALLBACK} when the gateway lists it and it isn't the primary.
  */
 export const helperFallbackChoice = (
-  profile: Pick<
-    GatewayProfile,
-    "models" | "helperModel" | "helperEffort" | "helperFallback"
-  >,
+  profile: Pick<GatewayProfile, "models" | "helperModel" | "helperEffort" | "helperFallback">,
 ): HelperChoice | undefined => {
   if (profile.helperFallback === null) return undefined;
   if (profile.helperFallback !== undefined) return profile.helperFallback;
   const primary = helperChoice(profile);
   return profile.models.some(
-    (model) =>
-      model.id === DEFAULT_HELPER_FALLBACK.model && gatewayModelUsable(model),
+    (model) => model.id === DEFAULT_HELPER_FALLBACK.model && gatewayModelUsable(model),
   ) && primary?.model !== DEFAULT_HELPER_FALLBACK.model
     ? DEFAULT_HELPER_FALLBACK
     : undefined;
@@ -284,8 +250,7 @@ const normalURL = (url: string): string => {
 };
 
 /** Whether two gateway addresses name the same endpoint, whatever their case or trailing slash. */
-export const sameGatewayURL = (a: string, b: string): boolean =>
-  normalURL(a) === normalURL(b);
+export const sameGatewayURL = (a: string, b: string): boolean => normalURL(a) === normalURL(b);
 
 // ---------------------------------------------------------------------------------------------
 // Projects, threads, labels
@@ -311,9 +276,7 @@ const ProjectCheckCommand = Schema.String.check(
 export const ProjectCheckPreparation = Schema.Struct({
   manifest: ProjectCheckCommand,
   inputConfigSha256: Schema.optionalKey(
-    Schema.String.check(
-      Schema.makeFilter((v) => /^[a-f0-9]{64}$/.test(v) || "Expected SHA-256."),
-    ),
+    Schema.String.check(Schema.makeFilter((v) => /^[a-f0-9]{64}$/.test(v) || "Expected SHA-256.")),
   ),
   sha256: Schema.String.check(
     Schema.makeFilter((v) => /^[a-f0-9]{64}$/.test(v) || "Expected SHA-256."),
@@ -366,12 +329,7 @@ export type Checkout = typeof Checkout.Type;
 export { CompactionActivity, ThreadStatus };
 
 /** The status-derived sidebar groups. Pinned / Parked come from thread flags instead. */
-export const SidebarGroup = Schema.Literals([
-  "needsYou",
-  "working",
-  "idle",
-  "settled",
-]);
+export const SidebarGroup = Schema.Literals(["needsYou", "working", "idle", "settled"]);
 export type SidebarGroup = typeof SidebarGroup.Type;
 
 /**
@@ -387,8 +345,7 @@ export const sidebarGroup = ({
   readonly completedAt?: number | undefined;
   readonly babysit?: { readonly phase: BabysitState["phase"] } | undefined;
 }): SidebarGroup => {
-  if (babysit?.phase === "stopped" && (status === "idle" || status === "cold"))
-    return "needsYou";
+  if (babysit?.phase === "stopped" && (status === "idle" || status === "cold")) return "needsYou";
   switch (status) {
     case "needsApproval":
     case "needsInput":
@@ -423,9 +380,9 @@ export const MergeIntent = Schema.Struct({
   method: Schema.Literals(["squash", "merge", "rebase"]),
   /** Pull requests that must have merged first. */
   after: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({ repo: Schema.String, number: Schema.Int }),
-    ).check(Schema.isMaxLength(MERGE_AFTER_MAX)),
+    Schema.Array(Schema.Struct({ repo: Schema.String, number: Schema.Int })).check(
+      Schema.isMaxLength(MERGE_AFTER_MAX),
+    ),
   ),
   /** Held until cleared, and why. */
   hold: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
@@ -487,9 +444,7 @@ export const MonitorMark = Schema.Struct({
   reviewsRead: Schema.optionalKey(Schema.Boolean),
   /** People's reviews already seen, by id, newest last. */
   humanReviews: Schema.optionalKey(
-    Schema.Array(Schema.String).check(
-      Schema.isMaxLength(MONITOR_MARK_REVIEWS_MAX),
-    ),
+    Schema.Array(Schema.String).check(Schema.isMaxLength(MONITOR_MARK_REVIEWS_MAX)),
   ),
 });
 export type MonitorMark = typeof MonitorMark.Type;
@@ -539,12 +494,8 @@ export const BoundPr = Schema.Struct({
 export type BoundPr = typeof BoundPr.Type;
 
 /** The dependencies `merge_when_ready` waits on: those it wasn't told it needn't. */
-export const mergeAfterDependencies = (
-  bound: BoundPr,
-): ReadonlyArray<PrDependency> =>
-  (bound.dependsOn ?? []).filter(
-    (dependency) => dependency.mergeAfter !== false,
-  );
+export const mergeAfterDependencies = (bound: BoundPr): ReadonlyArray<PrDependency> =>
+  (bound.dependsOn ?? []).filter((dependency) => dependency.mergeAfter !== false);
 
 /** The most workflow runs a thread watches at once; each one is a lookup every poll. */
 export const MAX_RUN_WATCHES = 8;
@@ -559,8 +510,7 @@ export const MAX_EXTRA_PRS = 8;
 export const samePr = (
   a: Pick<BoundPr, "repo" | "number">,
   b: Pick<BoundPr, "repo" | "number">,
-): boolean =>
-  a.number === b.number && a.repo.toLowerCase() === b.repo.toLowerCase();
+): boolean => a.number === b.number && a.repo.toLowerCase() === b.repo.toLowerCase();
 
 /**
  * A PR the user took out of the thread's PR strip. It stays bound or followed; only its row goes, and
@@ -573,9 +523,7 @@ export const HiddenPr = Schema.Struct({
   /** The PR's state when it was hidden; an open PR hidden while closed or merged was reopened. */
   state: Schema.optionalKey(PrState),
   /** What already needed the user when it was hidden, which doesn't bring the row back. */
-  seen: Schema.optionalKey(
-    Schema.Array(Schema.String).check(Schema.isMaxLength(8)),
-  ),
+  seen: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(8))),
 });
 export type HiddenPr = typeof HiddenPr.Type;
 
@@ -618,23 +566,13 @@ export const SessionSwitch = Schema.Struct({
   previous: ModelRef,
   target: ModelRef,
   mode: PermissionMode,
-  phase: Schema.Literals([
-    "checkpoint",
-    "retry",
-    "stopping",
-    "starting",
-    "ready",
-    "failed",
-  ]),
+  phase: Schema.Literals(["checkpoint", "retry", "stopping", "starting", "ready", "failed"]),
   oldExited: Schema.Boolean,
   /** Release proof for this exact id; a closed pre-spawn path is distinct from actual EXIT. */
   targetRelease: Schema.optionalKey(Schema.Literals(["notStarted", "exited"])),
   /** Admission proof belongs to the previous failed attempt, never to this new target. */
   retryFrom: Schema.optionalKey(
-    Schema.Struct({
-      id: Schema.String,
-      release: Schema.Literals(["notStarted", "exited"]),
-    }),
+    Schema.Struct({ id: Schema.String, release: Schema.Literals(["notStarted", "exited"]) }),
   ),
   checkpointTurnId: Schema.optionalKey(TurnId),
   detail: Schema.optionalKey(Schema.String),
@@ -710,17 +648,11 @@ export const Thread = Schema.Struct({
    * `boundPr`, and merging one never completes the thread. Capped in the schema too, so a stored
    * or imported thread can't widen every GitHub sweep past `MAX_EXTRA_PRS`.
    */
-  extraPrs: Schema.optionalKey(
-    Schema.Array(BoundPr).check(Schema.isMaxLength(MAX_EXTRA_PRS)),
-  ),
+  extraPrs: Schema.optionalKey(Schema.Array(BoundPr).check(Schema.isMaxLength(MAX_EXTRA_PRS))),
   /** Workflow runs the thread waits on, oldest first; each goes once its run completes. */
-  runWatches: Schema.optionalKey(
-    Schema.Array(RunWatch).check(Schema.isMaxLength(MAX_RUN_WATCHES)),
-  ),
+  runWatches: Schema.optionalKey(Schema.Array(RunWatch).check(Schema.isMaxLength(MAX_RUN_WATCHES))),
   /** PRs kept out of the PR strip (`pr.hide`), oldest first; bindings are untouched. */
-  hiddenPrs: Schema.optionalKey(
-    Schema.Array(HiddenPr).check(Schema.isMaxLength(MAX_HIDDEN_PRS)),
-  ),
+  hiddenPrs: Schema.optionalKey(Schema.Array(HiddenPr).check(Schema.isMaxLength(MAX_HIDDEN_PRS))),
   /** Babysit mode on the bound PR (`thread.setBabysit`); absent while off. */
   babysit: Schema.optionalKey(BabysitState),
   /**
@@ -783,9 +715,7 @@ export const ORCHESTRATOR_HAS_NO_PR =
 export const normalizeThreadPrs = (thread: Thread): Thread => {
   if (thread.role === "orchestrator") {
     const { boundPr, extraPrs, babysit, rereviewRequestedOn, ...rest } = thread;
-    const held = [boundPr, extraPrs, babysit, rereviewRequestedOn].some(
-      (v) => v !== undefined,
-    );
+    const held = [boundPr, extraPrs, babysit, rereviewRequestedOn].some((v) => v !== undefined);
     return held ? rest : thread;
   }
   const extras = thread.extraPrs;
@@ -830,12 +760,7 @@ export const UserInput = Schema.Struct({
   attachments: Schema.optionalKey(Schema.Array(Attachment)),
   /** A structured notice the transcript renders as a card; the agent reads `text`. */
   notice: Schema.optionalKey(
-    Schema.Union([
-      ReviewNotice,
-      HumanReviewNotice,
-      OrchestrationDigest,
-      IdleCompactNotice,
-    ]),
+    Schema.Union([ReviewNotice, HumanReviewNotice, OrchestrationDigest, IdleCompactNotice]),
   ),
   /** Set when another thread sent the message (`send_message`); the transcript names the sender. */
   origin: Schema.optionalKey(MessageOrigin),
@@ -866,8 +791,7 @@ export const PermissionUpdateDestination = Schema.Literals([
   "session",
   "cliArg",
 ]);
-export type PermissionUpdateDestination =
-  typeof PermissionUpdateDestination.Type;
+export type PermissionUpdateDestination = typeof PermissionUpdateDestination.Type;
 
 export const PermissionRuleValue = Schema.Struct({
   toolName: Schema.String,
@@ -875,11 +799,7 @@ export const PermissionRuleValue = Schema.Struct({
 });
 export type PermissionRuleValue = typeof PermissionRuleValue.Type;
 
-const rulesUpdate = <
-  const T extends "addRules" | "replaceRules" | "removeRules",
->(
-  type: T,
-) =>
+const rulesUpdate = <const T extends "addRules" | "replaceRules" | "removeRules">(type: T) =>
   Schema.Struct({
     type: Schema.Literal(type),
     rules: Schema.Array(PermissionRuleValue),
@@ -887,11 +807,7 @@ const rulesUpdate = <
     destination: PermissionUpdateDestination,
   });
 
-const directoriesUpdate = <
-  const T extends "addDirectories" | "removeDirectories",
->(
-  type: T,
-) =>
+const directoriesUpdate = <const T extends "addDirectories" | "removeDirectories">(type: T) =>
   Schema.Struct({
     type: Schema.Literal(type),
     directories: Schema.Array(Schema.String),
@@ -947,9 +863,7 @@ export const ApprovalRequest = Schema.Struct({
 export type ApprovalRequest = typeof ApprovalRequest.Type;
 
 /** What an approval is about: the command for shells, the path for file tools, else the input. */
-export const approvalSubject = (
-  request: Pick<ApprovalRequest, "input">,
-): string => {
+export const approvalSubject = (request: Pick<ApprovalRequest, "input">): string => {
   const { input } = request;
   if (typeof input["command"] === "string") return input["command"];
   if (typeof input["file_path"] === "string") return input["file_path"];
@@ -987,11 +901,7 @@ export const PlanRequest = Schema.Struct({
 });
 export type PlanRequest = typeof PlanRequest.Type;
 
-export const PendingRequest = Schema.Union([
-  ApprovalRequest,
-  QuestionRequest,
-  PlanRequest,
-]);
+export const PendingRequest = Schema.Union([ApprovalRequest, QuestionRequest, PlanRequest]);
 export type PendingRequest = typeof PendingRequest.Type;
 
 export const ApprovalAnswer = Schema.Struct({
@@ -1019,22 +929,13 @@ export const PlanAnswer = Schema.Struct({
 });
 export type PlanAnswer = typeof PlanAnswer.Type;
 
-export const RequestAnswer = Schema.Union([
-  ApprovalAnswer,
-  QuestionAnswer,
-  PlanAnswer,
-]);
+export const RequestAnswer = Schema.Union([ApprovalAnswer, QuestionAnswer, PlanAnswer]);
 export type RequestAnswer = typeof RequestAnswer.Type;
 
 // ---------------------------------------------------------------------------------------------
 // Plan and usage
 
-export const PlanItemStatus = Schema.Literals([
-  "pending",
-  "inProgress",
-  "completed",
-  "cancelled",
-]);
+export const PlanItemStatus = Schema.Literals(["pending", "inProgress", "completed", "cancelled"]);
 export type PlanItemStatus = typeof PlanItemStatus.Type;
 
 export const PlanItem = Schema.Struct({
