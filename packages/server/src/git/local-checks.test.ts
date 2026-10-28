@@ -252,9 +252,10 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
         const doc = { schema: "gram.selected-source/v1", head, base, tree, entries };
         const seen: Array<string> = [];
         const child = nodePath.join(dir, "synthetic-check.cjs");
+        const expectedDigest = createHash("sha256").update(JSON.stringify(doc)).digest("hex");
         write(
           child,
-          `const fs=require("node:fs");if(fs.existsSync(".env.example")||!process.env.GRAM_CHECK_SOURCE_SELECTION_MANIFEST||!process.env.GRAM_CHECK_SOURCE_SELECTION_SHA256||process.env.GRAM_CHECK_SOURCE_SELECTION_SHA256==="inherited-forgery")process.exit(1);`,
+          `const fs=require("node:fs");if(fs.existsSync(".env.example")||process.env.GRAM_CHECK_SOURCE_SELECTION_MANIFEST!==${JSON.stringify(manifest)}||process.env.GRAM_CHECK_SOURCE_SELECTION_SHA256!==${JSON.stringify(expectedDigest)})process.exit(1);`,
         );
         const command = `${JSON.stringify(process.execPath)} ${JSON.stringify(child)}`;
         const runner: LocalCheckRunnerShape["run"] = (work, log, wanted, source) =>
