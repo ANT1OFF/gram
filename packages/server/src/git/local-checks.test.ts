@@ -353,6 +353,48 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
   );
 
   it.live.skipIf(process.platform === "win32")(
+    "refuses attribute-transformed selected bytes before starting the command",
+    () =>
+      Effect.gen(function* () {
+        const { dir, repo } = fixture();
+        run(repo, "checkout", "-q", "feature");
+        write(nodePath.join(repo, "feature.txt"), "$Id$\n");
+        run(repo, "add", "feature.txt");
+        run(repo, "commit", "-qm", "ident content");
+        const head = run(repo, "rev-parse", "HEAD").trim();
+        run(repo, "checkout", "-q", "main");
+        write(nodePath.join(repo, ".gitattributes"), "feature.txt ident\n");
+        run(repo, "add", ".gitattributes");
+        run(repo, "commit", "-qm", "ident attribute");
+        const base = run(repo, "rev-parse", "HEAD").trim();
+        const tree = run(repo, "merge-tree", "--write-tree", "--no-messages", base, head).trim();
+        const entries = run(repo, "ls-tree", "-r", "-z", "--full-tree", tree)
+          .split("\0").filter(Boolean).map((item) => {
+            const [meta, path] = item.split("\t");
+            const [mode, , oid] = meta!.split(" ");
+            return { path: path!, mode: mode!, oid: oid!, selected: true };
+          });
+        const raw = JSON.stringify({ schema: "gram.selected-source/v1", head, base, tree, entries });
+        const manifest = nodePath.join(dir, "selection.json");
+        write(manifest, raw);
+        let invoked = false;
+        const runner: LocalCheckRunnerShape["run"] = () => Effect.sync(() => {
+          invoked = true;
+          return { ok: true };
+        });
+        const outcome = yield* Effect.gen(function* () {
+          yield* configured(repo, { command: "synthetic", preparation: {
+            manifest, sha256: createHash("sha256").update(raw).digest("hex"),
+          } });
+          return yield* checked(repo, head, base);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "ident.db"), dir, runner, false)));
+        expect(outcome).toMatchObject({ status: "failed", reason: "selected-source materialization differs" });
+        expect(invoked).toBe(false);
+        removeDir(dir);
+      }),
+  );
+
+  it.live.skipIf(process.platform === "win32")(
     "removes a stopped check's worktree only once the processes it owns have exited",
     () =>
       Effect.gen(function* () {

@@ -180,6 +180,55 @@ function protectedSourceName(path: string): boolean {
     )
   );
 }
+/** Verify materialized bytes and modes without opening any omitted path. */
+function verifySelectedWorktree(root: string, selection: ReadonlyArray<SelectedSource>): void {
+  const expected = new Map(selection.filter((row) => row.selected).map((row) => [row.path, row]));
+  const seen = new Set<string>();
+  const visit = (dir: string, prefix: string): void => {
+    for (const name of readdirSync(dir)) {
+      if (!prefix && name === ".git") continue;
+      const relative = prefix ? `${prefix}/${name}` : name;
+      const path = nodePath.join(dir, name);
+      const metadata = lstatSync(path);
+      if (metadata.isDirectory()) {
+        if (![...expected.keys()].some((candidate) => candidate.startsWith(relative + "/")))
+          throw new Error("unexpected selected worktree directory");
+        visit(path, relative);
+        continue;
+      }
+      const row = expected.get(relative);
+      if (row === undefined || !metadata.isFile() || metadata.isSymbolicLink())
+        throw new Error("unexpected selected worktree path");
+      const fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      try {
+        const before = fstatSync(fd);
+        const mode = (before.mode & 0o111) !== 0 ? "100755" : "100644";
+        if (!before.isFile() || mode !== row.mode || before.dev !== metadata.dev || before.ino !== metadata.ino)
+          throw new Error("selected worktree mode differs");
+        const hash = createHash("sha1").update(`blob ${before.size}\0`);
+        const buffer = Buffer.allocUnsafe(64 * 1024);
+        let bytes = 0;
+        for (;;) {
+          const count = readSync(fd, buffer, 0, buffer.length, null);
+          if (count === 0) break;
+          bytes += count;
+          hash.update(buffer.subarray(0, count));
+        }
+        const after = fstatSync(fd);
+        if (bytes !== before.size || hash.digest("hex") !== row.oid ||
+            before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+            before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs)
+          throw new Error("selected worktree bytes differ");
+      } finally {
+        closeSync(fd);
+      }
+      seen.add(relative);
+    }
+  };
+  visit(root, "");
+  if (seen.size !== expected.size) throw new Error("selected worktree membership differs");
+}
+
 function selectedSourceManifest(
   preparation: NonNullable<ProjectLocalCheck["preparation"]>,
   head: string,
@@ -1632,6 +1681,15 @@ export const LocalChecksLive = Layer.effect(
                         reason: "selected-source checkout failed",
                         failure: { kind: "unstartable" },
                       } satisfies LocalCheckOutcome;
+                    try {
+                      verifySelectedWorktree(dir, selection);
+                    } catch {
+                      return {
+                        ok: false,
+                        reason: "selected-source materialization differs",
+                        failure: { kind: "unstartable" },
+                      } satisfies LocalCheckOutcome;
+                    }
                   }
                   const outcome = yield* runner.run(dir, started.log!, wanted, {
                     head: started.head,
