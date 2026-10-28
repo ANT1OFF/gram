@@ -18,7 +18,7 @@ import {
   type ProjectLocalCheck,
   type ProjectId,
 } from "@gram/contracts";
-import { canonicalizeOrOwned, git, isInside, PathProbe, Proc } from "@gram/git";
+import { canonicalizeOrOwned, git, isInside, PathProbe, Proc, realPathSync } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -32,6 +32,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  constants as fsConstants,
   existsSync,
   fstatSync,
   mkdirSync,
@@ -62,6 +63,7 @@ export interface LocalCheckRun {
   /** How the source was isolated from the agent's repository (`LOCAL_CHECK_ISOLATION`). */
   readonly isolation: string;
   readonly command: string;
+  readonly preparation?: NonNullable<ProjectLocalCheck["preparation"]>;
   readonly projectId?: string;
   readonly setup?: string;
   readonly timeoutMs?: number;
@@ -90,6 +92,7 @@ export interface MergedCheckSource {
  * changes this, and retires every pass before it.
  */
 export const LOCAL_CHECK_ISOLATION = "own-bare-repository/2";
+const SELECTED_CHECK_ISOLATION = "own-bare-repository/selected/1";
 
 /** The single neutral project setting to command conversion. */
 export const localCheckRunFor = (
@@ -110,9 +113,11 @@ export const localCheckRunFor = (
   return setting?.command === undefined || setting.command.trim() === ""
     ? undefined
     : {
-        isolation: LOCAL_CHECK_ISOLATION,
+        isolation:
+          setting.preparation === undefined ? LOCAL_CHECK_ISOLATION : SELECTED_CHECK_ISOLATION,
         ...(projectId === undefined ? {} : { projectId }),
         command: setting.command,
+        ...(setting.preparation === undefined ? {} : { preparation: setting.preparation }),
         ...(setting.setup === undefined ? {} : { setup: setting.setup }),
         timeoutMs: setting.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
       };
@@ -121,6 +126,7 @@ export const localCheckRunFor = (
 /** Run identity includes the source-isolation version, so runs under another one hash apart. */
 export const runIdOf = (run: {
   readonly isolation?: string | undefined;
+  readonly preparation?: ProjectLocalCheck["preparation"] | undefined;
   readonly command: string;
   readonly projectId?: string | undefined;
   readonly setup?: string | undefined;
@@ -137,10 +143,144 @@ export const runIdOf = (run: {
         run.setup ?? null,
         run.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
         ...(run.profile === undefined ? [] : [run.profile, run.qualification ?? null]),
+        ...(run.preparation === undefined
+          ? []
+          : [run.preparation.manifest, run.preparation.sha256]),
       ]),
     )
     .digest("hex")
     .slice(0, 12);
+
+/** A user-approved selection enumerates the complete candidate tree; omitted bytes are never read. */
+interface SelectedSource {
+  path: string;
+  mode: string;
+  oid: string;
+  selected: boolean;
+}
+function protectedSourceName(path: string): boolean {
+  const parts = path.toLowerCase().split("/");
+  const name = parts.at(-1)!;
+  return (
+    parts.some((part) =>
+      [".ssh", ".aws", ".gnupg", "secret-manifest", "credential-store", "credentials"].includes(
+        part,
+      ),
+    ) ||
+    name.startsWith(".env") ||
+    name.includes(".env.") ||
+    /(?:private[_.-]?key|credential|password|mnemonic|seed[_.-]?phrase|keystore|api[_.-]?(?:key|token)|access[_.-]?token|refresh[_.-]?token)/i.test(
+      name,
+    ) ||
+    (name.includes("wallet") && /\.(?:json|toml|yaml|yml|ini|db)$/.test(name)) ||
+    /\.(?:env|key|pem|p12|pfx|jks|keystore)$/.test(name) ||
+    /^(?:id_rsa|id_ed25519|id_ecdsa)/.test(name) ||
+    ["secrets.json", "secrets.toml", ".npmrc", ".pypirc", ".netrc", ".git-credentials"].includes(
+      name,
+    )
+  );
+}
+function selectedSourceManifest(
+  preparation: NonNullable<ProjectLocalCheck["preparation"]>,
+  head: string,
+  base: string,
+  tree: string,
+): Array<SelectedSource> {
+  const path = preparation.manifest;
+  if (process.platform !== "linux") throw new Error("selected-source preparation requires Linux");
+  if (
+    !nodePath.isAbsolute(path) ||
+    nodePath.normalize(path) !== path ||
+    realPathSync(path) !== path ||
+    protectedSourceName(path)
+  )
+    throw new Error("unsafe selected-source manifest path");
+  const fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  try {
+    const before = fstatSync(fd);
+    if (!before.isFile() || before.size > 8 * 1024 * 1024 || before.size <= 0)
+      throw new Error("invalid selected-source manifest");
+    const raw = readFileSync(fd);
+    const after = fstatSync(fd);
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs ||
+      before.ctimeMs !== after.ctimeMs ||
+      createHash("sha256").update(raw).digest("hex") !== preparation.sha256
+    )
+      throw new Error("selected-source manifest identity differs");
+    const doc: unknown = JSON.parse(raw.toString("utf8"));
+    if (typeof doc !== "object" || doc === null || Array.isArray(doc))
+      throw new Error("invalid selected-source document");
+    const v = doc as Record<string, unknown>;
+    if (
+      Object.keys(v).toSorted().join(",") !== "base,entries,head,schema,tree" ||
+      v.schema !== "gram.selected-source/v1" ||
+      v.head !== head ||
+      v.base !== base ||
+      v.tree !== tree ||
+      !Array.isArray(v.entries) ||
+      v.entries.length === 0 ||
+      v.entries.length > 100_000
+    )
+      throw new Error("selected-source candidate identity differs");
+    const rows: Array<SelectedSource> = [];
+    const seen = new Set<string>();
+    for (const item of v.entries as Array<unknown>) {
+      if (typeof item !== "object" || item === null || Array.isArray(item))
+        throw new Error("invalid selected-source entry");
+      const row = item as Record<string, unknown>;
+      if (
+        Object.keys(row).toSorted().join(",") !== "mode,oid,path,selected" ||
+        typeof row.path !== "string" ||
+        !row.path ||
+        row.path.startsWith("/") ||
+        /[^\x20-\x7e]|\\/.test(row.path) ||
+        row.path
+          .split("/")
+          .some(
+            (part) => !part || part === "." || part === ".." || part.toLowerCase() === ".git",
+          ) ||
+        seen.has(row.path) ||
+        typeof row.mode !== "string" ||
+        !["100644", "100755", "120000"].includes(row.mode) ||
+        typeof row.oid !== "string" ||
+        !/^[a-f0-9]{40}$/.test(row.oid) ||
+        typeof row.selected !== "boolean" ||
+        (!row.selected && row.path.split("/").at(-1) === ".gitattributes") ||
+        (row.selected && (row.mode === "120000" || protectedSourceName(row.path)))
+      )
+        throw new Error("unsafe selected-source entry");
+      seen.add(row.path);
+      rows.push(row as unknown as SelectedSource);
+    }
+    if (
+      !rows.some((row) => row.selected) ||
+      rows.filter((row) => !row.selected).length > 4096 ||
+      rows.some((row, index) => index > 0 && rows[index - 1]!.path >= row.path)
+    )
+      throw new Error("invalid selected-source bounds or order");
+    const canonical = JSON.stringify({
+      schema: "gram.selected-source/v1",
+      head,
+      base,
+      tree,
+      entries: rows.map((row) => ({
+        path: row.path,
+        mode: row.mode,
+        oid: row.oid,
+        selected: row.selected,
+      })),
+    });
+    if (raw.toString("utf8") !== canonical)
+      throw new Error("noncanonical selected-source manifest");
+    return rows;
+  } finally {
+    closeSync(fd);
+  }
+}
 
 /** How long a stopped check's processes get to end on SIGTERM before SIGKILL. */
 const KILL_GRACE_MS = 10_000;
@@ -180,6 +320,19 @@ export const LocalCheck = Schema.Struct({
   tree: Schema.String,
   status: Schema.Literals(["running", "passed", "failed"]),
   command: Schema.String,
+  preparation: Schema.optionalKey(
+    Schema.Struct({ manifest: Schema.String, sha256: Schema.String }),
+  ),
+  omittedSources: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        path: Schema.String,
+        mode: Schema.String,
+        oid: Schema.String,
+        contents: Schema.Literal("NOT_READ_OR_VERIFIED"),
+      }),
+    ),
+  ),
   /** `LOCAL_CHECK_ISOLATION` as the check ran. */
   isolation: Schema.String,
   projectId: Schema.optionalKey(Schema.String),
@@ -523,6 +676,13 @@ export const spawnCheck = (
 ) =>
   Effect.gen(function* () {
     const env = checkEnv(environment.base, environment.pathValue);
+    // Only the approved recipe can supply this binding; never inherit a caller's claim.
+    delete env["GRAM_CHECK_SOURCE_SELECTION_MANIFEST"];
+    delete env["GRAM_CHECK_SOURCE_SELECTION_SHA256"];
+    if (run.preparation !== undefined) {
+      env["GRAM_CHECK_SOURCE_SELECTION_MANIFEST"] = run.preparation.manifest;
+      env["GRAM_CHECK_SOURCE_SELECTION_SHA256"] = run.preparation.sha256;
+    }
     const timeoutMs = run.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS;
     const graceMs = environment.killGraceMs ?? KILL_GRACE_MS;
     return yield* spawnCommand(
@@ -1253,7 +1413,7 @@ export const LocalChecksLive = Layer.effect(
         const found = records.get(keyOf(head, base, tree, wanted));
         return found?.head === head &&
           found.base === base &&
-          found.isolation === LOCAL_CHECK_ISOLATION &&
+          found.isolation === wanted.isolation &&
           runIdOf(found) === runIdOf(wanted)
           ? found
           : undefined;
@@ -1356,6 +1516,57 @@ export const LocalChecksLive = Layer.effect(
             failure: { kind: "unstartable" },
           } satisfies LocalCheckOutcome;
         yield* record({ ...current, mergedCommit: sha });
+        let selection: Array<SelectedSource> | undefined;
+        if (wanted.preparation !== undefined) {
+          try {
+            selection = selectedSourceManifest(
+              wanted.preparation,
+              started.head,
+              started.base,
+              started.tree!,
+            );
+          } catch {
+            return {
+              ok: false,
+              reason: "selected-source manifest refused",
+              failure: { kind: "unstartable" },
+            } satisfies LocalCheckOutcome;
+          }
+          const census = yield* g(own, ["ls-tree", "-r", "-z", "--full-tree", sha]);
+          if (census?.status !== 0 || census.truncated)
+            return {
+              ok: false,
+              reason: "selected-source tree unavailable",
+              failure: { kind: "unstartable" },
+            } satisfies LocalCheckOutcome;
+          const expected = new Map(
+            selection.map((row) => [row.path, `${row.mode} blob ${row.oid}`]),
+          );
+          const actual = census.stdout.split("\0").filter(Boolean);
+          if (
+            actual.length !== expected.size ||
+            actual.some((item) => {
+              const split = item.indexOf("\t");
+              return split < 0 || expected.get(item.slice(split + 1)) !== item.slice(0, split);
+            })
+          )
+            return {
+              ok: false,
+              reason: "selected-source tree membership differs",
+              failure: { kind: "unstartable" },
+            } satisfies LocalCheckOutcome;
+          yield* record({
+            ...current,
+            omittedSources: selection
+              .filter((row) => !row.selected)
+              .map((row) => ({
+                path: row.path,
+                mode: row.mode,
+                oid: row.oid,
+                contents: "NOT_READ_OR_VERIFIED" as const,
+              })),
+          });
+        }
         const work = nodePath.join(checksDir, "work");
         yield* Effect.sync(() => mkdirSync(work, { recursive: true }));
         const dir = nodePath.join(
@@ -1373,27 +1584,87 @@ export const LocalChecksLive = Layer.effect(
         });
         return yield* Effect.acquireUseRelease(
           // No checkout hook may change the tree after git wrote it.
-          g(own, ["-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", dir, sha]),
+          g(own, [
+            "-c",
+            "core.hooksPath=/dev/null",
+            "worktree",
+            "add",
+            ...(selection === undefined ? [] : ["--no-checkout"]),
+            "--detach",
+            dir,
+            sha,
+          ]),
           (added) =>
             added?.status === 0
-              ? runner.run(dir, started.log!, wanted, {
-                  head: started.head,
-                  base: started.base,
-                  tree: started.tree,
-                  commit: sha,
-                  retain: () => {
-                    retain = true;
-                    markRetained(dir);
-                  },
-                  durable: {
-                    status,
-                    started: (process) => record(job(process)).pipe(Effect.as(true)),
-                    detach: () => {
-                      if (!closing) return false;
-                      detached = true;
-                      return true;
+              ? Effect.gen(function* () {
+                  if (selection !== undefined) {
+                    const index = yield* g(dir, ["read-tree", sha]);
+                    const files = selection
+                      .filter((row) => row.selected)
+                      .map((row) => row.path + "\0")
+                      .join("");
+                    const checkout =
+                      index?.status === 0
+                        ? yield* g(
+                            dir,
+                            [
+                              "-c",
+                              "core.hooksPath=/dev/null",
+                              "-c",
+                              "core.attributesFile=/dev/null",
+                              "-c",
+                              "core.autocrlf=false",
+                              "checkout-index",
+                              "--stdin",
+                              "-z",
+                            ],
+                            { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+                            { stdin: files },
+                          )
+                        : undefined;
+                    if (checkout?.status !== 0)
+                      return {
+                        ok: false,
+                        reason: "selected-source checkout failed",
+                        failure: { kind: "unstartable" },
+                      } satisfies LocalCheckOutcome;
+                  }
+                  const outcome = yield* runner.run(dir, started.log!, wanted, {
+                    head: started.head,
+                    base: started.base,
+                    tree: started.tree,
+                    commit: sha,
+                    retain: () => {
+                      retain = true;
+                      markRetained(dir);
                     },
-                  },
+                    durable: {
+                      status,
+                      started: (process) => record(job(process)).pipe(Effect.as(true)),
+                      detach: () => {
+                        if (!closing) return false;
+                        detached = true;
+                        return true;
+                      },
+                    },
+                  });
+                  if (selection !== undefined && wanted.preparation !== undefined) {
+                    try {
+                      selectedSourceManifest(
+                        wanted.preparation,
+                        started.head,
+                        started.base,
+                        started.tree,
+                      );
+                    } catch {
+                      return {
+                        ok: false,
+                        reason: "selected-source manifest changed",
+                        failure: { kind: "unstartable" },
+                      } satisfies LocalCheckOutcome;
+                    }
+                  }
+                  return outcome;
                 })
               : Effect.succeed<LocalCheckOutcome>({
                   ok: false,

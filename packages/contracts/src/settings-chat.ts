@@ -203,7 +203,7 @@ const ws = (
 
 /** Every key `settings_propose` may change. A key that isn't here is refused. */
 export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
-  ...(["command", "setup", "timeoutMs"] as const).map((field): Entry => ({
+  ...(["command", "setup", "timeoutMs", "preparation"] as const).map((field): Entry => ({
     key: `project.localCheck.${field}`,
     label: `Local check ${field === "timeoutMs" ? "timeout (ms)" : field}`,
     tier: "project",
