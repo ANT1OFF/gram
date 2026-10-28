@@ -18,7 +18,14 @@ import {
   type ProjectLocalCheck,
   type ProjectId,
 } from "@gram/contracts";
-import { canonicalizeOrOwned, git, isInside, PathProbe, Proc, realPathSync } from "@gram/git";
+import {
+  canonicalizeOrOwned,
+  git,
+  isInside,
+  PathProbe,
+  Proc,
+  realPathSync,
+} from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -114,10 +121,14 @@ export const localCheckRunFor = (
     ? undefined
     : {
         isolation:
-          setting.preparation === undefined ? LOCAL_CHECK_ISOLATION : SELECTED_CHECK_ISOLATION,
+          setting.preparation === undefined
+            ? LOCAL_CHECK_ISOLATION
+            : SELECTED_CHECK_ISOLATION,
         ...(projectId === undefined ? {} : { projectId }),
         command: setting.command,
-        ...(setting.preparation === undefined ? {} : { preparation: setting.preparation }),
+        ...(setting.preparation === undefined
+          ? {}
+          : { preparation: setting.preparation }),
         ...(setting.setup === undefined ? {} : { setup: setting.setup }),
         timeoutMs: setting.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
       };
@@ -142,10 +153,18 @@ export const runIdOf = (run: {
         run.command,
         run.setup ?? null,
         run.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
-        ...(run.profile === undefined ? [] : [run.profile, run.qualification ?? null]),
+        ...(run.profile === undefined
+          ? []
+          : [run.profile, run.qualification ?? null]),
         ...(run.preparation === undefined
           ? []
-          : [run.preparation.manifest, run.preparation.sha256]),
+          : [
+              run.preparation.manifest,
+              run.preparation.sha256,
+              ...(run.preparation.inputConfigSha256 === undefined
+                ? []
+                : [run.preparation.inputConfigSha256]),
+            ]),
       ]),
     )
     .digest("hex")
@@ -163,21 +182,32 @@ function protectedSourceName(path: string): boolean {
   const name = parts.at(-1)!;
   return (
     parts.some((part) =>
-      [".ssh", ".aws", ".gnupg", "secret-manifest", "credential-store", "credentials"].includes(
-        part,
-      ),
+      [
+        ".ssh",
+        ".aws",
+        ".gnupg",
+        "secret-manifest",
+        "credential-store",
+        "credentials",
+      ].includes(part),
     ) ||
     name.startsWith(".env") ||
     name.includes(".env.") ||
     /(?:private[_.-]?key|credential|password|mnemonic|seed[_.-]?phrase|keystore|api[_.-]?(?:key|token)|access[_.-]?token|refresh[_.-]?token)/i.test(
       name,
     ) ||
-    (name.includes("wallet") && /\.(?:json|toml|yaml|yml|ini|db)$/.test(name)) ||
+    (name.includes("wallet") &&
+      /\.(?:json|toml|yaml|yml|ini|db)$/.test(name)) ||
     /\.(?:env|key|pem|p12|pfx|jks|keystore)$/.test(name) ||
     /^(?:id_rsa|id_ed25519|id_ecdsa)/.test(name) ||
-    ["secrets.json", "secrets.toml", ".npmrc", ".pypirc", ".netrc", ".git-credentials"].includes(
-      name,
-    )
+    [
+      "secrets.json",
+      "secrets.toml",
+      ".npmrc",
+      ".pypirc",
+      ".netrc",
+      ".git-credentials",
+    ].includes(name)
   );
 }
 function selectedSourceManifest(
@@ -187,7 +217,8 @@ function selectedSourceManifest(
   tree: string,
 ): Array<SelectedSource> {
   const path = preparation.manifest;
-  if (process.platform !== "linux") throw new Error("selected-source preparation requires Linux");
+  if (process.platform !== "linux")
+    throw new Error("selected-source preparation requires Linux");
   if (
     !nodePath.isAbsolute(path) ||
     nodePath.normalize(path) !== path ||
@@ -241,7 +272,11 @@ function selectedSourceManifest(
         row.path
           .split("/")
           .some(
-            (part) => !part || part === "." || part === ".." || part.toLowerCase() === ".git",
+            (part) =>
+              !part ||
+              part === "." ||
+              part === ".." ||
+              part.toLowerCase() === ".git",
           ) ||
         seen.has(row.path) ||
         typeof row.mode !== "string" ||
@@ -250,7 +285,8 @@ function selectedSourceManifest(
         !/^[a-f0-9]{40}$/.test(row.oid) ||
         typeof row.selected !== "boolean" ||
         (!row.selected && row.path.split("/").at(-1) === ".gitattributes") ||
-        (row.selected && (row.mode === "120000" || protectedSourceName(row.path)))
+        (row.selected &&
+          (row.mode === "120000" || protectedSourceName(row.path)))
       )
         throw new Error("unsafe selected-source entry");
       seen.add(row.path);
@@ -321,7 +357,11 @@ export const LocalCheck = Schema.Struct({
   status: Schema.Literals(["running", "passed", "failed"]),
   command: Schema.String,
   preparation: Schema.optionalKey(
-    Schema.Struct({ manifest: Schema.String, sha256: Schema.String }),
+    Schema.Struct({
+      manifest: Schema.String,
+      sha256: Schema.String,
+      inputConfigSha256: Schema.optionalKey(Schema.String),
+    }),
   ),
   omittedSources: Schema.optionalKey(
     Schema.Array(
@@ -420,35 +460,39 @@ export interface LocalCheckRunnerShape {
   ) => Effect.Effect<LocalCheckOutcome>;
 }
 
-export class LocalCheckRunner extends Context.Service<LocalCheckRunner, LocalCheckRunnerShape>()(
-  "@gram/server/LocalCheckRunner",
-) {
+export class LocalCheckRunner extends Context.Service<
+  LocalCheckRunner,
+  LocalCheckRunnerShape
+>()("@gram/server/LocalCheckRunner") {
   /** On the login-shell PATH: a Finder- or Dock-launched app inherits launchd's, without `bun`. */
-  static readonly layer: Layer.Layer<LocalCheckRunner, never, PathProbe | ServerConfig> =
-    Layer.effect(
-      LocalCheckRunner,
-      Effect.gen(function* () {
-        const probe = yield* PathProbe;
-        return {
-          run: (dir, log, run, source) =>
-            probe.path.pipe(
-              Effect.flatMap((pathValue) =>
-                spawnCheck(
-                  dir,
-                  log,
-                  {
-                    base: process.env,
-                    pathValue,
-                    retain: source.retain,
-                    durable: source.durable,
-                  },
-                  run,
-                ),
+  static readonly layer: Layer.Layer<
+    LocalCheckRunner,
+    never,
+    PathProbe | ServerConfig
+  > = Layer.effect(
+    LocalCheckRunner,
+    Effect.gen(function* () {
+      const probe = yield* PathProbe;
+      return {
+        run: (dir, log, run, source) =>
+          probe.path.pipe(
+            Effect.flatMap((pathValue) =>
+              spawnCheck(
+                dir,
+                log,
+                {
+                  base: process.env,
+                  pathValue,
+                  retain: source.retain,
+                  durable: source.durable,
+                },
+                run,
               ),
             ),
-        };
-      }),
-    );
+          ),
+      };
+    }),
+  );
 }
 
 /**
@@ -459,7 +503,9 @@ export class LocalCheckRunner extends Context.Service<LocalCheckRunner, LocalChe
  */
 const isGitControl = (name: string): boolean =>
   name.toUpperCase().startsWith("GIT_") &&
-  !["GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_ASKPASS"].includes(name.toUpperCase());
+  !["GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_ASKPASS"].includes(
+    name.toUpperCase(),
+  );
 
 /** Gram's own variables stay out of the check, whose tests set what they need themselves. */
 const checkEnv = (
@@ -524,12 +570,17 @@ const readTail = (log: string): string => {
 const plainLines = (text: string): Array<string> =>
   text
     // oxlint-disable-next-line no-control-regex -- terminal escape sequences
-    .replace(/\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)|[@-Z\\-_])/g, "")
+    .replace(
+      /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)|[@-Z\\-_])/g,
+      "",
+    )
     .split("\n")
     .map((line) => {
       const parts = line.split("\r").filter((part) => part !== "");
       // oxlint-disable-next-line no-control-regex -- the control characters left
-      return (parts.at(-1) ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trimEnd();
+      return (parts.at(-1) ?? "")
+        .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
+        .trimEnd();
     });
 
 /**
@@ -558,10 +609,16 @@ export const missingCommand = (output: string): string | undefined => {
   const patterns = [
     // A script names itself by its path: `./scripts/x.sh: line 3: foo: command not found` in bash,
     // `./scripts/x.sh: 3: foo: not found` in dash (`/bin/sh` on Debian and Ubuntu).
-    new RegExp(String.raw`^(?:${shell}|\S*/\S*): (?:line \d+: )?${name}: command not found$`),
+    new RegExp(
+      String.raw`^(?:${shell}|\S*/\S*): (?:line \d+: )?${name}: command not found$`,
+    ),
     new RegExp(String.raw`^(?:${shell}|\S*/\S*): \d+: ${name}: not found$`),
-    new RegExp(String.raw`^(?:${shell}|(?:\S*/)?bun): command not found: ${name}$`),
-    new RegExp(String.raw`^(?:\S*/)?env: ['"‘]?${name}['"’]?: No such file or directory$`),
+    new RegExp(
+      String.raw`^(?:${shell}|(?:\S*/)?bun): command not found: ${name}$`,
+    ),
+    new RegExp(
+      String.raw`^(?:\S*/)?env: ['"‘]?${name}['"’]?: No such file or directory$`,
+    ),
   ];
   let found: string | undefined;
   for (const line of plainLines(output)) {
@@ -609,7 +666,10 @@ export const diagnoseExit = (
   return {
     ok: false,
     reason: `exited ${code}`,
-    failure: withTail({ kind: "exited", ...(code === null ? {} : { exitCode: code }) }),
+    failure: withTail({
+      kind: "exited",
+      ...(code === null ? {} : { exitCode: code }),
+    }),
   };
 };
 
@@ -679,9 +739,14 @@ export const spawnCheck = (
     // Only the approved recipe can supply this binding; never inherit a caller's claim.
     delete env["GRAM_CHECK_SOURCE_SELECTION_MANIFEST"];
     delete env["GRAM_CHECK_SOURCE_SELECTION_SHA256"];
+    delete env["GRAM_CHECK_APPROVED_INPUT_SHA256"];
     if (run.preparation !== undefined) {
       env["GRAM_CHECK_SOURCE_SELECTION_MANIFEST"] = run.preparation.manifest;
       env["GRAM_CHECK_SOURCE_SELECTION_SHA256"] = run.preparation.sha256;
+      if (run.preparation.inputConfigSha256 !== undefined) {
+        env["GRAM_CHECK_APPROVED_INPUT_SHA256"] =
+          run.preparation.inputConfigSha256;
+      }
     }
     const timeoutMs = run.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS;
     const graceMs = environment.killGraceMs ?? KILL_GRACE_MS;
@@ -811,7 +876,9 @@ const spawnCommand = (
         /** Node reaped the leader: until then its zombie keeps the group's id taken. */
         let reaped = child.pid === undefined;
         const present = () =>
-          !reaped || (child.pid !== undefined && signalGroup(child.pid, 0)) ? "ours" : "gone";
+          !reaped || (child.pid !== undefined && signalGroup(child.pid, 0))
+            ? "ours"
+            : "gone";
         let stopping: Promise<void> | undefined;
         /** Stops what is left of the group and waits for it to be gone, once however often asked. */
         const stop = () =>
@@ -831,7 +898,10 @@ const spawnCommand = (
             clearTimeout(timer);
             void stop().then(() => resolve(told()));
           };
-          const timer = setTimeout(() => settle(() => timedOut(log, timeoutMs)), timeoutMs);
+          const timer = setTimeout(
+            () => settle(() => timedOut(log, timeoutMs)),
+            timeoutMs,
+          );
           release = () => {
             settled = true;
             clearTimeout(timer);
@@ -914,12 +984,16 @@ const processStartOf = (pid: number): string | undefined => {
 const processCwdOf = (pid: number): string | undefined => {
   try {
     if (process.platform === "linux") return readlinkSync(`/proc/${pid}/cwd`);
-    const out = execFileSync("/usr/sbin/lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], {
-      env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
-      encoding: "utf8",
-      timeout: 5_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const out = execFileSync(
+      "/usr/sbin/lsof",
+      ["-a", "-p", String(pid), "-d", "cwd", "-Fn"],
+      {
+        env: { PATH: "/usr/bin:/bin", LC_ALL: "C" },
+        encoding: "utf8",
+        timeout: 5_000,
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
     const line = out.split("\n").find((each) => each.startsWith("n"));
     return line === undefined ? undefined : line.slice(1);
   } catch {
@@ -965,22 +1039,29 @@ const memberInWork = (pgid: number, work: string): boolean => {
  * matches but the folder doesn't, or can't be read.
  */
 const recordedGroup = (
-  job: { readonly pid: number; readonly processStart: string; readonly work: string },
+  job: {
+    readonly pid: number;
+    readonly processStart: string;
+    readonly work: string;
+  },
   checkCwd = true,
 ): "ours" | "gone" | "leaderless" | "unsure" => {
   if (!signalGroup(job.pid, 0)) return "gone";
-  const leaderless = () => (checkCwd && memberInWork(job.pid, job.work) ? "ours" : "leaderless");
+  const leaderless = () =>
+    checkCwd && memberInWork(job.pid, job.work) ? "ours" : "leaderless";
   try {
     process.kill(job.pid, 0);
   } catch {
     return leaderless();
   }
   const start = processStartOf(job.pid);
-  if (start === undefined) return signalGroup(job.pid, 0) ? leaderless() : "gone";
+  if (start === undefined)
+    return signalGroup(job.pid, 0) ? leaderless() : "gone";
   if (start !== job.processStart) return "gone";
   if (!checkCwd) return "ours";
   const cwd = processCwdOf(job.pid);
-  return cwd !== undefined && canonicalizeOrOwned(cwd) === canonicalizeOrOwned(job.work)
+  return cwd !== undefined &&
+    canonicalizeOrOwned(cwd) === canonicalizeOrOwned(job.work)
     ? "ours"
     : "unsure";
 };
@@ -1018,8 +1099,11 @@ export const readExitStatus = (path: string): number | undefined => {
 };
 
 /** How a check ended that Gram took back, from what its wrapper wrote and its log's end. */
-const recordedOutcome = (code: number, log: string, pathValue: string): LocalCheckOutcome =>
-  diagnoseExit(code, null, readTail(log), pathValue);
+const recordedOutcome = (
+  code: number,
+  log: string,
+  pathValue: string,
+): LocalCheckOutcome => diagnoseExit(code, null, readTail(log), pathValue);
 
 export interface LocalChecksShape {
   readonly configuration: (
@@ -1112,7 +1196,11 @@ export const keptCheck = (check: LocalCheck, now: number): boolean =>
  * The keys whose logs go so the rest fit `budget`: finished checks' only, the oldest first.
  */
 export const logsOverBudget = (
-  logs: ReadonlyArray<{ readonly key: string; readonly check: LocalCheck; readonly size: number }>,
+  logs: ReadonlyArray<{
+    readonly key: string;
+    readonly check: LocalCheck;
+    readonly size: number;
+  }>,
   budget = LOG_BUDGET_BYTES,
 ): ReadonlyArray<string> =>
   dropOldest(logs, {
@@ -1141,9 +1229,10 @@ const entries = (dir: string): ReadonlyArray<string> => {
   }
 };
 
-export class LocalChecks extends Context.Service<LocalChecks, LocalChecksShape>()(
-  "@gram/server/LocalChecks",
-) {}
+export class LocalChecks extends Context.Service<
+  LocalChecks,
+  LocalChecksShape
+>()("@gram/server/LocalChecks") {}
 
 /**
  * A check vouches for one head on one base, with one run (`LocalCheckRun`). Two bases can merge
@@ -1188,7 +1277,10 @@ export const LocalChecksLive = Layer.effect(
       if ((latestByPair.get(pair)?.startedAt ?? -1) <= check.startedAt)
         latestByPair.set(pair, check);
     };
-    const waiters = new Map<string, Array<(check: LocalCheck) => Effect.Effect<void>>>();
+    const waiters = new Map<
+      string,
+      Array<(check: LocalCheck) => Effect.Effect<void>>
+    >();
     const fibers = yield* FiberMap.make<number>();
     let runs = 0;
     /**
@@ -1213,7 +1305,10 @@ export const LocalChecksLive = Layer.effect(
       waiting.forEach((key, ahead) => {
         const queued = records.get(key);
         if (queued?.status === "running")
-          remember(key, { ...queued, reason: `queued for local check (${ahead} ahead)` });
+          remember(key, {
+            ...queued,
+            reason: `queued for local check (${ahead} ahead)`,
+          });
       }),
     );
     /**
@@ -1234,7 +1329,8 @@ export const LocalChecksLive = Layer.effect(
       );
 
     /** Running checks a previous run of Gram left, taken back once everything is defined. */
-    const left: Array<{ readonly key: string; readonly check: LocalCheck }> = [];
+    const left: Array<{ readonly key: string; readonly check: LocalCheck }> =
+      [];
     /** `${head}:${base}` to its merged tree, or `null` when they conflict. */
     const trees = new Map<string, string | null>();
 
@@ -1257,7 +1353,10 @@ export const LocalChecksLive = Layer.effect(
         yield* run(sql`DELETE FROM local_checks WHERE key = ${row.key}`);
       }
       const other = records.get(key);
-      if (other === undefined || (other.finishedAt ?? 0) <= (record.value.finishedAt ?? 0))
+      if (
+        other === undefined ||
+        (other.finishedAt ?? 0) <= (record.value.finishedAt ?? 0)
+      )
         remember(key, record.value);
     }
     for (const key of rekeyed) {
@@ -1295,7 +1394,10 @@ export const LocalChecksLive = Layer.effect(
         Effect.option,
         Effect.map((out) => (out._tag === "Some" ? out.value : undefined)),
       );
-    const configuration: LocalChecksShape["configuration"] = (repoDir, projectId) =>
+    const configuration: LocalChecksShape["configuration"] = (
+      repoDir,
+      projectId,
+    ) =>
       Effect.gen(function* () {
         const common = yield* g(repoDir, [
           "rev-parse",
@@ -1313,7 +1415,10 @@ export const LocalChecksLive = Layer.effect(
               "--path-format=absolute",
               "--git-common-dir",
             ]);
-            if (other?.status === 0 && other.stdout.trim() === common.stdout.trim()) {
+            if (
+              other?.status === 0 &&
+              other.stdout.trim() === common.stdout.trim()
+            ) {
               found = project;
               break;
             }
@@ -1359,7 +1464,9 @@ export const LocalChecksLive = Layer.effect(
       });
 
     const hasCommit = (dir: string, sha: string) =>
-      g(dir, ["cat-file", "-e", `${sha}^{commit}`]).pipe(Effect.map((out) => out?.status === 0));
+      g(dir, ["cat-file", "-e", `${sha}^{commit}`]).pipe(
+        Effect.map((out) => out?.status === 0),
+      );
 
     /** Fetches `sha` into Gram's repository from `repoDir`'s, after fetching it there if need be. */
     const fetchInto = (own: string, repoDir: string, sha: string) =>
@@ -1384,25 +1491,52 @@ export const LocalChecksLive = Layer.effect(
      * The tree of `head` merged onto `base` in Gram's repository; `null` on conflicts; undefined
      * when unknowable, which it is until `fetch` brought both commits in.
      */
-    const treeOf = (own: string, repoDir: string, head: string, base: string, fetch: boolean) =>
+    const treeOf = (
+      own: string,
+      repoDir: string,
+      head: string,
+      base: string,
+      fetch: boolean,
+    ) =>
       Effect.gen(function* () {
         const cached = trees.get(`${head}:${base}`);
         if (cached !== undefined) return cached;
         for (const sha of [head, base]) {
-          if (!(yield* hasCommit(own, sha)) && !(fetch && (yield* fetchInto(own, repoDir, sha))))
+          if (
+            !(yield* hasCommit(own, sha)) &&
+            !(fetch && (yield* fetchInto(own, repoDir, sha)))
+          )
             return undefined;
         }
-        const out = yield* g(own, ["merge-tree", "--write-tree", "--no-messages", base, head]);
-        if (out === undefined || (out.status !== 0 && out.status !== 1)) return undefined;
-        const tree = out.status === 1 ? null : out.stdout.split("\n")[0]!.trim();
+        const out = yield* g(own, [
+          "merge-tree",
+          "--write-tree",
+          "--no-messages",
+          base,
+          head,
+        ]);
+        if (out === undefined || (out.status !== 0 && out.status !== 1))
+          return undefined;
+        const tree =
+          out.status === 1 ? null : out.stdout.split("\n")[0]!.trim();
         if (tree !== null && !SHA.test(tree)) return undefined;
         trees.set(`${head}:${base}`, tree);
         return tree;
       });
 
-    const lookup: LocalChecksShape["lookup"] = (repoDir, head, base, projectId) =>
+    const lookup: LocalChecksShape["lookup"] = (
+      repoDir,
+      head,
+      base,
+      projectId,
+    ) =>
       Effect.gen(function* () {
-        if (head === undefined || base === undefined || !SHA.test(head) || !SHA.test(base))
+        if (
+          head === undefined ||
+          base === undefined ||
+          !SHA.test(head) ||
+          !SHA.test(base)
+        )
           return undefined;
         const { config: wanted } = yield* configuration(repoDir, projectId);
         if (wanted === undefined) return undefined;
@@ -1434,7 +1568,8 @@ export const LocalChecksLive = Layer.effect(
         yield* save(key, check);
         const listeners = waiters.get(key) ?? [];
         waiters.delete(key);
-        for (const listener of listeners) yield* listener(check).pipe(Effect.ignore);
+        for (const listener of listeners)
+          yield* listener(check).pipe(Effect.ignore);
       });
 
     /**
@@ -1451,7 +1586,9 @@ export const LocalChecksLive = Layer.effect(
         )
           return;
         yield* g(own, ["worktree", "remove", "--force", dir]);
-        yield* Effect.sync(() => rmSync(parent, { recursive: true, force: true }));
+        yield* Effect.sync(() =>
+          rmSync(parent, { recursive: true, force: true }),
+        );
         yield* g(own, ["worktree", "prune"]);
       });
 
@@ -1466,12 +1603,21 @@ export const LocalChecksLive = Layer.effect(
         ...rest,
         status: result.ok ? "passed" : "failed",
         finishedAt,
-        ...(result.ok || result.reason === undefined ? {} : { reason: result.reason }),
-        ...(result.ok || result.failure === undefined ? {} : { failure: result.failure }),
+        ...(result.ok || result.reason === undefined
+          ? {}
+          : { reason: result.reason }),
+        ...(result.ok || result.failure === undefined
+          ? {}
+          : { failure: result.failure }),
       };
     };
 
-    const check = (own: string, key: string, started: LocalCheck, wanted: LocalCheckRun) => {
+    const check = (
+      own: string,
+      key: string,
+      started: LocalCheck,
+      wanted: LocalCheckRun,
+    ) => {
       let retain = false;
       /** Left running as Gram quit: the next start takes it, and its worktree, back. */
       let detached = false;
@@ -1482,7 +1628,9 @@ export const LocalChecksLive = Layer.effect(
       };
       /** What the record keeps of how the run is going, for a start after a quit. */
       const job = (more: Partial<CheckJobRecord>) =>
-        current.job === undefined ? current : { ...current, job: { ...current.job, ...more } };
+        current.job === undefined
+          ? current
+          : { ...current, job: { ...current.job, ...more } };
       const body = Effect.gen(function* () {
         if (wanted.refusal !== undefined) {
           yield* Effect.sync(() =>
@@ -1532,7 +1680,13 @@ export const LocalChecksLive = Layer.effect(
               failure: { kind: "unstartable" },
             } satisfies LocalCheckOutcome;
           }
-          const census = yield* g(own, ["ls-tree", "-r", "-z", "--full-tree", sha]);
+          const census = yield* g(own, [
+            "ls-tree",
+            "-r",
+            "-z",
+            "--full-tree",
+            sha,
+          ]);
           if (census?.status !== 0 || census.truncated)
             return {
               ok: false,
@@ -1547,7 +1701,10 @@ export const LocalChecksLive = Layer.effect(
             actual.length !== expected.size ||
             actual.some((item) => {
               const split = item.indexOf("\t");
-              return split < 0 || expected.get(item.slice(split + 1)) !== item.slice(0, split);
+              return (
+                split < 0 ||
+                expected.get(item.slice(split + 1)) !== item.slice(0, split)
+              );
             })
           )
             return {
@@ -1618,7 +1775,10 @@ export const LocalChecksLive = Layer.effect(
                               "--stdin",
                               "-z",
                             ],
-                            { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+                            {
+                              GIT_CONFIG_NOSYSTEM: "1",
+                              GIT_CONFIG_GLOBAL: "/dev/null",
+                            },
                             { stdin: files },
                           )
                         : undefined;
@@ -1640,7 +1800,8 @@ export const LocalChecksLive = Layer.effect(
                     },
                     durable: {
                       status,
-                      started: (process) => record(job(process)).pipe(Effect.as(true)),
+                      started: (process) =>
+                        record(job(process)).pipe(Effect.as(true)),
                       detach: () => {
                         if (!closing) return false;
                         detached = true;
@@ -1648,7 +1809,10 @@ export const LocalChecksLive = Layer.effect(
                       },
                     },
                   });
-                  if (selection !== undefined && wanted.preparation !== undefined) {
+                  if (
+                    selection !== undefined &&
+                    wanted.preparation !== undefined
+                  ) {
                     try {
                       selectedSourceManifest(
                         wanted.preparation,
@@ -1684,7 +1848,10 @@ export const LocalChecksLive = Layer.effect(
         ),
         Effect.flatMap((result) =>
           Effect.gen(function* () {
-            yield* finish(key, endedAs(current, result, yield* Clock.currentTimeMillis));
+            yield* finish(
+              key,
+              endedAs(current, result, yield* Clock.currentTimeMillis),
+            );
           }),
         ),
       );
@@ -1718,7 +1885,8 @@ export const LocalChecksLive = Layer.effect(
             startedAt,
             finishedAt: startedAt,
             host: hostname(),
-            reason: "the branch conflicts with its base; merge or rebase it first",
+            reason:
+              "the branch conflicts with its base; merge or rebase it first",
             failure: { kind: "conflict" },
           };
           yield* save(key, failed);
@@ -1732,7 +1900,8 @@ export const LocalChecksLive = Layer.effect(
           waiters.set(key, [...(waiters.get(key) ?? []), onDone]);
           return known;
         }
-        if (known?.status === "failed" && (known.finishedAt ?? 0) >= since) return known;
+        if (known?.status === "failed" && (known.finishedAt ?? 0) >= since)
+          return known;
         const logs = nodePath.join(dataDir, "local-checks");
         yield* Effect.sync(() => mkdirSync(logs, { recursive: true }));
         const started: LocalCheck = {
@@ -1761,23 +1930,39 @@ export const LocalChecksLive = Layer.effect(
     // wrapper wrote; one whose process is gone without a word was cut off, and runs again once,
     // from the start, saying so. Each reads as running meanwhile, so asking for it waits for it.
     /** Ends a check a previous run left, as `outcome` says, its worktree removed unless kept. */
-    const endLeft = (key: string, running: LocalCheck, outcome: LocalCheckOutcome, keep = false) =>
+    const endLeft = (
+      key: string,
+      running: LocalCheck,
+      outcome: LocalCheckOutcome,
+      keep = false,
+    ) =>
       Effect.gen(function* () {
         const work = running.job?.work;
         if (work !== undefined) {
           if (keep) markRetained(work);
           else yield* removeWork(running.job!.own, work);
         }
-        yield* finish(key, endedAs(running, outcome, yield* Clock.currentTimeMillis));
+        yield* finish(
+          key,
+          endedAs(running, outcome, yield* Clock.currentTimeMillis),
+        );
       });
     const timedOutLeft = (running: LocalCheck) =>
-      timedOut(running.log ?? "", running.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS);
+      timedOut(
+        running.log ?? "",
+        running.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
+      );
     /**
      * Follows a check Gram left running to its end: the status its wrapper writes, then what it
      * left in its group stopped, as a live check's are; or its deadline, then the group stopped.
      * `seen`: its leader was verified, so the group is the check's even once the leader is gone.
      */
-    const follow = (key: string, running: LocalCheck, job: RecordedJob, seen: boolean) =>
+    const follow = (
+      key: string,
+      running: LocalCheck,
+      job: RecordedJob,
+      seen: boolean,
+    ) =>
       Effect.gen(function* () {
         let verified = seen;
         for (;;) {
@@ -1785,7 +1970,11 @@ export const LocalChecksLive = Layer.effect(
           // Without its leader, a group verified by nothing yet: by a process in the worktree,
           // or by being gone a moment later, as a watchdog that outlived its wrapper soon is.
           if (!verified)
-            for (let n = 0; state === "leaderless" && n < LEADERLESS_WAITS; n++) {
+            for (
+              let n = 0;
+              state === "leaderless" && n < LEADERLESS_WAITS;
+              n++
+            ) {
               state = yield* Effect.sync(() => recordedGroup(job, true));
               if (state === "leaderless") yield* Effect.sleep("1 second");
             }
@@ -1800,13 +1989,17 @@ export const LocalChecksLive = Layer.effect(
                 ? recordedOutcome(code, running.log ?? "", job.pathValue ?? "")
                 : Date.now() >= (job.deadline ?? Infinity)
                   ? timedOutLeft(running)
-                  : lost("its processes ended without saying how, while Gram was closed"),
+                  : lost(
+                      "its processes ended without saying how, while Gram was closed",
+                    ),
               // A group no one can vouch for may still be in the worktree.
               state !== "gone",
             );
           const exited = code !== undefined;
           if (exited || Date.now() >= (job.deadline ?? Infinity)) {
-            const gone = yield* Effect.promise(() => stopVerifiedGroup(job.pid));
+            const gone = yield* Effect.promise(() =>
+              stopVerifiedGroup(job.pid),
+            );
             return yield* endLeft(
               key,
               running,
@@ -1827,7 +2020,10 @@ export const LocalChecksLive = Layer.effect(
           job.repoDir,
           running.projectId as ProjectId | undefined,
         );
-        if (wanted === undefined || keyOf(running.head, running.base, running.tree, wanted) !== key)
+        if (
+          wanted === undefined ||
+          keyOf(running.head, running.base, running.tree, wanted) !== key
+        )
           return yield* endLeft(
             key,
             running,
@@ -1856,7 +2052,11 @@ export const LocalChecksLive = Layer.effect(
       const state = recorded === undefined ? "gone" : recordedGroup(recorded);
       const ending = (outcome: LocalCheckOutcome, keep = false) => {
         remember(key, running);
-        return FiberMap.run(fibers, ++runs, endLeft(key, running, outcome, keep));
+        return FiberMap.run(
+          fibers,
+          ++runs,
+          endLeft(key, running, outcome, keep),
+        );
       };
       if (
         recorded !== undefined &&
@@ -1864,10 +2064,16 @@ export const LocalChecksLive = Layer.effect(
           state === "leaderless" ||
           readExitStatus(recorded.status) !== undefined)
       ) {
-        const kept: LocalCheck = { ...running, afterQuit: "kept", reason: KEPT_AFTER_QUIT };
+        const kept: LocalCheck = {
+          ...running,
+          afterQuit: "kept",
+          reason: KEPT_AFTER_QUIT,
+        };
         remember(key, kept);
         // Already running: it takes a slot at once, whatever the cap, and frees it as it ends.
-        const held = yield* admission.takeSlot(follow(key, kept, recorded, state === "ours"));
+        const held = yield* admission.takeSlot(
+          follow(key, kept, recorded, state === "ours"),
+        );
         yield* FiberMap.run(fibers, ++runs, held);
         continue;
       }
@@ -1932,7 +2138,8 @@ export const LocalChecksLive = Layer.effect(
         for (const [key, record] of records) remember(key, record);
 
         const named = new Set<string>();
-        for (const record of records.values()) if (record.log !== undefined) named.add(record.log);
+        for (const record of records.values())
+          if (record.log !== undefined) named.add(record.log);
         const unlink = (path: string, size: number) =>
           Effect.sync(() => {
             try {
@@ -1947,34 +2154,48 @@ export const LocalChecksLive = Layer.effect(
           if (!name.endsWith(".log")) continue;
           const path = nodePath.join(checksDir, name);
           const stat = fileStat(path);
-          if (stat !== undefined && !named.has(path) && stat.mtimeMs < now - ABANDONED_MS)
+          if (
+            stat !== undefined &&
+            !named.has(path) &&
+            stat.mtimeMs < now - ABANDONED_MS
+          )
             yield* unlink(path, stat.size);
         }
         const sized = [...records].flatMap(([key, record]) => {
-          const size = record.log === undefined ? undefined : fileStat(record.log)?.size;
+          const size =
+            record.log === undefined ? undefined : fileStat(record.log)?.size;
           return size === undefined ? [] : [{ key, check: record, size }];
         });
         for (const key of logsOverBudget(sized)) {
           const listed = sized.find((each) => each.key === key)!;
           const record = records.get(key);
           // Asked for again since the listing: its log is a running check's now.
-          if (record?.status !== listed.check.status || record.log !== listed.check.log) continue;
+          if (
+            record?.status !== listed.check.status ||
+            record.log !== listed.check.log
+          )
+            continue;
           yield* unlink(record.log!, listed.size);
           const { log: _, ...rest } = record;
           yield* save(key, rest);
         }
 
-        const running = [...records.values()].filter((record) => record.status === "running");
+        const running = [...records.values()].filter(
+          (record) => record.status === "running",
+        );
         const workDir = nodePath.join(checksDir, "work");
         const reposDir = nodePath.join(checksDir, "repos");
         const busy = new Set(
           running.flatMap((record) =>
-            record.job?.work === undefined ? [] : [nodePath.dirname(record.job.work)],
+            record.job?.work === undefined
+              ? []
+              : [nodePath.dirname(record.job.work)],
           ),
         );
         for (const name of entries(workDir)) {
           const folder = nodePath.join(workDir, name);
-          if (!/^[0-9a-f]{1,12}-[A-Za-z0-9]{6}$/.test(name) || busy.has(folder)) continue;
+          if (!/^[0-9a-f]{1,12}-[A-Za-z0-9]{6}$/.test(name) || busy.has(folder))
+            continue;
           let stat;
           try {
             stat = lstatSync(folder);
@@ -1992,17 +2213,24 @@ export const LocalChecksLive = Layer.effect(
           if (link === undefined) {
             // Made, but never checked out: nothing of a worktree in it.
             if (entries(src).length === 0) {
-              yield* Effect.sync(() => rmSync(folder, { recursive: true, force: true }));
+              yield* Effect.sync(() =>
+                rmSync(folder, { recursive: true, force: true }),
+              );
               work++;
             }
             continue;
           }
-          const gitdir = /^gitdir: (.+)$/m.exec(readFileSync(nodePath.join(src, ".git"), "utf8"));
+          const gitdir = /^gitdir: (.+)$/m.exec(
+            readFileSync(nodePath.join(src, ".git"), "utf8"),
+          );
           const own =
-            gitdir?.[1] === undefined ? undefined : nodePath.dirname(nodePath.dirname(gitdir[1]));
+            gitdir?.[1] === undefined
+              ? undefined
+              : nodePath.dirname(nodePath.dirname(gitdir[1]));
           if (
             own === undefined ||
-            canonicalizeOrOwned(nodePath.dirname(own)) !== canonicalizeOrOwned(reposDir) ||
+            canonicalizeOrOwned(nodePath.dirname(own)) !==
+              canonicalizeOrOwned(reposDir) ||
             !/^[0-9a-f]{16}\.git$/.test(nodePath.basename(own))
           )
             continue;
@@ -2017,14 +2245,22 @@ export const LocalChecksLive = Layer.effect(
         );
         for (const name of entries(reposDir)) {
           const own = nodePath.join(reposDir, name);
-          if (!/^[0-9a-f]{16}\.git$/.test(name) || !existsSync(nodePath.join(own, "HEAD")))
+          if (
+            !/^[0-9a-f]{16}\.git$/.test(name) ||
+            !existsSync(nodePath.join(own, "HEAD"))
+          )
             continue;
           // A check under way fetches and checks out here; the next sweep comes back.
           if (running.some((record) => record.job?.own === own)) continue;
           yield* g(own, ["worktree", "prune"]);
-          const found = yield* g(own, ["cat-file", "--batch-check"], undefined, {
-            stdin: kept.map((sha) => `${sha}\n`).join(""),
-          });
+          const found = yield* g(
+            own,
+            ["cat-file", "--batch-check"],
+            undefined,
+            {
+              stdin: kept.map((sha) => `${sha}\n`).join(""),
+            },
+          );
           const present = new Set(
             (found?.stdout ?? "")
               .split("\n")
@@ -2032,20 +2268,30 @@ export const LocalChecksLive = Layer.effect(
               .filter(([sha, type]) => type === "commit" && SHA.test(sha ?? ""))
               .map(([sha]) => sha!),
           );
-          const refs = yield* g(own, ["for-each-ref", "--format=%(refname)", "refs/gram/keep/"]);
+          const refs = yield* g(own, [
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/gram/keep/",
+          ]);
           const existing = new Set(
-            (refs?.status === 0 ? refs.stdout : "").split("\n").filter((ref) => ref !== ""),
+            (refs?.status === 0 ? refs.stdout : "")
+              .split("\n")
+              .filter((ref) => ref !== ""),
           );
           const updates = [
             ...[...present]
               .filter((sha) => !existing.has(`refs/gram/keep/${sha}`))
               .map((sha) => `update refs/gram/keep/${sha} ${sha}\n`),
             ...[...existing]
-              .filter((ref) => !present.has(ref.slice("refs/gram/keep/".length)))
+              .filter(
+                (ref) => !present.has(ref.slice("refs/gram/keep/".length)),
+              )
               .map((ref) => `delete ${ref}\n`),
           ];
           if (updates.length > 0)
-            yield* g(own, ["update-ref", "--stdin"], undefined, { stdin: updates.join("") });
+            yield* g(own, ["update-ref", "--stdin"], undefined, {
+              stdin: updates.join(""),
+            });
           const used = Math.max(
             ...["HEAD", "FETCH_HEAD", COLLECTED].map(
               (file) => fileStat(nodePath.join(own, file))?.mtimeMs ?? 0,
@@ -2057,18 +2303,31 @@ export const LocalChecksLive = Layer.effect(
             const listed = yield* g(own, ["worktree", "list", "--porcelain"]);
             const folders = (listed?.stdout ?? "")
               .split("\n\n")
-              .filter((entry) => entry.startsWith("worktree ") && !/^bare$/m.test(entry));
+              .filter(
+                (entry) =>
+                  entry.startsWith("worktree ") && !/^bare$/m.test(entry),
+              );
             if (listed?.status === 0 && folders.length === 0) {
-              yield* Effect.sync(() => rmSync(own, { recursive: true, force: true }));
+              yield* Effect.sync(() =>
+                rmSync(own, { recursive: true, force: true }),
+              );
               repos++;
             }
             continue;
           }
-          if ((fileStat(nodePath.join(own, COLLECTED))?.mtimeMs ?? 0) >= now - GC_EVERY_MS)
+          if (
+            (fileStat(nodePath.join(own, COLLECTED))?.mtimeMs ?? 0) >=
+            now - GC_EVERY_MS
+          )
             continue;
-          const gc = yield* g(own, ["gc", "--quiet", `--prune=${GC_PRUNE}`], undefined, {
-            tier: "slow",
-          });
+          const gc = yield* g(
+            own,
+            ["gc", "--quiet", `--prune=${GC_PRUNE}`],
+            undefined,
+            {
+              tier: "slow",
+            },
+          );
           if (gc?.status !== 0) continue;
           yield* Effect.sync(() => {
             const marker = nodePath.join(own, COLLECTED);
@@ -2098,7 +2357,12 @@ export const LocalChecksLive = Layer.effect(
       Effect.forkScoped,
     );
 
-    const latest: LocalChecksShape["latest"] = (_repoDir, head, base, project) => {
+    const latest: LocalChecksShape["latest"] = (
+      _repoDir,
+      head,
+      base,
+      project,
+    ) => {
       const wanted = localCheckRunFor(
         project?.localCheck,
         project?.id,

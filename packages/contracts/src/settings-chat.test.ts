@@ -27,8 +27,19 @@ const workspace: WorkspaceState = {
     ...DEFAULT_CHARTER,
     autonomy: "publish",
     workerModels: [
-      { agent: "claude", model: "opus", variant: "high", default: true, useFor: "the work" },
-      { agent: "codex", model: "gpt-6.1-sol", profileId: "p1" as never, useFor: "reviews" },
+      {
+        agent: "claude",
+        model: "opus",
+        variant: "high",
+        default: true,
+        useFor: "the work",
+      },
+      {
+        agent: "codex",
+        model: "gpt-6.1-sol",
+        profileId: "p1" as never,
+        useFor: "reviews",
+      },
     ],
   },
 };
@@ -42,16 +53,28 @@ const world: SettingsWorld = {
   workspace,
 };
 
-const plan = (changes: ReadonlyArray<SettingsChange>, against: SettingsWorld = world) =>
-  planSettingsChanges(against, changes);
+const plan = (
+  changes: ReadonlyArray<SettingsChange>,
+  against: SettingsWorld = world,
+) => planSettingsChanges(against, changes);
 
 /** What a plan stores, applied to the world it was planned against. */
-const charterAfter = (result: ReturnType<typeof plan>, against: SettingsWorld = world) =>
-  result.ok ? applyCharterWrites(against.workspace!.charter, result.plan.writes) : undefined;
+const charterAfter = (
+  result: ReturnType<typeof plan>,
+  against: SettingsWorld = world,
+) =>
+  result.ok
+    ? applyCharterWrites(against.workspace!.charter, result.plan.writes)
+    : undefined;
 const settingsAfter = (result: ReturnType<typeof plan>) =>
-  result.ok ? applySettingsWrites(world.settings, result.plan.writes) : undefined;
+  result.ok
+    ? applySettingsWrites(world.settings, result.plan.writes)
+    : undefined;
 
-const errorsOf = (changes: ReadonlyArray<SettingsChange>, against?: SettingsWorld) => {
+const errorsOf = (
+  changes: ReadonlyArray<SettingsChange>,
+  against?: SettingsWorld,
+) => {
   const result = plan(changes, against);
   if (result.ok) throw new Error("expected the plan to be refused");
   return result.errors.join(" ");
@@ -63,12 +86,16 @@ describe("settings by chat: tiers", () => {
       for (const spelled of [key, key.toUpperCase(), `${key}.anything`]) {
         expect(errorsOf([{ op: "set", key: spelled, value: true }])).toContain(
           // A workspace's repos, autonomy and worker mode change only on workspace_update's card.
-          via === undefined ? "no agent may change it" : `propose it with ${via}`,
+          via === undefined
+            ? "no agent may change it"
+            : `propose it with ${via}`,
         );
       }
     }
     expect(
-      USER_ONLY_SETTINGS.filter((each) => each.via !== undefined).map((each) => each.key),
+      USER_ONLY_SETTINGS.filter((each) => each.via !== undefined).map(
+        (each) => each.key,
+      ),
     ).toEqual([
       "workspace.autonomy",
       "workspace.workerMode",
@@ -103,7 +130,9 @@ describe("settings by chat: tiers", () => {
 
   it("refuses a key that isn't in the catalogue", () => {
     expect(
-      errorsOf([{ op: "set", key: "workspace.repoMergeReviewPolicies", value: {} }]),
+      errorsOf([
+        { op: "set", key: "workspace.repoMergeReviewPolicies", value: {} },
+      ]),
     ).toContain("isn't settable by chat");
   });
 });
@@ -118,12 +147,19 @@ describe("settings by chat: reading", () => {
     expect(text).not.toContain("/private/bin/editor");
     expect(text).not.toContain("/private/folder");
     const userOnly = readUserOnlyRows(world);
-    expect(userOnly.find((row) => row.key === "workspace.autonomy")).toMatchObject({
+    expect(
+      userOnly.find((row) => row.key === "workspace.autonomy"),
+    ).toMatchObject({
       value: "publish",
     });
-    expect(userOnly.find((row) => row.key === "editor.command")).not.toHaveProperty("value");
+    expect(
+      userOnly.find((row) => row.key === "editor.command"),
+    ).not.toHaveProperty("value");
     expect(readSettingsRows(world, "workspace")).toContainEqual(
-      expect.objectContaining({ key: "workspace.maxConcurrentWorkers", value: 10 }),
+      expect.objectContaining({
+        key: "workspace.maxConcurrentWorkers",
+        value: 10,
+      }),
     );
   });
 });
@@ -135,7 +171,12 @@ describe("settings by chat: planning", () => {
       {
         op: "add",
         key: "workspace.workerModels",
-        item: { agent: "claude", model: "haiku", useFor: "docs", default: true },
+        item: {
+          agent: "claude",
+          model: "haiku",
+          useFor: "docs",
+          default: true,
+        },
       },
       {
         op: "update",
@@ -206,7 +247,10 @@ describe("settings by chat: planning", () => {
       ...world,
       workspace: {
         ...workspace,
-        charter: { ...workspace.charter, workerModels: [{ agent: "claude", model: "opus" }] },
+        charter: {
+          ...workspace.charter,
+          workerModels: [{ agent: "claude", model: "opus" }],
+        },
       },
     };
     const result = plan(
@@ -236,7 +280,12 @@ describe("settings by chat: planning", () => {
       { op: "set", key: "appearance.motion", value: "reduced" },
     ]);
     expect(result.ok && result.plan.writes).toEqual([
-      { key: "appearance.mode", path: ["appearance", "mode"], before: "dark", after: "light" },
+      {
+        key: "appearance.mode",
+        path: ["appearance", "mode"],
+        before: "dark",
+        after: "light",
+      },
       {
         key: "appearance.motion",
         path: ["appearance", "motion"],
@@ -244,62 +293,89 @@ describe("settings by chat: planning", () => {
         after: "reduced",
       },
     ]);
-    expect(settingsAfter(result)?.appearance).toMatchObject({ mode: "light", motion: "reduced" });
-    expect(result.ok && result.plan.rows.map((row) => `${row.before}→${row.after}`)).toEqual([
-      "dark→light",
-      "system→reduced",
-    ]);
+    expect(settingsAfter(result)?.appearance).toMatchObject({
+      mode: "light",
+      motion: "reduced",
+    });
+    expect(
+      result.ok && result.plan.rows.map((row) => `${row.before}→${row.after}`),
+    ).toEqual(["dark→light", "system→reduced"]);
   });
 
   it("starts the app roster empty when none is saved, as new workspaces get it", () => {
     expect(
-      errorsOf([{ op: "remove", key: "agents.workerModels", match: "claude:haiku" }]),
+      errorsOf([
+        { op: "remove", key: "agents.workerModels", match: "claude:haiku" },
+      ]),
     ).toContain("has no claude:haiku");
     const result = plan([
-      { op: "add", key: "agents.workerModels", item: { agent: "codex", model: "gpt-5.5" } },
+      {
+        op: "add",
+        key: "agents.workerModels",
+        item: { agent: "codex", model: "gpt-5.5" },
+      },
     ]);
-    expect(settingsAfter(result)?.agents.workerModels?.map((model) => model.model)).toEqual([
-      "gpt-5.5",
-    ]);
+    expect(
+      settingsAfter(result)?.agents.workerModels?.map((model) => model.model),
+    ).toEqual(["gpt-5.5"]);
   });
 
   it("refuses values the Settings schemas refuse, naming the key", () => {
-    expect(errorsOf([{ op: "set", key: "workspace.maxConcurrentWorkers", value: 0 }])).toContain(
-      "workspace.maxConcurrentWorkers",
-    );
-    expect(errorsOf([{ op: "set", key: "appearance.mode", value: "purple" }])).toContain(
-      "appearance.mode",
-    );
-    expect(errorsOf([{ op: "set", key: "appearance.mode", value: null }])).toContain(
-      "can't be cleared",
-    );
-    expect(errorsOf([{ op: "set", key: "workspace.mergeReviewPolicy", value: "never" }])).toContain(
-      "automatic, solo, bot",
-    );
     expect(
       errorsOf([
-        { op: "add", key: "workspace.workerModels", item: { agent: "unknown-agent", model: "x" } },
+        { op: "set", key: "workspace.maxConcurrentWorkers", value: 0 },
+      ]),
+    ).toContain("workspace.maxConcurrentWorkers");
+    expect(
+      errorsOf([{ op: "set", key: "appearance.mode", value: "purple" }]),
+    ).toContain("appearance.mode");
+    expect(
+      errorsOf([{ op: "set", key: "appearance.mode", value: null }]),
+    ).toContain("can't be cleared");
+    expect(
+      errorsOf([
+        { op: "set", key: "workspace.mergeReviewPolicy", value: "never" },
+      ]),
+    ).toContain("automatic, solo, bot");
+    expect(
+      errorsOf([
+        {
+          op: "add",
+          key: "workspace.workerModels",
+          item: { agent: "unknown-agent", model: "x" },
+        },
       ]),
     ).toContain("workspace.workerModels");
     expect(
       errorsOf([
-        { op: "add", key: "workspace.workerModels", item: { agent: "claude", model: "opus" } },
+        {
+          op: "add",
+          key: "workspace.workerModels",
+          item: { agent: "claude", model: "opus" },
+        },
       ]),
     ).toContain("already has claude:opus");
     expect(
       errorsOf([
-        { op: "update", key: "workspace.workerModels", match: "claude:opus", item: { model: "x" } },
+        {
+          op: "update",
+          key: "workspace.workerModels",
+          match: "claude:opus",
+          item: { model: "x" },
+        },
       ]),
     ).toContain("remove the entry and add another");
     expect(
-      errorsOf([{ op: "remove", key: "workspace.workerModels", match: "claude:sonnet" }]),
+      errorsOf([
+        { op: "remove", key: "workspace.workerModels", match: "claude:sonnet" },
+      ]),
     ).toContain("has no claude:sonnet");
-    expect(errorsOf([{ op: "set", key: "workspace.workerModels", value: [] }])).toContain(
-      "is a list",
-    );
-    expect(errorsOf([{ op: "remove", key: "appearance.mode", match: "x" }])).toContain(
-      "isn't a list",
-    );
+    expect(
+      errorsOf([{ op: "set", key: "workspace.workerModels", value: [] }]),
+    ).toContain("is a list");
+    expect(
+      errorsOf([{ op: "remove", key: "appearance.mode", match: "x" }]),
+    ).toContain("isn't a list");
   });
 
   it("refuses a gateway profile on any model it is given", () => {
@@ -326,7 +402,9 @@ describe("settings by chat: planning", () => {
         value: { agent: "claude", model: "opus", profileId: "p2" },
       },
     ] as const) {
-      expect(errorsOf([change])).toContain("gateway profile can't be chosen by chat");
+      expect(errorsOf([change])).toContain(
+        "gateway profile can't be chosen by chat",
+      );
     }
   });
 
@@ -341,15 +419,17 @@ describe("settings by chat: planning", () => {
 
   it("refuses pausing and resuming: a pause is the user's way to stop agents", () => {
     // Re-review R1: the pause was approvable by chat, so an agent could ask to resume it.
-    expect(SETTINGS_CATALOGUE.map((entry) => entry.key)).not.toContain("workspace.paused");
+    expect(SETTINGS_CATALOGUE.map((entry) => entry.key)).not.toContain(
+      "workspace.paused",
+    );
     const paused: SettingsWorld = {
       ...world,
       workspace: { ...workspace, paused: { reason: "user", at: 1 } },
     };
     for (const value of [true, false]) {
-      expect(errorsOf([{ op: "set", key: "workspace.paused", value }], paused)).toContain(
-        "only the user pauses or resumes",
-      );
+      expect(
+        errorsOf([{ op: "set", key: "workspace.paused", value }], paused),
+      ).toContain("only the user pauses or resumes");
     }
     expect(readUserOnlyRows(paused)).toContainEqual(
       expect.objectContaining({ key: "workspace.paused", value: true }),
@@ -358,13 +438,16 @@ describe("settings by chat: planning", () => {
 
   it("needs a workspace for workspace keys, and a change for a proposal", () => {
     expect(
-      errorsOf([{ op: "set", key: "workspace.maxConcurrentWorkers", value: 3 }], {
-        settings: world.settings,
-      }),
+      errorsOf(
+        [{ op: "set", key: "workspace.maxConcurrentWorkers", value: 3 }],
+        {
+          settings: world.settings,
+        },
+      ),
     ).toContain("needs a workspace");
-    expect(errorsOf([{ op: "set", key: "appearance.mode", value: "dark" }])).toContain(
-      "changes nothing",
-    );
+    expect(
+      errorsOf([{ op: "set", key: "appearance.mode", value: "dark" }]),
+    ).toContain("changes nothing");
     expect(errorsOf([])).toContain("at least one change");
   });
 
@@ -373,7 +456,10 @@ describe("settings by chat: planning", () => {
       ...world,
       workspace: {
         ...workspace,
-        charter: { ...workspace.charter, orchestratorModel: { agent: "claude", model: "opus" } },
+        charter: {
+          ...workspace.charter,
+          orchestratorModel: { agent: "claude", model: "opus" },
+        },
       },
     };
     const result = plan(
@@ -394,11 +480,17 @@ describe("settings by chat: planning", () => {
       ...world,
       settings: {
         ...world.settings,
-        agents: { ...world.settings.agents, defaultModel: { agent: "claude", model: "opus" } },
+        agents: {
+          ...world.settings.agents,
+          defaultModel: { agent: "claude", model: "opus" },
+        },
       },
     };
     expect(
-      errorsOf([{ op: "set", key: "workspace.orchestratorEffort", value: "high" }], inherited),
+      errorsOf(
+        [{ op: "set", key: "workspace.orchestratorEffort", value: "high" }],
+        inherited,
+      ),
     ).toContain("Set workspace.orchestratorModel with a variant instead");
   });
 
@@ -426,7 +518,9 @@ describe("settings by chat: planning", () => {
   });
 
   it("shows a value written over its default as a change", () => {
-    const result = plan([{ op: "set", key: "layout.quietWhenIdle", value: false }]);
+    const result = plan([
+      { op: "set", key: "layout.quietWhenIdle", value: false },
+    ]);
     expect(result.ok && result.plan.rows).toEqual([
       {
         key: "layout.quietWhenIdle",
@@ -451,7 +545,10 @@ describe("settings by chat: applying", () => {
       autonomy: "supervised" as const,
       workerMode: "default" as const,
     };
-    expect(applyCharterWrites(now, limit.plan.writes)).toEqual({ ...now, maxConcurrentWorkers: 4 });
+    expect(applyCharterWrites(now, limit.plan.writes)).toEqual({
+      ...now,
+      maxConcurrentWorkers: 4,
+    });
   });
 
   it("writes nothing once a field it names has moved", () => {
@@ -461,16 +558,25 @@ describe("settings by chat: applying", () => {
 
   it("compares stored values whatever their keys' order", () => {
     const models = planSettingsChanges(world, [
-      { op: "remove", key: "workspace.workerModels", match: "codex:gpt-6.1-sol" },
+      {
+        op: "remove",
+        key: "workspace.workerModels",
+        match: "codex:gpt-6.1-sol",
+      },
     ]);
     if (!models.ok) throw new Error("expected a plan");
     const reordered = {
       ...workspace.charter,
       workerModels: workspace.charter.workerModels!.map(
-        (model) => Object.fromEntries(Object.entries(model).toReversed()) as typeof model,
+        (model) =>
+          Object.fromEntries(
+            Object.entries(model).toReversed(),
+          ) as typeof model,
       ),
     };
-    expect(applyCharterWrites(reordered, models.plan.writes)?.workerModels).toHaveLength(1);
+    expect(
+      applyCharterWrites(reordered, models.plan.writes)?.workerModels,
+    ).toHaveLength(1);
   });
 
   it("binds a cleared override to the app default the card shows", () => {
@@ -522,7 +628,11 @@ describe("settings by chat: applying", () => {
     expect(settingsHold(moved, result.plan.requires)).toBe(false);
     // An override set over an explicit one depends on nothing else.
     const set = planSettingsChanges(pinned, [
-      { op: "set", key: "workspace.orchestratorModel", value: { agent: "claude", model: "opus" } },
+      {
+        op: "set",
+        key: "workspace.orchestratorModel",
+        value: { agent: "claude", model: "opus" },
+      },
     ]);
     expect(set.ok && set.plan.requires).toEqual([]);
   });
@@ -545,8 +655,16 @@ describe("settings by chat: applying", () => {
       },
     };
     const result = planSettingsChanges(roster, [
-      { op: "remove", key: "workspace.workerModels", match: "claude:fake-haiku" },
-      { op: "add", key: "workspace.workerModels", item: { agent: "claude", model: "fake-haiku" } },
+      {
+        op: "remove",
+        key: "workspace.workerModels",
+        match: "claude:fake-haiku",
+      },
+      {
+        op: "add",
+        key: "workspace.workerModels",
+        item: { agent: "claude", model: "fake-haiku" },
+      },
       {
         op: "update",
         key: "workspace.workerModels",
@@ -579,7 +697,11 @@ describe("settings by chat: applying", () => {
 
   it("shows no order row when kept entries keep their order and new ones go last", () => {
     const result = plan([
-      { op: "add", key: "workspace.workerModels", item: { agent: "claude", model: "haiku" } },
+      {
+        op: "add",
+        key: "workspace.workerModels",
+        item: { agent: "claude", model: "haiku" },
+      },
     ]);
     expect(result.ok && result.plan.rows.map((row) => row.label)).toEqual([
       "Worker model claude:haiku",
@@ -588,7 +710,12 @@ describe("settings by chat: applying", () => {
 });
 
 describe("project local check planning", () => {
-  const project = { id: "p-1" as never, root: "/invented", name: "other", bookmarked: false };
+  const project = {
+    id: "p-1" as never,
+    root: "/invented",
+    name: "other",
+    bookmarked: false,
+  };
   it("rejects hidden/control characters and oversized command and setup values", () => {
     for (const field of ["command", "setup"]) {
       for (const value of [
@@ -600,32 +727,55 @@ describe("project local check planning", () => {
         "x".repeat(16_385),
       ])
         expect(
-          plan([{ op: "set", key: `project.localCheck.${field}`, value }], { ...world, project })
-            .ok,
+          plan([{ op: "set", key: `project.localCheck.${field}`, value }], {
+            ...world,
+            project,
+          }).ok,
         ).toBe(false);
       expect(
-        plan([{ op: "set", key: `project.localCheck.${field}`, value: "make test # comment" }], {
-          ...world,
-          project,
-        }).ok,
+        plan(
+          [
+            {
+              op: "set",
+              key: `project.localCheck.${field}`,
+              value: "make test # comment",
+            },
+          ],
+          {
+            ...world,
+            project,
+          },
+        ).ok,
       ).toBe(true);
     }
   });
   it("binds an approved source-selection manifest and rejects malformed pins", () => {
-    const preparation = { manifest: "/tmp/selection.json", sha256: "a".repeat(64) };
+    const preparation = {
+      manifest: "/tmp/selection.json",
+      sha256: "a".repeat(64),
+    };
     const accepted = plan(
-      [{ op: "set", key: "project.localCheck.preparation", value: preparation }],
+      [
+        {
+          op: "set",
+          key: "project.localCheck.preparation",
+          value: preparation,
+        },
+      ],
       { ...world, project },
     );
     expect(accepted.ok).toBe(true);
     for (const value of [
       { ...preparation, sha256: "bad" },
+      { ...preparation, inputConfigSha256: "bad" },
       { sha256: preparation.sha256 },
       "selection",
     ]) {
       expect(
-        plan([{ op: "set", key: "project.localCheck.preparation", value }], { ...world, project })
-          .ok,
+        plan([{ op: "set", key: "project.localCheck.preparation", value }], {
+          ...world,
+          project,
+        }).ok,
       ).toBe(false);
     }
   });
@@ -638,13 +788,25 @@ describe("project local check planning", () => {
     );
     for (const timeoutMs of [0, -1, 1.5, 86_400_001, "1000"])
       expect(
-        plan([{ op: "set", key: "project.localCheck.timeoutMs", value: timeoutMs }], {
-          ...world,
-          project,
-        }).ok,
+        plan(
+          [
+            {
+              op: "set",
+              key: "project.localCheck.timeoutMs",
+              value: timeoutMs,
+            },
+          ],
+          {
+            ...world,
+            project,
+          },
+        ).ok,
       ).toBe(false);
     expect(
-      plan([{ op: "set", key: "project.localCheck.command", value: "cargo test" }], world).ok,
+      plan(
+        [{ op: "set", key: "project.localCheck.command", value: "cargo test" }],
+        world,
+      ).ok,
     ).toBe(false);
   });
 });
@@ -652,7 +814,11 @@ describe("project local check planning", () => {
 describe("settings by chat: the worker brief footer and routing at a limit", () => {
   it("sets, changes and clears the footer with a card row, and refuses one too long", () => {
     const set = plan([
-      { op: "set", key: "workspace.workerBriefFooter", value: "Run the checks before merging." },
+      {
+        op: "set",
+        key: "workspace.workerBriefFooter",
+        value: "Run the checks before merging.",
+      },
     ]);
     expect(set.ok && set.plan.rows).toEqual([
       {
@@ -662,33 +828,52 @@ describe("settings by chat: the worker brief footer and routing at a limit", () 
         after: "Run the checks before merging.",
       },
     ]);
-    const footed = { ...world, workspace: { ...workspace, charter: charterAfter(set)! } };
-    expect(charterAfter(set)?.workerBriefFooter).toBe("Run the checks before merging.");
-    expect(
-      charterAfter(
-        plan([{ op: "set", key: "workspace.workerBriefFooter", value: null }], footed),
-        footed,
-      ),
-    ).not.toHaveProperty("workerBriefFooter");
-    expect(
-      charterAfter(
-        plan([{ op: "set", key: "workspace.workerBriefFooter", value: "  " }], footed),
-        footed,
-      ),
-    ).not.toHaveProperty("workerBriefFooter");
-    expect(
-      errorsOf([{ op: "set", key: "workspace.workerBriefFooter", value: "x".repeat(4001) }]),
-    ).toContain("at most 4000 characters");
-    expect(errorsOf([{ op: "set", key: "workspace.workerBriefFooter", value: 3 }])).toContain(
-      "expected text",
+    const footed = {
+      ...world,
+      workspace: { ...workspace, charter: charterAfter(set)! },
+    };
+    expect(charterAfter(set)?.workerBriefFooter).toBe(
+      "Run the checks before merging.",
     );
+    expect(
+      charterAfter(
+        plan(
+          [{ op: "set", key: "workspace.workerBriefFooter", value: null }],
+          footed,
+        ),
+        footed,
+      ),
+    ).not.toHaveProperty("workerBriefFooter");
+    expect(
+      charterAfter(
+        plan(
+          [{ op: "set", key: "workspace.workerBriefFooter", value: "  " }],
+          footed,
+        ),
+        footed,
+      ),
+    ).not.toHaveProperty("workerBriefFooter");
+    expect(
+      errorsOf([
+        {
+          op: "set",
+          key: "workspace.workerBriefFooter",
+          value: "x".repeat(4001),
+        },
+      ]),
+    ).toContain("at most 4000 characters");
+    expect(
+      errorsOf([{ op: "set", key: "workspace.workerBriefFooter", value: 3 }]),
+    ).toContain("expected text");
   });
 
   it("turns routing at a limit on and off, stored only while on", () => {
     expect(readSettingsRows(world, "workspace")).toContainEqual(
       expect.objectContaining({ key: "workspace.routeAtLimit", value: false }),
     );
-    const on = plan([{ op: "set", key: "workspace.routeAtLimit", value: true }]);
+    const on = plan([
+      { op: "set", key: "workspace.routeAtLimit", value: true },
+    ]);
     expect(on.ok && on.plan.rows).toEqual([
       {
         key: "workspace.routeAtLimit",
@@ -697,19 +882,25 @@ describe("settings by chat: the worker brief footer and routing at a limit", () 
         after: "on",
       },
     ]);
-    const routed = { ...world, workspace: { ...workspace, charter: charterAfter(on)! } };
+    const routed = {
+      ...world,
+      workspace: { ...workspace, charter: charterAfter(on)! },
+    };
     expect(
       charterAfter(
-        plan([{ op: "set", key: "workspace.routeAtLimit", value: false }], routed),
+        plan(
+          [{ op: "set", key: "workspace.routeAtLimit", value: false }],
+          routed,
+        ),
         routed,
       ),
     ).not.toHaveProperty("routeAtLimit");
-    expect(errorsOf([{ op: "set", key: "workspace.routeAtLimit", value: false }])).toContain(
-      "changes nothing",
-    );
-    expect(errorsOf([{ op: "set", key: "workspace.routeAtLimit", value: "yes" }])).toContain(
-      "expected true",
-    );
+    expect(
+      errorsOf([{ op: "set", key: "workspace.routeAtLimit", value: false }]),
+    ).toContain("changes nothing");
+    expect(
+      errorsOf([{ op: "set", key: "workspace.routeAtLimit", value: "yes" }]),
+    ).toContain("expected true");
   });
 });
 
@@ -717,23 +908,40 @@ describe("settings by chat: idle compaction", () => {
   it("reads as on for the orchestrator when the workspace never set it", () => {
     const rows = readSettingsRows(world, "workspace");
     expect(rows).toContainEqual(
-      expect.objectContaining({ key: "workspace.idleAutoCompact", value: true }),
+      expect.objectContaining({
+        key: "workspace.idleAutoCompact",
+        value: true,
+      }),
     );
     expect(rows).toContainEqual(
-      expect.objectContaining({ key: "workspace.idleAutoCompactKinds", value: ["orchestrator"] }),
+      expect.objectContaining({
+        key: "workspace.idleAutoCompactKinds",
+        value: ["orchestrator"],
+      }),
     );
   });
 
   it("turns off, back to the default, and covers workers when asked", () => {
     expect(
-      charterAfter(plan([{ op: "set", key: "workspace.idleAutoCompact", value: false }])),
+      charterAfter(
+        plan([{ op: "set", key: "workspace.idleAutoCompact", value: false }]),
+      ),
     ).toMatchObject({ idleAutoCompact: false });
     const off = {
       ...world,
-      workspace: { ...workspace, charter: { ...workspace.charter, idleAutoCompact: false } },
+      workspace: {
+        ...workspace,
+        charter: { ...workspace.charter, idleAutoCompact: false },
+      },
     };
     expect(
-      charterAfter(plan([{ op: "set", key: "workspace.idleAutoCompact", value: null }], off), off),
+      charterAfter(
+        plan(
+          [{ op: "set", key: "workspace.idleAutoCompact", value: null }],
+          off,
+        ),
+        off,
+      ),
     ).not.toHaveProperty("idleAutoCompact");
     expect(
       charterAfter(
@@ -749,14 +957,18 @@ describe("settings by chat: idle compaction", () => {
   });
 
   it("refuses values that aren't a switch or a list of kinds", () => {
-    expect(errorsOf([{ op: "set", key: "workspace.idleAutoCompact", value: "yes" }])).toContain(
-      "workspace.idleAutoCompact",
-    );
-    expect(errorsOf([{ op: "set", key: "workspace.idleAutoCompactKinds", value: [] }])).toContain(
-      "workspace.idleAutoCompactKinds",
-    );
     expect(
-      errorsOf([{ op: "set", key: "workspace.idleAutoCompactKinds", value: ["plain"] }]),
+      errorsOf([{ op: "set", key: "workspace.idleAutoCompact", value: "yes" }]),
+    ).toContain("workspace.idleAutoCompact");
+    expect(
+      errorsOf([
+        { op: "set", key: "workspace.idleAutoCompactKinds", value: [] },
+      ]),
+    ).toContain("workspace.idleAutoCompactKinds");
+    expect(
+      errorsOf([
+        { op: "set", key: "workspace.idleAutoCompactKinds", value: ["plain"] },
+      ]),
     ).toContain("workspace.idleAutoCompactKinds");
   });
 });
