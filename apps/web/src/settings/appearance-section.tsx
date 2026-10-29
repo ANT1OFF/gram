@@ -34,7 +34,7 @@ import {
 } from "@/theme/theme";
 import { switchTheme, type Point } from "@/theme/transition";
 
-import { LONG_COPY, SEGMENT } from "./fields";
+import { LONG_COPY, SEGMENT, SEGMENT_SLAB, SEGMENT_TRACK } from "./fields";
 import { FontsSection } from "./fonts-section";
 import { PaletteEditor } from "./palette-editor";
 import { paletteChoices, type PaletteChoice } from "./palette-choices";
@@ -335,11 +335,7 @@ function Segmented<T extends string>({
   const slab = useId();
   return (
     <Control label={label} {...(hint ? { hint } : {})} {...(keywords ? { keywords } : {})}>
-      <div
-        role="group"
-        aria-label={label}
-        className="isolate flex gap-1 rounded-lg border border-border p-0.5"
-      >
+      <div role="group" aria-label={label} className={SEGMENT_TRACK}>
         {options.map((option) => (
           <Button
             key={option}
@@ -349,7 +345,7 @@ function Segmented<T extends string>({
             className={cn(SEGMENT, "flex-1 capitalize")}
             onClick={(event) => onSelect(option, event)}
           >
-            {option === value && <SegmentSlab group={slab} className="bg-secondary" />}
+            {option === value && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
             {option}
           </Button>
         ))}
