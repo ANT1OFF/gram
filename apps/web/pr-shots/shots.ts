@@ -849,6 +849,16 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByRole("region", { name: "Models" }),
   },
   {
+    name: "workspace-autonomy",
+    title: "Workspace settings: Autonomy at Full, its selected level marked",
+    open: async (page) => {
+      await openSwitchWorkspace(page);
+      await page.getByTestId("autonomy").scrollIntoViewIfNeeded();
+      await page.waitForTimeout(600);
+    },
+    element: (page) => page.getByTestId("autonomy"),
+  },
+  {
     name: "workspace-idle-compact",
     title: "Workspace settings: Compact idle threads (on by default)",
     open: async (page) => {
