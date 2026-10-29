@@ -1331,8 +1331,9 @@ const selectedTreeOf = (own: string, repoDir: string, head: string, base: string
           // does not advertise filtering. Check the local upload-pack's v2
           // capability before requesting any candidate objects.
           const advertise = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "ls-remote", upload, pathToFileURL(repoDir).href], { ...env, GIT_TRACE_PACKET: "1" });
+          // The client receives the server's v2 capability advertisement over
+          // the transport. A separated upload-pack does not share its stderr.
           if (advertise?.status !== 0 || advertise.truncated ||
-              !/upload-pack> fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr) ||
               !/ls-remote< fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr)) return undefined;
           for (const sha of [head, base]) {
             if (yield* hasCommit(own, sha, true)) continue;
