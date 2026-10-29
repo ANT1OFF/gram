@@ -183,6 +183,11 @@ function protectedSourceName(path: string): boolean {
 /** Verify materialized bytes and modes without opening any omitted path. */
 function verifySelectedWorktree(root: string, selection: ReadonlyArray<SelectedSource>): void {
   const expected = new Map(selection.filter((row) => row.selected).map((row) => [row.path, row]));
+  const directories = new Set<string>();
+  for (const path of expected.keys()) {
+    const parts = path.split("/");
+    for (let end = 1; end < parts.length; end++) directories.add(parts.slice(0, end).join("/"));
+  }
   const seen = new Set<string>();
   const visit = (dir: string, prefix: string): void => {
     for (const name of readdirSync(dir)) {
@@ -191,7 +196,7 @@ function verifySelectedWorktree(root: string, selection: ReadonlyArray<SelectedS
       const path = nodePath.join(dir, name);
       const metadata = lstatSync(path);
       if (metadata.isDirectory()) {
-        if (![...expected.keys()].some((candidate) => candidate.startsWith(relative + "/")))
+        if (!directories.has(relative))
           throw new Error("unexpected selected worktree directory");
         visit(path, relative);
         continue;
@@ -233,8 +238,8 @@ function selectedSourceManifest(
   preparation: NonNullable<ProjectLocalCheck["preparation"]>,
   head: string,
   base: string,
-  tree: string,
-): Array<SelectedSource> {
+  tree?: string,
+): { tree: string; entries: Array<SelectedSource> } {
   const path = preparation.manifest;
   if (process.platform !== "linux") throw new Error("selected-source preparation requires Linux");
   if (
@@ -269,7 +274,8 @@ function selectedSourceManifest(
       v.schema !== "gram.selected-source/v1" ||
       v.head !== head ||
       v.base !== base ||
-      v.tree !== tree ||
+      typeof v.tree !== "string" || !/^[a-f0-9]{40}$/.test(v.tree) ||
+      (tree !== undefined && v.tree !== tree) ||
       !Array.isArray(v.entries) ||
       v.entries.length === 0 ||
       v.entries.length > 100_000
@@ -315,7 +321,7 @@ function selectedSourceManifest(
       schema: "gram.selected-source/v1",
       head,
       base,
-      tree,
+      tree: v.tree,
       entries: rows.map((row) => ({
         path: row.path,
         mode: row.mode,
@@ -325,7 +331,7 @@ function selectedSourceManifest(
     });
     if (raw.toString("utf8") !== canonical)
       throw new Error("noncanonical selected-source manifest");
-    return rows;
+    return { tree: v.tree as string, entries: rows };
   } finally {
     closeSync(fd);
   }
@@ -1391,7 +1397,7 @@ export const LocalChecksLive = Layer.effect(
     const checksDir = nodePath.join(dataDir, "local-checks");
 
     /** Gram's own bare repository for the one `repoDir` belongs to, made on first use. */
-    const ownRepoOf = (repoDir: string) =>
+    const ownRepoOf = (repoDir: string, wanted?: LocalCheckRun) =>
       Effect.gen(function* () {
         const common = yield* g(repoDir, [
           "rev-parse",
@@ -1402,7 +1408,7 @@ export const LocalChecksLive = Layer.effect(
         const own = nodePath.join(
           checksDir,
           "repos",
-          `${createHash("sha256").update(source).digest("hex").slice(0, 16)}.git`,
+          `${createHash("sha256").update(source).update(wanted?.preparation === undefined ? "" : "\0selected-metadata-v1\0" + wanted.preparation.sha256).digest("hex").slice(0, 16)}.git`,
         );
         if (!existsSync(nodePath.join(own, "HEAD"))) {
           yield* Effect.sync(() => mkdirSync(own, { recursive: true }));
@@ -1411,8 +1417,9 @@ export const LocalChecksLive = Layer.effect(
         return own;
       });
 
-    const hasCommit = (dir: string, sha: string) =>
-      g(dir, ["cat-file", "-e", `${sha}^{commit}`]).pipe(Effect.map((out) => out?.status === 0));
+    const hasCommit = (dir: string, sha: string, noLazy = false) =>
+      g(dir, ["cat-file", "-e", `${sha}^{commit}`], noLazy ? { GIT_NO_LAZY_FETCH: "1" } : undefined)
+        .pipe(Effect.map((out) => out?.status === 0));
 
     /** Fetches `sha` into Gram's repository from `repoDir`'s, after fetching it there if need be. */
     const fetchInto = (own: string, repoDir: string, sha: string) =>
@@ -1437,8 +1444,87 @@ export const LocalChecksLive = Layer.effect(
      * The tree of `head` merged onto `base` in Gram's repository; `null` on conflicts; undefined
      * when unknowable, which it is until `fetch` brought both commits in.
      */
-    const treeOf = (own: string, repoDir: string, head: string, base: string, fetch: boolean) =>
+    const treeOf = (own: string, repoDir: string, head: string, base: string, fetch: boolean, wanted?: LocalCheckRun) =>
       Effect.gen(function* () {
+        if (wanted?.preparation !== undefined) {
+          // A partial source repository is kept separate from ordinary checks,
+          // so an earlier full fetch cannot supply a selected check's objects.
+          let selection: { tree: string; entries: Array<SelectedSource> };
+          try {
+            selection = selectedSourceManifest(wanted.preparation, head, base);
+          } catch {
+            return undefined;
+          }
+          const cachedKey = `selected:${wanted.preparation.sha256}:${head}:${base}`;
+          if (!fetch) return trees.get(cachedKey);
+          const env = { GIT_NO_LAZY_FETCH: "1", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
+          const upload = "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack";
+          // Git otherwise silently falls back to a full fetch if the server
+          // does not advertise filtering. Check the local upload-pack's v2
+          // capability before requesting any candidate objects.
+          const advertise = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "ls-remote", upload, pathToFileURL(repoDir).href], { ...env, GIT_TRACE_PACKET: "1" });
+          if (advertise?.status !== 0 || advertise.truncated ||
+              !/upload-pack> fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr) ||
+              !/ls-remote< fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr)) return undefined;
+          for (const sha of [head, base]) {
+            if (yield* hasCommit(own, sha, true)) continue;
+            const result = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "fetch", "--quiet", "--no-tags", "--filter=blob:none", upload, pathToFileURL(repoDir).href, sha], env);
+            if (result?.status !== 0 || !(yield* hasCommit(own, sha, true))) return undefined;
+          }
+          const ancestor = yield* g(own, ["merge-base", base, head], env);
+          const parent = ancestor?.status === 0 ? ancestor.stdout.trim() : "";
+          if (!SHA.test(parent)) return undefined;
+          const inputTrees: Array<Map<string, { mode: string; oid: string }>> = [];
+          for (const rev of [parent, base, head]) {
+            const census = yield* g(own, ["ls-tree", "-r", "-z", "--full-tree", rev], env);
+            if (census?.status !== 0 || census.truncated) return undefined;
+            const entries = new Map<string, { mode: string; oid: string }>();
+            for (const item of census.stdout.split("\0").filter(Boolean)) {
+              const at = item.indexOf("\t");
+              const meta = item.slice(0, at).split(" ");
+              const path = item.slice(at + 1);
+              if (at < 0 || meta.length !== 3 || meta[1] !== "blob" ||
+                  !["100644", "100755", "120000"].includes(meta[0]!) || !SHA.test(meta[2]!) || entries.has(path))
+                return undefined;
+              entries.set(path, { mode: meta[0]!, oid: meta[2]! });
+            }
+            inputTrees.push(entries);
+          }
+          const selected = new Map(selection.entries.filter((row) => row.selected).map((row) => [row.path, row]));
+          const omitted = new Map(selection.entries.filter((row) => !row.selected).map((row) => [row.path, row]));
+          const paths = new Set([...selection.entries.map((row) => row.path), ...inputTrees.flatMap((tree) => [...tree.keys()])]);
+          const needed = new Set<string>();
+          const excluded = new Set<string>();
+          for (const path of paths) {
+            const values = inputTrees.map((tree) => tree.get(path));
+            if (selected.has(path)) {
+              for (const row of values) {
+                if (row !== undefined && !["100644", "100755"].includes(row.mode)) return undefined;
+                if (row !== undefined) needed.add(row.oid);
+              }
+            } else {
+              // Only an unchanged omitted blob can pass to merge-tree; do not
+              // give Git the opportunity to merge or lazily fetch its bytes.
+              const target = omitted.get(path);
+              if (target === undefined) return undefined;
+              if (values.some((row) => row?.oid !== target.oid || row.mode !== target.mode)) return undefined;
+              excluded.add(target.oid);
+            }
+          }
+          if ([...needed].some((oid) => excluded.has(oid))) return undefined;
+          if (fetch) {
+            const blobs = [...needed];
+            for (let offset = 0; offset < blobs.length; offset += 128) {
+              const result = yield* g(own, ["-c", "protocol.file.allow=always", "fetch", "--quiet", "--no-tags", upload, pathToFileURL(repoDir).href, ...blobs.slice(offset, offset + 128)], env);
+              if (result?.status !== 0) return undefined;
+            }
+          }
+          const merged = yield* g(own, ["merge-tree", "--write-tree", "--no-messages", base, head], env);
+          const tree = merged?.status === 0 ? merged.stdout.split("\n")[0]!.trim() : undefined;
+          if (tree !== selection.tree) return undefined;
+          trees.set(cachedKey, tree);
+          return tree;
+        }
         const cached = trees.get(`${head}:${base}`);
         if (cached !== undefined) return cached;
         for (const sha of [head, base]) {
@@ -1460,8 +1546,8 @@ export const LocalChecksLive = Layer.effect(
         const { config: wanted } = yield* configuration(repoDir, projectId);
         if (wanted === undefined) return undefined;
         // Without fetching: a pair Gram never fetched has no check of it.
-        const own = yield* ownRepoOf(repoDir);
-        const tree = yield* treeOf(own, repoDir, head, base, false);
+        const own = yield* ownRepoOf(repoDir, wanted);
+        const tree = yield* treeOf(own, repoDir, head, base, false, wanted);
         if (tree === undefined) return undefined;
         const found = records.get(keyOf(head, base, tree, wanted));
         return found?.head === head &&
@@ -1577,7 +1663,7 @@ export const LocalChecksLive = Layer.effect(
               started.head,
               started.base,
               started.tree!,
-            );
+            ).entries;
           } catch {
             return {
               ok: false,
@@ -1651,7 +1737,7 @@ export const LocalChecksLive = Layer.effect(
             added?.status === 0
               ? Effect.gen(function* () {
                   if (selection !== undefined) {
-                    const index = yield* g(dir, ["read-tree", sha]);
+                    const index = yield* g(dir, ["read-tree", sha], { GIT_NO_LAZY_FETCH: "1" });
                     const files = selection
                       .filter((row) => row.selected)
                       .map((row) => row.path + "\0")
@@ -1671,7 +1757,7 @@ export const LocalChecksLive = Layer.effect(
                               "--stdin",
                               "-z",
                             ],
-                            { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+                            { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1" },
                             { stdin: files },
                           )
                         : undefined;
@@ -1762,10 +1848,22 @@ export const LocalChecksLive = Layer.effect(
         if (!SHA.test(head) || !SHA.test(base)) return undefined;
         const { config: wanted } = yield* configuration(repoDir, projectId);
         if (wanted === undefined) return undefined;
-        const own = yield* ownRepoOf(repoDir);
-        const tree = yield* treeOf(own, repoDir, head, base, true);
-        if (tree === undefined) return undefined;
+        const own = yield* ownRepoOf(repoDir, wanted);
+        const tree = yield* treeOf(own, repoDir, head, base, true, wanted);
         const startedAt = yield* Clock.currentTimeMillis;
+        if (tree === undefined) {
+          if (wanted.preparation === undefined) return undefined;
+          const key = keyOf(head, base, null, wanted);
+          const failed: LocalCheck = {
+            head, base, tree: "", status: "failed", ...wanted, startedAt,
+            finishedAt: startedAt, host: hostname(),
+            reason: "selected-source metadata preparation refused",
+            failure: { kind: "unstartable" },
+          };
+          yield* save(key, failed);
+          yield* onDone(failed).pipe(Effect.ignore);
+          return failed;
+        }
         if (tree === null) {
           // Conflicts: nothing to check until the branch is brought up to date.
           const key = keyOf(head, base, null, wanted);

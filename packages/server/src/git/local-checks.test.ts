@@ -8,7 +8,7 @@ import {
 import { describe, expect, it } from "@effect/vitest";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { type Proc, ProcLive, ProcNonBlockingLive } from "@gram/git";
+import { Proc, ProcLive, ProcNonBlockingLive } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -49,9 +49,17 @@ import {
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
 
 /** A repo with `main` one commit past where `feature` branched, each adding its own file. */
-const fixture = () => {
+const fixture = (protectedBlob = false) => {
   const dir = tempDir();
   const repo = makeRepo(dir);
+  let protectedOid: string | undefined;
+  if (protectedBlob) {
+    protectedOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+      cwd: repo, input: "synthetic protected fixture", encoding: "utf8",
+    }).trim();
+    run(repo, "update-index", "--add", "--cacheinfo", `100644,${protectedOid},.env.example`);
+    run(repo, "commit", "-qm", "synthetic protected ancestor");
+  }
   run(repo, "checkout", "-q", "-b", "feature");
   write(nodePath.join(repo, "feature.txt"), "feature\n");
   run(repo, "add", "feature.txt");
@@ -62,7 +70,16 @@ const fixture = () => {
   run(repo, "add", "base.txt");
   run(repo, "commit", "-q", "-m", "base");
   const base = run(repo, "rev-parse", "HEAD").trim();
-  return { dir, repo, head, base };
+  return { dir, repo, head, base, protectedOid };
+};
+
+/** Assemble the known disjoint synthetic merge without asking Git to merge omitted blobs. */
+const fixtureTree = (dir: string, repo: string, base: string, head: string): string => {
+  const env = { ...process.env, GIT_INDEX_FILE: nodePath.join(dir, "fixture-index"), GIT_NO_LAZY_FETCH: "1" };
+  execFileSync("git", ["read-tree", base], { cwd: repo, env });
+  const oid = run(repo, "rev-parse", `${head}:feature.txt`).trim();
+  execFileSync("git", ["update-index", "--add", "--cacheinfo", `100644,${oid},feature.txt`], { cwd: repo, env });
+  return execFileSync("git", ["write-tree"], { cwd: repo, env, encoding: "utf8" }).trim();
 };
 
 const configured = (repo: string, setting: ProjectLocalCheck) =>
@@ -224,17 +241,9 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
     () =>
       Effect.gen(function* () {
         expect(Object.keys(ProjectLocalCheckSchema.fields)).toContain("preparation");
-        const { dir, repo, head } = fixture();
-        // Install a synthetic protected blob directly in the index, without opening a protected file.
-        const oid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
-          cwd: repo,
-          input: "synthetic protected fixture",
-          encoding: "utf8",
-        }).trim();
-        run(repo, "update-index", "--add", "--cacheinfo", `100644,${oid},.env.example`);
-        run(repo, "commit", "-qm", "synthetic protected tree entry");
-        const base = run(repo, "rev-parse", "HEAD").trim();
-        const tree = run(repo, "merge-tree", "--write-tree", "--no-messages", base, head).trim();
+        // The omitted object exists only in Git and is identical in both branches.
+        const { dir, repo, head, base, protectedOid: oid } = fixture(true);
+        const tree = fixtureTree(dir, repo, base, head);
         const entries = run(repo, "ls-tree", "-r", "-z", "--full-tree", tree)
           .split("\0")
           .filter(Boolean)
@@ -251,6 +260,13 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
         };
         const doc = { schema: "gram.selected-source/v1", head, base, tree, entries };
         const seen: Array<string> = [];
+        const gitCalls: Array<{ args: ReadonlyArray<string>; env: Readonly<Record<string, string>> | undefined }> = [];
+        const traced = Layer.effect(Proc, Effect.map(Effect.service(Proc), (proc) => Proc.of({
+          run: (bin, args, options) => Effect.suspend(() => {
+            if (bin === "git") gitCalls.push({ args, env: options.env });
+            return proc.run(bin, args, options);
+          }),
+        }))).pipe(Layer.provide(ProcLive));
         const child = nodePath.join(dir, "synthetic-check.cjs");
         const expectedDigest = createHash("sha256").update(JSON.stringify(doc)).digest("hex");
         write(
@@ -291,9 +307,14 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
               "stored selection",
             ).toMatchObject(setting);
             return yield* checked(repo, head, base);
-          }).pipe(Effect.provide(layer(nodePath.join(dir, suffix + ".db"), dir, runner, false)));
+          }).pipe(Effect.provide(layer(nodePath.join(dir, suffix + ".db"), dir, runner, false, traced)));
         const pass = yield* execute({ command, preparation: { ...prepare(doc), inputConfigSha256: "c".repeat(64) } }, "pass");
         expect(pass, JSON.stringify(pass)).toMatchObject({ status: "passed" });
+        const fetches = gitCalls.filter(({ args }) => args.includes("fetch"));
+        expect(fetches.some(({ args }) => args.includes("--filter=blob:none"))).toBe(true);
+        expect(fetches.every(({ args, env }) => !args.includes(oid!) && env?.GIT_NO_LAZY_FETCH === "1")).toBe(true);
+        expect(gitCalls.filter(({ args }) => args.includes("merge-tree"))
+          .every(({ env }) => env?.GIT_NO_LAZY_FETCH === "1")).toBe(true);
         expect(pass?.omittedSources).toEqual([
           { path: ".env.example", mode: "100644", oid, contents: "NOT_READ_OR_VERIFIED" },
         ]);
@@ -348,6 +369,57 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
         const digestFailure = yield* execute({ command, preparation: changedDigest }, "digest");
         expect(digestFailure).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
         expect(seen).toHaveLength(1);
+        // A server without filter capability must be refused before any fetch.
+        let refusedFetch = false;
+        const noFilter = Layer.effect(Proc, Effect.map(Effect.service(Proc), (proc) => Proc.of({
+          run: (bin, args, options) => Effect.suspend(() => {
+            if (bin === "git" && args.includes("fetch")) refusedFetch = true;
+            if (bin === "git" && args.includes("ls-remote"))
+              return Effect.succeed({ status: 0, stdout: "", stderr: "fetch=shallow", truncated: false });
+            return proc.run(bin, args, options);
+          }),
+        }))).pipe(Layer.provide(ProcLive));
+        const noCapability = yield* Effect.gen(function* () {
+          yield* configured(repo, { command, preparation: prepare(doc) });
+          return yield* checked(repo, head, base);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "no-filter.db"), dir, runner, false, noFilter)));
+        expect(noCapability).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        expect(refusedFetch).toBe(false);
+        expect(seen).toHaveLength(1);
+        const priorMerges = gitCalls.filter(({ args }) => args.includes("merge-tree")).length;
+        // Change only the omitted synthetic Git object, without creating a protected file.
+        const changedOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+          cwd: repo, input: "different synthetic protected fixture", encoding: "utf8",
+        }).trim();
+        const env = { ...process.env, GIT_INDEX_FILE: nodePath.join(dir, "changed-index") };
+        execFileSync("git", ["read-tree", head], { cwd: repo, env });
+        execFileSync("git", ["update-index", "--add", "--cacheinfo", `100644,${changedOid},.env.example`], { cwd: repo, env });
+        const changedTree = execFileSync("git", ["write-tree"], { cwd: repo, env, encoding: "utf8" }).trim();
+        const changedHead = run(repo, "commit-tree", changedTree, "-p", head, "-m", "changed synthetic omission").trim();
+        const changedDoc = { ...doc, head: changedHead };
+        const blocked = yield* Effect.gen(function* () {
+          yield* configured(repo, { command, preparation: prepare(changedDoc) });
+          return yield* checked(repo, changedHead, base);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "changed-omission.db"), dir, runner, false, traced)));
+        expect(gitCalls.filter(({ args }) => args.includes("merge-tree"))).toHaveLength(priorMerges);
+        expect(blocked).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        expect(seen).toHaveLength(1);
+        // Both sides changing an omitted object must stop before merge-tree too.
+        const otherOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+          cwd: repo, input: "third synthetic protected fixture", encoding: "utf8",
+        }).trim();
+        const otherEnv = { ...process.env, GIT_INDEX_FILE: nodePath.join(dir, "conflict-index") };
+        execFileSync("git", ["read-tree", base], { cwd: repo, env: otherEnv });
+        execFileSync("git", ["update-index", "--add", "--cacheinfo", `100644,${otherOid},.env.example`], { cwd: repo, env: otherEnv });
+        const otherTree = execFileSync("git", ["write-tree"], { cwd: repo, env: otherEnv, encoding: "utf8" }).trim();
+        const otherBase = run(repo, "commit-tree", otherTree, "-p", base, "-m", "conflicting synthetic omission").trim();
+        const conflicting = yield* Effect.gen(function* () {
+          yield* configured(repo, { command, preparation: prepare({ ...doc, head: changedHead, base: otherBase }) });
+          return yield* checked(repo, changedHead, otherBase);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "conflicting-omission.db"), dir, runner, false, traced)));
+        expect(conflicting).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        expect(gitCalls.filter(({ args }) => args.includes("merge-tree"))).toHaveLength(priorMerges);
+        expect(seen).toHaveLength(1);
         removeDir(dir);
       }),
   );
@@ -367,7 +439,7 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
         run(repo, "add", ".gitattributes");
         run(repo, "commit", "-qm", "ident attribute");
         const base = run(repo, "rev-parse", "HEAD").trim();
-        const tree = run(repo, "merge-tree", "--write-tree", "--no-messages", base, head).trim();
+        const tree = fixtureTree(dir, repo, base, head);
         const entries = run(repo, "ls-tree", "-r", "-z", "--full-tree", tree)
           .split("\0").filter(Boolean).map((item) => {
             const [meta, path] = item.split("\t");
