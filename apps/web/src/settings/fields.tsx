@@ -235,16 +235,28 @@ export function ExpandableError({ message }: { message: string }) {
   );
 }
 
+/**
+ * A segmented control's track: a `surface-hover` fill the selected segment's `SEGMENT_SLAB` sits
+ * on, so the selection shows on a card or popover as well as on the page.
+ */
+export const SEGMENT_TRACK = "isolate flex gap-0.5 rounded-lg bg-accent p-0.5";
+
 /** A row of choices, framed as one control; right-aligned when it wraps on a `SettingRow`. */
-export const OPTION_GROUP =
-  "isolate flex flex-wrap gap-0.5 rounded-lg border border-border/60 p-0.5 @min-[32rem]/row:justify-end";
+export const OPTION_GROUP = `${SEGMENT_TRACK} flex-wrap @min-[32rem]/row:justify-end`;
 
 /**
- * A ghost Button as one segment of a row whose selection is a sliding `SegmentSlab`: the selected
- * one keeps the slab's colour under the pointer rather than taking the hover tint over it.
+ * A ghost Button as one segment of a row whose selection is a sliding `SegmentSlab`: unselected
+ * labels are muted and brighten under the pointer without a tint, and the selected one takes the
+ * foreground over its slab.
  */
 export const SEGMENT =
-  "relative aria-checked:text-secondary-foreground aria-checked:hover:bg-transparent aria-pressed:text-secondary-foreground aria-pressed:hover:bg-transparent dark:aria-checked:hover:bg-transparent dark:aria-pressed:hover:bg-transparent";
+  "relative text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent aria-checked:text-foreground aria-pressed:text-foreground";
+
+/**
+ * The selected segment's slab: `surface-3` with a hairline. That fill is also a card's and a
+ * popover's, so on one of them the track and the hairline are what set the slab apart.
+ */
+export const SEGMENT_SLAB = "bg-secondary ring-1 ring-border";
 
 /** One choice out of a few, as a row of radio buttons. */
 export function OptionGroup<T extends string>({
@@ -276,7 +288,7 @@ export function OptionGroup<T extends string>({
             if (option.value !== value) onChange(option.value);
           }}
         >
-          {option.value === value && <SegmentSlab group={slab} className="bg-secondary" />}
+          {option.value === value && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
           {option.label}
         </Button>
       ))}

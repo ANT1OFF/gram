@@ -1,5 +1,11 @@
 // @vitest-environment happy-dom
-import { DEFAULT_SETTINGS, type ProjectId, type Settings, type WorkspaceId } from "@gram/contracts";
+import {
+  type Autonomy,
+  DEFAULT_SETTINGS,
+  type ProjectId,
+  type Settings,
+  type WorkspaceId,
+} from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api/mock";
 import { dispatchShortcut } from "@/keyboard/registry";
 import { renderWithApi } from "@/panels/test-utils";
+import { autonomyLevel } from "@/settings/workspace-settings-model";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { NewWorkspaceSheet } from "./new-workspace";
@@ -139,6 +146,34 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save.mock.calls[0]![0].charter?.autonomy).toBe("publish");
+  });
+
+  it("marks the selected autonomy level on the sheet's card, not by its fill alone", async () => {
+    const { render } = await mount(settingsWith({ welcomeSeen: true }));
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    const autonomy = screen.getByTestId("autonomy");
+    const marked = () =>
+      within(autonomy)
+        .getAllByRole("radio")
+        .filter((radio) => radio.getAttribute("aria-checked") === "true")
+        .map((radio) => ({
+          name: radio.textContent,
+          slab: radio.querySelector('[data-testid="segment-slab"]')?.className ?? "",
+        }));
+    // The sheet is a card, and the slab's fill is a card's too: the track and hairline show it.
+    expect(within(autonomy).getByRole("radiogroup").className).toContain("bg-accent");
+    const [initial] = marked();
+    expect(marked()).toHaveLength(1);
+    expect(initial!.name).toBe(
+      autonomyLevel(autonomy.getAttribute("data-value") as Autonomy).label,
+    );
+    expect(initial!.slab).toContain("ring-1");
+    expect(within(autonomy).getAllByTestId("segment-slab")).toHaveLength(1);
+
+    fireEvent.click(within(autonomy).getByRole("radio", { name: "Publish" }));
+    await waitFor(() => expect(marked().map(({ name }) => name)).toEqual(["Publish"]));
+    expect(marked()[0]!.slab).toContain("ring-1");
   });
 
   it("asks for a repository first, adds one from the list and removes it with its chip", async () => {
