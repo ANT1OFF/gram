@@ -1308,6 +1308,132 @@ const fixedIdentity = {
   GIT_COMMITTER_DATE: "1970-01-01T00:00:00Z",
 };
 
+// Shared native metadata-first selected tree preparation; both LocalChecks
+// and the explicit private-publisher entry use this identical path.
+type SelectedTreeGit = (cwd: string, args: ReadonlyArray<string>, env?: Record<string,string>, more?: { readonly stdin?: string; readonly tier?: "local" | "slow" }) => Effect.Effect<ProcOutput | undefined>;
+const selectedTreeOf = (own: string, repoDir: string, head: string, base: string, fetch: boolean,
+  preparation: NonNullable<ProjectLocalCheck["preparation"]>, g: SelectedTreeGit,
+  hasCommit: (dir: string, sha: string, noLazy?: boolean) => Effect.Effect<boolean>, trees: Map<string,string|null>) =>
+  Effect.gen(function* () {
+          // A partial source repository is kept separate from ordinary checks,
+          // so an earlier full fetch cannot supply a selected check's objects.
+          let selection: { tree: string; entries: Array<SelectedSource> };
+          try {
+            selection = selectedSourceManifest(preparation, head, base);
+          } catch {
+            return undefined;
+          }
+          const cachedKey = `selected:${preparation.sha256}:${head}:${base}`;
+          if (!fetch) return trees.get(cachedKey);
+          const env = { GIT_NO_LAZY_FETCH: "1", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
+          const upload = "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack";
+          // Git otherwise silently falls back to a full fetch if the server
+          // does not advertise filtering. Check the local upload-pack's v2
+          // capability before requesting any candidate objects.
+          const advertise = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "ls-remote", upload, pathToFileURL(repoDir).href], { ...env, GIT_TRACE_PACKET: "1" });
+          if (advertise?.status !== 0 || advertise.truncated ||
+              !/upload-pack> fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr) ||
+              !/ls-remote< fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr)) return undefined;
+          for (const sha of [head, base]) {
+            if (yield* hasCommit(own, sha, true)) continue;
+            const result = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "fetch", "--quiet", "--no-tags", "--filter=blob:none", upload, pathToFileURL(repoDir).href, sha], env);
+            if (result?.status !== 0 || !(yield* hasCommit(own, sha, true))) return undefined;
+          }
+          const ancestor = yield* g(own, ["merge-base", base, head], env);
+          const parent = ancestor?.status === 0 ? ancestor.stdout.trim() : "";
+          if (!SHA.test(parent)) return undefined;
+          const inputTrees: Array<Map<string, { mode: string; oid: string }>> = [];
+          for (const rev of [parent, base, head]) {
+            const census = yield* g(own, ["ls-tree", "-r", "-z", "--full-tree", rev], env);
+            if (census?.status !== 0 || census.truncated) return undefined;
+            const entries = new Map<string, { mode: string; oid: string }>();
+            for (const item of census.stdout.split("\0").filter(Boolean)) {
+              const at = item.indexOf("\t");
+              const meta = item.slice(0, at).split(" ");
+              const path = item.slice(at + 1);
+              if (at < 0 || meta.length !== 3 || meta[1] !== "blob" ||
+                  !["100644", "100755", "120000"].includes(meta[0]!) || !SHA.test(meta[2]!) || entries.has(path))
+                return undefined;
+              entries.set(path, { mode: meta[0]!, oid: meta[2]! });
+            }
+            inputTrees.push(entries);
+          }
+          const selected = new Map(selection.entries.filter((row) => row.selected).map((row) => [row.path, row]));
+          const omitted = new Map(selection.entries.filter((row) => !row.selected).map((row) => [row.path, row]));
+          const paths = new Set([...selection.entries.map((row) => row.path), ...inputTrees.flatMap((tree) => [...tree.keys()])]);
+          const needed = new Set<string>();
+          const excluded = new Set<string>();
+          for (const path of paths) {
+            const values = inputTrees.map((tree) => tree.get(path));
+            if (selected.has(path)) {
+              for (const row of values) {
+                if (row !== undefined && !["100644", "100755"].includes(row.mode)) return undefined;
+                if (row !== undefined) needed.add(row.oid);
+              }
+            } else {
+              // Only an unchanged omitted blob can pass to merge-tree; do not
+              // give Git the opportunity to merge or lazily fetch its bytes.
+              const target = omitted.get(path);
+              if (target === undefined) return undefined;
+              if (values.some((row) => row?.oid !== target.oid || row.mode !== target.mode)) return undefined;
+              excluded.add(target.oid);
+            }
+          }
+          if ([...needed].some((oid) => excluded.has(oid))) return undefined;
+          if (fetch) {
+            const blobs = [...needed];
+            for (let offset = 0; offset < blobs.length; offset += 128) {
+              const result = yield* g(own, ["-c", "protocol.file.allow=always", "fetch", "--quiet", "--no-tags", upload, pathToFileURL(repoDir).href, ...blobs.slice(offset, offset + 128)], env);
+              if (result?.status !== 0) return undefined;
+            }
+          }
+          const merged = yield* g(own, ["merge-tree", "--write-tree", "--no-messages", base, head], env);
+          const tree = merged?.status === 0 ? merged.stdout.split("\n")[0]!.trim() : undefined;
+          if (tree !== selection.tree) return undefined;
+          trees.set(cachedKey, tree);
+          return tree;
+  });
+
+/** Create a fresh isolated selected-only Git store and empty indexed publisher.
+ * This does not materialize selected source or run a local check.
+ */
+export const prepareSelectedPrivatePublisher = (
+  sourceRepo: string, own: string, publisher: string, head: string, base: string, tree: string,
+  preparation: NonNullable<ProjectLocalCheck["preparation"]>,
+) => Effect.gen(function* () {
+  const parent = nodePath.dirname(own);
+  if (![sourceRepo, own, publisher].every((p) => nodePath.isAbsolute(p) && nodePath.normalize(p) === p && realPathSync(p) === p)
+      || own === publisher || nodePath.dirname(publisher) !== parent || realPathSync(parent) !== parent
+      || lstatSync(parent).uid !== process.getuid?.() || (lstatSync(parent).mode & 0o777) !== 0o700
+      || !lstatSync(own).isDirectory() || !lstatSync(publisher).isDirectory()
+      || readdirSync(own).length !== 0 || readdirSync(publisher).length !== 0)
+    throw new Error("private selected publisher paths are not fresh and owned");
+  selectedSourceManifest(preparation, head, base, tree);
+  const proc = yield* Proc;
+  const g: SelectedTreeGit = (cwd, args, env, more) => git(cwd, args, {
+    ...more, omitEnv: isGitControl,
+    env: { GIT_TERMINAL_PROMPT: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1", ...env },
+  }).pipe(Effect.provideService(Proc, proc), Effect.option,
+    Effect.map((out) => out._tag === "Some" ? out.value : undefined));
+  const requireOk = (out: ProcOutput | undefined) => {
+    if (out?.status !== 0 || out.truncated) throw new Error("private selected Git preparation failed");
+    return out.stdout;
+  };
+  requireOk(yield* g(own, ["init", "--quiet", "--bare", "--template=", own]));
+  const hasCommit = (dir: string, sha: string, noLazy = false) =>
+    g(dir, ["cat-file", "-e", `${sha}^{commit}`], noLazy ? { GIT_NO_LAZY_FETCH: "1" } : undefined)
+      .pipe(Effect.map((out) => out?.status === 0));
+  const selected = yield* selectedTreeOf(own, sourceRepo, head, base, true, preparation, g, hasCommit, new Map());
+  if (selected !== tree) throw new Error("private selected tree unavailable or differs");
+  requireOk(yield* g(own, ["-c", "core.hooksPath=/dev/null", "worktree", "add", "--no-checkout", "--detach", publisher, head]));
+  requireOk(yield* g(publisher, ["read-tree", head]));
+  if (!lstatSync(nodePath.join(publisher, ".git")).isFile() || readdirSync(publisher).some((n) => n !== ".git"))
+    throw new Error("private publisher unexpectedly materialized source");
+  selectedSourceManifest(preparation, head, base, tree);
+  return { head, base, tree, selectionSha256: preparation.sha256, own, publisher };
+});
+
 export const LocalChecksLive = Layer.effect(
   LocalChecks,
   Effect.gen(function* () {
@@ -1524,85 +1650,8 @@ export const LocalChecksLive = Layer.effect(
      */
     const treeOf = (own: string, repoDir: string, head: string, base: string, fetch: boolean, wanted?: LocalCheckRun) =>
       Effect.gen(function* () {
-        if (wanted?.preparation !== undefined) {
-          // A partial source repository is kept separate from ordinary checks,
-          // so an earlier full fetch cannot supply a selected check's objects.
-          let selection: { tree: string; entries: Array<SelectedSource> };
-          try {
-            selection = selectedSourceManifest(wanted.preparation, head, base);
-          } catch {
-            return undefined;
-          }
-          const cachedKey = `selected:${wanted.preparation.sha256}:${head}:${base}`;
-          if (!fetch) return trees.get(cachedKey);
-          const env = { GIT_NO_LAZY_FETCH: "1", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
-          const upload = "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack";
-          // Git otherwise silently falls back to a full fetch if the server
-          // does not advertise filtering. Check the local upload-pack's v2
-          // capability before requesting any candidate objects.
-          const advertise = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "ls-remote", upload, pathToFileURL(repoDir).href], { ...env, GIT_TRACE_PACKET: "1" });
-          if (advertise?.status !== 0 || advertise.truncated ||
-              !/upload-pack> fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr) ||
-              !/ls-remote< fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr)) return undefined;
-          for (const sha of [head, base]) {
-            if (yield* hasCommit(own, sha, true)) continue;
-            const result = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "fetch", "--quiet", "--no-tags", "--filter=blob:none", upload, pathToFileURL(repoDir).href, sha], env);
-            if (result?.status !== 0 || !(yield* hasCommit(own, sha, true))) return undefined;
-          }
-          const ancestor = yield* g(own, ["merge-base", base, head], env);
-          const parent = ancestor?.status === 0 ? ancestor.stdout.trim() : "";
-          if (!SHA.test(parent)) return undefined;
-          const inputTrees: Array<Map<string, { mode: string; oid: string }>> = [];
-          for (const rev of [parent, base, head]) {
-            const census = yield* g(own, ["ls-tree", "-r", "-z", "--full-tree", rev], env);
-            if (census?.status !== 0 || census.truncated) return undefined;
-            const entries = new Map<string, { mode: string; oid: string }>();
-            for (const item of census.stdout.split("\0").filter(Boolean)) {
-              const at = item.indexOf("\t");
-              const meta = item.slice(0, at).split(" ");
-              const path = item.slice(at + 1);
-              if (at < 0 || meta.length !== 3 || meta[1] !== "blob" ||
-                  !["100644", "100755", "120000"].includes(meta[0]!) || !SHA.test(meta[2]!) || entries.has(path))
-                return undefined;
-              entries.set(path, { mode: meta[0]!, oid: meta[2]! });
-            }
-            inputTrees.push(entries);
-          }
-          const selected = new Map(selection.entries.filter((row) => row.selected).map((row) => [row.path, row]));
-          const omitted = new Map(selection.entries.filter((row) => !row.selected).map((row) => [row.path, row]));
-          const paths = new Set([...selection.entries.map((row) => row.path), ...inputTrees.flatMap((tree) => [...tree.keys()])]);
-          const needed = new Set<string>();
-          const excluded = new Set<string>();
-          for (const path of paths) {
-            const values = inputTrees.map((tree) => tree.get(path));
-            if (selected.has(path)) {
-              for (const row of values) {
-                if (row !== undefined && !["100644", "100755"].includes(row.mode)) return undefined;
-                if (row !== undefined) needed.add(row.oid);
-              }
-            } else {
-              // Only an unchanged omitted blob can pass to merge-tree; do not
-              // give Git the opportunity to merge or lazily fetch its bytes.
-              const target = omitted.get(path);
-              if (target === undefined) return undefined;
-              if (values.some((row) => row?.oid !== target.oid || row.mode !== target.mode)) return undefined;
-              excluded.add(target.oid);
-            }
-          }
-          if ([...needed].some((oid) => excluded.has(oid))) return undefined;
-          if (fetch) {
-            const blobs = [...needed];
-            for (let offset = 0; offset < blobs.length; offset += 128) {
-              const result = yield* g(own, ["-c", "protocol.file.allow=always", "fetch", "--quiet", "--no-tags", upload, pathToFileURL(repoDir).href, ...blobs.slice(offset, offset + 128)], env);
-              if (result?.status !== 0) return undefined;
-            }
-          }
-          const merged = yield* g(own, ["merge-tree", "--write-tree", "--no-messages", base, head], env);
-          const tree = merged?.status === 0 ? merged.stdout.split("\n")[0]!.trim() : undefined;
-          if (tree !== selection.tree) return undefined;
-          trees.set(cachedKey, tree);
-          return tree;
-        }
+        if (wanted?.preparation !== undefined)
+          return yield* selectedTreeOf(own, repoDir, head, base, fetch, wanted.preparation, g, hasCommit, trees);
         const cached = trees.get(`${head}:${base}`);
         if (cached !== undefined) return cached;
         for (const sha of [head, base]) {
