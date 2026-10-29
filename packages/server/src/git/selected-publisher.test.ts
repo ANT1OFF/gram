@@ -36,6 +36,7 @@ const fixture = (attributes = "", source = "public synthetic source\n", archive 
   const manifest = path.join(root, "selection.json"); writeFileSync(manifest, raw);
   const publisher = path.join(root, "publisher");
   run(repo, "-c", "core.hooksPath=/dev/null", "worktree", "add", "--no-checkout", "--detach", publisher, head);
+  run(publisher, "read-tree", head); // Populate only Git index metadata, without checkout.
   return { root, publisher, manifest, head, tree, sha256: createHash("sha256").update(raw).digest("hex") };
 };
 const materialize = (f: ReturnType<typeof fixture>, sha256 = f.sha256) => Effect.runPromise(
@@ -61,14 +62,14 @@ describe("explicit selected publisher preparation", () => {
   });
   it("refuses a stale selection before materializing source", async () => {
     const f = fixture(); try {
-      await expect(materialize(f, "0".repeat(64))).rejects.toThrow();
+      await expect(materialize(f, "0".repeat(64))).rejects.toThrow("selected-source manifest identity differs");
       expect(existsSync(path.join(f.publisher, "source.txt"))).toBe(false);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   });
   it("refuses a changed index before materializing source", async () => {
     const f = fixture(); try {
       run(f.publisher, "update-index", "--force-remove", "source.txt");
-      await expect(materialize(f)).rejects.toThrow();
+      await expect(materialize(f)).rejects.toThrow("publisher index differs from selection");
       expect(existsSync(path.join(f.publisher, "source.txt"))).toBe(false);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   });
@@ -77,7 +78,7 @@ describe("explicit selected publisher preparation", () => {
       const doc = JSON.parse(readFileSync(f.manifest, "utf8"));
       doc.entries.find((row: { path: string }) => row.path.endsWith("/.gitattributes")).selected = false;
       const raw = JSON.stringify(doc); writeFileSync(f.manifest, raw);
-      await expect(materialize(f, createHash("sha256").update(raw).digest("hex"))).rejects.toThrow();
+      await expect(materialize(f, createHash("sha256").update(raw).digest("hex"))).rejects.toThrow("unsafe selected-source entry");
       expect(existsSync(path.join(f.publisher, "source.txt"))).toBe(false);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   });
@@ -86,19 +87,19 @@ describe("explicit selected publisher preparation", () => {
       const common = run(f.publisher, "rev-parse", "--path-format=absolute", "--git-common-dir");
       mkdirSync(path.join(common, "info"), { recursive: true });
       writeFileSync(path.join(common, "info", "grafts"), "# synthetic graft marker\n");
-      await expect(materialize(f)).rejects.toThrow();
+      await expect(materialize(f)).rejects.toThrow("publisher info/grafts forbidden");
       expect(existsSync(path.join(f.publisher, "source.txt"))).toBe(false);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   });
   it("refuses filter attributes before materializing source", async () => {
     const f = fixture("source.txt filter=unexpected\n"); try {
-      await expect(materialize(f)).rejects.toThrow();
+      await expect(materialize(f)).rejects.toThrow("publisher selected filter attributes are forbidden");
       expect(existsSync(path.join(f.publisher, "source.txt"))).toBe(false);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   });
   it("refuses transformed selected bytes", async () => {
     const f = fixture("source.txt ident\n", "$Id$\n"); try {
-      await expect(materialize(f)).rejects.toThrow();
+      await expect(materialize(f)).rejects.toThrow("selected-source materialization differs");
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   });
 });
