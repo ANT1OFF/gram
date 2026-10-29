@@ -18,7 +18,7 @@ import {
   type ProjectLocalCheck,
   type ProjectId,
 } from "@gram/contracts";
-import { canonicalizeOrOwned, git, isInside, PathProbe, Proc, realPathSync } from "@gram/git";
+import { canonicalizeOrOwned, git, isInside, PathProbe, Proc, realPathSync, type ProcOutput } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -515,6 +515,84 @@ export class LocalCheckRunner extends Context.Service<LocalCheckRunner, LocalChe
 const isGitControl = (name: string): boolean =>
   name.toUpperCase().startsWith("GIT_") &&
   !["GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_ASKPASS"].includes(name.toUpperCase());
+
+/** Shared selected checkout and raw-byte verification for native and explicit publisher preparation. */
+type SelectedGit = (args: ReadonlyArray<string>, env?: Record<string, string>, more?: { readonly stdin?: string }) => Effect.Effect<ProcOutput | undefined>;
+const checkoutSelected = (dir: string, selection: ReadonlyArray<SelectedSource>, runGit: SelectedGit) =>
+  Effect.gen(function* () {
+    const files = selection.filter((row) => row.selected).map((row) => row.path + "\0").join("");
+    const checkout = yield* runGit(
+      ["-c", "core.hooksPath=/dev/null", "-c", "core.attributesFile=/dev/null", "-c", "core.autocrlf=false", "checkout-index", "--stdin", "-z"],
+      { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1" },
+      { stdin: files },
+    );
+    if (checkout?.status !== 0 || checkout.truncated) return "selected-source checkout failed";
+    try { verifySelectedWorktree(dir, selection); return undefined; } catch { return "selected-source materialization differs"; }
+  });
+
+/** Prepare an already indexed, empty publisher using the same selected checkout as native checks.
+ * This is preparation only; provider approval, partial-store safety and the local check remain separate.
+ */
+export const materializeSelectedPublisher = (
+  dir: string, preparation: NonNullable<ProjectLocalCheck["preparation"]>, head: string, base: string, tree: string,
+) => Effect.gen(function* () {
+  if (!nodePath.isAbsolute(dir) || nodePath.normalize(dir) !== dir || realPathSync(dir) !== dir ||
+      !lstatSync(dir).isDirectory() || lstatSync(dir).isSymbolicLink() ||
+      !lstatSync(nodePath.join(dir, ".git")).isFile() || lstatSync(nodePath.join(dir, ".git")).isSymbolicLink() ||
+      readdirSync(dir).some((name) => name !== ".git")) throw new Error("publisher is not an empty canonical linked worktree");
+  const selection = selectedSourceManifest(preparation, head, base, tree).entries;
+  const proc = yield* Proc;
+  const g: SelectedGit = (args, env, more) => git(dir, args, {
+    ...more, omitEnv: isGitControl,
+    env: { GIT_TERMINAL_PROMPT: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1", GIT_ATTR_NOSYSTEM: "1", ...env },
+  }).pipe(Effect.provideService(Proc, proc), Effect.option,
+    Effect.map((out) => out._tag === "Some" ? out.value : undefined));
+  const required = (result: ProcOutput | undefined) => {
+    if (result?.status !== 0 || result.truncated) throw new Error("publisher Git metadata unavailable");
+    return result.stdout;
+  };
+  const identity = required(yield* g(["rev-parse", "HEAD", "HEAD^{tree}"])).trim().split("\n");
+  if (identity.length !== 2 || identity[0] !== head || identity[1] !== tree) throw new Error("publisher head/tree differs");
+  const expected = new Map(selection.map((row) => [row.path, `${row.mode} ${row.oid}`]));
+  const top = required(yield* g(["rev-parse", "--show-toplevel"])).trim();
+  if (top !== dir) throw new Error("publisher Git root differs");
+  if (required(yield* g(["for-each-ref", "--format=%(refname)", "refs/replace/"])).trim() !== "")
+    throw new Error("publisher replacement refs forbidden");
+  // GIT_GRAFT_FILE is deliberately /dev/null for child commands, so asking
+  // rev-parse for info/grafts would return that override rather than the real file.
+  const common = required(yield* g(["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
+  if (!nodePath.isAbsolute(common) || realPathSync(common) !== common)
+    throw new Error("publisher common Git directory is not canonical");
+  const attrs = required(yield* g(["rev-parse", "--path-format=absolute", "--git-path", "info/attributes"])).trim();
+  if (!nodePath.isAbsolute(attrs)) throw new Error("publisher Git attributes path is not absolute");
+  for (const [label, path] of [["info/grafts", nodePath.join(common, "info/grafts")], ["info/attributes", attrs]]) {
+    try { lstatSync(path!); throw new Error(`publisher ${label} forbidden`); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  }
+  const treeRows = required(yield* g(["ls-tree", "-r", "-z", "--full-tree", head])).split("\0").filter(Boolean);
+  if (treeRows.length !== expected.size || treeRows.some((row) => {
+    const tab = row.indexOf("\t"), meta = row.slice(0, tab).split(" ");
+    return tab < 0 || meta.length !== 3 || meta[1] !== "blob" || expected.get(row.slice(tab + 1)) !== `${meta[0]} ${meta[2]}`;
+  })) throw new Error("publisher tree differs from selection");
+  const index = required(yield* g(["ls-files", "--stage", "-z"])).split("\0").filter(Boolean);
+  if (index.length !== expected.size || index.some((row) => {
+    const tab = row.indexOf("\t"), meta = row.slice(0, tab).split(" ");
+    return tab < 0 || meta.length !== 3 || meta[2] !== "0" || expected.get(row.slice(tab + 1)) !== `${meta[0]} ${meta[1]}`;
+  })) throw new Error("publisher index differs from selection");
+  const flags = required(yield* g(["ls-files", "-v", "-z"])).split("\0").filter(Boolean);
+  if (flags.length !== expected.size || flags.some((row) => !row.startsWith("H ") || !expected.has(row.slice(2))))
+    throw new Error("publisher index flags differ");
+  const selectedNames = selection.filter((row) => row.selected).map((row) => row.path + "\0").join("");
+  const attributes = required(yield* g(["-c", "core.attributesFile=/dev/null", "check-attr", "--cached", "--all", "--stdin", "-z"], undefined, { stdin: selectedNames })).split("\0");
+  if (attributes.at(-1) === "") attributes.pop();
+  if (attributes.length % 3 !== 0 || attributes.some((value, i) => i % 3 === 1 && value === "filter"))
+    throw new Error("publisher selected filter attributes are forbidden");
+  const checkoutError = yield* checkoutSelected(dir, selection, g);
+  if (checkoutError !== undefined) throw new Error(checkoutError);
+  selectedSourceManifest(preparation, head, base, tree);
+  return { head, base, tree, selectionSha256: preparation.sha256, selected: selection.filter((row) => row.selected).length };
+});
 
 /** Gram's own variables stay out of the check, whose tests set what they need themselves. */
 const checkEnv = (
@@ -1738,44 +1816,15 @@ export const LocalChecksLive = Layer.effect(
               ? Effect.gen(function* () {
                   if (selection !== undefined) {
                     const index = yield* g(dir, ["read-tree", sha], { GIT_NO_LAZY_FETCH: "1" });
-                    const files = selection
-                      .filter((row) => row.selected)
-                      .map((row) => row.path + "\0")
-                      .join("");
-                    const checkout =
-                      index?.status === 0
-                        ? yield* g(
-                            dir,
-                            [
-                              "-c",
-                              "core.hooksPath=/dev/null",
-                              "-c",
-                              "core.attributesFile=/dev/null",
-                              "-c",
-                              "core.autocrlf=false",
-                              "checkout-index",
-                              "--stdin",
-                              "-z",
-                            ],
-                            { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1" },
-                            { stdin: files },
-                          )
-                        : undefined;
-                    if (checkout?.status !== 0)
+                    const checkoutError = index?.status === 0
+                      ? yield* checkoutSelected(dir, selection, (args, env, more) => g(dir, args, env, more))
+                      : "selected-source checkout failed";
+                    if (checkoutError !== undefined)
                       return {
                         ok: false,
-                        reason: "selected-source checkout failed",
+                        reason: checkoutError,
                         failure: { kind: "unstartable" },
                       } satisfies LocalCheckOutcome;
-                    try {
-                      verifySelectedWorktree(dir, selection);
-                    } catch {
-                      return {
-                        ok: false,
-                        reason: "selected-source materialization differs",
-                        failure: { kind: "unstartable" },
-                      } satisfies LocalCheckOutcome;
-                    }
                   }
                   const outcome = yield* runner.run(dir, started.log!, wanted, {
                     head: started.head,
