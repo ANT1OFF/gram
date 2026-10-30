@@ -256,6 +256,31 @@ export function PrBadge({
         </PulseOnce>
       )}
       <ReviewGlyph review={pr.review} />
+      <PrBadgeMarks threadId={threadId} git={git} thread={thread} />
+    </span>
+  );
+}
+
+/**
+ * What the thread does about its PR beside the PR's own state: an armed merge, babysitting, a stale
+ * badge and where the work went. The header's badge carries them, and the PR strip's row while it
+ * stands in for the badge.
+ */
+export function PrBadgeMarks({
+  threadId,
+  git,
+  thread,
+}: {
+  threadId: ThreadId;
+  git: GitState;
+  thread?: PrBadgeThread | undefined;
+}) {
+  const pr = git.pr;
+  if (!pr) return null;
+  const shown = painted(git, pr, thread);
+  const cue = prCue(thread, pr);
+  return (
+    <>
       <PrMarkIcon
         group="merge"
         mark={mergeIntentMarkOf(shown, thread)}
@@ -288,7 +313,7 @@ export function PrBadge({
         />
       )}
       <BabysitGlyph threadId={threadId} />
-    </span>
+    </>
   );
 }
 

@@ -26,8 +26,13 @@ const timeClick = (page: Page, selector: string) =>
   }, selector);
 
 test("the file tree jumps to a file, and n / p step through its hunks", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("diff-panel");
+  // A narrow panel leaves the files to their list; the tree takes its place beside it once wider.
+  await expect(panel.getByTestId("diff-file").first()).toBeVisible();
+  await expect(panel.getByRole("tree")).toHaveCount(0);
+  await dragPanelEdge(page, -420);
   const tree = panel.getByRole("tree", { name: "Changed files" });
   await expect(tree.getByRole("treeitem")).toHaveCount(8);
   await expect(tree.getByRole("treeitem", { name: "src" })).toHaveAttribute(

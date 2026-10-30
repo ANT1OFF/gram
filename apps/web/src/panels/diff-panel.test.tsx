@@ -19,6 +19,7 @@ const T = "t-flaky" as ThreadId;
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   useThreadsStore.setState({ byId: {} });
   useLayoutStore.setState({ panelTargets: {}, diffLayout: "unified", diffTreeShown: true });
   resetFilesStore();
@@ -32,6 +33,22 @@ const expandedPaths = () =>
       (row) => within(row).getAllByRole("button")[0]!.getAttribute("aria-expanded") === "true",
     )
     .map((row) => row.querySelector("[title]")?.getAttribute("title"));
+
+/** A panel wide enough for the file tree, which a narrow one leaves to the file list. */
+const widePanel = () =>
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      readonly callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+      observe() {
+        this.callback([{ contentRect: { width: 900 } } as ResizeObserverEntry], this as never);
+      }
+      disconnect() {}
+    },
+  );
 
 describe("DiffPanel", () => {
   it("lists files in the tree's order with text status labels and renders their patches", async () => {
@@ -88,6 +105,7 @@ describe("DiffPanel", () => {
   });
 
   it("jumps to a file from the tree and steps through hunks with n and p", async () => {
+    widePanel();
     const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     const { container } = renderWithApi(<DiffPanel threadId={T} />, {
       gitDiff: vi.fn(async (threadId: ThreadId) => mockDiff(threadId, { kind: "uncommitted" })),
@@ -122,6 +140,7 @@ describe("DiffPanel", () => {
   });
 
   it("steps on from a file without hunks, and forgets the step when the scope changes", async () => {
+    widePanel();
     vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     const logo = { path: "src/logo.png", status: "added", additions: 0, deletions: 0 } as const;
     const last = { path: "zz.bin", status: "added", additions: 0, deletions: 0 } as const;
@@ -237,6 +256,7 @@ describe("DiffPanel", () => {
   });
 
   it("keeps a draft's note under a range that ends on a removed line", async () => {
+    widePanel();
     const { container } = renderWithApi(<DiffPanel threadId={T} />, {
       gitDiff: vi.fn(async (threadId: ThreadId) => mockDiff(threadId, { kind: "uncommitted" })),
     });
@@ -400,6 +420,15 @@ describe("DiffPanel", () => {
     expect(gitDiff).toHaveBeenLastCalledWith(T, { kind: "branch" });
   });
 
+  it("leaves a narrow panel to the file list, without the tree above it", async () => {
+    renderWithApi(<DiffPanel threadId={T} />, {
+      gitDiff: vi.fn(async (threadId: ThreadId) => mockDiff(threadId, { kind: "uncommitted" })),
+    });
+    await screen.findAllByTestId("diff-file");
+    expect(screen.queryByRole("tree")).toBeNull();
+    expect(screen.queryByRole("button", { name: "File tree" })).toBeNull();
+  });
+
   it("says when a clean tree falls back to the branch", async () => {
     renderWithApi(<DiffPanel threadId={"t-docs" as ThreadId} />, {
       gitDiff: vi.fn(async (threadId: ThreadId, scope: DiffScope) => mockDiff(threadId, scope)),
@@ -506,6 +535,6 @@ describe("DiffPanel", () => {
     renderWithApi(<DiffPanel threadId={T} />, {
       gitDiff: vi.fn(async (): Promise<Diff> => ({ repo: true, branch: "main", files: [] })),
     });
-    await waitFor(() => expect(screen.getByText("No changes")).toBeTruthy());
+    expect((await screen.findByTestId("diff-empty")).textContent).toBe("No changes on main");
   });
 });

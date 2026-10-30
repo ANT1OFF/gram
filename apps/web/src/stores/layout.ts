@@ -75,6 +75,11 @@ interface ShellContext {
   windowWidth: number;
   /** The route shows a thread, which the panel's thread tabs are about. */
   threadInView: boolean;
+  /**
+   * That thread has nothing to diff: no uncommitted change and nothing ahead of its base. Its
+   * stored panel then stays closed on the Diff tab, which would say only that, until opened here.
+   */
+  threadQuiet?: boolean | undefined;
   /** Which page the route is, so `panelPeek` is cleared on leaving it; see `shellPage`. */
   page: string;
 }
@@ -126,7 +131,8 @@ export function fitShell(input: ShellFitInput): ShellFit {
   const reviewsTab = input.panelTab === "reviews" && reviewsTabShown(input);
   // A thread's page shows the stored panel; any other only the one opened there, or Reviews.
   const open = input.threadInView
-    ? input.panelOpen
+    ? input.panelOpen &&
+      (input.threadQuiet !== true || input.panelTab !== "diff" || input.panelPeek)
     : input.panelPeek || (reviewsTab && input.panelOpen);
   const sidebarRoom = SIDEBAR_WIDTH.min <= room;
 
@@ -178,7 +184,9 @@ export function fitShell(input: ShellFitInput): ShellFit {
  */
 const showPanelPatch = (state: ShellFitInput): Partial<LayoutState> => {
   const { panelRoom } = fitShell(state);
-  return state.threadInView
+  // Open already, but kept closed on a thread with nothing to diff: shown for this thread alone.
+  const quiet = state.threadInView && state.threadQuiet === true && state.panelOpen;
+  return state.threadInView && !quiet
     ? { focusMode: false, panelOpen: true, panelExpanded: !panelRoom }
     : { focusMode: false, panelPeek: true, panelExpanded: !panelRoom };
 };
@@ -824,6 +832,7 @@ export const useLayoutStore = create<LayoutState>()(
         focusMode: false,
         windowWidth: typeof window === "undefined" ? 0 : window.innerWidth,
         threadInView: false,
+        threadQuiet: false,
         page: "",
         overviewBeforeHide: undefined,
 
@@ -935,13 +944,17 @@ export const useLayoutStore = create<LayoutState>()(
         setPanelExpanded: (panelExpanded) => set({ panelExpanded }),
         setFocusMode: (focusMode) =>
           set((s) => ({ focusMode, panelExpanded: !focusMode && s.panelExpanded })),
-        setShellContext: ({ windowWidth, threadInView, page }) =>
+        setShellContext: ({ windowWidth, threadInView, threadQuiet, page }) =>
           set((s) =>
-            s.windowWidth === windowWidth && s.threadInView === threadInView && s.page === page
+            s.windowWidth === windowWidth &&
+            s.threadInView === threadInView &&
+            s.threadQuiet === threadQuiet &&
+            s.page === page
               ? {}
               : {
                   windowWidth,
                   threadInView,
+                  threadQuiet,
                   page,
                   // A panel opened on the page left goes with it, expanded or not.
                   ...(s.page === page
@@ -962,12 +975,13 @@ export const useLayoutStore = create<LayoutState>()(
                 ...patch,
                 threadInView: true,
                 panelOpen: true,
-                panelPeek: false,
+                panelPeek: s.threadQuiet === true,
               };
               return {
                 ...patch,
                 panelOpen: true,
-                panelPeek: false,
+                // Asked for on a thread with nothing to diff, it shows there too.
+                panelPeek: s.threadQuiet === true,
                 panelExpanded: s.panelExpanded || !fitShell(next).panelRoom,
               };
             }
@@ -1031,7 +1045,9 @@ export const useLayoutStore = create<LayoutState>()(
             if (s.focusMode) return showPanelPatch({ ...s, focusMode: false });
             const fit = fitShell(s);
             if (fit.panel === "none") return showPanelPatch(s);
-            if (!s.threadInView && s.panelPeek) return { panelPeek: false, panelExpanded: false };
+            if (s.panelPeek && (!s.threadInView || s.threadQuiet === true)) {
+              return { panelPeek: false, panelExpanded: false };
+            }
             if (fit.panel === "over" && !fit.panelRoom) return { panelExpanded: false };
             return { panelOpen: false, panelExpanded: false };
           }),

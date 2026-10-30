@@ -270,6 +270,16 @@ export function stripLayout(
 }
 
 /**
+ * Whether the strip draws the thread's own PR, whose number, state and review the header's PR
+ * chips would then say a second time.
+ */
+export const ownPrOnStrip = (
+  boundPr: BoundPr | undefined,
+  git: GitState | undefined,
+  hiddenPrs: readonly HiddenPr[] | undefined,
+): boolean => stripLayout(prRowOf(boundPr, git), [], hiddenPrs).visible.length > 0;
+
+/**
  * The rows a folded strip still shows: the first, and any hidden row that came back because it
  * needs the user, which a fold mustn't swallow again.
  */

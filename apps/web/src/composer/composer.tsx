@@ -879,6 +879,14 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
 
   // Fold order is from the end: the mode picker first, then effort, then Steer. Labels go first.
   const hasEffort = efforts.length > 0;
+  // A default nobody chose says nothing: Speed on the CLI's default, and Mode on the user's own,
+  // wait in "…" (their shortcuts still open them there). A mode with a warning always shows.
+  const defaultMode = useServerSettings((s) => s.settings?.agents.defaultMode);
+  const quietSpeed = model?.speed === undefined;
+  const quietMode =
+    defaultMode !== undefined &&
+    summary?.thread.mode === defaultMode &&
+    modeWarning(summary.thread.mode) === undefined;
   // Only when it can act: a turn that takes input mid-turn, and something typed to send into it.
   const showSteer = steerable && canSend;
   // Steer settles in when a draft makes it possible mid-turn, rather than popping in; it only fades
@@ -888,15 +896,16 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     () => [
       { id: "model", foldable: false },
       ...(showSteer ? [{ id: "steer", foldable: true }] : []),
-      { id: "speed", foldable: true },
+      ...(quietSpeed ? [] : [{ id: "speed", foldable: true }]),
       ...(hasEffort ? [{ id: "effort", foldable: true }] : []),
-      { id: "mode", foldable: true },
+      ...(quietMode ? [] : [{ id: "mode", foldable: true }]),
     ],
-    [showSteer, hasEffort],
+    [showSteer, hasEffort, quietSpeed, quietMode],
   );
   const toolbar = useToolbarLayout(blocks);
   const { ref: toolbarRef, labelled, folded } = toolbar;
-  const isFolded = (id: string) => folded.includes(id);
+  const isFolded = (id: string) =>
+    folded.includes(id) || (id === "speed" && quietSpeed) || (id === "mode" && quietMode);
   const isLabelled = (id: string) => labelled === "all" || labelled.has(id);
   const openFolded = (id: string) => {
     setOverflowOpen(true);
@@ -1145,7 +1154,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                 value={model?.variant}
                 options={efforts}
                 icon={effortIcon}
-                labelled={isLabelled("effort")}
+                labelled={false}
                 folded={isFolded("effort")}
                 onFoldedOpen={() => openFolded("effort")}
                 onChange={onEffort}
@@ -1182,23 +1191,26 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               onChange={onMode}
             />
           </ToolbarBlock>
-          {folded.length > 0 && (
-            <ToolbarOverflow
-              pickers={foldedPickers}
-              steer={
-                showSteer && isFolded("steer")
-                  ? { run: () => void steer(), disabled: !canSend, label: STEER_LABEL }
-                  : undefined
-              }
-              open={overflowOpen}
-              onOpenChange={(next) => {
-                setOverflowOpen(next);
-                if (!next) setOverflowSub(undefined);
-              }}
-              openSub={overflowSub}
-              onOpenSubChange={setOverflowSub}
-            />
-          )}
+          {foldedPickers.length > 0 || isFolded("steer") ? (
+            // Always there while a default waits in it, so the measure counts it as fixed.
+            <div data-toolbar-fixed={quietSpeed || quietMode ? "" : undefined} className="flex">
+              <ToolbarOverflow
+                pickers={foldedPickers}
+                steer={
+                  showSteer && isFolded("steer")
+                    ? { run: () => void steer(), disabled: !canSend, label: STEER_LABEL }
+                    : undefined
+                }
+                open={overflowOpen}
+                onOpenChange={(next) => {
+                  setOverflowOpen(next);
+                  if (!next) setOverflowSub(undefined);
+                }}
+                openSub={overflowSub}
+                onOpenSubChange={setOverflowSub}
+              />
+            </div>
+          ) : null}
           <div data-toolbar-fixed className="flex shrink-0 empty:hidden">
             <StashMenu
               threadId={threadId}

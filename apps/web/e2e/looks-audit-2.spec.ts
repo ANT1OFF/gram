@@ -255,6 +255,11 @@ const SURFACES: Surface[] = [
   {
     name: "pr-badge-chips",
     open: async (page) => {
+      // The header's chips stand in for the PR strip once the PR is hidden from it.
+      await page
+        .getByTestId("pr-row")
+        .getByRole("button", { name: /^Hide #412 / })
+        .click();
       await expect(page.getByTestId("pane-merge-state")).toHaveText("Blocked");
       await expect(page.getByTestId("pane-review-decision")).toHaveText("Changes requested");
       return page.getByTestId("pane-header").first();

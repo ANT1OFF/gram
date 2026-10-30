@@ -32,8 +32,8 @@ test("removes an unused worktree from ⌘K, then binds a PR and watches its CI",
   await dialog.getByRole("button", { name: "Close" }).click();
   await expect(dialog).toBeHidden();
 
-  // The thread header's PR badge opens the PR panel.
-  await page.getByTestId("pane-pr-badge").click();
+  // The PR strip's number opens the PR panel.
+  await page.getByTestId("pr-row").getByTestId("pr-row-number").click();
   const panel = page.getByTestId("right-panel");
   const binding = panel.getByTestId("pr-watch");
   const watch = binding.getByRole("switch", { name: "Watch CI" });

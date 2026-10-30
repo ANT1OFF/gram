@@ -1,6 +1,6 @@
 import type { Diff, DiffScope, ThreadId, TurnId } from "@gram/contracts";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { Columns2, GitBranch, GitCompareArrows, History, ListTree, Rows2 } from "lucide-react";
+import { Columns2, GitBranch, History, ListTree, Rows2 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
@@ -39,7 +39,10 @@ const SWITCH_BACK_FRESH_MS = 30_000;
 
 /** The file list's narrowest width for split view; below it the panel shows unified. */
 const SPLIT_VIEW_MIN_WIDTH = 560;
-/** The panel's narrowest width with the file tree beside the files rather than above them. */
+/**
+ * The panel's narrowest width for the file tree, beside the files. Narrower, the file list is the
+ * only list: the tree above it would name the same files a second time.
+ */
 const TREE_BESIDE_MIN_WIDTH = 720;
 /** The file tree's width beside the files: `w-52`. */
 const TREE_WIDTH = 208;
@@ -114,9 +117,9 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
     staleTime: diffStamp === null ? 0 : SWITCH_BACK_FRESH_MS,
     retry: false,
   });
+  const treeFits = width >= TREE_BESIDE_MIN_WIDTH;
   // A single file gets no tree, so the tree takes no width from split view.
-  const treeBeside =
-    treeShown && width >= TREE_BESIDE_MIN_WIDTH && (query.data?.files?.length ?? 0) > 1;
+  const treeBeside = treeShown && treeFits && (query.data?.files?.length ?? 0) > 1;
   const splitFits = width - (treeBeside ? TREE_WIDTH : 0) >= SPLIT_VIEW_MIN_WIDTH;
   const refetch = () => (diffScope === undefined ? Promise.resolve() : query.refetch());
   const request = useLayoutStore((s) => s.panelTargets.diff);
@@ -230,16 +233,18 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
               );
             })}
           </div>
-          <button
-            type="button"
-            aria-label="File tree"
-            aria-pressed={treeShown}
-            title={treeShown ? "Hide the file tree" : "Show the file tree"}
-            onClick={toggleTree}
-            className="rounded-(--radius-sm) p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:text-foreground"
-          >
-            <ListTree aria-hidden className="size-3.5" />
-          </button>
+          {treeFits && (
+            <button
+              type="button"
+              aria-label="File tree"
+              aria-pressed={treeShown}
+              title={treeShown ? "Hide the file tree" : "Show the file tree"}
+              onClick={toggleTree}
+              className="rounded-(--radius-sm) p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:text-foreground"
+            >
+              <ListTree aria-hidden className="size-3.5" />
+            </button>
+          )}
           <RefreshButton
             threadId={threadId}
             label="Refresh diff"
@@ -257,7 +262,7 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
             scope={scope}
             query={query}
             layout={layout === "split" && splitFits ? "split" : "unified"}
-            tree={treeShown ? (treeBeside ? "beside" : "above") : undefined}
+            tree={treeBeside ? "beside" : undefined}
             panelRef={rootRef}
             {...(pending && pendingTurn === undefined ? { request: pending } : {})}
           />
@@ -280,7 +285,7 @@ function DiffBody({
   scope: ScopeKind;
   query: UseQueryResult<Diff>;
   layout: DiffLayout;
-  tree: "beside" | "above" | undefined;
+  tree: "beside" | undefined;
   panelRef: RefObject<HTMLElement | null>;
   request?: PanelTarget;
 }) {
@@ -366,9 +371,22 @@ function DiffBody({
   }
   const diff = query.data;
   if (!diff.repo) return <PanelMessage>Not a git repository</PanelMessage>;
+  const fallbackBase = scope === "uncommitted" ? diff.base : undefined;
+  // Nothing to show is one line, not a heading, a notice and an empty state.
+  if (files.length === 0) {
+    const base = (fallbackBase ?? diff.base)?.replace(/^origin\//, "");
+    return (
+      <>
+        <p data-testid="diff-empty" className="px-3 py-2 text-xs text-muted-foreground">
+          No changes{diff.branch ? ` on ${diff.branch}` : ""}
+          {base && (scope !== "uncommitted" || fallbackBase) ? ` against ${base}` : ""}
+        </p>
+        {diff.note && <p className="px-3 pb-2 text-xs text-warning">{diff.note}</p>}
+      </>
+    );
+  }
   const additions = files.reduce((sum, f) => sum + f.additions, 0);
   const deletions = files.reduce((sum, f) => sum + f.deletions, 0);
-  const fallbackBase = scope === "uncommitted" ? diff.base : undefined;
   const focus: DiffFocus | undefined =
     jump ?? (request && focusPath ? { path: focusPath, key: request.id } : undefined);
   const withTree = tree !== undefined && files.length > 1;
@@ -383,17 +401,15 @@ function DiffBody({
           </span>
         )}
         {diff.base && fallbackBase === undefined && <span>comparing to {diff.base}</span>}
-        {files.length > 0 && (
-          <span className="ml-auto font-mono tabular-nums">
-            <NumberTicker value={files.length} /> {files.length === 1 ? "file" : "files"} ·{" "}
-            <span className="text-success">
-              +<NumberTicker value={additions} />
-            </span>{" "}
-            <span className="text-destructive">
-              −<NumberTicker value={deletions} />
-            </span>
+        <span className="ml-auto font-mono tabular-nums">
+          <NumberTicker value={files.length} /> {files.length === 1 ? "file" : "files"} ·{" "}
+          <span className="text-success">
+            +<NumberTicker value={additions} />
+          </span>{" "}
+          <span className="text-destructive">
+            −<NumberTicker value={deletions} />
           </span>
-        )}
+        </span>
       </div>
       {fallbackBase && (
         <p data-testid="diff-fallback" className="shrink-0 px-3 pb-2 text-xs text-muted-foreground">
@@ -401,41 +417,32 @@ function DiffBody({
         </p>
       )}
       {diff.note && <p className="shrink-0 px-3 pb-2 text-xs text-warning">{diff.note}</p>}
-      {files.length === 0 ? (
-        <PanelMessage icon={GitCompareArrows}>No changes</PanelMessage>
-      ) : (
-        <div
-          className={cn(
-            "flex min-h-0 flex-1 border-t border-border",
-            tree === "beside" ? "flex-row" : "flex-col",
-          )}
-        >
-          {withTree && (
-            <DiffTree
-              nodes={nodes}
-              selected={focus?.path}
-              onJump={(path) => {
-                // The cursor sits just before the file's first hunk, or where it would be if the
-                // file has none, so n and p go on to the hunks either side.
-                const position = files.findIndex((file) => file.path === path);
-                const next = hunks.findIndex((h) => h.position >= position);
-                setJump({ path, key: --jumpSeq, index: (next === -1 ? hunks.length : next) - 0.5 });
-              }}
-              className={cn(
-                "shrink-0 overflow-y-auto",
-                tree === "beside"
-                  ? "w-52 border-r border-border"
-                  : "max-h-40 border-b border-border",
-              )}
-            />
-          )}
-          <div data-testid="diff-files" className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-            <DiffReviewContext value={review}>
-              <DiffFileList files={files} layout={layout} {...actions} focus={focus} />
-            </DiffReviewContext>
-          </div>
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 border-t border-border",
+          withTree ? "flex-row" : "flex-col",
+        )}
+      >
+        {withTree && (
+          <DiffTree
+            nodes={nodes}
+            selected={focus?.path}
+            onJump={(path) => {
+              // The cursor sits just before the file's first hunk, or where it would be if the
+              // file has none, so n and p go on to the hunks either side.
+              const position = files.findIndex((file) => file.path === path);
+              const next = hunks.findIndex((h) => h.position >= position);
+              setJump({ path, key: --jumpSeq, index: (next === -1 ? hunks.length : next) - 0.5 });
+            }}
+            className="w-52 shrink-0 overflow-y-auto border-r border-border"
+          />
+        )}
+        <div data-testid="diff-files" className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <DiffReviewContext value={review}>
+            <DiffFileList files={files} layout={layout} {...actions} focus={focus} />
+          </DiffReviewContext>
         </div>
-      )}
+      </div>
     </>
   );
 }

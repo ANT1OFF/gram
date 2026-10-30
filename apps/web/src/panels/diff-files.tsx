@@ -30,20 +30,24 @@ export interface DiffFocus {
   hunk?: number | undefined;
 }
 
-/** Glyph + text label per file status, so status never relies on colour alone. */
+/**
+ * Glyph, letter and label per file status, so status never relies on colour alone. A row shows
+ * the letter, git's own, with the label on hover and for a screen reader.
+ */
 export const FILE_STATUS: Record<
   DiffFileStatus,
-  { icon: LucideIcon; label: string; tone: string }
+  { icon: LucideIcon; letter: string; label: string; tone: string }
 > = {
-  added: { icon: FilePlus, label: "Added", tone: "text-success" },
-  modified: { icon: FilePen, label: "Modified", tone: "text-info" },
-  deleted: { icon: FileMinus, label: "Deleted", tone: "text-destructive" },
-  renamed: { icon: FileSymlink, label: "Renamed", tone: "text-highlight" },
-  untracked: { icon: FileQuestionMark, label: "Untracked", tone: "text-warning" },
+  added: { icon: FilePlus, letter: "A", label: "Added", tone: "text-success" },
+  modified: { icon: FilePen, letter: "M", label: "Modified", tone: "text-info" },
+  deleted: { icon: FileMinus, letter: "D", label: "Deleted", tone: "text-destructive" },
+  renamed: { icon: FileSymlink, letter: "R", label: "Renamed", tone: "text-highlight" },
+  untracked: { icon: FileQuestionMark, letter: "U", label: "Untracked", tone: "text-warning" },
 };
 
+/** A file's own actions: there while its row is hovered or holds focus. */
 const ROW_ACTION =
-  "me-2 shrink-0 rounded-sm p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
+  "me-2 shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 outline-none group-focus-within/file:opacity-100 group-hover/file:opacity-100 hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** ↑ / ↓ on a file header move to the previous / next file's header, past any open patch. */
 function moveBetweenHeaders(event: KeyboardEvent<HTMLButtonElement>) {
@@ -174,7 +178,7 @@ function DiffFileRow({
 
   return (
     <li ref={rowRef} data-testid="diff-file" data-path={file.path}>
-      <div className="flex items-center hover:bg-muted/50">
+      <div className="group/file flex items-center hover:bg-muted/50">
         <button
           type="button"
           data-diff-file-header
@@ -195,7 +199,13 @@ function DiffFileRow({
           <span className="min-w-0 flex-1 truncate font-mono" title={file.path}>
             {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
           </span>
-          <span className={cn("shrink-0", status.tone)}>{status.label}</span>
+          <span
+            title={status.label}
+            className={cn("shrink-0 font-mono font-semibold", status.tone)}
+          >
+            <span aria-hidden>{status.letter}</span>
+            <span className="sr-only">{status.label}</span>
+          </span>
           <span className="shrink-0 font-mono tabular-nums">
             <span className="text-success">
               +<NumberTicker value={file.additions} />

@@ -73,6 +73,7 @@ import { trackPaneHeight } from "./pane-height";
 import { PlanStrip } from "./plan-strip";
 import { WaitingTray } from "./waiting-tray";
 import { PrStrip } from "./pr-strip";
+import { ownPrOnStrip } from "./pr-strip-model";
 import { LimitWaitLine } from "./limit-wait-line";
 import { QueueList } from "./queue-list";
 import { RecapCard } from "./recap-card";
@@ -333,10 +334,15 @@ export function ThreadView({
   // Beside the title bar's switcher, an orchestrator named for its workspace shows its glyph alone.
   const titleShown = !(inTitlebar && paneTitle.workspaceName);
   const hideMd = inTitlebar ? "@max-md/titlebar:hidden" : "@max-md:hidden";
+  // The PR strip over the composer owns the thread's PR while it shows it; once hidden from
+  // there, the header's chips say it again.
+  const prOnStrip = ownPrOnStrip(thread.boundPr, summary.git, thread.hiddenPrs);
 
   const header = (
     <AttentionPulse
-      active={needs}
+      // Alone in the window the approval card, the sidebar's dot and its count already say it; in
+      // a grid the ring says which pane.
+      active={needs && !inTitlebar}
       // In the title bar the ring rounds and insets, so it marks the thread rather than boxing in
       // part of the window's bar.
       className={cn(
@@ -429,7 +435,7 @@ export function ThreadView({
               testId="pane-folder-missing"
               className={cn("text-xs", hideSm)}
             />
-            {pr && summary.git?.pr && (
+            {!prOnStrip && pr && summary.git?.pr && (
               <ContextMenu>
                 <ContextMenuTrigger className="flex shrink-0">
                   <PrBadge
@@ -445,21 +451,24 @@ export function ThreadView({
                 </ContextMenuContent>
               </ContextMenu>
             )}
-            <PrChip
-              group="merge"
-              mark={mergeStateMarkOf(shownPr, thread.boundPr)}
-              testId="pane-merge-state"
-              iconOnly
-              className={hideMd}
-            />
-            <PrChip
-              group="review"
-              mark={reviewDecisionMarkOf(shownPr)}
-              testId="pane-review-decision"
-
-              iconOnly
-              className={hideMd}
-            />
+            {!prOnStrip && (
+              <>
+                <PrChip
+                  group="merge"
+                  mark={mergeStateMarkOf(shownPr, thread.boundPr)}
+                  testId="pane-merge-state"
+                  iconOnly
+                  className={hideMd}
+                />
+                <PrChip
+                  group="review"
+                  mark={reviewDecisionMarkOf(shownPr)}
+                  testId="pane-review-decision"
+                  iconOnly
+                  className={hideMd}
+                />
+              </>
+            )}
             <PrElsewhereChip
               git={summary.git}
               threadId={threadId}
