@@ -176,6 +176,15 @@ export function createSettingsSync(options: SettingsSyncOptions) {
     timer = setTimeout(() => void flush(), debounceMs);
   };
 
+  // Local changes are pushed once something was read to diff them against: at start, or at the
+  // first pull to succeed when the server was unreachable as the window opened.
+  let listening = false;
+  const listen = () => {
+    if (listening || disposed) return;
+    listening = true;
+    unsubscribe.push(theme.subscribe(schedule), layout.subscribe(schedule));
+  };
+
   return {
     async start() {
       const [settings, palettes] = await Promise.allSettled([
@@ -200,8 +209,7 @@ export function createSettingsSync(options: SettingsSyncOptions) {
       } else {
         report("load palettes", palettes.reason);
       }
-      if (synced || syncedPalettes)
-        unsubscribe.push(theme.subscribe(schedule), layout.subscribe(schedule));
+      if (synced || syncedPalettes) listen();
       if (loaded) options.onLoaded?.(loaded);
       if (loaded && unsynced) await flush();
     },
@@ -275,6 +283,7 @@ export function createSettingsSync(options: SettingsSyncOptions) {
         }
       }
       if (pulledSettings && edited) apply(applySettingsPatch(pulledSettings, edited));
+      if (synced || syncedPalettes) listen();
       // A read that failed replays nothing, and what was held back still has to go out.
       schedule();
     },

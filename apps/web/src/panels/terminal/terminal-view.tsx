@@ -3,6 +3,7 @@ import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 
 import { useApi } from "@/api/context";
+import { isNotFound } from "@/api/errors";
 import { openContentUrl } from "@/api/open-external";
 import { Button } from "@/components/ui/button";
 import { useOpenInEditor, useOpensLocally } from "@/editor/use-open-in-editor";
@@ -84,7 +85,7 @@ export function TerminalView({
   const rootRef = useRef<HTMLDivElement>(null);
   const [finding, setFinding] = useState<FindRequest | null>(null);
   const [findResults, setFindResults] = useState<TerminalFindResults | undefined>();
-  const [exit, setExit] = useState<{ code?: number; signal?: string } | null>(null);
+  const [exit, setExit] = useState<{ code?: number; signal?: string; gone?: true } | null>(null);
   const [problem, setProblem] = useState<string | undefined>();
   const theme = useTerminalTheme();
   const searchColors = useTerminalSearchColors();
@@ -248,7 +249,10 @@ export function TerminalView({
           }
         }
       } catch (error) {
-        if (!abort.signal.aborted) setProblem(terminalProblem(error));
+        if (abort.signal.aborted) return;
+        // The server no longer has it, as after a restart: its shell is gone, so offer a new one.
+        if (isNotFound(error)) setExit({ gone: true });
+        else setProblem(terminalProblem(error));
       }
     })();
 
@@ -396,7 +400,7 @@ export function TerminalView({
           role="status"
           className="flex items-center gap-2 border-t border-border px-2 py-1.5 text-xs text-muted-foreground"
         >
-          Process exited{exitDetail}
+          {exit.gone ? "This terminal ended with the server" : `Process exited${exitDetail}`}
           <Button type="button" size="xs" variant="outline" className="ml-auto" onClick={onRestart}>
             <RotateCcw data-icon="inline-start" />
             Restart

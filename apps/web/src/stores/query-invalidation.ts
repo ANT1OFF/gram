@@ -73,3 +73,17 @@ export function invalidateForEvent(
     invalidateLedgers(queryClient, event.workspaceId, ledgerLive);
   }
 }
+
+/**
+ * Everything goes stale after the event feed resubscribes, since the events missed in the gap are
+ * gone: but a live ledger stream, which resubscribes and sends its own snapshot.
+ */
+export function invalidateAfterResync(
+  queryClient: QueryClient,
+  ledgerLive: (workspaceId: WorkspaceId) => boolean = () => false,
+): void {
+  void queryClient.invalidateQueries({
+    predicate: (query) =>
+      query.queryKey[0] !== "orchestratorLedger" || !ledgerLive(query.queryKey[1] as WorkspaceId),
+  });
+}

@@ -329,6 +329,25 @@ describe("createSettingsSync", () => {
     sync.dispose();
   });
 
+  it("starts pushing local changes once a pull succeeds after a start that read nothing", async () => {
+    const api = fakeApi();
+    api.getSettings.mockRejectedValueOnce(new Error("restarting"));
+    api.listPalettes.mockRejectedValueOnce(new Error("restarting"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { theme, sync } = setup(api);
+    await sync.start();
+
+    await sync.pull();
+    await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
+    expect(api.updateSettings).not.toHaveBeenCalled();
+
+    // An ordinary change later on, with no pull to carry it.
+    theme.getState().setTheme({ density: "compact" });
+    await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
+    expect(api.updateSettings).toHaveBeenCalledTimes(1);
+    sync.dispose();
+  });
+
   it("logs other failures and keeps local state", async () => {
     const api = fakeApi();
     api.getSettings.mockRejectedValue(new Error("boom"));

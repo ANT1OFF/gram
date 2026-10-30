@@ -6,6 +6,9 @@ const tagOf = (error: unknown): string | undefined =>
 /** The server has no handler for this RPC yet (W1–W4 land them one group at a time). */
 export const isNotImplemented = (error: unknown): boolean => tagOf(error) === "NotImplemented";
 
+/** What a request named is gone, or never existed on this server: any `NotFound`. */
+export const isNotFound = (error: unknown): boolean => tagOf(error) === "NotFound";
+
 /** The thread is gone: closed, deleted, or never existed on this server. */
 export const isThreadNotFound = (error: unknown): boolean => tagOf(error) === "ThreadNotFound";
 

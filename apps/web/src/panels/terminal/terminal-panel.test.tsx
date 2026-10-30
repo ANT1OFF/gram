@@ -423,6 +423,24 @@ describe("TerminalPanel", () => {
     }
   });
 
+  it("offers a new shell when the server no longer has the terminal, as after a restart", async () => {
+    const api = createMockApi({ speed: 0, autoplay: false });
+    const gone = Object.assign(new Error("terminal"), { _tag: "NotFound" });
+    const feed = vi.spyOn(api, "terminalFeed").mockImplementationOnce(async function* () {
+      yield* [];
+      throw gone;
+    });
+    renderWithApi(<TerminalPanel threadId={THREAD} />, api);
+
+    expect(await screen.findByText("This terminal ended with the server")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    feed.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+    await waitFor(() => expect(live()).toHaveLength(1));
+    await waitFor(() => expect(live()[0]?.output).toContain("$ "));
+    expect(screen.queryByRole("button", { name: "Restart" })).toBeNull();
+  });
+
   it("explains when the server has no terminal yet", async () => {
     const notImplemented = Object.assign(new Error("terminal.list"), { _tag: "NotImplemented" });
     renderWithApi(<TerminalPanel threadId={THREAD} />, {
