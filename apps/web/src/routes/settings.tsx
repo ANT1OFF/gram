@@ -245,10 +245,9 @@ function PageSection({
                   />
                 </Link>
               ) : (
-                <>
+                <HelpTip label={page.label} help={page.description}>
                   {page.label}
-                  <HelpTip label={page.label} help={page.description} />
-                </>
+                </HelpTip>
               )}
             </h2>
             {searching && page.search === null && (

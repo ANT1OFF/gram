@@ -13,8 +13,8 @@ export const SETTINGS_CARD =
   "flex flex-col rounded-lg border border-border/60 bg-card/40 [&>:not([hidden])~:not([hidden])]:border-t [&>*]:border-border/50 [&>*]:px-3 [&>*]:py-2.5";
 
 /**
- * A named group of settings within a page: a muted caption, its explanation behind a ?, over a card
- * of rows. Settings search finds the whole group by its name or keywords, and otherwise shows it
+ * A named group of settings within a page: a muted caption that explains it on hover or focus,
+ * over a card of rows. Settings search finds the whole group by its name or keywords, and otherwise shows it
  * while something inside matches.
  */
 export function SettingsGroup({
@@ -29,7 +29,7 @@ export function SettingsGroup({
 }: {
   label: string;
   description?: ReactNode;
-  /** What the description leaves out, behind the same ?. */
+  /** What the description leaves out, in the same help. */
   learnMore?: ReactNode;
   /** Extra words Settings search finds the group by. */
   keywords?: readonly string[];
@@ -55,9 +55,10 @@ export function SettingsGroup({
           id={titleId}
           className="font-caption text-xs font-medium tracking-wide text-muted-foreground uppercase"
         >
-          {label}
+          <HelpTip label={label} help={groupHelp(description, learnMore)}>
+            {label}
+          </HelpTip>
         </h3>
-        <HelpTip label={label} help={groupHelp(description, learnMore)} />
         <span className="flex-1" />
         {action}
       </div>

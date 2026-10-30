@@ -416,7 +416,7 @@ test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ p
     "Pushes branches and opens pull requests. Asks before merging or releasing.",
   );
   await expect.poll(storedAutonomy).toBe("publish");
-  // The gate's limit is said in a line; the rest is behind the ? by the label.
+  // The gate's limit is said in a line; the rest is on the label's hover.
   await expect(autonomy.getByTestId("orchestration-gate-warning")).toContainText(
     "an accident gate, not a security boundary",
   );

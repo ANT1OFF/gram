@@ -21,16 +21,16 @@ export const inputCls =
 export const rowInputCls = cn(inputCls, "w-64 max-w-full");
 
 /**
- * A setting is a label of four words or fewer and its control; what it does sits behind the ? beside
- * the label. `settings-copy.test.tsx` fails a page with a longer label or line. Text that has to be
+ * A setting is a label of four words or fewer and its control; what it does shows on the label's
+ * hover or focus. `settings-copy.test.tsx` fails a page with a longer label or line. Text that has to be
  * read whole, such as a consent or a legal notice, carries this attribute, set to why, and is left
  * out of that count.
  */
 export const LONG_COPY = "data-long-copy";
 
 /**
- * The ? beside a label: the one-line description and what it leaves out, together. Absent when
- * there is neither.
+ * A label's help: the one-line description and what it leaves out, together. Absent when there is
+ * neither.
  */
 function rowHelp(description: string | undefined, learnMore: ReactNode): ReactNode {
   if (learnMore === undefined || learnMore === null) return description;
@@ -42,7 +42,7 @@ function rowHelp(description: string | undefined, learnMore: ReactNode): ReactNo
   );
 }
 
-/** The name of a setting, with its ? beside it. */
+/** The name of a setting, which shows its help on hover or focus. */
 function RowLabel({
   label,
   htmlFor,
@@ -53,7 +53,7 @@ function RowLabel({
   help: ReactNode;
 }) {
   return (
-    <>
+    <HelpTip label={label} help={help}>
       {htmlFor === undefined ? (
         <span data-setting-label="" className="font-medium">
           {label}
@@ -63,12 +63,11 @@ function RowLabel({
           {label}
         </label>
       )}
-      <HelpTip label={label} help={help} />
-    </>
+    </HelpTip>
   );
 }
 
-/** A labelled setting in a form: its name, with its explanation behind a ?, then the control below. */
+/** A labelled setting in a form: its name, which explains it on hover or focus, then the control below. */
 export function Field({
   label,
   description,
@@ -84,7 +83,7 @@ export function Field({
   keywords?: readonly string[];
   /** The control's id, when it's a single form element the label should name. */
   htmlFor?: string;
-  /** What the one line leaves out, behind the same ?. */
+  /** What the one line leaves out, in the same help. */
   learnMore?: ReactNode;
   /** On the label's line, at its end. */
   action?: ReactNode;
@@ -103,8 +102,8 @@ export function Field({
 }
 
 /**
- * One setting on one line of a `SettingsGroup` card: its name on the left, with its explanation
- * behind a ?, its control on the right, dropping below when the two don't fit side by side. `onReset` is
+ * One setting on one line of a `SettingsGroup` card: its name on the left, which explains it on
+ * hover or focus, its control on the right, dropping below when the two don't fit side by side. `onReset` is
  * passed only while the value differs from its default, so the reset icon it shows also marks what
  * was changed.
  */
@@ -126,7 +125,7 @@ export function SettingRow({
   keywords?: readonly string[];
   /** The control's id, when it's a single form element the label should name. */
   htmlFor?: string;
-  /** What the one line leaves out, behind the same ?. */
+  /** What the one line leaves out, in the same help. */
   learnMore?: ReactNode;
   /** Puts the default back; absent while the value is the default. */
   onReset?: (() => void) | undefined;
@@ -323,7 +322,7 @@ export function Toggle({
   error?: string | undefined;
   /** Under the row, such as what the setting turns on. */
   detail?: ReactNode;
-  /** What the one line leaves out, behind the same ?. */
+  /** What the one line leaves out, in the same help. */
   learnMore?: ReactNode;
 }) {
   const id = useId();
