@@ -190,6 +190,13 @@ describe("turn end stamp", () => {
         { type: "status", status: "idle" },
       );
       yield* turnEnded(thread.id, 1);
+      // A reconnect now draws the held reply from its replay, not from the store.
+      const replay = yield* runtimes.replay(thread.id);
+      const finish = replay.inFlight.flatMap(({ event }) =>
+        event.type === "chunk" && event.chunk.type === "finish" ? [event.chunk] : [],
+      );
+      expect(finish.map((chunk) => chunk.messageMetadata?.turnEnd?.reason)).toEqual(["completed"]);
+
       yield* session.emit({
         type: "chunk",
         messageId,

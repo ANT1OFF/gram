@@ -390,11 +390,22 @@ export const makeFeedWriter = ({
     feedLocked(
       rt,
       Effect.gen(function* () {
-        // A reply held for a tool's late output is saved from here again, so that keeps it too.
-        rt.open.get(messageId)?.accumulator.apply({
-          type: "message-metadata",
-          messageMetadata: { turnEnd },
-        });
+        const held = rt.open.get(messageId);
+        if (held !== undefined) {
+          // A reply held for a tool's late output is saved from here again, so that keeps it too.
+          held.accumulator.apply({ type: "message-metadata", messageMetadata: { turnEnd } });
+          // And a replay draws it from these rather than the store, closing it on this finish.
+          const index = held.items.findLastIndex(
+            ({ event }) => event.type === "chunk" && event.chunk.type === "finish",
+          );
+          const finish = held.items[index];
+          if (finish?.event.type === "chunk" && finish.event.chunk.type === "finish") {
+            const chunk = finish.event.chunk;
+            const messageMetadata = { ...chunk.messageMetadata, turnEnd };
+            const event = { ...finish.event, chunk: { ...chunk, messageMetadata } };
+            held.items[index] = { ...finish, event };
+          }
+        }
         const reply = yield* store.getMessage(rt.threadId, messageId);
         if (reply === undefined) return;
         const message = { ...reply, metadata: { ...reply.metadata, turnEnd } };

@@ -13,6 +13,7 @@ import {
   statusEvent,
   UNAVAILABLE_LOG_CHARS,
   withDataPart,
+  guarded,
   ACTIVITY_THROTTLE_MS,
   locked,
   evictable,
@@ -451,10 +452,9 @@ export const makeTurnLifecycle = ({
       // Before the thread's status moves, so no client sees it settled on an unstamped reply. A
       // limit stopped the turn rather than failed it: the thread waits it out and resumes.
       if (turn.reply !== undefined) {
-        yield* stampTurnEnd(rt, turn.reply, {
-          at: endedAt,
-          reason: limited ? "interrupted" : reason,
-        });
+        const end = { at: endedAt, reason: limited ? ("interrupted" as const) : reason };
+        // A label on the transcript, so nothing past this point may wait on it.
+        yield* guarded(rt.threadId, "turn end stamp", stampTurnEnd(rt, turn.reply, end));
       }
       yield* Deferred.succeed(turn.done, undefined);
       // Requests belong to the turn: once it ends nothing will answer them, whether or not the agent
