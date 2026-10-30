@@ -1,6 +1,7 @@
 import { codexSubscriptionLimits } from "./limits.ts";
 import {
   AgentUnavailable,
+  AnswerUndelivered,
   InterruptHung,
   MessageId,
   NotFound,
@@ -1292,8 +1293,16 @@ export const makeCodexHost = (
           Effect.suspend(() => {
             const request = pending.get(requestId);
             if (request === undefined) return Effect.void;
-            pending.delete(requestId);
-            return rpc.respond(request.id, responseFor(request, answer, level ?? false));
+            return rpc.respond(request.id, responseFor(request, answer, level ?? false)).pipe(
+              Effect.catchDefect(() =>
+                Effect.fail(
+                  new AnswerUndelivered({
+                    message: "Codex did not receive the answer. Try again.",
+                  }),
+                ),
+              ),
+              Effect.tap(() => Effect.sync(() => pending.delete(requestId))),
+            );
           }),
         setMode: (next) =>
           Effect.sync(() => {

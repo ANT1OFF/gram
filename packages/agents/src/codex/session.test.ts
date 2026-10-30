@@ -92,6 +92,7 @@ const harness = (
     readonly modelPages?: ReadonlyArray<ReadonlyArray<Record<string, unknown>>>;
     readonly modelListErrorAt?: number;
     readonly steerFailure?: string;
+    readonly respond?: Effect.Effect<void>;
     readonly repeatModelCursor?: boolean;
   } = {},
 ) => {
@@ -299,7 +300,10 @@ const harness = (
             catch: (error) => new CodexRpcError({ method, message: (error as Error).message }),
           }),
     notify: () => Effect.void,
-    respond: (id, result) => Effect.sync(() => void responses.push([id, result])),
+    respond: (id, result) =>
+      (options.respond ?? Effect.void).pipe(
+        Effect.andThen(Effect.sync(() => void responses.push([id, result]))),
+      ),
     messages: Stream.empty,
   };
   const layer = CodexHostLayer({ newId: () => "id-1" }).pipe(
@@ -897,6 +901,29 @@ const deny = { kind: "approval", decision: "deny", scope: "once" } as const;
 /** Everything the session has emitted so far, after the three events of opening. */
 const drain = (session: AgentSession, n: number) =>
   take(session, 3 + n).pipe(Effect.map((events) => events.slice(3)));
+
+describe("Codex approval delivery", () => {
+  it.effect("keeps an undelivered answer pending for a successful retry", () =>
+    Effect.gen(function* () {
+      let attempts = 0;
+      const h = harness({
+        respond: Effect.suspend(() =>
+          ++attempts === 1 ? Effect.die(new Error("synthetic pipe write failure")) : Effect.void,
+        ),
+      });
+      const session = yield* openSession().pipe(Effect.provide(h.layer));
+      h.push(commandRequest(73, "echo hello"));
+      const requestId = RequestId.make("codex-73");
+      const failure = yield* Effect.flip(session.respond(requestId, allowOnce));
+      expect(failure._tag).toBe("AnswerUndelivered");
+      expect(h.responses).toEqual([]);
+      yield* session.respond(requestId, allowOnce);
+      expect(h.responses).toEqual([[73, { decision: "accept" }]]);
+      yield* session.respond(requestId, allowOnce);
+      expect(attempts).toBe(2);
+    }),
+  );
+});
 
 describe("policyFor and the outward gate's helpers", () => {
   it("maps each mode to a policy, and only bypass changes under the gate", () => {

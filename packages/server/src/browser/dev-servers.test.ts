@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -264,6 +264,36 @@ describe("ports and logs", () => {
 });
 
 describe("the dev server host", () => {
+  for (const cleanup of ["thread", "all"] as const) {
+    it(`cancels a pending launch during ${cleanup} cleanup before it can spawn`, async () => {
+      const root = project();
+      const entered = Promise.withResolvers<void>();
+      const environment = Promise.withResolvers<Record<string, string>>();
+      const host = createDevServerHost({
+        env: () => {
+          entered.resolve();
+          return environment.promise;
+        },
+      });
+      const config = (await readLaunchConfig(root))!.configurations[1]!;
+      const launch = await resolveLaunch(root, config, config.port);
+      const starting = host.start("t-closed", launch);
+      // Observe rejection immediately, including cleanup that cancels before env resolves.
+      const rejected = expect(starting).rejects.toThrow("cancelled");
+      await entered.promise;
+      if (cleanup === "thread") await host.stopThread("t-closed");
+      else await host.stopAll();
+      environment.resolve({});
+      try {
+        await rejected;
+        expect(host.list("t-closed")).toEqual([]);
+      } finally {
+        await host.stopAll();
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
   it("never signals a group that emptied after its leader exited", async () => {
     const root = project();
     const host = createDevServerHost({ env: async () => process.env });

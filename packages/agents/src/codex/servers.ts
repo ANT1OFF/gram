@@ -55,6 +55,7 @@ import type { CodexRuntimeSource, ManagedCodex } from "./runtime.ts";
 import { makeThreadOwnership } from "./thread-ownership.ts";
 import { acquireHeld } from "../servers-hold.ts";
 import { CODEX_CLI_VERSION } from "./version.ts";
+import { writeCodexLine } from "./stdio.ts";
 
 export interface CodexServer {
   readonly prepareForSwitch?: Effect.Effect<void, AgentUnavailable>;
@@ -298,8 +299,8 @@ const childIo = (child: ChildProcess) =>
     child.stderr?.on("data", (data: Buffer) => {
       stderr = (stderr + data.toString()).slice(-2_000);
     });
-    // A line written as the app-server exits fails with EPIPE, which with no listener is an
-    // uncaught exception; the exit listener below already fails the queue with the reason.
+    // Keep asynchronous pipe errors from becoming uncaught exceptions; each write's callback
+    // also reports them to its caller, so an approval is never acknowledged before delivery.
     child.stdin?.on("error", () => {});
     child.once("error", (error) =>
       Queue.failCauseUnsafe(
@@ -319,10 +320,7 @@ const childIo = (child: ChildProcess) =>
       ),
     );
     const io: CodexIo = {
-      write: (line) =>
-        Effect.sync(() => {
-          child.stdin?.write(`${line}\n`);
-        }),
+      write: (line) => writeCodexLine(child.stdin, line),
       lines: Stream.fromQueue(lines),
     };
     return io;
@@ -605,7 +603,7 @@ export const CodexServersLive = (
       ): Effect.Effect<CodexServer, AgentUnavailable | ManagedStartFailed> => {
         // Until the child exists to release it on exit, a failure here releases the managed hold.
         let managedHold: ManagedCodex | undefined;
-        let spawned = false;
+        let startingChild: ChildProcess | undefined;
         return Effect.gen(function* () {
           const prepared = yield* executable;
           const managed: ManagedCodex | undefined = prepared.managed;
@@ -683,7 +681,7 @@ export const CodexServersLive = (
             switchExits.set(switchStartup, false);
             child.once("exit", () => switchExits.set(switchStartup, true));
           }
-          spawned = true;
+          startingChild = child;
           const key = cacheKey(profileId, home, sessionPartitionId);
           children.add(child);
           if (managed !== undefined) {
@@ -949,8 +947,13 @@ export const CodexServersLive = (
             ),
           ),
           Effect.onError(() =>
-            Effect.sync(() => {
-              if (!spawned) managedHold?.release();
+            Effect.suspend(() => {
+              // Before publication there is no cached server to retire. Cancellation must join
+              // this child's teardown too, not only typed initialization failures.
+              if (startingChild !== undefined)
+                return Effect.promise(() => stopChild(startingChild!));
+              managedHold?.release();
+              return Effect.void;
             }),
           ),
         );
