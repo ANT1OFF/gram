@@ -169,9 +169,9 @@ describe("TaskCard", () => {
     expect(screen.getByText("Ran in the background")).toBeTruthy();
   });
 
-  it("names the lane's model, falling back to an explicit input override", () => {
+  it("names the lane's model family, falling back to an explicit input override", () => {
     card(new Set());
-    expect(screen.getByTestId("subagent-model").textContent).toBe("claude-haiku-4-5-20251001");
+    expect(screen.getByTestId("subagent-model").textContent).toBe("Haiku");
     cleanup();
 
     const overridden = {
@@ -182,7 +182,7 @@ describe("TaskCard", () => {
       part: overridden,
       messages: [{ ...transcript, metadata: { parentToolUseId: "bg1" } } as GramUIMessage],
     });
-    expect(screen.getByTestId("subagent-model").textContent).toBe("opus");
+    expect(screen.getByTestId("subagent-model").textContent).toBe("Opus");
     cleanup();
 
     card(new Set(), {
@@ -206,6 +206,14 @@ describe("TaskCard", () => {
       "3 tool uses · 12.4s · 8,120 tokens",
     );
     expect(screen.getByText("Grep")).toBeTruthy();
+  });
+
+  it("drops a finished run's stale snapshot of what it was on", () => {
+    card(new Set(), {
+      usage: { toolCallId: "bg1", status: "running", toolUses: 1, lastToolName: "Grep" },
+    });
+    expect(screen.getByTestId("subagent-usage").textContent).toBe("1 tool use");
+    expect(screen.queryByText("Grep")).toBeNull();
   });
 
   it("gives a background run's terminal snapshot the numbers it otherwise lacks", () => {

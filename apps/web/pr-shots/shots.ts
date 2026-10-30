@@ -1310,6 +1310,35 @@ export const SHOTS: readonly Shot[] = [
     open: openThread,
   },
   {
+    name: "transcript-turn-open",
+    title: "The scripted thread's finished turn with its tool groups opened, down to the subagent",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 1200 });
+      await openThread(page);
+      await page.getByTestId("approval-allow").click();
+      await expect(page.getByTestId("pane-status")).toHaveText("Idle");
+      const groups = page.getByTestId("tool-group");
+      for (let i = 0; i < (await groups.count()); i++) {
+        const toggle = groups.nth(i).getByRole("button").first();
+        if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+      }
+      await page.locator('[data-testid="tool-card"][data-tool="Task"]').scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    name: "plan-strip-open",
+    title: "The scripted thread's plan strip, opened",
+    open: async (page) => {
+      await openThread(page);
+      await page
+        .getByTestId("plan-strip")
+        .getByRole("button", { name: /^Plan: / })
+        .click();
+      await page.getByTestId("plan-strip-body").waitFor();
+    },
+    element: (page) => page.getByTestId("plan-strip"),
+  },
+  {
     name: "transcript-markdown",
     title:
       "The scripted thread's last reply: a list, bold and inline code, and a highlighted block",

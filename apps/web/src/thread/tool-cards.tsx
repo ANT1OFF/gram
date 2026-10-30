@@ -126,7 +126,7 @@ function ToolShell({
         setOpen(next);
         if (next) setOpened(true);
       }}
-      className="mb-2 rounded-(--radius-md) border-border bg-card/40"
+      className="group/tool mb-2 rounded-(--radius-md) border-border bg-card/40"
       data-testid="tool-card"
       data-tool={name}
       data-tool-call-id={part.toolCallId}
@@ -136,19 +136,25 @@ function ToolShell({
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm"
       >
         {/* The mark stays mounted from pending to done, so its arc can close into the check. */}
-        <Swap swapKey={isMarkPhase(phase) ? "mark" : phase} className="shrink-0">
-          {isMarkPhase(phase) ? (
-            <StatusMark phase={phase} className={cn("size-3.5", display.tone)} />
-          ) : (
-            <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
-          )}
-        </Swap>
+        {/* A native title: a tooltip trigger inside the row's toggle would take its click. */}
+        <span title={display.label} className="flex shrink-0">
+          <Swap swapKey={isMarkPhase(phase) ? "mark" : phase}>
+            {isMarkPhase(phase) ? (
+              <StatusMark phase={phase} className={cn("size-3.5", display.tone)} />
+            ) : (
+              <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
+            )}
+          </Swap>
+        </span>
         <span className="shrink-0 font-medium">{name}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
           {summary}
         </span>
         {meta}
-        <span className={cn("shrink-0 text-xs", display.tone)}>{display.label}</span>
+        {/* A finished row is the common case: its check says so, and the word is for a reader. */}
+        <span className={cn("shrink-0 text-xs", phase === "done" ? "sr-only" : display.tone)}>
+          {display.label}
+        </span>
         <ChevronDown
           aria-hidden
           className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) in-data-panel-open:rotate-180"
@@ -291,6 +297,10 @@ function SearchCard({ part }: { part: ToolPartOf<"Glob"> | ToolPartOf<"Grep"> })
 
 const TASK_CHIP = "shrink-0 rounded-sm border border-border px-1 text-xs text-muted-foreground";
 
+/** A run's counts: there while the card is hovered or focused, kept in place so nothing jumps. */
+const USAGE_LINE =
+  "text-xs text-muted-foreground opacity-0 transition-opacity duration-(--dur-fast) group-focus-within/tool:opacity-100 group-hover/tool:opacity-100";
+
 /**
  * The model the run actually used: its transcript reports the wire id even when the model was
  * inherited, and the input only carries an alias the caller asked for explicitly. They are shown as
@@ -301,10 +311,18 @@ const subagentModel = (
   messages: readonly GramUIMessage[],
 ) => messages.find((message) => message.metadata?.model)?.metadata?.model ?? part.input?.model;
 
+/** `Haiku` for `claude-haiku-4-5-20251001` or `haiku`; an id from no known family as it came. */
+const modelFamily = (model: string): string => {
+  const family = /(opus|sonnet|haiku|fable)/iu.exec(model)?.[1];
+  return family === undefined ? model : family[0]!.toUpperCase() + family.slice(1).toLowerCase();
+};
+
+const toolUses = (n: number) => `${n} tool ${n === 1 ? "use" : "uses"}`;
+
 /** `3 tool uses · 12.4s · 8,120 tokens`, dropping whatever the agent didn't report. */
 const usageCounts = (usage: SubagentUsageData) =>
   [
-    usage.toolUses === undefined ? undefined : `${usage.toolUses} tool uses`,
+    usage.toolUses === undefined ? undefined : toolUses(usage.toolUses),
     usage.durationMs === undefined ? undefined : `${(usage.durationMs / 1000).toFixed(1)}s`,
     usage.totalTokens === undefined ? undefined : `${formatCount(usage.totalTokens)} tokens`,
   ]
@@ -335,7 +353,10 @@ function TaskCard({
   const model = subagentModel(part, messages);
   // A finished foreground run reports richer totals with its result; the snapshot covers the rest.
   const counts = output?.status === "completed" || usage === undefined ? "" : usageCounts(usage);
-  const note = usage?.status === "running" ? (usage.summary ?? usage.lastToolName) : undefined;
+  // What a live run is on; a finished card's last snapshot can still say "running".
+  const live = running || part.state === "input-streaming" || part.state === "input-available";
+  const note =
+    live && usage?.status === "running" ? (usage.summary ?? usage.lastToolName) : undefined;
   return (
     <ToolShell
       part={part}
@@ -353,7 +374,7 @@ function TaskCard({
               title={model}
               className={cn(TASK_CHIP, "max-w-32 truncate")}
             >
-              {model}
+              {modelFamily(model)}
             </span>
           )}
         </>
@@ -369,8 +390,8 @@ function TaskCard({
       )}
       {output?.status === "completed" && (
         <>
-          <p className="text-xs text-muted-foreground">
-            {output.totalToolUseCount} tool uses · {(output.totalDurationMs / 1000).toFixed(1)}s ·{" "}
+          <p className={USAGE_LINE}>
+            {toolUses(output.totalToolUseCount)} · {(output.totalDurationMs / 1000).toFixed(1)}s ·{" "}
             {formatCount(output.totalTokens)} tokens
           </p>
           {messages.length === 0 &&
@@ -381,7 +402,7 @@ function TaskCard({
         </>
       )}
       {counts !== "" && (
-        <p data-testid="subagent-usage" className="text-xs text-muted-foreground">
+        <p data-testid="subagent-usage" className={USAGE_LINE}>
           {counts}
         </p>
       )}
