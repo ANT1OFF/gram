@@ -1,4 +1,4 @@
-import type { GramUIMessage, ThreadId, ThreadSummary } from "@gram/contracts";
+import type { GramUIMessage, ThreadId, ThreadSummary, WorkspaceId } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useStore } from "zustand";
@@ -6,10 +6,11 @@ import { useStore } from "zustand";
 import { useApi } from "@/api/context";
 import { isThreadNotFound } from "@/api/errors";
 import type { Api, ApiServerEvent } from "@/api/types";
+import { loadKeybindings } from "@/keyboard/use-keybindings-sync";
 import { ledgerStreamLive } from "@/orchestration/use-orchestration";
 import { pullServerSettings } from "@/settings-sync";
 
-import { invalidateForEvent } from "./query-invalidation";
+import { invalidateAfterResync, invalidateForEvent } from "./query-invalidation";
 import { createFrameBatch } from "./frame-batch";
 import {
   applyServerEvents,
@@ -236,10 +237,20 @@ export function useServerEvents() {
   useEffect(() => {
     const abort = new AbortController();
     const { applyEvent } = useThreadsStore.getState();
+    const ledgerLive = (workspaceId: WorkspaceId) => ledgerStreamLive(api, workspaceId);
+    let snapshots = 0;
     const batch = createFrameBatch<ApiServerEvent>(
       (event) => {
         applyEvent(event);
-        invalidateForEvent(queryClient, event, (workspaceId) => ledgerStreamLive(api, workspaceId));
+        invalidateForEvent(queryClient, event, ledgerLive);
+        // A later snapshot means the feed resubscribed (a dropped socket, a server restart, or the
+        // server's buffer overflowing): the snapshot covers threads, but every other event sent in
+        // the gap is lost, so what they would have refreshed is read again.
+        if (event.type === "threads.snapshot" && snapshots++ > 0) {
+          invalidateAfterResync(queryClient, ledgerLive);
+          void pullServerSettings();
+          void loadKeybindings(api, () => abort.signal.aborted);
+        }
         // A change no window made (an approved `settings_propose`): every window takes it.
         if (event.type === "settings.changed") void pullServerSettings();
       },

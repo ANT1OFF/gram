@@ -3,7 +3,7 @@ import type { ProjectId, Thread, ThreadId, ThreadStatus } from "@gram/contracts"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { Profiler } from "react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
 import type { Api, ApiServerEvent } from "@/api/types";
@@ -158,5 +158,34 @@ describe("server events", () => {
     await waitFor(() => expect(seen).toHaveLength(4));
     unsubscribe();
     expect(seen).toEqual(["running", "idle", "running", "idle"]);
+  });
+
+  it("reads queries and keybindings again when the feed resubscribes, not on its first snapshot", async () => {
+    const server = fakeServer();
+    const getKeybindings = vi.fn(async () => ({ path: "", bindings: [], problems: [] }));
+    const api = { ...server.api, getKeybindings } as unknown as Api;
+    const client = new QueryClient();
+    client.setQueryData(["openPrs"], []);
+    render(
+      <ApiProvider api={api}>
+        <QueryClientProvider client={client}>
+          <Shell />
+        </QueryClientProvider>
+      </ApiProvider>,
+    );
+    const stale = () => client.getQueryState(["openPrs"])?.isInvalidated;
+
+    server.burst([
+      { type: "threads.snapshot", threads: [] },
+      { type: "thread.upsert", thread: thread("a") },
+    ]);
+    await waitFor(() => expect(useThreadsStore.getState().byId["a"]).toBeDefined());
+    expect(stale()).toBe(false);
+    expect(getKeybindings).not.toHaveBeenCalled();
+
+    // A dropped socket: the openPrs.changed sent meanwhile is gone, and the new feed starts over.
+    server.burst([{ type: "threads.snapshot", threads: [] }]);
+    await waitFor(() => expect(stale()).toBe(true));
+    expect(getKeybindings).toHaveBeenCalledTimes(1);
   });
 });
