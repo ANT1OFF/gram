@@ -331,6 +331,10 @@ test("the Failing strip lists a stopped worker and red CI, opens one, and dismis
 test("a worker's own red CI leaves the Failing strip and Needs you, and returns once the user holds it", async ({
   page,
 }, testInfo) => {
+  // Held, so t-flaky's scripted approval can't land mid-test and move the count this compares.
+  await page.addInitScript(() => {
+    window.gramMockHoldGates = true;
+  });
   const made = await start(page, () => window.gramMock!.simulateFailures());
   const strip = board(page).getByTestId("board-failing");
   const failed = strip.locator(
