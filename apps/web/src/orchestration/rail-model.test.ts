@@ -14,7 +14,6 @@ import {
   groupFolded,
   groupFoldKey,
   groupNames,
-  busyCount,
   overlapHint,
   railEntries,
   railRows,
@@ -73,7 +72,6 @@ describe("railRows", () => {
     );
     expect(rows.map((row) => row.feature)).toEqual(["docs-refresh", "done"]);
     expect(rows[0]).toMatchObject({ held: [held], finished: false, reach: 0, projects: ["docs"] });
-    expect(busyCount(rows)).toBe(0);
     // A merged line with a brief still held isn't done.
     expect(rows[1]?.finished).toBe(false);
   });
@@ -145,7 +143,7 @@ describe("railRows", () => {
     expect(overlapHint({ overlaps: [], overlapFiles: [] })).toBeUndefined();
   });
 
-  it("counts only busy workers: a live turn or a wait on automation", () => {
+  it("tells a live turn and a wait on automation from attention and idle", () => {
     const rows = railRows(
       [
         card("f", [
@@ -164,7 +162,6 @@ describe("railRows", () => {
       "attention",
       "idle",
     ]);
-    expect(busyCount(rows)).toBe(2);
   });
 });
 

@@ -217,20 +217,6 @@ export const railRows = (
   return [...rows.filter((row) => !row.finished), ...rows.filter((row) => row.finished)];
 };
 
-/** The header's count: workers running a turn or waiting on automation, busy as Quiet counts. */
-export const busyCount = (rows: readonly RailRow[]): number =>
-  rows.reduce(
-    (sum, row) =>
-      sum +
-      Object.values(row.cells).reduce(
-        (n, cell) =>
-          n +
-          cell.filter((worker) => worker.tone === "working" || worker.tone === "waiting").length,
-        0,
-      ),
-    0,
-  );
-
 /** The advisory overlap in words: who the worker shares files with, and which; none without. */
 export const overlapHint = (worker: Pick<RailWorker, "overlaps" | "overlapFiles">) =>
   worker.overlaps.length === 0

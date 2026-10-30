@@ -1,10 +1,18 @@
-import { restartOnMcpChangeOn, type PermissionMode, type SettingsPatch } from "@gram/contracts";
+import {
+  restartOnMcpChangeOn,
+  type ModelRef,
+  type PermissionMode,
+  type SettingsPatch,
+} from "@gram/contracts";
 import { useState } from "react";
 
+import { useHarnessPreflight } from "@/agents/feature-preflight";
+import { HarnessSupportDetails } from "@/agents/support-details";
 import { errorMessage } from "@/api/errors";
 import { AgentFields, choiceModel } from "@/composer/agent-fields";
 import { choiceFromModel } from "@/composer/default-choice";
 import { useLocalDefaultChoice } from "@/composer/use-default-choice";
+import { useModels } from "@/composer/models";
 import { MODE_OPTIONS } from "@/composer/options";
 import {
   Select,
@@ -26,8 +34,21 @@ const IDLE_MINUTES = { min: 1, max: 1440 } as const;
 type AgentsKey = keyof typeof AGENTS_DEFAULTS;
 
 /**
- * Settings → Agents: what a new thread starts on, when idle sessions close, and whether they
- * restart after an MCP change.
+ * What the default harness can do beyond a plain session: browser tools, compaction, images, Dream.
+ * Setup detail, so it lives here rather than on the page work starts from.
+ */
+function DefaultHarnessSupport({ model }: { model: ModelRef | undefined }) {
+  const preflight = useHarnessPreflight(model, "session");
+  const models = useModels(model?.agent ?? "claude", model?.profileId);
+  const image = useHarnessPreflight(model, "imageInput", models === undefined ? {} : { models });
+  return (
+    <HarnessSupportDetails observation={preflight.observation} imageInput={image.result.support} />
+  );
+}
+
+/**
+ * Settings → Agents: what a new thread starts on and what that harness can do, when idle sessions
+ * close, and whether they restart after an MCP change.
  */
 export function AgentsSection() {
   const settings = useServerSettings((s) => s.settings);
@@ -37,6 +58,8 @@ export function AgentsSection() {
 
   if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
   const agents = settings.agents;
+  const choice =
+    agents.defaultModel === undefined ? local.choice : choiceFromModel(agents.defaultModel);
 
   const applyTo = (key: AgentsKey) => (patch: SettingsPatch) => {
     setFailed(undefined);
@@ -52,6 +75,9 @@ export function AgentsSection() {
         description="What a new thread starts on. You can still pick another in /new."
         onReset={resetOf("defaultModel")}
         error={errorOf("defaultModel")}
+        detail={
+          <DefaultHarnessSupport model={choice.model === "" ? undefined : choiceModel(choice)} />
+        }
       >
         {agents.defaultModel === undefined && local.discovering ? (
           <p role="status" className="text-sm text-muted-foreground">
@@ -59,14 +85,10 @@ export function AgentsSection() {
           </p>
         ) : (
           <AgentFields
-            value={
-              agents.defaultModel === undefined
-                ? local.choice
-                : choiceFromModel(agents.defaultModel)
-            }
+            value={choice}
             initializeDefault={agents.defaultModel !== undefined}
-            onChange={(choice) =>
-              applyTo("defaultModel")({ agents: { defaultModel: choiceModel(choice) } })
+            onChange={(next) =>
+              applyTo("defaultModel")({ agents: { defaultModel: choiceModel(next) } })
             }
           />
         )}

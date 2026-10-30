@@ -68,7 +68,7 @@ test("a gateway profile is created, keyed, discovers models and is made default"
   await page.keyboard.press("Escape");
 });
 
-test("Claude Code and Codex use a gateway only after explicit selection, and require its key", async ({
+test("Claude Code and Codex use a gateway only after explicit selection, offered once it has a key", async ({
   page,
 }) => {
   // The keyed default profile the first test builds through the UI.
@@ -101,7 +101,8 @@ test("Claude Code and Codex use a gateway only after explicit selection, and req
     await expect(form.getByRole("link", { name: "Add your gateway key" })).toHaveCount(0);
   }
 
-  // 6. Removing the key brings the key note back; then remove the profile.
+  // 6. Removing the key leaves the subscription the only way in, so the picker goes; then remove
+  // the profile.
   await page.goBack();
   await expect(page).toHaveURL(/\/settings\/gateways$/);
   await team.getByRole("button", { name: "Remove key" }).click();
@@ -109,12 +110,8 @@ test("Claude Code and Codex use a gateway only after explicit selection, and req
 
   await openNewThread(page);
   await pickAgent(page, "Claude Code");
-  await form.getByLabel("Gateway profile").click();
-  await page.getByRole("option", { name: "Team Gateway", exact: true }).click();
-  await expect(form).toContainText("Claude Code runs through your gateway.");
-  await expect(form.getByRole("link", { name: "Add your gateway key" })).toBeVisible();
-  await expect(form.getByLabel("Model")).toHaveCount(0);
-  await expect(form.getByRole("button", { name: /Create thread/ })).toBeDisabled();
+  await expect(form.getByLabel("Model")).toBeVisible();
+  await expect(form.getByLabel("Gateway profile")).toHaveCount(0);
 
   await page.goBack();
   await expect(page).toHaveURL(/\/settings\/gateways$/);

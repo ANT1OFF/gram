@@ -237,7 +237,9 @@ test("a dismissed problem shows again when the check result changes", async ({ p
   await expect(banner).not.toContainText("gh isn't installed");
 });
 
-test("first run is one screen: pick a repository, with the tools beside it", async ({ page }) => {
+test("first run is one screen: pick a repository, with only failing tools beside it", async ({
+  page,
+}) => {
   // Only Codex, signed in: set here, never the machine's own CLIs.
   await page.addInitScript(({ key, checks }) => sessionStorage.setItem(key, checks), {
     key: MOCK_LAUNCH_CHECKS_KEY,
@@ -256,11 +258,9 @@ test("first run is one screen: pick a repository, with the tools beside it", asy
   await page.goto("/");
   const welcome = page.getByTestId("welcome");
   await expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeVisible();
-  const tools = welcome.getByRole("list", { name: "Tools" }).getByRole("listitem");
-  await expect(tools).toHaveText([/Claude Code/, /Codex/, /git/, /GitHub CLI/]);
-  // Codex alone is enough: Claude Code missing is nothing to fix.
-  await expect(tools.first()).toHaveAttribute("data-state", "optional");
-  await expect(tools.nth(1)).toHaveAttribute("data-state", "ready");
+  // Codex alone is enough: Claude Code missing is nothing to fix, and tools that work say nothing.
+  await expect(welcome.getByRole("button", { name: /^web/ })).toBeVisible();
+  await expect(welcome.getByRole("list", { name: "Tools" })).toHaveCount(0);
   await expect(welcome.getByRole("button", { name: "Check again" })).toHaveCount(0);
   await expect(page.getByTestId("launch-checks-banner")).toBeHidden();
   await expect(page.getByText("Select a thread, or start a new one.")).toHaveCount(0);

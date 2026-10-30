@@ -1,15 +1,7 @@
 import type { Project, RepositoryCandidate } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  CheckCircle2,
-  CircleAlert,
-  CircleDashed,
-  FolderGit2,
-  FolderOpen,
-  Globe,
-  type LucideIcon,
-} from "lucide-react";
+import { CircleAlert, FolderGit2, FolderOpen, Globe, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 
@@ -52,7 +44,7 @@ export function useFirstRun(): boolean {
 }
 
 /**
- * First run, on one screen: pick a repository, with a read-only tools check beside it. The pick
+ * First run, on one screen: pick a repository, with any tool that needs fixing beside it. The pick
  * opens the new-workspace sheet on it, which marks the first run done once the workspace is made.
  * Gateways stay in Settings.
  */
@@ -211,35 +203,29 @@ function RecentRepos({
   );
 }
 
-const TOOL_ICON: Record<ToolState, { icon: LucideIcon; label: string; className: string }> = {
-  ready: { icon: CheckCircle2, label: "Ready", className: "text-success" },
+/** The states that need the user, and how each chip says so beside its colour. */
+const TOOL_ICON: Partial<
+  Record<ToolState, { icon: LucideIcon; label: string; className: string }>
+> = {
   attention: { icon: CircleAlert, label: "Needs attention", className: "text-warning" },
   missing: { icon: CircleAlert, label: "Missing", className: "text-destructive" },
-  optional: { icon: CircleDashed, label: "Not installed", className: "text-muted-foreground" },
 };
 
 /**
- * Claude Code, Codex, git and the GitHub CLI as chips; what to do about one is behind it. Only
- * reads the launch checks; state is never carried by colour alone.
+ * Claude Code, Codex, git or the GitHub CLI as a chip when it needs fixing, with what to do behind
+ * it; nothing while every tool is fine or still being checked. Only reads the launch checks; state
+ * is never carried by colour alone.
  */
 function ToolChips() {
   const { checks, recheck } = useLaunchChecks();
   const [checking, setChecking] = useState(false);
-  if (checks === undefined) {
-    return (
-      <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Spinner aria-hidden className="size-3.5" />
-        Checking tools…
-      </p>
-    );
-  }
-  const rows = toolRows(checks);
-  const settled = rows.every((row) => row.state === "ready" || row.state === "optional");
+  const rows = checks === undefined ? [] : toolRows(checks).filter((row) => TOOL_ICON[row.state]);
+  if (rows.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <ul aria-label="Tools" className="flex flex-wrap gap-1.5">
         {rows.map((row) => {
-          const { icon: Icon, label, className } = TOOL_ICON[row.state];
+          const { icon: Icon, label, className } = TOOL_ICON[row.state]!;
           return (
             <li key={row.tool} data-state={row.state} data-tool={row.tool}>
               <Hint
@@ -248,10 +234,7 @@ function ToolChips() {
                   <span
                     // Focusable, so the remedy behind it reaches the keyboard too.
                     tabIndex={0}
-                    className={cn(
-                      "flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                      row.state === "optional" && "text-muted-foreground",
-                    )}
+                    className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   />
                 }
               >
@@ -263,21 +246,19 @@ function ToolChips() {
           );
         })}
       </ul>
-      {!settled && (
-        <Button
-          size="xs"
-          variant="ghost"
-          disabled={checking}
-          onClick={() => {
-            setChecking(true);
-            recheck()
-              .catch((error: unknown) => console.error("welcome: re-check tools", error))
-              .finally(() => setChecking(false));
-          }}
-        >
-          {checking ? "Checking…" : "Check again"}
-        </Button>
-      )}
+      <Button
+        size="xs"
+        variant="ghost"
+        disabled={checking}
+        onClick={() => {
+          setChecking(true);
+          recheck()
+            .catch((error: unknown) => console.error("welcome: re-check tools", error))
+            .finally(() => setChecking(false));
+        }}
+      >
+        {checking ? "Checking…" : "Check again"}
+      </Button>
     </div>
   );
 }

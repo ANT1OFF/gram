@@ -99,8 +99,23 @@ describe("AgentFields", () => {
       ]),
     ).toBe(false);
   });
+  it("offers no Subscription picker while it is the only way in: a gateway without a key", async () => {
+    const api = mockApi();
+    const listModels = vi.spyOn(api, "listModels");
+    const onChoice = vi.fn();
+    renderWithApi(
+      <Harness initial={{ agent: "claude", model: "opus" }} onChoice={onChoice} />,
+      api,
+    );
+    await waitFor(() => expect(listModels).toHaveBeenCalledWith("claude"));
+    expect(await screen.findByLabelText("Model")).toBeTruthy();
+    expect(screen.queryByLabelText("Gateway profile")).toBeNull();
+    expect(onChoice).toHaveBeenLastCalledWith({ agent: "claude", model: "opus" });
+  });
+
   it("stays on Claude's own subscription even with a saved default gateway", async () => {
     const api = mockApi();
+    await api.setProfileKey(LITELLM, "synthetic-test-key");
     const listModels = vi.spyOn(api, "listModels");
     const onChoice = vi.fn();
     renderWithApi(
@@ -322,6 +337,46 @@ describe("AgentFields", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("codex login");
     expect(screen.queryByLabelText("Model")).toBeNull();
     expect(screen.queryByLabelText("Effort")).toBeNull();
+  });
+});
+
+/** One listed model, `m`, with these speeds. */
+const listed = (speeds: readonly ("standard" | "fast")[]) => ({
+  models: [
+    { id: "m", displayName: "M", supportsEffort: false, speeds: [...speeds], isDefault: true },
+  ],
+});
+
+/** The fields over `listed(speeds)`, in the prompt box with `ghost`. */
+const renderSpeed = (
+  choice: AgentChoice,
+  speeds: readonly ("standard" | "fast")[],
+  ghost: boolean,
+) => {
+  const api = mockApi();
+  vi.spyOn(api, "listModels").mockResolvedValue(listed(speeds));
+  renderWithApi(<AgentFields ghost={ghost} value={choice} onChange={() => {}} />, api);
+};
+
+describe("AgentFields speed", () => {
+  it("leaves Speed out of the prompt box while there is nothing to pick", async () => {
+    // The CLI decides, though Fast is there.
+    renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
+    expect(await screen.findByLabelText("Model")).toBeTruthy();
+    expect(screen.queryByLabelText("Speed")).toBeNull();
+    cleanup();
+    // Standard is all the model offers.
+    renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard"], true);
+    expect(await screen.findByLabelText("Model")).toBeTruthy();
+    expect(screen.queryByLabelText("Speed")).toBeNull();
+  });
+
+  it("shows Speed in the prompt box with Fast to pick, and always outside it", async () => {
+    renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard", "fast"], true);
+    expect((await screen.findByLabelText("Speed")).textContent).toContain("Standard");
+    cleanup();
+    renderSpeed({ agent: "claude", model: "m" }, ["standard"], false);
+    expect((await screen.findByLabelText("Speed")).textContent).toContain("CLI default");
   });
 });
 

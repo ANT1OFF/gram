@@ -1058,7 +1058,9 @@ test("the Board shows workers by station, pauses from its header, and fits a nar
   const mail = board.locator('[data-testid="rail-row"][data-feature="mail-trigger"]');
   const chip = (threadId: string) =>
     board.locator(`[data-testid="rail-worker"][data-thread-id="${threadId}"]`);
-  await expect(mail.getByTestId("rail-needs")).toBeVisible();
+  // Its group says once that it needs you; the line doesn't say it again.
+  await expect(board.getByTestId("rail-group-state")).toHaveText("Needs you");
+  await expect(mail.getByTestId("rail-needs")).toHaveCount(0);
   await expect(chip(made.working)).toHaveAttribute("data-station", "working");
   await expect(chip(made.waiting[0])).toHaveAttribute("data-tone", "needs");
   await expect(chip(made.waiting[1])).toHaveAttribute("data-tone", "needs");
@@ -1145,16 +1147,13 @@ test("stages step along a plan, groups band their features, and a worker spans r
     /release/,
   ]);
 
-  // A feature's plan: what is done, where it stands, what is to come, and whose word that is.
+  // A feature's plan: where it stands in it, and whose word that is, in a chip; the stations say
+  // how far the work has come, so the line draws no steps.
   const mail = board.locator('[data-testid="rail-row"][data-feature="mail-trigger"]');
-  const stepper = mail.getByTestId("stage-stepper");
   const chip = mail.getByTestId("rail-stage-chip");
-  const statuses = () =>
-    stepper
-      .getByTestId("stage-step")
-      .evaluateAll((steps) => steps.map((step) => step.getAttribute("data-status")));
-  expect(await statuses()).toEqual(["done", "current", "upcoming", "upcoming", "upcoming"]);
+  await expect(mail.getByTestId("stage-stepper")).toHaveCount(0);
   await expect(chip).toContainText("build");
+  await expect(chip).toContainText("2/5");
   await expect(chip).toHaveAttribute("title", /set by the orchestrator · 2h ago/);
   await expect(chip).toHaveAttribute("title", /contract is settled/);
   // A free label is one chip, and one nobody has touched for a day says so.
@@ -1172,8 +1171,8 @@ test("stages step along a plan, groups band their features, and a worker spans r
       [made.workspaceId, target] as const,
     );
   await advance({ feature: "mail-trigger" });
-  await expect(stepper).toHaveAttribute("data-stage", "preview deployed");
-  expect(await statuses()).toEqual(["done", "done", "current", "upcoming", "upcoming"]);
+  await expect(chip).toContainText("preview deployed");
+  await expect(chip).toContainText("3/5");
   await expect(chip).toHaveAttribute("title", /just now/);
   await advance({ group: "q4-platform" });
   await expect(groupStepper).toHaveAttribute("data-stage", "merge");
@@ -1244,9 +1243,11 @@ test("a click sets a stage, a plan is edited in place, and a feature changes gro
   };
   const sheet = page.getByTestId("feature-sheet");
 
-  // Clicking a step sets it, and it is the user's word at once.
+  // Clicking a step in the feature's sheet sets it, and it is the user's word at once.
   const mail = row("mail-trigger");
-  const stepper = mail.getByTestId("stage-stepper");
+  await mail.getByTestId("rail-feature").click();
+  await expect(sheet).toHaveAttribute("data-feature", "mail-trigger");
+  const stepper = sheet.getByTestId("stage-stepper");
   await stepper.getByRole("button", { name: "merge in order (upcoming)" }).click();
   await expect(stepper).toHaveAttribute("data-stage", "merge in order");
   await expect(mail.getByTestId("rail-stage-chip")).toHaveAttribute(
@@ -1277,6 +1278,8 @@ test("a click sets a stage, a plan is edited in place, and a feature changes gro
   await stepper.getByRole("button", { name: "rolled out (upcoming)" }).click();
   await expect(page.getByText("Not before it is merged.")).toBeVisible();
   await expect(stepper).toHaveAttribute("data-stage", "merge in order");
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
 
   // The plan editor, from the feature's menu, in its sheet: rename a step, move it, add one, and
   // leave a note.
@@ -1314,7 +1317,7 @@ test("a click sets a stage, a plan is edited in place, and a feature changes gro
   ]);
   await page.keyboard.press("Escape");
   await expect(sheet).toBeHidden();
-  await expect(stepper).toHaveAttribute("data-stage", "preview up");
+  await expect(mail.getByTestId("rail-stage-chip")).toContainText("preview up");
 
   // A group's stage is set the same way, and a feature with no stage gets one from the editor.
   const band = board.getByTestId("rail-group");

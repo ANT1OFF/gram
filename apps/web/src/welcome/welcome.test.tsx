@@ -61,29 +61,18 @@ afterEach(() => {
 });
 
 describe("first run", () => {
-  it("is one screen: pick a repository, with the tools beside it", async () => {
+  it("is one screen: pick a repository, with no tools shown while all of them work", async () => {
     const { api, render, updateSettings } = load(withOnboarding({}));
     for (const profile of await api.listProfiles()) await api.removeProfile(profile.id);
     render();
 
     const welcome = within(await screen.findByTestId("welcome"));
     expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeTruthy();
-    const tools = within(await welcome.findByRole("list", { name: "Tools" }));
-    const rows = tools.getAllByRole("listitem");
-    expect(rows.map((item) => item.getAttribute("data-tool"))).toEqual([
-      "claude",
-      "codex",
-      "git",
-      "gh",
-    ]);
-    expect(rows.map((item) => item.getAttribute("data-state"))).toEqual([
-      "ready",
-      "ready",
-      "ready",
-      "ready",
-    ]);
-    expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
+    await waitFor(() => expect(api.launchChecks).toHaveBeenCalled());
+    await vi.mocked(api.launchChecks).mock.results[0]!.value;
     expect(await welcome.findByRole("button", { name: /^api/ })).toBeTruthy();
+    expect(welcome.queryByRole("list", { name: "Tools" })).toBeNull();
+    expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
     expect(welcome.getByRole("button", { name: "Other folder" })).toBeTruthy();
     expect(welcome.getByRole("button", { name: "Clone from GitHub" })).toBeTruthy();
     // Looking at it records nothing, and a first run never asks for a gateway key.
@@ -137,9 +126,12 @@ describe("first run", () => {
     });
     render();
     const welcome = within(await screen.findByTestId("welcome"));
-    const claude = (await welcome.findByRole("list", { name: "Tools" })).querySelector(
-      '[data-tool="claude"]',
+    const tools = within(await welcome.findByRole("list", { name: "Tools" })).getAllByRole(
+      "listitem",
     );
+    // Only the tool that needs something: the ready ones say nothing.
+    expect(tools.map((item) => item.getAttribute("data-tool"))).toEqual(["claude"]);
+    const claude = tools[0];
     expect(claude?.getAttribute("data-state")).toBe("attention");
     expect(claude?.textContent).toContain("Run claude in a terminal to sign in.");
     fireEvent.click(welcome.getByRole("button", { name: "Check again" }));

@@ -29,7 +29,6 @@ import { HeldBriefChip } from "@/orchestration/held-brief";
 import { useBoardBand } from "@/orchestration/open-board";
 import {
   archivedCount,
-  busyCount,
   overlapHint,
   railEntries,
   railRows,
@@ -43,7 +42,9 @@ import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useLayoutStore } from "@/stores/layout";
 
 import { BoardHeader } from "./board-header";
-import { GroupBand, StageLine, type SetStage } from "./board-group";
+import { StageChip } from "@/orchestration/stage-stepper";
+
+import { GroupBand } from "./board-group";
 import { useViewStore } from "./view-store";
 
 // The Board view: the workspace as feature lines, each worker on
@@ -156,14 +157,18 @@ function Track({ reach }: { reach: number }) {
 function FeatureLine({
   row,
   stage,
-  setStage,
+  needsMark,
   onOpen,
   place,
 }: {
   row: RailRow;
-  /** Its stage from the workspace, which carries who set it and when. */
+  /**
+   * Its stage from the workspace, which carries who set it and when: a chip, as the stations already
+   * say how far the work has come. Its plan's steps are set in the feature's sheet.
+   */
   stage: FeatureStage | undefined;
-  setStage: SetStage;
+  /** Whether the line marks that it needs you; in a group's band, the band says it once. */
+  needsMark: boolean;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
   /** Where the Board's list draws it; a line in a group's band flows in it. */
   place?: RowPlace | undefined;
@@ -198,7 +203,7 @@ function FeatureLine({
             {row.feature}
           </button>
           {row.card.paused === true && <PausedBadge testId="rail-paused" />}
-          {row.needs && (
+          {needsMark && row.needs && (
             <CircleAlert
               aria-label="Needs you"
               data-testid="rail-needs"
@@ -211,13 +216,7 @@ function FeatureLine({
           />
         </span>
         {stage !== undefined && (
-          <StageLine
-            stage={stage}
-            subject={row.feature}
-            target={{ feature: row.feature }}
-            setStage={setStage}
-            testId="rail-stage"
-          />
+          <StageChip stage={stage} testId="rail-stage-chip" className="self-start" />
         )}
         {/* The helper's sentence for this card version; the line is complete without it. */}
         {summary !== undefined && (
@@ -298,7 +297,6 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   const entries = useMemo(() => railEntries(rows, state.groups), [rows, state.groups]);
   // Every open editor keeps its group's local draft mounted, even after another row takes focus.
   const [editingGroups, setEditingGroups] = useState<ReadonlySet<string>>(() => new Set());
-  const busy = busyCount(rows);
   const waiting = useBoardWaiting(state);
   const bandOpen = useBoardBand((s) => s.open[workspaceId] === true) && waiting.count > 0;
   const band = useRef<HTMLElement>(null);
@@ -310,7 +308,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
       key={row.feature}
       row={row}
       stage={state.stages?.[row.feature]}
-      setStage={setStage}
+      needsMark={row.group === undefined}
       onOpen={onOpen}
       place={place}
     />
@@ -332,7 +330,6 @@ function RailBoard({ state }: { state: WorkspaceState }) {
     >
       <BoardHeader
         state={state}
-        busy={busy}
         archived={archivedCount(cards)}
         waiting={waiting.count}
         waitingOpen={bandOpen}

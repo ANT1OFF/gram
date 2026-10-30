@@ -84,8 +84,9 @@ function AddKeyNote({ agent }: { agent: AgentKind }) {
 }
 
 /**
- * The agent picker, then local authentication or an explicit gateway profile, the model, and the
- * reasoning effort once `models.list` says the model supports one.
+ * The agent picker, then local authentication or an explicit gateway profile once a gateway can be
+ * used, the model, its speed, and the reasoning effort once `models.list` says the model supports
+ * one.
  */
 export function AgentFields({
   value,
@@ -117,6 +118,9 @@ export function AgentFields({
     queryFn: () => api.listProfiles(),
   });
   const effective = profiles.find((profile) => profile.id === value.profileId);
+  // Subscription is only worth a picker beside another way in: a gateway with a key, or the one
+  // already chosen, which the picker leaves by.
+  const pickAuth = gateway || profiles.some((profile) => profile.keyRef !== "");
   const needsKey =
     gateway && profilesListed && (effective === undefined || effective.keyRef === "");
   const models = useModels(value.agent, value.profileId);
@@ -125,6 +129,12 @@ export function AgentFields({
   const listedDefault = defaultModelId(models);
   const shownModel = value.model || listedDefault || "";
   const efforts = models && !needsKey ? effortOptions(models, shownModel) : [];
+  // In the prompt box, Speed shows only with a choice in it: not while the CLI decides, nor when
+  // Standard is all the model offers.
+  const pickSpeed =
+    !ghost ||
+    value.speed === "fast" ||
+    (value.speed !== undefined && modelSpeeds(models, shownModel).includes("fast"));
   const effortItems = [{ value: DEFAULT_EFFORT, label: "Default effort" }, ...efforts];
   useEffect(() => {
     if (initializeDefault && value.model === "" && listedDefault && !needsKey) {
@@ -178,7 +188,7 @@ export function AgentFields({
           {agentLabel(agents[0] ?? value.agent)}
         </span>
       )}
-      {!subscriptionOnly && supportsGateway && profiles.length > 0 && (
+      {!subscriptionOnly && supportsGateway && pickAuth && (
         <Select
           value={value.profileId ?? SUBSCRIPTION}
           items={[
@@ -244,7 +254,7 @@ export function AgentFields({
           }}
         />
       )}
-      {supportsGateway && !needsKey && (
+      {supportsGateway && !needsKey && pickSpeed && (
         <SpeedField
           agent={value.agent}
           model={shownModel}

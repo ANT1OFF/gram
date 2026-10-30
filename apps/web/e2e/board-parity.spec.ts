@@ -137,7 +137,7 @@ test("the waiting chip unfolds Waiting on you: waits with Done, questions answer
   await expect(chip).toHaveAttribute("aria-expanded", "false");
 });
 
-test("a line carries its stage, a pip sets it, and the menu's Set stage… edits the plan in its sheet", async ({
+test("a line carries its stage as a chip, its sheet's steps set it, and Set stage… edits the plan there", async ({
   page,
 }) => {
   const made = await start(page, async () => {
@@ -153,10 +153,18 @@ test("a line carries its stage, a pip sets it, and the menu's Set stage… edits
   const mail = line(page, "mail-trigger");
   const chip = mail.getByTestId("rail-stage-chip");
   await expect(chip).toContainText("build");
+  await expect(chip).toContainText("2/3");
   await expect(chip).toHaveAttribute("title", /Contract agreed with the payments team\./);
+  // The stations say how far it has come, so the line draws no steps of its own.
+  await expect(mail.getByTestId("stage-stepper")).toHaveCount(0);
 
-  // A click on a step sets it at once, as the user.
-  await mail.getByRole("button", { name: "rollout (upcoming)" }).click();
+  // In the feature's sheet, a click on a step sets it at once, as the user.
+  await mail.getByTestId("rail-feature").click();
+  const mailSheet = page.getByTestId("feature-sheet");
+  await expect(mailSheet).toHaveAttribute("data-feature", "mail-trigger");
+  await mailSheet.getByRole("button", { name: "rollout (upcoming)" }).click();
+  await page.keyboard.press("Escape");
+  await expect(mailSheet).toBeHidden();
   await expect(chip).toContainText("rollout");
   await expect(chip).toHaveAttribute("title", /set by you/);
   await expect

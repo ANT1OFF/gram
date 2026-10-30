@@ -1,5 +1,5 @@
 import type { FeatureStage, WorkspaceId } from "@gram/contracts";
-import { ChevronRight, Layers, Pencil } from "lucide-react";
+import { ChevronRight, CircleAlert, Layers, Pencil } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
@@ -67,7 +67,8 @@ const ROW_ACTION =
 
 /**
  * Several features run as one effort: a band over their lines with the state and the stage of the
- * whole, which folds them away. A finished group starts folded to one line; either way the fold is
+ * whole, which folds them away. It says once that the group needs you, in its state or a mark beside
+ * it; its lines don't say it again. A finished group starts folded to one line; either way the fold is
  * remembered per workspace.
  */
 export function GroupBand({
@@ -94,6 +95,8 @@ export function GroupBand({
   const linesId = useId();
   const count = group.rows.length;
   const target: StageTarget = { group: group.group };
+  const state = group.state === undefined ? undefined : presentState(group.state);
+  const needs = state?.tone !== "needs" && group.rows.some((row) => row.needs);
   return (
     <li
       ref={place?.ref}
@@ -132,8 +135,13 @@ export function GroupBand({
             {group.group}
           </span>
         </button>
-        {group.state !== undefined && (
-          <StatePill state={presentState(group.state)} testId="rail-group-state" />
+        {state !== undefined && <StatePill state={state} testId="rail-group-state" />}
+        {needs && (
+          <CircleAlert
+            aria-label="Needs you"
+            data-testid="rail-needs"
+            className="size-3 shrink-0 text-status-needs"
+          />
         )}
         <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
           {count} {count === 1 ? "feature" : "features"}
