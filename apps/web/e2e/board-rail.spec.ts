@@ -38,11 +38,15 @@ test("each feature is a line, its workers on the stations their cards give them"
   await expect(line(page, "registry-paging")).toBeVisible();
   await expect(line(page, "docs-refresh")).toBeVisible();
 
-  // The three pushers wait on one ask, so their chips say they need you, as does their line.
+  // The three pushers wait on one ask, so their chips say they need you. Their line's group says
+  // it once for its lines; a line in no group says it itself.
   for (const pusher of made.pushers) {
     await expect(chip(page, pusher)).toHaveAttribute("data-tone", "needs");
   }
-  await expect(line(page, "mail-trigger").getByTestId("rail-needs")).toBeVisible();
+  const group = board(page).getByTestId("rail-group");
+  await expect(group.getByTestId("rail-group-state")).toHaveText("Needs you");
+  await expect(group.getByTestId("rail-needs")).toHaveCount(0);
+  await expect(line(page, "docs-refresh").getByTestId("rail-needs")).toBeVisible();
   await expect(chip(page, made.inReview)).toHaveAttribute("data-station", /checks|review/);
   await expect(chip(page, made.briefed)).toBeVisible();
 

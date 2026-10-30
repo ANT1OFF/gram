@@ -17,10 +17,9 @@ test("Codex starts a thread with its own model and credentials without configuri
   const form = page.getByRole("form", { name: "New thread" });
   await form.getByRole("combobox", { name: "Agent" }).click();
   await page.getByRole("option", { name: "Codex", exact: true }).click();
-  await expect(form.getByRole("combobox", { name: "Gateway profile" })).toHaveText(
-    /^Subscription(?:▼)?$/,
-  );
   await expect(form.getByRole("combobox", { name: "Model", exact: true })).toContainText("GPT-5.5");
+  // The seeded gateway has no key, so the subscription is the only way in and needs no picker.
+  await expect(form.getByRole("combobox", { name: "Gateway profile" })).toHaveCount(0);
   await expect(form.getByRole("link", { name: "Add your gateway key" })).toHaveCount(0);
 
   await page.evaluate(() => {
@@ -62,9 +61,7 @@ test("signed-out Codex remains selectable and retrying after login discovers its
   await form.getByRole("button", { name: "Retry models" }).click();
   await expect(form.getByRole("combobox", { name: "Model", exact: true })).toContainText("GPT-5.5");
   await expect(form.getByRole("alert")).toHaveCount(0);
-  await expect(form.getByRole("combobox", { name: "Gateway profile" })).toHaveText(
-    /^Subscription(?:▼)?$/,
-  );
+  await expect(form.getByRole("combobox", { name: "Gateway profile" })).toHaveCount(0);
 });
 
 test("Codex-only diagnostics show ChatGPT login and recover on re-check without requiring Claude", async ({

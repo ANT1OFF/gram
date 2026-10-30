@@ -18,6 +18,7 @@ import { prFactsOfCard } from "@/components/pr-facts";
 import { PrMarkIcon } from "@/components/pr-marks";
 import { PR_STATE_DISPLAY, prMarksOf, prRefText, prTooltipOf } from "@/components/pr-marks-model";
 import { formatClockTime } from "@/lib/time";
+import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { PulseOnce, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
@@ -287,8 +288,15 @@ const filesText = (files: readonly string[]) =>
       ? files[0]!
       : `${files[0]!} and ${files.length - 1} more`;
 
+/** A card that hasn't moved for this long shows when it last did; a moving one needs no clock. */
+export const FEATURE_CARD_STALE_MS = 30 * 60_000;
+
+/** Whether `card` shows its time: still in play, and quiet for `FEATURE_CARD_STALE_MS` or more. */
+export const featureCardStale = (card: FeatureCard, finished: boolean, now: number): boolean =>
+  !finished && now - card.updatedAt >= FEATURE_CARD_STALE_MS;
+
 /**
- * One feature, live: its name and when it last moved, the helper's sentence when there is one for
+ * One feature, live: its name, when it last moved if that was a while ago, the helper's sentence when there is one for
  * this version, the five-station stage line, a line per worker (name, now line, PR chips) and any
  * advisory overlap between workers. Complete without the helper.
  */
@@ -307,6 +315,9 @@ export function FeatureCardView({
   const finished =
     card.held === undefined &&
     (card.station === "merged" || card.workers.every((worker) => worker.state === "archived"));
+  // A minute's clock is enough to notice a card going quiet; a finished one needs none.
+  const now = useNow(!finished, undefined, 60_000);
+  const stale = featureCardStale(card, finished, now);
   return (
     <article
       aria-label={`Feature ${card.feature}`}
@@ -347,13 +358,15 @@ export function FeatureCardView({
             {card.stage.current}
           </span>
         )}
-        <span
-          data-testid="feature-card-updated"
-          className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
-        >
-          {finished ? "" : "live · "}
-          {formatClockTime(card.updatedAt)}
-        </span>
+        {stale && (
+          <span
+            data-testid="feature-card-updated"
+            title={`Last moved at ${formatClockTime(card.updatedAt)}`}
+            className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
+          >
+            {formatClockTime(card.updatedAt)}
+          </span>
+        )}
       </header>
       {summary !== undefined && (
         <p data-testid="feature-card-summary" className="text-xs text-muted-foreground">

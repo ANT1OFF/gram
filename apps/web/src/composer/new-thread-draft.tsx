@@ -12,7 +12,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
-import { HarnessSupportDetails } from "@/agents/support-details";
 import { checkoutInUsePath } from "@/api/errors";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
@@ -541,10 +540,6 @@ function ConfiguredNewThreadDraft() {
             checking={preflight.checking}
             model={selectedModel}
             onRetry={preflight.recheck}
-          />
-          <HarnessSupportDetails
-            observation={preflight.observation}
-            imageInput={imagePreflight.result.support}
           />
           {hasImages && (
             <HarnessPreflightNote

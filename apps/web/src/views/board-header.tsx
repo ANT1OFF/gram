@@ -15,10 +15,10 @@ import { pauseClock, pauseLeavesRunning, pauseText } from "@/thread/orchestratio
 
 import { useViewStore } from "./view-store";
 
-// The Board's header: how many work, what waits on you, and Show
-// archived. It is the window's title bar's, one bar not two: the switcher there names the
-// workspace, and Tidy up and Pause or Resume are the bar's own. A pause says so in a line under it,
-// in the shared pause words.
+// The Board's header: what waits on you, and Show archived; the stations below say who works. It
+// is the window's title bar's, one bar not two: the switcher there names the workspace, and Tidy up
+// and Pause or Resume are the bar's own. A pause says so in a line under it, in the shared pause
+// words.
 
 /** Show archived, while there is any: the workspace's choice. */
 function ArchivedToggle({ workspaceId, count }: { workspaceId: string; count: number }) {
@@ -48,15 +48,12 @@ function ArchivedToggle({ workspaceId, count }: { workspaceId: string; count: nu
 
 export function BoardHeader({
   state,
-  busy,
   archived,
   waiting,
   waitingOpen,
   onWaiting,
 }: {
   state: WorkspaceState;
-  /** Workers running a turn or waiting on automation (`busyCount`). */
-  busy: number;
   /** Archived workers the lines leave out until shown. */
   archived: number;
   /** What Waiting on you holds. */
@@ -78,15 +75,6 @@ export function BoardHeader({
         slot === null ? "h-12 shrink-0 px-4" : "pl-2",
       )}
     >
-      {busy > 0 && (
-        <span
-          // Narrow, the bar's Workers count says much the same.
-          className="shrink-0 text-xs text-muted-foreground @max-3xl/titlebar:hidden"
-          data-testid="rail-live"
-        >
-          <NumberTicker value={busy} className="tabular-nums" /> busy
-        </span>
-      )}
       {waiting > 0 && (
         <button
           type="button"
