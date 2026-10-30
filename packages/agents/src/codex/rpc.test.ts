@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
+import { PassThrough } from "node:stream";
 import type * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { CodexRpcError, makeCodexRpc } from "./rpc.ts";
+import { writeCodexLine } from "./stdio.ts";
 
 const fakeIo = Effect.gen(function* () {
   const written: Array<unknown> = [];
@@ -27,6 +29,32 @@ const waitForWrites = (written: ReadonlyArray<unknown>, count: number) =>
   });
 
 describe("makeCodexRpc", () => {
+  it.effect("keeps request write failures typed even while the reader is still open", () =>
+    Effect.gen(function* () {
+      const f = yield* fakeIo;
+      const input = new PassThrough();
+      input.destroy();
+      const rpc = yield* makeCodexRpc({ ...f.io, write: (line) => writeCodexLine(input, line) });
+      const error = yield* Effect.flip(
+        rpc.request("turn/interrupt", { threadId: "t", turnId: "u" }),
+      );
+      expect(error).toMatchObject({ _tag: "CodexRpcError", method: "turn/interrupt" });
+      // The Stop button uses ignore: it must absorb this failure rather than die.
+      yield* rpc.request("turn/interrupt", { threadId: "t", turnId: "u" }).pipe(Effect.ignore);
+    }),
+  );
+
+  it.effect("keeps notification write failures typed for startup rollback", () =>
+    Effect.gen(function* () {
+      const f = yield* fakeIo;
+      const input = new PassThrough();
+      input.destroy();
+      const rpc = yield* makeCodexRpc({ ...f.io, write: (line) => writeCodexLine(input, line) });
+      const error = yield* Effect.flip(rpc.notify("initialized"));
+      expect(error).toMatchObject({ _tag: "CodexRpcError", method: "initialized" });
+    }),
+  );
+
   it.effect("answers requests by id and streams notifications and server requests in order", () =>
     Effect.gen(function* () {
       const f = yield* fakeIo;

@@ -107,7 +107,7 @@ export interface CodexRpc {
     method: M,
     params: CodexMethods[M][0],
   ) => Effect.Effect<CodexMethods[M][1], CodexRpcError>;
-  readonly notify: (method: string, params?: unknown) => Effect.Effect<void>;
+  readonly notify: (method: string, params?: unknown) => Effect.Effect<void, CodexRpcError>;
   readonly respond: (id: RequestId, result: unknown) => Effect.Effect<void>;
   /** Notifications and server requests in arrival order; ends when the server exits. */
   readonly messages: Stream.Stream<ServerMessage>;
@@ -195,6 +195,17 @@ export const makeCodexRpc = (
     );
 
     const send = (message: unknown) => io.write(JSON.stringify(message));
+    const sendFor = (method: string, message: unknown) =>
+      send(message).pipe(
+        Effect.catchDefect(() =>
+          Effect.fail(
+            new CodexRpcError({
+              method,
+              message: "couldn't write to codex app-server",
+            }),
+          ),
+        ),
+      );
 
     return {
       request: (method, params) =>
@@ -205,10 +216,14 @@ export const makeCodexRpc = (
           const id = nextId++;
           const done = yield* Deferred.make<unknown, CodexRpcError>();
           pending.set(id, { method, done });
-          yield* send({ id, method, params });
-          return (yield* Deferred.await(done)) as CodexMethods[typeof method][1];
+          return (yield* sendFor(method, { id, method, params }).pipe(
+            Effect.andThen(Deferred.await(done)),
+            // Failed writes and interrupted requests no longer retain an unreachable waiter.
+            Effect.ensuring(Effect.sync(() => pending.delete(id))),
+          )) as CodexMethods[typeof method][1];
         }),
-      notify: (method, params) => send(params === undefined ? { method } : { method, params }),
+      notify: (method, params) =>
+        sendFor(method, params === undefined ? { method } : { method, params }),
       respond: (id, result) => send({ id, result }),
       messages: Stream.fromQueue(messages),
     } satisfies CodexRpc;
