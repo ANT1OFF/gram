@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import type { ProjectId, ThreadId, ThreadStatus, ThreadSummary } from "@gram/contracts";
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { resetDerivedAsks, useDerivedAsks } from "@/orchestration/needs-you-store";
 import { useAttentionStore } from "@/sidebar/attention";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -32,8 +33,19 @@ const summary = (id: string, status: ThreadStatus, parked = false): ThreadSummar
 const byId = (...summaries: ThreadSummary[]) =>
   Object.fromEntries(summaries.map((s) => [s.thread.id, s])) as never;
 
+beforeEach(() => {
+  // What `NeedsYouSource` hands in for a window with no workspaces.
+  useDerivedAsks.getState().setQueried({
+    workspaces: [],
+    questions: new Map(),
+    ledgers: new Map(),
+    projects: [],
+  });
+});
+
 afterEach(() => {
   cleanup();
+  resetDerivedAsks();
   useThreadsStore.setState({ byId: {} as never });
   useAttentionStore.setState({ loaded: false, acknowledged: {} });
 });

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { flakyAsked } from "./seed-asks";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // Quiet: one ask card at a time over an empty field, a strip with
@@ -28,6 +29,8 @@ const seed = async (page: Page, settings: object = {}) => {
 
 const start = async (page: Page) => {
   await seed(page);
+  // t-flaky's opening turn raises an approval, a card of the deck too: up before the deck is counted.
+  await flakyAsked(page);
   const made = await page.evaluate(() => window.gramMock!.simulateFailures());
   await openOrchestrator(page, made.orchestratorThreadId);
   await expect(page.getByTestId("ask-stack")).toBeVisible();
@@ -140,8 +143,38 @@ test("the strip shows a dot per worker, and a workspace opens onto its workers",
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
 });
 
+/** Answers every open request, the seed's solo threads' included, so nothing asks. */
+const answerAll = (page: Page) =>
+  page.evaluate(async () => {
+    const mock = window.gramMock!;
+    for (const summary of mock.world.threads()) {
+      for (const request of summary.pendingRequests) {
+        await mock.respond(
+          summary.thread.id,
+          request.id,
+          request.kind === "approval"
+            ? { kind: "approval", decision: "deny", scope: "once" }
+            : request.kind === "plan"
+              ? { kind: "plan", decision: "reject" }
+              : { kind: "question", answers: {} },
+        );
+      }
+    }
+  });
+
+test("a solo thread's question is a card too, not 'Nothing needs you'", async ({ page }) => {
+  await seed(page);
+  await page.getByTestId("quiet-toggle").click();
+  await expect(quiet(page)).toBeVisible();
+  await goTo(page, "Which date library should the picker use?");
+  await expect(card(page)).toContainText("Solo threads");
+  await expect(quiet(page).getByTestId("quiet-empty")).toHaveCount(0);
+});
+
 test("nothing asked: the empty field says what is going on", async ({ page }) => {
   await seed(page);
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+  await answerAll(page);
   await page.getByTestId("quiet-toggle").click();
   await expect(quiet(page).getByTestId("quiet-empty")).toContainText("Nothing needs you.");
   await expect(quiet(page).getByTestId("quiet-summary")).toHaveText(/workers? (is|are) busy\./);

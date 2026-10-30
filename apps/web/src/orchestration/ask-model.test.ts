@@ -44,6 +44,13 @@ const labels = (...all: string[]) =>
   all.map((label) => ({ label, done: label, action: { kind: "memory", answer: label } }) as const);
 
 describe("the ask stack's asks", () => {
+  it("says the orchestrator only for the orchestrator's own asks, not a solo thread's", () => {
+    const [own] = groupInbox([{ ...entry("o", undefined, push("r-o")), orchestrator: true }]);
+    const [solo] = groupInbox([entry("s", undefined, push("r-s"))]);
+    expect(askOf(own!).context).toBe("orchestrator · Title of o");
+    expect(askOf(solo!).context).toBe("Title of s");
+  });
+
   it("makes equal pushes one ask that shows the exact command and answers them all", () => {
     const [group] = groupInbox([
       entry("a", "mail", push("r-a")),

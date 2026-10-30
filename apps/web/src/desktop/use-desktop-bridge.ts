@@ -1,10 +1,4 @@
-import {
-  chimeOf,
-  workspaceMuted,
-  type DesktopMenuAction,
-  type ThreadId,
-  type ThreadSummary,
-} from "@gram/contracts";
+import { chimeOf, workspaceMuted, type DesktopMenuAction, type ThreadId } from "@gram/contracts";
 import { isTranslucentLook, PRESET_PALETTES, resolvePalette } from "@gram/themes";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -17,8 +11,9 @@ import { copyText } from "@/settings/copy-text";
 import { useServerSettings } from "@/settings-sync/store";
 import { WHATS_NEW } from "@/whats-new";
 import { useWhatsNewDialog } from "@/whats-new/whats-new-dialog";
-import { ownsCiFailure, useAttentionStore } from "@/sidebar/attention";
-import { needsYou, nextNeedsYou } from "@/sidebar/grouping";
+import { needsYouCount, useDerivedAsks } from "@/orchestration/needs-you-store";
+import { ownsCiFailure } from "@/sidebar/attention";
+import { nextNeedsYou } from "@/sidebar/grouping";
 import { focusPaneComposer } from "@/shell/pane-focus";
 import { useReportIssueDialog } from "@/report-issue/report-issue-dialog";
 import { useLayoutStore } from "@/stores/layout";
@@ -39,16 +34,6 @@ import { resolveMode } from "@/theme/theme";
 /** A local info toast, for menu commands that finish without navigating anywhere. */
 const toast = (title: string, body: string) =>
   useThreadsStore.getState().applyEvent({ type: "notify", kind: "info", title, body });
-
-/** The badge count: the threads that need the user (`needsYou`), as the sidebar surfaces them. */
-export const needsYouCount = (
-  summaries: Iterable<ThreadSummary>,
-  acknowledged: Readonly<Record<string, string>> = useAttentionStore.getState().acknowledged,
-): number => {
-  let count = 0;
-  for (const s of summaries) if (needsYou(s, acknowledged)) count++;
-  return count;
-};
 
 /**
  * Wires the Electron preload bridge: menu commands, the needs-you badge, native notifications while
@@ -134,15 +119,17 @@ export function useDesktopBridge() {
 
     let badge = -1;
     const syncBadge = () => {
-      const count = needsYouCount(Object.values(useThreadsStore.getState().byId));
+      const count = needsYouCount();
       if (count === badge) return;
       badge = count;
       bridge.setBadge(count);
     };
 
-    const unsubscribeAttention = useAttentionStore.subscribe(syncBadge);
+    syncBadge();
+    const unsubscribeBadge = useDerivedAsks.subscribe((state, prev) => {
+      if (state.needsYou !== prev.needsYou) syncBadge();
+    });
     const unsubscribeThreads = useThreadsStore.subscribe((state, prev) => {
-      if (state.byId !== prev.byId) syncBadge();
       if (state.notifications === prev.notifications || document.hasFocus()) return;
       const known = new Set(prev.notifications);
       const prefs = useServerSettings.getState().settings?.notifications;
@@ -229,7 +216,7 @@ export function useDesktopBridge() {
     });
 
     return () => {
-      unsubscribeAttention();
+      unsubscribeBadge();
       unsubscribeThreads();
       unsubscribeTheme();
       unsubscribeSystem();

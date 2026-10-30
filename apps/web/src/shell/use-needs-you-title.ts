@@ -1,8 +1,6 @@
 import { useEffect } from "react";
 
-import { needsYouCount } from "@/desktop/use-desktop-bridge";
-import { useAttentionStore } from "@/sidebar/attention";
-import { useThreadsStore } from "@/stores/threads";
+import { needsYouCount, useDerivedAsks } from "@/orchestration/needs-you-store";
 
 const APP_TITLE = "Gram";
 
@@ -11,22 +9,20 @@ export const titleFor = (count: number): string =>
   count > 0 ? `(${count}) ${APP_TITLE}` : APP_TITLE;
 
 /**
- * Mount once per window: keeps `document.title` in step with the needs-you count. Electron mirrors
- * it into the window's own title.
+ * Mount once per window: keeps `document.title` in step with the needs-you count, the one the
+ * sidebar's pill shows. Electron mirrors it into the window's own title.
  */
 export function useNeedsYouTitle() {
   useEffect(() => {
     const sync = () => {
-      document.title = titleFor(needsYouCount(Object.values(useThreadsStore.getState().byId)));
+      document.title = titleFor(needsYouCount());
     };
     sync();
-    const unsubscribeAttention = useAttentionStore.subscribe(sync);
-    const unsubscribeThreads = useThreadsStore.subscribe((state, prev) => {
-      if (state.byId !== prev.byId) sync();
+    const unsubscribe = useDerivedAsks.subscribe((state, prev) => {
+      if (state.needsYou !== prev.needsYou) sync();
     });
     return () => {
-      unsubscribeAttention();
-      unsubscribeThreads();
+      unsubscribe();
       document.title = APP_TITLE;
     };
   }, []);

@@ -169,8 +169,12 @@ const whoOf = (entries: readonly InboxEntry[]): string => {
   return titles.length <= 2 ? titles.join(", ") : `${titles[0]} and ${titles.length - 1} more`;
 };
 
-const contextOf = (group: InboxGroup): string =>
-  [group.entries[0].feature ?? "orchestrator", whoOf(group.entries)].join(" · ");
+/** Its feature, or the orchestrator, and who asks; a solo thread's only who asks. */
+const contextOf = (group: InboxGroup): string => {
+  const [first] = group.entries;
+  const where = first.feature ?? (first.orchestrator === true ? "orchestrator" : undefined);
+  return [...(where === undefined ? [] : [where]), whoOf(group.entries)].join(" · ");
+};
 
 /** The hold id of an orchestrator's open question. */
 export const memoryId = (workspaceId: WorkspaceId, question: MemoryQuestion): string =>

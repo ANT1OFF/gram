@@ -8,23 +8,24 @@ import type { WorkerRow } from "@/orchestration/workers-model";
 /** How the summary says a wait on automation: the Board's word for it. */
 const WAITING = WAIT_LABELS.checks.toLowerCase();
 
-// Quiet's deck and strip: every workspace's asks one card at a time, and a dot per worker. No React.
+// Quiet's deck and strip: every workspace's asks, then the solo threads', one card at a time, and a
+// dot per worker. No React.
 
 /** How long the window must sit untouched, with nothing asked, before it drops into Quiet by itself. */
 export const QUIET_IDLE_MS = 5 * 60_000;
 
-/** One card of the deck: an ask and the workspace it came from. */
+/** One card of the deck: an ask and the workspace it came from, none for a solo thread's. */
 export interface DeckCard {
   readonly ask: Ask;
-  readonly workspaceId: WorkspaceId;
+  readonly workspaceId: WorkspaceId | undefined;
   readonly workspace: string;
   /** Where Open goes: the asking thread, else the workspace's orchestrator. */
   readonly threadId: ThreadId | undefined;
 }
 
-/** What the deck reads from each workspace: `WorkspaceAsks` without the hook. */
+/** What the deck reads from each workspace, or the solo threads: `WorkspaceAsks` without the hook. */
 export interface DeckSource {
-  readonly workspaceId: WorkspaceId;
+  readonly workspaceId: WorkspaceId | undefined;
   readonly name: string;
   readonly orchestratorThreadId: ThreadId | undefined;
   readonly asks: readonly Ask[];
@@ -44,8 +45,8 @@ export const quietDeck = (
   later: readonly string[],
 ): DeckCard[] => {
   const ordered = [
-    ...sources.filter((source) => source.workspaceId === first),
-    ...sources.filter((source) => source.workspaceId !== first),
+    ...sources.filter((source) => first !== undefined && source.workspaceId === first),
+    ...sources.filter((source) => first === undefined || source.workspaceId !== first),
   ];
   const cards = ordered.flatMap((source) =>
     source.asks.map((ask) => ({

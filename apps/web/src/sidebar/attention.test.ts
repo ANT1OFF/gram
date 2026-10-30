@@ -14,7 +14,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { prFactsOfBadge } from "@/components/pr-facts";
 import { prGlyphOf } from "@/components/pr-glyph-model";
-import { needsYouCount } from "@/desktop/use-desktop-bridge";
 
 import {
   ACK_LIMIT,
@@ -25,7 +24,11 @@ import {
   useAttentionStore,
 } from "./attention";
 import { useThreadsStore } from "@/stores/threads";
-import { nextNeedsYou, sectionOf, rollupOf } from "./grouping";
+import { needsYou, nextNeedsYou, sectionOf, rollupOf } from "./grouping";
+
+/** How many of `summaries` need the user, each of which Needs you gives an item. */
+const needsYouCount = (summaries: readonly ThreadSummary[]) =>
+  summaries.filter((s) => needsYou(s)).length;
 
 const pr = (overrides: Partial<PrStatus> = {}): PrStatus => ({
   number: 12,
