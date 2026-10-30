@@ -20,6 +20,7 @@ import {
   FEATURE_STAGE_NOTE_MAX,
   DIGEST_WAITING_LISTED,
   FINISHED_STATES,
+  featureState,
   orchestrationMode,
   DEPENDENCY_DRAG_CONFLICT_MIN,
   DEPENDENCY_DRAG_ROUNDS,
@@ -35,7 +36,6 @@ import {
   type Autonomy,
   type BackgroundTask,
   type ChecksRollup,
-  type CompletedReason,
   type DigestChange,
   type DigestReport,
   type DigestVariant,
@@ -48,7 +48,6 @@ import {
   type OrchestratorCharter,
   type PauseReason,
   type PermissionMode,
-  type PrFacts,
   type PrRef,
   type PrStatus,
   type PrWakeEvent,
@@ -60,7 +59,6 @@ import {
   type ThreadId,
   type ThreadRole,
   type ThreadStatus,
-  type TurnId,
   type WaitItem,
   type WaitKind,
   type WorkerReport,
@@ -628,157 +626,15 @@ export const modeAfterDowngrade = (input: {
 // Worker and feature state
 // ---------------------------------------------------------------------------------------------
 
-/** The facts a worker's state is derived from; nothing of it is stored. */
-export interface WorkerStateInput {
-  readonly status: ThreadStatus;
-  readonly parked: boolean;
-  readonly completedReason?: CompletedReason | undefined;
-  readonly lastReport?: { readonly state: WorkerReportState; readonly at: number } | undefined;
-  /** Epoch ms of the latest input the worker was given, by the user or the orchestrator. */
-  readonly lastInputAt?: number | undefined;
-  /** A turn has started at some point, so the brief has been picked up. */
-  readonly hasStartedTurn: boolean;
-  /** Approval, question and plan requests waiting on the user. */
-  readonly pendingRequestCount: number;
-  /**
-   * The bound PR's badge through `prFactsOf`, or every PR's through `combinePrFacts` for a worker
-   * with more than one; absent without a PR or before its first lookup.
-   */
-  readonly pr?: PrFacts | undefined;
-  /**
-   * The thread was reopened since its merges (`reopenedSinceMerge`): work resumed after them, so
-   * the merged badges it still carries don't make it merged.
-   */
-  readonly reopened?: boolean | undefined;
-  /**
-   * Whether a PR could be opened from any repo the worker works in: `false` only when it is known
-   * that none has a GitHub remote. Absent means it could, or that nobody knows yet.
-   */
-  readonly canOpenPr?: boolean | undefined;
-  /**
-   * The failure `Thread.lastError` records, which a later completed turn clears. It outlives the
-   * session's own `error` status, which a restart doesn't keep.
-   */
-  readonly lastError?: { readonly at: number; readonly turnId?: TurnId | undefined } | undefined;
-  /** The turn started last, and when, from the store's turn rows. */
-  readonly lastTurnId?: TurnId | undefined;
-  readonly lastTurnStartedAt?: number | undefined;
-}
-
-/**
- * Where a worker stands. The first rule that holds wins, most specific first:
- *
- * 1. `archived`: the thread is parked. Nothing about a parked worker asks for attention.
- * 2. `merged`: its PRs are merged, or the thread was completed because its PR merged, and none of
- *    its PRs is open: an open PR wins over a completion (`anyPrOpen`), as it does in the sidebar.
- *    Nor is it merged once reopened since those merges: it falls through to what it does now.
- * 3. `error`: the session is in `error`, or, at rest, the failure it last recorded is still its
- *    latest word: the failed turn is the last to have started, or, for a failure outside a turn
- *    (a session that wouldn't open), no turn has started since. After a restart every session
- *    is `cold`, so the failure is what tells. Turn identity, not input times, decides, since an
- *    input's bookkeeping can land after the failure it caused.
- * 4. `needsUser`: it waits on an approval, a question or a plan.
- * 5. `readyToMerge`: PR open, approved on head, checks green, mergeable.
- * 6. `inReview`: PR open.
- * 7. `blocked` / `question`: its latest report says so and no input has arrived since, so the
- *    report is still unanswered.
- * 8. `done`: its latest report says so and no input has arrived since, or the agent or the user
- *    marked it completed (an old idle completion is nobody's word, and doesn't count).
- *    Where no PR can be opened at all (`canOpenPr: false`) that is the end of the road, so it
- *    reads `delivered` instead of waiting for a review that can't come. Never `merged`: nothing the
- *    server can see says the branch is in main, and the ledger states only facts.
- * 9. `working`: a turn is running or starting, or one has started before. An idle worker that
- *    stopped without reporting reads `working` beside an `idle` status in the ledger.
- * 10. `briefed`: no turn has started yet.
- *
- * A closed, unmerged PR counts as no PR: the worker falls through to its report and status.
- */
-const failureStands = (
-  failure: NonNullable<WorkerStateInput["lastError"]>,
-  lastTurnId: TurnId | undefined,
-  lastTurnStartedAt: number | undefined,
-): boolean =>
-  failure.turnId !== undefined
-    ? lastTurnId === undefined || lastTurnId === failure.turnId
-    : lastTurnStartedAt === undefined || lastTurnStartedAt <= failure.at;
-
-export const workerState = (input: WorkerStateInput): WorkerState => {
-  if (input.parked) return "archived";
-  if (
-    input.reopened !== true &&
-    (input.pr?.state === "merged" ||
-      (input.completedReason === "prMerged" && input.pr?.state !== "open"))
-  )
-    return "merged";
-  if (input.status === "error") return "error";
-  if (
-    input.lastError !== undefined &&
-    (input.status === "cold" || input.status === "idle") &&
-    failureStands(input.lastError, input.lastTurnId, input.lastTurnStartedAt)
-  )
-    return "error";
-  if (
-    input.status === "needsApproval" ||
-    input.status === "needsInput" ||
-    input.pendingRequestCount > 0
-  )
-    return "needsUser";
-  if (input.pr?.state === "open") {
-    return input.pr.checksGreen && input.pr.approvedOnHead && input.pr.mergeable
-      ? "readyToMerge"
-      : "inReview";
-  }
-  const report = input.lastReport;
-  const unanswered =
-    report !== undefined && (input.lastInputAt === undefined || report.at >= input.lastInputAt);
-  if (unanswered && (report.state === "blocked" || report.state === "question"))
-    return report.state;
-  const marked = input.completedReason === "agent" || input.completedReason === "user";
-  if ((unanswered && report.state === "done") || marked) {
-    return input.pr === undefined && input.canOpenPr === false ? "delivered" : "done";
-  }
-  if (input.status === "running" || input.status === "starting" || input.hasStartedTurn)
-    return "working";
-  return "briefed";
-};
-
-/**
- * Worker states from what holds a feature back most to what holds it back least: the states that
- * wait on somebody, then the road from brief to merge. `delivered` sits just before `merged`: both
- * are finished, but only one of them is known to be in main, so a feature with a worker of each is
- * `delivered`. `archived` is last because a parked worker holds nothing back.
- */
-export const WORKER_STATE_ORDER: ReadonlyArray<WorkerState> = [
-  "error",
-  "needsUser",
-  "blocked",
-  "question",
-  "briefed",
-  "working",
-  "done",
-  "inReview",
-  "readyToMerge",
-  "delivered",
-  "merged",
-  "archived",
-];
-
-const rank = (state: WorkerState): number => WORKER_STATE_ORDER.indexOf(state);
-
-/**
- * A feature's state: its least advanced worker's by `WORKER_STATE_ORDER`, so a feature is
- * `inReview` only when every sibling has a PR and `readyToMerge` only when every sibling is.
- * Archived workers don't count while any sibling is live. A feature whose workers are all
- * delivered, merged or archived is `delivered` if any of them is, and `merged` only when every one
- * that isn't archived truly is; one with nothing but archived workers (or none) is `archived`.
- */
-export const featureState = (workers: ReadonlyArray<WorkerState>): WorkerState => {
-  const live = workers.filter((state) => state !== "archived");
-  return live.reduce<WorkerState>(
-    (least, state) => (rank(state) < rank(least) ? state : least),
-    live[0] ?? "archived",
-  );
-};
+// `workerState`, `featureState` and their order live in the contracts, so the board's live overlay
+// and the web's mock ledger use the same rule as the ledger.
+export {
+  WORKER_STATE_ORDER,
+  featureState,
+  workerState,
+  workerStateBase,
+  type WorkerStateInput,
+} from "@gram/contracts";
 
 // ---------------------------------------------------------------------------------------------
 // Refusals

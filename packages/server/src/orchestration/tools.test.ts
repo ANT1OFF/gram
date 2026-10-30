@@ -545,9 +545,13 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         expect(yield* tool.needsApproval!(BRIEF)).toBe(true);
         // A yes lets that one through; nothing about it is refused.
         yield* spawn(session, { feature: "third" });
-        // An archived worker gives its place back.
+        // An archived worker gives its place back once it rests; a turn it still runs holds it.
         yield* session.callTool("archive_thread", { threadId: second.thread.id });
         yield* session.callTool("archive_thread", { threadId: made.thread.id });
+        yield* settle;
+        expect(yield* tool.needsApproval!(BRIEF)).toBe(true);
+        yield* completeTurn(second.session);
+        yield* completeTurn(made.session);
         expect(yield* tool.needsApproval!(BRIEF)).toBe(false);
       }),
     ),
@@ -927,6 +931,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           expect(session.sent[1]?.text).toContain(`advisory overlap ${b.thread.id}`);
           yield* completeTurn(session);
 
+          yield* completeTurn(b.session);
           yield* session.callTool("archive_thread", { threadId: b.thread.id });
           const after = (yield* session.callTool("list_workers", {})) as OrchestratorLedger;
           expect(after.features[0]?.workers.map((w) => w.title)).toEqual(["Runner"]);
@@ -996,6 +1001,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             stage: "shipped",
             note: "old notes",
           });
+          yield* completeTurn(a.session);
           yield* session.callTool("archive_thread", { threadId: a.thread.id });
           for (const detail of [false, true]) {
             const result = (yield* session.callTool("list_workers", {

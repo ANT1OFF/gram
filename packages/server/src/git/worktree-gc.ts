@@ -26,6 +26,7 @@ import { join, relative } from "node:path";
 import {
   combinePrFacts,
   FINISHED_STATES,
+  headPushed,
   mergedAndDone,
   prFactsOf,
   reopenedSinceMerge,
@@ -201,7 +202,7 @@ export const sweepDue = (
 export interface WorktreeCheck {
   /** `git status` lists nothing: no uncommitted or untracked work. */
   readonly clean: boolean;
-  /** A remote-tracking ref contains HEAD, or HEAD is the PR's head on GitHub. */
+  /** Every commit is on a remote (`headPushed`): the rule the close dialog pre-ticks removal by. */
   readonly pushed: boolean;
   /** The PR is merged or closed. */
   readonly prSettled: boolean;
@@ -238,14 +239,14 @@ export const checkWorktree = (
     ]).pipe(Effect.option);
     const onRemote =
       Option.isSome(remote) && remote.value.status === 0 && remote.value.stdout.trim() !== "";
-    if (!wantPr) return { clean, pushed: onRemote, prSettled: false };
+    if (!wantPr)
+      return { clean, pushed: headPushed({ head, headOnRemote: onRemote }), prSettled: false };
     const pr = yield* Pr;
     const badge = yield* asBackground(pr.status(path, thread.boundPr)).pipe(Effect.option);
     const settled = Option.isSome(badge) ? badge.value : undefined;
     return {
       clean,
-      // A squash merge leaves HEAD in no remote branch once GitHub deletes the PR's.
-      pushed: onRemote || (settled?.headRefOid !== undefined && settled.headRefOid === head),
+      pushed: headPushed({ head, headOnRemote: onRemote, prHeadRefOid: settled?.headRefOid }),
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
     };
   });

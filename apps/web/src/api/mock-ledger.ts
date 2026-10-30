@@ -1,6 +1,10 @@
 import {
-  mergeStateAllowsMerge,
+  featureState,
+  prFactsOf,
+  reopenedSinceMerge,
   requiredChecksOf,
+  workerState,
+  workerStateBase,
   type FeatureLedgerEntry,
   WORKER_REQUEST_SUMMARY_MAX,
   type MergeIntent,
@@ -13,58 +17,55 @@ import {
   type WorkerRepo,
   type WorkerReport,
   type WorkerState,
+  type WorkerStateInput,
 } from "@gram/contracts";
 
-// The orchestration mock's ledger rows: a worker's state from its thread, its PR rows, and
-// features as far along as their slowest worker, cut down from the server's rules.
+// The orchestration mock's ledger rows: a worker's state from its thread by the server's own rule
+// (`workerState`), its PR rows, and features as far along as their slowest worker (`featureState`).
 
-/** The ledger's order from least to most advanced; a feature is as far along as its slowest worker. */
-export const ADVANCEMENT: readonly WorkerState[] = [
-  "error",
-  "blocked",
-  "question",
-  "needsUser",
-  "briefed",
-  "working",
-  "done",
-  "inReview",
-  "readyToMerge",
-  "delivered",
-  "merged",
-  "archived",
-];
+/** What the mock knows of a worker, as the facts the server's rule reads. */
+type MockWorkerFacts = Pick<ThreadSummary, "thread" | "status" | "git"> &
+  Partial<Pick<ThreadSummary, "pendingRequests">>;
 
 /**
- * A cut-down version of the server's rule for where a worker stands, from what the mock knows
- * about its thread.
+ * The server's `WorkerStateInput` from what the mock knows about a worker's thread. The mock keeps
+ * no input times or turn rows, so a report always stands and a turn has started once it reported.
  */
-export const mockWorkerState = (
-  summary: Pick<ThreadSummary, "thread" | "status" | "git">,
+export const mockStateInput = (
+  summary: MockWorkerFacts,
   lastReport: WorkerReport | undefined,
-): WorkerState => {
-  if (summary.thread.parked) return "archived";
-  if (summary.status === "error") return "error";
-  if (summary.status === "needsApproval" || summary.status === "needsInput") return "needsUser";
-  const pr = summary.git?.pr;
-  if (pr?.state === "MERGED") return "merged";
-  if (pr?.state === "OPEN") {
-    return requiredChecksOf(pr) === "passing" &&
-      pr.review?.verdictOnHead === "approved" &&
-      mergeStateAllowsMerge(pr.mergeState)
-      ? "readyToMerge"
-      : "inReview";
-  }
-  // Done with no PR in a checkout known to have no GitHub remote: finished, and never "merged".
-  if (
-    lastReport?.state === "done" &&
-    summary.git?.repo === true &&
-    summary.git.origin === undefined
-  )
-    return "delivered";
-  if (lastReport !== undefined && lastReport.state !== "progress") return lastReport.state;
-  if (summary.status === "running" || summary.status === "starting") return "working";
-  return lastReport === undefined ? "briefed" : "working";
+): WorkerStateInput => {
+  const { thread, git } = summary;
+  const badge = git?.pr;
+  return {
+    status: summary.status,
+    parked: thread.parked,
+    completedReason: thread.completedReason,
+    ...(lastReport === undefined
+      ? {}
+      : { lastReport: { state: lastReport.state, at: lastReport.at } }),
+    hasStartedTurn: lastReport !== undefined,
+    pendingRequestCount: summary.pendingRequests?.length ?? 0,
+    ...(badge === undefined ? {} : { pr: prFactsOf(badge) }),
+    reopened: reopenedSinceMerge(thread, [badge]),
+    // Known to have no GitHub remote: no PR can be opened, so done is delivered.
+    canOpenPr: !(git?.repo === true && git.origin === undefined),
+    ...(thread.lastError === undefined
+      ? {}
+      : {
+          lastError: {
+            at: thread.lastError.at,
+            ...(thread.lastError.turnId === undefined ? {} : { turnId: thread.lastError.turnId }),
+          },
+        }),
+  };
 };
+
+/** Where a worker stands, by the server's rule over what the mock knows. */
+export const mockWorkerState = (
+  summary: MockWorkerFacts,
+  lastReport: WorkerReport | undefined,
+): WorkerState => workerState(mockStateInput(summary, lastReport));
 
 /** What the ledger knows about a worker beyond its thread: only the simulations set any of it. */
 export interface WorkerExtras {
@@ -135,7 +136,8 @@ export const ledgerEntry = (
     threadId: thread.id,
     title: thread.title,
     ...(thread.checkout.branch === undefined ? {} : { branch: thread.checkout.branch }),
-    state: mockWorkerState(summary, lastReport),
+    state: workerState(mockStateInput(summary, lastReport)),
+    stateBase: workerStateBase(mockStateInput(summary, lastReport)),
     status: summary.status,
     ...(summary.activity === undefined ? {} : { activity: summary.activity }),
     ...(thread.lastError === undefined
@@ -209,11 +211,6 @@ export const slugOf = (raw: string): string | undefined => {
   return slug === "" || slug.length > 48 ? undefined : slug;
 };
 
-export const leastAdvanced = (states: readonly WorkerState[]): WorkerState =>
-  states.reduce((least, state) =>
-    ADVANCEMENT.indexOf(state) < ADVANCEMENT.indexOf(least) ? state : least,
-  );
-
 /** Workers grouped by feature in first-seen order, each group as far along as its slowest worker. */
 export const groupByFeature = (workers: readonly WorkerLedgerEntry[]): FeatureLedgerEntry[] => {
   const groups = new Map<string, WorkerLedgerEntry[]>();
@@ -222,7 +219,7 @@ export const groupByFeature = (workers: readonly WorkerLedgerEntry[]): FeatureLe
   }
   return [...groups].map(([feature, members]) => ({
     feature,
-    state: leastAdvanced(members.map((member) => member.state)),
+    state: featureState(members.map((member) => member.state)),
     workers: members,
   }));
 };

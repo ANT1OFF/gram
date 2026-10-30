@@ -153,6 +153,11 @@ export const GitState = Schema.Struct({
   upstream: Schema.optionalKey(UpstreamState),
   /** Commits HEAD has that `origin/<branch>` doesn't; present while `upstream` is ahead or diverged. */
   aheadUpstream: Schema.optionalKey(Schema.Int),
+  /**
+   * A remote-tracking ref contains HEAD, so every commit here is on a remote (`headPushed`).
+   * Measured with the rebase tier; absent until it has been, and while it is cleared.
+   */
+  headOnRemote: Schema.optionalKey(Schema.Boolean),
   pr: Schema.optionalKey(PrStatus),
   /**
    * Badges for the thread's `extraPrs`, matched to them by `url`. One is missing until its first
@@ -182,6 +187,18 @@ export const GitState = Schema.Struct({
   missing: Schema.optionalKey(Schema.Literal(true)),
 });
 export type GitState = typeof GitState.Type;
+
+/**
+ * Whether a checkout's commits are all on a remote, so removing it loses none: a remote-tracking
+ * ref contains HEAD, or HEAD is its PR's head on GitHub, since a squash merge leaves HEAD in no
+ * remote branch once GitHub deletes the PR's. The worktree sweep decides on this, from git asked
+ * right before it acts; the close dialog and the merged notice read it off the published state.
+ */
+export const headPushed = (facts: {
+  readonly head: string;
+  readonly headOnRemote: boolean;
+  readonly prHeadRefOid?: string | undefined;
+}): boolean => facts.headOnRemote || (facts.head !== "" && facts.prHeadRefOid === facts.head);
 
 export const WorktreeEntry = Schema.Struct({
   path: Schema.String,

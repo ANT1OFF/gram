@@ -1,5 +1,7 @@
 import {
   DEFAULT_PR_WAKE_EVENTS,
+  featureState,
+  liveWorkerState,
   prWakeWhen,
   type FeatureGroupLedgerEntry,
   type FeatureLedgerEntry,
@@ -20,33 +22,6 @@ import { contextPercent } from "@/thread/context-usage";
 // Pure derivations for the orchestration board: which column a worker stands in, what a feature's
 // row holds, and which workspace's board a thread opens. No React, so it is tested without a browser.
 
-/**
- * A worker's state with the thread's live status laid over the ledger's. The ledger is refetched a
- * beat after the thread changes, so without this a card would sit in the wrong column meanwhile: a
- * request just raised moves it to Waiting on a person at once, and one just answered moves it back. A failure
- * the ledger says still stands holds while the thread rests (`cold` after a restart, or `idle`), and
- * goes once a later turn starts.
- */
-export const liveWorkerState = (
-  ledger: WorkerState,
-  status: ThreadStatus | undefined,
-  hasRequests = false,
-): WorkerState => {
-  if (hasRequests) return "needsUser";
-  if (status === undefined) return ledger;
-  if (status === "needsApproval" || status === "needsInput") return "needsUser";
-  // A stale thread error must not bring a ledger-archived worker back to the live board. A newly
-  // running turn does bring it back, and real requests still win above.
-  if (status === "running" || status === "starting") {
-    return ledger === "archived" || ledger === "error" || ledger === "needsUser"
-      ? "working"
-      : ledger;
-  }
-  if (status === "error") return ledger === "archived" ? "archived" : "error";
-  if (ledger === "error") return status === "cold" || status === "idle" ? "error" : "working";
-  return ledger === "needsUser" ? "working" : ledger;
-};
-
 /** Shared by the production board callbacks and card presentation. */
 export const liveWorkerEntry = (
   worker: WorkerLedgerEntry,
@@ -54,9 +29,10 @@ export const liveWorkerEntry = (
 ): WorkerLedgerEntry => ({
   ...worker,
   state: liveWorkerState(
-    worker.state,
-    summary?.status,
-    (summary?.pendingRequests.length ?? worker.pendingRequests.length) > 0,
+    worker,
+    summary === undefined
+      ? undefined
+      : { status: summary.status, pendingRequestCount: summary.pendingRequests.length },
   ),
   status: summary?.status ?? worker.status,
   pendingRequests:
@@ -81,25 +57,13 @@ export const workerTitle = (
   summary: { readonly thread: Pick<Thread, "title"> } | undefined,
 ): string => summary?.thread.title ?? worker.title;
 
-/** From least to most advanced: a group is as far along as its slowest feature. */
-const ADVANCEMENT: readonly WorkerState[] = [
-  "error",
-  "blocked",
-  "question",
-  "needsUser",
-  "briefed",
-  "working",
-  "done",
-  "inReview",
-  "readyToMerge",
-  "delivered",
-  "merged",
-  "archived",
-];
-
-/** A state this build doesn't know sorts first: nobody can say how far along it is. */
+/**
+ * A group's state from its members' by the ledger's own rule (`featureState`): parked work doesn't
+ * count while anything is live, and a state this build doesn't know comes first. `undefined` for
+ * no members at all.
+ */
 export const leastAdvanced = (states: readonly WorkerState[]): WorkerState | undefined =>
-  states.toSorted((a, b) => ADVANCEMENT.indexOf(a) - ADVANCEMENT.indexOf(b))[0];
+  states.length === 0 ? undefined : featureState(states);
 
 /** What `sectionsOf` needs of a feature, which both a board row and a ledger entry are. */
 interface Groupable {

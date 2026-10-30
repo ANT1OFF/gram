@@ -25,6 +25,7 @@ const pr: PrStatus = {
   checks: "passing",
   headMatches: true,
   aheadOfPr: false,
+  headRefOid: "abc",
 };
 
 const git: GitState = {
@@ -78,18 +79,18 @@ describe("merged cleanup helpers", () => {
 describe("cleanAndPushed", () => {
   it("reads a clean tree whose commits a remote has, and nothing else", () => {
     const { pr: _, ...noPr } = git;
+    // HEAD is the merged PR's head, which GitHub keeps after deleting the branch.
     expect(cleanAndPushed(git)).toBe(true);
-    expect(cleanAndPushed({ ...noPr, upstream: "synced" })).toBe(true);
-    expect(cleanAndPushed({ ...noPr, upstream: "behind" })).toBe(true);
-    expect(cleanAndPushed({ ...noPr, base: "origin/main", aheadBase: 0 })).toBe(true);
+    expect(cleanAndPushed({ ...noPr, headOnRemote: true })).toBe(true);
     expect(cleanAndPushed({ ...git, changedFiles: 1 })).toBe(false);
-    expect(cleanAndPushed({ ...noPr, upstream: "ahead", aheadUpstream: 2 })).toBe(false);
-    expect(cleanAndPushed({ ...noPr, upstream: "diverged" })).toBe(false);
-    expect(cleanAndPushed({ ...noPr, base: "origin/main", aheadBase: 3 })).toBe(false);
-    expect(cleanAndPushed({ ...git, pr: { ...pr, aheadOfPr: true } })).toBe(false);
-    // The PR's head is the pushed tip, but two local commits are past it.
-    expect(cleanAndPushed({ ...git, upstream: "ahead", aheadUpstream: 2 })).toBe(false);
-    expect(cleanAndPushed({ ...git, upstream: "diverged" })).toBe(false);
+    expect(cleanAndPushed({ ...noPr, headOnRemote: false })).toBe(false);
+    // Not measured yet: nothing says the commits are anywhere else.
+    expect(cleanAndPushed(noPr)).toBe(false);
+    // The PR's head is the pushed tip, but local commits are past it.
+    const past = { ...git, pr: { ...pr, headRefOid: "older", aheadOfPr: true } };
+    expect(cleanAndPushed(past)).toBe(false);
+    expect(cleanAndPushed({ ...past, headOnRemote: false })).toBe(false);
+    expect(cleanAndPushed({ ...past, headOnRemote: true })).toBe(true);
     expect(cleanAndPushed({ ...git, missing: true })).toBe(false);
     expect(cleanAndPushed(undefined)).toBe(false);
   });

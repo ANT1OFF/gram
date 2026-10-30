@@ -125,13 +125,43 @@ const resolveBase = (
       );
 
 export const clearRebaseTier = (state: GitState): GitState => {
-  const { base: _base, upstream: _upstream, aheadUpstream: _aheadUpstream, ...rest } = state;
+  const {
+    base: _base,
+    upstream: _upstream,
+    aheadUpstream: _aheadUpstream,
+    headOnRemote: _headOnRemote,
+    ...rest
+  } = state;
   return { ...rest, behindBase: 0, aheadBase: 0, conflicts: false };
 };
 
 /**
- * Fill base / behind / ahead / conflicts / upstream from remote-tracking refs (no fetch). Conflicts
- * run a `git merge-tree --write-tree` trial only when diverged, since otherwise a merge fast-forwards.
+ * Whether a remote-tracking ref contains HEAD (`GitState.headOnRemote`): read off the tier when it
+ * tells, HEAD on or behind `origin/<branch>` or nothing past the base, and asked of git otherwise.
+ */
+const headOnRemote = (cwd: string, state: GitState) =>
+  Effect.gen(function* () {
+    if (state.head === "") return false;
+    if (state.upstream === "synced" || state.upstream === "behind") return true;
+    if (state.base !== undefined && state.aheadBase === 0) return true;
+    const out = yield* git(cwd, [
+      "for-each-ref",
+      "--count=1",
+      "--format=%(refname)",
+      "--contains",
+      state.head,
+      "refs/remotes",
+    ]);
+    return out.status === 0 && out.stdout.trim() !== "";
+  });
+
+const withHeadOnRemote = (cwd: string, state: GitState) =>
+  headOnRemote(cwd, state).pipe(Effect.map((onRemote) => ({ ...state, headOnRemote: onRemote })));
+
+/**
+ * Fill base / behind / ahead / conflicts / upstream / head on a remote from remote-tracking refs (no
+ * fetch). Conflicts run a `git merge-tree --write-tree` trial only when diverged, since otherwise a
+ * merge fast-forwards.
  * A timeout fails so the caller restores what it carried rather than publishing zeros.
  */
 export const fillRebase = (
@@ -142,7 +172,7 @@ export const fillRebase = (
   Effect.gen(function* () {
     const cleared: Mutable<GitState> = { ...clearRebaseTier(state) };
     const branch = state.branch;
-    if (branch === undefined || state.head === "") return cleared;
+    if (branch === undefined || state.head === "") return yield* withHeadOnRemote(cwd, cleared);
     const tips = yield* originTips(cwd, prBase === undefined ? [branch] : [branch, prBase]);
     const upstream = yield* upstreamState(cwd, branch, state.head, tips.get(branch));
     if (upstream !== undefined) {
@@ -150,7 +180,7 @@ export const fillRebase = (
       if (upstream.ahead > 0) cleared.aheadUpstream = upstream.ahead;
     }
     const base = yield* resolveBase(cwd, branch, prBase, tips);
-    if (base === undefined) return cleared;
+    if (base === undefined) return yield* withHeadOnRemote(cwd, cleared);
     const counts = yield* git(cwd, ["rev-list", "--left-right", "--count", `${base}...HEAD`]);
     const { behind, ahead } =
       counts.status === 0 ? parseCounts(counts.stdout) : { behind: 0, ahead: 0 };
@@ -163,7 +193,7 @@ export const fillRebase = (
     cleared.aheadBase = ahead;
     // Exit 1 = conflicts. Anything else (an old git, an error, a timeout) never false-alarms.
     cleared.conflicts = trial !== undefined && Option.isSome(trial) && trial.value.status === 1;
-    return cleared;
+    return yield* withHeadOnRemote(cwd, cleared);
   });
 
 /**
@@ -221,5 +251,8 @@ export const carryRebaseTier = (next: GitState, carried: GitState | undefined): 
   if (carried.base !== undefined) tier.base = carried.base;
   if (carried.upstream !== undefined) tier.upstream = carried.upstream;
   if (carried.aheadUpstream !== undefined) tier.aheadUpstream = carried.aheadUpstream;
+  // Of the carried head: a new commit since may not be on any remote.
+  if (carried.headOnRemote !== undefined && carried.head === next.head)
+    tier.headOnRemote = carried.headOnRemote;
   return { ...clearRebaseTier(next), ...tier };
 };

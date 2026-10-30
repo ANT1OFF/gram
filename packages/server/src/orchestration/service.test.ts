@@ -8,6 +8,7 @@ import {
   type ThreadPlan,
   type WorkspaceId,
   WorkerState,
+  liveWorkerState,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
@@ -107,6 +108,24 @@ const shopWorker = (over: Partial<WorkerFacts>, thread: object = {}): WorkerFact
   ...over,
 });
 const workerOf = (worker: WorkerFacts) => featuresOf([worker])[0]!.workers[0]!;
+
+describe("worker state on the ledger row", () => {
+  it("shows a parked worker's request and running turn, and carries the base the board overlays", () => {
+    const request = { kind: "approval", ageMin: 0 };
+    const asking = workerOf(shopWorker({ pendingRequests: [request] }, { parked: true }));
+    expect(asking.state).toBe("needsUser");
+    expect(asking.stateBase).toEqual({ state: "merged", parked: true });
+    // The board, laying the same row's status over it, lands where the ledger did.
+    expect(liveWorkerState(asking)).toBe("needsUser");
+    expect(liveWorkerState(asking, { status: "idle", pendingRequestCount: 0 })).toBe("archived");
+    expect(workerOf(shopWorker({}, { parked: true })).state).toBe("archived");
+    const open = { badge: shopBadge(204, "OPEN"), status: "running" as const };
+    expect(workerOf(shopWorker(open, { parked: true })).state).toBe("inReview");
+    expect(workerOf(shopWorker({ ...open, status: "idle" }, { parked: true })).state).toBe(
+      "archived",
+    );
+  });
+});
 
 describe("quiet worker ledger evidence", () => {
   it("keeps PR state while flagging an unreported stop, and excludes intentional waits", () => {

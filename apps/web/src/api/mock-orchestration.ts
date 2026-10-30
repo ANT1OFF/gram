@@ -4,6 +4,7 @@ import {
   availableWorkspaceName,
   newWorkspaceCharter,
   orchestrationMode,
+  featureState,
   workerHasOngoingWork,
   serializeDigest,
   cardShown,
@@ -69,7 +70,7 @@ import { simulateWaits } from "./mock-board-waits";
 import { simulateQuietBusy, simulateQuietWorkspaces } from "./mock-quiet";
 import { simulateRelease } from "./mock-release";
 import { simulate } from "./mock-orchestration-report";
-import { ledgerEntry, slugOf, leastAdvanced, groupByFeature } from "./mock-ledger";
+import { ledgerEntry, slugOf, groupByFeature } from "./mock-ledger";
 import { simulateReaching, type MockReachingSimulation } from "./mock-reaching";
 import { simulateWorkersList, type MockWorkersSimulation } from "./mock-workers";
 import type {
@@ -437,7 +438,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
               {
                 group,
                 features: slugs,
-                state: leastAdvanced(members.map((member) => member.state)),
+                state: featureState(members.map((member) => member.state)),
                 ...(stage === undefined ? {} : { stage }),
               },
             ];
