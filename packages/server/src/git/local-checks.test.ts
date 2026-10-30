@@ -1,11 +1,14 @@
 import {
   localCheckConcurrencyOf,
+  ProjectLocalCheck as ProjectLocalCheckSchema,
   type ThreadId,
   type ProjectId,
   type ProjectLocalCheck,
 } from "@gram/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import { type Proc, ProcLive, ProcNonBlockingLive } from "@gram/git";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { Proc, ProcLive, ProcNonBlockingLive } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -46,9 +49,17 @@ import {
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
 
 /** A repo with `main` one commit past where `feature` branched, each adding its own file. */
-const fixture = () => {
+const fixture = (protectedBlob = false) => {
   const dir = tempDir();
   const repo = makeRepo(dir);
+  let protectedOid: string | undefined;
+  if (protectedBlob) {
+    protectedOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+      cwd: repo, input: "synthetic protected fixture", encoding: "utf8",
+    }).trim();
+    run(repo, "update-index", "--add", "--cacheinfo", `100644,${protectedOid},.env.example`);
+    run(repo, "commit", "-qm", "synthetic protected ancestor");
+  }
   run(repo, "checkout", "-q", "-b", "feature");
   write(nodePath.join(repo, "feature.txt"), "feature\n");
   run(repo, "add", "feature.txt");
@@ -59,20 +70,29 @@ const fixture = () => {
   run(repo, "add", "base.txt");
   run(repo, "commit", "-q", "-m", "base");
   const base = run(repo, "rev-parse", "HEAD").trim();
-  return { dir, repo, head, base };
+  return { dir, repo, head, base, protectedOid };
+};
+
+/** Assemble the known disjoint synthetic merge without asking Git to merge omitted blobs. */
+const fixtureTree = (dir: string, repo: string, base: string, head: string): string => {
+  const env = { ...process.env, GIT_INDEX_FILE: nodePath.join(dir, "fixture-index"), GIT_NO_LAZY_FETCH: "1" };
+  execFileSync("git", ["read-tree", base], { cwd: repo, env });
+  const oid = run(repo, "rev-parse", `${head}:feature.txt`).trim();
+  execFileSync("git", ["update-index", "--add", "--cacheinfo", `100644,${oid},feature.txt`], { cwd: repo, env });
+  return execFileSync("git", ["write-tree"], { cwd: repo, env, encoding: "utf8" }).trim();
 };
 
 const configured = (repo: string, setting: ProjectLocalCheck) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
     const project = yield* store.ensureProject({ root: repo, name: "invented" });
-    const writes = (["command", "setup", "timeoutMs"] as const).map((field) => ({
+    const writes = (["command", "setup", "timeoutMs", "preparation"] as const).map((field) => ({
       key: `project.localCheck.${field}`,
       path: ["localCheck", field],
       before: project.localCheck?.[field],
       after: setting[field],
     }));
-    yield* store.updateProjectLocalCheckAudited(
+    const updated = yield* store.updateProjectLocalCheckAudited(
       project.id,
       writes,
       {
@@ -87,6 +107,7 @@ const configured = (repo: string, setting: ProjectLocalCheck) =>
       },
       project.localCheckRevision!,
     );
+    expect(updated).toBeDefined();
   });
 
 const layer = (
@@ -211,6 +232,236 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
           expect(yield* checks.lookup(repo, head, later)).toBeUndefined();
         }).pipe(Effect.provide(layer(database, dir, runner)));
         expect(seen).toHaveLength(1);
+        removeDir(dir);
+      }),
+  );
+
+  it.live.skipIf(process.platform === "win32")(
+    "prepares only an approved merged-tree selection and refuses substitutions",
+    () =>
+      Effect.gen(function* () {
+        expect(Object.keys(ProjectLocalCheckSchema.fields)).toContain("preparation");
+        // The omitted object exists only in Git and is identical in both branches.
+        const { dir, repo, head, base, protectedOid: oid } = fixture(true);
+        const tree = fixtureTree(dir, repo, base, head);
+        const entries = run(repo, "ls-tree", "-r", "-z", "--full-tree", tree)
+          .split("\0")
+          .filter(Boolean)
+          .map((item) => {
+            const [meta, path] = item.split("\t");
+            const [mode, , blob] = meta!.split(" ");
+            return { path: path!, mode: mode!, oid: blob!, selected: path !== ".env.example" };
+          });
+        const manifest = nodePath.join(dir, "selected.json");
+        const prepare = (doc: object) => {
+          const raw = JSON.stringify(doc);
+          write(manifest, raw);
+          return { manifest, sha256: createHash("sha256").update(raw).digest("hex") };
+        };
+        const doc = { schema: "gram.selected-source/v1", head, base, tree, entries };
+        const seen: Array<string> = [];
+        const gitCalls: Array<{ args: ReadonlyArray<string>; env: Readonly<Record<string, string>> | undefined }> = [];
+        const traced = Layer.effect(Proc, Effect.map(Effect.service(Proc), (proc) => Proc.of({
+          run: (bin, args, options) => Effect.suspend(() => {
+            if (bin === "git") gitCalls.push({ args, env: options.env });
+            return proc.run(bin, args, options);
+          }),
+        }))).pipe(Layer.provide(ProcLive));
+        const child = nodePath.join(dir, "synthetic-check.cjs");
+        const expectedDigest = createHash("sha256").update(JSON.stringify(doc)).digest("hex");
+        write(
+          child,
+          `const fs=require("node:fs");if(fs.existsSync(".env.example")||process.env.GRAM_CHECK_SOURCE_SELECTION_MANIFEST!==${JSON.stringify(manifest)}||process.env.GRAM_CHECK_SOURCE_SELECTION_SHA256!==${JSON.stringify(expectedDigest)}||process.env.GRAM_CHECK_APPROVED_INPUT_SHA256!==${JSON.stringify("c".repeat(64))})process.exit(1);`,
+        );
+        const command = `${JSON.stringify(process.execPath)} ${JSON.stringify(child)}`;
+        const runner: LocalCheckRunnerShape["run"] = (work, log, wanted, source) =>
+          Effect.gen(function* () {
+            expect(existsSync(nodePath.join(work, ".env.example"))).toBe(false);
+            expect(existsSync(nodePath.join(work, "feature.txt"))).toBe(true);
+            expect(run(work, "ls-files", "--stage")).toContain(".env.example");
+            expect(
+              run(work, "ls-files", "-v")
+                .split("\n")
+                .filter(Boolean)
+                .every((row) => row.startsWith("H ")),
+            ).toBe(true);
+            seen.push(work);
+            return yield* spawnCheck(
+              work,
+              log,
+              {
+                base: { HOME: dir, GRAM_CHECK_SOURCE_SELECTION_SHA256: "inherited-forgery", GRAM_CHECK_APPROVED_INPUT_SHA256: "inherited-forgery" },
+                pathValue: LAUNCHD_PATH,
+                retain: source.retain,
+              },
+              wanted,
+            );
+          });
+        const execute = (setting: ProjectLocalCheck, suffix: string) =>
+          Effect.gen(function* () {
+            yield* configured(repo, setting);
+            const store = yield* ThreadStore;
+            const projects = yield* store.listProjects;
+            expect(
+              projects.find((p) => p.root === repo)?.localCheck,
+              "stored selection",
+            ).toMatchObject(setting);
+            return yield* checked(repo, head, base);
+          }).pipe(Effect.provide(layer(nodePath.join(dir, suffix + ".db"), dir, runner, false, traced)));
+        const pass = yield* execute({ command, preparation: { ...prepare(doc), inputConfigSha256: "c".repeat(64) } }, "pass");
+        expect(pass, JSON.stringify(pass)).toMatchObject({ status: "passed" });
+        const fetches = gitCalls.filter(({ args }) => args.includes("fetch"));
+        expect(fetches.some(({ args }) => args.includes("--filter=blob:none"))).toBe(true);
+        expect(fetches.every(({ args, env }) => !args.includes(oid!) && env?.GIT_NO_LAZY_FETCH === "1")).toBe(true);
+        expect(gitCalls.filter(({ args }) => args.includes("merge-tree"))
+          .every(({ env }) => env?.GIT_NO_LAZY_FETCH === "1")).toBe(true);
+        expect(pass?.omittedSources).toEqual([
+          { path: ".env.example", mode: "100644", oid, contents: "NOT_READ_OR_VERIFIED" },
+        ]);
+        expect(seen).toHaveLength(1);
+        expect(existsSync(seen[0]!)).toBe(false);
+        const stale = yield* execute(
+          { command, preparation: prepare({ ...doc, tree: "0".repeat(40) }) },
+          "stale",
+        );
+        expect(stale).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        const missing = yield* execute(
+          { command, preparation: prepare({ ...doc, entries: entries.slice(1) }) },
+          "missing",
+        );
+        expect(missing).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        const selectedProtected = entries.map((row) =>
+          row.path === ".env.example" ? { ...row, selected: true } : row,
+        );
+        const refused = yield* execute(
+          { command, preparation: prepare({ ...doc, entries: selectedProtected }) },
+          "protected",
+        );
+        expect(refused).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        const duplicate = yield* execute(
+          { command, preparation: prepare({ ...doc, entries: [...entries, entries[0]] }) },
+          "duplicate",
+        );
+        expect(duplicate).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        const substituted = entries.map((row) =>
+          row.path === "feature.txt" ? { ...row, oid: "0".repeat(40) } : row,
+        );
+        const wrongBlob = yield* execute(
+          { command, preparation: prepare({ ...doc, entries: substituted }) },
+          "blob",
+        );
+        expect(wrongBlob).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        const escaped = entries.map((row) =>
+          row.path === "feature.txt" ? { ...row, path: "../escape" } : row,
+        );
+        const traversal = yield* execute(
+          { command, preparation: prepare({ ...doc, entries: escaped }) },
+          "traversal",
+        );
+        expect(traversal).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        const wrongHead = yield* execute(
+          { command, preparation: prepare({ ...doc, head: "0".repeat(40) }) },
+          "head",
+        );
+        expect(wrongHead).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        const changedDigest = prepare(doc);
+        changedDigest.sha256 = "0".repeat(64);
+        const digestFailure = yield* execute({ command, preparation: changedDigest }, "digest");
+        expect(digestFailure).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        expect(seen).toHaveLength(1);
+        // A server without filter capability must be refused before any fetch.
+        let refusedFetch = false;
+        const noFilter = Layer.effect(Proc, Effect.map(Effect.service(Proc), (proc) => Proc.of({
+          run: (bin, args, options) => Effect.suspend(() => {
+            if (bin === "git" && args.includes("fetch")) refusedFetch = true;
+            if (bin === "git" && args.includes("ls-remote"))
+              return Effect.succeed({ status: 0, stdout: "", stderr: "fetch=shallow", truncated: false });
+            return proc.run(bin, args, options);
+          }),
+        }))).pipe(Layer.provide(ProcLive));
+        const noCapability = yield* Effect.gen(function* () {
+          yield* configured(repo, { command, preparation: prepare(doc) });
+          return yield* checked(repo, head, base);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "no-filter.db"), dir, runner, false, noFilter)));
+        expect(noCapability).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        expect(refusedFetch).toBe(false);
+        expect(seen).toHaveLength(1);
+        const priorMerges = gitCalls.filter(({ args }) => args.includes("merge-tree")).length;
+        // Change only the omitted synthetic Git object, without creating a protected file.
+        const changedOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+          cwd: repo, input: "different synthetic protected fixture", encoding: "utf8",
+        }).trim();
+        const env = { ...process.env, GIT_INDEX_FILE: nodePath.join(dir, "changed-index") };
+        execFileSync("git", ["read-tree", head], { cwd: repo, env });
+        execFileSync("git", ["update-index", "--add", "--cacheinfo", `100644,${changedOid},.env.example`], { cwd: repo, env });
+        const changedTree = execFileSync("git", ["write-tree"], { cwd: repo, env, encoding: "utf8" }).trim();
+        const changedHead = run(repo, "commit-tree", changedTree, "-p", head, "-m", "changed synthetic omission").trim();
+        const changedDoc = { ...doc, head: changedHead };
+        const blocked = yield* Effect.gen(function* () {
+          yield* configured(repo, { command, preparation: prepare(changedDoc) });
+          return yield* checked(repo, changedHead, base);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "changed-omission.db"), dir, runner, false, traced)));
+        expect(gitCalls.filter(({ args }) => args.includes("merge-tree"))).toHaveLength(priorMerges);
+        expect(blocked).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        expect(seen).toHaveLength(1);
+        // Both sides changing an omitted object must stop before merge-tree too.
+        const otherOid = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+          cwd: repo, input: "third synthetic protected fixture", encoding: "utf8",
+        }).trim();
+        const otherEnv = { ...process.env, GIT_INDEX_FILE: nodePath.join(dir, "conflict-index") };
+        execFileSync("git", ["read-tree", base], { cwd: repo, env: otherEnv });
+        execFileSync("git", ["update-index", "--add", "--cacheinfo", `100644,${otherOid},.env.example`], { cwd: repo, env: otherEnv });
+        const otherTree = execFileSync("git", ["write-tree"], { cwd: repo, env: otherEnv, encoding: "utf8" }).trim();
+        const otherBase = run(repo, "commit-tree", otherTree, "-p", base, "-m", "conflicting synthetic omission").trim();
+        const conflicting = yield* Effect.gen(function* () {
+          yield* configured(repo, { command, preparation: prepare({ ...doc, head: changedHead, base: otherBase }) });
+          return yield* checked(repo, changedHead, otherBase);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "conflicting-omission.db"), dir, runner, false, traced)));
+        expect(conflicting).toMatchObject({ status: "failed", failure: { kind: "unstartable" } });
+        expect(gitCalls.filter(({ args }) => args.includes("merge-tree"))).toHaveLength(priorMerges);
+        expect(seen).toHaveLength(1);
+        removeDir(dir);
+      }),
+  );
+
+  it.live.skipIf(process.platform === "win32")(
+    "refuses attribute-transformed selected bytes before starting the command",
+    () =>
+      Effect.gen(function* () {
+        const { dir, repo } = fixture();
+        run(repo, "checkout", "-q", "feature");
+        write(nodePath.join(repo, "feature.txt"), "$Id$\n");
+        run(repo, "add", "feature.txt");
+        run(repo, "commit", "-qm", "ident content");
+        const head = run(repo, "rev-parse", "HEAD").trim();
+        run(repo, "checkout", "-q", "main");
+        write(nodePath.join(repo, ".gitattributes"), "feature.txt ident\n");
+        run(repo, "add", ".gitattributes");
+        run(repo, "commit", "-qm", "ident attribute");
+        const base = run(repo, "rev-parse", "HEAD").trim();
+        const tree = fixtureTree(dir, repo, base, head);
+        const entries = run(repo, "ls-tree", "-r", "-z", "--full-tree", tree)
+          .split("\0").filter(Boolean).map((item) => {
+            const [meta, path] = item.split("\t");
+            const [mode, , oid] = meta!.split(" ");
+            return { path: path!, mode: mode!, oid: oid!, selected: true };
+          });
+        const raw = JSON.stringify({ schema: "gram.selected-source/v1", head, base, tree, entries });
+        const manifest = nodePath.join(dir, "selection.json");
+        write(manifest, raw);
+        let invoked = false;
+        const runner: LocalCheckRunnerShape["run"] = () => Effect.sync(() => {
+          invoked = true;
+          return { ok: true };
+        });
+        const outcome = yield* Effect.gen(function* () {
+          yield* configured(repo, { command: "synthetic", preparation: {
+            manifest, sha256: createHash("sha256").update(raw).digest("hex"),
+          } });
+          return yield* checked(repo, head, base);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "ident.db"), dir, runner, false)));
+        expect(outcome).toMatchObject({ status: "failed", reason: "selected-source materialization differs" });
+        expect(invoked).toBe(false);
         removeDir(dir);
       }),
   );
@@ -1037,6 +1288,14 @@ describe("project run identity", () => {
     expect(localCheckRunFor({ setup: "make deps" })).toBeUndefined();
     const configuredRun = localCheckRunFor({ command: "make test" }, "project-1" as never)!;
     const id = runIdOf(configuredRun);
+    const preparation = { manifest: "/tmp/selection.json", sha256: "a".repeat(64) };
+    const selected = localCheckRunFor({ command: "make test", preparation }, "project-1" as never)!;
+    expect(runIdOf(selected)).not.toBe(id);
+    expect(
+      runIdOf({ ...selected, preparation: { ...preparation, sha256: "b".repeat(64) } }),
+    ).not.toBe(runIdOf(selected));
+    expect(runIdOf({ ...selected, preparation: { ...preparation, inputConfigSha256: "c".repeat(64) } }))
+      .not.toBe(runIdOf(selected));
     for (const change of [
       { command: "cargo test" },
       { setup: "make deps" },

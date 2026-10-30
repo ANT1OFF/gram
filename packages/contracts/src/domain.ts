@@ -273,8 +273,19 @@ const ProjectCheckCommand = Schema.String.check(
       "Use a single line without control, invisible format or bidirectional characters.",
   ),
 );
+export const ProjectCheckPreparation = Schema.Struct({
+  manifest: ProjectCheckCommand,
+  inputConfigSha256: Schema.optionalKey(
+    Schema.String.check(Schema.makeFilter((v) => /^[a-f0-9]{64}$/.test(v) || "Expected SHA-256.")),
+  ),
+  sha256: Schema.String.check(
+    Schema.makeFilter((v) => /^[a-f0-9]{64}$/.test(v) || "Expected SHA-256."),
+  ),
+});
+
 export const ProjectLocalCheck = Schema.Struct({
   command: Schema.optionalKey(ProjectCheckCommand),
+  preparation: Schema.optionalKey(ProjectCheckPreparation),
   setup: Schema.optionalKey(ProjectCheckCommand),
   timeoutMs: Schema.optionalKey(
     Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400_000 })),
