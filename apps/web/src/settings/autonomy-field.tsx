@@ -16,7 +16,7 @@ import {
 
 /**
  * How far this workspace's agents go unasked, with the selected level's
- * consequence in one line under it and the rest behind the ? by its label. Stepping up to Full is
+ * consequence in one line under it and the rest on its label's hover. Stepping up to Full is
  * confirmed in place first, since nothing asks after it.
  */
 export function AutonomyField({

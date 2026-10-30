@@ -13,13 +13,13 @@ import { ALL_SETTINGS_PAGES } from "./pages";
 import { WorkspaceSettingsPage } from "./workspace-page";
 
 /**
- * A setting is a short label and its control. What it does, its caveats and mechanics sit behind
- * the ? beside the label, and a consent or legal notice that must be read whole is marked with
+ * A setting is a short label and its control. What it does, its caveats and mechanics show on the
+ * label's hover or focus, and a consent or legal notice that must be read whole is marked with
  * `LONG_COPY`. What copy is left on screen, such as a status, stays one short line.
  */
 const MAX_WORDS = 25;
 
-/** A setting is named in four words or fewer; what it does is behind the ? beside it. */
+/** A setting is named in four words or fewer; what it does shows on its label's hover. */
 const MAX_LABEL_WORDS = 4;
 
 const words = (text: string) =>
@@ -79,13 +79,15 @@ function longLabels(): string[] {
 }
 
 /**
- * Descriptions shown under a setting's label, where they used to be: a row is its label, its ? and
- * its control.
+ * Descriptions shown under a setting's label, where they used to be: a row is its label, which
+ * holds its help, and its control.
  */
 function visibleDescriptions(): string[] {
   return [...document.body.querySelectorAll("[data-setting] [data-setting-label]")].flatMap(
     (label) => {
-      const next = label.parentElement?.nextElementSibling;
+      // A label with help sits in the element that shows it; the row's line is around that.
+      const name = label.closest('[data-testid="setting-help"]') ?? label;
+      const next = name.parentElement?.nextElementSibling;
       if (next?.tagName !== "P" || next.getAttribute("role") === "alert") return [];
       return next.closest(`[${LONG_COPY}]`) === null ? [next.textContent.trim()] : [];
     },
@@ -108,14 +110,25 @@ afterEach(() => {
   useServerSettings.setState({ settings: undefined });
 });
 
-/** A row as it was before labels went short and descriptions went behind the ?. */
+/** A row as it was before labels went short and descriptions went into their help. */
 const OldStyleRow = () => (
-  <div data-setting="">
-    <div>
-      <span data-setting-label="">Restart sessions after an MCP change</span>
+  <>
+    <div data-setting="">
+      <div>
+        <span data-setting-label="">Restart sessions after an MCP change</span>
+      </div>
+      <p>Reload live sessions when Gram adds or removes a server.</p>
     </div>
-    <p>Reload live sessions when Gram adds or removes a server.</p>
-  </div>
+    {/* The same with its label in the element that shows its help. */}
+    <div data-setting="">
+      <div>
+        <span data-testid="setting-help">
+          <span data-setting-label="">Restart on MCP change</span>
+        </span>
+      </div>
+      <p>Reload live sessions when Gram adds or removes a server.</p>
+    </div>
+  </>
 );
 
 describe("settings copy", () => {
@@ -180,6 +193,7 @@ describe("settings copy", () => {
     await renderPage(OldStyleRow, mockApi());
     expect(longLabels()).toEqual(["[6 words] Restart sessions after an MCP change"]);
     expect(visibleDescriptions()).toEqual([
+      "Reload live sessions when Gram adds or removes a server.",
       "Reload live sessions when Gram adds or removes a server.",
     ]);
   });
