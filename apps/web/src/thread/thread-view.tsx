@@ -141,13 +141,16 @@ export function ThreadView({
     );
 
   const { top, children, subagentUsage } = useSplitSubagents(messages);
-  // Rebuilt with every streamed frame, but the same chapters keep the rail from re-rendering.
-  const chapters = useStable(
-    useMemo(() => chaptersOf(top), [top]),
-    sameChapters,
-  );
   // An orchestrator's calm stream: its silent digests left out, its feature cards placed.
   const stream = useOrchestratorStream(summary?.thread, top);
+  // What the transcript renders, which every index handed to it counts in: an orchestrator's
+  // stream has fewer rows than `top`.
+  const shown = stream?.plan.messages ?? top;
+  // Rebuilt with every streamed frame, but the same chapters keep the rail from re-rendering.
+  const chapters = useStable(
+    useMemo(() => chaptersOf(shown), [shown]),
+    sameChapters,
+  );
   // Walks the whole history, so once per history change rather than on every scroll render.
   const turnEnds = useMemo(() => turnEndMessages(top), [top]);
   const turnStatus = summary?.status;
@@ -190,7 +193,7 @@ export function ThreadView({
     });
   const [chapterJump, setChapterJump] = useState<JumpRequest>();
   const jumpToChapter = (messageId: string) => {
-    const index = top.findIndex((message) => message.id === messageId);
+    const index = shown.findIndex((message) => message.id === messageId);
     if (index === -1) return;
     setChapterJump((previous) => ({
       index,
@@ -211,8 +214,11 @@ export function ThreadView({
   // A search hit (⌘K or ⌘F) is scrolled to and flashed once the transcript has the message.
   const revealIndex =
     revealRequest?.threadId === threadId
-      ? top.findIndex((m) => m.id === revealRequest.messageId)
+      ? shown.findIndex((m) => m.id === revealRequest.messageId)
       : -1;
+  // Loaded, though perhaps folded out of an orchestrator's stream, which no page brings back.
+  const revealLoaded =
+    revealRequest?.threadId === threadId && top.some((m) => m.id === revealRequest.messageId);
   const revealNonce = revealIndex === -1 ? undefined : revealRequest?.nonce;
   const revealJump = useMemo(
     () => (revealNonce === undefined ? undefined : { index: revealIndex, nonce: revealNonce }),
@@ -222,7 +228,7 @@ export function ThreadView({
   // A search hit older than the history loaded so far is paged in first, and again once a failed
   // page is retried.
   const unloadedHit =
-    revealRequest?.threadId === threadId && revealIndex === -1 && earlier
+    revealRequest?.threadId === threadId && !revealLoaded && earlier
       ? revealRequest.messageId
       : undefined;
   useEffect(() => {
@@ -242,8 +248,12 @@ export function ThreadView({
 
   const jumpToSubagent = (run: RunningSubagent) => {
     lastSubagentJump.current = run.toolCallId;
+    // `run.index` counts in `top`; the transcript counts in what it shows.
+    const messageId = top[run.index]?.id;
+    const index = shown.findIndex((m) => m.id === messageId);
+    if (index === -1) return;
     setChapterJump({
-      index: run.index,
+      index,
       nonce: Date.now(),
       toolCallId: run.toolCallId,
       ancestors: run.ancestors,
@@ -539,7 +549,7 @@ export function ThreadView({
         <Transcript
           threadId={threadId}
           loading={phase === "loading"}
-          messages={stream?.plan.messages ?? top}
+          messages={shown}
           subagents={children}
           subagentUsage={subagentUsage}
           streamingIds={streamingSet}

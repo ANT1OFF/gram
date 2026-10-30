@@ -149,10 +149,30 @@ describe("index.html boot script", () => {
     });
   });
 
-  it("follows the OS only for an explicit saved system mode", () => {
+  it("follows the OS only for an explicit saved system mode, with the palette's partner", () => {
     const saved = JSON.stringify({ state: { look: "glass", palette: "forest", mode: "system" } });
     expect(boot(saved, true)).toMatchObject({ look: "glass", palette: "forest", mode: "light" });
-    expect(boot(saved, false)).toMatchObject({ look: "glass", palette: "forest", mode: "dark" });
+    expect(boot(saved, false)).toMatchObject({
+      look: "glass",
+      palette: "forest-dark",
+      mode: "dark",
+    });
+  });
+
+  it.each([
+    ["neutral-dark", "light", "neutral"],
+    ["tokyo-light", "dark", "tokyo-night"],
+    ["neutral-dark", "dark", "neutral-dark"],
+    ["slate-dark", "light", "slate-dark"],
+  ])("first-paints a stored %s in %s as ThemeRoot will, %s", (palette, mode, painted) => {
+    const saved = JSON.stringify({ state: { palette, mode } });
+    expect(boot(saved)["palette"]).toBe(painted);
+    expect(
+      themeAttributes(
+        { ...DEFAULT_THEME, palette, mode: mode as "light" | "dark" },
+        DEFAULT_SYSTEM_PREFS,
+      )["data-palette"],
+    ).toBe(painted);
   });
 });
 

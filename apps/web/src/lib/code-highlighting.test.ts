@@ -57,9 +57,14 @@ it("bounds cached source and concurrent work", async () => {
     { length: 64 },
     (_, index) => new Promise((resolve) => highlightCode(`echo ${index}`, "shellscript", resolve)),
   );
-  expect(highlightCode("echo overloaded", "shellscript")).toBeNull();
+  // Past the bound it waits its turn, rather than never being coloured.
+  const overloaded = new Promise((resolve) =>
+    highlightCode("echo overloaded", "shellscript", resolve),
+  );
+  expect(codeToTokens).toHaveBeenCalledTimes(0);
   await Promise.all(requests);
-  expect(codeToTokens).toHaveBeenCalledTimes(64);
+  expect(JSON.stringify(await overloaded)).toContain("echo overloaded");
+  expect(codeToTokens).toHaveBeenCalledTimes(65);
   await new Promise((resolve) => highlightCode("echo new", "shellscript", resolve));
   expect(highlightCode("echo 0", "shellscript")).toBeNull();
 });

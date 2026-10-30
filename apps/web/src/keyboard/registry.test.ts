@@ -206,6 +206,33 @@ describe("dispatchShortcut", () => {
     expect(closePane).toHaveBeenCalledTimes(2);
   });
 
+  it("takes a held key's repeats without running a once-per-press shortcut, or anything under it", () => {
+    const below = vi.fn();
+    const allow = vi.fn();
+    cleanups.push(
+      registerShortcut({ id: "b", keys: "enter", label: "B", group: "App", run: below }),
+    );
+    cleanups.push(
+      registerShortcut({
+        id: "allow",
+        keys: "enter",
+        label: "Allow",
+        group: "Thread",
+        once: true,
+        run: allow,
+      }),
+    );
+    const enter = { key: "Enter", code: "Enter" };
+    expect(dispatchShortcut(key(enter), true)).toBe(true);
+    // Holding Enter: the next card under it would be answered too.
+    expect(dispatchShortcut(key({ ...enter, repeat: true }), true)).toBe(true);
+    expect(dispatchShortcut(key({ ...enter, repeat: true }), true)).toBe(true);
+    expect(allow).toHaveBeenCalledOnce();
+    expect(below).not.toHaveBeenCalled();
+    expect(dispatchShortcut(key(enter), true)).toBe(true);
+    expect(allow).toHaveBeenCalledTimes(2);
+  });
+
   it("runs the most recent matching shortcut whose `when` passes", () => {
     const first = vi.fn();
     const second = vi.fn();

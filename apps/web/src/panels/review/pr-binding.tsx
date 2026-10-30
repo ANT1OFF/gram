@@ -1,10 +1,11 @@
 import type { ThreadId } from "@gram/contracts";
 import { GitPullRequest } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
 import { Button } from "@/components/ui/button";
+import { useReturnFocus } from "@/lib/use-return-focus";
 import { useThreadsStore } from "@/stores/threads";
 
 import { targetBadge } from "../pr-identity";
@@ -108,10 +109,14 @@ export function FollowingStatus({ binding }: { binding: ReturnType<typeof usePrB
 export function BindPrForm({
   binding,
   onDone,
+  returnFocus,
 }: {
   binding: ReturnType<typeof usePrBinding>;
   onDone: () => void;
+  /** Where focus goes when the form closes on it, since the button that opened it went with it. */
+  returnFocus?: () => Element | null | undefined;
 }) {
+  useReturnFocus(returnFocus);
   const [value, setValue] = useState("");
   const { action, bind } = binding;
   return (
@@ -153,9 +158,14 @@ export function PrBinding({ threadId }: { threadId: ThreadId }) {
   const binding = usePrBinding(threadId);
   const { boundPr, hasPr, action, watchCi } = binding;
   const [formOpen, setFormOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div data-testid="pr-binding" className="flex flex-col gap-1 border-b border-border px-3 py-2">
+    <div
+      ref={rootRef}
+      data-testid="pr-binding"
+      className="flex flex-col gap-1 border-b border-border px-3 py-2"
+    >
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {hasPr && (
           <>
@@ -184,7 +194,14 @@ export function PrBinding({ threadId }: { threadId: ThreadId }) {
           )
         )}
       </div>
-      {formOpen && !boundPr && <BindPrForm binding={binding} onDone={() => setFormOpen(false)} />}
+      {formOpen && !boundPr && (
+        <BindPrForm
+          binding={binding}
+          onDone={() => setFormOpen(false)}
+          // Bind a PR… back again, or once bound what the row offers instead.
+          returnFocus={() => rootRef.current?.querySelector("button")}
+        />
+      )}
       <Notice notice={action.notice} />
     </div>
   );

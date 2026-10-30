@@ -90,7 +90,7 @@ import {
 import { MODE_ICONS, MODE_OPTIONS } from "./options";
 import { Picker } from "./picker";
 import { inOpenFence } from "./mention";
-import { enterSends } from "./send-key";
+import { enterSends, imeComposing } from "./send-key";
 import { prefillDraftProject } from "./draft-prefill";
 import { filterCommands, slashQuery } from "./slash";
 import { SlashMenu, SlashNote } from "./slash-menu";
@@ -703,7 +703,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
+    const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !imeComposing(event);
     if (menuOpen && plain) {
       const next =
         verbs.length > 0

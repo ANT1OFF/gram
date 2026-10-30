@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { DEFAULT_SETTINGS, type ThreadId, type WorkspaceState } from "@gram/contracts";
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -180,6 +180,17 @@ describe("Composer / verbs on the orchestrator", () => {
     await waitFor(() => expect(slashMenu()).not.toBeNull());
     expect(verbMenu()).toBeNull();
     expect(within(slashMenu()!).getByRole("option", { name: /\/model/ })).toBeTruthy();
+  });
+
+  it("leaves Enter and Escape to an input method still composing", async () => {
+    const { composer, user } = await setup();
+    await user.click(composer);
+    await user.type(composer, "/mod");
+    await waitFor(() => expect(slashMenu()).not.toBeNull());
+    fireEvent.keyDown(composer, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(composer, { key: "Escape", keyCode: 229 });
+    expect(composer.value).toBe("/mod");
+    expect(slashMenu()).not.toBeNull();
   });
 
   it("closes on Escape for that /, as the slash menu does", async () => {

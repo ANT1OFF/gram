@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { imeComposing } from "@/composer/send-key";
 import { useReturnFocus } from "@/lib/use-return-focus";
 
 import { useThreadSearch, type ThreadSearchState } from "./use-thread-search";
@@ -62,6 +63,7 @@ export function FindBar({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (imeComposing(event)) return;
     if (event.key === "Enter") {
       event.preventDefault();
       step(event.shiftKey ? -1 : 1);

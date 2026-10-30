@@ -84,8 +84,10 @@ export function useSetStage(workspaceId: WorkspaceId) {
       hold.release();
       queryClient.setQueryData(workspacesKey, workspaces);
       queryClient.setQueryData(ledgerKey, ledger);
-      // What was put back may itself be stale by now: a ledger streamed in while the call ran.
+      // What was put back may itself be stale by now: a ledger streamed in, or the workspaces were
+      // read again, while the call ran.
       void queryClient.invalidateQueries({ queryKey: ledgerKey });
+      void queryClient.invalidateQueries({ queryKey: workspacesKey });
       notifyError("Couldn't set the stage", error);
       return false;
     }

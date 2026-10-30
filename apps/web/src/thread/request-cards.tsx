@@ -606,6 +606,7 @@ export function ApprovalCard({
       keys: "enter",
       label: "Allow",
       group: "Thread",
+      once: true,
       run: () => allow("once"),
     },
     active && pause === undefined,
@@ -617,12 +618,13 @@ export function ApprovalCard({
       label: "Allow always",
       group: "Thread",
       when: () => canAlways,
+      once: true,
       run: () => allow("always"),
     },
     active && pause === undefined,
   );
   useShortcut(
-    { id: "approval.deny", keys: "escape", label: "Deny", group: "Thread", run: deny },
+    { id: "approval.deny", keys: "escape", label: "Deny", group: "Thread", once: true, run: deny },
     active && pause === undefined,
   );
 

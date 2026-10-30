@@ -64,6 +64,21 @@ describe("PrBinding", () => {
     expect(screen.getByRole("button", { name: "Bind a PR…" })).toBeTruthy();
   });
 
+  it("hands focus back to Bind a PR… when Escape closes the form", async () => {
+    setThread(undefined, undefined);
+    renderWithApi(<PrBinding threadId={T} />, {});
+    const open = screen.getByRole("button", { name: "Bind a PR…" });
+    open.focus();
+    fireEvent.click(open);
+    const field = screen.getByRole("textbox", { name: "Pull request number or URL" });
+    field.focus();
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Bind a PR…" })),
+    );
+  });
+
   it("follows a bound PR, watches its CI and unbinds it", async () => {
     setThread({ repo: "example/api", number: 412, monitor: false }, mockGitState(T, undefined));
     const prSetMonitor = vi.fn(async () => undefined);

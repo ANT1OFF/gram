@@ -38,6 +38,7 @@ import { agoText } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import { spin, Spinner, StatusMark, Swap, type MarkPhase } from "@/motion";
+import { imeComposing } from "@/composer/send-key";
 import { useThreadsStore } from "@/stores/threads";
 
 import {
@@ -100,6 +101,7 @@ function TextEdit({
 }) {
   const [text, setText] = useState(value);
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (imeComposing(event)) return;
     if (event.key === "Enter") {
       event.preventDefault();
       onDone(text.trim());
