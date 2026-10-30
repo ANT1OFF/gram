@@ -38,16 +38,16 @@ test("the toolbar stays one row as it narrows, folding pickers into …", async 
   const mode = toolbar.getByRole("combobox", { name: "Mode", exact: true });
   await expect(mode).toContainText("Ask");
 
-  // Speed is a separate picker, which widens the glyph-only stage.
-  await squeeze(page, 480);
+  // Speed at the CLI's default waits in "…", which is there from the start.
+  const more = toolbar.getByRole("button", { name: "More composer controls" });
+  await expect(more).toBeVisible();
+  await expect(toolbar.getByRole("combobox", { name: "Speed", exact: true })).toHaveCount(0);
+  await squeeze(page, 400);
   await expect(mode).toHaveAttribute("title", /^Mode: Ask/);
-  await expect(toolbar.getByTestId("composer-overflow")).toHaveCount(0);
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
 
   await squeeze(page, 280);
   await expect(mode).toHaveCount(0);
-  const more = toolbar.getByRole("button", { name: "More composer controls" });
-  await expect(more).toBeVisible();
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
   const edge = await right(message);
   expect(await right(page.getByRole("button", { name: "Stop", exact: true }))).toBeLessThanOrEqual(
@@ -60,6 +60,7 @@ test("the toolbar stays one row as it narrows, folding pickers into …", async 
   // Narrower still, Steer folds too: into "…", and off the toolbar. It shows only with a draft,
   // and here still fits, so its leaving the toolbar below is the fold and not Steer going away.
   await message.fill("use the fake clock");
+  await squeeze(page, 320);
   const steer = toolbar.getByRole("button", { name: "Steer now" });
   await expect(steer).toBeVisible();
   await squeeze(page, 230);

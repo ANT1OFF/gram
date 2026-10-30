@@ -7,8 +7,8 @@ test("watches reviews and babysits with a round budget from the PR panel", async
   // Wide enough that the one bar keeps the PR badge among its chips; narrower, it folds away.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/t/t-flaky");
-  // The thread header's PR badge opens the PR panel.
-  await page.getByTestId("pane-pr-badge").click();
+  // The PR strip's number opens the PR panel.
+  await page.getByTestId("pr-row").getByTestId("pr-row-number").click();
   const panel = page.getByTestId("right-panel");
 
   const watch = panel.getByRole("switch", { name: "Watch reviews" });

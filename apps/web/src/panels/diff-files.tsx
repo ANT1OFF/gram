@@ -30,18 +30,24 @@ export interface DiffFocus {
   hunk?: number | undefined;
 }
 
-/** Glyph + text label per file status, so status never relies on colour alone. */
+/**
+ * Glyph, letter and label per file status, so status never relies on colour alone. A row shows
+ * the letter, git's own, with the label on hover and for a screen reader.
+ */
 export const FILE_STATUS: Record<
   DiffFileStatus,
-  { icon: LucideIcon; label: string; tone: string }
+  { icon: LucideIcon; letter: string; label: string; tone: string }
 > = {
-  added: { icon: FilePlus, label: "Added", tone: "text-success" },
-  modified: { icon: FilePen, label: "Modified", tone: "text-info" },
-  deleted: { icon: FileMinus, label: "Deleted", tone: "text-destructive" },
-  renamed: { icon: FileSymlink, label: "Renamed", tone: "text-highlight" },
-  untracked: { icon: FileQuestionMark, label: "Untracked", tone: "text-warning" },
+  added: { icon: FilePlus, letter: "A", label: "Added", tone: "text-success" },
+  modified: { icon: FilePen, letter: "M", label: "Modified", tone: "text-info" },
+  deleted: { icon: FileMinus, letter: "D", label: "Deleted", tone: "text-destructive" },
+  renamed: { icon: FileSymlink, letter: "R", label: "Renamed", tone: "text-highlight" },
+  untracked: { icon: FileQuestionMark, letter: "U", label: "Untracked", tone: "text-warning" },
 };
 
+/** A file's own actions, over the row's end while it is hovered or one of them has focus. */
+const ROW_ACTIONS =
+  "absolute inset-y-0 right-0 flex items-center bg-panel opacity-0 focus-within:opacity-100 group-hover/file:opacity-100";
 const ROW_ACTION =
   "me-2 shrink-0 rounded-sm p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
 
@@ -174,7 +180,7 @@ function DiffFileRow({
 
   return (
     <li ref={rowRef} data-testid="diff-file" data-path={file.path}>
-      <div className="flex items-center hover:bg-muted/50">
+      <div className="group/file relative flex items-center hover:bg-muted/50">
         <button
           type="button"
           data-diff-file-header
@@ -195,7 +201,13 @@ function DiffFileRow({
           <span className="min-w-0 flex-1 truncate font-mono" title={file.path}>
             {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
           </span>
-          <span className={cn("shrink-0", status.tone)}>{status.label}</span>
+          <span
+            title={status.label}
+            className={cn("shrink-0 font-mono font-semibold", status.tone)}
+          >
+            <span aria-hidden>{status.letter}</span>
+            <span className="sr-only">{status.label}</span>
+          </span>
           <span className="shrink-0 font-mono tabular-nums">
             <span className="text-success">
               +<NumberTicker value={file.additions} />
@@ -205,39 +217,41 @@ function DiffFileRow({
             </span>
           </span>
         </button>
-        {onReveal && (
-          <button
-            type="button"
-            aria-label={`Show ${file.path} in Files`}
-            title="Show in Files"
-            onClick={() => onReveal(file.path)}
-            className={ROW_ACTION}
-          >
-            <FolderSearch aria-hidden className="size-3.5" />
-          </button>
-        )}
-        {onOpenInEditor && (
-          <button
-            type="button"
-            aria-label={`Open ${file.path} in editor`}
-            title="Open in editor"
-            onClick={() => onOpenInEditor(file.path)}
-            className={ROW_ACTION}
-          >
-            <SquareArrowOutUpRight aria-hidden className="size-3.5" />
-          </button>
-        )}
-        {onRevealInFileManager && (
-          <button
-            type="button"
-            aria-label={revealLabel(file.path)}
-            title={revealLabel()}
-            onClick={() => onRevealInFileManager(file.path)}
-            className={ROW_ACTION}
-          >
-            <FolderOpen aria-hidden className="size-3.5" />
-          </button>
-        )}
+        <div className={ROW_ACTIONS}>
+          {onReveal && (
+            <button
+              type="button"
+              aria-label={`Show ${file.path} in Files`}
+              title="Show in Files"
+              onClick={() => onReveal(file.path)}
+              className={ROW_ACTION}
+            >
+              <FolderSearch aria-hidden className="size-3.5" />
+            </button>
+          )}
+          {onOpenInEditor && (
+            <button
+              type="button"
+              aria-label={`Open ${file.path} in editor`}
+              title="Open in editor"
+              onClick={() => onOpenInEditor(file.path)}
+              className={ROW_ACTION}
+            >
+              <SquareArrowOutUpRight aria-hidden className="size-3.5" />
+            </button>
+          )}
+          {onRevealInFileManager && (
+            <button
+              type="button"
+              aria-label={revealLabel(file.path)}
+              title={revealLabel()}
+              onClick={() => onRevealInFileManager(file.path)}
+              className={ROW_ACTION}
+            >
+              <FolderOpen aria-hidden className="size-3.5" />
+            </button>
+          )}
+        </div>
       </div>
       <Expand open={open} id={bodyId}>
         {rendered && (

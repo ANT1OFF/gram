@@ -759,7 +759,7 @@ test("an orchestrator shows no PR of its own, and its PR tab points at the Board
 
   // A worker keeps its own.
   await threadRow(page, made.inReview).click();
-  await expect(page.getByTestId("pane-pr-badge")).toBeVisible();
+  await expect(page.getByTestId("pr-row")).toBeVisible();
 });
 
 test("finished work is under a folded Done today, and a merged worker offers its cleanup", async ({

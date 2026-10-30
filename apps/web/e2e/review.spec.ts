@@ -3,19 +3,19 @@ import { expect, test } from "@playwright/test";
 test("shows the review glyph, resolves a bot thread and asks the agent to address one", async ({
   page,
 }) => {
-  // Wide enough that the one bar keeps the PR badge among its chips; narrower, it folds away.
+  // Wide enough that the PR strip's review chip keeps its words.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/t/t-flaky");
-  const badge = page.getByTestId("pane-pr-badge");
+  // The PR strip owns the thread's PR: its state, number and the review bot's verdict.
+  const row = page.getByTestId("pr-row");
+  const badge = row.getByTestId("pr-row-number");
   await expect(badge).toContainText("#412");
-  // The pane header carries the review glyph alongside the PR's state and number.
-  await expect(
-    badge.getByRole("img", { name: "Review bot: 2 blockers", exact: true }),
-  ).toBeVisible();
+  await expect(row.getByTestId("pr-row-review")).toHaveAccessibleName(/^Review bot: 2 blockers/);
+  await expect(row.getByRole("img").first()).toHaveAttribute("data-kind", "failing");
+  // The header doesn't say it again.
+  await expect(page.getByTestId("pane-pr-badge")).toHaveCount(0);
 
-  await expect(badge).toHaveAttribute("data-state", "failing");
-
-  // The badge opens the PR panel, whatever tab the panel was on.
+  // The number opens the PR panel, whatever tab the panel was on.
   const panel = page.getByTestId("right-panel");
   await panel.getByRole("tab", { name: "Diff", exact: true }).click();
   await badge.click();
@@ -31,9 +31,7 @@ test("shows the review glyph, resolves a bot thread and asks the agent to addres
   await restoreTimers.getByRole("button", { name: "Resolve" }).click();
   await expect(restoreTimers).toBeHidden();
   await expect(review.getByRole("button", { name: "Resolved (2)" })).toBeVisible();
-  await expect(
-    badge.getByRole("img", { name: "Review bot: 1 blocker", exact: true }),
-  ).toBeVisible();
+  await expect(row.getByTestId("pr-row-review")).toHaveAccessibleName(/^Review bot: 1 blocker/);
 
   const lastError = review.getByRole("article", { name: "Blocker: src/retry.ts:38-42" });
   await lastError.getByRole("button", { name: "Ask agent to address" }).click();

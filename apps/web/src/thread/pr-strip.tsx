@@ -24,10 +24,12 @@ import {
 
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
-import { openPrPanel, openPrReview } from "@/components/git-badges";
+import { openPrPanel, openPrReview, PrBadgeMarks } from "@/components/git-badges";
+import { PrBadgeMenuItems } from "@/components/pr-badge-menu";
 import { PR_GLYPH_DISPLAY, prGlyphOf, prGlyphWords } from "@/components/pr-glyph-model";
 import type { PrFacts } from "@/components/pr-marks-model";
 import { ReviewStatusLabel, reviewStatusOf } from "@/components/review-glyph";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { RingSpinner } from "@/motion";
@@ -195,37 +197,54 @@ function OwnRow({
   cleanup: MergedCleanup | undefined;
 }) {
   const api = useApi();
+  const git = useThreadsStore((s) => s.byId[threadId]?.git);
+  const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
+  const badgePr = git?.pr;
   const repo = row.fullRepo;
+  // Right-click has the menu the header's PR badge had, which hides while this row shows.
   return (
-    <div data-testid="pr-row" className={ROW}>
-      <div className="flex min-w-0 flex-1 items-center gap-0.5">
-        <StateIcon facts={row.facts} />
-        <PrNumberLink
-          number={row.number}
-          facts={row.facts}
-          place={row}
-          card={row}
-          title="Open the PR panel"
-          onOpen={() => openPrPanel(threadId)}
-          prewarm={prewarm}
-        />
-        <RepoLink threadId={threadId} place={row} />
-        <BranchLink threadId={threadId} place={row} />
-      </div>
-      {cleanup !== undefined && <CleanupChip cleanup={cleanup} />}
-      <DiffChip additions={row.additions} deletions={row.deletions} />
-      <ReviewChip threadId={threadId} review={row.status?.review} />
-      <CiMenu threadId={threadId} row={row} runs={runs} />
-      {repo !== undefined && (
-        <RowClose
-          label={hideLabel(row.number)}
-          run={async () => {
-            await api.prHide(threadId, hiddenEntryOf({ repo, number: row.number }, row.status));
-            cleanup?.dismiss();
-          }}
-        />
+    <ContextMenu disabled={badgePr === undefined}>
+      <ContextMenuTrigger render={<div data-testid="pr-row" className={ROW} />}>
+        <div className="flex min-w-0 flex-1 items-center gap-0.5">
+          <StateIcon facts={row.facts} />
+          <PrNumberLink
+            number={row.number}
+            facts={row.facts}
+            place={row}
+            card={row}
+            title="Open the PR panel"
+            onOpen={() => openPrPanel(threadId)}
+            prewarm={prewarm}
+          />
+          <RepoLink threadId={threadId} place={row} />
+          <BranchLink threadId={threadId} place={row} />
+          {/* The header badge's own marks (an armed merge, babysitting), which it hides for this row. */}
+          {git !== undefined && badgePr?.number === row.number && (
+            <span data-testid="pr-row-marks" className="flex shrink-0 items-center gap-1 px-1">
+              <PrBadgeMarks threadId={threadId} git={git} thread={thread} />
+            </span>
+          )}
+        </div>
+        {cleanup !== undefined && <CleanupChip cleanup={cleanup} />}
+        <DiffChip additions={row.additions} deletions={row.deletions} />
+        <ReviewChip threadId={threadId} review={row.status?.review} />
+        <CiMenu threadId={threadId} row={row} runs={runs} />
+        {repo !== undefined && (
+          <RowClose
+            label={hideLabel(row.number)}
+            run={async () => {
+              await api.prHide(threadId, hiddenEntryOf({ repo, number: row.number }, row.status));
+              cleanup?.dismiss();
+            }}
+          />
+        )}
+      </ContextMenuTrigger>
+      {badgePr !== undefined && (
+        <ContextMenuContent>
+          <PrBadgeMenuItems threadId={threadId} pr={badgePr} />
+        </ContextMenuContent>
       )}
-    </div>
+    </ContextMenu>
   );
 }
 

@@ -1,11 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 test("turns babysit on from the PR panel and shows the first review notice", async ({ page }) => {
-  // Wide enough that the one bar keeps the PR badge among its chips; narrower, it folds away.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/t/t-flaky");
-  // The thread header's PR badge, which opens the PR panel.
-  const badge = page.getByTestId("pane-pr-badge");
+  // The PR strip's number, which opens the PR panel.
+  const badge = page.getByTestId("pr-row").getByTestId("pr-row-number");
   await expect(badge).toContainText("#412");
   await badge.click();
 
@@ -19,9 +18,10 @@ test("turns babysit on from the PR panel and shows the first review notice", asy
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await expect(panel.getByTestId("babysit-status")).toContainText("Watching");
-  // The badge carries babysitting in a glyph of its own.
-  await expect(badge.getByTestId("babysit-glyph")).toHaveAttribute("data-phase", "watching");
-  await expect(badge.getByRole("img", { name: /^Babysitting/ })).toBeVisible();
+  // The PR row carries babysitting in a glyph of its own.
+  const marks = page.getByTestId("pr-row").getByTestId("pr-row-marks");
+  await expect(marks.getByTestId("babysit-glyph")).toHaveAttribute("data-phase", "watching");
+  await expect(marks.getByRole("img", { name: /^Babysitting/ })).toBeVisible();
 
   const notice = page.getByRole("article", { name: "Review update on #412" });
   await expect(notice).toBeVisible();

@@ -1,18 +1,26 @@
 import { expect, test } from "@playwright/test";
 
-test("the pane's PR badge menu copies, opens and refreshes the PR", async ({ page }) => {
-  // Wide enough that the one bar keeps the PR badge among its chips; narrower, it folds away.
+test("the PR row's menu copies, opens and refreshes the PR", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/t/t-flaky");
-  const badge = page.getByTestId("pane-pr-badge");
-  await expect(page.getByTestId("pane-merge-state")).toHaveText("Blocked");
-  await expect(page.getByTestId("pane-review-decision")).toHaveText("Changes requested");
+  // The PR strip owns the PR, so the header's badge and chips wait until it's hidden there.
+  const row = page.getByTestId("pr-row");
+  await expect(row.getByTestId("pr-row-number")).toContainText("#412");
+  await expect(page.getByTestId("pane-pr-badge")).toHaveCount(0);
+  await expect(page.getByTestId("pane-merge-state")).toHaveCount(0);
 
-  await badge.click({ button: "right" });
+  await row.click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Copy PR link" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Open #412 on GitHub" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Refresh from GitHub" }).click();
   await expect(page.getByRole("menuitem", { name: "Copy PR link" })).toHaveCount(0);
+
+  // Hidden from the strip, the PR is the header's again.
+  await row.getByRole("button", { name: /^Hide #412 / }).click();
+  await expect(row).toHaveCount(0);
+  await expect(page.getByTestId("pane-pr-badge")).toContainText("#412");
+  await expect(page.getByTestId("pane-merge-state")).toHaveText("Blocked");
+  await expect(page.getByTestId("pane-review-decision")).toHaveText("Changes requested");
 });
 
 test("rerun failed checks, then squash-merge the PR from the panel", async ({ page }) => {

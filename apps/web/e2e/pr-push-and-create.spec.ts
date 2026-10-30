@@ -16,8 +16,8 @@ test("creates a PR for an unpublished branch, pushing it first", async ({ page }
   await dialog.getByRole("button", { name: "Push and create" }).click();
   await expect(dialog).toBeHidden();
 
-  // The thread's header shows the new PR, where its sidebar row used to.
-  await expect(page.getByTestId("pane-pr-badge")).toContainText("#418");
+  // The PR strip shows the new PR, where its sidebar row used to.
+  await expect(page.getByTestId("pr-row").getByTestId("pr-row-number")).toContainText("#418");
   await expect(panel.getByTestId("push-button")).toBeHidden();
   await expect(panel.getByText("No PR for this branch")).toBeHidden();
 });

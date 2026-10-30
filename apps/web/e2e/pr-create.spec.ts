@@ -19,8 +19,8 @@ test("publishes a branch, opens its PR and shows the badge", async ({ page }) =>
   await dialog.getByRole("button", { name: "Create PR" }).click();
   await expect(dialog).toBeHidden();
 
-  // The thread's header shows the new PR, where its sidebar row used to.
-  const badge = page.getByTestId("pane-pr-badge");
+  // The PR strip shows the new PR, where its sidebar row used to.
+  const badge = page.getByTestId("pr-row").getByTestId("pr-row-number");
   await expect(badge).toContainText("#418");
   await expect(panel.getByText("No PR for this branch")).toBeHidden();
 });

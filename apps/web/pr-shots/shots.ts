@@ -1398,6 +1398,27 @@ export const SHOTS: readonly Shot[] = [
     open: openThread,
   },
   {
+    name: "diff-panel",
+    title: "The scripted thread's Diff panel at its default width",
+    open: openThread,
+    element: (page) => page.getByTestId("right-panel"),
+  },
+  {
+    name: "thread-nothing-to-diff",
+    title: "A merged worker with nothing to diff, the right panel stored open",
+    open: async (page) => {
+      const made = await openWorkersScenario(page);
+      await pressWorkersList(page);
+      await page
+        .getByTestId("workers-list")
+        .locator(`[data-thread-id="${made.doneToday}"]`)
+        .click();
+      await expect(page).toHaveURL(new RegExp(`/t/${made.doneToday}$`));
+      await page.getByTestId("pane-header").waitFor();
+      await page.waitForLoadState("networkidle");
+    },
+  },
+  {
     name: "transcript-turn-open",
     title: "The scripted thread's finished turn with its tool groups opened, down to the subagent",
     open: async (page) => {

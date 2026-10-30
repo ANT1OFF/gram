@@ -16,6 +16,12 @@ for (const width of [880, 1440]) {
     await expect(panel.getByTestId("pr-panel")).toBeVisible();
     await page.evaluate(() => window.gramMock?.simulateUnpushed("t-flaky" as never, 2));
     await expect(panel.getByTestId("pr-panel-push").getByRole("button")).toBeVisible();
+    // Hidden from the PR strip, the PR's chips are the header's, and there are too many to fit.
+    await page
+      .getByTestId("pr-row")
+      .getByRole("button", { name: /^Hide #412 / })
+      .click();
+    await expect(page.getByTestId("pr-row")).toHaveCount(0);
 
     const header = page.getByTestId("pane-header").first();
     const overflow = await header.evaluate((el) => el.scrollWidth - el.clientWidth);

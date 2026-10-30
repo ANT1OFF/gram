@@ -104,6 +104,38 @@ describe("fitShell", () => {
 });
 
 describe("panel toggle", () => {
+  it("keeps the Diff tab closed on a thread with nothing to diff, until opened there", () => {
+    s().setShellContext({ windowWidth: 1440, threadInView: true, threadQuiet: true, page: "/t/q" });
+    expect(fitShell(s()).panel).toBe("none");
+    // Another tab is about something else, so the stored panel shows it.
+    expect(fit({ panelTab: "pr" })).toMatchObject({ panel: "side" });
+    s().togglePanel();
+    expect(s()).toMatchObject({ panelOpen: true, panelPeek: true });
+    expect(fitShell(s()).panel).toBe("side");
+    s().togglePanel();
+    expect(s()).toMatchObject({ panelOpen: true, panelPeek: false });
+    // Stored closed, the first toggle still opens it, and it stays stored closed.
+    s().setPanel({ open: false, width: PANEL_WIDTH.default, tab: "diff" });
+    s().togglePanel();
+    expect(s()).toMatchObject({ panelOpen: false, panelPeek: true });
+    expect(fitShell(s()).panel).toBe("side");
+    s().togglePanel();
+    expect(fitShell(s()).panel).toBe("none");
+    // Picking Diff in an open panel doesn't close it.
+    s().setPanel({ open: true, width: PANEL_WIDTH.default, tab: "pr" });
+    expect(fitShell(s()).panel).toBe("side");
+    s().setPanelTab("diff");
+    expect(fitShell(s()).panel).toBe("side");
+    // A thread with changes gets the stored panel back.
+    s().setShellContext({
+      windowWidth: 1440,
+      threadInView: true,
+      threadQuiet: false,
+      page: "/t/a",
+    });
+    expect(fitShell(s()).panel).toBe("side");
+  });
+
   it("opens the panel on a page without a thread for that page only", () => {
     s().togglePanel();
     expect(s().panelOpen).toBe(false);
