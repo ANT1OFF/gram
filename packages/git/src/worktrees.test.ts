@@ -160,18 +160,58 @@ describe.skipIf(!hasGit)("worktrees", () => {
       expect(plan.worktreeDir).toBe(nodePath.join(repo, ".worktrees", "feat-x"));
     });
 
-    it("reuses a registered worktree root but never a stray dir", () => {
+    it("never reuses a detached or stray directory by its flattened name", () => {
       const repo = nodePath.join(tmp(), "repo");
       const wtDir = nodePath.join(repo, ".worktrees", "feat-x");
       fs.mkdirSync(wtDir, { recursive: true });
       expect(planPlacement([row(repo, "master"), row(wtDir)], repo, "feat/x", "feat/x").reuse).toBe(
-        true,
+        false,
       );
       const stray = nodePath.join(repo, ".worktrees", "feat-y");
       fs.mkdirSync(stray, { recursive: true });
       expect(planPlacement([], repo, "feat/y", "feat/y").reuse).toBe(false);
     });
   });
+
+  it.live("refuses a folder collision with a different branch", () =>
+    Effect.gen(function* () {
+      const { repo, wt } = repoWithWorktree("feat-a");
+      const error = yield* Effect.flip(
+        createWorktree({
+          repoPath: repo,
+          branch: "feat/a",
+          openCheckouts: [],
+        }),
+      );
+      expect(error.reason).toBe("invalidRequest");
+      expect(run(wt, "branch", "--show-current").trim()).toBe("feat-a");
+      expect(run(repo, "branch", "--list", "feat/a").trim()).toBe("");
+    }).pipe(provide),
+  );
+
+  it.live("rejects escaping and invalid branch names before reusing a checkout", () =>
+    Effect.gen(function* () {
+      const repo = makeRepo(tmp());
+      for (const branch of [
+        "..",
+        ".",
+        "../main",
+        "/main",
+        "feat/../main",
+        "feat//main",
+        "feat/.hidden",
+        "feat.lock",
+        "feat.",
+        "HEAD",
+      ]) {
+        const error = yield* Effect.flip(
+          createWorktree({ repoPath: repo, branch, openCheckouts: [] }),
+        );
+        expect(error.reason, branch).toBe("invalidRequest");
+      }
+      expect(run(repo, "branch", "--show-current").trim()).toBe("main");
+    }).pipe(provide),
+  );
 
   describe("add", () => {
     it.live("creates a new branch checkout", () =>
