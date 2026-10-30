@@ -247,6 +247,22 @@ describe("grantPermission", () => {
     expect(ask("media", "http://127.0.0.1:4317", [])).toBe(false);
   });
 
+  it("refuses screen capture, which Electron reports apart from media since 45", () => {
+    const page = "http://127.0.0.1:4317/thread/1";
+    expect(ask("display-capture", page, ["video"])).toBe(false);
+    expect(ask("display-capture", page, ["video", "audio"])).toBe(false);
+    expect(ask("display-capture", page)).toBe(false);
+    expect(
+      grantPermission(
+        permissionRequestAsk("display-capture", { mediaTypes: ["video"] }, page),
+        trusted,
+      ),
+    ).toBe(false);
+    expect(
+      grantPermission(permissionCheckAsk("display-capture", "http://127.0.0.1:4317", {}), trusted),
+    ).toBe(false);
+  });
+
   it("keeps the app's other permissions, and grants nothing to another origin", () => {
     expect(ask("clipboard-sanitized-write", "http://127.0.0.1:4317/")).toBe(true);
     expect(ask("media", "http://127.0.0.1:9999/", ["audio"])).toBe(false);
