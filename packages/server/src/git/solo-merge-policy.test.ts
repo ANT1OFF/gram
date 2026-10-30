@@ -83,6 +83,25 @@ describe("solo merge readiness", () => {
         local,
       ),
     ).toMatch(/not fresh, green/);
+    // The tip is what counts, not the base GitHub recorded for the PR when it last synced.
+    expect(
+      mergeBlocker(
+        intent,
+        green({ checks: "pending", baseTipOid: "base-2" }),
+        "solo",
+        undefined,
+        local,
+      ),
+    ).toMatch(/not fresh, green/);
+    expect(
+      mergeBlocker(
+        intent,
+        green({ checks: "pending", baseRefOid: "base-0", baseTipOid: "base-1" }),
+        "solo",
+        undefined,
+        local,
+      ),
+    ).toBeUndefined();
     const { baseRefOid: _, ...baseUnknown } = green({ checks: "pending" });
     expect(mergeBlocker(intent, baseUnknown, "solo", undefined, local)).toMatch(/not fresh, green/);
     // A genuine failure on the same head still holds the merge, as do GitHub's own refusals.

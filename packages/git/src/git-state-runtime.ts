@@ -2,7 +2,7 @@
 // network tier (PR badge, throttled background fetch, rebase signal against the PR base), and the
 // watcher stream.
 
-import type { GitState, PrStatus } from "@gram/contracts";
+import { currentBaseOf, type GitState, type PrStatus } from "@gram/contracts";
 import * as fs from "node:fs";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -96,12 +96,13 @@ const maybeFetch = (
     if (roots === undefined) return false;
     const last = lastFetch.get(roots.common);
     if (last !== undefined && Date.now() - last < FETCH_THROTTLE_MS) return false;
-    if (pr?.baseRef !== undefined && pr.baseRefOid !== undefined) {
+    const remoteBase = pr === undefined ? undefined : currentBaseOf(pr);
+    if (pr?.baseRef !== undefined && remoteBase !== undefined) {
       const tips = yield* originTips(
         cwd,
         pr.headRefOid === undefined ? [pr.baseRef] : [pr.baseRef, branch],
       );
-      if (fetchRedundant(tips.get(pr.baseRef), pr.baseRefOid, tips.get(branch), pr.headRefOid))
+      if (fetchRedundant(tips.get(pr.baseRef), remoteBase, tips.get(branch), pr.headRefOid))
         return false;
     }
     if (!fetchDue(lastFetch, roots.common, Date.now(), FETCH_THROTTLE_MS)) return false;

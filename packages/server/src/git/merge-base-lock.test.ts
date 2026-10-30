@@ -50,7 +50,7 @@ describe("merges onto one base from two workspaces", () => {
   it.live.each([
     ["the second's check runs again on the moved base", true],
     ["a read that still names the old base launches nothing", false],
-  ] as const)("launch one at a time: %s", (_name, moves) =>
+  ] as const)("launch one at a time: %s", ([, moves]) =>
     Effect.gen(function* () {
       const dirs = [5, 6].map(() => mkdtempSync(join(tmpdir(), "gram-merge-base-")));
       yield* Effect.addFinalizer(() =>

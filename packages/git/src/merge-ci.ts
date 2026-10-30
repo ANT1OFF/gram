@@ -1,7 +1,8 @@
-// Launch-only evidence beyond registered check contexts. Read the policy from the PR's base
-// commit: a feature branch cannot erase its own merge conditions. No local file or cached badge
+// Launch-only evidence beyond registered check contexts. Read the policy from the base branch's
+// tip, where the merge lands: a feature branch cannot erase its own merge conditions, and a PR's
+// recorded base can't keep it under ones the branch has since dropped or tightened. No local file or cached badge
 // is authority, and Actions jobs are read from the selected run attempt, not another head/run.
-import type { ChecksRollup, PrStatus } from "@gram/contracts";
+import { currentBaseOf, type ChecksRollup, type PrStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ghApi, git } from "./exec.ts";
@@ -143,7 +144,7 @@ const runJobs = (cwd: string, repo: string, run: Record<string, unknown>) =>
 export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
   Effect.gen(function* () {
     if (!exact(badge)) throw new Error("Merge CI needs the exact base, head and branch");
-    const policy = yield* readPolicy(cwd, repo, badge.baseRefOid);
+    const policy = yield* readPolicy(cwd, repo, currentBaseOf(badge) ?? badge.baseRefOid);
     if (policy === undefined && badge.requiredChecks !== undefined) return "passing" as const;
     // Independently reproduce the classification. A workflow's skipped checks or reported output
     // is never authority. Missing local commit objects/output limits conservatively require full.
@@ -301,7 +302,7 @@ export const verifyMergeCi = (cwd: string, repo: string, badge: PrStatus) =>
 const verifyAlwaysJobs = (cwd: string, repo: string, badge: PrStatus) =>
   Effect.gen(function* () {
     if (!exact(badge)) throw new Error("Merge CI needs the exact base, head and branch");
-    const policy = yield* readPolicy(cwd, repo, badge.baseRefOid);
+    const policy = yield* readPolicy(cwd, repo, currentBaseOf(badge) ?? badge.baseRefOid);
     const declared = (policy?.workflows ?? []).filter(
       (workflow) => (workflow.alwaysJobs?.length ?? 0) > 0,
     );

@@ -380,6 +380,30 @@ describe("merge policy in PR context", () => {
       }).blocking,
     ).toContainEqual({ kind: "approvalMissing" });
   });
+  it("says why an armed merge waits, while it does", () => {
+    const bound: BoundPr = {
+      repo: "ANT1OFF/gram",
+      number: 459,
+      monitor: false,
+      mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 1 },
+    };
+    const waiting = { why: "its check waits for ANT1OFF/gram#458", since: 1 };
+    expect(
+      of({ badge: badge(), bound: { ...bound, mergeWaiting: waiting } }).blocking,
+    ).toContainEqual({
+      kind: "waiting",
+      reason: waiting.why,
+    });
+    expect(of({ badge: badge(), bound }).blocking.map((b) => b.kind)).not.toContain("waiting");
+    // Not armed any more: what it waited for is over.
+    const { mergeWhenReady: _, ...disarmed } = bound;
+    expect(
+      of({ badge: badge(), bound: { ...disarmed, mergeWaiting: waiting } }).blocking.map(
+        (b) => b.kind,
+      ),
+    ).not.toContain("waiting");
+  });
+
   it("reports missing solo CI and a configured bot that no longer approves", () => {
     const bound: BoundPr = {
       repo: "ANT1OFF/gram",

@@ -10,6 +10,7 @@
 // so a restart keeps it. Every `gh` goes through `Proc`, bounded like any other.
 
 import {
+  currentBaseOf,
   samePr,
   mergePolicyReady,
   mergeReviewPolicyOf,
@@ -56,8 +57,16 @@ import { makeKeyedLock } from "./keyed-lock.ts";
 /** How many times a merge is launched on one head when gh times out or can't start. */
 const LAUNCH_TRIES = 3;
 
-/** How long a merge waiting on `after` waits before it asks again whether they have merged. */
-const AFTER_RECHECK = Duration.minutes(2);
+/**
+ * How long a merge that has to wait (on `after`, a base GitHub hasn't moved on, a read that failed)
+ * waits before it asks again.
+ */
+export const MergeRecheckMs = Context.Reference<number>("@gram/server/MergeRecheckMs", {
+  defaultValue: () => Duration.toMillis(Duration.minutes(2)),
+});
+
+/** How many of those a wait outlasts, on the PR's status alone, before the thread is told why. */
+const RECHECKS_BEFORE_TELLING = 3;
 
 /** How many moved-from base commits are kept per repository and base branch. */
 const MOVED_BASES_KEPT = 32;
@@ -177,6 +186,10 @@ export const localCheckFailedText = (bound: BoundPr, check: LocalCheck) => {
 const localCheckPassedText = (bound: BoundPr, check: LocalCheck) =>
   `Gram's full check of ${prName(bound)} passed on ${check.head.slice(0, 7)} merged onto ${check.base.slice(0, 7)}. merge_when_ready uses this pass instead of running it again, while the PR's head and its base stay at these commits; a push or a move of the base needs a new check.`;
 
+/** What the thread is told of a merge that has been waiting a while; it keeps asking. */
+const waitingText = (bound: BoundPr, why: string) =>
+  `merge_when_ready hasn't merged ${prName(bound)} yet and keeps trying: ${why}.`;
+
 /** What the thread is told when GitHub refused the merge; it is tried again on a new head. */
 const refusedText = (bound: BoundPr, head: string, why: string) =>
   `merge_when_ready couldn't merge ${prName(bound)} at ${head.slice(0, 7)}: ${why.split("\n")[0]!.slice(0, 300)}. It tries again once the head moves; call merge_when_ready again to retry this head.`;
@@ -207,6 +220,22 @@ export interface MergeWhenReadyShape {
   ) => Effect.Effect<LocalCheckStart>;
 }
 
+/** One PR's go at checking the tip of a base branch, and the threads waiting for it to end. */
+interface BaseTurn {
+  readonly threadId: ThreadId;
+  readonly pr: BoundPr;
+  /** Its entry in `listening`: a look of the same thread on another head has a turn of its own. */
+  readonly listener: string;
+  readonly queued: Set<ThreadId>;
+}
+
+/** A merge of `pr` onto a base's tip `tip` that Gram didn't hear the end of, and when it left. */
+interface UnsettledMerge {
+  readonly pr: BoundPr;
+  readonly tip: string | undefined;
+  readonly at: number;
+}
+
 /** What `runLocalCheck` did: started or found a check (none, unasked to start), or why it couldn't. */
 type LocalCheckStart =
   | {
@@ -230,6 +259,8 @@ export const MergeWhenReadyLive = Layer.effect(
     const proc = yield* Proc;
     const providerPr = yield* Pr;
     const refreshes = yield* GitRefresh;
+    const recheckMs = yield* MergeRecheckMs;
+    const recheck = Effect.sleep(Duration.millis(recheckMs));
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
 
@@ -240,7 +271,7 @@ export const MergeWhenReadyLive = Layer.effect(
         const found = yield* localChecks.lookup(
           yield* repoDirOf(thread),
           badge.headRefOid,
-          badge.baseRefOid,
+          currentBaseOf(badge),
           thread.projectId,
         );
         return found?.status === "passed" ? found : undefined;
@@ -324,17 +355,70 @@ export const MergeWhenReadyLive = Layer.effect(
      */
     const baseLocks = makeKeyedLock<string>();
     /**
-     * Per `baseKey`, the base commits a merge by Gram moved on from, latest last: a read GitHub
-     * hasn't caught up on names one, and nothing merges onto it.
+     * Per `baseKey`, the tips a merge by Gram moved on from, latest last: a read GitHub hasn't
+     * caught up on names one, and nothing merges onto it.
      */
     const movedBases = new Map<string, Array<string>>();
+    /**
+     * Per `baseKey`, a merge that may have gone through: `gh` timed out, exited non-zero (a reset
+     * after GitHub applied it reads like a refusal) or was cut off. It fences the base as an answered
+     * merge does, for longer: nothing launches onto that base until `settle` says how it ended.
+     */
+    const unsettled = new Map<string, UnsettledMerge>();
+    /**
+     * Per `baseKey`, whose check of the base's tip goes now. Every merge moves the tip and voids a
+     * pass on the old one, so checks side by side would all but one run for nothing: N armed PRs
+     * take N checks, one after the other. A merge ends a turn, as does the check failing, or a
+     * while after a pass that didn't merge, so a turn never outlasts the check by long.
+     */
+    const turns = new Map<string, BaseTurn>();
+    /**
+     * What goes on after a merge or a turn, apart from the attempt that got there: a merged PR's
+     * own state stops its attempt (`evaluate`), and the PRs still to look must not go with it.
+     */
+    const aftermath = yield* FiberMap.make<string>();
     const baseMoved = (key: string, oid: string) => {
       const moved = (movedBases.get(key) ?? []).filter((each) => each !== oid);
       movedBases.set(key, [...moved, oid].slice(-MOVED_BASES_KEPT));
+      turns.delete(key);
     };
 
     const run = (cwd: string, args: ReadonlyArray<string>) =>
       gh(cwd, args).pipe(Effect.provideService(Proc, proc));
+
+    /**
+     * Under the base's lock: how the merge fencing `key` ended, by reading its PR. `"merged"` moved
+     * the base, as an answered merge does; the merge itself while it can't be told. Open reads as
+     * not merged only once GitHub had a recheck's time to show it: its reads can lag a merge.
+     */
+    const settle = (key: string, cwd: string) =>
+      Effect.gen(function* () {
+        const merge = unsettled.get(key);
+        if (merge === undefined) return undefined;
+        const state = yield* run(cwd, [
+          "pr",
+          "view",
+          String(merge.pr.number),
+          "--repo",
+          merge.pr.repo,
+          "--json",
+          "state",
+          "--jq",
+          ".state",
+        ]).pipe(
+          Effect.map((out) => (out.status === 0 ? out.stdout.trim() : undefined)),
+          Effect.orElseSucceed(() => undefined),
+        );
+        if (state === "MERGED") {
+          unsettled.delete(key);
+          if (merge.tip !== undefined) baseMoved(key, merge.tip);
+          return "merged" as const;
+        }
+        const now = yield* Clock.currentTimeMillis;
+        if ((state !== "OPEN" && state !== "CLOSED") || now - merge.at < recheckMs) return merge;
+        unsettled.delete(key);
+        return undefined;
+      });
 
     /** Which of `after` hasn't merged; one gh can't answer for counts as not merged. */
     const unmerged = (cwd: string, after: ReadonlyArray<Pick<BoundPr, "repo" | "number">>) =>
@@ -370,7 +454,9 @@ export const MergeWhenReadyLive = Layer.effect(
           if (intent === undefined || (setAt !== undefined && intent.setAt !== setAt)) return t;
           const next = change(intent);
           const { mergeWhenReady: _, ...rest } = current;
-          return { ...t, boundPr: next === undefined ? rest : { ...rest, mergeWhenReady: next } };
+          if (next !== undefined) return { ...t, boundPr: { ...rest, mergeWhenReady: next } };
+          const { mergeWaiting: __, ...done } = rest;
+          return { ...t, boundPr: done };
         })
         .pipe(Effect.ignore);
 
@@ -384,6 +470,61 @@ export const MergeWhenReadyLive = Layer.effect(
             ),
           ),
         );
+
+    /**
+     * Keeps on the PR what its armed merge waits for (`undefined`: nothing), since which the wait is
+     * dated. When `loud`, one that outlasts a few rechecks is logged and told to the thread, once.
+     */
+    const noteWait = (thread: Thread, bound: BoundPr, why: string | undefined, loud = false) =>
+      Effect.gen(function* () {
+        const current = (yield* store.getThread(thread.id)).boundPr;
+        if (
+          current === undefined ||
+          !samePr(current, bound) ||
+          current.mergeWhenReady === undefined
+        )
+          return;
+        const last = current.mergeWaiting;
+        if (why === undefined && last === undefined) return;
+        const now = yield* Clock.currentTimeMillis;
+        const same = last !== undefined && last.why === why ? last : undefined;
+        const since = same?.since ?? now;
+        const telling =
+          loud &&
+          why !== undefined &&
+          same?.told !== true &&
+          now - since >= RECHECKS_BEFORE_TELLING * recheckMs;
+        if (same !== undefined && !telling) return;
+        yield* runtimes.updateThread(thread.id, (t) => {
+          if (t.boundPr === undefined || !samePr(t.boundPr, bound)) return t;
+          const { mergeWaiting: _, ...rest } = t.boundPr;
+          return {
+            ...t,
+            boundPr:
+              why === undefined
+                ? rest
+                : {
+                    ...rest,
+                    mergeWaiting: {
+                      why,
+                      since,
+                      ...(telling ? { told: true as const } : {}),
+                    },
+                  },
+          };
+        });
+        if (!telling) return;
+        yield* Effect.logWarning("merge_when_ready still waits").pipe(
+          Effect.annotateLogs({ threadId: thread.id, pr: prName(bound), why }),
+        );
+        yield* tell(thread, bound, waitingText(bound, why)).pipe(Effect.asVoid);
+      }).pipe(
+        Effect.catch((e) =>
+          Effect.logWarning("merge_when_ready wait not recorded").pipe(
+            Effect.annotateLogs({ threadId: thread.id, error: e.message }),
+          ),
+        ),
+      );
 
     const attempt = (threadId: ThreadId, head: string, tries = 0): Effect.Effect<void> =>
       Effect.gen(function* () {
@@ -416,13 +557,18 @@ export const MergeWhenReadyLive = Layer.effect(
           yield* Effect.logDebug("merge_when_ready waits").pipe(
             Effect.annotateLogs({ threadId, after: waiting.map(prName).join(" ") }),
           );
-          return yield* Effect.sleep(AFTER_RECHECK).pipe(
-            Effect.andThen(Effect.suspend(() => attempt(threadId, head))),
+          yield* noteWait(
+            thread.value,
+            bound,
+            `${waiting.map(prName).join(", ")} must merge first`,
           );
+          return yield* recheck.pipe(Effect.andThen(Effect.suspend(() => attempt(threadId, head))));
         }
         // The lookups took a while: merge only on the intent as it stands now, unchanged since. From
         // here to the merge's launch, no change of the intent can land (`mutate`).
         let launchedLocalCheck: LocalCheck | undefined;
+        /** This look found that an earlier merge onto the base went through. */
+        let foundMerged = false;
         const launched = yield* serial(
           threadId,
           Effect.gen(function* () {
@@ -522,15 +668,16 @@ export const MergeWhenReadyLive = Layer.effect(
                   // Another base branch than the lock's (a retarget, or a badge that didn't name it):
                   // the launch goes through that branch's lock instead.
                   if (fresh.baseRef !== baseRef) return { retarget: fresh.baseRef } as const;
+                  const settled = yield* settle(key, ghCwd);
+                  if (settled === "merged") foundMerged = true;
+                  else if (settled !== undefined) return { unsettled: settled.pr } as const;
+                  const tip = currentBaseOf(fresh);
                   // A merge by Gram moved this base, and GitHub's read hasn't caught up yet.
-                  if (
-                    fresh.baseRefOid !== undefined &&
-                    movedBases.get(key)?.includes(fresh.baseRefOid)
-                  )
-                    return { lagging: true } as const;
+                  if (tip !== undefined && movedBases.get(key)?.includes(tip))
+                    return { lagging: tip } as const;
                   // The base moved since the check: what would merge is not what was checked, so the
-                  // check runs again on the base GitHub reads now.
-                  if (localCheck !== undefined && fresh.baseRefOid !== localCheck.base)
+                  // check runs again on the tip GitHub reads now.
+                  if (localCheck !== undefined && tip !== localCheck.base)
                     return { recheck: fresh } as const;
                   if (
                     // The fresh read skipped runner evidence for the check; only solo may rely on it.
@@ -623,6 +770,9 @@ export const MergeWhenReadyLive = Layer.effect(
                     (yield* localCheckFor(latest, fresh)) !== localCheck
                   )
                     return undefined;
+                  const fenceBase = Effect.map(Clock.currentTimeMillis, (at) => {
+                    unsettled.set(key, { pr: bound, tip, at });
+                  });
                   const merge = run(ghCwd, [
                     "pr",
                     "merge",
@@ -636,23 +786,23 @@ export const MergeWhenReadyLive = Layer.effect(
                     // gh that timed out or couldn't start says nothing of whether GitHub merged.
                     Effect.map((out) => ({ out })),
                     Effect.catch((e) => Effect.succeed({ lost: e.message })),
+                    // Part of the launch, with no way for a stop to come between it and the answer.
+                    // Still under the base's lock: the next merge onto it never takes the old base.
+                    Effect.tap((result) =>
+                      "out" in result && result.out.status === 0
+                        ? Effect.sync(() => {
+                            if (tip !== undefined) baseMoved(key, tip);
+                          })
+                        : fenceBase,
+                    ),
+                    Effect.onInterrupt(() => fenceBase),
                   );
                   // The pause is read again with the launch, behind the workspace's pause fence: one that
                   // landed during the checks above holds the intent, and one asked for now waits for the
                   // launch, which is in flight from here.
-                  const result =
-                    latest.workspaceId === undefined || orchestration === undefined
-                      ? yield* merge
-                      : yield* orchestration.launchUnlessPaused(latest.workspaceId, merge);
-                  // Still under the base's lock: the next merge onto it never takes the old base.
-                  if (
-                    result !== undefined &&
-                    "out" in result &&
-                    result.out.status === 0 &&
-                    fresh.baseRefOid !== undefined
-                  )
-                    baseMoved(key, fresh.baseRefOid);
-                  return result;
+                  return latest.workspaceId === undefined || orchestration === undefined
+                    ? yield* merge
+                    : yield* orchestration.launchUnlessPaused(latest.workspaceId, merge);
                 }),
               );
             };
@@ -663,16 +813,37 @@ export const MergeWhenReadyLive = Layer.effect(
             return second !== undefined && "retarget" in second ? undefined : second;
           }),
         );
-        if (launched === undefined) return;
-        if ("lagging" in launched || "unread" in launched)
-          return yield* Effect.sleep(AFTER_RECHECK).pipe(
-            Effect.andThen(Effect.suspend(() => attempt(threadId, head, tries))),
-          );
+        // The base moved without a word: the others still have to hear of it.
+        if (foundMerged)
+          yield* FiberMap.run(aftermath, `found\u0000${threadId}`, afterMerge(threadId, bound), {
+            onlyIfMissing: true,
+          });
+        if (launched === undefined) return yield* noteWait(thread.value, bound, undefined);
         if ("recheck" in launched) {
           // Its badge still names the old base until the publisher reads the new one.
           yield* refreshes.request(cwd, true, { expectChange: true });
-          return yield* startLocalCheck(thread.value, bound, intent, launched.recheck);
+          return yield* noteWait(
+            thread.value,
+            bound,
+            yield* startLocalCheck(thread.value, bound, intent, launched.recheck),
+          );
         }
+        if ("lagging" in launched || "unread" in launched || "unsettled" in launched) {
+          yield* noteWait(
+            thread.value,
+            bound,
+            "lagging" in launched
+              ? `GitHub still reads ${launched.lagging.slice(0, 7)} as the tip of ${badge.baseRef ?? "its base"}, which a merge by Gram moved on from`
+              : "unread" in launched
+                ? "its state on GitHub couldn't be read"
+                : `whether ${prName(launched.unsettled)} merged isn't known yet, and that decides the base`,
+            true,
+          );
+          return yield* recheck.pipe(
+            Effect.andThen(Effect.suspend(() => attempt(threadId, head, tries))),
+          );
+        }
+        yield* noteWait(thread.value, bound, undefined);
         if ("lost" in launched) {
           invalidatePrBadges();
           yield* refreshes.request(cwd, true, { expectChange: true });
@@ -694,7 +865,7 @@ export const MergeWhenReadyLive = Layer.effect(
           }
           // Looked at again after a while: a merge that went through reads merged by then, and the
           // attempt finds the PR no longer open.
-          return yield* Effect.sleep(AFTER_RECHECK).pipe(
+          return yield* recheck.pipe(
             Effect.andThen(Effect.suspend(() => attempt(threadId, head, tries + 1))),
           );
         }
@@ -745,7 +916,11 @@ export const MergeWhenReadyLive = Layer.effect(
           body: thread.value.title,
           threadId,
         });
-        yield* afterMerge(threadId, bound);
+        yield* FiberMap.run(
+          aftermath,
+          `merged\u0000${threadId}\u0000${head}`,
+          afterMerge(threadId, bound),
+        );
       }).pipe(
         Effect.catch((e) =>
           Effect.logWarning("merge_when_ready attempt failed").pipe(
@@ -755,23 +930,62 @@ export const MergeWhenReadyLive = Layer.effect(
       );
 
     /**
+     * `check`, on what GitHub says now rather than the badge the publisher last read, which still
+     * names the old tip for a while after a merge.
+     */
+    const lookAfresh = (threadId: ThreadId): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const thread = yield* store.getThread(threadId).pipe(Effect.option);
+        const bound = Option.isSome(thread) ? thread.value.boundPr : undefined;
+        if (Option.isNone(thread) || bound?.mergeWhenReady === undefined) return;
+        const read = yield* providerPr
+          .status(
+            yield* repoDirOf(thread.value),
+            { repo: bound.repo, number: bound.number, reviews: true },
+            undefined,
+            { fresh: true },
+          )
+          .pipe(Effect.orElseSucceed(() => undefined));
+        yield* stop(threadId);
+        yield* evaluate(thread.value, read ?? (yield* publisher.badgeFor(thread.value)));
+      });
+
+    /**
      * A merge moved its base: every other armed merge in the repository looks again, on a fresh
-     * read, so one whose pass was on the old base has its check run again on the new one rather
-     * than wait for its badge to change.
+     * read, oldest first, so one whose pass was on the old base has its check run again on the new
+     * one rather than wait for its badge to change.
      */
     const afterMerge = (threadId: ThreadId, bound: BoundPr) =>
       Effect.gen(function* () {
-        for (const other of yield* store.listThreads) {
-          if (
-            other.id === threadId ||
-            other.boundPr?.mergeWhenReady === undefined ||
-            other.boundPr.repo.toLowerCase() !== bound.repo.toLowerCase()
+        const others = (yield* store.listThreads)
+          .filter(
+            (other) =>
+              other.id !== threadId &&
+              other.boundPr?.mergeWhenReady !== undefined &&
+              other.boundPr.repo.toLowerCase() === bound.repo.toLowerCase(),
           )
-            continue;
+          .toSorted((a, b) => a.boundPr!.mergeWhenReady!.setAt - b.boundPr!.mergeWhenReady!.setAt);
+        for (const other of others) {
           yield* refreshes.request(other.checkout.path, true, { expectChange: true });
-          yield* check(other.id);
+          yield* lookAfresh(other.id);
         }
       });
+
+    /** Ends the turn `listener` holds, if it still does: those waiting for it look again. */
+    const turnOver = (key: string, listener: string, wait: Effect.Effect<void> = Effect.void) =>
+      FiberMap.run(
+        aftermath,
+        listener,
+        Effect.gen(function* () {
+          yield* wait;
+          const turn = turns.get(key);
+          if (turn?.listener !== listener) return;
+          turns.delete(key);
+          for (const threadId of turn.queued) yield* lookAfresh(threadId);
+        }),
+        // Two ends can arrive for one check; the second never cuts the first's looks short.
+        { onlyIfMissing: true },
+      );
 
     const stop = (threadId: ThreadId) => {
       attemptHeads.delete(threadId);
@@ -780,7 +994,8 @@ export const MergeWhenReadyLive = Layer.effect(
 
     /**
      * Under solo, when a passing check is all an armed merge lacks, Gram runs its own full check of
-     * the head merged onto the base; a pass looks at the merge again, a failure is told.
+     * the head merged onto the base; a pass looks at the merge again, a failure is told. Returns
+     * why it can't start one yet, when it is another PR's turn on the same base.
      */
     /** Threads, by head and base, listening for the end of Gram's own check of their PR. */
     const listening = new Set<string>();
@@ -789,19 +1004,33 @@ export const MergeWhenReadyLive = Layer.effect(
       bound: BoundPr,
       intent: MergeIntent,
       badge: PrStatus,
-    ) =>
+    ): Effect.Effect<string | undefined> =>
       Effect.gen(function* () {
         const head = badge.headRefOid;
-        const base = badge.baseRefOid;
-        if (localChecks === undefined || head === undefined || base === undefined) return;
-        if (intent.hold !== undefined || intent.failedOn === head) return;
+        const base = currentBaseOf(badge);
+        if (localChecks === undefined || head === undefined || base === undefined) return undefined;
+        if (intent.hold !== undefined || intent.failedOn === head) return undefined;
         const { paused, policy, bots } = yield* policyFor(thread, bound.repo);
-        if (paused || policy !== "solo") return;
-        if (mergeBlocker(intent, badge, "solo", bots, { head, base }) !== undefined) return;
+        if (paused || policy !== "solo") return undefined;
+        if (mergeBlocker(intent, badge, "solo", bots, { head, base }) !== undefined)
+          return undefined;
         // Every look while the check runs comes here: one listener for it, not one a look, so
         // its end is told once.
         const listener = `${thread.id}\u0000${head}\u0000${base}`;
-        if (listening.has(listener)) return;
+        if (listening.has(listener)) return undefined;
+        const key = baseKey(bound.repo, badge.baseRef);
+        const turn = turns.get(key);
+        if (turn !== undefined && turn.threadId !== thread.id) {
+          turn.queued.add(thread.id);
+          return `its check waits for ${prName(turn.pr)}, whose merge would move the base`;
+        }
+        // Its own older turn, on a head it has since pushed past, gives way.
+        turns.set(key, {
+          threadId: thread.id,
+          pr: bound,
+          listener,
+          queued: turn?.queued ?? new Set(),
+        });
         listening.add(listener);
         const found = yield* localChecks
           .ensure(yield* repoDirOf(thread), head, base, {
@@ -817,14 +1046,30 @@ export const MergeWhenReadyLive = Layer.effect(
                     : tell(thread, bound, localCheckFailedText(bound, done), "local-check"),
                 ),
                 Effect.andThen(Effect.suspend(() => check(thread.id))),
+                // A pass keeps the turn while it merges: the next check on this tip would be void.
+                Effect.andThen(
+                  Effect.suspend(() =>
+                    turnOver(key, listener, done.status === "passed" ? recheck : Effect.void),
+                  ),
+                ),
               ),
           })
-          .pipe(Effect.onInterrupt(() => Effect.sync(() => listening.delete(listener))));
+          .pipe(
+            Effect.onInterrupt(() =>
+              Effect.sync(() => listening.delete(listener)).pipe(
+                Effect.andThen(Effect.suspend(() => turnOver(key, listener))),
+              ),
+            ),
+          );
         // Nothing runs to tell it: a pass or failure on record, or no check at all.
-        if (found?.status !== "running") listening.delete(listener);
+        if (found?.status !== "running") {
+          listening.delete(listener);
+          yield* turnOver(key, listener);
+        }
+        return undefined;
       });
 
-    const evaluate = (thread: Thread, badge: PrStatus | undefined) =>
+    const evaluate = (thread: Thread, badge: PrStatus | undefined): Effect.Effect<void> =>
       Effect.gen(function* () {
         const bound = thread.boundPr;
         const intent = bound?.mergeWhenReady;
@@ -848,7 +1093,7 @@ export const MergeWhenReadyLive = Layer.effect(
           (yield* blockerFor(thread, bound.repo, intent, badge)) !== undefined ||
           head === undefined
         ) {
-          yield* startLocalCheck(thread, bound, intent, badge);
+          yield* noteWait(thread, bound, yield* startLocalCheck(thread, bound, intent, badge));
           return yield* stop(thread.id);
         }
         // One for this head runs or waits already; one for an older head gives way.
@@ -957,7 +1202,7 @@ export const MergeWhenReadyLive = Layer.effect(
         if (badge.state !== "OPEN")
           return { refused: `${prName(bound)} is ${badge.state.toLowerCase()}` };
         const head = badge.headRefOid;
-        const base = badge.baseRefOid;
+        const base = currentBaseOf(badge);
         if (head === undefined || base === undefined)
           return { refused: `GitHub didn't give ${prName(bound)}'s head and base commits` };
         // Its own PR alone: never a fork's or another branch's code on this machine.

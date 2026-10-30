@@ -411,6 +411,16 @@ export const MergeIntent = Schema.Struct({
 });
 export type MergeIntent = typeof MergeIntent.Type;
 
+/** Why an armed merge that looks ready hasn't happened yet: beside the intent, which is approved. */
+export const MergeWaiting = Schema.Struct({
+  why: Schema.String,
+  /** Epoch ms it started waiting for this. */
+  since: Schema.Number,
+  /** The thread was told. */
+  told: Schema.optionalKey(Schema.Literal(true)),
+});
+export type MergeWaiting = typeof MergeWaiting.Type;
+
 /** The most people's reviews a `MonitorMark` remembers; older ones fall off the front. */
 export const MONITOR_MARK_REVIEWS_MAX = 32;
 
@@ -475,6 +485,8 @@ export const BoundPr = Schema.Struct({
   seen: Schema.optionalKey(MonitorMark),
   /** Merge it once it is ready (`merge_when_ready`); absent when nobody asked. */
   mergeWhenReady: Schema.optionalKey(MergeIntent),
+  /** What that merge waits for now; absent when it is merging or a blocker of the PR says why. */
+  mergeWaiting: Schema.optionalKey(MergeWaiting),
   /** The PRs it depends on, in the order they were declared; absent when none was. */
   dependsOn: Schema.optionalKey(
     Schema.Array(PrDependency).check(Schema.isMaxLength(MAX_PR_DEPENDENCIES)),

@@ -318,6 +318,8 @@ export const WorkerPr = Schema.Struct({
         Schema.Array(Schema.Struct({ repo: Schema.String, number: Schema.Int })),
       ),
       refused: Schema.optionalKey(Schema.Literal(true)),
+      /** Why it waits, when that isn't a hold or a blocker the PR shows. */
+      waiting: Schema.optionalKey(Schema.String),
     }),
   ),
   /**

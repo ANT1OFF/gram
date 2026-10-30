@@ -292,6 +292,59 @@ describe("Pr.status caching", () => {
     }),
   );
 
+  it.effect("a merge's read of the REST fallback has the tip, or no read at all", () =>
+    Effect.gen(function* () {
+      const recorded = "a".repeat(40);
+      const tip = "c".repeat(40);
+      const head = "d".repeat(40);
+      let tipReadable = true;
+      const { proc, ghCalls } = repoProc({
+        head: () => "aaa",
+        gh: (args) => {
+          const joined = args.join(" ");
+          // A document GitHub answered without usable data: the one PR is read over REST.
+          if (joined.includes("query=") && !joined.includes("ref="))
+            return { status: 0, stdout: "{}" };
+          if (joined.includes("ref="))
+            return {
+              status: 0,
+              stdout: JSON.stringify({ data: { repository: { object: null } } }),
+            };
+          if (joined.includes("commits/heads%2Fmain"))
+            return tipReadable ? { status: 0, stdout: `${tip}\n` } : { status: 1, stdout: "" };
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              number: 11,
+              state: "OPEN",
+              url: "https://github.com/acme/web/pull/11",
+              title: "t",
+              headRefOid: head,
+              baseRefOid: recorded,
+              baseRefName: "main",
+              headRefName: "feature",
+              statusCheckRollup: [],
+            }),
+          };
+        },
+      });
+      yield* Effect.gen(function* () {
+        const pr = yield* Pr;
+        const read = pr.status("/repo", { repo: "acme/web", number: 11 }, undefined, {
+          forMerge: true,
+          localCheckHead: head,
+        });
+        expect(yield* read).toMatchObject({ baseRefOid: recorded, baseTipOid: tip });
+        // The policy comes from where the merge lands, not the base the PR last synced with.
+        expect(ghCalls().some((call) => call.args.includes(`ref=${tip}:.gram/merge-ci.json`))).toBe(
+          true,
+        );
+        tipReadable = false;
+        expect((yield* Effect.flip(read)).message).toContain("tip of main");
+      }).pipe(Effect.provide(prLayer(proc)));
+    }),
+  );
+
   it.effect("refetches when the checkout's HEAD moves", () =>
     Effect.gen(function* () {
       let head = "aaa";

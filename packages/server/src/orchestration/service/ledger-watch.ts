@@ -3,6 +3,7 @@
 // built from it, and the watches that send them again when something they show moves.
 
 import {
+  currentBaseOf,
   effectiveCheckout,
   featureCardsText,
   reconcileFeatureCards,
@@ -149,15 +150,14 @@ export const makeLedgerWatch = (kit: OrchestrationKit) => {
             };
           });
           const badge = yield* publisher.badgeFor(thread);
+          const base = badge === undefined ? undefined : currentBaseOf(badge);
           const localCheck =
-            localChecks === undefined ||
-            badge?.headRefOid === undefined ||
-            badge.baseRefOid === undefined
+            localChecks === undefined || badge?.headRefOid === undefined || base === undefined
               ? undefined
               : localChecks.latest(
                   thread.checkout.path,
                   badge.headRefOid,
-                  badge.baseRefOid,
+                  base,
                   projects.get(thread.projectId),
                 );
           return {

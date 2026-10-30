@@ -266,6 +266,7 @@ describe("actual merge launch with GitHub CI evidence", () => {
                         baseRefName: "main",
                         headRefOid: HEAD,
                         baseRefOid: base,
+                        baseRef: { target: { oid: base } },
                         mergeStateStatus: "CLEAN",
                         commits: {
                           nodes: [

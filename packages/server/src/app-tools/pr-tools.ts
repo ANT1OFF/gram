@@ -1,4 +1,5 @@
 import {
+  currentBaseOf,
   AppToolError,
   MERGE_AFTER_MAX,
   mergeReviewPolicyOf,
@@ -328,7 +329,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
               ? yield* localChecks.lookup(
                   thread.checkout.path,
                   badge.headRefOid,
-                  badge.baseRefOid,
+                  currentBaseOf(badge),
                   thread.projectId,
                 )
               : undefined;
@@ -900,7 +901,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 t.boundPr !== undefined && samePr(t.boundPr, pr)
                   ? t.boundPr
                   : { repo: pr.repo, number: pr.number, monitor: false };
-              const { mergeWhenReady: current, ...rest } = bound;
+              const { mergeWhenReady: current, mergeWaiting: _, ...rest } = bound;
               // Read again in the write: a hold committed since the check above stands.
               if (!enabled && current?.heldBy === "orchestrator" && !byOrchestrator) {
                 refused = heldMessage(current);

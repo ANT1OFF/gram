@@ -279,6 +279,31 @@ describe("a local check of the head at the merge launch", () => {
     workflows: policy.workflows.map((workflow) => ({ ...workflow, alwaysJobs: e2e })),
   };
 
+  it.effect("reads the policy at the base branch's tip, not the PR's recorded base", () =>
+    Effect.gen(function* () {
+      const tip = "e".repeat(40);
+      const calls: string[][] = [];
+      const moved = { ...badge, baseTipOid: tip };
+      yield* mergeCiForLaunch("/repo", "example/project", moved, head).pipe(
+        Effect.provide(
+          Layer.succeed(Proc, {
+            run: (_bin, args) =>
+              Effect.sync(() => {
+                calls.push([...args]);
+                return {
+                  status: 0,
+                  stdout: JSON.stringify({ data: { repository: { object: null } } }),
+                  stderr: "",
+                  truncated: false,
+                };
+              }),
+          }),
+        ),
+      );
+      expect(calls.flat()).toContain(`ref=${tip}:.gram/merge-ci.json`);
+    }),
+  );
+
   it.effect("stands in for every job when the policy declares no alwaysJobs", () =>
     Effect.gen(function* () {
       const calls: string[][] = [];
