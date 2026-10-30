@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { mergeStateAllowsMerge, requiredChecksOf, type PrStatus } from "./git.ts";
+import { currentBaseOf, mergeStateAllowsMerge, requiredChecksOf, type PrStatus } from "./git.ts";
 import { matchesBotLogin, type ReviewBot } from "./review.ts";
 
 export const MergeReviewPolicy = Schema.Literals(["automatic", "solo", "bot"]);
@@ -62,14 +62,14 @@ export interface LocalCheckPass {
 
 /** Whether `localCheck` vouches for exactly the head `badge` shows, on exactly its base. */
 export const localCheckOnHead = (
-  badge: Pick<PrStatus, "headRefOid" | "baseRefOid">,
+  badge: Pick<PrStatus, "headRefOid" | "baseRefOid" | "baseTipOid">,
   localCheck: LocalCheckPass | undefined,
 ): boolean =>
   localCheck !== undefined &&
   badge.headRefOid !== undefined &&
-  badge.baseRefOid !== undefined &&
+  currentBaseOf(badge) !== undefined &&
   localCheck.head === badge.headRefOid &&
-  localCheck.base === badge.baseRefOid;
+  localCheck.base === currentBaseOf(badge);
 
 /**
  * GitHub remains authoritative in both policies. Solo needs actual passing CI, or Gram's own check

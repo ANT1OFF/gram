@@ -425,6 +425,7 @@ const toPrStatus = (
     changedFiles: optionalCount(p, "changedFiles"),
     headRefOid: optionalStr(p, "headRefOid"),
     baseRefOid: optionalStr(p, "baseRefOid"),
+    baseTipOid: optionalStr(p, "baseTipOid"),
     updatedAt: optionalStr(p, "updatedAt"),
     mergeState: optionalStr(p, "mergeStateStatus"),
     reviewDecision: optionalStr(p, "reviewDecision"),
@@ -550,7 +551,7 @@ const REVIEW_REQUESTS_GQL_FIELD =
  * these unless a review monitor is on it.
  */
 const badgeGqlFields = (number: string) =>
-  "number state url isDraft headRefOid baseRefOid title baseRefName headRefName author{login} additions " +
+  "number state url isDraft headRefOid baseRefOid baseRef{target{oid}} title baseRefName headRefName author{login} additions " +
   "deletions changedFiles updatedAt mergeStateStatus reviewDecision " +
   REVIEW_REQUESTS_GQL_FIELD +
   rollupGqlField(number);
@@ -577,8 +578,7 @@ const THREADS_GQL_FIELD =
  */
 export type PrFieldSet = "badge" | "review" | "reviewAndThreads";
 
-const branchPrGqlFields = (number: string) =>
-  `${badgeGqlFields(number)} baseRef{target{oid}} ${REVIEW_GQL_FIELDS}`;
+const branchPrGqlFields = (number: string) => `${badgeGqlFields(number)} ${REVIEW_GQL_FIELDS}`;
 const FIELD_SETS: Record<PrFieldSet, (number: string) => string> = {
   badge: badgeGqlFields,
   review: branchPrGqlFields,
@@ -634,6 +634,7 @@ const reshapeBadgeNode = (node: Json): Json => ({
   isDraft: node["isDraft"],
   headRefOid: node["headRefOid"],
   baseRefOid: node["baseRefOid"],
+  baseTipOid: at(node, ["baseRef", "target", "oid"]),
   title: node["title"],
   baseRefName: node["baseRefName"],
   headRefName: node["headRefName"],
@@ -805,6 +806,24 @@ const restBoundPr = (
       } catch {
         return Effect.fail(new PrLookupError({ message: "gh pr view returned no JSON" }));
       }
+    }),
+  );
+
+/** The commit at the tip of `branch`, read from GitHub. */
+const baseTip = (cwd: string, repo: string, branch: string) =>
+  ghApi(cwd, [
+    "--method",
+    "GET",
+    `repos/${repo}/commits/${encodeURIComponent(`heads/${branch}`)}`,
+    "--jq",
+    ".sha",
+  ]).pipe(
+    Effect.mapError((e) => new PrLookupError({ message: e.message })),
+    Effect.flatMap((out) => {
+      const sha = out.stdout.trim();
+      return out.status === 0 && /^[a-f0-9]{40}$/.test(sha)
+        ? Effect.succeed(sha)
+        : Effect.fail(new PrLookupError({ message: `The tip of ${branch} couldn't be read` }));
     }),
   );
 
@@ -1488,10 +1507,16 @@ export const PrLive = Layer.effect(
           if (locallyChecked) return badge;
           return yield* new PrLookupError({ message: "Merge CI repository is unknown" });
         }
+        // A merge goes by the base branch's tip: the REST fallback has none, so it asks for it, and
+        // without it the read fails rather than pass off the PR's recorded base as the tip.
+        const known =
+          badge.baseTipOid !== undefined || badge.baseRef === undefined
+            ? badge
+            : { ...badge, baseTipOid: yield* provide(baseTip(cwd, repo, badge.baseRef)) };
         const mergeChecks = yield* provide(
-          mergeCiForLaunch(cwd, repo, badge, options.localCheckHead),
+          mergeCiForLaunch(cwd, repo, known, options.localCheckHead),
         ).pipe(Effect.mapError((e) => new PrLookupError({ message: e.message })));
-        return mergeChecks === undefined ? badge : { ...badge, mergeChecks };
+        return mergeChecks === undefined ? known : { ...known, mergeChecks };
       });
 
     const detail = (cwd: string, number: number, explicitRepo?: string) =>

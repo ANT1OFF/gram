@@ -79,7 +79,13 @@ export const PrStatus = Schema.Struct({
   deletions: Schema.optionalKey(Schema.Int),
   changedFiles: Schema.optionalKey(Schema.Int),
   headRefOid: Schema.optionalKey(Schema.String),
+  /**
+   * The base as GitHub recorded it when the PR last synced, which stays put until the PR is pushed
+   * to. It is not where the base branch is now: that is `baseTipOid`, through `currentBaseOf`.
+   */
   baseRefOid: Schema.optionalKey(Schema.String),
+  /** The base branch's tip when this was read; absent from the REST fallback. */
+  baseTipOid: Schema.optionalKey(Schema.String),
   /** GitHub `updatedAt`, a catch-all change stamp. */
   updatedAt: Schema.optionalKey(Schema.String),
   /** GitHub's `mergeStateStatus`, e.g. CLEAN / BLOCKED / DIRTY; absent from older fetch paths. */
@@ -109,6 +115,11 @@ export const repoFromPrUrl = (url: string): string | undefined => {
 /** What of a badge decides its PR's checks: the commit they ran on, and how they add up. */
 export const prChecksStamp = (badge: Pick<PrStatus, "headRefOid" | "checks">): string =>
   `${badge.headRefOid ?? ""}:${badge.checks}`;
+
+/** The commit a merge of this PR lands on: the base branch's tip, as far as the read knew it. */
+export const currentBaseOf = (
+  pr: Pick<PrStatus, "baseRefOid" | "baseTipOid">,
+): string | undefined => pr.baseTipOid ?? pr.baseRefOid;
 
 /** A badge's two rollups, as `requiredChecksOf` reads them. */
 export interface ChecksOfPr {

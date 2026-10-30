@@ -65,6 +65,7 @@ export type MergeBlocker =
   | { readonly kind: "checksMissing" }
   | { readonly kind: "behind" }
   | { readonly kind: "held"; readonly reason: string }
+  | { readonly kind: "waiting"; readonly reason: string }
   | { readonly kind: "blocked" };
 
 export interface HumanReviewContext {
@@ -136,6 +137,8 @@ export interface PrContext {
         readonly method: string;
         readonly reviewPolicy?: "solo" | "bot" | undefined;
         readonly hold?: string | undefined;
+        /** Why it hasn't merged, when that isn't a hold or another blocker here. */
+        readonly waiting?: string | undefined;
         readonly after: ReadonlyArray<string>;
         /** GitHub refused the merge on this head. */
         readonly refusedOnHead: boolean;
@@ -338,6 +341,7 @@ const blockersOf = (
     out.push({ kind: "checksMissing" });
   if (ctx.mergeState === "BEHIND") out.push({ kind: "behind" });
   if (ctx.armed?.hold !== undefined) out.push({ kind: "held", reason: ctx.armed.hold });
+  if (ctx.armed?.waiting !== undefined) out.push({ kind: "waiting", reason: ctx.armed.waiting });
   if (out.length === 0 && ctx.mergeState === "BLOCKED") out.push({ kind: "blocked" });
   return out;
 };
@@ -368,6 +372,9 @@ export const prContextOf = (input: PrContextInput): PrContext => {
               ? {}
               : { reviewPolicy: input.mergeReviewPolicy }),
             ...(intent.hold === undefined ? {} : { hold: clean(intent.hold, 80) }),
+            ...(bound?.mergeWaiting === undefined
+              ? {}
+              : { waiting: clean(bound.mergeWaiting.why, 160) }),
             after: (intent.after ?? [])
               .slice(0, PR_CONTEXT_MAX_NAMES)
               .map((pr) => clean(`${pr.repo}#${pr.number}`)),
@@ -414,6 +421,8 @@ export const mergeBlockerText = (b: MergeBlocker): string => {
       return "the branch is behind its base";
     case "held":
       return `merge_when_ready is held: ${b.reason}`;
+    case "waiting":
+      return `merge_when_ready waits: ${b.reason}`;
     case "blocked":
       return "branch protection blocks it";
   }

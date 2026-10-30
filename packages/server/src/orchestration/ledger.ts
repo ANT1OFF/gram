@@ -26,6 +26,7 @@ import {
   type WorkerQuestion,
   type LimitUse,
   type MergeIntent,
+  type MergeWaiting,
   type OrchestratorLedger,
   type PendingWake,
   type PendingRequest,
@@ -301,6 +302,7 @@ export const prRow = (
   badge: PrStatus,
   intent?: MergeIntent | undefined,
   monitored = false,
+  waiting?: MergeWaiting | undefined,
 ): WorkerPr => {
   const verdict = badge.review?.verdictOnHead;
   const bot = botOnHead(badge.review);
@@ -334,6 +336,7 @@ export const prRow = (
             ...(intent.failedOn !== undefined && intent.failedOn === badge.headRefOid
               ? { refused: true as const }
               : {}),
+            ...(waiting === undefined ? {} : { waiting: redactText(waiting.why) }),
           },
         }),
   };
@@ -353,6 +356,7 @@ const prOf = (
     badge,
     thread.boundPr?.mergeWhenReady,
     thread.boundPr?.monitor === true || thread.boundPr?.reviewMonitor === true,
+    thread.boundPr?.mergeWaiting,
   );
   return boundRow(
     facts,
@@ -415,7 +419,13 @@ const alsoInOf = (facts: WorkerFacts, workspacePrs: WorkspacePrs): ReadonlyArray
         facts,
         badge === undefined
           ? { repo: pr.repo, number: pr.number }
-          : prRow(pr.repo, badge, pr.mergeWhenReady, pr.monitor || pr.reviewMonitor === true),
+          : prRow(
+              pr.repo,
+              badge,
+              pr.mergeWhenReady,
+              pr.monitor || pr.reviewMonitor === true,
+              pr.mergeWaiting,
+            ),
         workspacePrs,
       );
     });

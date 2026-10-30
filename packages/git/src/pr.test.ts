@@ -372,8 +372,21 @@ describe("GraphQL", () => {
     }
     expect(reshaped["baseRefOid"]).toBe("base999");
     expect(reshapePrNode({ number: 1 })["baseRefOid"]).toBeNull();
+    expect(reshaped["baseTipOid"]).toBe("base999");
     expect(rollupStatus(reshaped["statusCheckRollup"])).toBe("pending");
     expect(reshapePrNode({ number: 7, state: "MERGED" })["statusCheckRollup"]).toEqual([]);
+  });
+
+  it("keeps the base GitHub recorded for a PR apart from the base branch's tip", () => {
+    const node = {
+      baseRefOid: "recorded",
+      baseRef: { target: { oid: "tip" } },
+    };
+    expect(reshapePrNode(node)["baseRefOid"]).toBe("recorded");
+    expect(reshapePrNode(node)["baseTipOid"]).toBe("tip");
+    // Every block asks for the tip, a bound PR's badge as much as a branch's: no connection, no cost.
+    for (const fields of ["badge", "review", "reviewAndThreads"] as const)
+      expect(prGraphqlQuery([{ kind: "pr", fields }])).toContain("baseRef{target{oid}}");
   });
 
   it.effect("carries required-check provenance even when all checks are green", () =>

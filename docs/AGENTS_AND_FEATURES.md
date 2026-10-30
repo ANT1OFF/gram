@@ -331,11 +331,22 @@ A stored pass is specific to the project, command, setup, timeout, exact head an
 merged tree: a moved base invalidates it even when the merged tree is identical.
 
 Gram's own merges onto one base branch of one repository launch one at a time, across threads
-and workspaces. Each reads GitHub afresh, compares the base its check ran on and launches under
-that branch's lock. After a merge, every other armed `merge_when_ready` in the repository looks
-again, and a pass on the old base runs again on the new one. The lock fences only Gram: a push or
-merge by anyone else in between is for GitHub to refuse, with a branch rule requiring pull
-requests to be up to date, or a merge queue.
+and workspaces. Each reads GitHub afresh, compares the base branch's current tip with the one its
+check ran on and launches under that branch's lock. GitHub's `baseRefOid` is not used for this: it
+stays at the base the pull request last synced with until it is pushed to. After a merge, every
+other armed `merge_when_ready` in the repository looks again, and a pass on the old tip runs again
+on the new one. The lock fences only Gram: a push or merge by anyone else in between is for GitHub
+to refuse, with a branch rule requiring pull requests to be up to date, or a merge queue.
+
+Armed pull requests on one base take turns at the check, oldest first, because each merge voids a
+pass on the old tip: N of them cost N checks in a row, not N side by side. A merge, or a failed
+check, ends a turn at once; a pass that doesn't merge ends it after two minutes, so one pull
+request can't hold up the rest. `local_check` asks for its own check and doesn't queue.
+
+An armed merge that can't go yet says why on the pull request's status (`pr_status` under
+`bound.mergeWaiting`, the ledger and the PR context): its turn, the pull requests in `after`, a
+tip GitHub still reads as one Gram moved on from, or GitHub out of reach. The last two are asked
+again every two minutes, and after three of those Gram logs a warning and tells the thread once.
 
 A check under way when Gram quits keeps running under a wrapper that leads its process group,
 writes the exit status beside the worktree and stops the group 30 s past the timeout. On the next
