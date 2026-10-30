@@ -177,6 +177,75 @@ describe.skipIf(!hasGit)("deleteMergedBranch", () => {
     }),
   );
 
+  it.effect("keeps a stacked branch scheduled for rebase --update-refs", () =>
+    Effect.gen(function* () {
+      const { repo, worktree, head } = fixture();
+      run(worktree, "switch", "-qc", "top");
+      run(worktree, "commit", "--allow-empty", "-qm", "stack tip");
+      run(repo, "commit", "--allow-empty", "-qm", "new base");
+      const editor = nodePath.join(repo, ".git", "edit-stack.cjs");
+      write(
+        editor,
+        'const fs = require("node:fs"); const path = process.argv[2]; fs.writeFileSync(path, fs.readFileSync(path, "utf8").replace(/^pick /m, "edit "));',
+      );
+      const editorCommand = `"${process.execPath.replaceAll("\\", "/")}" "${editor.replaceAll("\\", "/")}"`;
+      run(
+        worktree,
+        "-c",
+        `sequence.editor=${editorCommand}`,
+        "rebase",
+        "-i",
+        "--update-refs",
+        "main",
+      );
+      expect(run(worktree, "branch", "--show-current").trim()).toBe("");
+      expect(() => run(repo, "branch", "-D", "feat")).toThrow();
+      const result = yield* deleteMergedBranch({ repoPath: repo, branch: "feat", pr: PR }).pipe(
+        withPr(Effect.succeed(merged(head))),
+      );
+      expect(result.deleted).toBe(false);
+      expect(run(repo, "rev-parse", "refs/heads/feat").trim()).toBe(head);
+      run(worktree, "rebase", "--continue");
+      expect(run(worktree, "branch", "--show-current").trim()).toBe("top");
+      expect(run(repo, "rev-parse", "refs/heads/feat").trim()).not.toBe(head);
+      run(worktree, "merge-base", "--is-ancestor", "feat", "top");
+    }),
+  );
+
+  for (const staleBranch of ["feat", "unrelated"]) {
+    it.effect(`ignores a prunable worktree registered on ${staleBranch}`, () =>
+      Effect.gen(function* () {
+        const { repo, worktree, head } = fixture();
+        if (staleBranch !== "feat") run(worktree, "switch", "-qc", staleBranch);
+        removeDir(worktree);
+        expect(run(repo, "worktree", "list", "--porcelain")).toContain("prunable");
+        const result = yield* deleteMergedBranch({ repoPath: repo, branch: "feat", pr: PR }).pipe(
+          withPr(Effect.succeed(merged(head))),
+        );
+        expect(result).toEqual({ name: "feat", deleted: true });
+        expect(branches(repo)).toBe("");
+        // Cleanup skips the stale registration; it doesn't prune git metadata.
+        expect(run(repo, "worktree", "list", "--porcelain")).toContain("prunable");
+      }),
+    );
+  }
+
+  it.effect("keeps the branch when a missing worktree is locked rather than prunable", () =>
+    Effect.gen(function* () {
+      const { repo, worktree, head } = fixture();
+      run(worktree, "switch", "-qc", "locked");
+      run(repo, "worktree", "lock", worktree);
+      removeDir(worktree);
+      expect(run(repo, "worktree", "list", "--porcelain")).not.toContain("prunable");
+      const result = yield* deleteMergedBranch({ repoPath: repo, branch: "feat", pr: PR }).pipe(
+        withPr(Effect.succeed(merged(head))),
+      );
+      expect(result.deleted).toBe(false);
+      expect(result.reason).toContain("couldn't inspect git operation state");
+      expect(run(repo, "rev-parse", "refs/heads/feat").trim()).toBe(head);
+    }),
+  );
+
   it.effect("keeps a branch used by a detached worktree's bisect", () =>
     Effect.gen(function* () {
       const { repo, worktree } = fixture();

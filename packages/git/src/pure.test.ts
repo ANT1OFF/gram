@@ -125,6 +125,18 @@ describe("branch sanitising and placement names", () => {
 });
 
 describe("worktree list parsing", () => {
+  it("preserves git's prunable marker, with or without a reason", () => {
+    expect(
+      parseWorktrees(
+        "worktree /stale\nHEAD aaa\nbranch refs/heads/feat\nprunable gitdir file points to non-existent location\n\n" +
+          "worktree /other\nHEAD bbb\ndetached\nprunable\n",
+      ),
+    ).toEqual([
+      { path: "/stale", branch: "feat", detached: false, prunable: true },
+      { path: "/other", branch: undefined, detached: true, prunable: true },
+    ]);
+  });
+
   it("keeps order, strips refs, flags detached and drops bare", () => {
     const stdout =
       "worktree /repo\r\nHEAD aaa\r\nbranch refs/heads/master\r\n\r\n" +

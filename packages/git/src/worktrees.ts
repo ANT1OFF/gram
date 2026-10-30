@@ -44,6 +44,8 @@ export interface ParsedWorktree {
   /** `refs/heads/` stripped; `undefined` when detached. */
   readonly branch: string | undefined;
   readonly detached: boolean;
+  /** Git marks this stale registration safe to prune. */
+  readonly prunable?: true;
 }
 
 /** Parse porcelain listing. The MAIN checkout stays first; bare and `worktree`-less blocks drop. */
@@ -56,14 +58,17 @@ export const parseWorktrees = (stdout: string): Array<ParsedWorktree> => {
     let branch: string | undefined;
     let detached = false;
     let bare = false;
+    let prunable = false;
     for (const line of block.split("\n")) {
       if (line.startsWith("worktree ")) path = line.slice("worktree ".length);
       else if (line.startsWith("branch "))
         branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
       else if (line === "detached") detached = true;
       else if (line === "bare") bare = true;
+      else if (line === "prunable" || line.startsWith("prunable ")) prunable = true;
     }
-    if (path !== undefined && !bare) out.push({ path, branch, detached });
+    if (path !== undefined && !bare)
+      out.push({ path, branch, detached, ...(prunable ? { prunable: true as const } : {}) });
   }
   return out;
 };
