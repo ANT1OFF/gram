@@ -114,6 +114,18 @@ describe("panel toggle", () => {
     expect(fitShell(s()).panel).toBe("side");
     s().togglePanel();
     expect(s()).toMatchObject({ panelOpen: true, panelPeek: false });
+    // Stored closed, the first toggle still opens it, and it stays stored closed.
+    s().setPanel({ open: false, width: PANEL_WIDTH.default, tab: "diff" });
+    s().togglePanel();
+    expect(s()).toMatchObject({ panelOpen: false, panelPeek: true });
+    expect(fitShell(s()).panel).toBe("side");
+    s().togglePanel();
+    expect(fitShell(s()).panel).toBe("none");
+    // Picking Diff in an open panel doesn't close it.
+    s().setPanel({ open: true, width: PANEL_WIDTH.default, tab: "pr" });
+    expect(fitShell(s()).panel).toBe("side");
+    s().setPanelTab("diff");
+    expect(fitShell(s()).panel).toBe("side");
     // A thread with changes gets the stored panel back.
     s().setShellContext({
       windowWidth: 1440,

@@ -45,9 +45,11 @@ export const FILE_STATUS: Record<
   untracked: { icon: FileQuestionMark, letter: "U", label: "Untracked", tone: "text-warning" },
 };
 
-/** A file's own actions: there while its row is hovered or holds focus. */
+/** A file's own actions, over the row's end while it is hovered or one of them has focus. */
+const ROW_ACTIONS =
+  "absolute inset-y-0 right-0 flex items-center bg-panel opacity-0 focus-within:opacity-100 group-hover/file:opacity-100";
 const ROW_ACTION =
-  "me-2 shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 outline-none group-focus-within/file:opacity-100 group-hover/file:opacity-100 hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
+  "me-2 shrink-0 rounded-sm p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** ↑ / ↓ on a file header move to the previous / next file's header, past any open patch. */
 function moveBetweenHeaders(event: KeyboardEvent<HTMLButtonElement>) {
@@ -178,7 +180,7 @@ function DiffFileRow({
 
   return (
     <li ref={rowRef} data-testid="diff-file" data-path={file.path}>
-      <div className="group/file flex items-center hover:bg-muted/50">
+      <div className="group/file relative flex items-center hover:bg-muted/50">
         <button
           type="button"
           data-diff-file-header
@@ -215,39 +217,41 @@ function DiffFileRow({
             </span>
           </span>
         </button>
-        {onReveal && (
-          <button
-            type="button"
-            aria-label={`Show ${file.path} in Files`}
-            title="Show in Files"
-            onClick={() => onReveal(file.path)}
-            className={ROW_ACTION}
-          >
-            <FolderSearch aria-hidden className="size-3.5" />
-          </button>
-        )}
-        {onOpenInEditor && (
-          <button
-            type="button"
-            aria-label={`Open ${file.path} in editor`}
-            title="Open in editor"
-            onClick={() => onOpenInEditor(file.path)}
-            className={ROW_ACTION}
-          >
-            <SquareArrowOutUpRight aria-hidden className="size-3.5" />
-          </button>
-        )}
-        {onRevealInFileManager && (
-          <button
-            type="button"
-            aria-label={revealLabel(file.path)}
-            title={revealLabel()}
-            onClick={() => onRevealInFileManager(file.path)}
-            className={ROW_ACTION}
-          >
-            <FolderOpen aria-hidden className="size-3.5" />
-          </button>
-        )}
+        <div className={ROW_ACTIONS}>
+          {onReveal && (
+            <button
+              type="button"
+              aria-label={`Show ${file.path} in Files`}
+              title="Show in Files"
+              onClick={() => onReveal(file.path)}
+              className={ROW_ACTION}
+            >
+              <FolderSearch aria-hidden className="size-3.5" />
+            </button>
+          )}
+          {onOpenInEditor && (
+            <button
+              type="button"
+              aria-label={`Open ${file.path} in editor`}
+              title="Open in editor"
+              onClick={() => onOpenInEditor(file.path)}
+              className={ROW_ACTION}
+            >
+              <SquareArrowOutUpRight aria-hidden className="size-3.5" />
+            </button>
+          )}
+          {onRevealInFileManager && (
+            <button
+              type="button"
+              aria-label={revealLabel(file.path)}
+              title={revealLabel()}
+              onClick={() => onRevealInFileManager(file.path)}
+              className={ROW_ACTION}
+            >
+              <FolderOpen aria-hidden className="size-3.5" />
+            </button>
+          )}
+        </div>
       </div>
       <Expand open={open} id={bodyId}>
         {rendered && (
