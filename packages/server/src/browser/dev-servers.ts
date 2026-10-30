@@ -318,6 +318,8 @@ export function createDevServerHost(options: DevServerHostOptions) {
   };
   /** Thread and name pairs being started, so a second start of one waits for none. */
   const starting = new Set<string>();
+  /** Pending spawns remain cancellable while the environment is being resolved. */
+  const launches = new Map<string, { readonly threadId: string; cancelled: boolean }>();
 
   /**
    * Signals the server's whole process group (`npm run dev` and what it started), whose remainder
@@ -409,70 +411,81 @@ export function createDevServerHost(options: DevServerHostOptions) {
       const running = servers.get(keyOf(threadId, launch.name));
       if (running !== undefined && running.exit === undefined)
         throw new LaunchConfigError(`"${launch.name}" is already running.`);
-      const base = await options.env();
-      const env: Record<string, string> = {};
-      for (const [key, value] of Object.entries(base)) if (value !== undefined) env[key] = value;
-      Object.assign(env, launch.env, { PORT: String(launch.port) });
-      const child = spawn(launch.executable, [...launch.args], {
-        cwd: launch.cwd,
-        env,
-        detached: process.platform !== "win32",
-        shell: process.platform === "win32",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      const server: DevServer = {
-        threadId,
-        name: launch.name,
-        port: launch.port,
-        url: `http://localhost:${launch.port}/`,
-        command: [launch.executable, ...launch.args].join(" "),
-        startedAt: Date.now(),
-        pid: child.pid,
-        logs: [],
-        exit: undefined,
-        groupGone: false,
-        child,
-      };
-      servers.set(keyOf(threadId, launch.name), server);
-      if (child.pid !== undefined) options.rooted?.(threadId, child.pid);
-      /** Characters in `server.logs`, kept under `LOG_CHARS_KEPT` with their count under `LOGS_KEPT`. */
-      const kept = makeBoundedList(server.logs, {
-        maxItems: LOGS_KEPT,
-        maxSize: LOG_CHARS_KEPT,
-        sizeOf: (line) => line.text.length,
-      });
-      const log = (stream: LogLine["stream"], text: string, level = levelOf(text)) =>
-        kept.push({ at: Date.now(), stream, level, text });
-      for (const stream of ["stdout", "stderr"] as const) {
-        // Each line is kept to `LINE_CHARS` while it is read, so a partial line never grows past it.
-        const lines = makeLineCutter((partial, cut) => {
-          let text = partial.replace(ANSI, "").trimEnd();
-          if (cut) text = text.slice(0, LINE_CHARS - TRUNCATED.length) + TRUNCATED;
-          if (text !== "") log(stream, text);
+      const key = keyOf(threadId, launch.name);
+      if (launches.has(key)) throw new LaunchConfigError(`"${launch.name}" is already starting.`);
+      const attempt = { threadId, cancelled: false };
+      launches.set(key, attempt);
+      try {
+        const base = await options.env();
+        if (attempt.cancelled)
+          throw new LaunchConfigError(`"${launch.name}" launch was cancelled.`);
+        const env: Record<string, string> = {};
+        for (const [name, value] of Object.entries(base))
+          if (value !== undefined) env[name] = value;
+        Object.assign(env, launch.env, { PORT: String(launch.port) });
+        const child = spawn(launch.executable, [...launch.args], {
+          cwd: launch.cwd,
+          env,
+          detached: process.platform !== "win32",
+          shell: process.platform === "win32",
+          stdio: ["ignore", "pipe", "pipe"],
         });
-        child[stream]?.setEncoding("utf8");
-        child[stream]?.on("data", lines.write);
-        // Output that never ended its last line is still kept.
-        child[stream]?.once("end", lines.end);
+        const server: DevServer = {
+          threadId,
+          name: launch.name,
+          port: launch.port,
+          url: `http://localhost:${launch.port}/`,
+          command: [launch.executable, ...launch.args].join(" "),
+          startedAt: Date.now(),
+          pid: child.pid,
+          logs: [],
+          exit: undefined,
+          groupGone: false,
+          child,
+        };
+        servers.set(keyOf(threadId, launch.name), server);
+        if (child.pid !== undefined) options.rooted?.(threadId, child.pid);
+        /** Characters in `server.logs`, kept under `LOG_CHARS_KEPT` with their count under `LOGS_KEPT`. */
+        const kept = makeBoundedList(server.logs, {
+          maxItems: LOGS_KEPT,
+          maxSize: LOG_CHARS_KEPT,
+          sizeOf: (line) => line.text.length,
+        });
+        const log = (stream: LogLine["stream"], text: string, level = levelOf(text)) =>
+          kept.push({ at: Date.now(), stream, level, text });
+        for (const stream of ["stdout", "stderr"] as const) {
+          // Each line is kept to `LINE_CHARS` while it is read, so a partial line never grows past it.
+          const lines = makeLineCutter((partial, cut) => {
+            let text = partial.replace(ANSI, "").trimEnd();
+            if (cut) text = text.slice(0, LINE_CHARS - TRUNCATED.length) + TRUNCATED;
+            if (text !== "") log(stream, text);
+          });
+          child[stream]?.setEncoding("utf8");
+          child[stream]?.on("data", lines.write);
+          // Output that never ended its last line is still kept.
+          child[stream]?.once("end", lines.end);
+        }
+        child.once("error", (error) => {
+          log("stderr", error.message.slice(0, LINE_CHARS), "error");
+          server.exit ??= { code: null, signal: null };
+        });
+        const holder = holders.get(keyOf(threadId, launch.name));
+        child.once("exit", (code, signal) => {
+          server.exit = { code, signal };
+          watchGroup(server);
+          free(server.port, holder);
+          if (server.pid !== undefined) options.unrooted?.(server.pid);
+        });
+        const deadline = Date.now() + READY_MS;
+        while (Date.now() < deadline && server.exit === undefined) {
+          if ((await listening(launch.port, "127.0.0.1")) || (await listening(launch.port, "::1")))
+            return { server, ready: true };
+          await new Promise((done) => setTimeout(done, 250));
+        }
+        return { server, ready: false };
+      } finally {
+        launches.delete(key);
       }
-      child.once("error", (error) => {
-        log("stderr", error.message.slice(0, LINE_CHARS), "error");
-        server.exit ??= { code: null, signal: null };
-      });
-      const holder = holders.get(keyOf(threadId, launch.name));
-      child.once("exit", (code, signal) => {
-        server.exit = { code, signal };
-        watchGroup(server);
-        free(server.port, holder);
-        if (server.pid !== undefined) options.unrooted?.(server.pid);
-      });
-      const deadline = Date.now() + READY_MS;
-      while (Date.now() < deadline && server.exit === undefined) {
-        if ((await listening(launch.port, "127.0.0.1")) || (await listening(launch.port, "::1")))
-          return { server, ready: true };
-        await new Promise((done) => setTimeout(done, 250));
-      }
-      return { server, ready: false };
     },
     stop: async (threadId: string, name: string) => {
       const server = servers.get(keyOf(threadId, name));
@@ -481,11 +494,14 @@ export function createDevServerHost(options: DevServerHostOptions) {
       return true;
     },
     stopThread: async (threadId: string) => {
+      for (const attempt of launches.values())
+        if (attempt.threadId === threadId) attempt.cancelled = true;
       await Promise.all(
         [...servers.values()].filter((s) => s.threadId === threadId).map(stopServer),
       );
     },
     stopAll: async () => {
+      for (const attempt of launches.values()) attempt.cancelled = true;
       await Promise.all([...servers.values()].map(stopServer));
     },
   };
