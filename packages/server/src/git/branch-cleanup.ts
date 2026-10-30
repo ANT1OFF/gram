@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { git, listWorktrees, Pr, type Proc } from "@gram/git";
+import { fromGitPath, git, parseWorktrees, Pr, type Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -39,7 +39,12 @@ const operationUsesBranch = (worktree: string, branch: string) =>
     const gitDir = directory.value.stdout.trim();
     const state = yield* Effect.tryPromise(() =>
       Promise.all(
-        ["rebase-merge/head-name", "rebase-apply/head-name", "BISECT_START"].map(async (file) => {
+        [
+          "rebase-merge/head-name",
+          "rebase-apply/head-name",
+          "BISECT_START",
+          "rebase-merge/update-refs",
+        ].map(async (file) => {
           try {
             return (await readFile(join(gitDir, file), "utf8")).trim();
           } catch (error) {
@@ -50,7 +55,15 @@ const operationUsesBranch = (worktree: string, branch: string) =>
       ),
     ).pipe(Effect.option);
     if (Option.isNone(state)) return "unknown" as const;
-    return state.value.some((name) => name === branch || name === `refs/heads/${branch}`)
+    const [mergeHead, applyHead, bisectStart, updateRefs] = state.value;
+    // update-refs stores triples: ref name, original oid, rewritten oid.
+    const names = [
+      mergeHead,
+      applyHead,
+      bisectStart,
+      ...(updateRefs?.split(/\r?\n/).filter((_, index) => index % 3 === 0) ?? []),
+    ];
+    return names.some((name) => name === branch || name === `refs/heads/${branch}`)
       ? ("held" as const)
       : ("free" as const);
   });
@@ -90,14 +103,20 @@ export const deleteMergedBranch = (
       return keep(`it has commits #${number} doesn't`);
     }
 
-    const list = yield* listWorktrees(repoPath, { openCheckouts: [] }).pipe(Effect.option);
-    if (Option.isNone(list)) return keep("couldn't list the repo's worktrees");
-    const holder = list.value.worktrees.find((w) => w.branch === branch);
+    const list = yield* git(repoPath, ["worktree", "list", "--porcelain"]).pipe(Effect.option);
+    if (Option.isNone(list) || list.value.status !== 0 || list.value.truncated)
+      return keep("couldn't list the repo's worktrees");
+    // Only git's explicit prunable marker permits skipping a registration. A missing locked
+    // checkout can be a temporarily unmounted worktree and must still fail closed below.
+    const worktrees = parseWorktrees(list.value.stdout)
+      .filter((w) => !w.prunable)
+      .map((w) => ({ ...w, path: fromGitPath(w.path) }));
+    const holder = worktrees.find((w) => w.branch === branch);
     if (holder !== undefined) return keep(`it's checked out in ${holder.path}`);
 
     // `git branch -D` guarded these detached worktrees itself. The conditional ref deletion
     // below must preserve that guard, reading every worktree's own operation state last.
-    for (const worktree of list.value.worktrees) {
+    for (const worktree of worktrees) {
       const operation = yield* operationUsesBranch(worktree.path, branch);
       if (operation === "held") return keep(`it's being rebased or bisected in ${worktree.path}`);
       if (operation === "unknown")
