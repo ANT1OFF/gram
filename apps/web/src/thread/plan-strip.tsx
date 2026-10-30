@@ -17,12 +17,13 @@ import {
   CircleCheck,
   CircleDot,
   CircleSlash,
-  Lock,
   Octagon,
   Pencil,
+  ListRestart,
   Plus,
   RefreshCw,
   Sparkles,
+  Target,
   User,
   Workflow,
   X,
@@ -31,6 +32,7 @@ import {
 import { useRef, useState, type KeyboardEvent } from "react";
 
 import { useApi } from "@/api/context";
+import { Hint } from "@/components/hint";
 import { PR_STATE_DISPLAY, prLifecycleOf } from "@/components/pr-marks-model";
 import { agoText } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -318,7 +320,6 @@ function StepRow({
             className="mt-0.5 flex shrink-0 items-center gap-0.5 text-muted-foreground/70 hover:text-foreground"
           >
             <source.icon aria-hidden className="size-3" />
-            <Lock aria-hidden className="size-2.5" />
           </button>
         ) : (
           <span title={source.label} className="mt-0.5 shrink-0 text-muted-foreground/70">
@@ -329,6 +330,40 @@ function StepRow({
       </span>
       {todos !== undefined && todos.length > 0 && <TurnTodos items={todos} />}
     </li>
+  );
+}
+
+/** One of the strip's own actions: a glyph, its words on hover. */
+function FooterAction({
+  label,
+  hint,
+  icon: Icon,
+  spinning = false,
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  hint?: string;
+  icon: LucideIcon;
+  spinning?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Hint
+      label={hint ?? label}
+      render={
+        <button
+          type="button"
+          aria-label={label}
+          disabled={disabled}
+          onClick={onClick}
+          className="rounded-sm p-1 hover:text-foreground disabled:opacity-50"
+        />
+      }
+    >
+      <Icon aria-hidden ref={spinning ? spin : undefined} className="size-3.5" />
+    </Hint>
   );
 }
 
@@ -392,7 +427,9 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
   };
   const goal = plan?.goal ?? "";
   const doing = fromTodo ? undefined : steps.find((step) => step.status === "doing");
-  const line = stripLine(headline, steps);
+  const line = stripLine(steps);
+  // A finished plan has nothing left to say; it stays while the user has it open.
+  if (progress.total > 0 && progress.done === progress.total && !open) return null;
 
   return (
     <div
@@ -420,10 +457,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
           {goal || "Plan"}
         </span>
         {line !== undefined && (
-          <span
-            data-testid="plan-strip-headline"
-            className={cn("min-w-0 truncate @max-sm:hidden", needsYou && "text-status-needs")}
-          >
+          <span data-testid="plan-strip-headline" className="min-w-0 truncate @max-sm:hidden">
             · {line}
           </span>
         )}
@@ -513,42 +547,30 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
                 </>
               )}
             </span>
-            <span className="ml-auto flex items-center gap-3">
-              <button
-                type="button"
+            <span className="ml-auto flex items-center gap-0.5">
+              <FooterAction
+                label={goal === "" ? "Set a goal" : "Edit goal"}
+                icon={Target}
                 onClick={() => setEditingGoal(true)}
-                className="hover:text-foreground"
-              >
-                {goal === "" ? "Set a goal" : "Edit goal"}
-              </button>
+              />
               {steps.length < 8 && (
-                <button
-                  type="button"
-                  onClick={() => setAdding(true)}
-                  className="flex items-center gap-0.5 hover:text-foreground"
-                >
-                  <Plus aria-hidden className="size-3" /> Add step
-                </button>
+                <FooterAction label="Add step" icon={Plus} onClick={() => setAdding(true)} />
               )}
-              <button
-                type="button"
+              <FooterAction
+                label="Refresh"
+                hint="Refresh: bring the plan up to date from the transcript and PR state"
+                icon={RefreshCw}
+                spinning={refreshing}
                 disabled={refreshing}
-                title="Bring the plan up to date from the transcript and PR state"
                 onClick={() => refresh(false)}
-                className="flex items-center gap-0.5 hover:text-foreground disabled:opacity-50"
-              >
-                <RefreshCw aria-hidden ref={refreshing ? spin : undefined} className="size-3" />{" "}
-                Refresh
-              </button>
-              <button
-                type="button"
+              />
+              <FooterAction
+                label="Rebuild"
+                hint="Rebuild: drop the steps nobody locked and derive them again from the whole thread"
+                icon={ListRestart}
                 disabled={refreshing}
-                title="Drop the steps nobody locked and derive them again from the whole thread"
                 onClick={() => refresh(true)}
-                className="hover:text-foreground disabled:opacity-50"
-              >
-                Rebuild
-              </button>
+              />
             </span>
           </div>
         </div>

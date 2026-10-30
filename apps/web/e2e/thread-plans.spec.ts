@@ -48,7 +48,7 @@ test("a planned thread's header strip says where it stands, and edits the plan",
   await expect(steps).toHaveCount(4);
   await expect(count).toHaveText("2/4");
 
-  // Every step done: the ring turns to a check, and the strip says just that.
+  // Every step done: the ring turns to a check, with no step left to name; folded, the strip goes.
   await steps
     .nth(2)
     .getByRole("button", { name: /^In progress: / })
@@ -63,7 +63,9 @@ test("a planned thread's header strip says where it stands, and edits the plan",
     .click();
   await expect(ring).toHaveAttribute("data-share", "1");
   await expect(count).toHaveText("4/4");
-  await expect(headline).toHaveText("· Done");
+  await expect(headline).toHaveCount(0);
+  await strip.getByRole("button", { name: /^Plan: / }).click();
+  await expect(strip).toHaveCount(0);
 });
 
 test("the agent's todo list stands in for a plan it hasn't got", async ({ page }) => {
@@ -82,5 +84,6 @@ test("the agent's todo list stands in for a plan it hasn't got", async ({ page }
   await strip.getByRole("button", { name: /^Plan: / }).click();
   await expect(strip.getByTestId("plan-step")).toHaveCount(2);
   await expect(strip).toContainText("The agent's todo list");
-  await expect(strip.getByTestId("plan-strip-headline")).toContainText("Next: Grouping by folder");
+  // The step in progress, by its own words.
+  await expect(strip.getByTestId("plan-strip-headline")).toHaveText("· Grouping by folder");
 });

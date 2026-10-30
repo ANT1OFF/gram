@@ -48,18 +48,17 @@ export const hasPlan = (
   (turnPlan !== undefined && turnPlan.length > 0);
 
 /**
- * What the header's plan strip says after the goal: the headline, except while the thread works,
- * when it names the step in progress rather than the command running, which the transcript and the
- * header's status already show. The strip's own count stands in for the headline's "Step 2 of 4".
+ * What the header's plan strip says after the goal: the step in progress, or the next one to do.
+ * Only the step: the PR strip, the approval card and the header's status already say the rest, and
+ * the strip's own count stands in for "Step 2 of 4".
  */
 export const stripLine = (
-  headline: PlanHeadline | undefined,
   steps: readonly Pick<PlanStep, "text" | "status">[],
 ): string | undefined => {
-  if (headline === undefined) return undefined;
-  if (headline.phase !== "working") return headline.text;
   const doing = steps.find((step) => step.status === "doing");
-  return doing === undefined ? undefined : planText(doing.text);
+  if (doing !== undefined) return planText(doing.text);
+  const next = steps.find((step) => step.status === "todo");
+  return next === undefined ? undefined : `Next: ${planText(next.text)}`;
 };
 
 /** The tone a phase's text and ring take. */

@@ -37,18 +37,11 @@ describe("the row's plan", () => {
 });
 
 describe("the header's plan strip", () => {
-  it("names the step in progress while working, never the running command", () => {
-    const working = {
-      phase: "working",
-      text: "Step 2 of 3 · Running pnpm test",
-      done: 1,
-      total: 3,
-    } as const;
-    expect(stripLine(working, plan.steps)).toBe("Fix Parked lane focus");
-    expect(stripLine(working, [{ text: "Lanes", status: "done" }])).toBeUndefined();
-    const next = { phase: "next", text: "Next: Update FEATURES.md", done: 1, total: 3 } as const;
-    expect(stripLine(next, plan.steps)).toBe("Next: Update FEATURES.md");
-    expect(stripLine(undefined, plan.steps)).toBeUndefined();
+  it("names the step in progress, or the next one, and nothing else", () => {
+    expect(stripLine(plan.steps)).toBe("Fix Parked lane focus");
+    expect(stripLine([plan.steps[0]!, plan.steps[2]!])).toBe("Next: Update FEATURES.md");
+    expect(stripLine([{ text: "Lanes", status: "done" }])).toBeUndefined();
+    expect(stripLine([])).toBeUndefined();
   });
 });
 
