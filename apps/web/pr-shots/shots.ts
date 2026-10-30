@@ -727,6 +727,41 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "terminal-gone",
+    title: "The Terminal tab when the server no longer has its terminal, as after a server restart",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.addInitScript(() => {
+        Object.defineProperty(window, "gramMock", {
+          configurable: true,
+          set(mock: NonNullable<typeof window.gramMock>) {
+            // What a restarted server answers for a terminal id it never had.
+            mock.terminalFeed = async function* () {
+              yield* [];
+              throw Object.assign(new Error(), {
+                _tag: "NotFound",
+                entity: "terminal",
+                id: "term-1",
+                message: undefined,
+              });
+            };
+            Object.defineProperty(window, "gramMock", { configurable: true, value: mock });
+          },
+        });
+      });
+      await page.goto("/t/t-flaky");
+      const panel = page.getByTestId("right-panel");
+      await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+      await panel
+        .getByTestId("terminal")
+        .getByRole("alert")
+        .or(panel.getByRole("status"))
+        .waitFor();
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("right-panel"),
+  },
+  {
     name: "quiet-busy",
     title:
       "Quiet over `casefiles`, its workers peeked: two running, three waiting on CI, the review bot or a dependency, one on a conflict",
