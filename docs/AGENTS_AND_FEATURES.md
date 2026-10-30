@@ -343,10 +343,17 @@ pass on the old tip: N of them cost N checks in a row, not N side by side. A mer
 check, ends a turn at once; a pass that doesn't merge ends it after two minutes, so one pull
 request can't hold up the rest. `local_check` asks for its own check and doesn't queue.
 
+A merge Gram didn't hear the end of fences its base as a confirmed one does. If `gh` times out,
+exits non-zero or is cut off, GitHub may still have applied it, so nothing launches onto that base
+until the pull request is read: merged counts as a move of the base, and open or closed counts as
+not merged only two minutes after the launch, since GitHub's reads can lag a merge. A plain refusal
+takes the same path, so the next merge onto that base can wait up to two minutes.
+
 An armed merge that can't go yet says why on the pull request's status (`pr_status` under
 `bound.mergeWaiting`, the ledger and the PR context): its turn, the pull requests in `after`, a
-tip GitHub still reads as one Gram moved on from, or GitHub out of reach. The last two are asked
-again every two minutes, and after three of those Gram logs a warning and tells the thread once.
+tip GitHub still reads as one Gram moved on from, a merge whose outcome isn't known, or GitHub out
+of reach. The last three are asked again every two minutes, and after three of those Gram logs a
+warning and tells the thread once.
 
 A check under way when Gram quits keeps running under a wrapper that leads its process group,
 writes the exit status beside the worktree and stops the group 30 s past the timeout. On the next

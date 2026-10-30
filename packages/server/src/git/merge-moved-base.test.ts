@@ -6,7 +6,7 @@ import {
   type ProjectId,
   type ThreadId,
 } from "@gram/contracts";
-import { Pr, Proc } from "@gram/git";
+import { Pr, Proc, ProcTimeout } from "@gram/git";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -62,6 +62,11 @@ const record = (head: string, base: string, status: LocalCheck["status"]): Local
   host: "invented",
 });
 
+const ok = (stdout = "") => ({ status: 0, stdout, stderr: "", truncated: false });
+
+/** Lost: `gh` timed out. Reset: it exited 1. Hung: it never answers, until it is interrupted. */
+type LaunchFate = "lost-applied" | "lost-unapplied" | "reset-applied" | "refused" | "hung-applied";
+
 interface Options {
   readonly numbers: ReadonlyArray<number>;
   /** Passes Gram already holds: every PR on the recorded base, as the armed PRs of the stall had. */
@@ -70,6 +75,12 @@ interface Options {
   readonly outcome?: (head: string, base: string) => "passed" | "failed";
   /** What GitHub's merge does to the tip; by default it moves. */
   readonly stuckTip?: boolean;
+  /** What becomes of the nth merge launched; by default GitHub applies it and answers. */
+  readonly launch?: (nth: number) => LaunchFate | undefined;
+  /** What `gh pr view` says of a PR's state; by default the truth. */
+  readonly stateRead?: () => string;
+  /** The wait between rechecks; short by default. */
+  readonly recheckMs?: number;
   /** How long GitHub takes to answer a read. */
   readonly readMs?: number;
   /** A read that fails, for the PR it names. */
@@ -83,7 +94,12 @@ const scenario = <E, R>(
     readonly service: MergeWhenReady["Service"];
     readonly store: ThreadStore["Service"];
     readonly threads: ReadonlyArray<ThreadId>;
+    /** The PRs merged on GitHub, whatever Gram heard of it. */
     readonly merged: ReadonlyArray<number>;
+    /** The PRs Gram launched a merge of, in order. */
+    readonly launches: ReadonlyArray<number>;
+    /** The base moves on, as a read that had lagged catches up. */
+    readonly moveTip: () => void;
     /** Every check started, in order. */
     readonly ensured: ReadonlyArray<readonly [string, string]>;
     /** The most checks that ran at once. */
@@ -103,22 +119,42 @@ const scenario = <E, R>(
     let merges = 0;
     const tip = () => tipAfter(merges);
     const merged: Array<number> = [];
+    const launches: Array<number> = [];
     const proc = Layer.succeed(Proc, {
       run: (_bin, args) =>
-        Effect.sync(() => {
-          if (args[0] === "pr" && args[1] === "merge") {
-            merged.push(Number(args[2]));
+        Effect.suspend(() => {
+          const number = Number(args[2]);
+          if (args[0] === "pr" && args[1] === "view")
+            return Effect.succeed(
+              ok(options.stateRead?.() ?? (merged.includes(number) ? "MERGED" : "OPEN")),
+            );
+          if (args[0] !== "pr" || args[1] !== "merge") return Effect.succeed(ok());
+          launches.push(number);
+          const fate = options.launch?.(launches.length);
+          if (fate !== "lost-unapplied" && fate !== "refused") {
+            merged.push(number);
             if (options.stuckTip !== true) merges++;
           }
-          return { status: 0, stdout: "", stderr: "", truncated: false };
+          if (fate === "hung-applied") return Effect.never;
+          if (fate === "lost-applied" || fate === "lost-unapplied")
+            return Effect.fail(new ProcTimeout({ bin: "gh", message: "invented: timed out" }));
+          return Effect.succeed(
+            fate === "reset-applied" || fate === "refused"
+              ? { ...ok(), status: 1, stderr: "invented: gh failed" }
+              : ok(),
+          );
         }),
+    });
+    const current = (number: number): PrStatus => ({
+      ...badgeOf(number, tip()),
+      state: merged.includes(number) ? "MERGED" : "OPEN",
     });
     const provider = Layer.succeed(Pr, {
       status: (_cwd: string, bound?: { readonly number: number }) =>
         options.unreadable?.(bound!.number) === true
           ? Effect.fail({ message: "invented: GitHub unreachable" })
           : Effect.sleep(Duration.millis(options.readMs ?? 0)).pipe(
-              Effect.map(() => badgeOf(bound!.number, tip())),
+              Effect.map(() => current(bound!.number)),
             ),
     } as unknown as Pr["Service"]);
     const records = new Map<string, LocalCheck>();
@@ -162,7 +198,7 @@ const scenario = <E, R>(
       // Caught up: merge-base-lock.test.ts has a publisher that hasn't.
       badgeFor: (thread) =>
         Effect.sync(() =>
-          thread.boundPr === undefined ? undefined : badgeOf(thread.boundPr.number, tip()),
+          thread.boundPr === undefined ? undefined : current(thread.boundPr.number),
         ),
       stateFor: () => Effect.succeed(undefined),
       extraBadgesFor: () => Effect.succeed([]),
@@ -184,7 +220,7 @@ const scenario = <E, R>(
       Layer.provideMerge(publisher),
       Layer.provideMerge(checks),
       Layer.provideMerge(GitRefresh.layer),
-      Layer.provideMerge(Layer.succeed(MergeRecheckMs, 20)),
+      Layer.provideMerge(Layer.succeed(MergeRecheckMs, options.recheckMs ?? 20)),
       Layer.provideMerge(RuntimeTestLayer),
       Layer.provideMerge(captureLogs({ printWarnings: false }).layer),
     );
@@ -227,6 +263,10 @@ const scenario = <E, R>(
         store,
         threads,
         merged,
+        launches,
+        moveTip: () => {
+          merges++;
+        },
         ensured,
         mostAtOnce: () => mostAtOnce,
         tip,
@@ -372,6 +412,174 @@ describe("armed merges on a base that moved", () => {
         }),
     ),
   );
+
+  describe("a merge Gram can't say went through", () => {
+    const both = [
+      [5, RECORDED],
+      [6, RECORDED],
+    ] as const;
+
+    it.live.each([
+      ["its reply was lost", "lost-applied"],
+      ["gh exited non-zero after GitHub applied it", "reset-applied"],
+    ] as const)("fences the base as an answered merge does: %s", ([, fate]) =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          launch: (nth) => (nth === 1 ? fate : undefined),
+        },
+        ({ service, store, threads, launches, merged, ensured, finish, moveTip, tip }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "the first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            yield* service.check(threads[1]!);
+            // GitHub still reads the old tip, so the pass on it is worth nothing.
+            yield* waitReal(
+              "the second waits on the tip",
+              Effect.map(
+                store.getThread(threads[1]!),
+                (t) => t.boundPr?.mergeWaiting?.why.includes("still reads") === true,
+              ),
+            );
+            expect(launches).toEqual([5]);
+            expect(ensured).toEqual([]);
+            // The read catches up, and the publisher, seeing the badge's tip move, has it look:
+            // its check runs on the new tip, and then it merges.
+            moveTip();
+            yield* service.check(threads[1]!);
+            yield* waitReal(
+              "the second's check on the new tip",
+              Effect.sync(() => ensured.length === 1),
+            );
+            expect(ensured).toEqual([[headOf(6), tip()]]);
+            yield* finish(headOf(6), tip());
+            yield* waitReal(
+              "the second merged",
+              Effect.sync(() => merged.includes(6)),
+            );
+            expect(launches).toEqual([5, 6]);
+          }),
+      ),
+    );
+
+    it.live("fences the base when the launch is cut off under way", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          launch: (nth) => (nth === 1 ? "hung-applied" : undefined),
+        },
+        ({ service, store, threads, launches }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "the first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            // A look stops the attempt, with `gh` in flight.
+            yield* service.check(threads[0]!);
+            yield* service.check(threads[1]!);
+            yield* waitReal(
+              "the second waits on the tip",
+              Effect.map(
+                store.getThread(threads[1]!),
+                (t) => t.boundPr?.mergeWaiting?.why.includes("still reads") === true,
+              ),
+            );
+            expect(launches).toEqual([5]);
+          }),
+      ),
+    );
+
+    it.live("doesn't take an open PR's word for it while GitHub's reads may still lag", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          recheckMs: 60_000,
+          stateRead: () => "OPEN",
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, store, threads, launches }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "the first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            yield* service.check(threads[1]!);
+            yield* waitReal(
+              "the second waits on the outcome",
+              Effect.map(
+                store.getThread(threads[1]!),
+                (t) => t.boundPr?.mergeWaiting?.why.includes("isn't known") === true,
+              ),
+            );
+            expect(launches).toEqual([5]);
+          }),
+      ),
+    );
+
+    it.live("holds everything back while the PR's state can't be read, and says so", () =>
+      scenario(
+        {
+          numbers: [5, 6],
+          passed: both,
+          stuckTip: true,
+          stateRead: () => "",
+          launch: (nth) => (nth === 1 ? "lost-applied" : undefined),
+        },
+        ({ service, store, threads, launches, notices }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "the first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            yield* service.check(threads[1]!);
+            yield* waitReal(
+              "the thread is told",
+              Effect.map(notices(), (texts) => texts.some((text) => text.includes("isn't known"))),
+            );
+            expect(launches).toEqual([5]);
+            expect((yield* store.getThread(threads[1]!)).boundPr?.mergeWaiting?.why).toContain(
+              "isn't known",
+            );
+          }),
+      ),
+    );
+
+    it.live.each([
+      ["a lost reply it never applied", "lost-unapplied"],
+      ["a refusal", "refused"],
+    ] as const)("lets go once GitHub had time to show it: %s", ([, fate]) =>
+      scenario(
+        { numbers: [5, 6], passed: both, launch: (nth) => (nth === 1 ? fate : undefined) },
+        ({ service, threads, merged, launches }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "the first launched",
+              Effect.sync(() => launches.length === 1),
+            );
+            yield* service.check(threads[1]!);
+            // No move to fence: the tip is where it was, and the pass on it still stands.
+            yield* waitReal(
+              "a merge at last",
+              Effect.sync(() => merged.length > 0),
+            );
+            expect(launches).toHaveLength(2);
+          }),
+      ),
+    );
+  });
 
   it.live("a pass that doesn't merge lets the next PR go after a while", () =>
     scenario(
