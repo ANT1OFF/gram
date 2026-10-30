@@ -18,12 +18,12 @@
 # SHERPA_ONNX_OUT=<dir> writes elsewhere, to compare a rebuild with the committed files.
 set -euo pipefail
 
-TAG=v1.13.8
-COMMIT=11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf
+TAG=v2.0.0
+COMMIT=8abb7c8f87eae85b2e75f9a4115236c978980add
 CMAKE_JS=7.4.0
 NODE_ADDON_API=8.9.2
-NODE_HEADERS=26.11.1 # .node-version; the addon uses Node-API only, so Electron loads it as is.
-MACOS=13.0 # Electron 44's LSMinimumSystemVersion; cmake-js would otherwise target the build machine's.
+NODE_HEADERS=26.12.0 # .node-version; the addon uses Node-API only, so Electron loads it as is.
+MACOS=13.0 # Electron's LSMinimumSystemVersion; cmake-js would otherwise target the build machine's.
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)

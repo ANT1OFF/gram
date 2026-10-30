@@ -25,7 +25,7 @@ updates:
       # The Effect family moves as one release, and patches/ pins @effect/platform-node-shared.
       - dependency-name: effect
       - dependency-name: "@effect/*"
-      # The darwin-arm64 build in tools/sherpa-onnx/ and the six platform overrides move together.
+      # The darwin-arm64 build in tools/sherpa-onnx/ and the seven platform overrides move together.
       - dependency-name: sherpa-onnx*
       # Node types follow the .node-version major.
       - dependency-name: "@types/node"
