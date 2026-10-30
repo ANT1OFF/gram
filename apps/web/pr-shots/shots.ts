@@ -606,8 +606,44 @@ const proposalCard = (prompt: string, title: string, name: string): Shot => ({
   element: (page) => page.getByTestId("approval-card").last(),
 });
 
+/** t-flaky held mid-turn, so the send button stays on what a running turn offers. */
+async function openRunningComposer(page: Page) {
+  await page.addInitScript(() => {
+    window.gramMockHoldGates = true;
+  });
+  await page.goto("/t/t-flaky");
+  await page.getByRole("button", { name: "Stop", exact: true }).first().waitFor();
+}
+
+const composerSurface = (page: Page) => page.locator('[data-surface="composer"]');
+
 export const SHOTS: readonly Shot[] = [
   ...UPDATE_PILL_SHOTS,
+  {
+    name: "send-button-running",
+    title: "The composer's send button during a turn, nothing typed",
+    open: openRunningComposer,
+    element: composerSurface,
+  },
+  {
+    name: "send-button-draft",
+    title: "The composer's send button during a turn, with a draft",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await page.getByLabel("Message", { exact: true }).fill("use the fake clock");
+    },
+    element: composerSurface,
+  },
+  {
+    name: "send-button-menu",
+    title: "The send button's right-click menu during a turn, with a draft",
+    open: async (page) => {
+      await openRunningComposer(page);
+      await page.getByLabel("Message", { exact: true }).fill("use the fake clock");
+      await page.getByTestId("send-menu-trigger").click({ button: "right" });
+      await page.getByTestId("send-menu").waitFor();
+    },
+  },
   {
     name: "new-entry-header",
     title: "The overview header with its New control, at the 180 px minimum width",

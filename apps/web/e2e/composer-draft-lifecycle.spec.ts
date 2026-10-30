@@ -78,7 +78,7 @@ const open = async (page: Page) => {
       return window.composerLifecycle.sendCalls.length === 1 ? send.promise : { queued: true };
     };
   });
-  await expect(page.getByRole("button", { name: "Queue", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   return field;
 };
 const switchTo = async (page: Page, threadId: string) => {

@@ -25,6 +25,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 
@@ -34,7 +35,6 @@ import { useApi } from "@/api/context";
 import { useWindowAttended } from "@/desktop/use-window-attended";
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
-import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -42,7 +42,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { shortcutPressed } from "@/keyboard/bindings";
-import { runShortcut, useShortcut } from "@/keyboard/registry";
+import { isMac, runShortcut, useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { cn } from "@/lib/utils";
@@ -56,7 +56,7 @@ import {
   useMirrorFit,
 } from "@/dictation/composer-dictation";
 import { DictationButton } from "@/dictation/dictation-button";
-import { PressScale, RunningEdge, SharedSlab, SlotPresence, Swap, useChangeCount } from "@/motion";
+import { PressScale, RunningEdge, SharedSlab, Swap } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
 import { activityLine, backgroundWorking } from "@/sidebar/status";
 import { useDiffComments, useDiffCommentsStore, withDiffComments } from "@/stores/diff-comments";
@@ -90,6 +90,7 @@ import {
 import { MODE_ICONS, MODE_OPTIONS } from "./options";
 import { Picker } from "./picker";
 import { inOpenFence } from "./mention";
+import { sendAction, type SendAction } from "./send-action";
 import { enterSends, imeComposing } from "./send-key";
 import { prefillDraftProject } from "./draft-prefill";
 import { filterCommands, slashQuery } from "./slash";
@@ -104,18 +105,11 @@ import {
 import { useSlabHandoff } from "./slab-handoff";
 import { useOrchestratorVerbs, VerbMenu } from "./verb-menu";
 import { filterVerbs, gridIndexForKey, VERB_COLUMNS, type Verb } from "./verbs";
-import {
-  GHOST_MIRROR,
-  QUEUE_GLYPH,
-  ROUND,
-  SEND_FILL,
-  SLAB,
-  SLAB_TEXTAREA,
-  STOP_OUTLINE,
-} from "./styles";
+import { GHOST_MIRROR, ROUND, SEND_FILL, SLAB, SLAB_TEXTAREA, STOP_OUTLINE } from "./styles";
 import { StashMenu, stashesQueryKey } from "./stash-menu";
 import { ToolbarOverflow, type FoldedPicker } from "./toolbar-overflow";
 import { useMentions } from "./use-mentions";
+import { useModHeld } from "./use-mod-held";
 import { useToolbarLayout } from "./use-toolbar-layout";
 import { useTypingPresence } from "./typing-presence";
 
@@ -839,7 +833,36 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   );
 
   const ModeIcon = MODE_ICONS[summary?.thread.mode ?? "default"];
-  const sendLabel = busy ? "Queue: sends when the turn ends" : "Send";
+  // The composer holds something, even if it can't go yet: a draft waiting on an upload isn't Stop.
+  const hasDraft = canSend || attachments.uploading;
+  const stopLabel = background ? "Stop the background agents" : "Stop";
+  const steerModifier = isMac() ? "⌘" : "Ctrl";
+  const sendHeld = useModHeld(steerable && hasDraft);
+  const action = sendAction({ hasDraft, busy, background, steering: steerable && sendHeld });
+  const sendKeyHint = sendKey === "enter" ? "↵" : sendHint;
+  const queueLabel = steerable
+    ? `Queue: sends when the turn ends. ${steerModifier}-click to steer`
+    : "Queue: sends when the turn ends";
+  const actionLabels = {
+    send: { aria: "Send", hint: withHint("Send", sendKeyHint) },
+    queue: { aria: "Queue", hint: withHint(queueLabel, sendKeyHint) },
+    steer: { aria: "Steer now", hint: STEER_LABEL },
+    stop: { aria: "Stop", hint: stopLabel },
+  } as const;
+  const runAction = (event: MouseEvent<HTMLButtonElement>) => {
+    const steering = steerable && (event.metaKey || event.ctrlKey);
+    switch (sendAction({ hasDraft, busy, background, steering })) {
+      case "send":
+      case "queue":
+        return void send();
+      case "steer":
+        return void steer();
+      case "stop":
+        // The second click of a double click on Send lands here once the composer has emptied.
+        if (event.detail > 1) return;
+        return void api.interrupt(threadId);
+    }
+  };
 
   const onModel = (value: string) => {
     if (!model) return;
@@ -877,7 +900,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   const modeIcon = <ModeIcon aria-hidden className="size-3.5" />;
   const effortIcon = <Gauge aria-hidden className="size-3.5" />;
 
-  // Fold order is from the end: the mode picker first, then effort, then Steer. Labels go first.
+  // Fold order is from the end: the mode picker first, then effort. Labels go first.
   const hasEffort = efforts.length > 0;
   // A default nobody chose says nothing: Speed on the CLI's default, and Mode on the user's own,
   // wait in "…" (their shortcuts still open them there). A mode with a warning always shows.
@@ -887,20 +910,14 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     defaultMode !== undefined &&
     summary?.thread.mode === defaultMode &&
     modeWarning(summary.thread.mode) === undefined;
-  // Only when it can act: a turn that takes input mid-turn, and something typed to send into it.
-  const showSteer = steerable && canSend;
-  // Steer settles in when a draft makes it possible mid-turn, rather than popping in; it only fades
-  // and settles in place, since the toolbar measures its blocks' widths to decide what folds.
-  const steerArrives = useChangeCount(showSteer) > 0;
   const blocks = useMemo(
     () => [
       { id: "model", foldable: false },
-      ...(showSteer ? [{ id: "steer", foldable: true }] : []),
       ...(quietSpeed ? [] : [{ id: "speed", foldable: true }]),
       ...(hasEffort ? [{ id: "effort", foldable: true }] : []),
       ...(quietMode ? [] : [{ id: "mode", foldable: true }]),
     ],
-    [showSteer, hasEffort, quietSpeed, quietMode],
+    [hasEffort, quietSpeed, quietMode],
   );
   const toolbar = useToolbarLayout(blocks);
   const { ref: toolbarRef, labelled, folded } = toolbar;
@@ -957,24 +974,6 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
         ]
       : []),
   ];
-
-  const steerButton = (
-    <Hint
-      label={STEER_LABEL}
-      render={
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Steer now"
-          disabled={!canSend}
-          className="rounded-(--composer-button-radius) text-muted-foreground"
-          onClick={() => void steer()}
-        />
-      }
-    >
-      <Send />
-    </Hint>
-  );
 
   return (
     <div
@@ -1191,16 +1190,11 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               onChange={onMode}
             />
           </ToolbarBlock>
-          {foldedPickers.length > 0 || isFolded("steer") ? (
+          {foldedPickers.length > 0 ? (
             // Always there while a default waits in it, so the measure counts it as fixed.
             <div data-toolbar-fixed={quietSpeed || quietMode ? "" : undefined} className="flex">
               <ToolbarOverflow
                 pickers={foldedPickers}
-                steer={
-                  showSteer && isFolded("steer")
-                    ? { run: () => void steer(), disabled: !canSend, label: STEER_LABEL }
-                    : undefined
-                }
                 open={overflowOpen}
                 onOpenChange={(next) => {
                   setOverflowOpen(next);
@@ -1225,16 +1219,6 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
           >
             {hint ?? (dictation.active ? dictationStatus(dictation.state) : undefined)}
           </span>
-          {/* Folded, Steer lives in "…" alone: unlike a picker it has no shortcut to keep mounted. */}
-          {showSteer && !isFolded("steer") && (
-            <ToolbarBlock
-              id="steer"
-              folded={false}
-              className={steerArrives ? "gram-swap" : undefined}
-            >
-              {steerButton}
-            </ToolbarBlock>
-          )}
           <div data-toolbar-fixed className="flex shrink-0 items-center gap-1.5">
             {dictation.available && (
               <DictationButton
@@ -1246,49 +1230,28 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
             )}
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
-            {/* Stop opens beside Send as a turn starts and folds away as it ends, so Send slides over
-                rather than jumping. */}
-            <SlotPresence shown={busy || background} gap={6}>
-              <Hint
-                label={background ? "Stop the background agents" : "Stop"}
-                render={
-                  <button
-                    type="button"
-                    aria-label="Stop"
-                    className={cn(ROUND, STOP_OUTLINE)}
-                    onClick={() => void api.interrupt(threadId)}
-                  />
-                }
-              >
-                <Square aria-hidden className="size-2.5 fill-current" />
-              </Hint>
-            </SlotPresence>
-            {/* Right-click for the other ways to send: steer into the running turn, or send and
-                start a new draft. */}
+            {/* One button for what the composer can do now, its word on hover. Right-click for the
+                rest: Stop stays reachable there while a draft has the button. */}
             <ContextMenu>
               <ContextMenuTrigger
                 data-testid="send-menu-trigger"
                 render={<span className="inline-flex" />}
               >
-                <PressScale hover={canSend ? 1.05 : undefined}>
+                <PressScale hover={canSend || action === "stop" ? 1.05 : undefined}>
                   <Hint
-                    label={withHint(sendLabel, sendKey === "enter" ? "↵" : sendHint)}
+                    label={actionLabels[action].hint}
                     render={
                       <button
                         type="button"
-                        aria-label={busy ? "Queue" : "Send"}
-                        disabled={!canSend}
-                        className={cn(ROUND, busy ? QUEUE_GLYPH : SEND_FILL)}
-                        onClick={() => void send()}
+                        aria-label={actionLabels[action].aria}
+                        disabled={action !== "stop" && !canSend}
+                        className={cn(ROUND, action === "stop" ? STOP_OUTLINE : SEND_FILL)}
+                        onClick={runAction}
                       />
                     }
                   >
-                    <Swap swapKey={busy ? "Queue" : "Send"}>
-                      {busy ? (
-                        <ListPlus aria-hidden className="size-4" />
-                      ) : (
-                        <ArrowUp aria-hidden className="size-4" strokeWidth={2.25} />
-                      )}
+                    <Swap swapKey={action}>
+                      <SendGlyph action={action} />
                     </Swap>
                   </Hint>
                 </PressScale>
@@ -1298,13 +1261,16 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                   {busy ? <ListPlus aria-hidden /> : <ArrowUp aria-hidden />}
                   {busy ? "Queue" : "Send"}
                   <kbd className="ml-auto pl-3 font-mono text-[10px] text-muted-foreground">
-                    {sendKey === "enter" ? "↵" : sendHint}
+                    {sendKeyHint}
                   </kbd>
                 </ContextMenuItem>
                 {steerable && (
                   <ContextMenuItem disabled={!canSend} onClick={() => void steer()}>
                     <Send aria-hidden />
                     {STEER_LABEL}
+                    <kbd className="ml-auto pl-3 font-mono text-[10px] text-muted-foreground">
+                      {steerModifier}-click
+                    </kbd>
                   </ContextMenuItem>
                 )}
                 <ContextMenuItem disabled={!canSend} onClick={() => void send(true)}>
@@ -1314,6 +1280,12 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                     {newDraftHint}
                   </kbd>
                 </ContextMenuItem>
+                {(busy || background) && (
+                  <ContextMenuItem onClick={() => void api.interrupt(threadId)}>
+                    <Square aria-hidden className="fill-current" />
+                    {stopLabel}
+                  </ContextMenuItem>
+                )}
               </ContextMenuContent>
             </ContextMenu>
           </div>
@@ -1321,6 +1293,20 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
       </SharedSlab>
     </div>
   );
+}
+
+/** The one send button's glyph; the button's own label says it in words, on hover. */
+function SendGlyph({ action }: { action: SendAction }) {
+  switch (action) {
+    case "stop":
+      return <Square aria-hidden className="size-2.5 fill-current" />;
+    case "queue":
+      return <ListPlus aria-hidden className="size-4" />;
+    case "steer":
+      return <Send aria-hidden className="size-4" />;
+    case "send":
+      return <ArrowUp aria-hidden className="size-4" strokeWidth={2.25} />;
+  }
 }
 
 /**

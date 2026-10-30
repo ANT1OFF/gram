@@ -185,11 +185,9 @@ it.each(["send", "steer", "stash"] as const)(
     await s.paste("old.txt");
     if (operation === "stash") stash();
     else
-      fireEvent.click(
-        screen.getByRole("button", {
-          name: operation === "send" ? "Queue" : "Steer now",
-        }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Queue" }), {
+        metaKey: operation === "steer",
+      });
     await waitFor(() =>
       expect(s[operation === "stash" ? "stashDraft" : operation]).toHaveBeenCalledTimes(1),
     );
@@ -277,11 +275,9 @@ it.each(["send", "steer", "stash"] as const)(
     await s.paste("old.txt");
     if (operation === "stash") stash();
     else
-      fireEvent.click(
-        screen.getByRole("button", {
-          name: operation === "send" ? "Queue" : "Steer now",
-        }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "Queue" }), {
+        metaKey: operation === "steer",
+      });
     await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
     s.snapshot(20);
     type("New lifetime");

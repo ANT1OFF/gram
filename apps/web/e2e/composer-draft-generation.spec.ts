@@ -136,7 +136,7 @@ const open = async (page: Page) => {
     },
     { A, B },
   );
-  await expect(page.getByRole("button", { name: "Queue", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
 };
 const paste = async (page: Page, name: string, image = false) => {
   await field(page).evaluate(

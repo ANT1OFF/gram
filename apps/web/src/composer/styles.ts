@@ -30,10 +30,6 @@ export const ROUND =
 export const STOP_OUTLINE =
   "border border-(--composer-outline-focus) text-muted-foreground transition-colors hover:border-destructive/50 hover:bg-destructive-tint hover:text-destructive";
 
-/** Queue, while a turn runs: a bare glyph, muted until there is something to queue. */
-export const QUEUE_GLYPH =
-  "text-foreground transition-colors hover:bg-accent disabled:text-muted-foreground disabled:opacity-50";
-
 /** Send's fill: the accent with a faint gloss, flat while pressed or disabled. */
 export const SEND_FILL =
   "bg-primary text-primary-foreground shadow-xs shadow-primary/24 inset-shadow-2xs inset-shadow-white/16 active:inset-shadow-black/8 active:shadow-none disabled:opacity-64 disabled:shadow-none";
