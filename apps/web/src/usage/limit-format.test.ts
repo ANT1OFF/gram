@@ -72,9 +72,6 @@ describe("limit formatting", () => {
     expect(limitShareText({ agent: "claude", usedPct: 90, window: "seven_day" })).toBe(
       "Claude is at 90% of its weekly limit",
     );
-    expect(limitShareText({ agent: "grok", usedPct: 70, window: "fiveHour" })).toBe(
-      "Grok Build is at 70% of its 5-hour limit",
-    );
   });
 
   it("sums the tightest limit up in one line, capped short of the limit", () => {

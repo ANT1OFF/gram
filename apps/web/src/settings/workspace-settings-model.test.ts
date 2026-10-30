@@ -247,7 +247,7 @@ describe("worker models", () => {
       claude,
       codex,
       profiled,
-      { agent: "grok", model: "synthetic-grok" } as ModelRef,
+      { agent: "unknown-agent", model: "synthetic-model" } as unknown as ModelRef,
     ];
     // Native gate readiness belongs to the server; Settings does not assume a gateway is needed.
     for (const autonomy of ["supervised", "publish", "full"] as const) {
@@ -336,7 +336,10 @@ describe("worker models", () => {
     expect(harnessNotes([claude])).toEqual([]);
     expect(harnessNotes([claude], "claude")).toEqual([]);
     expect(harnessNotes([codex, profiled]).map((note) => note.agent)).toEqual(["codex"]);
-    const both = harnessNotes([{ agent: "grok", model: "m" }, claude], "codex");
+    const both = harnessNotes(
+      [{ agent: "unknown-agent", model: "m" } as unknown as ModelRef, claude],
+      "codex",
+    );
     expect(both.map((note) => note.agent)).toEqual(["codex"]);
     expect(both[0]?.notes).toContain(
       "Known gap: a command typed into an interactive shell Codex opened is not asked about.",

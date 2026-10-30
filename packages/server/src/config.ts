@@ -41,7 +41,10 @@ export interface ServerConfigShape {
    * `app.openExternal` refuses rather than open a link past that question.
    */
   readonly shellOpensLinks?: boolean;
-  /** The echo fake agent replaces real agents (`GRAM_FAKE_AGENT=1`). */
+  /**
+   * The echo fake agent replaces real agents (`GRAM_FAKE_AGENT=1`). The desktop shell withholds the
+   * variable from a packaged build (`apps/desktop/src/main/server-env.ts`).
+   */
   readonly fakeAgent?: boolean;
   /**
    * How long wake reasons collect before an orchestrator gets its digest; a minute when absent.

@@ -7,8 +7,6 @@ import {
 } from "@gram/agents";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
 import { CodexHost, CodexHostLive } from "@gram/agents/codex";
-import { GrokHost, GrokHostLive } from "@gram/agents/grok";
-import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -106,17 +104,11 @@ const CodexAgent = Layer.unwrap(
 const ClaudeAgents: Layer.Layer<AgentHosts, never, AgentNeeds> = Layer.effect(
   AgentHosts,
   Effect.gen(function* () {
-    return AgentHosts.fromHosts([yield* ClaudeHost, yield* CodexHost, yield* GrokHost]);
+    return AgentHosts.fromHosts([yield* ClaudeHost, yield* CodexHost]);
   }),
 ).pipe(
   Layer.provide(ClaudeHostLive()),
   Layer.provide(CodexAgent),
-  Layer.provide(
-    GrokHostLive({
-      home: join(config.dataDir, "grok"),
-      authPath: join(homedir(), ".grok", "auth.json"),
-    }),
-  ),
   Layer.provide(GatewayCredentials.layerProvider),
 );
 

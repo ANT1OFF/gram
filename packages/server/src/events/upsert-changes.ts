@@ -22,6 +22,13 @@ export const upsertsChanging = (key: (thread: Thread) => string) => {
   };
 };
 
-/** All of a thread but the fields a turn or a look at it changes, for subscribers reading neither. */
-export const besidesActivity = ({ lastActivityAt: _at, unread: _unread, ...rest }: Thread) =>
-  JSON.stringify(rest);
+/**
+ * All of a thread but what a turn or a look at it changes, and the `revision` every write does, for
+ * subscribers reading none of them.
+ */
+export const besidesActivity = ({
+  lastActivityAt: _at,
+  unread: _unread,
+  revision: _revision,
+  ...rest
+}: Thread) => JSON.stringify(rest);

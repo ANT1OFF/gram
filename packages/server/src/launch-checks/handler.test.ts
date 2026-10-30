@@ -37,10 +37,7 @@ describe("launch-check model refresh", () => {
         });
         const handlers = yield* launchChecksHandlers.pipe(
           Effect.provide(
-            Layer.succeed(
-              AgentHosts,
-              AgentHosts.fromHosts([host("claude"), host("codex"), host("grok")]),
-            ),
+            Layer.succeed(AgentHosts, AgentHosts.fromHosts([host("claude"), host("codex")])),
           ),
           Effect.provide(
             Layer.succeed(LaunchChecksCache, {

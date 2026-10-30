@@ -302,7 +302,7 @@ export const makeHistoryMethods = ({
         createdAt: now,
         lastActivityAt: now,
       };
-      yield* store.insertThread(thread);
+      const stored = yield* store.insertThread(thread);
       const copies = yield* store.copyMessages(source.id, thread.id, plan.messageId);
       const owned = yield* copyForkedAttachments(
         attachmentsDir(config.dataDir),
@@ -311,8 +311,8 @@ export const makeHistoryMethods = ({
         copies,
       );
       for (const message of owned) yield* store.upsertMessage(thread.id, message);
-      yield* publishUpsert(thread);
-      return thread;
+      yield* publishUpsert(stored);
+      return stored;
     }),
 });
 

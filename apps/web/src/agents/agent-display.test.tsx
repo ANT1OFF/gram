@@ -9,8 +9,7 @@ afterEach(cleanup);
 
 describe("agentLabel", () => {
   it("names every agent kind, and passes an unknown one through", () => {
-    expect(Object.keys(AGENT_DISPLAY)).toEqual(["claude", "codex", "grok"]);
-    expect(agentLabel("grok")).toBe("Grok Build");
+    expect(Object.keys(AGENT_DISPLAY)).toEqual(["claude", "codex"]);
     expect(agentLabel("codex")).toBe("Codex");
     expect(agentLabel("claude")).toBe("Claude Code");
     expect(agentLabel("unknown-agent")).toBe("unknown-agent");
@@ -54,7 +53,6 @@ describe("AgentIcon", () => {
     for (const [agent, name] of [
       ["claude", "Claude Code"],
       ["codex", "Codex"],
-      ["grok", "Grok Build"],
       ["unknown-agent", "unknown-agent"],
     ] as const) {
       render(<AgentIcon agent={agent} labelled />);

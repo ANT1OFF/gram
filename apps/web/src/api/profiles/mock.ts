@@ -1,6 +1,6 @@
 import { customModelsOf, withCustomModels, type AgentKind, type AgentModel } from "@gram/contracts";
 
-import { createMockGateways, unavailableGrokMock } from "../mock-gateways";
+import { createMockGateways } from "../mock-gateways";
 import type { MockWorld } from "../mock-world";
 import type { ProfilesApi } from "./types";
 
@@ -53,8 +53,6 @@ export function createProfilesMock(world: MockWorld, agents: readonly AgentKind[
       drafts.set(windowId, [...threadIds]);
     },
     listModels: async (agent, profileId) => {
-      // Refuse before adapter defaults, profile lookup or custom-model merging.
-      if (agent === "grok") throw unavailableGrokMock();
       if (agents !== undefined && !agents.includes(agent))
         throw Object.assign(new Error(`This mock has no ${agent} adapter.`), {
           _tag: "AgentUnavailable",

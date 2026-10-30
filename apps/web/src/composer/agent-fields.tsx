@@ -63,7 +63,6 @@ const SUBSCRIPTION = "subscription";
 /** Local agents need no gateway; an explicit gateway choice must still exist and have a key. */
 export function gatewayReady(choice: AgentChoice, profiles: readonly GatewayProfile[]): boolean {
   if (choice.profileId === undefined) return true;
-  if (choice.agent === "grok") return false;
   return profiles.some((profile) => profile.id === choice.profileId && profile.keyRef !== "");
 }
 
@@ -147,13 +146,6 @@ export function AgentFields({
 
   return (
     <>
-      {value.agent === "grok" && (
-        <p className="text-xs text-muted-foreground">
-          Grok Build is unavailable: the official CLI cannot enforce subscription-only inference
-          routing. Login or a subscription purchase does not resolve this CLI limitation. Gram
-          starts no Grok CLI or inference request.
-        </p>
-      )}
       {agents.length > 1 ? (
         <Select
           value={value.agent}

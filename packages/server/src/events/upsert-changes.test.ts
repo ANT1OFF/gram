@@ -36,6 +36,7 @@ describe("upsertsChanging", () => {
     const passes = upsertsChanging(besidesActivity);
     expect(passes(upsert())).toBe(true);
     expect(passes(upsert({ lastActivityAt: 2, unread: true }))).toBe(false);
+    expect(passes(upsert({ revision: 2 }))).toBe(false);
     expect(passes(upsert({ lastActivityAt: 3, title: "renamed" }))).toBe(true);
   });
 });

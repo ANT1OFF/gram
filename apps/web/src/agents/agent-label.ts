@@ -8,7 +8,6 @@ import type { AgentKind } from "@gram/contracts";
 export const AGENT_LABEL: Readonly<Record<AgentKind, string>> = {
   claude: "Claude Code",
   codex: "Codex",
-  grok: "Grok Build",
 };
 
 /** An agent's name; a kind this build doesn't know shows as itself. */

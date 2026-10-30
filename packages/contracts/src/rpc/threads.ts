@@ -7,7 +7,7 @@ import { CheckoutInUse, CheckoutUsers, CheckoutUsersPayload } from "../checkout-
 import { ClosedThread, ReopenedClosedThread } from "../closed-threads.ts";
 import { CodexHome } from "../codex-home.ts";
 import {
-  SupportedModelRef,
+  ModelRef,
   PermissionMode,
   RequestAnswer,
   Thread,
@@ -50,7 +50,7 @@ export const ThreadRpcs = RpcGroup.make(
     payload: {
       projectRoot: Schema.String,
       checkout: CheckoutRequest,
-      model: Schema.optionalKey(SupportedModelRef),
+      model: Schema.optionalKey(ModelRef),
       mode: Schema.optionalKey(PermissionMode),
       title: Schema.optionalKey(Schema.String),
       /** First prompt; omit to open a warm draft. */
@@ -133,7 +133,7 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, InvalidState),
   }),
   Rpc.make("thread.setModel", {
-    payload: { ...threadRef, model: SupportedModelRef },
+    payload: { ...threadRef, model: ModelRef },
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
   /** `InvalidState`: a turn is running, or the message has no agent ids to resume from. */

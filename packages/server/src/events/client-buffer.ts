@@ -9,19 +9,25 @@ export interface Taken<A> {
 
 /**
  * One client's outbound events, bounded. A client that keeps up gets every event. Past `capacity`
- * the buffer compacts: each key keeps only its latest item (full state supersedes), unkeyed items
- * stay. If it's still full, it clears and ignores offers until the next take, which reports the
+ * the buffer compacts: each key keeps only its latest item, by `orderOf` and then as offered (full
+ * state supersedes), unkeyed items stay. If it's still full, it clears and ignores offers until the next take, which reports the
  * overflow so the consumer resyncs from a snapshot instead of replaying a stale backlog.
  */
 export class ClientBuffer<A> {
   readonly capacity: number;
   readonly keyOf: (item: A) => string | undefined;
+  readonly orderOf: (item: A) => number;
   #queued: Array<A> = [];
   #overflowed = false;
 
-  constructor(capacity: number, keyOf: (item: A) => string | undefined = () => undefined) {
+  constructor(
+    capacity: number,
+    keyOf: (item: A) => string | undefined = () => undefined,
+    orderOf: (item: A) => number = () => 0,
+  ) {
     this.capacity = capacity;
     this.keyOf = keyOf;
+    this.orderOf = orderOf;
   }
 
   /** Nothing to take: no queued items and no pending resync. */
@@ -46,7 +52,10 @@ export class ClientBuffer<A> {
     const latest = new Map<string, number>();
     this.#queued.forEach((item, index) => {
       const key = this.keyOf(item);
-      if (key !== undefined) latest.set(key, index);
+      if (key === undefined) return;
+      const held = latest.get(key);
+      if (held === undefined || this.orderOf(this.#queued[held]!) <= this.orderOf(item))
+        latest.set(key, index);
     });
     this.#queued = this.#queued.filter((item, index) => {
       const key = this.keyOf(item);
@@ -58,6 +67,10 @@ export class ClientBuffer<A> {
     }
   }
 }
+
+/** Two upserts of a thread can be published out of commit order; the higher revision is the later. */
+export const serverEventOrder = (event: ServerEvent): number =>
+  event.type === "thread.upsert" ? (event.thread.revision ?? 0) : 0;
 
 /**
  * Full-state events coalesce per thread under pressure, and a workspace's invalidations into one;

@@ -10,7 +10,6 @@
     "./claude": "./src/claude/index.ts",
     "./claude/testing": "./src/claude/testing.ts",
     "./codex": "./src/codex/index.ts",
-    "./grok": "./src/grok/index.ts",
     "./codex/testing": "./src/codex/testing.ts",
     "./testing/logs": "./src/testing/logs.ts"
   },

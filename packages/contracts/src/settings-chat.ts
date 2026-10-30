@@ -12,8 +12,7 @@ import {
   ReasoningVariant,
   SpeedMode,
   AgentKind,
-  SupportedModelRef,
-  type ModelRef,
+  ModelRef,
 } from "./domain.ts";
 import { MergeReviewPolicy } from "./merge-policy.ts";
 import {
@@ -901,7 +900,7 @@ export const planSettingsChanges = (
           errors.push(`${key}: ${NO_PROFILE}.`);
           break;
         }
-        const decoded = decodeWith(SupportedModelRef, value);
+        const decoded = decodeWith(ModelRef, value);
         if (Result.isFailure(decoded)) {
           errors.push(`${key}: ${firstLine(decoded.failure.message)}`);
         } else {

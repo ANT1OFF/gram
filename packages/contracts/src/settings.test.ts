@@ -691,7 +691,6 @@ describe("agents.customModels", () => {
     expect(next.agents.defaultMode).toBe(DEFAULT_SETTINGS.agents.defaultMode);
     expect(customModelsOf(next, "claude").map((m) => m.id)).toEqual(["opus[1m]"]);
     expect(customModelsOf(next, "codex").map((m) => m.id)).toEqual(["gpt-preview"]);
-    expect(customModelsOf(next, "grok")).toEqual([]);
 
     const emptied = applySettingsPatch(next, { agents: { customModels: [] } });
     expect(customModelsOf(emptied, "claude")).toEqual([]);

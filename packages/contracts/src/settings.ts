@@ -2,13 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { RuntimeSourceChoice } from "./agent-runtime.ts";
 import { ChimeSound } from "./chime.ts";
-import {
-  AgentKind,
-  ModelRef,
-  SupportedModelRef,
-  PermissionMode,
-  ReasoningVariant,
-} from "./domain.ts";
+import { AgentKind, ModelRef, PermissionMode, ReasoningVariant } from "./domain.ts";
 import {
   HelperContextScope,
   HelperLocalFallback,
@@ -793,7 +787,7 @@ export const SettingsPatch = Schema.Struct({
   composer: Schema.optionalKey(Schema.Struct({ sendKey: Schema.optionalKey(SendKey) })),
   agents: Schema.optionalKey(
     Schema.Struct({
-      defaultModel: clearable(SupportedModelRef),
+      defaultModel: clearable(ModelRef),
       /** Replaces the whole list. */
       customModels: Schema.optionalKey(Schema.Array(CustomModel)),
       defaultFolder: clearable(Schema.String),

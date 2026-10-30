@@ -50,7 +50,7 @@ describe("validateCustomModels", () => {
   });
 });
 
-const from = (agent: "claude" | "codex" | "grok", id: string) => ({
+const from = (agent: "claude" | "codex", id: string) => ({
   agent,
   id,
   source: "Claude Code settings",
@@ -66,7 +66,6 @@ describe("pendingSuggestions", () => {
           from("claude", "claude-preview-eap"),
           from("claude", "already-a-row"),
           from("codex", "opus[1m]"),
-          from("grok", "synthetic-grok"),
         ],
         [draft({ id: " already-a-row " })],
         { claude: ["default", "opus[1m]"], codex: [] },

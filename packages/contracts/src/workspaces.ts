@@ -4,7 +4,7 @@
 
 import * as Schema from "effect/Schema";
 import { DraftId } from "./attachments.ts";
-import { ModelRef, PermissionMode, SupportedModelRef, UserInput } from "./domain.ts";
+import { ModelRef, PermissionMode, UserInput } from "./domain.ts";
 import { SupportedTaskModelSelection } from "./task-preflight.ts";
 import { ProjectId, ThreadId, WorkspaceId } from "./ids.ts";
 import { MergeReviewPolicy, RepoMergeReviewPolicies } from "./merge-policy.ts";
@@ -369,7 +369,7 @@ export const StartTaskInput = Schema.Struct({
        * The worker's model as the user picked it from the preview's `workerChoices`; absent is the
        * roster's default. One no longer on the roster, or unavailable here, is refused.
        */
-      worker: Schema.optionalKey(SupportedModelRef),
+      worker: Schema.optionalKey(ModelRef),
     }),
   ),
   /**

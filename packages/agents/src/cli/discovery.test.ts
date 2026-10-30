@@ -10,7 +10,7 @@ import {
 
 describe("CLI discovery", () => {
   it("keeps the probed path independent of the selected adapter", () => {
-    for (const name of ["claude", "codex", "grok"]) {
+    for (const name of ["claude", "codex"]) {
       expect(
         parseProbeOutput(
           `banner\n\0__SB_PROBE__\0/installed/${name}\n\0__SB_ENV__\0PATH=/installed\0`,

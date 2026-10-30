@@ -79,26 +79,8 @@ describe("AgentFields", () => {
     await user.click(screen.getByLabelText("Agent"));
     expect(screen.getByRole("option", { name: "Claude Code" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Codex" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Grok Build" })).toBeTruthy();
   });
 
-  it("explains the Grok CLI routing limitation and never offers a gateway selector", async () => {
-    const api = mockApi();
-    renderWithApi(
-      <AgentFields value={{ agent: "grok", model: "synthetic-grok" }} onChange={() => {}} />,
-      api,
-    );
-    expect(await screen.findByText(/^Grok Build is unavailable:/)).toBeTruthy();
-    expect(screen.queryByLabelText("Gateway profile")).toBeNull();
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Grok Build is unavailable in Gram",
-    );
-    expect(
-      gatewayReady({ agent: "grok", model: "synthetic-grok", profileId: LITELLM }, [
-        profile(LITELLM, { keyRef: "synthetic" }),
-      ]),
-    ).toBe(false);
-  });
   it("offers no Subscription picker while it is the only way in: a gateway without a key", async () => {
     const api = mockApi();
     const listModels = vi.spyOn(api, "listModels");

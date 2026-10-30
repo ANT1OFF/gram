@@ -204,7 +204,7 @@ describe("connectors", () => {
     expectRoundTrip(ConfiguredConnectorsPayload, {});
     expectRoundTrip(ConnectorSignInPayload, { target: "codex", name: "example", cwd: "/repo" });
     const signIn = Schema.decodeUnknownSync(ConnectorSignInPayload);
-    expect(() => signIn({ target: "grok", name: "example" })).toThrow();
+    expect(() => signIn({ target: "unknown-agent", name: "example" })).toThrow();
     expect(() => signIn({ target: "codex", name: "" })).toThrow();
     // A claude.ai connector goes by its display name.
     expectRoundTrip(ConnectorSignInPayload, {

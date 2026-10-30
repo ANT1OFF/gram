@@ -19,14 +19,6 @@ import { mockLaunchChecks } from "./mock-launch-checks";
 const tagged = (tag: string, fields: Record<string, unknown> & { message: string }) =>
   Object.assign(new Error(fields.message), { _tag: tag, ...fields });
 
-/** Matches the production Grok host; no mock model/profile can grant missing CLI route proof. */
-export const unavailableGrokMock = () =>
-  tagged("AgentUnavailable", {
-    agent: "grok",
-    message:
-      "Grok Build is unavailable in Gram: the official CLI cannot enforce subscription-only inference routing for all configured models and auxiliary requests. Login or a subscription purchase does not resolve this CLI capability limitation. No CLI was started.",
-  });
-
 const SEEDED: GatewayProfile[] = [
   {
     id: "litellm" as ProfileId,
@@ -243,7 +235,6 @@ export function createMockGateways(
     presence: { typing: 0 },
     /** Local model discovery uses the agent's own account; only explicit profiles use gateway models. */
     listAgentModels: async (agent: AgentKind, profileId?: ProfileId): Promise<ModelList> => {
-      if (agent === "grok") throw unavailableGrokMock();
       if (!agents.has(agent)) {
         throw tagged("AgentUnavailable", { agent, message: `no ${agent} adapter in this build` });
       }

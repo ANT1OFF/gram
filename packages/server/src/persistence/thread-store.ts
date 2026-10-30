@@ -309,7 +309,8 @@ export interface ThreadStoreShape {
   /** Removes a project from the recents; refused while any thread belongs to it. */
   forgetProject(id: ProjectId): Effect.Effect<void, NotFound | InvalidState>;
 
-  insertThread(thread: Thread): Effect.Effect<void>;
+  /** Stores a new thread; returns it as stamped, which is the one to publish. */
+  insertThread(thread: Thread): Effect.Effect<Thread>;
   getThread(id: ThreadId): Effect.Effect<Thread, ThreadNotFound>;
   /** Read-only authority snapshot from one transaction, for the final check after provider I/O. */
   getThreadWithAuthority(
@@ -1202,10 +1203,16 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }),
         );
 
-      const writeThread = (thread: Thread) =>
+      /** The `feed_revision` counter's next value, inside the caller's transaction. */
+      const nextRevision = sql<{ rev: number }>`UPDATE feed_revision SET rev = rev + 1
+        WHERE id = 0 RETURNING rev`.pipe(Effect.map(([row]) => Number(row!.rev)));
+
+      /** Writes the thread under a new `revision`, and returns it as stamped. */
+      const writeThread = (unstamped: Thread) =>
         Effect.gen(function* () {
-          if (thread.labels.length > 1)
-            return yield* Effect.die(new Error(`thread ${thread.id} has more than one label`));
+          if (unstamped.labels.length > 1)
+            return yield* Effect.die(new Error(`thread ${unstamped.id} has more than one label`));
+          const thread: Thread = { ...unstamped, revision: yield* nextRevision };
           yield* sql`INSERT INTO threads
             (id, project_id, agent_session_id, pinned, parked, created_at, last_activity_at, data)
           VALUES (${thread.id}, ${thread.projectId}, ${thread.agentSessionId ?? null},
@@ -1217,6 +1224,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             parked = excluded.parked,
             last_activity_at = excluded.last_activity_at,
             data = excluded.data`;
+          return thread;
         });
 
       /**
@@ -1250,9 +1258,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               authorityCaller === undefined
                 ? undefined
                 : yield* readThreadAuthority(thread, authorityCaller);
-            const next = normalizeThreadPrs(f(thread, context));
-            yield* writeThread(next);
-            return next;
+            return yield* writeThread(normalizeThreadPrs(f(thread, context)));
           }),
         );
 
@@ -1262,9 +1268,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
        */
       const takeRev = (threadId: string, reset = false) =>
         Effect.gen(function* () {
-          const [row] = yield* sql<{ rev: number }>`UPDATE feed_revision SET rev = rev + 1
-            WHERE id = 0 RETURNING rev`;
-          const rev = Number(row!.rev);
+          const rev = yield* nextRevision;
           yield* reset
             ? sql`UPDATE threads SET feed_rev = ${rev}, feed_reset_rev = ${rev}
                 WHERE id = ${threadId}`
@@ -1437,10 +1441,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             const current = yield* readThread(id);
             const next = f(current);
             if (next === undefined) return { thread: current, changed: false };
-            yield* writeThread(next);
+            const stored = yield* writeThread(next);
             yield* sql`UPDATE threads SET completed_reason = ${next.completedReason ?? null}
               WHERE id = ${id}`;
-            return { thread: next, changed: true };
+            return { thread: stored, changed: true };
           }),
         );
 
@@ -2862,8 +2866,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   ...thread,
                   spawnedBy: { ...thread.spawnedBy, feature: to },
                 };
-                yield* writeThread(after);
-                renamed.push(after);
+                renamed.push(yield* writeThread(after));
               }
               for (const card of cards) {
                 yield* sql`INSERT INTO feature_cards (workspace_id, feature, version, created_at, data)

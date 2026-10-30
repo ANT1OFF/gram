@@ -189,7 +189,6 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
           { workspaceId: "other-workspace" },
           { spawnedBy: undefined },
           { spawnedBy: { ...worker.thread.spawnedBy!, threadId: "foreign-orchestrator" } },
-          { model: { agent: "grok", model: "unadmitted" } },
         ]) {
           yield* store.updateThread(
             worker.thread.id,
@@ -207,7 +206,6 @@ describe.skipIf(!hasGit)("Full Auto worker parent messaging", () => {
           { parked: true },
           { role: undefined },
           { workspaceId: "other-workspace" },
-          { model: { agent: "grok", model: "unadmitted" } },
         ]) {
           yield* store.updateThread(
             thread.id,

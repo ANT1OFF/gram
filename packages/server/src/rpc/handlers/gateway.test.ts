@@ -4,7 +4,6 @@ import { join } from "node:path";
 
 import { describe, expect, layer } from "@effect/vitest";
 import type { AgentHost } from "@gram/agents";
-import { makeGrokHost } from "@gram/agents/grok";
 import {
   AgentUnavailable,
   GatewayError,
@@ -94,32 +93,6 @@ describe("gateway handlers", () => {
         const unavailable = yield* Effect.flip(handlers["models.list"]({ agent: "codex" }));
         expect(unavailable).toBeInstanceOf(AgentUnavailable);
       }),
-    );
-
-    it.effect(
-      "Grok refuses an explicitly supplied gateway even when its profile and key exist",
-      () =>
-        Effect.gen(function* () {
-          const store = yield* ThreadStore;
-          const vault = makeMemoryVault();
-          const saved = profile("synthetic-grok-gateway", { keyRef: "synthetic-grok-key" });
-          yield* store.upsertProfile(saved);
-          yield* vault.set("synthetic-grok-key", Redacted.make("synthetic-only-key"));
-          const { handlers } = makeGateway({
-            store,
-            hosts: AgentHosts.fromHosts([makeGrokHost({ home: join(home, "synthetic-grok") })]),
-            vault,
-            fetcher: async () => {
-              throw new Error("No network for Grok profile refusal");
-            },
-            home,
-          });
-          const error = yield* Effect.flip(
-            handlers["models.list"]({ agent: "grok", profileId: saved.id }),
-          );
-          expect(error).toBeInstanceOf(AgentUnavailable);
-          expect(error.message).toContain("cannot enforce subscription-only inference routing");
-        }),
     );
 
     it.effect("models.list appends the user's own models, direct and through a profile", () =>
