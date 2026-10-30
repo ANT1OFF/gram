@@ -53,7 +53,14 @@ import { redactText } from "../logging/redact.ts";
 import type { ThreadPlanRecord } from "../persistence/thread-store.ts";
 import type { CostBucket, WorkerMemo } from "./outbox.ts";
 import { localDayOf } from "../zone-time.ts";
-import { featureState, groupOf, overlapPairs, workerState } from "./rules.ts";
+import {
+  featureState,
+  groupOf,
+  overlapPairs,
+  workerState,
+  workerStateBase,
+  type WorkerStateInput,
+} from "./rules.ts";
 
 /** A worktree a worker holds in a repo other than its own, as the service last sampled it. */
 export interface ExtraRepoFacts {
@@ -464,14 +471,14 @@ export const contextPct = (usage: UsageSummary | undefined): number | undefined 
   return Math.min(100, Math.round((usage.contextTokens / usage.contextWindow) * 100));
 };
 
-const stateOf = (facts: WorkerFacts): WorkerState => {
+const stateInputOf = (facts: WorkerFacts): WorkerStateInput => {
   const { thread, memo } = facts;
   const report = facts.lastReport;
   const badges = workerPrBadges(facts);
   const prFacts = combinePrFacts(
     badges.map((badge) => (badge === undefined ? undefined : prFactsOf(badge))),
   );
-  return workerState({
+  return {
     status: facts.status,
     parked: thread.parked,
     completedReason: facts.completedReason,
@@ -492,8 +499,10 @@ const stateOf = (facts: WorkerFacts): WorkerState => {
         }),
     lastTurnId: facts.lastTurn?.id,
     lastTurnStartedAt: facts.lastTurn?.startedAt,
-  });
+  };
 };
+
+const stateOf = (facts: WorkerFacts): WorkerState => workerState(stateInputOf(facts));
 
 /** How many shared paths a ledger row keeps. */
 const OVERLAP_FILES_KEPT = 10;
@@ -553,6 +562,7 @@ const entryOf = (
     title: redactText(thread.title),
     ...(branch === undefined ? {} : { branch }),
     state,
+    stateBase: workerStateBase(stateInputOf(facts)),
     status: facts.status,
     ...((facts.status === "idle" || facts.status === "cold") &&
     waitingOnAutomation(thread, facts.wakes)

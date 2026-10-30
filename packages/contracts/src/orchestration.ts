@@ -135,6 +135,22 @@ export const WorkerState = Schema.Literals([
 ]);
 export type WorkerState = typeof WorkerState.Type;
 
+/**
+ * What a worker's `state` is worked out from beside its thread's status and requests: the state
+ * its other facts leave it in, and the two facts the status rules weigh. A client lays a newer
+ * status over it with the server's own rule (`liveWorkerState`), so a card moves before the ledger
+ * is refetched and lands where the refetched ledger will put it.
+ */
+export const WorkerStateBase = Schema.Struct({
+  /** Never `needsUser`, `error` or `archived`: those come of the status, a request or parking. */
+  state: WorkerState,
+  /** The thread is parked. */
+  parked: Schema.optionalKey(Schema.Literal(true)),
+  /** The failure it last recorded is still its latest word, so at rest it reads `error`. */
+  failureStands: Schema.optionalKey(Schema.Literal(true)),
+});
+export type WorkerStateBase = typeof WorkerStateBase.Type;
+
 /** The most of a pending request's own words the ledger quotes. */
 export const WORKER_REQUEST_SUMMARY_MAX = 400;
 
@@ -416,6 +432,8 @@ export const WorkerLedgerEntry = Schema.Struct({
   title: Schema.String,
   branch: Schema.optionalKey(Schema.String),
   state: WorkerState,
+  /** What `state` was worked out from beside `status` and `pendingRequests`; absent in older ledgers. */
+  stateBase: Schema.optionalKey(WorkerStateBase),
   status: ThreadStatus,
   /** The sidebar's activity line while it runs. */
   activity: Schema.optionalKey(Schema.String),

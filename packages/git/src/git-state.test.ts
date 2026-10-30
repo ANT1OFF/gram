@@ -61,6 +61,13 @@ describe("carryRebaseTier", () => {
       upstream: "diverged",
     });
     expect(carryRebaseTier(fresh, undefined)).toBe(fresh);
+    // Whether HEAD is on a remote is carried only for the same HEAD: a new commit may not be.
+    expect(carryRebaseTier(fresh, { ...carried, headOnRemote: true })).not.toHaveProperty(
+      "headOnRemote",
+    );
+    expect(
+      carryRebaseTier(fresh, { ...carried, head: "new", headOnRemote: true }).headOnRemote,
+    ).toBe(true);
   });
 });
 
@@ -304,6 +311,30 @@ describe.skipIf(!hasGit)("local git state", () => {
       expect(yield* aheadUpstream()).toBe(1);
       run(repo, "checkout", "-q", "--detach", "HEAD");
       expect(yield* upstream()).toBeUndefined();
+    }).pipe(provide),
+  );
+
+  it.live("says whether a remote-tracking ref holds HEAD", () =>
+    Effect.gen(function* () {
+      const repo = makeRepo(tmp());
+      const onRemote = () =>
+        localGitState(repo).pipe(
+          Effect.flatMap((state) => fillRebase(repo, state, undefined)),
+          Effect.map((state) => state.headOnRemote),
+        );
+      expect(yield* onRemote()).toBe(false);
+      run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+      expect(yield* onRemote()).toBe(true);
+      run(repo, "checkout", "-q", "-b", "feat");
+      write(nodePath.join(repo, "feat.txt"), "feat\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "feat work");
+      expect(yield* onRemote()).toBe(false);
+      // Any remote ref will do, not only the branch's own or the base.
+      run(repo, "update-ref", "refs/remotes/fork/elsewhere", "HEAD");
+      expect(yield* onRemote()).toBe(true);
+      run(repo, "checkout", "-q", "--detach", "HEAD");
+      expect(yield* onRemote()).toBe(true);
     }).pipe(provide),
   );
 

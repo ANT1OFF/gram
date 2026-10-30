@@ -1,4 +1,4 @@
-import type { GitState, ThreadSummary } from "@gram/contracts";
+import { headPushed, type GitState, type ThreadSummary } from "@gram/contracts";
 
 import type { MergedPrRef } from "@/api/types";
 
@@ -28,16 +28,14 @@ export function branchDeleteLooksSafe(git: GitState | undefined): boolean {
 
 /**
  * Whether the published state says removing the worktree loses nothing: no uncommitted changes, and
- * every commit on a remote (the upstream has them, the PR's head is the tip, or nothing is past the
- * base). Only pre-ticks the close dialog's removal; the server refuses a dirty tree regardless.
+ * every commit on a remote by the sweep's own rule (`headPushed`). Only pre-ticks the close dialog's
+ * removal; the server asks git again and refuses a dirty tree regardless.
  */
 export function cleanAndPushed(git: GitState | undefined): boolean {
   if (git?.repo !== true || git.missing === true || git.changedFiles > 0) return false;
-  // Local commits the remote branch lacks, whatever the PR's head says.
-  if (git.upstream === "ahead" || git.upstream === "diverged" || (git.aheadUpstream ?? 0) > 0) {
-    return false;
-  }
-  if (git.upstream === "synced" || git.upstream === "behind") return true;
-  if (git.pr !== undefined && git.pr.headMatches && !git.pr.aheadOfPr) return true;
-  return git.upstream === undefined && git.base !== undefined && git.aheadBase === 0;
+  return headPushed({
+    head: git.head,
+    headOnRemote: git.headOnRemote === true,
+    prHeadRefOid: git.pr?.headRefOid,
+  });
 }

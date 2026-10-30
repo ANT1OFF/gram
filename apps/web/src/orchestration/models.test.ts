@@ -19,10 +19,19 @@ import type {
   WorkerLedgerEntry,
   WorkerPr,
   WorkerState,
+  WorkerStateInput,
   WorkspaceId,
   WorkspaceState,
 } from "@gram/contracts";
-import { DEFAULT_CHARTER, DEFAULT_ORCHESTRATOR_MODEL, newWorkspaceCharter } from "@gram/contracts";
+import {
+  DEFAULT_CHARTER,
+  DEFAULT_ORCHESTRATOR_MODEL,
+  liveWorkerState,
+  newWorkspaceCharter,
+  ThreadStatus as ThreadStatuses,
+  workerState,
+  workerStateBase,
+} from "@gram/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import { canonicalJson } from "@/lib/canonical-json";
@@ -38,7 +47,6 @@ import {
   handoffRunning,
   boardWorkspaceFor,
   leastAdvanced,
-  liveWorkerState,
   liveWorkerEntry,
   reportLine,
   sectionsOf,
@@ -353,7 +361,61 @@ describe("board columns", () => {
       ["blocked", "idle", "blocked"],
     ];
     for (const [ledger, status, expected] of cases) {
-      expect(liveWorkerState(ledger, status), `${ledger} + ${status}`).toBe(expected);
+      const live = status === undefined ? undefined : { status, pendingRequestCount: 0 };
+      expect(liveWorkerState(worker("w", "f", ledger), live), `${ledger} + ${status}`).toBe(
+        expected,
+      );
+    }
+  });
+
+  it("puts a card where the refetched ledger will, for every status and request", () => {
+    const request = { kind: "question", id: "q-1" as RequestId, questions: [] } as PendingRequest;
+    const facts: ReadonlyArray<Omit<WorkerStateInput, "status" | "pendingRequestCount">> = [
+      { parked: false, hasStartedTurn: false },
+      { parked: false, hasStartedTurn: true, lastReport: { state: "blocked", at: 1 } },
+      {
+        parked: false,
+        hasStartedTurn: true,
+        pr: { state: "open", checksGreen: true, approvedOnHead: true, mergeable: true },
+      },
+      {
+        parked: false,
+        hasStartedTurn: true,
+        pr: { state: "merged", checksGreen: true, approvedOnHead: true, mergeable: true },
+      },
+      { parked: false, hasStartedTurn: true, lastError: { at: 1 } },
+      { parked: true, hasStartedTurn: true, lastReport: { state: "done", at: 1 } },
+    ];
+    const lives = ThreadStatuses.literals.flatMap((status) => [
+      { status, pendingRequests: [] },
+      { status, pendingRequests: [request] },
+    ]);
+    for (const fact of facts) {
+      for (const surveyed of lives) {
+        const input = {
+          ...fact,
+          status: surveyed.status,
+          pendingRequestCount: surveyed.pendingRequests.length,
+        };
+        const row = worker("w", "f", workerState(input), {
+          stateBase: workerStateBase(input),
+          status: surveyed.status,
+          pendingRequests: surveyed.pendingRequests.map((each) => ({
+            kind: each.kind,
+            requestId: each.id,
+            ageMin: 0,
+          })),
+        });
+        expect(liveWorkerEntry(row, undefined).state).toBe(row.state);
+        for (const live of lives) {
+          const ledger = workerState({
+            ...fact,
+            status: live.status,
+            pendingRequestCount: live.pendingRequests.length,
+          });
+          expect(liveWorkerEntry(row, live).state, JSON.stringify({ input, live })).toBe(ledger);
+        }
+      }
     }
   });
 
@@ -885,7 +947,11 @@ describe("workspace tree", () => {
     expect(featureFinished(tree!.features[0]!, tree!.entries)).toBe(true);
     expect(workspaceStatus(tree!)).toBe("idle");
     expect(
-      workerWait(asking, liveWorkerState(asking.state, askingThread.status), askingThread.status),
+      workerWait(
+        asking,
+        liveWorkerState(asking, { status: askingThread.status, pendingRequestCount: 0 }),
+        askingThread.status,
+      ),
     ).toMatchObject({ bucket: "person" });
   });
 
