@@ -1,6 +1,17 @@
 import { Menu } from "@base-ui/react/menu";
 import type { ThreadId } from "@gram/contracts";
-import { Ellipsis, Hand, Pause, Pencil, Pin, PinOff, Play, X } from "lucide-react";
+import {
+  CircleCheck,
+  Ellipsis,
+  Hand,
+  Pause,
+  Pencil,
+  Pin,
+  PinOff,
+  Play,
+  RotateCcw,
+  X,
+} from "lucide-react";
 
 import { ContextMenuItem } from "@/components/ui/context-menu";
 import { shortcutHint } from "@/keyboard/bindings";
@@ -10,14 +21,22 @@ import { useLayoutStore, type PaletteScope } from "@/stores/layout";
 import { PrContextMenuItems } from "./pr-menu-items";
 import { useThreadActions } from "./use-thread-actions";
 
-const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
-const DANGER = "text-destructive data-[highlighted]:text-destructive";
+export const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
+export const DANGER = "text-destructive data-[highlighted]:text-destructive";
+
+/** Mark done's tick, or Reopen's arrow back for a thread already done. */
+const DoneIcon = ({ done }: { done: boolean }) =>
+  done ? (
+    <RotateCcw aria-hidden className="size-3.5" />
+  ) : (
+    <CircleCheck aria-hidden className="size-3.5" />
+  );
 
 /**
  * Opens ⌘K on the commands of one thread or workspace: everything a context menu leaves out, by
  * scope. Last in every row menu.
  */
-function MoreContextMenuItem({ scope }: { scope: PaletteScope }) {
+export function MoreContextMenuItem({ scope }: { scope: PaletteScope }) {
   return (
     <ContextMenuItem
       data-testid="menu-more"
@@ -31,8 +50,9 @@ function MoreContextMenuItem({ scope }: { scope: PaletteScope }) {
 }
 
 /**
- * A row menu's thread verbs, after the row's own: rename, pin, park, its PR and close, then More…
- * for the rest. An orchestrator's row has its workspace's verbs above, and More… is its workspace's.
+ * A row menu's thread verbs, after the row's own: rename, pin, park, done, its PR and close, then
+ * More… for the rest. An orchestrator's row has its workspace's verbs above, and More… is its
+ * workspace's.
  */
 export function ThreadContextMenuItems({
   threadId,
@@ -75,6 +95,12 @@ export function ThreadContextMenuItems({
         )}
         {thread.parked ? "Unpark" : "Park"}
       </ContextMenuItem>
+      {actions.toggleDone !== undefined && (
+        <ContextMenuItem data-testid="menu-done" onClick={actions.toggleDone}>
+          <DoneIcon done={thread.completedAt !== undefined} />
+          {thread.completedAt === undefined ? "Mark done" : "Reopen"}
+        </ContextMenuItem>
+      )}
       {/* An orchestrator follows no PR of its own; its workers carry theirs. */}
       {!orchestrator && <PrContextMenuItems threadId={threadId} />}
       <ContextMenuItem className={DANGER} onClick={actions.close}>
@@ -100,8 +126,8 @@ export function ReleaseContextMenuItem({ threadId }: { threadId: ThreadId }) {
 }
 
 /**
- * The same thread verbs for the pane header's base-ui menu: rename, pin, park and close, then More…
- * for the rest, as the row menu has them.
+ * The same thread verbs for the pane header's base-ui menu: rename, pin, park, done and close, then
+ * More… for the rest, as the row menu has them.
  */
 export function ThreadMenuItems({
   threadId,
@@ -140,6 +166,12 @@ export function ThreadMenuItems({
         )}
         {thread.parked ? "Unpark" : "Park"}
       </Menu.Item>
+      {actions.toggleDone !== undefined && (
+        <Menu.Item className={itemClassName} onClick={actions.toggleDone}>
+          <DoneIcon done={thread.completedAt !== undefined} />
+          {thread.completedAt === undefined ? "Mark done" : "Reopen"}
+        </Menu.Item>
+      )}
       <Menu.Item className={`${itemClassName} ${DANGER}`} onClick={actions.close}>
         <X aria-hidden className="size-3.5" />
         Close thread…

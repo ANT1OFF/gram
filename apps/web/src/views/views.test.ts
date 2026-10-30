@@ -1,7 +1,7 @@
 import type { ThreadSummary, WorkspaceState } from "@gram/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { parkedSoloThreads, soloThreads } from "./solo-threads";
+import { doneSoloThreads, parkedSoloThreads, soloThreads } from "./solo-threads";
 import { useViewStore } from "./view-store";
 import { viewWorkspace } from "./view-workspace";
 
@@ -70,10 +70,15 @@ const summary = (
   id: string,
   thread: Partial<ThreadSummary["thread"]>,
   lastActivityAt: number,
+  status: ThreadSummary["status"] = "idle",
 ): ThreadSummary =>
   ({
     thread: { id, title: id, projectId: "p", parked: false, lastActivityAt, ...thread },
+    status,
+    pendingRequests: [],
   }) as unknown as ThreadSummary;
+
+const ids = (list: readonly ThreadSummary[]) => list.map((each) => each.thread.id);
 
 describe("soloThreads", () => {
   it("lists the threads outside every workspace, unparked, latest first", () => {
@@ -95,5 +100,20 @@ describe("soloThreads", () => {
     expect(parkedSoloThreads(threads, new Set(["api"])).map((each) => each.thread.id)).toEqual([
       "parked",
     ]);
+  });
+
+  it("folds done threads under Done, until they work or ask again", () => {
+    const done = { completedAt: 1, completedReason: "user" } as const;
+    const threads = [
+      summary("open", {}, 4),
+      summary("done", done, 3),
+      summary("resumed", done, 2, "running"),
+      summary("asking", done, 1, "needsApproval"),
+      summary("pinned", { ...done, pinned: true }, 6),
+      summary("parked", { ...done, parked: true }, 5),
+    ];
+    expect(ids(soloThreads(threads, new Set()))).toEqual(["pinned", "open", "resumed", "asking"]);
+    expect(ids(doneSoloThreads(threads, new Set()))).toEqual(["done"]);
+    expect(ids(parkedSoloThreads(threads, new Set()))).toEqual(["parked"]);
   });
 });

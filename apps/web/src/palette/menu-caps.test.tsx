@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { WorkspaceMenuItems } from "@/orchestration/workspace-menu-items";
 import { RowMenuItems, WorkerMenuItems, WorkerRowMenuItems } from "@/thread/row-menu";
 import { ThreadMenu } from "@/thread/thread-menu";
 import { createMockApi, type MockApi } from "@/api/mock";
@@ -114,6 +115,13 @@ describe("context menu caps", () => {
   // group, then the thread's verbs and More…. Each kind of row is checked at its fullest.
   it("keeps a solo thread's menu to the cap", async () => {
     expectCapped("solo thread", await itemsOf(<RowMenuItems threadId={"t-flaky" as ThreadId} />));
+  });
+
+  it("keeps a workspace line's menu to the cap", async () => {
+    const state = (await api.listWorkspaces()).find(
+      (each) => each.workspace.id === made.workspaceId,
+    )!;
+    expectCapped("workspace", await itemsOf(<WorkspaceMenuItems state={state} />));
   });
 
   it("keeps a held, merged worker's menu to the cap", async () => {

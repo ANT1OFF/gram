@@ -71,14 +71,19 @@ const worker = (page: Page, threadId: string) =>
   overview(page).locator(`[data-testid="overview-worker"][data-thread-id="${threadId}"]`);
 const workspaceRow = (page: Page, workspaceId: string) =>
   overview(page).locator(`[data-testid="overview-workspace"][data-workspace-id="${workspaceId}"]`);
-/** The solo rows outside the Parked line, the ones Solo threads counts. */
+/** The solo rows outside the Parked and Done lines, the ones Solo threads counts. */
 const unparked = (page: Page) =>
-  overview(page).locator('[data-testid="overview-solo"]:not([data-testid="overview-parked"] *)');
+  overview(page).locator(
+    '[data-testid="overview-solo"]:not([data-testid="overview-parked"] *, [data-testid="overview-done"] *)',
+  );
 /** The Parked line's button, which folds and unfolds the parked solo threads. */
 const parkedLine = (page: Page) =>
   overview(page)
     .getByTestId("overview-parked")
     .getByRole("button", { name: /^Parked/ });
+/** The Done line's button, which folds and unfolds the solo threads marked done. */
+const doneLine = (page: Page) =>
+  overview(page).getByTestId("overview-done").getByRole("button", { name: /^Done/ });
 const storedLayout = (page: Page) =>
   page.evaluate(
     (key) =>
@@ -396,7 +401,9 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   await expect(doneHead).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(prsHead).toBeFocused();
-  // The folded Parked line is a stop of its own, its rows hidden under it are not.
+  // The folded Done and Parked lines are stops of their own, the rows hidden under them are not.
+  await page.keyboard.press("ArrowUp");
+  await expect(doneLine(page)).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(parkedLine(page)).toBeFocused();
   await page.keyboard.press("ArrowUp");

@@ -60,6 +60,18 @@ export function useThreadActions(threadId: ThreadId) {
       );
     },
     /**
+     * Marks a thread done, or reopens it: what the sidebar's Done line holds. A worker's finish is
+     * its orchestrator's call and an orchestrator's work never ends, so `undefined` for both.
+     */
+    toggleDone:
+      thread === undefined || thread.role !== undefined || thread.spawnedBy !== undefined
+        ? undefined
+        : () =>
+            attempt(
+              thread.completedAt === undefined ? "mark the thread done" : "reopen the thread",
+              () => api.markCompleted(threadId, thread.completedAt === undefined),
+            ),
+    /**
      * Asks before replacing an orchestrator's agent session with a fresh one; `undefined` for a
      * thread that isn't the orchestrator of a workspace.
      */

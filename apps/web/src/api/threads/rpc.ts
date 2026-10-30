@@ -56,6 +56,8 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => ({
     run(client["thread.refreshPlan"]({ threadId, ...(rebuild ? { rebuild } : {}) })),
   pin: (threadId, pinned) => run(client["thread.pin"]({ threadId, pinned })),
   park: (threadId, parked) => run(client["thread.park"]({ threadId, parked })),
+  markCompleted: (threadId, completed) =>
+    run(client["thread.markCompleted"]({ threadId, completed })),
   reorderThreads: (threadIds) => run(client["threads.reorder"]({ threadIds })),
   label: (threadId, labels) => run(client["thread.label"]({ threadId, labels })),
   markUnread: (threadId, unread) => run(client["thread.markUnread"]({ threadId, unread })),

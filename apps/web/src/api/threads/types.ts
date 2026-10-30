@@ -101,6 +101,8 @@ export interface ThreadsApi {
   refreshPlan(threadId: ThreadId, rebuild?: boolean): Promise<ThreadPlan | null>;
   pin(threadId: ThreadId, pinned: boolean): Promise<void>;
   park(threadId: ThreadId, parked: boolean): Promise<void>;
+  /** Marks the thread done (`completedReason: "user"`), or reopens it; it stays until reopened. */
+  markCompleted(threadId: ThreadId, completed: boolean): Promise<void>;
   /** The manually ordered sidebar, top to bottom; each thread's `sortOrder` becomes its index. */
   reorderThreads(threadIds: readonly ThreadId[]): Promise<void>;
   label(threadId: ThreadId, labels: ThreadLabels): Promise<void>;

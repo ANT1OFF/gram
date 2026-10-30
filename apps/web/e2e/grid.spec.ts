@@ -18,6 +18,8 @@ test("grid: preset, drag to pane, focus shortcuts, independent sends, maximize, 
   await expect(panes.nth(1)).toHaveAttribute("data-focused", "true");
   await expect(page).toHaveURL(/\/t\/t-release$/);
 
+  // t-dark is marked done: its row is under the folded Done line.
+  await page.getByTestId("overview-done").getByRole("button", { name: /^Done/ }).click();
   await threadRow(page, "t-dark").dragTo(panes.nth(2));
   await expect(panes.nth(2)).toHaveAttribute("data-thread-id", "t-dark");
 

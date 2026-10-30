@@ -163,6 +163,16 @@ export function useScopeCommands(
           label: thread.parked ? "Unpark thread" : "Park thread",
           run: actions.togglePark,
         },
+        ...(actions.toggleDone === undefined
+          ? []
+          : [
+              {
+                id: `scope:done:${id}`,
+                label: thread.completedAt === undefined ? "Mark thread done" : "Reopen thread",
+                keywords: "complete finished settle",
+                run: actions.toggleDone,
+              },
+            ]),
         {
           id: `scope:label:${id}`,
           label: "Label…",

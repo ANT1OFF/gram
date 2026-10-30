@@ -151,12 +151,14 @@ test("the arrows walk the rows in order past the drawn ones, and Home and End re
     await page.keyboard.press("ArrowUp");
     await expect.poll(() => focusedIndex(page)).toBe(step);
   }
-  // End lands on the Parked line under the list; up from it is the list's last row, drawn only
-  // then, and up again the one before.
+  // End lands on the Done line under the list, then up is the Parked line; up from it is the list's
+  // last row, drawn only then, and up again the one before.
   const listed = Number(
     (await solo(page).getByRole("button").first().textContent())?.match(/\d+$/)?.[0],
   );
   await page.keyboard.press("End");
+  await expect(overview(page).getByTestId("overview-done").getByRole("button")).toBeFocused();
+  await page.keyboard.press("ArrowUp");
   await expect(overview(page).getByTestId("overview-parked").getByRole("button")).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect.poll(() => focusedIndex(page)).toBe(listed - 1);
@@ -322,15 +324,23 @@ test("with nothing after the list, End lands on its last row though it wasn't dr
     ),
   );
   await seed(page);
-  // No Parked line: the list's last row is the overview's last stop.
-  const parked = await overview(page)
-    .getByTestId("overview-parked")
-    .locator("[data-thread-id]")
-    .evaluateAll((all) => all.map((row) => row.getAttribute("data-thread-id")!));
-  await page.evaluate(async (ids) => {
-    for (const id of ids) await window.gramMock!.park(id as never, false);
-  }, parked);
+  // No Parked or Done line: the list's last row is the overview's last stop.
+  const under = (line: string) =>
+    overview(page)
+      .getByTestId(line)
+      .locator("[data-thread-id]")
+      .evaluateAll((all) => all.map((row) => row.getAttribute("data-thread-id")!));
+  const parked = await under("overview-parked");
+  const done = await under("overview-done");
+  await page.evaluate(
+    async ([parkedIds, doneIds]) => {
+      for (const id of parkedIds!) await window.gramMock!.park(id as never, false);
+      for (const id of doneIds!) await window.gramMock!.markCompleted(id as never, false);
+    },
+    [parked, done],
+  );
   await expect(overview(page).getByTestId("overview-parked")).toHaveCount(0);
+  await expect(overview(page).getByTestId("overview-done")).toHaveCount(0);
   const listed = Number(
     (await solo(page).getByRole("button").first().textContent())?.match(/\d+$/)?.[0],
   );

@@ -1323,6 +1323,42 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("overview-section-orchestrators"),
   },
   {
+    name: "solo-threads-done",
+    title: "Solo threads, the done ones folded under Done (opened here) as the parked are",
+    open: async (page) => {
+      await openSidebar(page);
+      // The base has no Done line: its done thread is in the list.
+      const done = page.getByTestId("overview-done").getByRole("button", { name: /^Done/ });
+      if ((await done.count()) > 0) await done.click();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("overview-section-solo"),
+  },
+  {
+    name: "solo-thread-menu",
+    title: "A solo thread's right-click menu, with Mark done",
+    open: async (page) => {
+      await openSidebar(page);
+      await threadRow(page, "t-deps").click({ button: "right" });
+      await page.getByRole("menu").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    name: "workspace-menu",
+    title: "A workspace line's right-click menu: settings, pause, remove and More…",
+    open: async (page) => {
+      await openOrchestrators(page, true);
+      await page.getByTestId("overview-workspace-row").first().click({ button: "right" });
+      // The base has no menu here; the right-click only selects text.
+      await page
+        .getByTestId("overview-workspace-menu")
+        .waitFor({ timeout: 3000 })
+        .catch(() => {});
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     name: "sidebar-catppuccin",
     title: "The overview sidebar in Catppuccin (Latte light, Mocha dark)",
     open: async (page) => {
