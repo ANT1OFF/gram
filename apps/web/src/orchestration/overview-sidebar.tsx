@@ -53,7 +53,7 @@ import {
   OVERVIEW_ROOT,
   toggleOverviewSidebar,
 } from "@/views/shell-layout";
-import { parkedSoloThreads, soloThreads } from "@/views/solo-threads";
+import { doneSoloThreads, parkedSoloThreads, soloThreads } from "@/views/solo-threads";
 import { useViewWorkspace } from "@/views/view-workspace";
 
 import { askKeysByThread } from "./ask-model";
@@ -90,6 +90,7 @@ import { useFeatureCards } from "./use-feature-cards";
 import { NeedsYouPopover } from "./needs-you-popover";
 import { useNeedsYou } from "./use-needs-you";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
+import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { workerActivities, workerTones } from "./workers-model";
 
@@ -458,8 +459,11 @@ function WorkspaceRow({
   const summary: FoldedSummary = { live, working, asks };
   const line = orchestratorLine(word, { working, asks });
   const name = state.workspace.name;
-  // ← folds and → unfolds, as a tree row's do; anything else is the overview's.
+  // ← folds and → unfolds, as a tree row's do, and Shift+F10 opens its menu; anything else is the
+  // overview's.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    rowMenuKeys(event);
+    if (event.defaultPrevented) return;
     const to = foldByKey(event, folded);
     if (to === undefined) return;
     event.preventDefault();
@@ -472,77 +476,86 @@ function WorkspaceRow({
       data-folded={folded || undefined}
       className="flex flex-col"
     >
-      {/* The current workspace's mark spans its line, the chevron with it. */}
-      <div
-        className={cn(
-          "flex min-w-0 items-center gap-0.5 rounded-(--radius-sm)",
-          here && "bg-sidebar-row-active",
-        )}
-      >
-        <button
-          type="button"
-          {...{ [STOP]: "" }}
-          data-testid="overview-workspace-row"
-          aria-current={here || undefined}
-          aria-expanded={!folded}
-          aria-controls={bodyId}
-          aria-keyshortcuts="ArrowLeft ArrowRight"
-          aria-label={`${name}, ${overviewSummary(word, { working, asks })}`}
-          onClick={() => switchTo(state.workspace)}
-          onKeyDown={onKeyDown}
-          className={cn(ROW, "min-w-0 flex-1")}
+      {/* The current workspace's mark spans its line, the chevron with it, and so does its menu. */}
+      <ContextMenu>
+        <ContextMenuTrigger
+          render={
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-0.5 rounded-(--radius-sm)",
+                here && "bg-sidebar-row-active",
+              )}
+            />
+          }
         >
-          <span
-            aria-hidden
-            data-testid="overview-workspace-dot"
-            data-working={line.pulse || undefined}
-            className={cn(
-              "size-2 justify-self-center rounded-full",
-              line.dot,
-              line.pulse && "gram-working",
-            )}
-          />
-          <span className="truncate font-medium">{name}</span>
-          <span className="flex items-center gap-1.5">
-            <WorkerCount summary={summary} />
-            {/* What waits on the user stands in for the state word, never for who works. */}
-            {(asks === 0 || working > 0) && (
-              <span
-                data-testid="overview-workspace-state"
-                className="text-xs whitespace-nowrap text-muted-foreground"
-              >
-                {line.phrase}
-              </span>
-            )}
-            {asks > 0 && (
-              <span
-                data-testid="overview-workspace-asks"
-                className="min-w-4.5 rounded-full bg-status-needs/12 px-1.5 text-center text-[11px] leading-4.5 font-semibold text-status-needs tabular-nums"
-              >
-                {asks}
-              </span>
-            )}
-          </span>
-        </button>
-        <button
-          type="button"
-          data-testid="overview-workspace-fold"
-          aria-expanded={!folded}
-          aria-controls={bodyId}
-          aria-label={folded ? `Show ${name}'s workers` : `Hide ${name}'s workers`}
-          title={folded ? "Show workers" : "Hide workers"}
-          onClick={() => fold(!folded)}
-          className="grid size-6 shrink-0 cursor-default place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              "size-3.5 transition-transform duration-(--dur-fast)",
-              folded && "-rotate-90",
-            )}
-          />
-        </button>
-      </div>
+          <button
+            type="button"
+            {...{ [STOP]: "" }}
+            data-testid="overview-workspace-row"
+            aria-current={here || undefined}
+            aria-expanded={!folded}
+            aria-controls={bodyId}
+            aria-keyshortcuts="ArrowLeft ArrowRight Shift+F10"
+            aria-label={`${name}, ${overviewSummary(word, { working, asks })}`}
+            onClick={() => switchTo(state.workspace)}
+            onKeyDown={onKeyDown}
+            className={cn(ROW, "min-w-0 flex-1")}
+          >
+            <span
+              aria-hidden
+              data-testid="overview-workspace-dot"
+              data-working={line.pulse || undefined}
+              className={cn(
+                "size-2 justify-self-center rounded-full",
+                line.dot,
+                line.pulse && "gram-working",
+              )}
+            />
+            <span className="truncate font-medium">{name}</span>
+            <span className="flex items-center gap-1.5">
+              <WorkerCount summary={summary} />
+              {/* What waits on the user stands in for the state word, never for who works. */}
+              {(asks === 0 || working > 0) && (
+                <span
+                  data-testid="overview-workspace-state"
+                  className="text-xs whitespace-nowrap text-muted-foreground"
+                >
+                  {line.phrase}
+                </span>
+              )}
+              {asks > 0 && (
+                <span
+                  data-testid="overview-workspace-asks"
+                  className="min-w-4.5 rounded-full bg-status-needs/12 px-1.5 text-center text-[11px] leading-4.5 font-semibold text-status-needs tabular-nums"
+                >
+                  {asks}
+                </span>
+              )}
+            </span>
+          </button>
+          <button
+            type="button"
+            data-testid="overview-workspace-fold"
+            aria-expanded={!folded}
+            aria-controls={bodyId}
+            aria-label={folded ? `Show ${name}'s workers` : `Hide ${name}'s workers`}
+            title={folded ? "Show workers" : "Hide workers"}
+            onClick={() => fold(!folded)}
+            className="grid size-6 shrink-0 cursor-default place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                "size-3.5 transition-transform duration-(--dur-fast)",
+                folded && "-rotate-90",
+              )}
+            />
+          </button>
+        </ContextMenuTrigger>
+        <ContextMenuContent data-testid="overview-workspace-menu">
+          <WorkspaceMenuItems state={state} />
+        </ContextMenuContent>
+      </ContextMenu>
       <div id={bodyId} hidden={folded} className="flex flex-col">
         {/* The current one's are there folded too, for ⌘J to open it on its first worker. */}
         {(here || !folded) && <WorkspaceBody workspaceId={id} />}
@@ -901,7 +914,10 @@ const SOLO_GAP = 1;
 
 const soloKey = (summary: ThreadSummary) => summary.thread.id;
 
-/** The threads outside any workspace, latest first, the parked ones folded under them: a click opens one. */
+/**
+ * The threads outside any workspace, latest first, the parked and the done ones folded under them: a
+ * click opens one.
+ */
 function SoloThreads() {
   const workspaces = useWorkspaces();
   const ids = useMemo(
@@ -911,6 +927,7 @@ function SoloThreads() {
   // The solo threads, by identity and order: a worker's update re-renders none of them.
   const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids)));
   const parked = useThreadsStore(useShallow((s) => parkedSoloThreads(Object.values(s.byId), ids)));
+  const done = useThreadsStore(useShallow((s) => doneSoloThreads(Object.values(s.byId), ids)));
   const viewed = useParams({ strict: false }).threadId;
   return (
     <Section id="solo" title="Solo threads" count={solo.length}>
@@ -919,7 +936,8 @@ function SoloThreads() {
       ) : (
         <SoloList threads={solo} viewed={viewed} />
       )}
-      {parked.length > 0 && <ParkedThreads parked={parked} viewed={viewed} />}
+      {parked.length > 0 && <FoldedThreads kind="parked" threads={parked} viewed={viewed} />}
+      {done.length > 0 && <FoldedThreads kind="done" threads={done} viewed={viewed} />}
     </Section>
   );
 }
@@ -945,22 +963,35 @@ function SoloList({
   );
 }
 
-/** The parked solo threads behind one line, folded until opened: out of the way, still a click away. */
-function ParkedThreads({
-  parked,
+const FOLDED = {
+  parked: { label: "Parked", hint: undefined },
+  done: { label: "Done", hint: "Threads marked done. Reopen one from its menu." },
+} as const;
+
+/**
+ * The parked or done solo threads behind one line, folded until opened: out of the way, still a
+ * click away.
+ */
+function FoldedThreads({
+  kind,
+  threads,
   viewed,
 }: {
-  parked: readonly ThreadSummary[];
+  kind: keyof typeof FOLDED;
+  threads: readonly ThreadSummary[];
   viewed: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const rows = `overview-${kind}-rows`;
+  const { label, hint } = FOLDED[kind];
   return (
-    <div data-testid="overview-parked" className="flex flex-col gap-px">
+    <div data-testid={`overview-${kind}`} className="flex flex-col gap-px">
       <button
         type="button"
         {...{ [STOP]: "" }}
         aria-expanded={open}
-        aria-controls="overview-parked-rows"
+        aria-controls={rows}
+        title={hint}
         onClick={() => setOpen(!open)}
         className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-xs text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -971,11 +1002,11 @@ function ParkedThreads({
             !open && "-rotate-90",
           )}
         />
-        <span className="flex-1">Parked</span>
-        <span className="tabular-nums">{parked.length}</span>
+        <span className="flex-1">{label}</span>
+        <span className="tabular-nums">{threads.length}</span>
       </button>
-      <div id="overview-parked-rows" hidden={!open} className="flex flex-col gap-px">
-        <SoloList threads={parked} viewed={viewed} />
+      <div id={rows} hidden={!open} className="flex flex-col gap-px">
+        <SoloList threads={threads} viewed={viewed} />
       </div>
     </div>
   );

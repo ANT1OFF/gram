@@ -58,6 +58,7 @@ import {
   FEED_WINDOW_TURNS,
   recentTurns,
   applyUserEdit,
+  withoutCompletion,
 } from "@gram/contracts";
 
 import { createThreadFeed, syncScheduler } from "@/stores/thread-feed";
@@ -1418,6 +1419,16 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   async park(threadId: ThreadId, parked: boolean) {
     this.#update(this.#runtime(threadId), { parked });
     this.#orchestration.parkChanged(threadId, parked);
+  }
+
+  async markCompleted(threadId: ThreadId, completed: boolean) {
+    const runtime = this.#runtime(threadId);
+    const open = withoutCompletion(runtime.summary.thread);
+    const thread = completed
+      ? { ...open, completedAt: Date.now(), completedReason: "user" as const }
+      : open;
+    runtime.summary = { ...runtime.summary, thread };
+    this.#emit({ type: "thread.upsert", thread });
   }
 
   async reorderThreads(threadIds: readonly ThreadId[]) {
