@@ -132,6 +132,68 @@ describe.skipIf(!hasGit)("deleteMergedBranch", () => {
     }),
   );
 
+  it.effect("keeps a branch used by a detached worktree's paused rebase", () =>
+    Effect.gen(function* () {
+      const { repo, worktree, head } = fixture();
+      const editor = nodePath.join(repo, ".git", "edit-rebase.cjs");
+      write(
+        editor,
+        'const fs = require("node:fs"); const path = process.argv[2]; fs.writeFileSync(path, fs.readFileSync(path, "utf8").replace(/^pick /m, "edit "));',
+      );
+      const editorCommand = `"${process.execPath.replaceAll("\\", "/")}" "${editor.replaceAll("\\", "/")}"`;
+      run(worktree, "-c", `sequence.editor=${editorCommand}`, "rebase", "-i", "main");
+      run(worktree, "commit", "--allow-empty", "-qm", "work during rebase");
+      expect(run(worktree, "branch", "--show-current").trim()).toBe("");
+      const result = yield* deleteMergedBranch({ repoPath: repo, branch: "feat", pr: PR }).pipe(
+        withPr(Effect.succeed(merged(head))),
+      );
+      expect(result.deleted).toBe(false);
+      expect(result.reason).toContain(worktree);
+      expect(run(repo, "rev-parse", "refs/heads/feat").trim()).toBe(head);
+      run(worktree, "rebase", "--continue");
+      expect(run(worktree, "branch", "--show-current").trim()).toBe("feat");
+      expect(run(worktree, "rev-parse", "HEAD").trim()).not.toBe(head);
+    }),
+  );
+
+  it.effect("keeps a branch used by a detached worktree's apply rebase", () =>
+    Effect.gen(function* () {
+      const { repo, worktree } = fixture();
+      write(nodePath.join(repo, "tracked.txt"), "base change");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "base change");
+      write(nodePath.join(worktree, "tracked.txt"), "feature change");
+      run(worktree, "add", "-A");
+      run(worktree, "commit", "-qm", "feature change");
+      const head = run(worktree, "rev-parse", "HEAD").trim();
+      expect(() => run(worktree, "rebase", "--apply", "main")).toThrow();
+      expect(run(worktree, "branch", "--show-current").trim()).toBe("");
+      const result = yield* deleteMergedBranch({ repoPath: repo, branch: "feat", pr: PR }).pipe(
+        withPr(Effect.succeed(merged(head))),
+      );
+      expect(result.deleted).toBe(false);
+      expect(run(repo, "rev-parse", "refs/heads/feat").trim()).toBe(head);
+      run(worktree, "rebase", "--abort");
+    }),
+  );
+
+  it.effect("keeps a branch used by a detached worktree's bisect", () =>
+    Effect.gen(function* () {
+      const { repo, worktree } = fixture();
+      run(worktree, "commit", "--allow-empty", "-qm", "middle");
+      run(worktree, "commit", "--allow-empty", "-qm", "bad tip");
+      const head = run(worktree, "rev-parse", "HEAD").trim();
+      run(worktree, "bisect", "start", "HEAD", "main");
+      expect(run(worktree, "branch", "--show-current").trim()).toBe("");
+      const result = yield* deleteMergedBranch({ repoPath: repo, branch: "feat", pr: PR }).pipe(
+        withPr(Effect.succeed(merged(head))),
+      );
+      expect(result.deleted).toBe(false);
+      expect(run(repo, "rev-parse", "refs/heads/feat").trim()).toBe(head);
+      run(worktree, "bisect", "reset");
+    }),
+  );
+
   it.effect("keeps the branch when gh can't confirm the merge", () =>
     Effect.gen(function* () {
       const { repo, worktree } = fixture();

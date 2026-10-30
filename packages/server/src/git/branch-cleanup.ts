@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { git, listWorktrees, Pr, type Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -19,11 +21,45 @@ export interface BranchCleanup {
 
 const BRANCH_NAME = /^(?!-)[\w./-]+$/;
 
+/** Detached HEAD hides the branch a rebase or bisect still needs to restore. */
+const operationUsesBranch = (worktree: string, branch: string) =>
+  Effect.gen(function* () {
+    const directory = yield* git(worktree, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-dir",
+    ]).pipe(Effect.option);
+    if (
+      Option.isNone(directory) ||
+      directory.value.status !== 0 ||
+      directory.value.truncated ||
+      directory.value.stdout.trim() === ""
+    )
+      return "unknown" as const;
+    const gitDir = directory.value.stdout.trim();
+    const state = yield* Effect.tryPromise(() =>
+      Promise.all(
+        ["rebase-merge/head-name", "rebase-apply/head-name", "BISECT_START"].map(async (file) => {
+          try {
+            return (await readFile(join(gitDir, file), "utf8")).trim();
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+            throw error;
+          }
+        }),
+      ),
+    ).pipe(Effect.option);
+    if (Option.isNone(state)) return "unknown" as const;
+    return state.value.some((name) => name === branch || name === `refs/heads/${branch}`)
+      ? ("held" as const)
+      : ("free" as const);
+  });
+
 /**
  * Deletes a worktree's local branch after its PR merged. Everything is checked again right before
  * the conditional ref deletion: gh reports the PR merged now, the branch tip is the PR's head,
- * and no worktree still has the branch checked out. Otherwise, or when gh can't answer, the branch is kept with a
- * reason. The remote branch is never touched.
+ * and no worktree still has the branch checked out or needs it for a rebase or bisect. Unknown
+ * operation state keeps it too. The remote branch is never touched.
  */
 export const deleteMergedBranch = (
   request: BranchCleanupRequest,
@@ -58,6 +94,15 @@ export const deleteMergedBranch = (
     if (Option.isNone(list)) return keep("couldn't list the repo's worktrees");
     const holder = list.value.worktrees.find((w) => w.branch === branch);
     if (holder !== undefined) return keep(`it's checked out in ${holder.path}`);
+
+    // `git branch -D` guarded these detached worktrees itself. The conditional ref deletion
+    // below must preserve that guard, reading every worktree's own operation state last.
+    for (const worktree of list.value.worktrees) {
+      const operation = yield* operationUsesBranch(worktree.path, branch);
+      if (operation === "held") return keep(`it's being rebased or bisected in ${worktree.path}`);
+      if (operation === "unknown")
+        return keep(`couldn't inspect git operation state in ${worktree.path}`);
+    }
 
     // Ref deletion compares under git's lock: another writer's new commits keep their branch.
     // Never dereference a symbolic branch ref into another branch's target.
