@@ -6,7 +6,9 @@ import { AgentIcon } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
 import { prefillDraftProject } from "@/composer/draft-prefill";
 import { focusOtherWindow } from "@/desktop/open-thread";
-import { useShortcut } from "@/keyboard/registry";
+import { releasesChord } from "@/dictation/push-to-talk";
+import { effectiveKeys } from "@/keyboard/bindings-store";
+import { isMac, parseKeys, useShortcut } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
 import { useListedThreads } from "@/sidebar/listed";
 import { threadStatusOf } from "@/sidebar/status";
@@ -14,6 +16,21 @@ import { useLayoutStore } from "@/stores/layout";
 import { switchOrder, useThreadHistory } from "@/stores/thread-history";
 import { useThreadsStore } from "@/stores/threads";
 import { reopenLastClosed } from "@/thread/reopen-closed";
+
+const CYCLE_KEYS = "ctrl+tab";
+
+/**
+ * Whether a key-up ends a switch begun with `keys`: one of the modifiers it is held by coming up
+ * (Ctrl for the default, whatever a rebinding holds), Shift aside, which only walks it backwards.
+ * A chord with none held ends at its own key's release.
+ */
+export const endsSwitch = (keys: string, event: KeyboardEvent, mac = isMac()): boolean => {
+  const chord = parseKeys(keys);
+  if (!chord.mod && !chord.ctrl && !chord.alt) return releasesChord(keys, event, mac);
+  return event.key !== "Shift" && MODIFIER_KEYS.has(event.key) && releasesChord(keys, event, mac);
+};
+
+const MODIFIER_KEYS = new Set(["Control", "Meta", "Alt"]);
 
 /** The thread in the focused pane. */
 export const focusedThreadId = (): ThreadId | undefined => {
@@ -72,7 +89,7 @@ export function ThreadSwitcher() {
   useEffect(() => {
     if (!cycle) return;
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key !== "Control") return;
+      if (!endsSwitch(effectiveKeys("thread.cycleNext", CYCLE_KEYS) ?? CYCLE_KEYS, event)) return;
       const threadId = cycle.order[cycle.index];
       setCycle(undefined);
       if (threadId && threadId !== focusedThreadId()) open(threadId);
@@ -96,7 +113,7 @@ export function ThreadSwitcher() {
 
   useShortcut({
     id: "thread.cycleNext",
-    keys: "ctrl+tab",
+    keys: CYCLE_KEYS,
     label: "Switch threads, most recent first (hold Ctrl)",
     group: "Navigation",
     allowInInputs: true,

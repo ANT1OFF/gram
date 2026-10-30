@@ -25,6 +25,11 @@ export interface Shortcut {
   allowInDialogs?: boolean;
   /** Hide from the shortcut overlay (e.g. duplicates of a documented binding). */
   hidden?: boolean;
+  /**
+   * Once per press: a held key's repeats are taken and dropped. For an answer's key, where the next
+   * card under the key would be answered too.
+   */
+  once?: boolean;
   run: (event: KeyboardEvent) => void;
 }
 
@@ -265,6 +270,7 @@ export function dispatchShortcut(event: KeyboardEvent, mac = isMac()): boolean {
       if (shortcut.focusScope && !shortcut.focusScope()) continue;
       if (shortcut.when && !shortcut.when()) continue;
       event.preventDefault();
+      if (shortcut.once && event.repeat) return true;
       shortcut.run(event);
       return true;
     }
@@ -287,7 +293,7 @@ export function useShortcut(shortcut: Shortcut, enabled = true) {
   useEffect(() => {
     latest.current = shortcut;
   });
-  const { id, keys, label, group, allowInInputs, skipWhileTyping, allowInDialogs, hidden } =
+  const { id, keys, label, group, allowInInputs, skipWhileTyping, allowInDialogs, hidden, once } =
     shortcut;
   const scoped = shortcut.focusScope !== undefined;
   useEffect(() => {
@@ -301,6 +307,7 @@ export function useShortcut(shortcut: Shortcut, enabled = true) {
       ...(skipWhileTyping !== undefined ? { skipWhileTyping } : {}),
       ...(allowInDialogs !== undefined ? { allowInDialogs } : {}),
       ...(hidden !== undefined ? { hidden } : {}),
+      ...(once !== undefined ? { once } : {}),
       ...(scoped ? { focusScope: () => latest.current.focusScope?.() ?? false } : {}),
       when: () => latest.current.when?.() ?? true,
       run: (event) => latest.current.run(event),
@@ -314,6 +321,7 @@ export function useShortcut(shortcut: Shortcut, enabled = true) {
     skipWhileTyping,
     allowInDialogs,
     hidden,
+    once,
     scoped,
     enabled,
   ]);

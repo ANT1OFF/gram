@@ -25,6 +25,16 @@ const highlighters = new Map<
 >();
 const tokensCache = new Map<string, TokenizedCode>();
 const pending = new Map<string, Set<(result: TokenizedCode) => void>>();
+/**
+ * What asked while `MAX_ENTRIES` were already being worked on, oldest first, started as they
+ * finish: a long diff's later hunks get their colours too. Bounded, dropping the oldest, which stay
+ * plain text.
+ */
+const waiting = new Map<
+  string,
+  { code: string; language: BundledLanguage; callbacks: Set<(result: TokenizedCode) => void> }
+>();
+const MAX_WAITING = 256;
 
 export const createRawTokens = (code: string): TokenizedCode => {
   let offset = 0;
@@ -70,13 +80,28 @@ export const highlightCode = (
     tokensCache.set(key, cached);
     return cached;
   }
-  const subscribers = pending.get(key);
+  const subscribers = pending.get(key) ?? waiting.get(key)?.callbacks;
   if (subscribers) {
     if (callback) subscribers.add(callback);
     return null;
   }
-  if (pending.size >= MAX_ENTRIES) return null;
-  pending.set(key, new Set(callback ? [callback] : []));
+  if (pending.size >= MAX_ENTRIES) {
+    waiting.set(key, { code, language, callbacks: new Set(callback ? [callback] : []) });
+    if (waiting.size > MAX_WAITING) waiting.delete(waiting.keys().next().value!);
+    return null;
+  }
+  tokenize(key, code, language, new Set(callback ? [callback] : []));
+  return null;
+};
+
+/** One background tokenization, then the oldest waiting one in its place. */
+const tokenize = (
+  key: string,
+  code: string,
+  language: BundledLanguage,
+  callbacks: Set<(result: TokenizedCode) => void>,
+) => {
+  pending.set(key, callbacks);
 
   // The existing Shiki engine/themes are retained; failures resolve to the original source.
   void (async () => {
@@ -97,9 +122,14 @@ export const highlightCode = (
     }
     tokensCache.set(key, tokenized);
     if (tokensCache.size > MAX_ENTRIES) tokensCache.delete(tokensCache.keys().next().value!);
-    const callbacks = pending.get(key);
+    // The set callers joined while it ran, which `pending` handed them.
     pending.delete(key);
-    for (const receive of callbacks ?? []) receive(tokenized);
+    for (const receive of callbacks) receive(tokenized);
+    const next = waiting.entries().next().value;
+    if (next !== undefined) {
+      const [nextKey, queued] = next;
+      waiting.delete(nextKey);
+      tokenize(nextKey, queued.code, queued.language, queued.callbacks);
+    }
   })();
-  return null;
 };

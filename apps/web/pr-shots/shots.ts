@@ -789,6 +789,31 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "light-first-paint",
+    title:
+      "The first paint with Light picked over the default palette, before the app's modules load",
+    modes: ["light"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.addInitScript(() => {
+        localStorage.setItem(
+          "gram.theme",
+          JSON.stringify({ state: { palette: "neutral-dark", mode: "light" }, version: 1 }),
+        );
+      });
+      // The inline boot script and the stylesheets alone: the app itself is held back, so nothing
+      // corrects the boot script's attributes.
+      await page.route(/\/src\/main\.tsx(?:\?.*)?$/, (route) =>
+        route.fulfill({
+          contentType: "application/javascript",
+          body: 'import "/src/styles/globals.css";',
+        }),
+      );
+      await page.goto("/t/t-deps", { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     name: "quiet-busy",
     title:
       "Quiet over `casefiles`, its workers peeked: two running, three waiting on CI, the review bot or a dependency, one on a conflict",

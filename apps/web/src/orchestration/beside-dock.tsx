@@ -169,7 +169,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
         ))}
       </div>
       <ReadOnlyTranscript.Provider value>
-        {tab === "log" && <WorkerLog threadId={worker} />}
+        {tab === "log" && <WorkerLog key={worker} threadId={worker} />}
         {tab === "terminal" && <LiveTerminal threadId={worker} />}
         {tab === "changes" && (
           <div className="flex min-h-0 flex-1 flex-col">

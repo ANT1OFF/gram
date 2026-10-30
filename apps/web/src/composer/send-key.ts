@@ -24,3 +24,13 @@ export const enterSends = (
   !event.altKey &&
   event.isComposing !== true &&
   event.keyCode !== 229;
+
+/**
+ * Whether a React key event belongs to an IME composition still in progress: its Enter accepts a
+ * candidate and its arrows move among them, so a list or field acting on the key would take it
+ * from the input method. `keyCode` 229 as for `enterSends`.
+ */
+export const imeComposing = (event: {
+  readonly nativeEvent: { readonly isComposing?: boolean };
+  readonly keyCode?: number;
+}): boolean => event.nativeEvent.isComposing === true || event.keyCode === 229;

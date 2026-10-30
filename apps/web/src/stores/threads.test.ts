@@ -356,9 +356,19 @@ describe("threads store events", () => {
     expect(store.getState().byId).toBe(byId);
     expect(store.getState().plans[T]).toHaveLength(1);
 
+    applyEvent({ type: "thread.status", threadId: T, status: "running", detail: "Reading" });
     applyEvent({ type: "thread.removed", threadId: T });
     expect(store.getState().plans).toEqual({});
     expect(store.getState().usage).toEqual({});
+    expect(store.getState().statusDetail).toEqual({});
+
+    // A plan that lands after the thread went doesn't come back with it if it is reopened.
+    applyEvent({
+      type: "thread.plan",
+      threadId: T,
+      items: [{ content: "Late", status: "pending" }],
+    });
+    expect(store.getState().plans).toEqual({});
   });
 
   it("keeps the thread's plan in the thread map, and its todo list beside it", () => {
@@ -608,6 +618,23 @@ describe("queueOps", () => {
       "InvalidState",
     );
     expect(texts(store)).toEqual(["one", "two", "three"]);
+  });
+
+  it("keeps a queue the server sent while a rejected change was out, rather than the old one", async () => {
+    const store = makeStore();
+    const client = api();
+    let reject!: (error: Error) => void;
+    client.queueRemove.mockImplementationOnce(
+      () => new Promise<void>((_, fail) => (reject = fail)),
+    );
+    const removing = queueOps.remove(client, store.getState, T, q("q3"));
+    expect(texts(store)).toEqual(["one", "two"]);
+    // Meanwhile a turn starts with the first item: the server's queue no longer has it.
+    const queue = base.queue.filter((item) => item.id !== q("q1"));
+    store.getState().applyEvent({ type: "thread.queue", threadId: T, queue });
+    reject(new Error("InvalidState"));
+    await expect(removing).rejects.toThrow("InvalidState");
+    expect(texts(store)).toEqual(["two", "three"]);
   });
 
   it("drops a steered item, and puts it back when the steer is rejected", async () => {

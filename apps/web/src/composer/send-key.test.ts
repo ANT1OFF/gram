@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { enterSends } from "./send-key";
+import { enterSends, imeComposing } from "./send-key";
 
 const enter = (patch: Partial<Parameters<typeof enterSends>[0]> = {}) => ({
   key: "Enter",
@@ -34,5 +34,13 @@ describe("enterSends", () => {
 
   it("sends nothing until settings have loaded and the choice is known", () => {
     expect(enterSends(enter(), undefined)).toBe(false);
+  });
+});
+
+describe("imeComposing", () => {
+  it("reads a composition from the native event, or from the 229 some browsers send first", () => {
+    expect(imeComposing({ nativeEvent: { isComposing: true } })).toBe(true);
+    expect(imeComposing({ nativeEvent: { isComposing: false }, keyCode: 229 })).toBe(true);
+    expect(imeComposing({ nativeEvent: { isComposing: false }, keyCode: 13 })).toBe(false);
   });
 });

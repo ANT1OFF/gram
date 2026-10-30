@@ -19,15 +19,36 @@
       try {
         var state = JSON.parse(localStorage.getItem("gram.theme") || "{}").state || {};
         var root = document.documentElement;
-        if (typeof state.palette === "string" && state.palette)
-          root.dataset.palette = state.palette;
         var mode = state.mode === "light" || state.mode === "dark" ? state.mode : "dark";
         if (state.mode === "system" && typeof matchMedia === "function")
           mode = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
         root.dataset.mode = mode;
-        // An unset palette uses the default's light partner only for an explicit Light/System.
-        if (!(typeof state.palette === "string" && state.palette) && mode === "light")
-          root.dataset.palette = "neutral";
+        // Each preset dark palette's light partner, as `@gram/themes` pairs them (boot-pairs.test.ts
+        // keeps this in step): a palette stored in the other mode paints as its partner, the way
+        // ThemeRoot will, rather than in the wrong mode until it does.
+        var lightOf = {
+          "tokyo-night": "tokyo-light",
+          "catppuccin-mocha": "catppuccin-latte",
+          "minimal-ocean-dark": "minimal-ocean",
+          "minimal-grape-dark": "minimal-grape",
+          "minimal-forest-dark": "minimal-forest",
+          "minimal-sunset-dark": "minimal-sunset",
+          "minimal-vivid-dark": "minimal-vivid",
+          "minimal-graphite-dark": "minimal-graphite",
+          "neutral-dark": "neutral",
+          "rose-dark": "rose",
+          "forest-dark": "forest",
+          "ocean-dark": "ocean",
+          "ember-dark": "ember",
+          "violet-dark": "violet",
+        };
+        // An unset palette is the default, `neutral-dark`, paired the same way.
+        var stored =
+          typeof state.palette === "string" && state.palette ? state.palette : "neutral-dark";
+        var paired = stored;
+        if (mode === "light" && lightOf[stored]) paired = lightOf[stored];
+        if (mode === "dark") for (var dark in lightOf) if (lightOf[dark] === stored) paired = dark;
+        root.dataset.palette = paired;
         if (/^(reduced|off)$/.test(state.motion)) root.dataset.motion = state.motion;
       } catch (error) {}
     </script>

@@ -74,6 +74,22 @@ describe("Composer @ mentions", () => {
     expect(files()).toBeNull();
   });
 
+  it("leaves Enter and the arrows to an input method still composing", async () => {
+    const { composer, user } = setup();
+    await user.click(composer);
+    await user.type(composer, "why @retry");
+    await waitFor(() => expect(offered()[0]).toBe("src/retry.ts"));
+    // A candidate accepted with Enter, or browsed with ↓, belongs to the input method.
+    fireEvent.keyDown(composer, { key: "ArrowDown", isComposing: true });
+    fireEvent.keyDown(composer, { key: "Enter", keyCode: 229 });
+    fireEvent.keyDown(composer, { key: "Enter", isComposing: true });
+    expect(composer.value).toBe("why @retry");
+    expect(files()).not.toBeNull();
+    // Composition over, Enter picks the first file as before.
+    fireEvent.keyDown(composer, { key: "Enter" });
+    expect(composer.value).toBe("why @src/retry.ts ");
+  });
+
   it("keeps a chosen folder open, listing its children", async () => {
     const { composer, user } = setup();
     await user.click(composer);

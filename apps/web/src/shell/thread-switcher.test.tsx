@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
 import { draftProjectPrefill, prefillDraftProject } from "@/composer/draft-prefill";
+import { useBindingsStore } from "@/keyboard/bindings-store";
 import { installKeyboard } from "@/keyboard/registry";
 import { renderWithApi } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
@@ -72,6 +73,26 @@ describe("ThreadSwitcher", () => {
     expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: FLAKY } });
     const { grid } = useLayoutStore.getState();
     expect(grid.panes[grid.focused]).toBe(FLAKY);
+  });
+
+  it("finishes on the rebound chord's modifier, not on Control", () => {
+    useBindingsStore.setState({ overrides: { "thread.cycleNext": "alt+tab" } });
+    try {
+      renderWithApi(<ThreadSwitcher />, api);
+      visitBoth();
+
+      fireEvent.keyDown(window, { key: "Tab", code: "Tab", altKey: true });
+      expect(selected()).toContain("Fix flaky retry test");
+      // Neither another modifier nor the chord's own key ends it while Alt is held.
+      fireEvent.keyUp(window, { key: "Control" });
+      fireEvent.keyUp(window, { key: "Tab", code: "Tab" });
+      expect(screen.queryByTestId("thread-switcher")).not.toBeNull();
+      fireEvent.keyUp(window, { key: "Alt" });
+      expect(screen.queryByTestId("thread-switcher")).toBeNull();
+      expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: FLAKY } });
+    } finally {
+      useBindingsStore.setState({ overrides: {} });
+    }
   });
 
   it("cancels on Escape without switching", () => {

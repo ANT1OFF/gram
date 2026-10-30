@@ -169,7 +169,8 @@ export const createThreadsSlice = (
           const { [event.threadId]: _removed, ...rest } = s.byId;
           const { [event.threadId]: _plan, ...plans } = s.plans;
           const { [event.threadId]: _usage, ...usage } = s.usage;
-          return { byId: rest, plans, usage };
+          const { [event.threadId]: _detail, ...statusDetail } = s.statusDetail;
+          return { byId: rest, plans, usage, statusDetail };
         });
         return;
       }
@@ -239,8 +240,9 @@ export const createThreadsSlice = (
       case "thread.plan":
         // The todo list moves with every step the agent ticks off, and the sidebar shows none of it,
         // so only a change to the thread's plan touches `byId`.
+        // A late plan for a thread already removed would come back with it if it were reopened.
         set((s) => ({
-          plans: { ...s.plans, [event.threadId]: event.items },
+          plans: s.byId[event.threadId] ? { ...s.plans, [event.threadId]: event.items } : s.plans,
           byId: patch(s.byId, event.threadId, (t) => {
             if (samePlan(t.plan, event.plan)) return t;
             const { plan: _old, ...rest } = t;
@@ -533,11 +535,14 @@ async function optimistic(
 ) {
   const previous = getState().byId[threadId]?.queue;
   if (!previous) return;
-  getState().setQueue(threadId, next(previous));
+  const guessed = next(previous);
+  getState().setQueue(threadId, guessed);
   try {
     await commit();
   } catch (error) {
-    getState().setQueue(threadId, previous);
+    // Only over the guess: a queue the server sent meanwhile (a turn took an item, another window
+    // added one) is what the queue is now, and putting `previous` back would undo it.
+    if (getState().byId[threadId]?.queue === guessed) getState().setQueue(threadId, previous);
     throw error;
   }
 }

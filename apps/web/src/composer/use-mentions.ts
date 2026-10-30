@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useRef, useState, type KeyboardEvent, type SyntheticEvent } from "react";
 
 import { insertMention, mentionTrigger, rankMentions } from "./mention";
+import { imeComposing } from "./send-key";
 
 export interface MentionSource {
   /** What's listed, for caching: a thread and its checkout, or a folder. */
@@ -76,7 +77,8 @@ export function useMentions({
 
   /** The list's keys while it's open; true when the event was one of them. */
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
-    if (!open || event.metaKey || event.ctrlKey || event.altKey) return false;
+    if (!open || event.metaKey || event.ctrlKey || event.altKey || imeComposing(event))
+      return false;
     const handled = (run: () => void) => {
       event.preventDefault();
       run();
