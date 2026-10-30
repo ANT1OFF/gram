@@ -22,8 +22,10 @@ export interface InboxEntry {
   readonly title: string;
   /** The project's name, which is what tells cross-repo siblings apart. */
   readonly project?: string | undefined;
-  /** Absent for the orchestrator's own requests. */
+  /** Absent for the orchestrator's own requests, and a thread outside any feature's. */
   readonly feature?: string | undefined;
+  /** The workspace's orchestrator asks it. */
+  readonly orchestrator?: true | undefined;
   /**
    * Where the thread's agent runs, so where an allowed command would: the worktree it moved into
    * when it has, the one it was launched in otherwise.
@@ -49,6 +51,7 @@ export const threadEntries = (
       title: thread.title,
       project: projectName(thread.projectId),
       feature: thread.role === undefined ? thread.spawnedBy?.feature : undefined,
+      ...(thread.role === "orchestrator" ? { orchestrator: true as const } : {}),
       checkout: thread.currentCheckout ?? thread.checkout,
       request,
     })),

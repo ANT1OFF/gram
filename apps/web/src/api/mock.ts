@@ -10,6 +10,7 @@ import type {
   PlanStepId,
   ThreadPlan,
   RespondManyResult,
+  SettingsPatch,
   McpTarget,
   RestartMidTurn,
   SessionRestartReason,
@@ -2082,6 +2083,15 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /** Synthetic notification injection for dev/browser tests; no provider payload is involved. */
   simulateNotification(event: Extract<ApiServerEvent, { type: "notify" }>) {
     this.#emit(event);
+  }
+
+  /**
+   * Settings changed behind the window's back, as an approved `settings_propose` changes them: saved,
+   * then `settings.changed`, which every window answers by pulling them again.
+   */
+  async simulateSettingsChange(patch: SettingsPatch) {
+    await this.#settings.api.updateSettings(patch);
+    this.#emit({ type: "settings.changed" });
   }
 
   /** `simulateChecks` (`mock-scenarios.ts`). */

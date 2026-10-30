@@ -13,12 +13,17 @@ import { useAttentionStore } from "@/sidebar/attention";
 import { needsYou as threadNeedsYou, splitForTree } from "@/sidebar/grouping";
 import { useThreadsStore, whenServerEventsSettle } from "@/stores/threads";
 
-import { asksOf } from "./ask-model";
+import { asksOf, type Ask } from "./ask-model";
 import type { WorkspaceAsks } from "./ask-stack";
 import { hiddenIds, useAskStackStore } from "./ask-stack-store";
 import { asleep, snoozesOf } from "./inbox-set-aside";
 import { groupInbox, inboxEntries, threadEntries } from "./inbox-model";
-import { soloFailures, standingFailures, type FailureItem } from "./needs-you-model";
+import {
+  soloFailures,
+  standingFailures,
+  threadNeedsItems,
+  type FailureItem,
+} from "./needs-you-model";
 import { needsYouGroups, type NeedsYouThread } from "./needs-you-items";
 import { workspaceTrees } from "./tree-model";
 import type { NeedsYouList } from "./use-needs-you";
@@ -50,6 +55,8 @@ export interface DerivedAsks {
   readonly asks: readonly WorkspaceAsks[];
   /** The same with what is put away for Later left in, which Needs you lists apart. */
   readonly withLater: readonly WorkspaceAsks[];
+  /** The asks of threads outside any workspace, less what is put away for Later. */
+  readonly soloAsks: readonly Ask[];
   readonly needsYou: NeedsYouList;
 }
 
@@ -59,6 +66,7 @@ interface DerivedAsksState extends DerivedAsks {
 }
 
 const NOTHING: NeedsYouList = { groups: [], items: [], later: [] };
+const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
 const NO_QUERIED: QueriedInputs = {
   workspaces: [],
   questions: new Map(),
@@ -130,13 +138,30 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
   // The threads outside any workspace bring their requests and errors while they need the user, as
   // the window title and the dock badge count them.
   const solo = split.listed.filter((summary) => threadNeedsYou(summary));
+  const soloErrors = soloFailures(solo, hidden, projectName);
+  // What a thread needs the user for beyond its asks and its error, in its workspace's group or
+  // with the solo threads: every thread the title and the badge count has an item.
+  // A failure covers its thread dismissed or not: a dismissed red build stays dismissed.
+  const covered = new Set(
+    withLater
+      .flatMap((w) => standingFailures(ledgers.get(w.workspaceId), byId, NOTHING_HIDDEN))
+      .map((item) => item.failure.threadId),
+  );
+  const soloOthers: FailureItem[] = [];
+  const summaries = Object.values(byId).filter((summary) => summary !== undefined);
+  for (const item of threadNeedsItems(summaries, covered, hidden, projectName)) {
+    const into = item.workspaceId === undefined ? undefined : failures.get(item.workspaceId);
+    if (into === undefined) soloOthers.push({ ...item, workspaceId: undefined });
+    else failures.set(item.workspaceId!, [...into, item]);
+  }
+  const soloGroups = groupInbox(threadEntries(solo, projectName));
   const source = {
     workspaces: withLater,
     failures,
     threads,
     solo: {
-      asks: asksOf({ groups: groupInbox(threadEntries(solo, projectName)), hidden }),
-      failures: soloFailures(solo, hidden, projectName),
+      asks: asksOf({ groups: soloGroups, hidden }),
+      failures: [...soloErrors, ...soloOthers],
     },
   };
   const groups = needsYouGroups({ ...source, away: new Set([...away.keys(), ...hidden]) });
@@ -150,6 +175,7 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
   return {
     asks,
     withLater,
+    soloAsks: asksOf({ groups: soloGroups, hidden: new Set([...answered, ...setAside]) }),
     needsYou: { groups, items: groups.flatMap((group) => group.items), later },
     ...(sleeping.wakes === undefined ? {} : { wakes: sleeping.wakes }),
   };
@@ -173,11 +199,17 @@ export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
     const current = get();
     const asks = keepSame(current.asks, next.asks);
     const withLater = keepSame(current.withLater, next.withLater);
+    const soloAsks = keepSame(current.soloAsks, next.soloAsks);
     const needsYou = keepSame(current.needsYou, next.needsYou);
-    if (asks === current.asks && withLater === current.withLater && needsYou === current.needsYou) {
+    if (
+      asks === current.asks &&
+      withLater === current.withLater &&
+      soloAsks === current.soloAsks &&
+      needsYou === current.needsYou
+    ) {
       return;
     }
-    set({ asks, withLater, needsYou });
+    set({ asks, withLater, soloAsks, needsYou });
   };
   // Run from the input stores' listeners: a derivation that fails is logged, never thrown at
   // whoever changed the store, and never keeps that store's later listeners from hearing of it.
@@ -207,6 +239,7 @@ export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
   return {
     asks: [],
     withLater: [],
+    soloAsks: [],
     needsYou: NOTHING,
     setQueried(next) {
       queried = next;
@@ -216,11 +249,17 @@ export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
   };
 });
 
+/**
+ * The one needs-you count: Needs you's items, which the sidebar's pill shows and the window title
+ * and the dock badge follow. Every thread that needs the user has at least one (`threadNeedsItems`).
+ */
+export const needsYouCount = (): number => useDerivedAsks.getState().needsYou.items.length;
+
 /** Back to nothing handed in and nothing derived, as a window starts; for tests. */
 export const resetDerivedAsks = () => {
   queried = NO_QUERIED;
   sourced = false;
   clearTimeout(wake);
   wake = undefined;
-  useDerivedAsks.setState({ asks: [], withLater: [], needsYou: NOTHING });
+  useDerivedAsks.setState({ asks: [], withLater: [], soloAsks: [], needsYou: NOTHING });
 };

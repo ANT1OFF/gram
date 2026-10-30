@@ -232,8 +232,10 @@ test("See all: the panel filters by kind, puts an item away for Later, and dismi
 test("with nothing waiting, the popover and the panel say so", async ({ page }) => {
   await page.goto("/t/t-deps");
   await expect(threadRow(page, "t-deps")).toBeVisible();
-  // The seed's threads outside any workspace that ask, a question and a plan, count until parked.
-  await expect(pill(page)).toHaveAttribute("data-count", "2");
+  // The seed's threads outside any workspace that need the user count until parked or seen: a
+  // question, a plan, and t-flaky's red PR. The window title says the same.
+  await expect(pill(page)).toHaveAttribute("data-count", "3");
+  await expect(page).toHaveTitle("(3) Gram");
   await parkSeedAsks(page);
   await expect(pill(page)).toHaveText("Nothing needs you");
   await openPopover(page);

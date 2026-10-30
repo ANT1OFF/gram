@@ -762,6 +762,33 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("right-panel"),
   },
   {
+    name: "quiet-solo-asks",
+    title: "Quiet with only solo threads asking: their question and plan are cards",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/t/t-deps");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.getByTestId("quiet-toggle").click();
+      await page.getByTestId("quiet-view").waitFor();
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "needs-you-solo-pr",
+    title:
+      "Needs you over the seed: t-flaky's unseen red PR is listed, so the pill says what the title says",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/t/t-deps");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.getByTestId("overview-needs-you").click();
+      await page.getByTestId("needs-you-popover").waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
     name: "quiet-busy",
     title:
       "Quiet over `casefiles`, its workers peeked: two running, three waiting on CI, the review bot or a dependency, one on a conflict",

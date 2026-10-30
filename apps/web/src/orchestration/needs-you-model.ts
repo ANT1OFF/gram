@@ -10,6 +10,7 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 
+import { unseenAttention } from "@/sidebar/attention";
 import { needsYou } from "@/sidebar/grouping";
 import { failureLabel } from "@/thread/failure-kinds";
 
@@ -20,9 +21,12 @@ import { liveWorkerEntry, workerTitle } from "./board-model";
 // its Failing strip, and Needs you counts them with the asks, with the errors of threads outside any
 // workspace. Dismissing one (`inbox.cleared`) holds for that occurrence only. No React.
 
-/** A worker stopped on an error, or a PR of its with failing checks. */
+/**
+ * A worker stopped on an error, or a PR of its with failing checks; or a thread that needs the user
+ * for what has no item of its own: its PR's attention unseen, or its babysit stopped.
+ */
 interface NeedsYouFailure {
-  readonly kind: "error" | "checks";
+  readonly kind: "error" | "checks" | "review" | "babysit" | "thread";
   readonly threadId: ThreadId;
   readonly title: string;
   readonly project: string;
@@ -184,4 +188,62 @@ export const soloFailures = (
       thread.lastError?.at ?? thread.lastActivityAt,
     );
     return item.ids.some((id) => hidden.has(id)) ? [] : [item];
+  });
+
+/**
+ * What else a thread needing the user (`needsYou`) has to show for it, beside its asks and its
+ * error: an item for unseen PR attention, a stopped babysit, or failing that the thread itself, so
+ * every thread that needs the user is somewhere in Needs you and its count is the one the window
+ * title and the dock badge show. `covered` are threads a failure already shows. Each id names the
+ * occurrence, so a dismiss holds until the attention is new again.
+ */
+export const threadNeedsItems = (
+  threads: readonly ThreadSummary[],
+  covered: ReadonlySet<ThreadId>,
+  hidden: ReadonlySet<string>,
+  projectName: (projectId: string) => string | undefined = () => undefined,
+): readonly FailureItem[] =>
+  threads.flatMap((summary) => {
+    const { thread } = summary;
+    if (
+      summary.pendingRequests.length > 0 ||
+      summary.status === "error" ||
+      covered.has(thread.id) ||
+      !needsYou(summary)
+    ) {
+      return [];
+    }
+    const attention = unseenAttention(summary);
+    const pr = summary.git?.pr;
+    const [kind, tag, occurrence]: [NeedsYouFailure["kind"], string, string] =
+      attention !== undefined
+        ? [
+            attention.reason === "ciFailed" ? "checks" : "review",
+            pr === undefined
+              ? attention.label
+              : `#${pr.number} ${attention.reason === "ciFailed" ? "checks failing" : "changes requested"}`,
+            attention.key,
+          ]
+        : thread.babysit?.phase === "stopped"
+          ? ["babysit", "Babysit stopped", `babysit:${thread.lastActivityAt}`]
+          : ["thread", "Needs you", `${summary.status}:${thread.lastActivityAt}`];
+    const id = `failure:${kind}:${thread.id}:${occurrence}`;
+    if (hidden.has(id)) return [];
+    return [
+      {
+        kind: "failure",
+        key: id,
+        ids: [id],
+        workspaceId: thread.workspaceId,
+        feature: undefined,
+        failure: {
+          kind,
+          threadId: thread.id,
+          title: thread.title,
+          project: projectName(thread.projectId) ?? "",
+          tag,
+          at: thread.lastActivityAt,
+        },
+      },
+    ];
   });

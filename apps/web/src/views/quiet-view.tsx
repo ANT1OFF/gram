@@ -30,6 +30,7 @@ import {
 } from "@/orchestration/ask-stack";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
+import { useDerivedAsks } from "@/orchestration/needs-you-store";
 import { allWorkspacesPaused, setAllWorkspacesPaused } from "@/orchestration/pause-workspace";
 import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
 import { workersByTab, type WorkerRow } from "@/orchestration/workers-model";
@@ -47,6 +48,7 @@ import {
   sendLater,
   shouldEnterQuiet,
   type DeckCard,
+  type DeckSource,
   type DotTone,
   type StripWorkspace,
 } from "./quiet-model";
@@ -114,6 +116,14 @@ export function useQuietStrip(all: readonly WorkspaceAsks[]): StripWorkspace[] {
   );
 }
 
+/** The solo threads' asks as one more source of cards, after every workspace's. */
+const soloSource = (asks: readonly Ask[]): DeckSource => ({
+  workspaceId: undefined,
+  name: "Solo threads",
+  orchestratorThreadId: undefined,
+  asks,
+});
+
 /**
  * Quiet: an empty field, one strip at the bottom with a dot per worker, and, when something needs
  * you, one card at a time. ⏎ takes the first answer, 1 and 2 pick, → sends a card to the back and
@@ -122,9 +132,13 @@ export function useQuietStrip(all: readonly WorkspaceAsks[]): StripWorkspace[] {
  */
 export function QuietView({ workspaceId }: ViewProps) {
   const all = useWorkspaceAsks();
+  const solo = useDerivedAsks((s) => s.soloAsks);
   const strip = useQuietStrip(all);
   const [later, setLater] = useState<readonly string[]>([]);
-  const deck = useMemo(() => quietDeck(all, workspaceId, later), [all, workspaceId, later]);
+  const deck = useMemo(
+    () => quietDeck([...all, soloSource(solo)], workspaceId, later),
+    [all, solo, workspaceId, later],
+  );
   const [peek, setPeek] = useState<WorkspaceId>();
   const api = useApi();
   const queryClient = useQueryClient();
@@ -299,7 +313,12 @@ export function QuietView({ workspaceId }: ViewProps) {
       {peeked !== undefined && (
         <Peek workspace={peeked} onClose={() => setPeek(undefined)} onOpen={leaveTo} />
       )}
-      <Strip strip={strip} peek={peek} onPeek={(id) => setPeek(id === peek ? undefined : id)} />
+      <Strip
+        strip={strip}
+        asks={deck.length}
+        peek={peek}
+        onPeek={(id) => setPeek(id === peek ? undefined : id)}
+      />
     </div>
   );
 }
@@ -488,16 +507,18 @@ function PeekRow({ row, onOpen }: { row: WorkerRow; onOpen: () => void }) {
 /** The bottom strip: a dot per worker by workspace, the asks, the time, and the one menu. */
 function Strip({
   strip,
+  asks,
   peek,
   onPeek,
 }: {
   strip: readonly StripWorkspace[];
+  /** Every card in the deck, the solo threads' included. */
+  asks: number;
   peek: WorkspaceId | undefined;
   onPeek: (workspaceId: WorkspaceId) => void;
 }) {
   const now = useNow(true, undefined, 30_000);
   const time = new Date(now);
-  const asks = strip.reduce((sum, w) => sum + w.asks, 0);
   return (
     <footer
       data-testid="quiet-strip"
