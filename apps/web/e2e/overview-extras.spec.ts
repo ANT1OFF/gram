@@ -4,7 +4,7 @@ import type { MockOneThreadSimulation } from "../src/api/mock-asks";
 import { pressFirstWorkspaceKey } from "./thread-row";
 
 // The overview sidebar's extras: Pull requests and Done
-// today, folded until opened, the usage meters and worker slots at its foot, ⌘J's jump into its
+// today, folded until opened, the usage meters and worker slots at its foot, off by default, ⌘J's jump into its
 // workers, and Settings → General's Sidebar sections. Each is checked against what the right
 // panel's PR lists, ⌘J's list, the title bar's meter and the ledger say. Mock state lives in memory, so every
 // step after the seed stays inside the app, bar the reload the settings are kept across.
@@ -13,18 +13,22 @@ const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
 /**
  * `kept` is what the window keeps of its layout by itself, outside the settings (`gram.layout`), as
- * where each PR list shows.
+ * where each PR list shows; `layout` is the settings' own.
  */
-const start = async (page: Page, kept: Record<string, unknown> = {}) => {
+const start = async (
+  page: Page,
+  kept: Record<string, unknown> = {},
+  layout: Record<string, unknown> = {},
+) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(
-    ([key, own]) => {
+    ([key, own, settings]) => {
       if (sessionStorage.getItem(key) === null) {
-        sessionStorage.setItem(key, JSON.stringify({ panel: { open: false } }));
+        sessionStorage.setItem(key, JSON.stringify({ panel: { open: false }, layout: settings }));
         localStorage.setItem("gram.layout", JSON.stringify({ state: own, version: 1 }));
       }
     },
-    [MOCK_SETTINGS_KEY, kept] as const,
+    [MOCK_SETTINGS_KEY, kept, layout] as const,
   );
   await page.goto("/t/t-flaky");
   await page.getByLabel("Message", { exact: true }).waitFor();
@@ -106,20 +110,35 @@ test("Pull requests starts folded and lists the PR lists' PRs, opening one on Gi
   await expect(title).toHaveAttribute("aria-expanded", "false");
   const rows = section(page, "pullRequests").getByTestId("overview-pr");
   await expect(rows.first()).toBeHidden();
+  // Folded, it says how many; open, the rows do, the title's name and hover keeping the number.
+  const folded = await title.textContent();
 
   await title.click();
   await expect(title).toHaveAttribute("aria-expanded", "true");
   await expect(rows.first()).toBeVisible();
   const listed = await overviewPrs(page);
   expect(listed.length).toBeGreaterThan(1);
-  await expect(title).toContainText(String(listed.length));
-  // The review requests first, then your own; each says which, and `repo#n · author` under it.
+  expect(folded).toContain(String(listed.length));
+  await expect(title).toHaveText("Pull requests");
+  await expect(title).toHaveAttribute("title", `Pull requests, ${listed.length}`);
+  await expect(title).toHaveAccessibleName(`Pull requests, ${listed.length}`);
+  // The review requests first, then your own, each under its own sub-heading; `repo#n · author`,
+  // which list and every mark are on its hover.
   expect(listed.map((row) => row.kind)).toEqual(
     listed.map((row) => row.kind).toSorted((a, b) => (a === b ? 0 : a === "review" ? -1 : 1)),
   );
+  await expect(section(page, "pullRequests").getByTestId("overview-pr-kind")).toHaveText([
+    "Review requests",
+    "Your PRs",
+  ]);
   const first = rows.first();
-  await expect(first).toContainText(listed[0]!.kind!);
-  await expect(first.getByTestId("overview-pr-sub")).toHaveText(/^[\w.-]+#\d+( · .+)?$/);
+  await expect(first).toHaveAttribute("title", /^Review requests · [\w.-]+#\d+( · .+)?\n/);
+  await expect(first).toHaveAccessibleName(/^Open .+#\d+ on GitHub: .+, .+#\d+( · .+)?, Review/);
+  // One glyph on one line: nothing under the title.
+  await expect(first.getByTestId("overview-pr-glyph").locator("svg")).toHaveCount(1);
+  await expect(first.locator("[data-pr-mark]")).toHaveCount(1);
+  const lineHeight = (await first.boundingBox())!.height;
+  expect(lineHeight).toBeLessThan(36);
 
   // A click opens it on GitHub, as the lists' rows do.
   const url = await page.evaluate(async (pr) => {
@@ -206,17 +225,35 @@ test("Done today starts folded and has ⌘J's Done today rows, opening one as �
   const merged = rows.and(page.locator(`[data-thread-id="${made.doneToday}"]`));
   await expect(merged).toHaveAttribute("data-merged", "true");
   await expect(merged.getByTestId("overview-done-time")).toHaveText(/^\d{2}:\d{2}$/);
-  await expect(merged.getByTestId("overview-done-sub")).toHaveText(
-    /^agent-platform · merged api#\d+$/,
-  );
+  // One line, grey until hovered: what became of it is on its hover and in its name.
+  await expect(merged).toHaveAttribute("title", /^agent-platform · merged api#\d+$/);
+  await expect(merged).toHaveAccessibleName(/, agent-platform · merged api#\d+, \d{2}:\d{2}$/);
+  await expect(merged).toHaveCSS("filter", /grayscale\(1\)/);
+  await merged.hover();
+  await expect(merged).not.toHaveCSS("filter", /grayscale\(1\)/);
   await merged.click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.doneToday}$`));
 });
 
-test("the foot's usage matches the title bar meter's, and its slots the cap and held briefs", async ({
+test("the foot is off by default, and the orchestrator's line keeps the slots on its hover", async ({
   page,
 }) => {
   const made = await start(page);
+  await expect(overview(page).getByTestId("overview-foot")).toHaveCount(0);
+  const { budget } = await page.evaluate(
+    (id) => window.gramMock!.orchestratorLedger(id as never),
+    made.workspaceId,
+  );
+  const slots = `Worker slots ${budget.liveWorkers} of ${budget.maxConcurrentWorkers}`;
+  const line = overview(page).getByTestId("overview-workspace-row").first();
+  await expect(line).toHaveAttribute("title", new RegExp(slots));
+  await expect(line).toHaveAttribute("aria-label", new RegExp(slots));
+});
+
+test("the foot, turned on, matches the title bar meter's usage, and its slots the cap and held briefs", async ({
+  page,
+}) => {
+  const made = await start(page, {}, { overviewSections: { usage: true } });
   const foot = overview(page).getByTestId("overview-foot");
   await expect(foot).toBeVisible();
 
@@ -327,7 +364,10 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
     doneToday: section(page, "doneToday"),
     usage: overview(page).getByTestId("overview-foot"),
   } as const;
-  for (const where of Object.values(shown)) await expect(where).toBeVisible();
+  await expect(shown.usage).toHaveCount(0);
+  for (const key of ["solo", "pullRequests", "doneToday"] as const) {
+    await expect(shown[key]).toBeVisible();
+  }
 
   // Settings sits beside the overview, so each box's effect shows at once.
   await page.getByLabel("Message", { exact: true }).click();
@@ -342,10 +382,27 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
     usage: "Usage and slots",
   } as const;
   await expect(group.getByRole("checkbox")).toHaveCount(4);
+  await expect(box(labels.usage)).not.toBeChecked();
+  const reseed = async () => {
+    await expect(overview(page)).toBeVisible();
+    await page.evaluate(() => window.gramMock!.simulateOneThread());
+    await expect(section(page, "orchestrators")).toBeVisible();
+  };
+
+  // Usage starts off, so turning it on is what is stored; it is shown from there.
+  await box(labels.usage).check();
+  await expect(shown.usage).toBeVisible();
+  await expect
+    .poll(async () => (await storedLayout(page))["overviewSections"])
+    .toEqual({ usage: true });
   for (const label of Object.values(labels)) await expect(box(label)).toBeChecked();
 
-  // One at a time: each off leaves the ones still on, and only what is off is stored.
+  // One at a time: each off leaves the ones still on, and only what differs is stored.
   const off: Record<string, false> = {};
+  const stored = () => {
+    const { usage, ...rest } = off;
+    return usage === false ? rest : { ...rest, usage: true };
+  };
   for (const [key, label] of Object.entries(labels) as [keyof typeof labels, string][]) {
     await box(label).uncheck();
     off[key] = false;
@@ -353,26 +410,34 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
     for (const [other, where] of Object.entries(shown)) {
       if (!(other in off)) await expect(where).toBeVisible();
     }
-    await expect.poll(async () => (await storedLayout(page))["overviewSections"]).toEqual(off);
+    await expect
+      .poll(async () => (await storedLayout(page))["overviewSections"] ?? {})
+      .toEqual(stored());
   }
   await expect(section(page, "orchestrators")).toBeVisible();
 
-  // Kept across a reload.
+  // Kept across a reload. The mock's threads went with it, and an empty section stays away by
+  // itself, so they are seeded again: what stays away now does so because it is turned off.
   await page.reload();
-  await expect(section(page, "orchestrators")).toBeVisible();
+  await reseed();
   for (const label of Object.values(labels)) await expect(box(label)).not.toBeChecked();
   for (const where of Object.values(shown)) await expect(where).toHaveCount(0);
 
-  // Back on, one by one, each showing again; with every one on, nothing is stored.
+  // Back on, one by one, each showing again.
   for (const [key, label] of Object.entries(labels) as [keyof typeof labels, string][]) {
     await box(label).check();
     delete off[key];
     await expect(shown[key]).toBeVisible();
     await expect
-      .poll(async () => (await storedLayout(page))["overviewSections"])
-      .toEqual(Object.keys(off).length === 0 ? undefined : off);
+      .poll(async () => (await storedLayout(page))["overviewSections"] ?? {})
+      .toEqual(stored());
   }
   await page.reload();
+  await reseed();
   for (const label of Object.values(labels)) await expect(box(label)).toBeChecked();
   for (const where of Object.values(shown)) await expect(where).toBeVisible();
+
+  // Usage off again is the default: nothing is stored.
+  await box(labels.usage).uncheck();
+  await expect.poll(async () => (await storedLayout(page))["overviewSections"]).toBeUndefined();
 });

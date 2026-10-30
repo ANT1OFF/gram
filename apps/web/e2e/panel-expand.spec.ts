@@ -58,7 +58,7 @@ test("the right panel widens past 960 px, expands over the chat and fits a narro
   // Automatic mode instead becomes a 60 px rail below 1280 px.
   await page.getByRole("button", { name: "Compact overview", exact: true }).click();
   await page.getByRole("button", { name: "Expand overview", exact: true }).click();
-  await expect.poll(() => widthOf(page.getByTestId("overview-sidebar"))).toBe(280);
+  await expect.poll(() => widthOf(page.getByTestId("overview-sidebar"))).toBe(248);
 
   await dragHandle(page, -700);
   await expect.poll(() => widthOf(panel)).toBeGreaterThan(960);
@@ -70,7 +70,7 @@ test("the right panel widens past 960 px, expands over the chat and fits a narro
   await page.getByRole("button", { name: "Expand panel" }).click();
   await expect(shell).toHaveAttribute("data-panel-expanded", "true");
   await expect(chat).toHaveAttribute("inert");
-  await expect.poll(() => widthOf(panel)).toBe(1920 - 280);
+  await expect.poll(() => widthOf(panel)).toBe(1920 - 248);
   // The chat is behind the panel, not unmounted.
   await expect(page.getByTestId("thread-view")).toHaveCount(1);
 
@@ -87,11 +87,11 @@ test("the right panel widens past 960 px, expands over the chat and fits a narro
 
   // A narrow window shows less of the stored width, and gives it back when it widens again.
   await page.setViewportSize({ width: 1000, height: 700 });
-  await expect.poll(() => widthOf(panel)).toBe(1000 - 280 - 360);
+  await expect.poll(() => widthOf(panel)).toBe(1000 - 248 - 360);
   await expect.poll(() => widthOf(chat)).toBe(360);
   // Expanded, the chat keeps its 360 px underneath, and nothing of it shows through the panel.
   await page.getByRole("button", { name: "Expand panel" }).click();
-  await expect.poll(() => widthOf(panel)).toBe(1000 - 280);
+  await expect.poll(() => widthOf(panel)).toBe(1000 - 248);
   const onTop = await page.evaluate(() =>
     [300, 500, 640].every((x) =>
       [100, 400, 680].every((y) =>
@@ -110,7 +110,7 @@ test("the right panel widens past 960 px, expands over the chat and fits a narro
   // With no room for both, the panel steps aside, and its toggle opens it over the chat.
   await page.setViewportSize({ width: 640, height: 700 });
   await expect(panel).toHaveCount(0);
-  await expect.poll(() => widthOf(chat)).toBe(640 - 280);
+  await expect.poll(() => widthOf(chat)).toBe(640 - 248);
   const toggle = page.getByRole("button", { name: "Show right panel" });
   await toggle.click();
   await expect(shell).toHaveAttribute("data-panel-expanded", "true");
@@ -146,7 +146,7 @@ test("expanding works in a grid and with the panel on the left", async ({ page }
   await setLayout(page, "2 columns");
   await expect(page.getByTestId("pane")).toHaveCount(2);
   await page.getByRole("button", { name: "Expand panel" }).click();
-  await expect.poll(() => widthOf(panel)).toBe(1600 - 280);
+  await expect.poll(() => widthOf(panel)).toBe(1600 - 248);
   await restorePanelWithEscape(page);
   await expect(shell).toHaveAttribute("data-panel-expanded", "false");
   await expect(page.getByTestId("pane")).toHaveCount(2);
@@ -166,8 +166,8 @@ test("expanding works in a grid and with the panel on the left", async ({ page }
   await dragHandle(page, 300);
   await expect.poll(() => widthOf(panel)).toBe(352 + 300);
   await page.getByRole("button", { name: "Expand panel" }).click();
-  await expect.poll(async () => (await panel.boundingBox())?.x).toBe(280);
-  await expect.poll(() => widthOf(panel)).toBe(1600 - 280);
+  await expect.poll(async () => (await panel.boundingBox())?.x).toBe(248);
+  await expect.poll(() => widthOf(panel)).toBe(1600 - 248);
   // Opening settings brings the chat's place back, so it isn't hidden behind the panel.
   await page.keyboard.press("ControlOrMeta+Comma");
   await expect(shell).toHaveAttribute("data-panel-expanded", "false");

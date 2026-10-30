@@ -8,6 +8,7 @@ import {
   PR_STATE_DISPLAY,
   REVIEW_DISPLAY,
   prRefText,
+  type MarkGroup,
   type PrMark,
   type PrMarkDisplay,
   type PrMarks,
@@ -17,8 +18,6 @@ import {
 // The PR vocabulary's marks as React: small glyphs that say one fact each, by shape and tone, with
 // their words in a `title` and, unless the surrounding control already says them, their accessible
 // name. See `pr-marks-model.ts` for what each mark means.
-
-type MarkGroup = "state" | "checks" | "review" | "threads" | "bot" | "merge";
 
 const DISPLAYS: Record<MarkGroup, Record<string, PrMarkDisplay>> = {
   state: PR_STATE_DISPLAY,

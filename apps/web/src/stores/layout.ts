@@ -1,6 +1,7 @@
 import {
   GRID_SHAPES,
   loopbackUrl,
+  OVERVIEW_HIDDEN_BY_DEFAULT,
   OVERVIEW_OPTIONAL_SECTIONS,
   previewFileFragment,
   previewFileKind,
@@ -25,7 +26,7 @@ export interface WidthBounds {
   default: number;
 }
 
-export const SIDEBAR_WIDTH: WidthBounds = { min: 180, max: 520, default: 280 };
+export const SIDEBAR_WIDTH: WidthBounds = { min: 180, max: 520, default: 248 };
 /**
  * `max` only bounds a stored width: the window decides how wide the panel shows, through
  * `panelBounds`.
@@ -810,7 +811,7 @@ export const useLayoutStore = create<LayoutState>()(
         workspacesCollapsedNodes: [],
         overviewFolded: [],
         overviewUnfolded: [],
-        overviewHidden: [],
+        overviewHidden: OVERVIEW_HIDDEN_BY_DEFAULT,
         boardArchivedShown: [],
         diffLayout: "unified",
         diffTreeShown: true,

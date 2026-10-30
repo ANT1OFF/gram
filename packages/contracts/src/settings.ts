@@ -342,13 +342,17 @@ export type OpenAtLaunch = typeof OpenAtLaunch.Type;
 export const OverviewSidebar = Schema.Literals(["open", "compact", "hidden"]);
 export type OverviewSidebar = typeof OverviewSidebar.Type;
 
-/** The overview sidebar's optional sections, each shown unless turned off in Settings → General. */
+/** The overview sidebar's optional sections, each turned on or off in Settings → General. */
 export const OVERVIEW_OPTIONAL_SECTIONS = ["solo", "pullRequests", "doneToday", "usage"] as const;
 export type OverviewOptionalSection = (typeof OVERVIEW_OPTIONAL_SECTIONS)[number];
 
+/** The sections off until turned on: the title bar's meter owns usage. */
+export const OVERVIEW_HIDDEN_BY_DEFAULT: readonly OverviewOptionalSection[] = ["usage"];
+
 /**
  * Which of the overview sidebar's optional sections show: solo threads, pull requests, Done today,
- * and the footer's usage and worker slots. Only what is off is stored, as `false`; absent is shown.
+ * and the footer's usage and worker slots. Only what differs from the default is stored; absent is
+ * the default (`OVERVIEW_HIDDEN_BY_DEFAULT`).
  */
 export const OverviewSections = Schema.Struct({
   solo: Schema.optionalKey(Schema.Boolean),
@@ -368,7 +372,7 @@ export const LayoutSettings = Schema.Struct({
   openAtLaunch: Schema.optionalKey(OpenAtLaunch),
   /** The overview sidebar in the Orchestrator layout; read through `overviewSidebarOf`. */
   overviewSidebar: Schema.optionalKey(OverviewSidebar),
-  /** The overview's optional sections that are off; read through `overviewHiddenOf`. */
+  /** The overview's optional sections unlike their default; read through `overviewHiddenOf`. */
   overviewSections: Schema.optionalKey(OverviewSections),
 });
 export type LayoutSettings = typeof LayoutSettings.Type;
@@ -706,18 +710,26 @@ export const overviewSidebarOf = (settings: Settings): OverviewSidebar | undefin
 /** The overview sidebar's optional sections that are turned off, in their order on screen. */
 export const overviewHiddenOf = (settings: Settings): OverviewOptionalSection[] =>
   OVERVIEW_OPTIONAL_SECTIONS.filter(
-    (section) => settings.layout?.overviewSections?.[section] === false,
+    (section) =>
+      !(
+        settings.layout?.overviewSections?.[section] ??
+        !OVERVIEW_HIDDEN_BY_DEFAULT.includes(section)
+      ),
   );
 
 /**
- * The stored form of the sections turned off, only them, as `false`; `null` (cleared) when every
- * section shows.
+ * The stored form of the sections off: only what differs from the default, `false` for off and
+ * `true` for on; `null` (cleared) when every section is at its default.
  */
 export const overviewSectionsValue = (
   hidden: readonly OverviewOptionalSection[],
 ): OverviewSections | null => {
-  const off = OVERVIEW_OPTIONAL_SECTIONS.filter((section) => hidden.includes(section));
-  return off.length === 0 ? null : Object.fromEntries(off.map((section) => [section, false]));
+  const changed = OVERVIEW_OPTIONAL_SECTIONS.filter(
+    (section) => hidden.includes(section) !== OVERVIEW_HIDDEN_BY_DEFAULT.includes(section),
+  );
+  return changed.length === 0
+    ? null
+    : Object.fromEntries(changed.map((section) => [section, !hidden.includes(section)]));
 };
 
 /** Whether the user muted desktop notifications for `workspaceId`'s asks. */
@@ -933,7 +945,7 @@ export const DEFAULT_SETTINGS: Settings = Schema.decodeSync(Settings)({
   },
   sidebar: {
     grouping: "status",
-    width: 280,
+    width: 248,
     collapsed: false,
     collapsedGroups: [],
   },

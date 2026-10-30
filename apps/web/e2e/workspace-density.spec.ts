@@ -63,7 +63,7 @@ for (const mode of ["light", "dark"] as const) {
         const right = element.getBoundingClientRect().right;
         const leaves = [
           ...element.querySelectorAll<HTMLElement>(
-            '[data-testid="overview-workspace-row"], [data-testid="overview-workspace-fold"], [data-testid="overview-worker-title"], [data-testid="overview-worker-now"], [data-testid="overview-stage"], [data-testid="overview-solo"]',
+            '[data-testid="overview-workspace-row"], [data-testid="overview-workspace-fold"], [data-testid="overview-worker-title"], [data-testid="overview-worker-now"], [data-testid="overview-solo"]',
           ),
         ];
         return leaves.map((leaf) => ({

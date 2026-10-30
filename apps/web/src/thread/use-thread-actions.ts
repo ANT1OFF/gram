@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { threadWorking } from "@/orchestration/tree-model";
 import { useHandoffStore } from "@/orchestration/use-board-actions";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useThreadsStore } from "@/stores/threads";
@@ -24,6 +25,10 @@ export function useLabels() {
 export function useThreadActions(threadId: ThreadId) {
   const api = useApi();
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
+  const working = useThreadsStore((s) => {
+    const summary = s.byId[threadId];
+    return summary !== undefined && threadWorking(summary, s.statusDetail[threadId]);
+  });
   const labels = useLabels();
   const workspaces = useWorkspaces();
   // The server matches the thread's checkouts to projects by resolved path, as the join does, so
@@ -59,6 +64,8 @@ export function useThreadActions(threadId: ThreadId) {
         api.park(threadId, !thread.parked),
       );
     },
+    /** It is at work, so it can't be marked done yet; reopening is always open. */
+    doneHeld: thread?.completedAt === undefined && working,
     /**
      * Marks a thread done, or reopens it: what the sidebar's Done line holds. A worker's finish is
      * its orchestrator's call and an orchestrator's work never ends, so `undefined` for both.

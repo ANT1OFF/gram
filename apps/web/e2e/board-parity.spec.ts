@@ -368,6 +368,8 @@ test("⌘⇧D, the orchestrator's header, the palette and Memory all open the Bo
   page,
 }) => {
   const made = await start(page, () => window.gramMock!.simulateWorkerWaits());
+  // Wide enough that the bar keeps its questions chip, which a narrower one drops whole.
+  await page.setViewportSize({ width: 1680, height: 900 });
   const chat = () =>
     page
       .getByTestId("view-switcher")

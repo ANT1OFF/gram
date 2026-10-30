@@ -2,7 +2,6 @@ import { PreviewCard } from "@base-ui/react/preview-card";
 import {
   STATION_LABELS,
   type FeatureCardHeld,
-  type FeatureStation,
   type OrchestratorLedger,
   type ThreadId,
   type ThreadSummary,
@@ -10,7 +9,7 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
-import { ChevronDown, PanelLeftClose, PanelLeftDashed, Users } from "lucide-react";
+import { ChevronDown, PanelLeftClose, PanelLeftDashed } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -23,7 +22,7 @@ import {
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import { AgentIcon } from "@/agents/agent-display";
+import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
@@ -38,7 +37,13 @@ import { focusSidebar, overviewStops } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { useSwitchWorkspace } from "@/shell/workspace-switcher";
-import { activityLine, statusHint, threadStatusOf } from "@/sidebar/status";
+import {
+  activityLine,
+  settledRow,
+  SETTLED_AFTER_MS,
+  statusHint,
+  threadStatusOf,
+} from "@/sidebar/status";
 import { overviewFoldKey, useLayoutStore, type ShellFit } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
@@ -64,24 +69,24 @@ import { keepBeside } from "./beside-store";
 import { PrChip } from "./feature-card";
 import { RAIL_TONES } from "./feature-sheet";
 import { OverviewDoneToday, OverviewFoot, OverviewPullRequests } from "./overview-extras";
+import { ledgerSlotsText } from "./overview-extras-model";
 import {
   foldByKey,
-  foldedSummaryText,
+  nowLineShown,
+  orchestratorHover,
   orchestratorLine,
   overviewFeatures,
   overviewState,
-  overviewSummary,
   rowTone,
-  stageTicks,
+  stateWordShown,
   workLineText,
-  type FoldedSummary,
   type OverviewFeature,
   type OverviewState,
   type OverviewWorkerRow,
   type ReportNext,
   type RunningWorker,
 } from "./overview-model";
-import { ROW, Section, STOP } from "./overview-section";
+import { ROW, Section, SETTLED, STOP } from "./overview-section";
 import { WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
 import { TONE_DOT, type RailTone } from "./rail-model";
@@ -330,9 +335,13 @@ export function useCarryOverviewFocus(sidebar: ShellFit["sidebar"]): void {
   }, [sidebar]);
 }
 
-/** The pill: what needs you across every workspace, which opens the Needs you popover under it. */
+/**
+ * The pill: what needs you across every workspace, which opens the Needs you popover under it. Its
+ * shortcut is on its hover.
+ */
 function NeedsYou() {
   const { count, label, hint } = useNeedsYou();
+  const words = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
   // Nothing waiting, it stays as quiet grey words, so the column doesn't jump.
   return (
     <NeedsYouPopover
@@ -343,6 +352,7 @@ function NeedsYou() {
           {...{ [STOP]: "" }}
           data-testid="overview-needs-you"
           data-count={count}
+          aria-label={withHint(words, hint)}
           title={withHint(label, hint)}
           className={cn(
             "flex w-full shrink-0 items-center gap-2 rounded-(--radius-md) px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -354,18 +364,7 @@ function NeedsYou() {
           {count > 0 && (
             <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs" />
           )}
-          <span className="min-w-0 flex-1 truncate">
-            {count > 0 ? (
-              <>
-                <span className="tabular-nums">{count}</span> {count === 1 ? "needs" : "need"} you
-              </>
-            ) : (
-              "Nothing needs you"
-            )}
-          </span>
-          {count > 0 && hint && (
-            <kbd className="shrink-0 font-sans text-[11px] font-normal opacity-80">{hint}</kbd>
-          )}
+          <span className="min-w-0 flex-1 truncate">{words}</span>
         </button>
       }
     />
@@ -403,6 +402,7 @@ function Orchestrators() {
   // Every line counts its workers from its ledger, folded or open, so both say the same.
   const workspaceIds = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
   const ledgers = useOrchestratorLedgers(workspaceIds);
+  if (workspaces.length === 0) return null;
   return (
     <Section id="orchestrators" title="Orchestrators" count={workspaces.length}>
       {workspaces.map((state) => {
@@ -427,11 +427,12 @@ const NO_ASKING: ReadonlySet<ThreadId> = new Set();
 
 /**
  * A workspace's line, and under it, open, its features with their live workers. Every workspace's
- * line has the same form, folded or open, with no worker or many: its dot, its name, its live
- * workers' count, how many of them work (else its state word, which an ask's count takes the place
- * of), and the chevron. The chevron, or ← and → on the line, folds what is under it, kept per workspace across
- * reloads. An ask arriving never unfolds it: its count says so. Only an open workspace, or the
- * current one, reads its cards.
+ * line has the same form, folded or open, with no worker or many: its dot, its name, one number,
+ * the asks that need you, and the chevron. Paused or parked, it says that too; the rest (its live
+ * workers, who works, its state and its worker slots) is on its hover and in its name. The chevron,
+ * or ← and → on the line, folds what is under it, kept per workspace across reloads. An ask
+ * arriving never unfolds it: its count says so. Only an open workspace, or the current one, reads
+ * its cards.
  */
 function WorkspaceRow({
   state,
@@ -456,7 +457,7 @@ function WorkspaceRow({
   const folded = useLayoutStore((s) => s.workspacesCollapsedNodes.includes(foldKey));
   const fold = (to: boolean) => useLayoutStore.getState().toggleWorkspaceNode(foldKey, to);
   const bodyId = useId();
-  const summary: FoldedSummary = { live, working, asks };
+  const hover = orchestratorHover(word, { live, working, asks }, ledgerSlotsText(ledger));
   const line = orchestratorLine(word, { working, asks });
   const name = state.workspace.name;
   // ← folds and → unfolds, as a tree row's do, and Shift+F10 opens its menu; anything else is the
@@ -492,11 +493,14 @@ function WorkspaceRow({
             type="button"
             {...{ [STOP]: "" }}
             data-testid="overview-workspace-row"
+            data-live={live}
+            data-working={working}
             aria-current={here || undefined}
             aria-expanded={!folded}
             aria-controls={bodyId}
             aria-keyshortcuts="ArrowLeft ArrowRight Shift+F10"
-            aria-label={`${name}, ${overviewSummary(word, { working, asks })}`}
+            aria-label={`${name}, ${hover}`}
+            title={hover}
             onClick={() => switchTo(state.workspace)}
             onKeyDown={onKeyDown}
             className={cn(ROW, "min-w-0 flex-1")}
@@ -513,14 +517,12 @@ function WorkspaceRow({
             />
             <span className="truncate font-medium">{name}</span>
             <span className="flex items-center gap-1.5">
-              <WorkerCount summary={summary} />
-              {/* What waits on the user stands in for the state word, never for who works. */}
-              {(asks === 0 || working > 0) && (
+              {stateWordShown(word) && (
                 <span
                   data-testid="overview-workspace-state"
                   className="text-xs whitespace-nowrap text-muted-foreground"
                 >
-                  {line.phrase}
+                  {word}
                 </span>
               )}
               {asks > 0 && (
@@ -570,24 +572,16 @@ function WorkspaceBody({ workspaceId }: { workspaceId: WorkspaceId }) {
   return <WorkspaceFeatures workspaceId={workspaceId} features={features} />;
 }
 
-/** An orchestrator's live workers, its icon with their count, the rest said on hover. None, nothing. */
-function WorkerCount({ summary }: { summary: FoldedSummary }) {
-  if (summary.live === 0) return null;
-  return (
-    <span
-      data-testid="overview-workspace-workers"
-      data-live={summary.live}
-      data-working={summary.working}
-      title={foldedSummaryText(summary)}
-      className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums"
-    >
-      <Users aria-hidden className="size-3" />
-      {summary.live}
-    </span>
+/** The agent the workspace's orchestrator runs, which its workers' rows leave out when they share it. */
+export const useOrchestratorAgent = (workspaceId: WorkspaceId): string | undefined => {
+  const workspace = useWorkspaces().find((state) => state.workspace.id === workspaceId)?.workspace;
+  return useThreadsStore(
+    (s) =>
+      orchestratorOf(Object.values(s.byId), workspace ?? { id: workspaceId })?.thread.model?.agent,
   );
-}
+};
 
-/** An open workspace: its features, each with its stage ticks and live workers. */
+/** An open workspace: its features with their live workers, each feature's stage on its hover. */
 function WorkspaceFeatures({
   workspaceId,
   features,
@@ -595,6 +589,7 @@ function WorkspaceFeatures({
   workspaceId: WorkspaceId;
   features: readonly OverviewFeature[];
 }) {
+  const orchestratorAgent = useOrchestratorAgent(workspaceId);
   if (features.length === 0) {
     return (
       <OrchestratorAtWork workspaceId={workspaceId} className="pb-1 pl-6">
@@ -610,21 +605,27 @@ function WorkspaceFeatures({
       {features.map((feature) => (
         <section
           key={feature.feature}
-          aria-label={feature.feature}
+          aria-label={`${feature.feature}, ${STATION_LABELS[feature.station]}`}
           data-testid="overview-feature"
           data-feature={feature.feature}
+          data-station={feature.station}
           className="flex flex-col"
         >
-          <h3 className="flex items-center gap-2 px-1.5 pt-1.5 pb-0.5 text-xs font-normal">
-            <span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
-              {feature.feature}
-            </span>
-            <StageTicks station={feature.station} />
+          <h3
+            title={`Stage: ${STATION_LABELS[feature.station]}`}
+            className="truncate px-1.5 pt-1.5 pb-0.5 text-xs font-medium text-muted-foreground"
+          >
+            {feature.feature}
           </h3>
           <PresenceList>
             {feature.rows.map((row) => (
               <PresenceItem key={row.threadId}>
-                <WorkerRow row={row} feature={feature.feature} updatedAt={feature.updatedAt} />
+                <WorkerRow
+                  row={row}
+                  feature={feature.feature}
+                  updatedAt={feature.updatedAt}
+                  orchestratorAgent={orchestratorAgent}
+                />
               </PresenceItem>
             ))}
           </PresenceList>
@@ -637,49 +638,24 @@ function WorkspaceFeatures({
   );
 }
 
-/** The card's five stations as ticks: passed, where it stands, ahead. */
-export function StageTicks({ station }: { station: FeatureStation }) {
-  return (
-    <span
-      role="img"
-      aria-label={`Stage: ${STATION_LABELS[station]}`}
-      title={STATION_LABELS[station]}
-      data-testid="overview-stage"
-      data-station={station}
-      className="inline-flex shrink-0 items-center gap-0.5"
-    >
-      {stageTicks(station).map((tick, i) => (
-        <i
-          key={i}
-          data-state={tick}
-          className={cn(
-            "block h-0.75 w-2 rounded-full",
-            tick === "current"
-              ? "bg-status-working"
-              : tick === "past"
-                ? "bg-muted-foreground/60"
-                : "bg-border",
-          )}
-        />
-      ))}
-    </span>
-  );
-}
-
 /**
  * A live worker: a click opens it, where any ask it has shows, ⌥-click peeks and ⌘/Ctrl-click keeps
- * it beside; a right-click (or Shift+F10) opens its menu, and it drags onto a grid pane. In the
- * compact rail's flyout it has no hover card of its own (`card={false}`), the flyout being one.
+ * it beside; a right-click (or Shift+F10) opens its menu, and it drags onto a grid pane. Its agent's
+ * glyph shows only when it isn't its orchestrator's, and a second line only for an ask, a failure or
+ * real activity; its name and hover card keep the rest. In the compact rail's flyout it has no hover
+ * card of its own (`card={false}`), the flyout being one.
  */
 export function WorkerRow({
   row,
   feature,
   updatedAt,
+  orchestratorAgent,
   card = true,
 }: {
   row: OverviewWorkerRow;
   feature: string;
   updatedAt: number;
+  orchestratorAgent: string | undefined;
   card?: boolean;
 }) {
   const openThread = useOpenThread();
@@ -693,6 +669,20 @@ export function WorkerRow({
   const tone = rowTone(row, { status, working: busy });
   const dot = TONE_DOT[tone];
   const working = tone === "working";
+  // Ages to the minute.
+  const now = useNow(true, undefined, 60_000);
+  const settled =
+    tone === "idle" &&
+    pause === undefined &&
+    lastActivity !== undefined &&
+    now - lastActivity >= SETTLED_AFTER_MS;
+  const facts = [
+    row.title,
+    ...(pause === undefined ? [] : [PAUSE_WORD[pause.state]]),
+    row.now,
+    ...(agent === undefined ? [] : [agentLabel(agent)]),
+    ...(lastActivity === undefined ? [] : [`last active ${formatClockTime(lastActivity)}`]),
+  ];
   const onClick = (event: MouseEvent<HTMLElement>) => {
     if (besideKey(event)) keepBeside(row.threadId, openThread);
     else if (event.altKey) {
@@ -705,12 +695,14 @@ export function WorkerRow({
     "data-testid": "overview-worker",
     "data-thread-id": row.threadId,
     "data-asking": asking || undefined,
-    "aria-label": `${row.title}, ${pause === undefined ? "" : `${PAUSE_WORD[pause.state]}, `}${row.now}`,
+    "aria-label": facts.join(", "),
+    // The compact rail's flyout has no card to say them.
+    title: card ? undefined : facts.join(" · "),
     "aria-keyshortcuts": "Shift+F10",
     onClick,
     onKeyDown: rowMenuKeys,
     ...threadDragProps(row.threadId),
-    className: ROW,
+    className: cn(ROW, settled && SETTLED),
   };
   const body = (
     <>
@@ -726,29 +718,16 @@ export function WorkerRow({
       </span>
       <span className="flex items-center gap-1.5 text-muted-foreground">
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
-        {agent !== undefined && <AgentIcon agent={agent} className="size-3" />}
-        {working && lastActivity !== undefined && <Ago at={lastActivity} />}
-      </span>
-      <Swap
-        swapKey={row.now}
-        className={cn(
-          "col-span-2 col-start-2 min-w-0 truncate text-xs",
-          asking ? "text-status-needs" : row.failed ? "text-destructive" : "text-muted-foreground",
+        {agent !== undefined && agent !== orchestratorAgent && (
+          <AgentIcon agent={agent} className="size-3" />
         )}
-      >
-        <span data-testid="overview-worker-now" className="truncate">
-          {row.now}
-        </span>
-      </Swap>
-      {/* At work, a line more under the card's now line: the thread's own step and what it runs,
-          as its tree row says them. An ask or a failure is all the row says. */}
-      {working && (
-        <span
-          data-testid="overview-worker-step"
-          className="col-span-2 col-start-2 min-w-0 truncate text-[11px] text-muted-foreground/80"
-        >
-          <WorkLine threadId={row.threadId} report={row.report} />
-        </span>
+      </span>
+      {/* At work, the thread's own step and what it runs, as its tree row says them, else the
+          card's now line. An ask or a failure is all the row says. */}
+      {working && !asking && !row.failed ? (
+        <WorkerStep row={row} />
+      ) : (
+        <WorkerNow row={row} asking={asking} />
       )}
     </>
   );
@@ -783,6 +762,7 @@ export function WorkerRow({
               <WorkerCard
                 row={row}
                 feature={feature}
+                agent={agent}
                 lastActivity={lastActivity ?? updatedAt}
                 dot={dot}
                 tone={tone}
@@ -798,6 +778,38 @@ export function WorkerRow({
   );
 }
 
+/** A worker's card now line under its title, when it says more than the row's dot. */
+function WorkerNow({ row, asking }: { row: OverviewWorkerRow; asking: boolean }) {
+  if (!nowLineShown(row)) return null;
+  return (
+    <Swap
+      swapKey={row.now}
+      className={cn(
+        "col-span-2 col-start-2 min-w-0 truncate text-xs",
+        asking ? "text-status-needs" : row.failed ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      <span data-testid="overview-worker-now" className="truncate">
+        {row.now}
+      </span>
+    </Swap>
+  );
+}
+
+/** What a worker at work is doing, in one line; with no step to say, its now line. */
+function WorkerStep({ row }: { row: OverviewWorkerRow }) {
+  const step = useWorkLine(row.threadId, row.report);
+  if (step === undefined) return <WorkerNow row={row} asking={false} />;
+  return (
+    <span
+      data-testid="overview-worker-step"
+      className="col-span-2 col-start-2 min-w-0 truncate text-xs text-muted-foreground"
+    >
+      {step}
+    </span>
+  );
+}
+
 /** A thread's row with its context menu: a right-click anywhere on it, its PR chips included. */
 function RowMenu({ menu, children }: { menu: ReactNode; children: ReactNode }) {
   return (
@@ -808,10 +820,11 @@ function RowMenu({ menu, children }: { menu: ReactNode; children: ReactNode }) {
   );
 }
 
-/** A worker on hover: its feature, title, station and now line, first PR and last activity. */
+/** A worker on hover: its feature, agent, title, station and now line, first PR and last activity. */
 function WorkerCard({
   row,
   feature,
+  agent,
   lastActivity,
   dot,
   tone,
@@ -820,6 +833,7 @@ function WorkerCard({
 }: {
   row: OverviewWorkerRow;
   feature: string;
+  agent: string | undefined;
   lastActivity: number;
   dot: string;
   tone: RailTone;
@@ -829,7 +843,13 @@ function WorkerCard({
   const time = formatClockTime(lastActivity);
   return (
     <>
-      <p className="truncate text-xs text-muted-foreground">{feature}</p>
+      <p
+        data-testid="overview-worker-card-feature"
+        className="truncate text-xs text-muted-foreground"
+      >
+        {feature}
+        {agent !== undefined && ` · ${agentLabel(agent)}`}
+      </p>
       <p data-testid="overview-worker-card-title" className="font-medium">
         {row.title}
       </p>
@@ -929,13 +949,10 @@ function SoloThreads() {
   const parked = useThreadsStore(useShallow((s) => parkedSoloThreads(Object.values(s.byId), ids)));
   const done = useThreadsStore(useShallow((s) => doneSoloThreads(Object.values(s.byId), ids)));
   const viewed = useParams({ strict: false }).threadId;
+  if (solo.length + parked.length + done.length === 0) return null;
   return (
     <Section id="solo" title="Solo threads" count={solo.length}>
-      {solo.length === 0 ? (
-        <p className="px-1.5 py-1 text-xs text-muted-foreground">None.</p>
-      ) : (
-        <SoloList threads={solo} viewed={viewed} />
-      )}
+      {solo.length > 0 && <SoloList threads={solo} viewed={viewed} />}
       {parked.length > 0 && <FoldedThreads kind="parked" threads={parked} viewed={viewed} />}
       {done.length > 0 && <FoldedThreads kind="done" threads={done} viewed={viewed} />}
     </Section>
@@ -946,9 +963,12 @@ function SoloThreads() {
 function SoloList({
   threads,
   viewed,
+  settled = false,
 }: {
   threads: readonly ThreadSummary[];
   viewed: string | undefined;
+  /** All of them grey until hovered, whatever their age: the Done line's. */
+  settled?: boolean;
 }) {
   return (
     <VirtualRows
@@ -958,7 +978,7 @@ function SoloList({
       gap={SOLO_GAP}
       current={threads.findIndex((summary) => summary.thread.id === viewed)}
     >
-      {(summary) => <SoloRow summary={summary} />}
+      {(summary) => <SoloRow summary={summary} settled={settled} />}
     </VirtualRows>
   );
 }
@@ -991,7 +1011,12 @@ function FoldedThreads({
         {...{ [STOP]: "" }}
         aria-expanded={open}
         aria-controls={rows}
-        title={hint}
+        aria-label={`${label}, ${threads.length}`}
+        title={
+          hint === undefined
+            ? `${label}, ${threads.length}`
+            : `${label}, ${threads.length}. ${hint}`
+        }
         onClick={() => setOpen(!open)}
         className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-xs text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -1003,10 +1028,10 @@ function FoldedThreads({
           )}
         />
         <span className="flex-1">{label}</span>
-        <span className="tabular-nums">{threads.length}</span>
+        {!open && <span className="tabular-nums">{threads.length}</span>}
       </button>
       <div id={rows} hidden={!open} className="flex flex-col gap-px">
-        <SoloList threads={threads} viewed={viewed} />
+        <SoloList threads={threads} viewed={viewed} settled={kind === "done"} />
       </div>
     </div>
   );
@@ -1032,22 +1057,6 @@ const workingOrchestrator = (
     : undefined;
 };
 
-/** How long ago, to the minute. */
-function Ago({ at }: { at: number }) {
-  const ref = useRef<HTMLTimeElement>(null);
-  const now = useNow(true, ref, 60_000);
-  return (
-    <time
-      ref={ref}
-      data-testid="overview-ago"
-      dateTime={new Date(at).toISOString()}
-      className="text-[11px] tabular-nums"
-    >
-      {formatRelative(at, now)}
-    </time>
-  );
-}
-
 /**
  * What a thread at work is doing, as its tree row says it: its plan's step and what it runs, else
  * what it runs. An orchestrator has no plan headline, so its line is always what it runs. A
@@ -1062,11 +1071,15 @@ const workLineOf = (s: ThreadsState, threadId: ThreadId): string | undefined => 
   return activity ?? statusHint(display, activity);
 };
 
-function WorkLine({ threadId, report }: { threadId: ThreadId; report?: ReportNext | undefined }) {
+const useWorkLine = (threadId: ThreadId, report?: ReportNext | undefined): string | undefined => {
   const { headline } = useThreadHeadline(threadId);
   const running = useThreadsStore((s) => workLineOf(s, threadId));
   const planAt = useThreadsStore((s) => s.byId[threadId]?.plan?.updatedAt);
-  return <>{workLineText(headline, planAt, report, running)}</>;
+  return workLineText(headline, planAt, report, running);
+};
+
+function WorkLine({ threadId }: { threadId: ThreadId }) {
+  return <>{useWorkLine(threadId)}</>;
 }
 
 /**
@@ -1091,9 +1104,9 @@ export function OrchestratorAtWork({
 }
 
 /**
- * A thread at work: its title (unless `own`, the orchestrator's own line under its workspace), its
- * step and how long ago. A click opens it, ⌥-click peeks and ⌘-click keeps it beside, as a worker
- * row's.
+ * A thread at work: its title (unless `own`, the orchestrator's own line under its workspace) and
+ * its step, its last activity on hover. A click opens it, ⌥-click peeks and ⌘-click keeps it
+ * beside, as a worker row's.
  */
 function AtWorkLines({
   threadId,
@@ -1120,6 +1133,7 @@ function AtWorkLines({
       data-testid="overview-at-work"
       data-thread-id={threadId}
       data-own={own || undefined}
+      title={at === undefined ? undefined : `Last activity ${formatClockTime(at)}`}
       onClick={onClick}
       className={cn(
         "flex w-full min-w-0 cursor-default flex-col rounded-(--radius-sm) text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
@@ -1132,11 +1146,7 @@ function AtWorkLines({
           className="size-1.5 shrink-0 rounded-full bg-status-working gram-working"
         />
         <span className="truncate text-foreground">{own ? "Orchestrator" : title}</span>
-        {at !== undefined && (
-          <span className="ml-auto shrink-0 text-muted-foreground">
-            <Ago at={at} />
-          </span>
-        )}
+        {at !== undefined && <span className="sr-only">, last active {formatClockTime(at)}</span>}
       </span>
       <span data-testid="overview-at-work-line" className="w-full truncate text-muted-foreground">
         <WorkLine threadId={threadId} />
@@ -1145,7 +1155,17 @@ function AtWorkLines({
   );
 }
 
-export function SoloRow({ summary }: { summary: ThreadSummary }) {
+/**
+ * A thread outside any workspace. At work its dot pulses and its last activity goes to its hover; a
+ * day at rest, or `settled`, it fades until hovered.
+ */
+export function SoloRow({
+  summary,
+  settled = false,
+}: {
+  summary: ThreadSummary;
+  settled?: boolean;
+}) {
   const openThread = useOpenThread();
   const viewed = useParams({ strict: false }).threadId === summary.thread.id;
   // Ages to the minute.
@@ -1154,6 +1174,8 @@ export function SoloRow({ summary }: { summary: ThreadSummary }) {
   const detail = useThreadsStore((s) => s.statusDetail[thread.id]);
   const display = threadStatusOf(summary, detail);
   const title = threadDisplayTitle(thread);
+  const active = display.working ? `Last activity ${formatClockTime(thread.lastActivityAt)}` : "";
+  const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
   return (
     <RowMenu menu={<RowMenuItems threadId={thread.id} />}>
       <button
@@ -1163,20 +1185,29 @@ export function SoloRow({ summary }: { summary: ThreadSummary }) {
         data-testid="overview-solo"
         data-thread-id={thread.id}
         aria-current={viewed || undefined}
-        aria-label={`${title}, ${display.label}`}
+        data-settled={faded || undefined}
+        aria-label={`${title}, ${display.label}${active === "" ? "" : `, ${active}`}`}
+        title={active === "" ? undefined : active}
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(thread.id)}
         onKeyDown={rowMenuKeys}
-        className={cn(ROW, "aria-current:bg-sidebar-row-active")}
+        className={cn(ROW, "aria-current:bg-sidebar-row-active", faded && SETTLED)}
       >
         <span
           aria-hidden
-          className={cn("size-2 justify-self-center rounded-full bg-current", display.tone)}
+          data-working={display.working || undefined}
+          className={cn(
+            "size-2 justify-self-center rounded-full bg-current",
+            display.tone,
+            display.working && "gram-working",
+          )}
         />
         <span className="truncate">{title}</span>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {formatRelative(thread.lastActivityAt, now)}
-        </span>
+        {!display.working && (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {formatRelative(thread.lastActivityAt, now)}
+          </span>
+        )}
       </button>
     </RowMenu>
   );

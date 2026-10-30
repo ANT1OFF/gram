@@ -65,8 +65,8 @@ describe("fitShell", () => {
   it("narrows the panel, then an Open overview, so the chat keeps its minimum", () => {
     useLayoutStore.setState({ overviewSidebar: "open" });
     expect(fit({ windowWidth: 900 })).toMatchObject({
-      sidebarWidth: 280,
-      panelWidth: 900 - 280 - CHAT_MIN_WIDTH,
+      sidebarWidth: SIDEBAR_WIDTH.default,
+      panelWidth: 900 - SIDEBAR_WIDTH.default - CHAT_MIN_WIDTH,
     });
     const narrow = fit({ windowWidth: 800 });
     expect(narrow).toMatchObject({ sidebar: "full", panel: "side" });

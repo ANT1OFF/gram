@@ -13,7 +13,14 @@ export const STOP = OVERVIEW_STOP;
 export const ROW =
   "grid w-full cursor-default grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 py-1 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring";
 
-/** A section with a title that folds it, its fold kept in the layout store. */
+/** A settled row: grey and a step back, until hovered, focused or open. */
+export const SETTLED =
+  "opacity-75 grayscale transition-[opacity,filter] duration-(--dur-fast) hover:opacity-100 hover:grayscale-0 focus-visible:opacity-100 focus-visible:grayscale-0 aria-current:opacity-100 aria-current:grayscale-0";
+
+/**
+ * A section with a title that folds it, its fold kept in the layout store. Only folded does it say
+ * its count; open, its rows do, and the title's name and hover keep the number.
+ */
 export function Section({
   id,
   title,
@@ -36,6 +43,8 @@ export function Section({
           {...{ [STOP]: "" }}
           aria-expanded={!folded}
           aria-controls={body}
+          aria-label={`${title}, ${count}`}
+          title={`${title}, ${count}`}
           onClick={() => toggle(id)}
           className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -47,7 +56,7 @@ export function Section({
             )}
           />
           <span className="flex-1">{title}</span>
-          <span className="tracking-normal tabular-nums">{count}</span>
+          {folded && count > 0 && <span className="tracking-normal tabular-nums">{count}</span>}
         </button>
       </h2>
       <div id={body} hidden={folded} className="flex flex-col gap-px">
