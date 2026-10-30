@@ -21,8 +21,8 @@ const BRANCH_NAME = /^(?!-)[\w./-]+$/;
 
 /**
  * Deletes a worktree's local branch after its PR merged. Everything is checked again right before
- * `git branch -D`: gh reports the PR merged now, the branch tip is the PR's head, and no worktree
- * still has the branch checked out. Otherwise, or when gh can't answer, the branch is kept with a
+ * the conditional ref deletion: gh reports the PR merged now, the branch tip is the PR's head,
+ * and no worktree still has the branch checked out. Otherwise, or when gh can't answer, the branch is kept with a
  * reason. The remote branch is never touched.
  */
 export const deleteMergedBranch = (
@@ -59,10 +59,18 @@ export const deleteMergedBranch = (
     const holder = list.value.worktrees.find((w) => w.branch === branch);
     if (holder !== undefined) return keep(`it's checked out in ${holder.path}`);
 
-    const out = yield* git(repoPath, ["branch", "-D", branch]).pipe(Effect.option);
+    // Ref deletion compares under git's lock: another writer's new commits keep their branch.
+    // Never dereference a symbolic branch ref into another branch's target.
+    const out = yield* git(repoPath, [
+      "update-ref",
+      "--no-deref",
+      "-d",
+      `refs/heads/${branch}`,
+      localTip,
+    ]).pipe(Effect.option);
     if (Option.isNone(out) || out.value.status !== 0) {
       const detail = Option.isSome(out) ? out.value.stderr.trim() : "";
-      return keep(`git branch -D failed${detail === "" ? "" : `: ${detail}`}`);
+      return keep(`conditional branch deletion failed${detail === "" ? "" : `: ${detail}`}`);
     }
     return { name: branch, deleted: true };
   });

@@ -78,7 +78,13 @@ export const isValidGitRefCharset = (raw: string): boolean =>
 
 /** The branch that may enter git argv, or `undefined` when invalid. */
 export const sanitizeBranch = (raw: string): string | undefined =>
-  isValidGitRefCharset(raw) ? raw : undefined;
+  isValidGitRefCharset(raw) &&
+  raw !== "HEAD" &&
+  !raw.includes("..") &&
+  !raw.endsWith(".") &&
+  raw.split("/").every((part) => part !== "" && !part.startsWith(".") && !part.endsWith(".lock"))
+    ? raw
+    : undefined;
 
 /** Names Windows reserves for devices, alone or before an extension (`con`, `aux.x`, `com1`). */
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
@@ -104,7 +110,7 @@ export interface Placement {
 /**
  * Where a create lands, before any git mutation: the checkout that already has `rawBranch` (matched
  * on the raw string, so an unrepresentable branch still finds its checkout), else
- * `<repo>/.worktrees/<folder>` — reused only when that dir is a registered worktree root.
+ * `<repo>/.worktrees/<folder>`. Only an exact branch match may reuse a checkout.
  */
 export const planPlacement = (
   worktrees: ReadonlyArray<ParsedWorktree>,
@@ -118,9 +124,7 @@ export const planPlacement = (
   const folder = folderName(safeBranch);
   const worktreeDir = existing?.path ?? nodePath.join(repoTop, ".worktrees", folder);
   const target = samePathKey(worktreeDir);
-  const reuse =
-    existing !== undefined ||
-    (isDir(worktreeDir) && worktrees.some((w) => samePathKey(w.path) === target));
+  const reuse = existing !== undefined;
   return {
     worktreeDir,
     reuse,
@@ -366,6 +370,11 @@ export const createWorktree = (request: CreateWorktreeRequest) =>
     const plan = planPlacement(worktrees, repoTop, rawBranch, safeBranch);
     if (plan.reuse && checkoutInUse(request.openCheckouts, plan.worktreeDir)) {
       return yield* Effect.fail(conflict("a thread is already open in that checkout"));
+    }
+    if (!plan.reuse && fs.existsSync(plan.worktreeDir)) {
+      return yield* Effect.fail(
+        invalid("the worktree folder already exists; choose a different branch name"),
+      );
     }
     const added = plan.reuse
       ? { copiedIncludes: 0, startPoint: undefined }

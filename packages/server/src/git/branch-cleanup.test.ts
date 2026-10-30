@@ -1,7 +1,7 @@
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import type { PrStatus } from "@gram/contracts";
-import { Pr, PrLookupError, ProcLive } from "@gram/git";
+import { Pr, PrLookupError, Proc, ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { deleteMergedBranch } from "./branch-cleanup.ts";
@@ -68,6 +68,37 @@ describe.skipIf(!hasGit)("deleteMergedBranch", () => {
       expect(result).toEqual({ name: "feat", deleted: true });
       expect(branches(repo)).toBe("");
     }),
+  );
+
+  it.effect("keeps a branch advanced after its merged tip was validated", () =>
+    Effect.gen(function* () {
+      const { repo, worktree, head } = fixture();
+      write(nodePath.join(worktree, "unmerged.txt"), "new work");
+      run(worktree, "add", "-A");
+      run(worktree, "commit", "-qm", "unmerged work");
+      const next = run(worktree, "rev-parse", "HEAD").trim();
+      run(worktree, "reset", "--hard", head);
+      run(repo, "worktree", "remove", worktree);
+      const proc = yield* Proc;
+      let advanced = false;
+      const result = yield* deleteMergedBranch({ repoPath: repo, branch: "feat", pr: PR }).pipe(
+        Effect.provideService(Pr, { ...(yield* Pr), status: () => Effect.succeed(merged(head)) }),
+        Effect.provideService(Proc, {
+          run: (bin, args, options) =>
+            Effect.suspend(() => {
+              // A concurrent writer lands after rev-parse and before cleanup's final deletion.
+              if (!advanced && args[0] === "worktree" && args[1] === "list") {
+                run(repo, "update-ref", "refs/heads/feat", next, head);
+                advanced = true;
+              }
+              return proc.run(bin, args, options);
+            }),
+        }),
+      );
+      expect(advanced).toBe(true);
+      expect(result.deleted).toBe(false);
+      expect(run(repo, "rev-parse", "refs/heads/feat").trim()).toBe(next);
+    }).pipe(withPr(Effect.succeed(undefined))),
   );
 
   it.effect("keeps a branch with commits the merged PR doesn't have", () =>
