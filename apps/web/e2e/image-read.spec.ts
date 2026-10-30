@@ -73,6 +73,8 @@ async function restore(page: Page) {
     const saved = JSON.parse(sessionStorage.getItem("gram.test.image-read-history")!);
     for (const message of saved) window.gramMock!.simulateMessage("t-deps" as never, message);
   });
+  // A finished turn is folded; the previews are inside it.
+  await page.getByTestId("turn-fold").last().click();
 }
 
 for (const width of [1440, 390]) {
@@ -99,6 +101,8 @@ for (const width of [1440, 390]) {
     const bounds = (await image.boundingBox())!;
     expect(bounds.x).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    // The turn's row and this card have just opened: the tooltip closes if they move under it.
+    await thumbnail.scrollIntoViewIfNeeded();
     await thumbnail.focus();
     await thumbnail.press("Tab");
     await page.keyboard.press("Shift+Tab");

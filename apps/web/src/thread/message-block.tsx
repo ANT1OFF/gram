@@ -21,6 +21,7 @@ import { imageDataUrl, useAttachmentImage } from "@/panels/files/image-preview";
 import { copyText } from "@/settings/copy-text";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { useTurnFolds } from "@/stores/turn-folds";
 
 import { AgentErrorCard } from "./agent-error-card";
 import { BabysitReportCard } from "./babysit-report-card";
@@ -56,8 +57,8 @@ import { PreviewFileCard } from "./preview-file-card";
 import { previewableFiles } from "./preview-files";
 import { publishedArtifacts } from "./published-artifacts";
 import { ToolCard } from "./tool-cards";
-import { ToolGroup } from "./tool-group";
-import { toolImagesOf, toolRuns } from "./tool-group-model";
+import { ToolGroup, TurnFoldRow } from "./tool-group";
+import { toolImagesOf, toolRuns, type MessageFold } from "./tool-group-model";
 import { ToolImagesContext } from "./tool-images";
 import { TurnFilesChip } from "./turn-files-chip";
 import { WidgetCard } from "./widget-card";
@@ -217,6 +218,10 @@ export interface MessageBlockProps {
   animate?: boolean;
   /** Set on a finished turn's last reply: the turn whose changed files it offers. */
   turnEnd?: TurnId | undefined;
+  /** How this reply's turn folds, when it does. */
+  fold?: MessageFold | undefined;
+  /** The reader opened that fold. */
+  foldOpen?: boolean | undefined;
 }
 
 export const MessageBlock = memo(function MessageBlock({
@@ -227,6 +232,8 @@ export const MessageBlock = memo(function MessageBlock({
   subagentUsage,
   animate = false,
   turnEnd,
+  fold,
+  foldOpen = false,
 }: MessageBlockProps) {
   // Subagent transcripts nest under a Task card and aren't rewind points.
   const topLevel = message.metadata?.parentToolUseId === undefined;
@@ -316,7 +323,8 @@ export const MessageBlock = memo(function MessageBlock({
   }
 
   const streaming = streamingIds.has(message.id);
-  const actions = topLevel && !streaming;
+  const folded = fold !== undefined && !foldOpen;
+  const actions = topLevel && !streaming && !(folded && fold.empty);
   const renderSubagent = (child: GramUIMessage) => (
     <MessageBlock
       threadId={threadId}
@@ -328,7 +336,7 @@ export const MessageBlock = memo(function MessageBlock({
     />
   );
 
-  const runs = toolRuns(message.parts);
+  const runs = toolRuns(message.parts, folded ? fold.apart : undefined);
   // Summary and raw parts share one visual; each retains its own text and open lifecycle.
   const reasoningIndex = message.parts.findLastIndex((part) => part.type === "reasoning");
   const reasoningOpen =
@@ -341,6 +349,13 @@ export const MessageBlock = memo(function MessageBlock({
       data-streaming={streaming ? "true" : undefined}
       className="max-w-full"
     >
+      {fold?.row && (
+        <TurnFoldRow
+          turn={fold.row}
+          open={foldOpen}
+          onToggle={() => useTurnFolds.getState().toggle(threadId, fold.turn)}
+        />
+      )}
       <MessageContent
         data-testid="message-time"
         title={actions ? undefined : sentAt}
@@ -349,7 +364,8 @@ export const MessageBlock = memo(function MessageBlock({
         <ToolImagesContext value={toolImages}>
           {message.parts.map((part, i) => {
             const key = `${message.id}:${i}`;
-            if (runs.absorbed.has(i)) return null;
+            if (runs.absorbed.has(i) || fold?.under.has(i)) return null;
+            if (folded && fold.hidden.has(i)) return null;
             const run = runs.starts.get(i);
             if (run) {
               return (
@@ -445,6 +461,13 @@ export const MessageBlock = memo(function MessageBlock({
       {actions && (
         <MessageActions threadId={threadId} message={message} turnEnd={turnEnd !== undefined} />
       )}
+      {fold !== undefined &&
+        [...fold.under].map((i) => {
+          const part = message.parts[i];
+          return part?.type === "data-task-chip" ? (
+            <TaskChip key={part.data.id} threadId={threadId} chip={part.data} />
+          ) : null;
+        })}
     </Message>
   );
 });

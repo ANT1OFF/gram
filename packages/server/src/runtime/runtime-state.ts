@@ -95,6 +95,8 @@ export interface Turn {
   readonly done: Deferred.Deferred<void>;
   usage: UsageSummary | undefined;
   producedOutput?: boolean;
+  /** The latest top-level message it opened, which carries how the turn ended. */
+  reply?: MessageId;
   model: ModelRef;
   /**
    * Epoch ms the latest input of the turn's main conversation reached the agent: its start, a steer

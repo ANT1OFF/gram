@@ -5,20 +5,24 @@ import {
   type VirtualItem,
   type Virtualizer,
 } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useMarkdown } from "@/components/ai-elements/markdown-loader";
 import { Button } from "@/components/ui/button";
 import { useShortcut } from "@/keyboard/registry";
+import { useStable } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
 import { StreamExtrasView, useOrchestratorStreamContext } from "@/orchestration/stream-context";
 import { digestOf } from "@/orchestration/stream-model";
 import { useThreadsStore } from "@/stores/threads";
+import { isFoldOpen, useTurnFolds } from "@/stores/turn-folds";
 
 import { CompactingLine } from "./compaction-marker";
 import { MessageBlock } from "./message-block";
 import { isToolPart, type Chapter } from "./parts";
+import { runningSubagents } from "./subagent-strip-model";
 import { ConversationRail } from "./table-of-contents";
+import { reuseFolds, turnFolds, type MessageFold } from "./tool-group-model";
 import { FileRefsProvider } from "./file-ref-link";
 import { PrRefsProvider } from "./pr-ref-link";
 import {
@@ -42,12 +46,18 @@ const EARLIER_THRESHOLD = 600;
 const EARLIER_ROW = 40;
 /** How far the transcript fades into the composer: `mask-b-from-[calc(100%-1.5rem)]` below. */
 const FADE_PX = 24;
+/** How long a search hit in a fold keeps its place while the opened row settles. */
+const REVEAL_SETTLE_FRAMES = 12;
 /** The live compaction line's room under the last row until it is measured: one line and `my-3`. */
 const COMPACTING_ROW = 40;
 
 const NO_SUBAGENTS: ReadonlyMap<string, readonly GramUIMessage[]> = new Map();
 const NO_SUBAGENT_USAGE: ReadonlyMap<string, SubagentUsageData> = new Map();
 const NOT_STREAMING: ReadonlySet<string> = new Set();
+const NO_FOLDS: ReadonlyMap<string, MessageFold> = new Map();
+
+const sameIds = (a: ReadonlySet<string>, b: ReadonlySet<string>) =>
+  a.size === b.size && [...a].every((id) => b.has(id));
 
 const hasSubagentTool = (message: GramUIMessage) =>
   message.parts.some(
@@ -61,18 +71,21 @@ const hasSubagentTool = (message: GramUIMessage) =>
  * A first guess at a row's height before it's measured: collapsed tool cards, and text by length.
  * Close guesses keep scrolling into unmeasured history from jumping as rows correct their size.
  */
-export function estimateRowHeight(message: GramUIMessage): number {
-  const cached = estimates.get(message);
+export function estimateRowHeight(message: GramUIMessage, closed?: MessageFold): number {
+  const key = closed ?? message;
+  const cached = estimates.get(key);
   if (cached !== undefined) return cached;
+  if (closed?.empty === true) return 0;
   let height = message.role === "user" ? 56 : 48;
-  for (const part of message.parts) {
+  for (const [index, part] of message.parts.entries()) {
+    if (closed?.hidden.has(index) === true) continue;
     if (isToolPart(part)) height += 40;
     else if (part.type === "text")
       height += 22 * (part.text.split("\n").length + part.text.length / 90);
     else if (part.type === "reasoning") height += 36;
   }
   const estimate = Math.round(height);
-  estimates.set(message, estimate);
+  estimates.set(key, estimate);
   return estimate;
 }
 
@@ -80,7 +93,7 @@ export function estimateRowHeight(message: GramUIMessage): number {
  * The virtualizer re-estimates every row whenever its options change, which is each render; stored
  * messages keep their identity, so each is estimated once.
  */
-const estimates = new WeakMap<GramUIMessage, number>();
+const estimates = new WeakMap<GramUIMessage | MessageFold, number>();
 
 export interface JumpRequest {
   index: number;
@@ -198,6 +211,53 @@ export function Transcript({
     return () => observer.disconnect();
   }, []);
   const endRoom = FADE_PX + (compaction === undefined ? 0 : compactingRow);
+  // An orchestrator's stream is its own digest of the thread, with no turns to fold.
+  const orchestrated = useOrchestratorStreamContext() !== undefined;
+  const background = useThreadsStore((s) => s.byId[threadId]?.background);
+  // Calls that returned and go on: a backgrounded subagent or shell stays in view until it's done.
+  const workingCalls = useStable(
+    useMemo(
+      () =>
+        new Set([
+          // Not the usage alone: a finished run's last snapshot can still say it's running.
+          ...runningSubagents({
+            top: messages,
+            children: subagents,
+            usage: subagentUsage,
+            streamingIds,
+          }).map((run) => run.toolCallId),
+          ...(background ?? []).flatMap((task) => task.toolCallId ?? []),
+        ]),
+      [messages, subagents, subagentUsage, streamingIds, background],
+    ),
+    sameIds,
+  );
+  const builtFolds = useMemo(
+    () => (orchestrated ? NO_FOLDS : turnFolds(messages, inProgress, workingCalls)),
+    [messages, inProgress, orchestrated, workingCalls],
+  );
+  const keptFolds = useRef(NO_FOLDS);
+  const folds = useMemo(() => reuseFolds(keptFolds.current, builtFolds), [builtFolds]);
+  useLayoutEffect(() => {
+    keptFolds.current = folds;
+  }, [folds]);
+  const openFolds = useTurnFolds((s) => s.open);
+  const closedFold = (messageId: string) => {
+    const fold = folds.get(messageId);
+    return fold === undefined || isFoldOpen(openFolds, threadId, fold.turn) ? undefined : fold;
+  };
+  /** What a jump or a search hit lands on mustn't stay folded away. True when it opened a fold. */
+  const revealFold = useCallback(
+    (messageId: string | undefined) => {
+      const fold = messageId === undefined ? undefined : keptFolds.current.get(messageId);
+      if (fold === undefined || fold.hidden.size === 0) return false;
+      const store = useTurnFolds.getState();
+      if (isFoldOpen(store.open, threadId, fold.turn)) return false;
+      store.reveal(threadId, fold.turn);
+      return true;
+    },
+    [threadId],
+  );
   const latestTurn = [...turnEnds.values()].at(-1);
   const turnEndOf = (messageId: string) => {
     const turnId = turnEnds.get(messageId);
@@ -236,7 +296,10 @@ export function Transcript({
     measureElement: measureRow,
     count: messages.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => (messages[index] ? estimateRowHeight(messages[index]) : 96),
+    estimateSize: (index) => {
+      const message = messages[index];
+      return message ? estimateRowHeight(message, closedFold(message.id)) : 96;
+    },
     overscan: 6,
     // The virtualizer preserves the visible key/offset through prepend and trim.
     // Transcript's following ref still decides whether to follow new content.
@@ -342,6 +405,7 @@ export function Transcript({
     appliedJump.current = jump;
     manualGesture.current = undefined;
     setFollowing(false);
+    revealFold(previousMessages.current[targetIndex]?.id);
     virtualizer.scrollToIndex(targetIndex, { align: "start" });
     // Keep an outline request alive through measurement/paging reconciliation, then retire it.
     // Replaying the last clicked ID on every later append would fight manual reading.
@@ -399,7 +463,7 @@ export function Transcript({
     };
     // A stable-ID jump is reconciled by the layout effect while it is active. Its changed numeric
     // index must not clean up that active request before the new mapping is applied.
-  }, [jump, numericJumpIndex, jumpAvailable, virtualizer, setFollowing]);
+  }, [jump, numericJumpIndex, jumpAvailable, virtualizer, setFollowing, revealFold]);
 
   useEffect(() => {
     if (!reveal) return;
@@ -407,8 +471,24 @@ export function Transcript({
     virtualizer.cancelScroll();
     manualGesture.current = undefined;
     setFollowing(false);
-    virtualizer.scrollToIndex(reveal.index, { align: "center" });
-  }, [reveal, virtualizer, setFollowing]);
+    if (!revealFold(previousMessages.current[reveal.index]?.id)) {
+      virtualizer.scrollToIndex(reveal.index, { align: "center" });
+      return;
+    }
+    // The opened row is taller than the one measured, and likely than the view: its start is where
+    // the turn's story is, and a few frames bring that back as the row settles at its new height.
+    pendingJump.current = reveal;
+    let frames = REVEAL_SETTLE_FRAMES;
+    let frame = 0;
+    const settle = () => {
+      if (pendingJump.current !== reveal) return;
+      virtualizer.scrollToIndex(reveal.index, { align: "start" });
+      if (--frames > 0) frame = requestAnimationFrame(settle);
+      else pendingJump.current = undefined;
+    };
+    frame = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(frame);
+  }, [reveal, virtualizer, setFollowing, revealFold]);
 
   // This pane's transcript answers ⌥↑ / ⌥↓ while focus is in the pane, or nowhere in the focused one.
   const inPane = () => {
@@ -687,28 +767,37 @@ export function Transcript({
                     </Button>
                   </div>
                 ) : null}
-                {virtualizer.getVirtualItems().map((item) => (
-                  <div
-                    key={item.key}
-                    data-index={item.index}
-                    data-message-id={messages[item.index]!.id}
-                    data-flash={flashId === messages[item.index]!.id ? "true" : undefined}
-                    ref={virtualizer.measureElement}
-                    tabIndex={-1}
-                    className="absolute top-0 left-0 w-full rounded-(--radius-md) px-6 py-2 outline-none transition-[background-color,box-shadow] duration-(--dur-fast) [contain:content] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-[flash=true]:bg-highlight/10 data-[flash=true]:ring-2 data-[flash=true]:ring-highlight/50 data-[flash=true]:ring-inset"
-                    style={{ transform: `translateY(${item.start}px)` }}
-                  >
-                    <Row
-                      threadId={threadId}
-                      message={messages[item.index]!}
-                      streamingIds={streamingIds}
-                      subagents={subagents}
-                      subagentUsage={subagentUsage}
-                      animate={animate}
-                      turnEnd={turnEndOf(messages[item.index]!.id)}
-                    />
-                  </div>
-                ))}
+                {virtualizer.getVirtualItems().map((item) => {
+                  const id = messages[item.index]!.id;
+                  const closed = closedFold(id);
+                  return (
+                    <div
+                      key={item.key}
+                      data-index={item.index}
+                      data-message-id={id}
+                      data-flash={flashId === id ? "true" : undefined}
+                      ref={virtualizer.measureElement}
+                      tabIndex={-1}
+                      className={cn(
+                        "absolute top-0 left-0 w-full rounded-(--radius-md) px-6 outline-none transition-[background-color,box-shadow] duration-(--dur-fast) [contain:content] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-[flash=true]:bg-highlight/10 data-[flash=true]:ring-2 data-[flash=true]:ring-highlight/50 data-[flash=true]:ring-inset",
+                        closed?.empty !== true && "py-2",
+                      )}
+                      style={{ transform: `translateY(${item.start}px)` }}
+                    >
+                      <Row
+                        threadId={threadId}
+                        message={messages[item.index]!}
+                        streamingIds={streamingIds}
+                        subagents={subagents}
+                        subagentUsage={subagentUsage}
+                        animate={animate}
+                        turnEnd={turnEndOf(id)}
+                        fold={folds.get(id)}
+                        foldOpen={closed === undefined}
+                      />
+                    </div>
+                  );
+                })}
                 {compaction !== undefined && (
                   <div
                     ref={measureCompacting}
@@ -743,6 +832,8 @@ function Row({
   subagentUsage,
   animate,
   turnEnd,
+  fold,
+  foldOpen,
 }: {
   threadId: ThreadId;
   message: GramUIMessage;
@@ -751,6 +842,8 @@ function Row({
   subagentUsage: ReadonlyMap<string, SubagentUsageData>;
   animate: boolean;
   turnEnd: TurnId | undefined;
+  fold: MessageFold | undefined;
+  foldOpen: boolean;
 }) {
   const live = hasSubagentTool(message);
   // Decided once, at mount: what you just sent lands in the transcript you are watching, and the
@@ -777,6 +870,8 @@ function Row({
           subagentUsage={live ? subagentUsage : NO_SUBAGENT_USAGE}
           animate={animate}
           turnEnd={turnEnd}
+          fold={fold}
+          foldOpen={foldOpen}
         />
       )}
       <StreamExtrasView messageId={message.id} at={message.metadata?.createdAt} />

@@ -14,7 +14,7 @@ import {
 } from "./domain.ts";
 import { MessageId, RequestId } from "./ids.ts";
 import { CompactionActivity } from "./thread-status.ts";
-import { UIMessageChunkSchema } from "./ui-message.ts";
+import { TurnEndReason, UIMessageChunkSchema } from "./ui-message.ts";
 import { CwdEvent } from "./worktree-move.ts";
 
 /** Feature flags so the UI can hide what an agent lacks. */
@@ -60,9 +60,6 @@ export const FileChange = Schema.Struct({
   kind: Schema.Literals(["add", "modify", "delete"]),
 });
 export type FileChange = typeof FileChange.Type;
-
-export const TurnEndReason = Schema.Literals(["completed", "interrupted", "error", "maxTurns"]);
-export type TurnEndReason = typeof TurnEndReason.Type;
 
 export const IdentityEvent = Schema.Struct({
   type: Schema.Literal("identity"),

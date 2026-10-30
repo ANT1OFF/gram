@@ -41,6 +41,7 @@ test("Codex background output and count survive parent idle, exit updates one ca
     window.gramMock!.simulateBackground("t-deps" as never, []);
     window.gramMock!.simulateMessage("t-deps" as never, messages.collaboration as never);
   }, displayed);
+  await page.getByTestId("turn-fold").last().click();
   await expect(command).toHaveCount(1);
   await expect(command).toContainText("Done");
   await expect(command).toContainText("done");

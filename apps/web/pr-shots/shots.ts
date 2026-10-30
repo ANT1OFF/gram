@@ -617,6 +617,12 @@ async function openRunningComposer(page: Page) {
 
 const composerSurface = (page: Page) => page.locator('[data-surface="composer"]');
 
+/** t-flaky stopped at its approval, with what the turn has done so far above it. */
+async function openFlakyAtApproval(page: Page) {
+  await page.goto("/t/t-flaky");
+  await expect(page.getByTestId("approval-card")).toBeVisible({ timeout: 20_000 });
+}
+
 export const SHOTS: readonly Shot[] = [
   ...UPDATE_PILL_SHOTS,
   {
@@ -642,6 +648,21 @@ export const SHOTS: readonly Shot[] = [
       await page.getByLabel("Message", { exact: true }).fill("use the fake clock");
       await page.getByTestId("send-menu-trigger").click({ button: "right" });
       await page.getByTestId("send-menu").waitFor();
+    },
+  },
+  {
+    name: "turn-running",
+    title: "A running turn waiting on an approval",
+    open: openFlakyAtApproval,
+  },
+  {
+    name: "turn-finished",
+    title: "A finished turn, as far up as it goes",
+    open: async (page) => {
+      await openFlakyAtApproval(page);
+      await page.getByTestId("approval-allow").click();
+      await page.getByText("Done. Summary:").waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Stop", exact: true }).waitFor({ state: "hidden" });
     },
   },
   {

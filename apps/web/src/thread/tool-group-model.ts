@@ -1,4 +1,10 @@
-import { FILE_EDIT_VERB, visibleText, type FileEdit, type ToolImageData } from "@gram/contracts";
+import {
+  FILE_EDIT_VERB,
+  visibleText,
+  type FileEdit,
+  type GramUIMessage,
+  type ToolImageData,
+} from "@gram/contracts";
 
 import { formatSize } from "@/panels/files/format";
 
@@ -10,7 +16,9 @@ import {
   basename,
   type AnyToolPart,
   type MessagePart,
+  type ToolPhase,
 } from "./parts";
+import { formatElapsed } from "./subagent-strip-model";
 
 /** Tool calls that keep their own card: a subagent's card carries its whole transcript. */
 const UNGROUPED = new Set(["Task", "Agent"]);
@@ -42,9 +50,10 @@ const invisible = (part: MessagePart) =>
 
 /**
  * Consecutive tool calls in a message, folded into runs. Anything visible between two calls ends a
- * run; invisible markers don't.
+ * run; invisible markers don't. So do the parts in `apart`, which a closed turn fold holds out of
+ * any run.
  */
-export function toolRuns(parts: readonly MessagePart[]): ToolRuns {
+export function toolRuns(parts: readonly MessagePart[], apart?: ReadonlySet<number>): ToolRuns {
   const starts = new Map<number, readonly AnyToolPart[]>();
   const absorbed = new Set<number>();
   let run: AnyToolPart[] = [];
@@ -58,6 +67,7 @@ export function toolRuns(parts: readonly MessagePart[]): ToolRuns {
     indexes = [];
   };
   parts.forEach((part, index) => {
+    if (apart?.has(index)) return close();
     if (invisible(part)) return;
     if (!groupable(part)) return close();
     run.push(part);
@@ -251,4 +261,266 @@ export function runState(run: readonly AnyToolPart[]): RunState {
     cancelled: phases.filter((phase) => phase === "cancelled").length,
     awaiting: phases.includes("awaiting"),
   };
+}
+
+export type TurnFoldState = "running" | "worked" | "failed" | "stopped";
+
+/** What a turn's fold row says. */
+export interface TurnSummary {
+  state: TurnFoldState;
+  /** Epoch ms; absent when the turn's prompt doesn't say. */
+  startedAt: number | undefined;
+  /** Epoch ms; absent while it runs and on a turn older than `MessageMetadata.turnEnd`. */
+  endedAt: number | undefined;
+  tools: number;
+  failed: number;
+}
+
+/** What a turn's fold does to one of its replies. */
+export interface MessageFold {
+  /** The turn's id, or for a prompt that has none its message's. */
+  turn: string;
+  /** The parts a closed fold doesn't draw. */
+  hidden: ReadonlySet<number>;
+  /** The parts a closed fold keeps out of tool runs: `hidden`, and what stays out as its own card. */
+  apart: ReadonlySet<number>;
+  /** Offered tasks, drawn under the reply rather than where the agent offered them. */
+  under: ReadonlySet<number>;
+  /** A closed fold leaves nothing of this reply, not even its actions. */
+  empty: boolean;
+  /** On a turn's first reply, when there is anything to fold: its row. */
+  row: TurnSummary | undefined;
+}
+
+const NO_PARTS: ReadonlySet<number> = new Set();
+const NOTHING_WORKING: ReadonlySet<string> = new Set();
+
+const phaseOf = (part: AnyToolPart) =>
+  toolPhase(
+    part.state,
+    part.state === "output-error" ? part.errorText : undefined,
+    part.state === "output-available" && part.preliminary === true,
+  );
+
+/** A tool call the fold can take: one that's over and neither failed nor needs the user. */
+const SETTLED: ReadonlySet<ToolPhase> = new Set(["done", "cancelled", "denied"]);
+
+/** Narration and how the turn got there. Anything else, an error card say, stays out of the fold. */
+const foldable = (part: MessagePart) =>
+  part.type === "text" ||
+  part.type === "reasoning" ||
+  part.type === "data-chapter" ||
+  (isToolPart(part) && SETTLED.has(phaseOf(part)));
+
+/** Parts that draw nothing wherever they are, so a reply of only these is empty. */
+const SILENT: ReadonlySet<MessagePart["type"]> = new Set([
+  "step-start",
+  "data-tool-image",
+  "data-subagent-usage",
+]);
+
+const said = (part: MessagePart) => part.type === "text" && part.text.trim() !== "";
+
+/** Where the reply's last words start: the last text, and any text right before it. */
+function lastWordsStart(parts: readonly MessagePart[]): number {
+  let start = parts.findLastIndex(said);
+  for (let i = start - 1; i >= 0; i--) {
+    const part = parts[i]!;
+    if (said(part)) start = i;
+    else if (part.type !== "text" && !invisible(part)) break;
+  }
+  return start;
+}
+
+/** The lines a set of hidden parts takes up: a run of tool calls is one, and silent parts none. */
+function linesHidden(reply: GramUIMessage, hidden: ReadonlySet<number>): number {
+  const drawn = (i: number) => !invisible(reply.parts[i]!);
+  const shown = new Set([...reply.parts.keys()].filter((i) => !hidden.has(i) && drawn(i)));
+  const { absorbed } = toolRuns(reply.parts, shown);
+  return [...hidden].filter((i) => drawn(i) && !absorbed.has(i)).length;
+}
+
+/** A fold replaces its lines with one row of its own, so it has to take two to save any. */
+const MIN_FOLD = 2;
+
+const stateOf = (replies: readonly GramUIMessage[]): TurnFoldState => {
+  switch (replies.findLast((reply) => reply.metadata?.turnEnd)?.metadata?.turnEnd?.reason) {
+    case "error":
+      return "failed";
+    case "interrupted":
+    case "maxTurns":
+      return "stopped";
+    case "completed":
+      return "worked";
+    default:
+      return replies.some((reply) => reply.parts.some((p) => p.type === "data-agent-error"))
+        ? "failed"
+        : "worked";
+  }
+};
+
+function foldTurn(
+  turn: string,
+  replies: readonly GramUIMessage[],
+  startedAt: number | undefined,
+  live: boolean,
+  working: ReadonlySet<string>,
+  folds: Map<string, MessageFold>,
+) {
+  const ended = replies.findLast((reply) => reply.metadata?.turnEnd)?.metadata?.turnEnd;
+  const running = live && ended === undefined;
+  const lastSaid = replies.findLastIndex((reply) => reply.parts.some(said));
+  const wordsStart = lastSaid === -1 ? -1 : lastWordsStart(replies[lastSaid]!.parts);
+  const wordsEnd = lastSaid === -1 ? -1 : replies[lastSaid]!.parts.findLastIndex(said);
+  /** Whether a part stays open: the last words, and while the turn runs whatever follows them. */
+  const current = (reply: number, part: number) => {
+    if (running)
+      return lastSaid === -1 || reply > lastSaid || (reply === lastSaid && part >= wordsStart);
+    return reply === lastSaid && part >= wordsStart && part <= wordsEnd;
+  };
+
+  let tools = 0;
+  let failed = 0;
+  const shapes = replies.map((reply, r) => {
+    const hidden = new Set<number>();
+    const apart = new Set<number>();
+    const under = new Set<number>();
+    let kept = false;
+    reply.parts.forEach((part, i) => {
+      if (isToolPart(part)) {
+        tools++;
+        const phase = phaseOf(part);
+        if (phase === "error") failed++;
+        if (phase === "error" || phase === "awaiting") apart.add(i);
+      }
+      if (part.type === "data-task-chip") under.add(i);
+      const held = isToolPart(part) && working.has(part.toolCallId);
+      if (foldable(part) && !held && !current(r, i)) {
+        hidden.add(i);
+        apart.add(i);
+      } else if (!SILENT.has(part.type)) {
+        kept = true;
+      }
+    });
+    return { reply, hidden, apart, under, kept };
+  });
+  const lines = shapes.reduce((sum, { reply, hidden }) => sum + linesHidden(reply, hidden), 0);
+  if (lines < MIN_FOLD) {
+    for (const { reply, under } of shapes) {
+      if (under.size === 0) continue;
+      const nothing = { hidden: NO_PARTS, apart: NO_PARTS, empty: false, row: undefined };
+      folds.set(reply.id, { turn, under, ...nothing });
+    }
+    return;
+  }
+  const state = running ? "running" : stateOf(replies);
+  const summary = { state, startedAt, endedAt: ended?.at, tools, failed };
+  shapes.forEach(({ reply, hidden, apart, under, kept }, r) => {
+    const row = r === 0 ? summary : undefined;
+    if (hidden.size === 0 && under.size === 0 && row === undefined) return;
+    const empty = !kept && row === undefined && r < replies.length - 1;
+    folds.set(reply.id, { turn, hidden, apart, under, empty, row });
+  });
+}
+
+/**
+ * How each finished turn folds to one row, keyed by reply: everything between the prompt and the
+ * reply's last words, leaving out what must stay in view (`foldable`). `inProgress` says the
+ * thread's latest turn is still going, when only what's finished folds: the step under way stays.
+ * `working` names tool calls that returned but go on, a subagent running in the background say.
+ */
+export function turnFolds(
+  messages: readonly GramUIMessage[],
+  inProgress: boolean,
+  working: ReadonlySet<string> = NOTHING_WORKING,
+): ReadonlyMap<string, MessageFold> {
+  const turns = new Map<string, { replies: GramUIMessage[]; startedAt: number | undefined }>();
+  let current: string | undefined;
+  const turnOf = (id: string) => {
+    let turn = turns.get(id);
+    if (turn === undefined) {
+      turn = { replies: [], startedAt: undefined };
+      turns.set(id, turn);
+    }
+    return turn;
+  };
+  for (const message of messages) {
+    if (message.metadata?.parentToolUseId !== undefined) continue;
+    if (message.role === "user") {
+      current = message.metadata?.turnId ?? message.id;
+      turnOf(current).startedAt ??= message.metadata?.createdAt;
+      continue;
+    }
+    if (message.role !== "assistant") continue;
+    // A reply after its turn ended, or that the agent started on its own, opens a turn of its own.
+    const ended = current !== undefined && turns.get(current)?.replies.at(-1)?.metadata?.turnEnd;
+    if (ended || message.metadata?.initiator === "agent") current = message.id;
+    const id = message.metadata?.turnId ?? current;
+    if (id === undefined) continue;
+    turnOf(id).replies.push(message);
+  }
+  const latest = [...turns.keys()].at(-1);
+  const folds = new Map<string, MessageFold>();
+  for (const [id, { replies, startedAt }] of turns) {
+    if (replies.length === 0) continue;
+    const start = startedAt ?? replies[0]!.metadata?.createdAt;
+    foldTurn(id, replies, start, inProgress && id === latest, working, folds);
+  }
+  return folds;
+}
+
+const sameParts = (a: ReadonlySet<number>, b: ReadonlySet<number>) =>
+  a.size === b.size && [...a].every((index) => b.has(index));
+
+const sameRow = (a: TurnSummary | undefined, b: TurnSummary | undefined) =>
+  a === b ||
+  (a !== undefined &&
+    b !== undefined &&
+    a.state === b.state &&
+    a.startedAt === b.startedAt &&
+    a.endedAt === b.endedAt &&
+    a.tools === b.tools &&
+    a.failed === b.failed);
+
+const sameFold = (a: MessageFold, b: MessageFold) =>
+  a.turn === b.turn &&
+  a.empty === b.empty &&
+  sameRow(a.row, b.row) &&
+  sameParts(a.hidden, b.hidden) &&
+  sameParts(a.apart, b.apart) &&
+  sameParts(a.under, b.under);
+
+/**
+ * `next` with each fold that hasn't changed kept from `previous`: rebuilt on every streamed frame,
+ * but a row's memo only sees a new fold when there is something new to draw.
+ */
+export function reuseFolds(
+  previous: ReadonlyMap<string, MessageFold>,
+  next: ReadonlyMap<string, MessageFold>,
+): ReadonlyMap<string, MessageFold> {
+  return new Map(
+    [...next].map(([id, fold]) => {
+      const kept = previous.get(id);
+      return [id, kept !== undefined && sameFold(kept, fold) ? kept : fold];
+    }),
+  );
+}
+
+const FOLD_VERB: Record<TurnFoldState, readonly [word: string, joined: string]> = {
+  running: ["Working", "Working for"],
+  worked: ["Worked", "Worked for"],
+  failed: ["Failed", "Failed after"],
+  stopped: ["Stopped", "Stopped after"],
+};
+
+/** `Worked for 3m 05s · 5 tools`; a turn without an end time says `Worked · 5 tools`. */
+export function turnFoldLabel(turn: TurnSummary, now: number): string {
+  const end = turn.state === "running" ? now : turn.endedAt;
+  const [word, joined] = FOLD_VERB[turn.state];
+  const lead =
+    turn.startedAt === undefined || end === undefined
+      ? word
+      : `${joined} ${formatElapsed(end - turn.startedAt)}`;
+  if (turn.tools === 0) return lead;
+  return `${lead} · ${turn.tools === 1 ? "1 tool" : `${turn.tools} tools`}`;
 }

@@ -198,6 +198,8 @@ test("agent-read snapshot survives source deletion and reload without crossing t
         },
         { serialized: JSON.stringify(saved), target: targetThread },
       );
+      // A reload forgets which turns were open, and the cards are in a finished turn's fold.
+      await page.getByTestId("turn-fold").last().click();
     };
     await restore(threadId);
     await page.getByRole("button", { name: "Read 1 file, used 1 tool", exact: true }).click();
@@ -222,6 +224,7 @@ test("agent-read snapshot survives source deletion and reload without crossing t
     }
     await card.getByRole("button", { name: /Read/ }).click();
     await expect(card.getByTestId("tool-images")).toHaveAttribute("data-size", "large");
+    await image.scrollIntoViewIfNeeded();
     await expect(image).toBeInViewport();
     await expect(card.locator(".gram-expand")).toHaveCSS("opacity", "1");
     await page.screenshot({ path: testInfo.outputPath("agent-read-snapshot-card.png") });

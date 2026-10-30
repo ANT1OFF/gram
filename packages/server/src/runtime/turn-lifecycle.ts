@@ -74,6 +74,7 @@ export interface TurnLifecycleDeps {
   readonly publishMessage: FeedWriter["publishMessage"];
   readonly appendDataPart: FeedWriter["appendDataPart"];
   readonly closeOpenMessages: FeedWriter["closeOpenMessages"];
+  readonly stampTurnEnd: FeedWriter["stampTurnEnd"];
   readonly setRetrying: (rt: Runtime, retrying: boolean, detail?: string) => Effect.Effect<void>;
   readonly clearPendingRequests: (rt: Runtime, reason: string) => Effect.Effect<void>;
 }
@@ -96,6 +97,7 @@ export const makeTurnLifecycle = ({
   publishMessage,
   appendDataPart,
   closeOpenMessages,
+  stampTurnEnd,
   setRetrying,
   clearPendingRequests,
 }: TurnLifecycleDeps) => {
@@ -446,6 +448,14 @@ export const makeTurnLifecycle = ({
           ? {}
           : { usage: { ...turn.usage, lastRequestAt: turn.lastInputAt } }),
       });
+      // Before the thread's status moves, so no client sees it settled on an unstamped reply. A
+      // limit stopped the turn rather than failed it: the thread waits it out and resumes.
+      if (turn.reply !== undefined) {
+        yield* stampTurnEnd(rt, turn.reply, {
+          at: endedAt,
+          reason: limited ? "interrupted" : reason,
+        });
+      }
       yield* Deferred.succeed(turn.done, undefined);
       // Requests belong to the turn: once it ends nothing will answer them, whether or not the agent
       // reported them resolved.

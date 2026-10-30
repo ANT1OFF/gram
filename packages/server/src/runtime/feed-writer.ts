@@ -19,6 +19,7 @@ import {
 import type { LiveFeedEvent, ThreadFeedItem, EventHubShape } from "../events/event-hub.ts";
 import {
   type GramUIMessage,
+  type TurnEnd,
   type TurnId,
   FEED_WINDOW_TURNS,
   type GramUIMessageChunk,
@@ -225,6 +226,7 @@ export const makeFeedWriter = ({
           unsaved: false,
         };
         rt.open.set(messageId, inFlight);
+        if (rt.turn !== undefined && !inFlight.nested) rt.turn.reply = messageId;
       }
       const completed = inFlight.accumulator.apply(chunk);
       if (chunk.type === "finish" || chunk.type === "abort") inFlight.finished = true;
@@ -381,6 +383,27 @@ export const makeFeedWriter = ({
     );
 
   /**
+   * Stamps how a turn ended on its reply. A whole-message write: the stored row keeps its place, and
+   * unlike a chunk it doesn't read as the reply streaming again. Only the transcript hears of it.
+   */
+  const stampTurnEnd = (rt: Runtime, messageId: MessageId, turnEnd: TurnEnd) =>
+    feedLocked(
+      rt,
+      Effect.gen(function* () {
+        // A reply held for a tool's late output is saved from here again, so that keeps it too.
+        rt.open.get(messageId)?.accumulator.apply({
+          type: "message-metadata",
+          messageMetadata: { turnEnd },
+        });
+        const reply = yield* store.getMessage(rt.threadId, messageId);
+        if (reply === undefined) return;
+        const message = { ...reply, metadata: { ...reply.metadata, turnEnd } };
+        const rev = yield* store.upsertMessage(rt.threadId, message);
+        yield* publishFeed(rt, { type: "message", message, rev });
+      }),
+    );
+
+  /**
    * Finishes and stores every subagent transcript still streaming, for a session that is gone and
    * took its background subagents with it: left open, the next session's replay would show each
    * stopped subagent running for good.
@@ -410,6 +433,7 @@ export const makeFeedWriter = ({
     appendChunk,
     appendDataPart,
     closeOpenMessages,
+    stampTurnEnd,
     closeLanes,
   };
 };
