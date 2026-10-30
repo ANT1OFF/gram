@@ -1,6 +1,6 @@
 // Dream prompts and archive, then a dream's start, confinement and bridge.
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, type Dream, type ThreadId } from "@gram/contracts";
+import { type AgentKind, DEFAULT_CHARTER, type Dream, type ThreadId } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -38,6 +38,9 @@ import {
   titles,
   filesUnder,
 } from "./dreams-service-kit.ts";
+
+/** A kind outside the contract, for the guards that must refuse one. */
+const UNADMITTED = "unadmitted" as string as AgentKind;
 
 describe("mergedFromReply", () => {
   const sides = { path: "goals.md", base: "a\n", output: "A\n", current: "a\nb\n" };
@@ -604,11 +607,11 @@ describe.skipIf(!hasGit)("dreams", () => {
         const dreams = yield* Dreams;
         const { workspaceId } = yield* openOrchestrator(world);
         const refused = yield* Effect.flip(
-          dreams.start({ workspaceId, kind: "dream", model: { agent: "grok", model: "x" } }),
+          dreams.start({ workspaceId, kind: "dream", model: { agent: UNADMITTED, model: "x" } }),
         );
         expect(refused).toMatchObject({ _tag: "InvalidState" });
         expect(refused.message).toBe(
-          "A dream runs on claude or codex; grok isn't admitted for one. Pick a model of one of those.",
+          "A dream runs on claude or codex; unadmitted isn't admitted for one. Pick a model of one of those.",
         );
         expect(yield* store.listDreams(workspaceId)).toEqual([]);
         // Full autonomy changes nothing for a Claude dream: it reads what nobody vetted.

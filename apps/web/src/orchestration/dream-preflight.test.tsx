@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import {
+  type AgentKind,
   DEFAULT_SETTINGS,
   type ModelRef,
   type ProjectId,
@@ -15,6 +16,9 @@ import { createMockApi } from "@/api/mock";
 import { renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { DreamsSection } from "./dreams-section";
+
+/** A kind outside the contract, for the guards that must refuse one. */
+const UNADMITTED = "unadmitted" as string as AgentKind;
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
@@ -148,7 +152,7 @@ describe("Dream selected-harness preflight", () => {
   });
 
   it("shows the selected unsupported default and never silently switches to Claude", async () => {
-    const { api, preview, start } = setup({ agent: "grok", model: "synthetic-grok" }, () => ({
+    const { api, preview, start } = setup({ agent: UNADMITTED, model: "synthetic-model" }, () => ({
       support: {
         dream: {
           state: "unsupported",
@@ -158,10 +162,10 @@ describe("Dream selected-harness preflight", () => {
       },
     }));
     await screen.findByText("Synthetic selected harness has no Dream mode.");
-    expect(screen.getByText(/^Your default:.*synthetic-grok$/)).toBeDefined();
-    expect(vi.mocked(api.agentSupport).mock.calls.every(([model]) => model.agent === "grok")).toBe(
-      true,
-    );
+    expect(screen.getByText(/^Your default:.*synthetic-model$/)).toBeDefined();
+    expect(
+      vi.mocked(api.agentSupport).mock.calls.every(([model]) => model.agent === UNADMITTED),
+    ).toBe(true);
     expect(preview).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });

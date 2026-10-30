@@ -1,4 +1,4 @@
-import type { LimitRecord, ServerEvent, ThreadId } from "@gram/contracts";
+import type { AgentKind, LimitRecord, ServerEvent, ThreadId } from "@gram/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -19,6 +19,8 @@ import {
 } from "./usage-limits";
 
 type Reading = Extract<ServerEvent, { type: "usageLimit" }>;
+
+const UNKNOWN_AGENT = "unknown-agent" as string as AgentKind;
 
 const NOW = Date.parse("2026-10-15T12:00:00Z");
 const HOUR = 3_600_000;
@@ -102,7 +104,7 @@ describe("usage limit readings", () => {
   it("ignores gateways, other agents, other windows, and a share it can't place", () => {
     const empty: UsageLimits = {};
     expect(withReading(empty, reading({ gateway: true }), NOW)).toBe(empty);
-    expect(withReading(empty, reading({ agent: "grok" }), NOW)).toBe(empty);
+    expect(withReading(empty, reading({ agent: UNKNOWN_AGENT }), NOW)).toBe(empty);
     expect(withReading(empty, reading({ window: "overage" }), NOW)).toBe(empty);
     const { utilization: _none, ...unmeasured } = reading({ status: "warning" });
     expect(withReading(empty, unmeasured, NOW)).toBe(empty);
@@ -227,7 +229,7 @@ describe("the server's kept readings", () => {
         kept({ profileId: "gateway" }),
         kept({ window: "overage" }),
         kept({ window: "seven_day", resetsAt: NOW - 1 }),
-        kept({ agent: "grok" }),
+        kept({ agent: UNKNOWN_AGENT }),
       ]);
     const { limits } = useUsageLimits.getState();
     expect(limits).toEqual({

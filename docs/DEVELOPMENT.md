@@ -127,12 +127,13 @@ follow [releasing](RELEASING.md).
 The unsigned Apple silicon directory build is `apps/desktop/release/mac-arm64/Gram.app`.
 An isolated native smoke can use `GRAM_FAKE_AGENT=1 GRAM_DATA_DIR=<temporary-folder>`
 and run its `Contents/MacOS/Gram --smoke`; that validates boot/native loading, not accounts.
+A packaged build honours `GRAM_FAKE_AGENT` only under `--smoke`; otherwise it runs the real agents.
 
 To inspect the GUI alongside your ordinary app, isolate server data and the Electron profile:
 
 ```sh
 smokeRoot=$(mktemp -d -t gram-desktop-smoke)
-GRAM_DATA_DIR="$smokeRoot/data" GRAM_FAKE_AGENT=0 \
+GRAM_DATA_DIR="$smokeRoot/data" \
   apps/desktop/release/mac-arm64/Gram.app/Contents/MacOS/Gram \
   --user-data-dir="$smokeRoot/electron"
 ```

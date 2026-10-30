@@ -39,7 +39,8 @@ export const dreamSupportFor = (agent: AgentKind, evidence: DreamSupportEvidence
         reason:
           "Gram starts Dream with normal Codex permissions: workspace-write sandbox and on-request approvals. Instructions guide snapshot reads and candidate writes; native tools can read or change other permitted files. Gram validates the candidate before applying it through the user's selected per-run Review or Auto mode.",
       };
-    case "grok":
-      return { mode: "unsupported", reason: "Grok Build Dream confinement is not implemented." };
+    // A kind this build doesn't name gets no Dream, whatever reached it.
+    default:
+      return { mode: "unsupported", reason: "Gram has no Dream mode for this agent." };
   }
 };

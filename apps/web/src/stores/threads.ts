@@ -154,6 +154,10 @@ export const createThreadsSlice = (
       case "thread.upsert":
         set((s) => {
           const current = s.byId[event.thread.id];
+          // Publishes can land out of commit order; the higher revision is the later write.
+          const held = current?.thread.revision;
+          const revision = event.thread.revision;
+          if (held !== undefined && revision !== undefined && revision < held) return s;
           const next: ThreadSummary = current
             ? { ...current, thread: event.thread }
             : { thread: event.thread, status: "cold", pendingRequests: [], queue: [] };

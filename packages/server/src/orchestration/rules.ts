@@ -527,7 +527,7 @@ export const rosterText = (
 
 /** An agent kind as prose names it. */
 export const kindName = (kind: AgentKind): string =>
-  kind === "codex" ? "Codex" : kind === "grok" ? "Grok Build" : "Claude";
+  kind === "claude" ? "Claude" : kind === "codex" ? "Codex" : kind;
 
 export type WorkerModelVerdict =
   | { readonly ok: true }

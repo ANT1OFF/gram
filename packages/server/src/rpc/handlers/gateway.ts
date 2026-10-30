@@ -147,7 +147,6 @@ export const profileModels = (
 const AGENT_NAMES: Readonly<Record<AgentKind, string>> = {
   claude: "Claude",
   codex: "Codex",
-  grok: "Grok Build",
 };
 
 /**
@@ -415,8 +414,6 @@ export const makeGateway = ({
     "models.list": ({ agent, profileId }) =>
       Effect.gen(function* () {
         const host = yield* hosts.get(agent);
-        if (agent === "grok")
-          return { models: yield* host.listModels(profileId === undefined ? {} : { profileId }) };
         // The user's own models follow either list: an id is the same id through a gateway.
         const custom = customModelsOf(yield* store.getSettings, agent);
         if (profileId === undefined) {

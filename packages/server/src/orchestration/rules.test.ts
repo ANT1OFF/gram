@@ -124,6 +124,9 @@ import {
   userAwayMinutes,
 } from "./rules.ts";
 
+/** A kind outside the contract, for the guards that must refuse one. */
+const UNADMITTED = "unadmitted" as string as AgentKind;
+
 const ORCH = "thread-orch" as ThreadId;
 const W1 = "thread-w1" as ThreadId;
 const W2 = "thread-w2" as ThreadId;
@@ -156,7 +159,7 @@ const workspace = (overrides: Partial<RuleWorkspace> = {}): RuleWorkspace => ({
 });
 
 describe("admission", () => {
-  const kinds: ReadonlyArray<AgentKind> = ["claude", "codex", "grok"];
+  const kinds: ReadonlyArray<AgentKind> = ["claude", "codex", UNADMITTED];
   const roles = ["orchestrator", "worker", "dream"] as const;
 
   it("admits only Claude and Codex for every role", () => {
@@ -194,7 +197,7 @@ describe("hasAuthority", () => {
       "the thread has no workspace",
       { thread: { id: ORCH, role: "orchestrator", model: { agent: "claude" } } },
     ],
-    ["the agent kind isn't admitted", { thread: orchestrator({ model: { agent: "grok" } }) }],
+    ["the agent kind isn't admitted", { thread: orchestrator({ model: { agent: UNADMITTED } }) }],
   ];
   it.each(broken)("fails when %s", (_, change) => {
     expect(
@@ -237,7 +240,7 @@ describe("isDelegated", () => {
 
   it("needs the caller's authority", () => {
     expect(ask({ workspace: workspace({ orchestratorThreadId: W2 }) })).toBe(false);
-    expect(ask({ caller: orchestrator({ model: { agent: "grok" } }) })).toBe(false);
+    expect(ask({ caller: orchestrator({ model: { agent: UNADMITTED } }) })).toBe(false);
   });
 });
 
@@ -252,15 +255,19 @@ describe("toolAudience", () => {
     ["a worker", { thread: worker() }, "worker"],
     ["a worker whose orchestrator has gone", { thread: worker(), workspace: { id: WS } }, "worker"],
     ["a Codex worker", { thread: worker({ model: { agent: "codex" } }) }, "worker"],
-    ["a worker of a kind not admitted", { thread: worker({ model: { agent: "grok" } }) }, "plain"],
+    [
+      "a worker of a kind not admitted",
+      { thread: worker({ model: { agent: UNADMITTED } }) },
+      "plain",
+    ],
     [
       "a Codex orchestrator with authority",
       { thread: orchestrator({ model: { agent: "codex" } }), workspace: workspace() },
       "orchestrator",
     ],
     [
-      "a Grok thread carrying the orchestrator's role",
-      { thread: orchestrator({ model: { agent: "grok" } }), workspace: workspace() },
+      "an unadmitted thread carrying the orchestrator's role",
+      { thread: orchestrator({ model: { agent: UNADMITTED } }), workspace: workspace() },
       "plain",
     ],
     ["a plain thread", { thread: worker({ spawnedBy: undefined }) }, "plain"],
@@ -327,12 +334,12 @@ describe("autonomy", () => {
   // Whatever the level, and `full` is the one that would show a leak.
   const strict: ReadonlyArray<readonly [string, RuleThread, RuleWorkspace | undefined]> = [
     ["a Claude dream", dream("claude"), workspace()],
-    ["a dream of a kind not admitted", dream("grok"), workspace()],
+    ["a dream of a kind not admitted", dream(UNADMITTED), workspace()],
     ["an orchestrator outside its slot", orchestrator(), workspace({ orchestratorThreadId: W3 })],
     ["an orchestrator in another workspace", orchestrator({ workspaceId: OTHER_WS }), workspace()],
     [
       "an orchestrator of a kind not admitted",
-      orchestrator({ model: { agent: "grok" } }),
+      orchestrator({ model: { agent: UNADMITTED } }),
       workspace(),
     ],
     ["a worker whose workspace is gone", worker(), undefined],
@@ -342,7 +349,7 @@ describe("autonomy", () => {
       workspace({ orchestratorThreadId: W3 }),
     ],
     ["a worker filed under another workspace", worker({ workspaceId: OTHER_WS }), workspace()],
-    ["a worker of a kind not admitted", worker({ model: { agent: "grok" } }), workspace()],
+    ["a worker of a kind not admitted", worker({ model: { agent: UNADMITTED } }), workspace()],
     ["a worker that also carries a role", worker({ role: "orchestrator" }), workspace()],
   ];
   it.each(strict)("%s keeps the strictest gate, even at full", (_, thread, ws) => {
@@ -2172,7 +2179,7 @@ describe("prompts", () => {
     expect(roleOn("codex")).toContain(
       "Your Gram tools are on the MCP server named `gram`: `spawn_worker`, `adopt_thread`, `list_workers`, `send_message`, `broadcast_message`, `archive_thread`, `set_stage`, `set_group`, `memory_read`, `memory_append`, `memory_edit`, `memory_write`, `ask_user`, `close_question`, `forward_question`, `answer_worker`, `wait_on_user`, `notify_user`, `schedule_wake`, `depends_on`. Search for them",
     );
-    for (const agent of ["claude", "grok"] as const) {
+    for (const agent of ["claude", UNADMITTED] as const) {
       expect(workerOn(agent)).not.toContain("MCP server named");
       expect(roleOn(agent)).not.toContain("MCP server named");
     }
@@ -2827,7 +2834,7 @@ describe("worker models", () => {
   });
 
   it("refuses a harness not admitted as a worker whatever its own logins list", () => {
-    const kimi = { agent: "grok", model: "kimi-k3" } as const;
+    const kimi = { agent: UNADMITTED, model: "kimi-k3" };
     const own = ["gpt-6.1-sol", "kimi-k3"];
     const unfetched = [gateway("example", "vault:example", [], true)];
     expect(workerModelUnavailable({ model: kimi, profiles: unfetched, ownModels: own })).toMatch(
@@ -2898,11 +2905,13 @@ describe("worker models", () => {
     );
 
     it("refuses a kind that isn't admitted, even at full", () => {
-      expect(verdict({ model: { agent: "grok", model: "x" }, autonomy: "full" })).toMatchObject({
-        ok: false,
-        code: "not_admitted",
-        reason: "grok threads can't be workers yet.",
-      });
+      expect(verdict({ model: { agent: UNADMITTED, model: "x" }, autonomy: "full" })).toMatchObject(
+        {
+          ok: false,
+          code: "not_admitted",
+          reason: "unadmitted threads can't be workers yet.",
+        },
+      );
     });
 
     // kind × gate × profile × whether the adapter's gate holds in the mode: the one rule behind
@@ -3345,7 +3354,7 @@ describe("joining a workspace", () => {
         spawnedBy: { threadId: "o2" as ThreadId, feature: "x" },
       }),
     ).toBeUndefined();
-    expect(refused({ model: { agent: "grok" } })).toContain("isn't admitted as a worker");
+    expect(refused({ model: { agent: UNADMITTED } })).toContain("isn't admitted as a worker");
     expect(refused({ checkout: { kind: "main" } })).toContain("main checkout");
     expect(refused({ checkout: { kind: "main" } }, { inRepo: false })).toContain(
       "isn't in a git repository",

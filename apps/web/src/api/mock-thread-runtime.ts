@@ -71,7 +71,6 @@ const COMMANDS: Partial<Record<AgentKind, ThreadIdentity["commands"]>> = {
     { name: "release-notes", description: "Draft release notes from the merged PRs" },
     { name: "skill-creator", description: "Create or update a Codex skill" },
   ],
-  grok: [],
 };
 
 export const identityFor = (model: ModelRef): ThreadIdentity => ({

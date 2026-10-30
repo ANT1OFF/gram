@@ -257,19 +257,19 @@ export const makeThreadLifecycle = ({
           : { extraCheckouts: [...input.extraCheckouts] }),
         ...input.kept,
       };
-      yield* store.insertThread(thread);
+      const stored = yield* store.insertThread(thread);
       if (input.restoreClosedHistory === true) yield* store.restoreClosedHistory(thread.id);
-      yield* publishUpsert(thread);
+      yield* publishUpsert(stored);
       // Clients dropped the plan with the thread when it closed; the upsert carries only the thread.
       if (input.restoreClosedHistory === true) yield* plans.publish(thread.id);
       if (input.input !== undefined) {
         yield* send(thread.id, input.input).pipe(Effect.catchTag("ThreadNotFound", Effect.die));
       } else if (input.resumeSessionId === undefined && input.deferOpen !== true) {
         const rt = yield* getRuntime(thread.id).pipe(Effect.orDie);
-        yield* locked(rt, openSession(rt, thread));
+        yield* locked(rt, openSession(rt, stored));
       }
       // A resumed session stays cold until the first send, like a fork.
-      return thread;
+      return stored;
     });
 
   /** Whether `guard` still holds of the thread as stored; true without one. */

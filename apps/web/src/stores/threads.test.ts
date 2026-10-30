@@ -56,6 +56,26 @@ const texts = (store: ReturnType<typeof makeStore>) =>
   store.getState().byId[T]!.queue.map((item) => item.input.text);
 
 describe("threads store events", () => {
+  it("drops an upsert older than the thread it holds", () => {
+    const store = makeStore();
+    const { applyEvent } = store.getState();
+    const upsert = (title: string, revision?: number) =>
+      applyEvent({
+        type: "thread.upsert",
+        thread: { ...base.thread, title, ...(revision === undefined ? {} : { revision }) },
+      });
+    upsert("second", 2);
+    expect(store.getState().byId[T]!.thread.title).toBe("second");
+    // Writers committed 1 then 2 and published 2 then 1.
+    upsert("first", 1);
+    expect(store.getState().byId[T]!.thread.title).toBe("second");
+    upsert("again", 2);
+    expect(store.getState().byId[T]!.thread.title).toBe("again");
+    // A thread no write stamped has nothing to compare.
+    upsert("unstamped");
+    expect(store.getState().byId[T]!.thread.title).toBe("unstamped");
+  });
+
   it("uses fresh snapshot activity after missing status events during a disconnect", () => {
     const store = makeStore();
     const { applyEvent } = store.getState();

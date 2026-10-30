@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
-import { AgentKind, SupportedModelRef } from "./domain.ts";
+import { AgentKind, ModelRef } from "./domain.ts";
 import { SettingsPatch } from "./settings.ts";
 import { RuntimeAgent } from "./agent-runtime.ts";
 import { McpTarget } from "./connectors-config.ts";
@@ -16,19 +16,16 @@ describe("agent harness admission", () => {
           speed: "standard",
           ...profile,
         };
-        expect(Schema.decodeUnknownSync(SupportedModelRef)(model)).toEqual(model);
+        expect(Schema.decodeUnknownSync(ModelRef)(model)).toEqual(model);
         expect(
           Schema.decodeUnknownSync(SettingsPatch)({ agents: { defaultModel: model } }),
         ).toEqual({ agents: { defaultModel: model } });
       }
     });
   }
-  it("admits Grok only as a distinct local CLI selection, with no managed runtime", () => {
-    const model = { agent: "grok", model: "synthetic-grok", speed: "standard" };
-    expect(Schema.decodeUnknownSync(SupportedModelRef)(model)).toEqual(model);
-    expect(Schema.decodeUnknownSync(AgentKind)("grok")).toBe("grok");
-    for (const patch of [{ profileId: "api" }, { variant: "high" }, { speed: "fast" }])
-      expect(() => Schema.decodeUnknownSync(SupportedModelRef)({ ...model, ...patch })).toThrow();
+  it("runs no other harness: Grok was removed, and nothing admits it", () => {
+    expect(() => Schema.decodeUnknownSync(AgentKind)("grok")).toThrow();
+    expect(() => Schema.decodeUnknownSync(ModelRef)({ agent: "grok", model: "m" })).toThrow();
     expect(() => Schema.decodeUnknownSync(RuntimeAgent)("grok")).toThrow();
     expect(() => Schema.decodeUnknownSync(McpTarget)("grok")).toThrow();
   });

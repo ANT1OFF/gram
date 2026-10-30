@@ -1,3 +1,4 @@
+import type { AgentKind } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 import { dreamSupportFor } from "./dream-support.ts";
 
@@ -11,7 +12,9 @@ describe("Dream support evidence", () => {
       "native tools can read or change other permitted files",
     );
     expect(dreamSupportFor("claude", { kind: "implementation" }).mode).toBe("confined");
-    expect(dreamSupportFor("grok", { kind: "implementation" }).mode).toBe("unsupported");
+    expect(
+      dreamSupportFor("unknown-agent" as string as AgentKind, { kind: "implementation" }).mode,
+    ).toBe("unsupported");
   });
   it("reports uncertainty for an unidentified or unqualified installed Codex", () => {
     for (const cliVersion of [undefined, "0.160.0", "0.163.0"])

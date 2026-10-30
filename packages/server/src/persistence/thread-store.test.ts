@@ -146,6 +146,20 @@ describe("ThreadStore", () => {
       }),
     ),
   );
+  it.effect("stamps every write of a thread above the last, whatever else takes the counter", () =>
+    withStore(
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const project = yield* store.ensureProject({ root: "/work/stamped", name: "stamped" });
+        const inserted = yield* store.insertThread(thread(project.id));
+        const updated = yield* store.updateThread(inserted.id, (t) => ({ ...t, title: "renamed" }));
+        expect(updated.revision).toBeGreaterThan(inserted.revision!);
+        expect((yield* store.getThread(inserted.id)).revision).toBe(updated.revision);
+        const completed = yield* store.setCompletion(inserted.id, { at: 1, reason: "user" });
+        expect(completed.revision).toBeGreaterThan(updated.revision!);
+      }),
+    ),
+  );
   it.effect("reuses a project per root", () =>
     withStore(
       Effect.gen(function* () {

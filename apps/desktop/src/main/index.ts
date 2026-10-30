@@ -95,6 +95,7 @@ import { appBuildEnv, runningBuildInfo } from "./build-info.ts";
 import { createSignalQuit } from "./signal-quit.ts";
 import { createQuit, QUIT_DEADLINE_MS, serverShutdownFromMessage } from "./quit.ts";
 import { createQuitWindow } from "./quit-window.ts";
+import { inheritedServerEnv } from "./server-env.ts";
 import { createServerHost, DEFAULT_RECOVERY, NO_RECOVERY } from "./server-host.ts";
 import {
   autoUpdateCheckEnabled,
@@ -208,7 +209,7 @@ const server = createServerHost({
       serviceName: "gram-server",
       stdio: "pipe",
       env: {
-        ...process.env,
+        ...inheritedServerEnv(process.env, { packaged: app.isPackaged, smoke: SMOKE }),
         GRAM_DATA_DIR: dataDir,
         GRAM_APP_VERSION: app.getVersion(),
         // Which build runs, for orchestrators to tell whether a merged fix is live yet.

@@ -6,7 +6,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { BacklogGauge } from "./backlog.ts";
-import { ClientBuffer, serverEventKey } from "./client-buffer.ts";
+import { ClientBuffer, serverEventKey, serverEventOrder } from "./client-buffer.ts";
 
 /** The live part of a thread feed: in-flight chunks and whole-message upserts. */
 export type LiveFeedEvent = Extract<
@@ -225,7 +225,7 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
             ),
           );
           return clientStream(eventClients, {
-            buffer: new ClientBuffer(serverEventCapacity, serverEventKey),
+            buffer: new ClientBuffer(serverEventCapacity, serverEventKey, serverEventOrder),
             accept: () => true,
             start: head,
             emit: (event) => event,

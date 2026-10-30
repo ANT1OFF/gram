@@ -1,4 +1,10 @@
-import type { IssueArea, IssueDraft, IssueKind, ThreadId } from "@gram/contracts";
+import {
+  GRAM_REPO,
+  type IssueArea,
+  type IssueDraft,
+  type IssueKind,
+  type ThreadId,
+} from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bug,
@@ -164,7 +170,7 @@ function ReportIssueForm({
     <DialogShell
       testId="report-issue-dialog"
       title="Report an issue"
-      description="Filed on ANT1OFF/gram with your GitHub account."
+      description={`Filed on ${GRAM_REPO} with your GitHub account.`}
       onClose={onClose}
     >
       <form className="flex flex-col gap-3" onSubmit={(event) => void submit(event)}>

@@ -1,6 +1,6 @@
 // Orchestration service: tasks, admitted agents and models, autonomy and connectors.
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, type ModelRef, type ProfileId } from "@gram/contracts";
+import { type AgentKind, DEFAULT_CHARTER, type ModelRef, type ProfileId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import { hasGit } from "../git/test-repo.ts";
@@ -24,6 +24,9 @@ import {
   waitStatus,
 } from "./test-harness.ts";
 import { inServer, texts, sessionsOf } from "./service-kit.ts";
+
+/** A kind outside the contract, for the guards that must refuse one. */
+const UNADMITTED = "unadmitted" as string as AgentKind;
 
 describe.skipIf(!hasGit)("orchestration service", () => {
   it.effect(
@@ -248,24 +251,25 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const handlers = yield* threadHandlers;
         const { session, thread } = yield* openOrchestrator(world);
         const worker = yield* spawn(session, { feature: "mail-trigger" });
-        const grok = { agent: "grok", model: "synthetic-grok" } as const;
+        const unadmitted = { agent: UNADMITTED, model: "synthetic-model" };
 
         const asOrchestrator = yield* handlers["thread.setModel"]({
           threadId: thread.id,
-          model: grok,
+          model: unadmitted,
         }).pipe(Effect.flip);
         expect(asOrchestrator).toMatchObject({ _tag: "InvalidState" });
-        expect(asOrchestrator.message).toContain("grok isn't admitted to orchestrate");
+        expect(asOrchestrator.message).toContain("unadmitted isn't admitted to orchestrate");
         const asWorker = yield* handlers["thread.setModel"]({
           threadId: worker.thread.id,
-          model: grok,
+          model: unadmitted,
         }).pipe(Effect.flip);
         expect(asWorker.message).toContain("Detach it");
         expect((yield* store.getThread(thread.id)).model.agent).toBe("claude");
         expect((yield* store.getThread(worker.thread.id)).model.agent).toBe("claude");
 
         expect(
-          (yield* Effect.flip(orchestration.checkModelChange(worker.thread.id, grok))).message,
+          (yield* Effect.flip(orchestration.checkModelChange(worker.thread.id, unadmitted)))
+            .message,
         ).toContain("isn't admitted");
         yield* handlers["thread.setModel"]({
           threadId: thread.id,
@@ -273,7 +277,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         });
         // Anything goes once the worker is detached.
         yield* orchestration.detach(worker.thread.id);
-        yield* orchestration.checkModelChange(worker.thread.id, grok);
+        yield* orchestration.checkModelChange(worker.thread.id, unadmitted);
       }),
     ),
   );
@@ -394,17 +398,6 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(refused).toMatchObject({ _tag: "InvalidState" });
           expect(refused.message).toContain("Codex cannot prepare Gram's native approval home");
           expect(refused.message).toContain("Prepare the native approval home");
-          expect((yield* store.listThreads).filter((t) => t.role === "orchestrator")).toEqual([]);
-
-          // An explicit unsupported default is authoritative and refused before a holder exists.
-          yield* prefer({ agent: "grok", model: "synthetic-grok" });
-          const unsupported = yield* orchestration
-            .open({ projectId: project.id })
-            .pipe(Effect.flip);
-          expect(unsupported).toMatchObject({
-            _tag: "InvalidState",
-            message: expect.stringContaining("cannot orchestrate"),
-          });
           expect((yield* store.listThreads).filter((t) => t.role === "orchestrator")).toEqual([]);
         }),
       ),

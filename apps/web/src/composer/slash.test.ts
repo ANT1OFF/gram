@@ -1,4 +1,4 @@
-import type { SlashCommand } from "@gram/contracts";
+import type { AgentKind, SlashCommand } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import { filterCommands, slashQuery } from "./slash";
@@ -83,7 +83,9 @@ describe("the slash menu's commands", () => {
   it("offers fork only where the agent forks, and add-dir only where it takes folders", () => {
     expect(names(menuCommands("claude", [], false))).not.toContain("fork");
     expect(names(menuCommands("claude", [], true))).toContain("fork");
-    expect(names(menuCommands("grok", [], true))).not.toContain("add-dir");
+    expect(names(menuCommands("unknown-agent" as string as AgentKind, [], true))).not.toContain(
+      "add-dir",
+    );
     expect(names(menuCommands("codex", [], true))).toContain("add-dir");
   });
 

@@ -501,7 +501,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
   );
 
   it.effect(
-    "a reopen asks admission of the orchestrator as its slot's holder, and of each worker it relinks",
+    "a reopen asks admission of the orchestrator as its slot's holder, and relinks its workers",
     () =>
       inServer((world) =>
         Effect.gen(function* () {
@@ -512,14 +512,9 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           yield* atAutonomy(thread, "full");
           const kept = yield* spawn(session, { feature: "mail-trigger" });
           yield* completeTurn(kept.session);
-          const moved = yield* spawn(session, { feature: "cart" });
-          yield* completeTurn(moved.session);
           const direct = { agent: "codex", model: "gpt-5.5" } as ModelRef;
           yield* runtimes.updateThread(thread.id, (t) => ({ ...t, model: direct }));
           yield* runtimes.close(thread.id);
-          // A plain thread meanwhile, one worker moves to an agent no worker is admitted on.
-          const grok = { agent: "grok", model: "synthetic-grok" } as ModelRef;
-          yield* runtimes.updateThread(moved.thread.id, (t) => ({ ...t, model: grok }));
 
           const closedHandlers = yield* closedThreadHandlers;
           const back = yield* closedHandlers["threads.closed.reopen"]();
@@ -529,7 +524,6 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             thread.id,
           );
           expect((yield* store.getThread(kept.thread.id)).spawnedBy?.threadId).toBe(thread.id);
-          expect((yield* store.getThread(moved.thread.id)).spawnedBy).toBeUndefined();
         }),
       ),
   );

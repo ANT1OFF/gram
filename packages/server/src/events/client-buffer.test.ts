@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { GitState, ServerEvent, ThreadId, WorkspaceId } from "@gram/contracts";
-import { ClientBuffer, serverEventKey } from "./client-buffer.ts";
+import type { GitState, ServerEvent, Thread, ThreadId, WorkspaceId } from "@gram/contracts";
+import { ClientBuffer, serverEventKey, serverEventOrder } from "./client-buffer.ts";
 
 const t1 = "t1" as ThreadId;
 const git = (head: string): ServerEvent => ({
@@ -9,6 +9,10 @@ const git = (head: string): ServerEvent => ({
   state: { head } as GitState,
 });
 const notify = (title: string): ServerEvent => ({ type: "notify", kind: "info", title });
+const upsert = (revision: number): ServerEvent => ({
+  type: "thread.upsert",
+  thread: { id: t1, revision } as Thread,
+});
 
 describe("ClientBuffer", () => {
   it("keeps every event while under capacity", () => {
@@ -33,6 +37,15 @@ describe("ClientBuffer", () => {
 
     for (let i = 0; i < 1_000; i++) buffer.offer(git(String(i)));
     expect(buffer.take().items).toEqual([git("999")]);
+  });
+
+  it("under pressure keeps a thread's highest revision, though it was offered first", () => {
+    const buffer = new ClientBuffer<ServerEvent>(2, serverEventKey, serverEventOrder);
+    buffer.offer(notify("one"));
+    buffer.offer(upsert(2));
+    // Writers committed 1 then 2 and published 2 then 1.
+    buffer.offer(upsert(1));
+    expect(buffer.take().items).toEqual([notify("one"), upsert(2)]);
   });
 
   it("clears when compaction can't make room, ignores offers until taken, then resumes", () => {

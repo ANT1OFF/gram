@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
-import { SupportedModelRef } from "../domain.ts";
+import { ModelRef } from "../domain.ts";
 import {
   DREAM_INSTRUCTIONS_MAX,
   AutomaticDreamStatus,
@@ -66,7 +66,7 @@ export const DreamRpcs = RpcGroup.make(
       instructions: Schema.optionalKey(
         Schema.String.check(Schema.isMaxLength(DREAM_INSTRUCTIONS_MAX)),
       ),
-      model: Schema.optionalKey(SupportedModelRef),
+      model: Schema.optionalKey(ModelRef),
       projectIds: Schema.optionalKey(Schema.Array(ProjectId)),
       perRepo: Schema.optionalKey(PositiveInt),
       /** Copies Claude Code's memory files for the workspace's folders in as seed material. */

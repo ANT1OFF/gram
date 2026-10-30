@@ -19,7 +19,7 @@ import { CompactionActivity, ThreadStatus } from "./thread-status.ts";
 // Agents, models, profiles
 
 /** The agent CLIs Gram runs. */
-export const AgentKind = Schema.Literals(["claude", "codex", "grok"]);
+export const AgentKind = Schema.Literals(["claude", "codex"]);
 export type AgentKind = typeof AgentKind.Type;
 
 /** Claude's permission modes. `dontAsk` is SDK-only but can arrive in a `setMode` suggestion. */
@@ -58,15 +58,6 @@ export const ModelRef = Schema.Struct({
   speed: Schema.optionalKey(SpeedMode),
 });
 export type ModelRef = typeof ModelRef.Type;
-/** A model choice Gram can run: Grok Build takes no gateway, effort or Fast override. */
-export const SupportedModelRef = ModelRef.check(
-  Schema.makeFilter(
-    (model) =>
-      model.agent !== "grok" ||
-      (model.profileId === undefined && model.variant === undefined && model.speed !== "fast") ||
-      "Grok Build requires its local CLI login without gateway, effort or Fast overrides.",
-  ),
-);
 
 /**
  * What an explicitly configured LiteLLM metadata catalog says beyond the ids in `/models`.
@@ -582,6 +573,12 @@ export type SessionSwitch = typeof SessionSwitch.Type;
 
 export const Thread = Schema.Struct({
   id: ThreadId,
+  /**
+   * Stamped from the store's `feed_revision` counter by every write of the thread, so a later write
+   * always has a higher one. Publishes can land out of commit order; a client drops an upsert older
+   * than the thread it holds. Absent on a thread no write has stamped yet.
+   */
+  revision: Schema.optionalKey(Schema.Number),
   projectId: ProjectId,
   title: Schema.String,
   /** The user renamed it; helper-LLM titles must not overwrite. */

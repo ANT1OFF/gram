@@ -693,14 +693,14 @@ describe.skipIf(process.platform === "win32")("the configured local check", () =
         },
         {
           isolation: LOCAL_CHECK_ISOLATION,
-          setup: "sleep 0.2",
-          command: "sleep 0.2; touch finished",
-          timeoutMs: 300,
+          setup: "sleep 1",
+          command: "sleep 1; touch finished",
+          timeoutMs: 1_500,
         },
       );
       expect(result).toMatchObject({
         ok: false,
-        reason: "timed out: still running after 300 ms, so Gram stopped it",
+        reason: "timed out: still running after 1500 ms, so Gram stopped it",
       });
       expect(existsSync(nodePath.join(dir, "finished"))).toBe(false);
       removeDir(dir);

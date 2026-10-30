@@ -1,5 +1,5 @@
 import type { AgentKind } from "@gram/contracts";
-import { Orbit, Plug } from "lucide-react";
+import { Plug } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { cn } from "@/lib/utils";
@@ -18,7 +18,6 @@ export interface AgentDisplay {
 export const AGENT_DISPLAY: Readonly<Record<AgentKind, AgentDisplay>> = {
   claude: { label: AGENT_LABEL.claude, icon: ClaudeMark },
   codex: { label: AGENT_LABEL.codex, icon: OpenAiMark },
-  grok: { label: AGENT_LABEL.grok, icon: Orbit },
 };
 
 const displayOf = (agent: string): AgentDisplay | undefined =>

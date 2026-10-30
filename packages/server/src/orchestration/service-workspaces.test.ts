@@ -1,6 +1,6 @@
 // Orchestration service: opening workspaces and orchestrators, names and session policy.
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, type ProfileId, type WorkerModel } from "@gram/contracts";
+import { type AgentKind, DEFAULT_CHARTER, type ProfileId, type WorkerModel } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as nodePath from "node:path";
@@ -22,6 +22,9 @@ import {
   waitStatus,
 } from "./test-harness.ts";
 import { inServer, sessionsOf } from "./service-kit.ts";
+
+/** A kind outside the contract, for the guards that must refuse one. */
+const UNADMITTED = "unadmitted" as string as AgentKind;
 
 describe.skipIf(!hasGit)("orchestration service", () => {
   it.effect(
@@ -138,10 +141,10 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const refused = yield* orchestration
             .setCharter(state.workspace.id, {
               ...state.charter,
-              orchestratorModel: { agent: "grok", model: "synthetic-grok" },
+              orchestratorModel: { agent: UNADMITTED, model: "synthetic-model" },
             })
             .pipe(Effect.flip);
-          expect(refused.message).toBe("Grok Build threads can't be orchestrators yet.");
+          expect(refused.message).toBe("unadmitted threads can't be orchestrators yet.");
           yield* orchestration.setCharter(state.workspace.id, {
             ...state.charter,
             orchestratorModel: { agent: "claude", model: "fake-opus" },

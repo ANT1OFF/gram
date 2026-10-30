@@ -96,42 +96,6 @@ describe("MockApi gateways", () => {
     abort.abort();
   });
 
-  it.each([
-    { name: "default assembly", registered: false, custom: false, profileId: undefined },
-    { name: "explicit Grok", registered: true, custom: false, profileId: undefined },
-    { name: "custom models", registered: true, custom: true, profileId: undefined },
-    { name: "default assembly with profile", registered: false, custom: false, profileId: LITELLM },
-    {
-      name: "registered Grok with custom models and profile",
-      registered: true,
-      custom: true,
-      profileId: LITELLM,
-    },
-    { name: "missing profile", registered: true, custom: true, profileId: "missing" as ProfileId },
-  ])(
-    "Grok unavailable through actual mock assembly: $name",
-    async ({ registered, custom, profileId }) => {
-      const api = createMockApi({
-        speed: 0,
-        autoplay: false,
-        ...(registered ? { agents: ["claude", "codex", "grok"] } : {}),
-      });
-      if (custom)
-        await api.updateSettings({
-          agents: { customModels: [{ agent: "grok", id: "synthetic-custom-grok" }] },
-        });
-      await expect(api.listModels("grok", profileId)).rejects.toMatchObject({
-        _tag: "AgentUnavailable",
-        agent: "grok",
-        message:
-          "Grok Build is unavailable in Gram: the official CLI cannot enforce subscription-only inference routing for all configured models and auxiliary requests. Login or a subscription purchase does not resolve this CLI capability limitation. No CLI was started.",
-      });
-      // Other providers retain the default/explicit assembly's own catalogs.
-      expect((await api.listModels("claude")).models[0]?.id).toBe("opus");
-      if (registered) expect((await api.listModels("codex")).models[0]?.id).toBe("gpt-5.5");
-    },
-  );
-
   it("registers only the agents the session flag names and ignores unknown entries", async () => {
     sessionStorage.setItem(MOCK_AGENTS_KEY, "claude,invented-unknown");
     const api = createMockApi({ speed: 0, autoplay: false });

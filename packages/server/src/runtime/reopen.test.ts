@@ -831,7 +831,7 @@ describe("restarting sessions after an MCP change", () => {
     expect(mcpChangeReaches({ agent: "codex", threads: [] }, session)).toBe(false);
     expect(mcpChangeReaches({ agent: "codex", except: [threadId] }, session)).toBe(false);
     expect(mcpChangeReaches({ agent: "codex", except: [] }, session)).toBe(true);
-    expect(mcpChangeReaches({ agent: "claude" }, { ...session, agent: "grok" })).toBe(false);
+    expect(mcpChangeReaches({ agent: "claude" }, session)).toBe(false);
   });
 
   it.effect("restarts an idle session at once, under a divider that says why", () =>

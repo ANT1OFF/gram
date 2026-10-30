@@ -1,3 +1,4 @@
+import { GRAM_REPO } from "@gram/contracts";
 import type {
   BackgroundTask,
   CompactionActivity,
@@ -793,7 +794,7 @@ const MOCK_CHART = [
 ].join("");
 
 const MOCK_ISSUE = {
-  repo: "ANT1OFF/gram",
+  repo: GRAM_REPO,
   labels: ["bug", "web"],
   title: "Terminal output freezes after resizing the split",
   body: [
@@ -835,7 +836,7 @@ const reportIssueSteps = (m: string, callId: string): Step[] => [
       toolName: "mcp__gram__report_issue",
       displayName: "report_issue",
       input: MOCK_ISSUE,
-      description: `File “${MOCK_ISSUE.title}” on ANT1OFF/gram (bug, web)`,
+      description: `File “${MOCK_ISSUE.title}” on ${GRAM_REPO} (bug, web)`,
       suggestions: [],
       scopes: ["once"],
     },
@@ -844,9 +845,9 @@ const reportIssueSteps = (m: string, callId: string): Step[] => [
         ? [
             toolResult(m, callId, {
               number: 162,
-              url: "https://github.com/ANT1OFF/gram/issues/162",
+              url: `https://github.com/${GRAM_REPO}/issues/162`,
             }),
-            ...text(m, "t2", "Filed https://github.com/ANT1OFF/gram/issues/162."),
+            ...text(m, "t2", `Filed https://github.com/${GRAM_REPO}/issues/162.`),
           ]
         : [toolError(m, callId, "The user declined report_issue.")],
   },

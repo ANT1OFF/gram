@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { ModelRef, SupportedModelRef } from "./domain.ts";
+import { ModelRef } from "./domain.ts";
 import { ThreadId } from "./ids.ts";
 
 /**
@@ -33,7 +33,7 @@ export type TaskModelSelection = typeof TaskModelSelection.Type;
 
 /** A task selection a new task may start on, including a supplied preview. */
 export const SupportedTaskModelSelection = Schema.Struct({
-  orchestrator: SupportedModelRef,
+  orchestrator: ModelRef,
   orchestratorThreadId: Schema.optionalKey(ThreadId),
-  worker: Schema.optionalKey(SupportedModelRef),
+  worker: Schema.optionalKey(ModelRef),
 });
