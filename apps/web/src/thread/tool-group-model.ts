@@ -305,10 +305,12 @@ const phaseOf = (part: AnyToolPart) =>
 /** A tool call the fold can take: one that's over and neither failed nor needs the user. */
 const SETTLED: ReadonlySet<ToolPhase> = new Set(["done", "cancelled", "denied"]);
 
-/** Narration and how the turn got there. Anything else, an error card say, stays out of the fold. */
+/**
+ * Narration and how the turn got there. Anything else, an error card say, stays out of the fold, and
+ * so do words still arriving, whatever the thread's status says of the turn.
+ */
 const foldable = (part: MessagePart) =>
-  part.type === "text" ||
-  part.type === "reasoning" ||
+  ((part.type === "text" || part.type === "reasoning") && part.state !== "streaming") ||
   part.type === "data-chapter" ||
   (isToolPart(part) && SETTLED.has(phaseOf(part)));
 

@@ -298,6 +298,13 @@ describe("turnFolds", () => {
     expect(toolRuns(parts, fold.apart).starts.size).toBe(0);
   });
 
+  it("keeps words still arriving in view, whatever the thread's status says", () => {
+    const thinking = { type: "reasoning", text: "", state: "streaming" } as MessagePart;
+    const parts = [text("a"), tool("Read"), text("final"), thinking];
+    const fold = turnFolds([user("u"), reply("r", parts)], false).get("r");
+    expect([...(fold?.hidden ?? [])]).toEqual([0, 1]);
+  });
+
   it("keeps a tool still running in a finished turn in view", () => {
     const parts = [text("a"), tool("Read"), tool("Task", {}, "input-available"), text("final")];
     expect([...turnFolds([user("u"), reply("r", parts)], false).get("r")!.hidden]).toEqual([0, 1]);
