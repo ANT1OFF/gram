@@ -213,10 +213,10 @@ export function permissionCheckAsk(
 
 /**
  * Whether to grant a permission. Nothing is granted to a page outside `trustedOrigins`, and of
- * `media` only the microphone, for dictation and voice: no camera, no screen. Other permissions
- * the app's own pages ask for are granted, as Electron did before there was a handler (clipboard
- * writes use one). `microphone: false` refuses `media` outright, for a shell that carries nothing
- * that listens.
+ * capture only the microphone, for dictation and voice: no camera, and no screen, which Electron
+ * reports as `display-capture` rather than `media` since 45. Other permissions the app's own pages
+ * ask for are granted, as Electron did before there was a handler (clipboard writes use one).
+ * `microphone: false` refuses `media` outright, for a shell that carries nothing that listens.
  */
 export function grantPermission(
   ask: PermissionAsk,
@@ -224,6 +224,7 @@ export function grantPermission(
   { microphone = true }: { readonly microphone?: boolean } = {},
 ): boolean {
   if (!isTrustedSenderUrl(ask.url, trustedOrigins)) return false;
+  if (ask.permission === "display-capture") return false;
   if (ask.permission !== "media") return true;
   if (!microphone) return false;
   return ask.mediaTypes.length > 0 && ask.mediaTypes.every((type) => type === "audio");

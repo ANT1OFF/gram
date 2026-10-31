@@ -1,4 +1,4 @@
-electronVersion: 44.9.0 # Keep in sync with the root catalog; electron-builder cannot resolve catalog: with Bun.
+electronVersion: 45.0.0 # Keep in sync with the root catalog; electron-builder cannot resolve catalog: with Bun.
 # Packaging is unsigned; `bun run release:rc` then signs, notarizes and staples the packaged app
 # with apps/desktop/scripts/sign-mac.mjs when the publisher's Developer ID is set up.
 appId: io.github.ant1off.gram
