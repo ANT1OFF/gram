@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds sherpa-onnx's darwin-arm64 Node addon and C API from the upstream tag with text-to-speech
-# off, into tools/sherpa-onnx/darwin-arm64/. The npm sherpa-onnx-darwin-arm64 package statically links
-# espeak-ng (GPL-3.0-or-later) and piper-phonemize for TTS; Gram only recognises speech, so it ships
-# these instead (tools/sherpa-onnx/install.mjs puts them over the npm package on install).
+# off, into tools/sherpa-onnx/darwin-arm64/. The npm sherpa-onnx-darwin-arm64 package carries TTS, and
+# up to 1.13.8 statically linked espeak-ng (GPL-3.0-or-later) and piper-phonemize for it; Gram only
+# recognises speech, so it ships these instead (tools/sherpa-onnx/install.mjs puts them over the npm
+# package on install).
 #
 # Flags are upstream's npm-addon-macos.yaml with SHERPA_ONNX_ENABLE_TTS=OFF. The addon gets
 # node-addon.patch, which drops its TTS bindings (they call the C API's TTS functions) and the

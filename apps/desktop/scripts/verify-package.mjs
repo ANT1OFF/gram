@@ -365,8 +365,9 @@ check(
   sherpaPackage,
 );
 
-// The npm darwin-arm64 build statically links espeak-ng (GPL-3.0-or-later) through piper-phonemize
-// for text-to-speech; Gram ships the speech-recognition-only build from tools/sherpa-onnx instead.
+// The npm darwin-arm64 build carries text-to-speech, and up to 1.13.8 statically linked espeak-ng
+// (GPL-3.0-or-later) through piper-phonemize for it; Gram ships the speech-recognition-only build
+// from tools/sherpa-onnx instead.
 // Case matters: "OfflineSpeaker" holds "eSpeak".
 if (platform === "darwin") {
   const gpl = findBinaries(path.join(unpacked, sherpaPackage)).flatMap(({ file }) => {

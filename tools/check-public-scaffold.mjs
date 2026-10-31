@@ -50,7 +50,7 @@ assert.match(
 assert.match(read("apps/desktop/build/afterPack.cjs"), /THIRD-PARTY-NOTICES\.txt/);
 assert.match(read("apps/desktop/scripts/verify-package.mjs"), /THIRD-PARTY-NOTICES\.txt present/);
 // No GPL code ships: the install puts the speech-recognition-only sherpa-onnx build (tools/sherpa-onnx)
-// over the npm one, which links espeak-ng, and verify-package fails a package with its symbols.
+// over the npm one, and verify-package fails a package with espeak-ng or piper-phonemize symbols.
 assert.match(read("package.json"), /"postinstall": "node tools\/sherpa-onnx\/install\.mjs"/);
 assert.match(
   read("apps/desktop/scripts/verify-package.mjs"),
