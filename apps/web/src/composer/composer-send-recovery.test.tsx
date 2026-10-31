@@ -143,7 +143,7 @@ describe("failed send draft recovery", () => {
     const { steer, paste } = setup();
     steer.mockRejectedValueOnce(new Error("synthetic steer refusal"));
     await paste("steer.txt");
-    fireEvent.click(screen.getByRole("button", { name: "Steer now" }));
+    fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
     await waitFor(() => expect(screen.getByText(/Couldn't steer/)).toBeTruthy());
     expect(screen.getAllByTestId("attachment-chip")).toHaveLength(1);
     expect(steer.mock.calls[0]![1].attachments).toHaveLength(1);

@@ -38,10 +38,8 @@ const setup = ({ steers = true }: { steers?: boolean } = {}) => {
   return { api, steer, textarea, unmount: view.unmount };
 };
 
-const steerBlock = () =>
-  screen.getByRole("button", { name: "Steer now" }).closest("[data-toolbar-block]")!;
-
-const steerNow = () => fireEvent.click(screen.getByRole("button", { name: "Steer now" }));
+const steerNow = () =>
+  fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
 
 afterEach(() => {
   cleanup();
@@ -227,34 +225,58 @@ describe("Composer steer", () => {
     expect(screen.getByText("shot.txt")).toBeTruthy();
   });
 
-  it("names its glyph buttons, with Queue in place of Send while the turn runs", () => {
-    setup();
-    expect(screen.getByRole("button", { name: "Queue" })).toBeTruthy();
+  it("is one button: Stop while empty, Queue with a draft, each with its name", () => {
+    const { textarea } = setup();
+    fireEvent.change(textarea, { target: { value: "" } });
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Queue" })).toBeNull();
+    fireEvent.change(textarea, { target: { value: "use vitest" } });
+    expect(screen.getByRole("button", { name: "Queue" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
     expect(screen.getByTestId("running-edge")).toBeTruthy();
   });
 
-  it("settles Steer in when typing makes it possible, but not a draft that was there", () => {
-    useDraftStore.setState({ text: { [THREAD]: "already typed" } });
-    const { textarea } = setup();
-    expect(steerBlock().classList.contains("gram-swap")).toBe(false);
+  it("stops the turn from the empty button, but not on a double click's second click", () => {
+    const { api, textarea } = setup();
+    const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
     fireEvent.change(textarea, { target: { value: "" } });
-    expect(screen.queryByRole("button", { name: "Steer now" })).toBeNull();
-    fireEvent.change(textarea, { target: { value: "use vitest" } });
-    expect(steerBlock().classList.contains("gram-swap")).toBe(true);
+    const stop = screen.getByRole("button", { name: "Stop" });
+    fireEvent.click(stop, { detail: 2 });
+    expect(interrupt).not.toHaveBeenCalled();
+    fireEvent.click(stop, { detail: 1 });
+    expect(interrupt).toHaveBeenCalledTimes(1);
   });
 
-  it("offers Steer only with something typed, to an agent that takes input mid-turn", () => {
+  it("turns to Steer while the modifier is down, and back", () => {
     const { textarea } = setup();
-    expect(screen.queryByRole("button", { name: "Steer now" })).toBeNull();
     fireEvent.change(textarea, { target: { value: "use vitest" } });
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
     expect(screen.getByRole("button", { name: "Steer now" })).toBeTruthy();
-    cleanup();
+    fireEvent.keyUp(window, { key: "Meta" });
+    expect(screen.getByRole("button", { name: "Queue" })).toBeTruthy();
+  });
 
-    const unable = setup({ steers: false });
-    fireEvent.change(unable.textarea, { target: { value: "use vitest" } });
+  it("queues rather than steers for an agent that takes no input mid-turn", async () => {
+    const { textarea, steer, api } = setup({ steers: false });
+    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true } as never);
+    fireEvent.change(textarea, { target: { value: "use vitest" } });
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
     expect(screen.queryByRole("button", { name: "Steer now" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Queue" }), { metaKey: true });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it("keeps Stop in the right-click menu while a draft has the button", async () => {
+    const { api, textarea } = setup();
+    const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
+    fireEvent.change(textarea, { target: { value: "use vitest" } });
+    fireEvent.contextMenu(screen.getByTestId("send-menu-trigger"));
+    const steer = await screen.findByRole("menuitem", { name: /^Steer now/ });
+    expect(steer.textContent).toMatch(/(⌘|Ctrl)-click$/);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Stop" }));
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(textarea.value).toBe("use vitest");
   });
 });
 

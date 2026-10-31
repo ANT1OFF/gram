@@ -53,25 +53,15 @@ test("the toolbar stays one row as it narrows, folding pickers into …", async 
   expect(await right(page.getByRole("button", { name: "Stop", exact: true }))).toBeLessThanOrEqual(
     edge,
   );
-  expect(await right(page.getByRole("button", { name: /^(Send|Queue)$/ }))).toBeLessThanOrEqual(
-    edge,
-  );
 
-  // Narrower still, Steer folds too: into "…", and off the toolbar. It shows only with a draft,
-  // and here still fits, so its leaving the toolbar below is the fold and not Steer going away.
+  // With a draft the one button takes Queue, and stays inside the composer however narrow it gets.
   await message.fill("use the fake clock");
-  await squeeze(page, 320);
-  const steer = toolbar.getByRole("button", { name: "Steer now" });
-  await expect(steer).toBeVisible();
   await squeeze(page, 230);
-  await expect(steer).toHaveCount(0);
-  expect(await right(page.getByRole("button", { name: /^(Send|Queue)$/ }))).toBeLessThanOrEqual(
+  await expect(toolbar.getByRole("button", { name: "Steer now" })).toHaveCount(0);
+  expect(await right(page.getByRole("button", { name: "Queue", exact: true }))).toBeLessThanOrEqual(
     await right(message),
   );
   await more.click();
-  await expect(
-    page.getByTestId("composer-overflow-menu").getByRole("menuitem", { name: /^Steer now/ }),
-  ).toBeVisible();
   await page
     .getByTestId("composer-overflow-menu")
     .getByRole("menuitem", { name: /^Speed/ })
@@ -112,6 +102,7 @@ test("right-click on Send offers steering and sending into a new draft", async (
   const menu = page.getByTestId("send-menu");
   await expect(menu.getByRole("menuitem", { name: /^Queue/ })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: /Send and start a new draft/ })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Stop", exact: true })).toBeVisible();
   await menu.getByRole("menuitem", { name: /^Steer now/ }).click();
   await expect(page.getByLabel("Message", { exact: true })).toHaveValue("");
 });
@@ -162,8 +153,6 @@ test("a running turn lights the border, and Steer waits for a draft", async ({ p
   await page.goto("/t/t-flaky");
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
-  const toolbar = page.getByTestId("composer-toolbar");
-  await expect(toolbar.getByRole("button", { name: "Steer now" })).toHaveCount(0);
   const message = page.getByLabel("Message", { exact: true });
   await message.focus();
 
@@ -172,11 +161,38 @@ test("a running turn lights the border, and Steer waits for a draft", async ({ p
   await expect.poll(() => light.evaluate((el) => el.style.translate)).not.toBe(first);
 
   await message.fill("use the fake clock");
-  await expect(toolbar.getByRole("button", { name: "Steer now" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Queue", exact: true })).toBeVisible();
+  await expect(stop).toBeHidden();
+  await message.fill("");
 
   await stop.click();
   // The mock notices an interrupt only between steps, so the held gate has to open for it to stop.
   await page.evaluate(() => window.gramMock?.release("flaky-read"));
   await expect(stop).toBeHidden();
   await expect(page.getByTestId("running-edge")).toHaveCount(0);
+});
+
+test("one send button: Stop while empty, Queue with a draft, Steer with the modifier", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.gramMockHoldGates = true;
+  });
+  await page.goto("/t/t-flaky");
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  await expect(button("Stop")).toBeVisible();
+  await button("Stop").hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Stop");
+
+  const message = page.getByLabel("Message", { exact: true });
+  await message.fill("use the fake clock");
+  await expect(button("Queue")).toBeVisible();
+  await expect(button("Stop")).toHaveCount(0);
+
+  await page.keyboard.down("Meta");
+  await expect(button("Steer now")).toBeVisible();
+  await button("Steer now").click({ modifiers: ["Meta"] });
+  await page.keyboard.up("Meta");
+  await expect(message).toHaveValue("");
+  await expect(button("Stop")).toBeVisible();
 });

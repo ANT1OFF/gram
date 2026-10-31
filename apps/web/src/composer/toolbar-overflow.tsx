@@ -1,5 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
-import { CheckIcon, ChevronRightIcon, Ellipsis, Send } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, Ellipsis } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -25,20 +25,17 @@ export interface FoldedPicker {
 }
 
 /**
- * The composer toolbar's "…": the pickers and Steer that folded away when it got narrow. A folded
+ * The composer toolbar's "…": the pickers that folded away when it got narrow. A folded
  * picker's shortcut opens this menu at its submenu, which `openSub` names.
  */
 export function ToolbarOverflow({
   pickers,
-  steer,
   open,
   onOpenChange,
   openSub,
   onOpenSubChange,
 }: {
   pickers: readonly FoldedPicker[];
-  /** Steer now, when it folded and a turn is running; `disabled` with nothing to steer. */
-  steer?: { run: () => void; disabled: boolean; label: string } | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   openSub: string | undefined;
@@ -120,12 +117,6 @@ export function ToolbarOverflow({
                 </Menu.Portal>
               </Menu.SubmenuRoot>
             ))}
-            {steer && (
-              <Menu.Item disabled={steer.disabled} className={ITEM} onClick={steer.run}>
-                <Send aria-hidden />
-                {steer.label}
-              </Menu.Item>
-            )}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
