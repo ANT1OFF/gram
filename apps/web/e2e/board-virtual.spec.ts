@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { openOrchestrator, threadRow } from "./thread-row";
 
@@ -82,6 +82,27 @@ const contiguous = (page: Page) => async () => {
     return false;
   }
 };
+
+/**
+ * An element's height once it has held still for a few frames. The Board view scales in past full
+ * size, so a box read during that entrance can be a pixel or two taller than the settled one.
+ */
+const settledHeight = (locator: Locator) =>
+  locator.evaluate(
+    (element) =>
+      new Promise<number>((resolve) => {
+        let last = -1;
+        let still = 0;
+        const frame = () => {
+          const height = element.getBoundingClientRect().height;
+          still = height === last ? still + 1 : 0;
+          last = height;
+          if (still >= 5) resolve(height);
+          else requestAnimationFrame(frame);
+        };
+        frame();
+      }),
+  );
 
 const focusedEntry = (page: Page) =>
   page.evaluate(() => {
@@ -220,7 +241,7 @@ test("a group's band folds its lines away and the lines under it move up", async
   await expect(band).toBeVisible();
   const toggle = band.getByTestId("rail-group-toggle");
   const height = async () => (await band.boundingBox())!.height;
-  const open = await height();
+  const open = await settledHeight(band);
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect.poll(height).toBeLessThan(open - 20);
