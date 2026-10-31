@@ -175,7 +175,9 @@ test("60 features draw a dozen or so lines, each where the whole list puts it", 
       ),
     )
     .toBeGreaterThanOrEqual(FEATURES - 1);
-  await expectContiguous(page);
+  // The last line draws before the rest are measured. The list then shortens and the first drawn
+  // lines leave the page, and a line removed mid-read measures as 0.
+  await expect.poll(contiguous(page)).toBe(true);
   expect(await entries(page).count()).toBeLessThan(30);
 });
 
