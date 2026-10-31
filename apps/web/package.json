@@ -30,7 +30,7 @@
     "@streamdown/code": "2.0.0",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
-    "@tanstack/react-virtual": "3.14.21",
+    "@tanstack/react-virtual": "3.14.22",
     "ai": "catalog:",
     "class-variance-authority": "catalog:",
     "cn": "catalog:",
@@ -41,7 +41,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "shiki": "4.5.0",
-    "streamdown": "2.7.0",
+    "streamdown": "2.7.1",
     "zustand": "catalog:"
   },
   "devDependencies": {
