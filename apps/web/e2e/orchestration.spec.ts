@@ -268,7 +268,7 @@ test("a worker's menu goes to its orchestrator, removing makes it a plain thread
     workspaceRow(page, made.workspaceId).locator(
       `[data-testid="overview-worker"][data-thread-id="${made.workerThreadId}"]`,
     ),
-  ).toHaveAccessibleName("Return rate-limit headers, briefed");
+  ).toHaveAccessibleName(/^Return rate-limit headers, briefed, /);
   await expect(detached).toHaveCount(0);
 });
 
@@ -639,7 +639,7 @@ test("the overview nests a workspace's features and workers, and a worker's thre
     await expect(soloRow(page, threadId)).toHaveCount(0);
   }
   // A worker waiting on a request says so on its row, and one in review carries its PR's chip.
-  await expect(threadRow(page, made.waiting[0])).toHaveAccessibleName("Trigger form, asks you");
+  await expect(threadRow(page, made.waiting[0])).toHaveAccessibleName(/^Trigger form, asks you, /);
   await expect(
     workspace
       .locator(`[data-testid="overview-pr-chips"][data-thread-id="${made.inReview}"]`)
@@ -1741,7 +1741,7 @@ test("parking an orchestrator pauses its workspace, and one confirm removes a wo
       const [state] = (await window.gramMock?.listWorkspaces()) ?? [];
       return state?.paused?.reason ?? null;
     });
-  await expect(line).toHaveAccessibleName("api, idle");
+  await expect(line).toHaveAccessibleName(/^api, idle · /);
 
   // Parked from its thread's menu, the workspace is paused, which its line in the overview says,
   // and unparked the same way.
@@ -1749,11 +1749,11 @@ test("parking an orchestrator pauses its workspace, and one confirm removes a wo
   let menu = await openThreadMenu(page);
   await menu.getByRole("menuitem", { name: "Park", exact: true }).click();
   await expect.poll(paused).toBe("parked");
-  await expect(line).toHaveAccessibleName("api, paused");
+  await expect(line).toHaveAccessibleName(/^api, paused · /);
   menu = await openThreadMenu(page);
   await menu.getByRole("menuitem", { name: "Unpark", exact: true }).click();
   await expect.poll(paused).toBe(null);
-  await expect(line).toHaveAccessibleName("api, idle");
+  await expect(line).toHaveAccessibleName(/^api, idle · /);
 
   // Removing closes the orchestrator too; the worker it leaves is an ordinary thread.
   const more = await openHeaderMore(page);

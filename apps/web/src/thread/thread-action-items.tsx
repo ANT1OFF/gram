@@ -24,6 +24,10 @@ import { useThreadActions } from "./use-thread-actions";
 export const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
 export const DANGER = "text-destructive data-[highlighted]:text-destructive";
 
+/** Mark done's words: a disabled item shows no tooltip, so they say why it is off while it works. */
+const doneWord = (done: boolean, held: boolean) =>
+  done ? "Reopen" : held ? "Mark done after it stops" : "Mark done";
+
 /** Mark done's tick, or Reopen's arrow back for a thread already done. */
 const DoneIcon = ({ done }: { done: boolean }) =>
   done ? (
@@ -96,9 +100,13 @@ export function ThreadContextMenuItems({
         {thread.parked ? "Unpark" : "Park"}
       </ContextMenuItem>
       {actions.toggleDone !== undefined && (
-        <ContextMenuItem data-testid="menu-done" onClick={actions.toggleDone}>
+        <ContextMenuItem
+          data-testid="menu-done"
+          disabled={actions.doneHeld}
+          onClick={actions.toggleDone}
+        >
           <DoneIcon done={thread.completedAt !== undefined} />
-          {thread.completedAt === undefined ? "Mark done" : "Reopen"}
+          {doneWord(thread.completedAt !== undefined, actions.doneHeld)}
         </ContextMenuItem>
       )}
       {/* An orchestrator follows no PR of its own; its workers carry theirs. */}
@@ -167,9 +175,13 @@ export function ThreadMenuItems({
         {thread.parked ? "Unpark" : "Park"}
       </Menu.Item>
       {actions.toggleDone !== undefined && (
-        <Menu.Item className={itemClassName} onClick={actions.toggleDone}>
+        <Menu.Item
+          className={itemClassName}
+          disabled={actions.doneHeld}
+          onClick={actions.toggleDone}
+        >
           <DoneIcon done={thread.completedAt !== undefined} />
-          {thread.completedAt === undefined ? "Mark done" : "Reopen"}
+          {doneWord(thread.completedAt !== undefined, actions.doneHeld)}
         </Menu.Item>
       )}
       <Menu.Item className={`${itemClassName} ${DANGER}`} onClick={actions.close}>

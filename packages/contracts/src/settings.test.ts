@@ -510,16 +510,21 @@ describe("panel and focus mode", () => {
     expect(cleared.layout).toEqual({});
   });
 
-  it("shows every overview section until one is turned off, storing only what is off", () => {
-    expect(overviewHiddenOf(DEFAULT_SETTINGS)).toEqual([]);
-    expect(overviewSectionsValue([])).toBeNull();
-    expect(overviewSectionsValue(["usage", "solo"])).toEqual({ solo: false, usage: false });
+  it("shows the overview's sections but usage by default, storing only what differs", () => {
+    expect(overviewHiddenOf(DEFAULT_SETTINGS)).toEqual(["usage"]);
+    expect(overviewSectionsValue(["usage"])).toBeNull();
+    expect(overviewSectionsValue(["usage", "solo"])).toEqual({ solo: false });
+    expect(overviewSectionsValue([])).toEqual({ usage: true });
 
     const off = applySettingsPatch(
       DEFAULT_SETTINGS,
       decodePatch({ layout: { overviewSections: overviewSectionsValue(["doneToday", "solo"]) } }),
     );
-    expect(off.layout?.overviewSections).toEqual({ solo: false, doneToday: false });
+    expect(off.layout?.overviewSections).toEqual({
+      solo: false,
+      doneToday: false,
+      usage: true,
+    });
     // In the order they sit in the column, whatever order they were turned off in.
     expect(overviewHiddenOf(off)).toEqual(["solo", "doneToday"]);
     expectRoundTrip(Settings, off);
@@ -529,7 +534,7 @@ describe("panel and focus mode", () => {
       DEFAULT_SETTINGS,
       decodePatch({ layout: { overviewSections: { pullRequests: true } } }),
     );
-    expect(overviewHiddenOf(shown)).toEqual([]);
+    expect(overviewHiddenOf(shown)).toEqual(["usage"]);
     const replaced = applySettingsPatch(
       off,
       decodePatch({ layout: { overviewSections: { usage: false } } }),
@@ -538,7 +543,7 @@ describe("panel and focus mode", () => {
     expect(() => decodePatch({ layout: { overviewSections: { solo: "no" } } })).toThrow();
 
     const cleared = applySettingsPatch(off, decodePatch({ layout: { overviewSections: null } }));
-    expect(overviewHiddenOf(cleared)).toEqual([]);
+    expect(overviewHiddenOf(cleared)).toEqual(["usage"]);
     expect(cleared.layout).toEqual({});
   });
 

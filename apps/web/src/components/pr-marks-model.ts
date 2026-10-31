@@ -475,6 +475,31 @@ export function prMarksOf(pr: PrFacts): PrMarks {
   };
 }
 
+/** The family of displays a mark is drawn from. */
+export type MarkGroup = "state" | "checks" | "review" | "threads" | "bot" | "merge";
+
+/**
+ * The one mark a one-line row shows: its checks or merge failing, else changes asked for, else a
+ * review or its threads still open, else its state. Checks still running are no worse than ok.
+ */
+export function worstPrMark(marks: PrMarks): { readonly group: MarkGroup; readonly mark: PrMark } {
+  const { state, checks, review, threads, bot, merge } = marks;
+  if (checks?.kind === "failing" || checks?.kind === "fixing") {
+    return { group: "checks", mark: checks };
+  }
+  if (merge?.kind === "conflicts" || merge?.kind === "refused") {
+    return { group: "merge", mark: merge };
+  }
+  if (review?.kind === "changes") return { group: "review", mark: review };
+  if (bot !== undefined && botAsksChanges(bot)) return { group: "bot", mark: bot };
+  if (review?.kind === "waiting") return { group: "review", mark: review };
+  if (threads !== undefined) return { group: "threads", mark: threads };
+  if (bot?.kind === "findings" || bot?.kind === "reviewerThreads") {
+    return { group: "bot", mark: bot };
+  }
+  return { group: "state", mark: state };
+}
+
 /** The PR's tooltip: its title and ref, its branch, then a line per mark. */
 export function prTooltipOf(pr: PrFacts, marks: PrMarks = prMarksOf(pr)): string {
   const ref = prRefText(pr);

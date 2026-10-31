@@ -3,6 +3,7 @@ import {
   DEFAULT_CLONE_FOLDER,
   notifyAboutOf,
   openAtLaunchOf,
+  OVERVIEW_HIDDEN_BY_DEFAULT,
   OVERVIEW_OPTIONAL_SECTIONS,
   sendKeyOf,
   type OverviewOptionalSection,
@@ -147,7 +148,7 @@ export function GeneralSection() {
         </SettingRow>
         <SettingRow
           label="Sidebar sections"
-          description="Which of the overview sidebar's optional sections show: solo threads, pull requests, Done today, and usage with worker slots at its foot."
+          description="Which of the overview sidebar's optional sections show: solo threads, pull requests, Done today, and usage with worker slots at its foot, off by default as the title bar's meter has them."
           keywords={[
             "overview",
             "sections",
@@ -157,7 +158,11 @@ export function GeneralSection() {
             "usage",
             "slots",
           ]}
-          onReset={overviewHidden.length === 0 ? undefined : () => setOverviewHidden([])}
+          onReset={
+            overviewHidden.join() === OVERVIEW_HIDDEN_BY_DEFAULT.join()
+              ? undefined
+              : () => setOverviewHidden(OVERVIEW_HIDDEN_BY_DEFAULT)
+          }
         >
           <SectionChecks hidden={overviewHidden} onChange={setOverviewHidden} />
         </SettingRow>

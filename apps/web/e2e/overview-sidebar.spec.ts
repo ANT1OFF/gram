@@ -156,7 +156,7 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   const other = workspaceRow(page, made.asks.other.workspaceId);
   await expect(other.locator("button[aria-current]")).toHaveCount(0);
   await expect(other.getByTestId("overview-workspace-asks")).toHaveText("1");
-  await expect(other.getByTestId("overview-workspace-workers")).toHaveAttribute("data-live", "1");
+  await expect(other.getByTestId("overview-workspace-row")).toHaveAttribute("data-live", "1");
   await expect(other.getByTestId("overview-feature")).toHaveAttribute(
     "data-feature",
     "invoice-export",
@@ -175,19 +175,24 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   await expect(features).toHaveCount(live.length);
   for (const [index, feature] of live.entries()) {
     await expect(features.nth(index)).toHaveAttribute("data-feature", feature.feature);
-    await expect(features.nth(index).getByTestId("overview-stage")).toHaveAttribute(
-      "data-station",
-      feature.station,
-    );
+    // No progress bar on the row: the stage is on its hover and in its name.
+    await expect(features.nth(index)).toHaveAttribute("data-station", feature.station);
+    await expect(features.nth(index).getByRole("heading")).toHaveAttribute("title", /^Stage: /);
+    await expect(features.nth(index).getByTestId("overview-stage")).toHaveCount(0);
     const workers = features.nth(index).getByTestId("overview-worker");
     await expect(workers).toHaveCount(feature.workers.length);
     for (const [at, each] of feature.workers.entries()) {
       await expect(workers.nth(at)).toHaveAttribute("data-thread-id", each.id);
       await expect(workers.nth(at).getByTestId("overview-worker-title")).toHaveText(each.title);
       const asking = (await workers.nth(at).getAttribute("data-asking")) === "true";
-      await expect(workers.nth(at).getByTestId("overview-worker-now")).toHaveText(
-        asking ? "asks you" : each.now,
-      );
+      // The now line is always in the row's name; on the row only if it says more than the dot.
+      const now = asking ? "asks you" : each.now;
+      expect(await workers.nth(at).getAttribute("aria-label")).toContain(`, ${now}`);
+      const line = workers.nth(at).getByTestId("overview-worker-now");
+      if (asking) await expect(line).toHaveText("asks you");
+      else if (["working", "briefed", "in review", "idle"].includes(now)) {
+        await expect(line).toHaveCount(0);
+      }
     }
   }
   // The cards and the overview say the same: one worker's now line on both.
@@ -212,6 +217,50 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   await expect(page.getByTestId("workspace-switcher-button")).toHaveAccessibleName(
     new RegExp(names[1]!),
   );
+});
+
+test("a worker's agent shows only when it isn't its orchestrator's, and always in its name and card", async ({
+  page,
+}) => {
+  const made = await start(page);
+  const glyph = worker(page, made.inReview).locator("svg");
+  await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
+  await expect(glyph).toHaveCount(0);
+  await worker(page, made.inReview).hover();
+  await expect(page.getByTestId("overview-worker-card-feature")).toContainText("Claude Code");
+  await page.mouse.move(1200, 400);
+
+  await page.evaluate((id) => {
+    const mock = window.gramMock!;
+    const { thread } = mock.world.summary(id as never);
+    mock.world.replaceThread({ ...thread, model: { agent: "codex", model: "gpt-5-codex" } });
+  }, made.inReview);
+  await expect(glyph).toHaveCount(1);
+  await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Codex, /);
+});
+
+test("an idle row fades after a day and comes back on hover; one needing you never does", async ({
+  page,
+}) => {
+  await start(page);
+  // Threads no mock script plays: a script moves its thread's status under the test.
+  const row = threadRow(page, "t-release");
+  const waiting = threadRow(page, "t-question");
+  await expect(waiting).toHaveAccessibleName(/, Needs input$/);
+  await page.evaluate(() => {
+    const mock = window.gramMock!;
+    for (const id of ["t-release", "t-question"]) {
+      const { thread } = mock.world.summary(id as never);
+      mock.world.replaceThread({ ...thread, lastActivityAt: Date.now() - 25 * 60 * 60_000 });
+    }
+  });
+  await expect(row).toHaveAttribute("data-settled", "true");
+  // As old, but it waits on the user, so it stays as it is.
+  await expect(waiting).not.toHaveAttribute("data-settled");
+  await page.mouse.move(1200, 400);
+  await expect(row).toHaveCSS("filter", /grayscale\(1\)/);
+  await row.hover();
+  await expect(row).not.toHaveCSS("filter", /grayscale\(1\)/);
 });
 
 test("a worker's hover card reads it: title, station, now line, PR and a 24-hour time", async ({
@@ -541,12 +590,12 @@ test("a parked solo thread waits behind the folded Parked line, and Park on a ro
   await page.getByRole("menuitem", { name: "Park", exact: true }).click();
   await expect(parked.locator('[data-thread-id="t-flaky"]')).toBeVisible();
   await expect(unparked(page).and(isRow("t-flaky"))).toHaveCount(0);
-  await expect(parkedLine(page)).toHaveText(new RegExp(`^Parked\\s*${before + 1}$`));
+  await expect(parkedLine(page)).toHaveAccessibleName(`Parked, ${before + 1}`);
   await threadRow(page, "t-flaky").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Unpark", exact: true }).click();
   await expect(unparked(page).and(isRow("t-flaky"))).toBeVisible();
   await expect(parked.locator('[data-thread-id="t-flaky"]')).toHaveCount(0);
-  await expect(parkedLine(page)).toHaveText(new RegExp(`^Parked\\s*${before}$`));
+  await expect(parkedLine(page)).toHaveAccessibleName(`Parked, ${before}`);
 });
 
 test("a solo or worker row's menu opens on a right-click or Shift+F10, held workers adding Hand back", async ({
@@ -716,7 +765,7 @@ test("an Open overview comes back Open after ⌘B, and stays beside the chat in 
   // Narrowing borrows from the overview's displayed width, never its saved width or Glass insets.
   const savedWidth = (await storedLayout(page))["sidebarWidth"];
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect.poll(async () => (await overview(page).boundingBox())!.width).toBe(280);
+  await expect.poll(async () => (await overview(page).boundingBox())!.width).toBe(248);
   expect((await storedLayout(page))["sidebarWidth"]).toBe(savedWidth);
 });
 
@@ -824,7 +873,7 @@ test("Automatic is open at 1440 px and compact at 1100 px, its tiles saying what
   const needs = await overview(page).getByTestId("overview-needs-you").getAttribute("data-count");
   // As its title counts them: the rows draw only near the view.
   const title = overview(page).getByTestId("overview-section-solo").getByRole("button").first();
-  const solo = Number((await title.textContent())?.match(/\d+$/)?.[0]);
+  const solo = Number((await title.getAttribute("aria-label"))?.match(/\d+$/)?.[0]);
   expect(solo).toBeGreaterThan(0);
 
   await page.setViewportSize({ width: 1100, height: 900 });
@@ -1167,11 +1216,13 @@ test("a worker still running after its feature is delivered shows with its step 
   const row = worker(page, made.doneToday);
   await expect(row).toBeVisible();
   await expect(row.getByTestId("overview-worker-dot")).toHaveAttribute("data-working", "true");
-  await expect(row.getByTestId("overview-worker-now")).toHaveText("working");
+  // One line: what it does, with the dot's "working" and its age in its name and hover card.
+  await expect(row.getByTestId("overview-worker-now")).toHaveCount(0);
   const line = row.getByTestId("overview-worker-step");
   await expect(line).not.toHaveText("");
   await expect(line).toContainText(/Tagging the release|git tag/);
-  await expect(row.getByTestId("overview-ago")).toBeVisible();
+  await expect(row.getByTestId("overview-ago")).toHaveCount(0);
+  await expect(row).toHaveAttribute("aria-label", /, working, .*last active \d{2}:\d{2}$/);
   // Its turn over, it leaves again.
   await page.evaluate((id) => window.gramMock!.simulateStatus(id as never, "idle"), made.doneToday);
   await expect(row).toHaveCount(0);
@@ -1182,8 +1233,7 @@ test("an orchestrator's line counts the same folded or open: its live workers, a
 }) => {
   const made = await start(page);
   const here = workspaceRow(page, made.workspaceId);
-  const count = here.getByTestId("overview-workspace-workers");
-  const state = here.getByTestId("overview-workspace-state");
+  const count = here.getByTestId("overview-workspace-row");
   const rows = here.getByTestId("overview-worker");
   await expect(rows.first()).toBeVisible();
   const live = await rows.count();
@@ -1192,8 +1242,15 @@ test("an orchestrator's line counts the same folded or open: its live workers, a
   const line = async () => {
     await expect(count).toHaveAttribute("data-live", String(live));
     await expect(count).toHaveAttribute("data-working", String(working));
-    // Its asks' count beside it never takes who works off the line.
-    await expect(state).toHaveText(`${working} working`);
+    // Its only number is what needs you: the rest is on its hover and in its name.
+    await expect(count).toHaveAttribute(
+      "title",
+      new RegExp(`^(\\w+( \\w+)? · )?${live} workers · ${working} working · `),
+    );
+    await expect(count).toHaveAttribute("aria-label", new RegExp(`, .*${working} working`));
+    await expect(count).toHaveAttribute("title", /Worker slots \d+ of \d+/);
+    await expect(here.getByTestId("overview-workspace-state")).toHaveCount(0);
+    await expect(here.getByTestId("overview-workspace-workers")).toHaveCount(0);
   };
   await line();
   await here.getByTestId("overview-workspace-fold").click();
@@ -1322,7 +1379,6 @@ test("an orchestrator folds its workers by its chevron or ← and →, keeps the
   const line = here.getByTestId("overview-workspace-row");
   const chevron = here.getByTestId("overview-workspace-fold");
   const workers = here.getByTestId("overview-worker");
-  const folded = here.getByTestId("overview-workspace-workers");
   const asksOf = async () =>
     Number((await here.getByTestId("overview-workspace-asks").textContent()) ?? "0");
   await expect(line).toHaveAttribute("aria-expanded", "true");
@@ -1331,7 +1387,7 @@ test("an orchestrator folds its workers by its chevron or ← and →, keeps the
   const live = await workers.count();
   expect(live).toBeGreaterThan(1);
   // Open, the line has the count it keeps folded.
-  await expect(folded).toHaveAttribute("data-live", String(live));
+  await expect(line).toHaveAttribute("data-live", String(live));
   const asks = await asksOf();
   expect(asks).toBeGreaterThan(0);
 
@@ -1346,15 +1402,9 @@ test("an orchestrator folds its workers by its chevron or ← and →, keeps the
   await expect(chevron).toHaveAccessibleName(/^Show .+'s workers$/);
   await expect(here).toHaveAttribute("data-folded", "true");
   await expect(workers.first()).toBeHidden();
-  await expect(folded).toBeVisible();
-  await expect(folded).toHaveAttribute("data-live", String(live));
+  await expect(line).toHaveAttribute("data-live", String(live));
   expect(await asksOf()).toBe(asks);
-  await expect(folded).toHaveAttribute(
-    "title",
-    new RegExp(`^${live} workers · .*${asks} needs? you$`),
-  );
-  const working = (await line.getAttribute("aria-label"))!.match(/(\d+) working/);
-  await expect(here.getByTestId("overview-workspace-state")).toHaveCount(working === null ? 0 : 1);
+  await expect(line).toHaveAttribute("title", new RegExp(`${live} workers · .*${asks} needs? you`));
   await expect(page).toHaveURL(new RegExp(`/t/${made.live}$`));
 
   // The line's click opens the orchestrator as before, and leaves the fold as it is.
@@ -1385,7 +1435,7 @@ test("an orchestrator folds its workers by its chevron or ← and →, keeps the
   await page.keyboard.press("ArrowRight");
   await expect(line).toHaveAttribute("aria-expanded", "true");
   await expect(workers.first()).toBeVisible();
-  await expect(folded).toHaveAttribute("data-live", String(live));
+  await expect(line).toHaveAttribute("data-live", String(live));
   await page.keyboard.press("ArrowRight");
   await expect(line).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("ArrowLeft");
@@ -1417,4 +1467,44 @@ test("an orchestrator folds its workers by its chevron or ← and →, keeps the
   await page.keyboard.press("ControlOrMeta+j");
   await expect(line).toHaveAttribute("aria-expanded", "true");
   await expect(workers.first()).toBeFocused();
+});
+
+test("a solo thread at work trades its age for a pulsing dot, and can't be marked done until it rests", async ({
+  page,
+}) => {
+  await start(page);
+  // A thread no mock script plays: a script moves its thread's status under the test.
+  const id = "t-release";
+  const row = threadRow(page, id);
+  await expect(row).toBeVisible();
+  const dot = row.locator("[data-working]");
+  const age = row.locator("span.tabular-nums");
+  await page.evaluate((threadId) => {
+    window.gramMock!.simulateStatus(threadId as never, "idle");
+  }, id);
+  await expect(age).toBeVisible();
+  await expect(dot).toHaveCount(0);
+
+  await page.evaluate((threadId) => {
+    window.gramMock!.simulateStatus(threadId as never, "running", "Running bun test");
+  }, id);
+  await expect(dot).toHaveCount(1);
+  await expect(age).toHaveCount(0);
+  // Off the row, its last activity stays on its hover and in its name.
+  await expect(row).toHaveAttribute("title", /^Last activity \d{2}:\d{2}$/);
+  await expect(row).toHaveAttribute("aria-label", /, Working, Last activity \d{2}:\d{2}$/);
+
+  await row.click({ button: "right" });
+  await expect(page.getByTestId("menu-done")).toHaveAttribute("data-disabled", /.*/);
+  await expect(page.getByTestId("menu-done")).toHaveText("Mark done after it stops");
+  await page.keyboard.press("Escape");
+
+  await page.evaluate((threadId) => {
+    window.gramMock!.simulateStatus(threadId as never, "idle");
+  }, id);
+  await expect(age).toBeVisible();
+  await row.click({ button: "right" });
+  await expect(page.getByTestId("menu-done")).not.toHaveAttribute("data-disabled");
+  await expect(page.getByTestId("menu-done")).toHaveText("Mark done");
+  await page.keyboard.press("Escape");
 });

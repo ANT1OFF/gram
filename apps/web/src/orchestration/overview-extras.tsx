@@ -1,11 +1,11 @@
 import type { FinishedWorker, WorkspaceId } from "@gram/contracts";
 import { useQueries } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
-import { PrMarkIcon, PrMarkRow } from "@/components/pr-marks";
-import { prMarksOf, prTooltipOf } from "@/components/pr-marks-model";
+import { PrMarkIcon } from "@/components/pr-marks";
+import { prMarksOf, prTooltipOf, worstPrMark } from "@/components/pr-marks-model";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { useOpenPrRows } from "@/reviews/open-prs";
@@ -22,21 +22,24 @@ import {
   doneTodayRows,
   footMeters,
   overviewPrRows,
+  PR_KIND_LABEL,
   prSubLine,
   workerSlots,
   type DoneTodayRow,
   type OverviewPrRow,
 } from "./overview-extras-model";
-import { ROW, Section, STOP } from "./overview-section";
+import { ROW, Section, SETTLED, STOP } from "./overview-section";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
 // The overview sidebar's extras: Pull requests and Done
-// today, folded until opened, and the usage meters and worker slots at its foot. Each reads what
-// ⌘J and the title bar's meter read, so they all say the same.
+// today, folded until opened and gone with nothing in them, and the usage meters and worker slots
+// at its foot, off by default. Each reads what ⌘J and the title bar's meter read, so they all say
+// the same.
 
 /**
- * The review requests and the user's open PRs in compact rows; a click opens the PR on GitHub, as there. A list placed nowhere is left out here too, and
- * with nothing to list and no poll that succeeded (`gh` signed out) the section stays away.
+ * The review requests and the user's open PRs in one-line rows, under a sub-heading each when both
+ * are there; a click opens the PR on GitHub, as there. A list placed nowhere is left out here too,
+ * and with nothing to list the section stays away.
  */
 export function OverviewPullRequests() {
   const { data: requests } = useReviewRequests();
@@ -48,29 +51,38 @@ export function OverviewPullRequests() {
       overviewPrRows(requests?.requests ?? [], own.rows, { reviews: reviewsShown, own: ownShown }),
     [requests, own.rows, reviewsShown, ownShown],
   );
-  const polled =
-    (reviewsShown && requests?.checkedAt !== undefined) ||
-    (ownShown && own.checkedAt !== undefined);
-  if (rows.length === 0 && !polled) return null;
+  if (rows.length === 0) return null;
+  const both = rows[0]?.kind !== rows.at(-1)?.kind;
   return (
     <Section id="pullRequests" title="Pull requests" count={rows.length}>
-      {rows.length === 0 ? (
-        <p className="px-1.5 py-1 text-xs text-muted-foreground">None right now.</p>
-      ) : (
-        rows.map((row) => <PrRow key={row.key} row={row} />)
-      )}
+      {rows.map((row, i) => (
+        <Fragment key={row.key}>
+          {both && rows[i - 1]?.kind !== row.kind && (
+            <h3
+              data-testid="overview-pr-kind"
+              className="px-1.5 pt-1 pb-0.5 text-xs font-medium text-muted-foreground"
+            >
+              {PR_KIND_LABEL[row.kind]}
+            </h3>
+          )}
+          <PrRow row={row} />
+        </Fragment>
+      ))}
     </Section>
   );
 }
 
 /**
- * A PR in the vocabulary's marks: its state's glyph in GitHub's colour, its title, then under it
- * `repo#n · author` and its checks, review, bot and merge marks. Its tooltip spells them out.
+ * A PR on one line: its worst mark in the vocabulary (`worstPrMark`) and its title. Its tooltip and
+ * name say the rest: `repo#n · author`, which list it is on and every mark.
  */
 function PrRow({ row }: { row: OverviewPrRow }) {
   const api = useApi();
   const sub = prSubLine(row);
   const marks = useMemo(() => prMarksOf(row.facts), [row.facts]);
+  const worst = worstPrMark(marks);
+  const label = PR_KIND_LABEL[row.kind];
+  const words = worst.group === "state" ? row.glyph.word : `${row.glyph.word}, ${worst.mark.word}`;
   return (
     <button
       type="button"
@@ -79,29 +91,21 @@ function PrRow({ row }: { row: OverviewPrRow }) {
       data-kind={row.kind}
       data-ref={row.ref}
       data-pr={row.pr}
-      aria-label={`Open ${row.ref} on GitHub: ${row.title}, ${row.glyph.word}`}
-      title={prTooltipOf(row.facts, marks)}
+      aria-label={`Open ${row.ref} on GitHub: ${row.title}, ${words}, ${sub}, ${label}`}
+      title={`${label} · ${sub}\n${prTooltipOf(row.facts, marks)}`}
       onClick={() => void openExternalUrl(api, row.url).catch(() => {})}
       className={ROW}
     >
       <span
         data-testid="overview-pr-glyph"
         data-state={row.glyph.kind}
+        data-worst={worst.mark.kind}
         className="flex justify-self-center"
       >
-        <PrMarkIcon group="state" mark={marks.state} />
+        <PrMarkIcon group={worst.group} mark={worst.mark} />
       </span>
-      <span data-testid="overview-pr-title" className="truncate">
+      <span data-testid="overview-pr-title" className="col-span-2 truncate">
         {row.title}
-      </span>
-      <span className="text-xs text-muted-foreground">{row.kind}</span>
-      <span className="col-span-2 col-start-2 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-        <span data-testid="overview-pr-sub" className="min-w-0 truncate">
-          {sub}
-        </span>
-        <span data-testid="overview-pr-marks" className="flex shrink-0 items-center gap-1">
-          <PrMarkRow marks={marks} />
-        </span>
       </span>
     </button>
   );
@@ -125,8 +129,8 @@ function useFinishedWorkersOf(ids: readonly WorkspaceId[]) {
 }
 
 /**
- * The workers that finished today in every workspace, as ⌘J's Done today lists each, latest first;
- * a click opens one as ⌘J does.
+ * The workers that finished today in every workspace, as ⌘J's Done today lists each, latest first,
+ * one line each; a click opens one as ⌘J does. With none, the section stays away.
  */
 export function OverviewDoneToday() {
   const workspaces = useWorkspaces();
@@ -149,17 +153,17 @@ export function OverviewDoneToday() {
   const rows = useThreadsStore(
     useSame((s) => doneTodayRows(sources, { byId: s.byId, statusDetail: s.statusDetail, now })),
   );
+  if (rows.length === 0) return null;
   return (
     <Section id="doneToday" title="Done today" count={rows.length}>
-      {rows.length === 0 ? (
-        <p className="px-1.5 py-1 text-xs text-muted-foreground">Nothing finished yet today.</p>
-      ) : (
-        rows.map((row) => <DoneRow key={row.threadId} row={row} />)
-      )}
+      {rows.map((row) => (
+        <DoneRow key={row.threadId} row={row} />
+      ))}
     </Section>
   );
 }
 
+/** A finished worker: grey until hovered, which says its workspace and what became of it. */
 function DoneRow({ row }: { row: DoneTodayRow }) {
   const openThread = useOpenThread();
   return (
@@ -171,8 +175,9 @@ function DoneRow({ row }: { row: DoneTodayRow }) {
       data-workspace-id={row.workspaceId}
       data-merged={row.merged || undefined}
       aria-label={`${row.title}, ${row.sub}, ${row.time}`}
+      title={row.sub}
       onClick={() => openThread(row.threadId)}
-      className={ROW}
+      className={cn(ROW, SETTLED)}
     >
       <span
         aria-hidden
@@ -186,12 +191,6 @@ function DoneRow({ row }: { row: DoneTodayRow }) {
       </span>
       <span data-testid="overview-done-time" className="text-xs text-muted-foreground tabular-nums">
         {row.time}
-      </span>
-      <span
-        data-testid="overview-done-sub"
-        className="col-span-2 col-start-2 truncate text-xs text-muted-foreground"
-      >
-        {row.sub}
       </span>
     </button>
   );

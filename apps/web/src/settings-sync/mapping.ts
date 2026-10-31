@@ -75,7 +75,7 @@ const overviewPatch = (prev: SyncedSettings, next: SyncedSettings) =>
 const sameList = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((value, index) => value === b[index]);
 
-// Only what is off is stored; with every section on, the field is cleared.
+// Only what differs from the default is stored; with every section at its default, the field is cleared.
 const overviewSectionsPatch = (prev: SyncedSettings, next: SyncedSettings) =>
   sameList(next.overviewHidden, prev.overviewHidden)
     ? {}

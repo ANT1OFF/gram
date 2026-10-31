@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 describe("createSettingsSync", () => {
-  it("reads the overview sections turned off, and saves a change as only what is off", async () => {
+  it("reads the overview sections off, and saves a change as only what differs from the default", async () => {
     useLayoutStore.setState({ overviewHidden: [] });
     const api = fakeApi({
       ...DEFAULT_SETTINGS,
@@ -78,16 +78,16 @@ describe("createSettingsSync", () => {
     });
     const { sync } = setup(api);
     await sync.start();
-    expect(useLayoutStore.getState().overviewHidden).toEqual(["doneToday"]);
+    expect(useLayoutStore.getState().overviewHidden).toEqual(["doneToday", "usage"]);
     await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
     expect(api.updateSettings).not.toHaveBeenCalled();
 
-    useLayoutStore.getState().setOverviewHidden(["doneToday", "usage"]);
+    useLayoutStore.getState().setOverviewHidden(["doneToday"]);
     await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
     expect(api.updateSettings).toHaveBeenLastCalledWith({
-      layout: { overviewSections: { doneToday: false, usage: false } },
+      layout: { overviewSections: { doneToday: false, usage: true } },
     });
-    useLayoutStore.getState().setOverviewHidden([]);
+    useLayoutStore.getState().setOverviewHidden(["usage"]);
     await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
     expect(api.updateSettings).toHaveBeenLastCalledWith({ layout: { overviewSections: null } });
     sync.dispose();

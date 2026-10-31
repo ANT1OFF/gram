@@ -39,6 +39,7 @@ import {
   PR_STATE_DISPLAY,
   prLifecycleOf,
   prMarksOf,
+  worstPrMark,
   prRefText,
   prStateMarkOf,
   prTooltipOf,
@@ -339,5 +340,39 @@ describe("a whole PR", () => {
 
   it("leaves unknown checks unmarked rather than guessing", () => {
     expect(prMarksOf({ repo: "acme/api", number: 1, state: "OPEN" }).checks).toBeUndefined();
+  });
+});
+
+const worst = (pr: Parameters<typeof prMarksOf>[0]) => {
+  const { group, mark } = worstPrMark(prMarksOf(pr));
+  return `${group}:${mark.kind}`;
+};
+
+describe("worstPrMark", () => {
+  const open = { repo: "acme/api", number: 1, state: "OPEN" } as const;
+  it("takes failing over changes requested, over a review, over ok", () => {
+    const review = { reviewDecision: "REVIEW_REQUIRED" } as const;
+    const changes = { reviewDecision: "CHANGES_REQUESTED" } as const;
+    expect(worst({ ...open, ...changes, checks: "failing" })).toBe("checks:failing");
+    expect(worst({ ...open, ...changes, checks: "passing" })).toBe("review:changes");
+    expect(worst({ ...open, ...review, checks: "passing" })).toBe("review:waiting");
+    expect(worst({ ...open, checks: "passing" })).toBe("state:open");
+    expect(worst({ ...open, reviewDecision: "APPROVED", checks: "passing" })).toBe("state:open");
+  });
+
+  it("counts conflicts as failing, the bot's asks as changes and threads as a review", () => {
+    expect(worst({ ...open, mergeState: "DIRTY", reviewDecision: "CHANGES_REQUESTED" })).toBe(
+      "merge:conflicts",
+    );
+    const blockers = { kind: "blockers", label: "1 blocker", text: "1 blocker" } as const;
+    expect(worst({ ...open, bot: blockers, reviewDecision: "REVIEW_REQUIRED" })).toBe(
+      "bot:blockers",
+    );
+    expect(worst({ ...open, peopleThreads: 2 })).toBe("threads:threads");
+  });
+
+  it("leaves checks still running to the tooltip, and a draft to its state", () => {
+    expect(worst({ ...open, checks: "pending" })).toBe("state:open");
+    expect(worst({ ...open, isDraft: true })).toBe("state:draft");
   });
 });

@@ -1,5 +1,4 @@
 import {
-  FEATURE_STATIONS,
   STATION_LABELS,
   cardStationOf,
   type FeatureCard,
@@ -61,7 +60,7 @@ export interface OverviewWorkerRow {
 
 export interface OverviewFeature {
   readonly feature: string;
-  /** The card's station: where its five stage ticks stand. */
+  /** The card's station, the least advanced of its live workers'. */
   readonly station: FeatureStation;
   readonly rows: readonly OverviewWorkerRow[];
   /** Briefs of the feature held until a usage limit resets, soonest first. */
@@ -183,12 +182,6 @@ export const overviewFeatures = (
   return features;
 };
 
-/** Each of the five stage ticks of a feature at `station`: passed, the current one, or ahead. */
-export const stageTicks = (station: FeatureStation): readonly ("past" | "current" | "ahead")[] => {
-  const at = FEATURE_STATIONS.indexOf(station);
-  return FEATURE_STATIONS.map((_, i) => (i < at ? "past" : i === at ? "current" : "ahead"));
-};
-
 /** What the window knows live of a row's thread, beside its card. */
 export interface RowLive {
   readonly status?: ThreadStatus | undefined;
@@ -226,6 +219,16 @@ export const stationDotClass = (station: FeatureStation, failed: boolean): strin
       : station === "briefed"
         ? "bg-muted-foreground/50"
         : "bg-status-working";
+
+/** Now lines that only say what a row's dot says. */
+const DOT_WORDS: ReadonlySet<string> = new Set(["working", "briefed", "in review", "idle"]);
+
+/**
+ * Whether a worker row spends its second line on its now line: for an ask, a failure, or anything
+ * that says more than its dot. The rest stays in its name and hover card.
+ */
+export const nowLineShown = (row: Pick<OverviewWorkerRow, "now" | "askKey" | "failed">): boolean =>
+  row.askKey !== undefined || row.failed || !DOT_WORDS.has(row.now);
 
 /**
  * What a worker row's step line says: its plan's headline, else what it runs. A plan's next step
@@ -284,19 +287,16 @@ export const overviewSummary = (
   return parts.length > 0 ? parts.join(" · ") : state;
 };
 
-/** An orchestrator's line, folded or open: its dot, whether it pulses, and the words after its count. */
+/** An orchestrator's line, folded or open: its dot, and whether it pulses. */
 export interface OrchestratorLine {
   readonly dot: string;
   readonly pulse: boolean;
-  /** "2 working", else its state word; paused or parked first. */
-  readonly phrase: string;
 }
 
 /**
  * An orchestrator's line, whatever its number of workers: amber while something waits on the user,
  * hollow while paused or parked, the working colour while it or any of its workers works (the
- * dot pulsing as a working worker's does), else idle. The words say how many of its workers work
- * now, else its state.
+ * dot pulsing as a working worker's does), else idle.
  */
 export const orchestratorLine = (
   state: OverviewState,
@@ -304,7 +304,6 @@ export const orchestratorLine = (
 ): OrchestratorLine => {
   const held = state === "paused" || state === "parked";
   const busy = !held && (state === "working" || working > 0);
-  const counted = working > 0 ? `${working} working` : undefined;
   return {
     dot:
       asks > 0
@@ -315,7 +314,6 @@ export const orchestratorLine = (
             ? "bg-status-working"
             : "bg-status-idle",
     pulse: busy && asks === 0,
-    phrase: counted === undefined ? state : held ? `${state} · ${counted}` : counted,
   };
 };
 
@@ -329,12 +327,31 @@ export interface FoldedSummary {
   readonly asks: number;
 }
 
-/** An orchestrator's summary in words, for its line's label: "3 workers · 1 working · 2 need you". */
+/** An orchestrator's summary in words: "3 workers · 1 working · 2 need you". */
 export const foldedSummaryText = ({ live, working, asks }: FoldedSummary): string =>
   [
     `${live} ${live === 1 ? "worker" : "workers"}`,
     ...(working > 0 ? [`${working} working`] : []),
     ...(asks > 0 ? [`${asks} ${asks === 1 ? "needs" : "need"} you`] : []),
+  ].join(" · ");
+
+/** Whether an orchestrator's line keeps its state word: it does not work, whatever its dot says. */
+export const stateWordShown = (state: OverviewState): boolean =>
+  state === "paused" || state === "parked";
+
+/**
+ * All an orchestrator's line leaves to its hover and its name, its state first unless the count says
+ * it: "paused · 3 workers · 1 working · 2 need you · Worker slots 6 of 8 · 1 held".
+ */
+export const orchestratorHover = (
+  state: OverviewState,
+  summary: FoldedSummary,
+  slots: string | undefined,
+): string =>
+  [
+    ...(state === "working" && summary.working > 0 ? [] : [state]),
+    foldedSummaryText(summary),
+    ...(slots === undefined ? [] : [`Worker slots ${slots}`]),
   ].join(" · ");
 
 /**

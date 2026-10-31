@@ -157,7 +157,7 @@ test("empty sidebar keeps all five top actions reachable", async ({ page }) => {
     for (const summary of mock.world.threads()) await mock.closeThread(summary.thread.id);
   });
   const sidebar = page.getByTestId("overview-sidebar");
-  await expect(sidebar.getByTestId("overview-section-solo")).toContainText("None.");
+  await expect(sidebar.getByTestId("overview-section-solo")).toHaveCount(0);
   for (const name of names)
     await expect(sidebar.getByRole("button", { name, exact: true })).toBeVisible();
   await sidebar.getByRole("button", { name: "Usage", exact: true }).click();

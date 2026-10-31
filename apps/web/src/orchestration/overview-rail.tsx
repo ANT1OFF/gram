@@ -1,10 +1,11 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
-import type {
-  OrchestratorLedger,
-  ThreadId,
-  ThreadSummary,
-  WorkspaceId,
-  WorkspaceState,
+import {
+  STATION_LABELS,
+  type OrchestratorLedger,
+  type ThreadId,
+  type ThreadSummary,
+  type WorkspaceId,
+  type WorkspaceState,
 } from "@gram/contracts";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import {
@@ -40,6 +41,7 @@ import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
 import {
   overviewState,
+  orchestratorHover,
   overviewSummary,
   tileLetters,
   tileWorking,
@@ -49,9 +51,9 @@ import {
   besideKey,
   overviewKeys,
   SoloRow,
-  StageTicks,
   switchOverview,
   OrchestratorAtWork,
+  useOrchestratorAgent,
   useOverviewFeatures,
   WorkerRow,
 } from "./overview-sidebar";
@@ -60,6 +62,7 @@ import { peek } from "./peek-store";
 import { workingWorkerThreads } from "./tree-model";
 import { NeedsYouPopover } from "./needs-you-popover";
 import { useNeedsYou } from "./use-needs-you";
+import { ledgerSlotsText } from "./overview-extras-model";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { useWorkspaces } from "./use-orchestration";
 
@@ -233,8 +236,9 @@ function WorkspaceTile({
   const switchTo = useSwitchWorkspace();
   const id = state.workspace.id;
   // How many of its workers work, by their tones, as the open overview's line counts them.
-  const { working } = useWorkerTally(id, ledger, asking);
+  const { live, working } = useWorkerTally(id, ledger, asking);
   const summary = overviewSummary(word, { working, asks });
+  const hover = orchestratorHover(word, { live, working, asks }, ledgerSlotsText(ledger));
   const ringing = tileWorking(word, working);
   return (
     <Flyout
@@ -247,7 +251,7 @@ function WorkspaceTile({
           data-workspace-id={id}
           data-state={word}
           aria-current={here || undefined}
-          aria-label={`${state.workspace.name}, ${summary}`}
+          aria-label={`${state.workspace.name}, ${hover}`}
           onClick={() => switchTo(state.workspace)}
           className={cn(TILE, (word === "paused" || word === "parked") && "opacity-60")}
         />
@@ -488,6 +492,7 @@ const Empty = ({ children }: { children: ReactNode }) => (
 /** The workspace the window is on: its live workers by feature, the open overview's rows. */
 function CurrentWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
   const features = useOverviewFeatures(workspaceId);
+  const orchestratorAgent = useOrchestratorAgent(workspaceId);
   const rows = features.filter((feature) => feature.rows.length > 0);
   if (rows.length === 0) {
     return (
@@ -499,16 +504,17 @@ function CurrentWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
   return rows.map((feature) => (
     <section
       key={feature.feature}
-      aria-label={feature.feature}
+      aria-label={`${feature.feature}, ${STATION_LABELS[feature.station]}`}
       data-testid="overview-feature"
       data-feature={feature.feature}
+      data-station={feature.station}
       className="flex flex-col"
     >
-      <h4 className="flex items-center gap-2 px-1.5 pt-1 pb-0.5 text-xs font-normal">
-        <span className="min-w-0 flex-1 truncate font-medium text-muted-foreground">
-          {feature.feature}
-        </span>
-        <StageTicks station={feature.station} />
+      <h4
+        title={`Stage: ${STATION_LABELS[feature.station]}`}
+        className="truncate px-1.5 pt-1 pb-0.5 text-xs font-medium text-muted-foreground"
+      >
+        {feature.feature}
       </h4>
       {feature.rows.map((row) => (
         <WorkerRow
@@ -516,6 +522,7 @@ function CurrentWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
           row={row}
           feature={feature.feature}
           updatedAt={feature.updatedAt}
+          orchestratorAgent={orchestratorAgent}
           card={false}
         />
       ))}

@@ -8,6 +8,8 @@ import {
   rowStatus,
   runningSummary,
   runningWork,
+  SETTLED_AFTER_MS,
+  settledRow,
   STATUS_DISPLAY,
   statusHint,
 } from "./status";
@@ -163,5 +165,26 @@ describe("rowStatus", () => {
   it("never lets completion hide a live status", () => {
     expect(rowStatus(merged, "needsInput", undefined).label).toBe("Needs input");
     expect(rowStatus(merged, "running", undefined).label).toBe("Working");
+  });
+});
+
+describe("settledRow", () => {
+  const DAY = SETTLED_AFTER_MS;
+  const at = 1_000_000_000;
+  const resting = { working: false, running: undefined };
+
+  it("fades a resting row after a day, and not before", () => {
+    expect(settledRow("idle", resting, at, at + DAY)).toBe(true);
+    expect(settledRow("cold", resting, at, at + DAY)).toBe(true);
+    expect(settledRow("ended", resting, at, at + DAY)).toBe(true);
+    expect(settledRow("idle", resting, at, at + DAY - 1)).toBe(false);
+  });
+
+  it("never fades what works or waits on the user, however old", () => {
+    expect(settledRow("needsApproval", resting, at, at + 2 * DAY)).toBe(false);
+    expect(settledRow("needsInput", resting, at, at + 2 * DAY)).toBe(false);
+    expect(settledRow("error", resting, at, at + 2 * DAY)).toBe(false);
+    expect(settledRow("idle", { working: true }, at, at + 2 * DAY)).toBe(false);
+    expect(settledRow("idle", { working: false, running: 1 }, at, at + 2 * DAY)).toBe(false);
   });
 });

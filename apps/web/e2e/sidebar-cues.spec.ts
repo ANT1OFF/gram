@@ -7,9 +7,10 @@ test("a row says its status, the opened thread its label and fork, and a bookmar
   // Open no thread: a playing script changes statuses under the clicks.
   await page.goto("/");
 
-  // The overview's row says the status in words as well as its dot.
+  // The overview's row says the status in words as well as its dot, and at work its last activity,
+  // which has left the row for its hover and name.
   const docs = threadRow(page, "t-docs");
-  await expect(docs).toHaveAccessibleName(/, Working$/);
+  await expect(docs).toHaveAccessibleName(/, Working, Last activity \d{2}:\d{2}$/);
 
   // Opened, the pane header carries the label's tint and where it was forked from.
   await docs.click();

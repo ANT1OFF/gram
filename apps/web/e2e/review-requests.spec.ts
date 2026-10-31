@@ -22,9 +22,10 @@ test("review requests list in the overview, notify when new and open on GitHub",
   await unfoldPullRequests(page);
   const requests = overviewRows(page, "review");
   await expect(requests).toHaveCount(2);
-  await expect(
-    requests.and(page.locator('[data-pr="example/api#530"]')).getByTestId("overview-pr-sub"),
-  ).toHaveText("api#530 · jordan");
+  await expect(requests.and(page.locator('[data-pr="example/api#530"]'))).toHaveAttribute(
+    "title",
+    /^Review requests · api#530 · jordan\n/,
+  );
 
   await page.evaluate(() =>
     window.gramMock?.simulateReviewRequest({

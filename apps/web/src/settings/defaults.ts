@@ -13,6 +13,7 @@ import {
   noticeActionsOn,
   notifyAboutOf,
   openAtLaunchOf,
+  OVERVIEW_HIDDEN_BY_DEFAULT,
   overviewHiddenOf,
   overviewSidebarOf,
   reviewRequestsOn,
@@ -89,7 +90,7 @@ export const GENERAL_DEFAULTS = defaults({
     read: overviewHiddenOf,
     reset: { layout: { overviewSections: null } },
     // Laid out from the layout store too, which the settings sync keeps.
-    afterRestore: () => useLayoutStore.getState().setOverviewHidden([]),
+    afterRestore: () => useLayoutStore.getState().setOverviewHidden(OVERVIEW_HIDDEN_BY_DEFAULT),
   },
   defaultFolder: {
     label: "Default folder",

@@ -85,9 +85,15 @@ export const overviewPrRows = (
   })),
 ];
 
-/** The line under a PR's title: `repo#n · author`. */
+/** Its `repo#n · author`, on its row's hover. */
 export const prSubLine = (row: Pick<OverviewPrRow, "ref" | "author">): string =>
   row.author === undefined || row.author === "" ? row.ref : `${row.ref} · ${row.author}`;
+
+/** How each of a PR row's kinds is named: its sub-heading, and on its hover. */
+export const PR_KIND_LABEL: Record<OverviewPrRow["kind"], string> = {
+  review: "Review requests",
+  yours: "Your PRs",
+};
 
 /** One workspace's facts for Done today. */
 export interface DoneTodaySource {
@@ -196,6 +202,12 @@ export const footMeters = (limits: UsageLimits, now: number): FootMeter[] =>
       },
     ];
   });
+
+/** A ledger's worker slots in words, for its orchestrator's hover; absent until it is read. */
+export const ledgerSlotsText = (
+  ledger: Pick<OrchestratorLedger, "budget" | "held"> | undefined,
+): string | undefined =>
+  ledger === undefined ? undefined : workerSlots(ledger.budget, ledger.held?.length ?? 0).text;
 
 /** The most pips the slots row draws; a bigger cap still counts in words. */
 export const MAX_SLOT_PIPS = 12;

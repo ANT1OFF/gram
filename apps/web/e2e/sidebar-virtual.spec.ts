@@ -76,7 +76,7 @@ test("150 solo threads draw a few dozen rows, laid out as the whole list would b
 }) => {
   await seed(page);
   const title = solo(page).getByRole("button").first();
-  const listed = Number((await title.textContent())?.match(/\d+$/)?.[0]);
+  const listed = Number((await title.getAttribute("aria-label"))?.match(/\d+$/)?.[0]);
   expect(listed).toBeGreaterThanOrEqual(COUNT);
   const drawn = await rows(page).count();
   expect(drawn).toBeGreaterThan(5);
@@ -154,7 +154,7 @@ test("the arrows walk the rows in order past the drawn ones, and Home and End re
   // End lands on the Done line under the list, then up is the Parked line; up from it is the list's
   // last row, drawn only then, and up again the one before.
   const listed = Number(
-    (await solo(page).getByRole("button").first().textContent())?.match(/\d+$/)?.[0],
+    (await solo(page).getByRole("button").first().getAttribute("aria-label"))?.match(/\d+$/)?.[0],
   );
   await page.keyboard.press("End");
   await expect(overview(page).getByTestId("overview-done").getByRole("button")).toBeFocused();
@@ -342,7 +342,7 @@ test("with nothing after the list, End lands on its last row though it wasn't dr
   await expect(overview(page).getByTestId("overview-parked")).toHaveCount(0);
   await expect(overview(page).getByTestId("overview-done")).toHaveCount(0);
   const listed = Number(
-    (await solo(page).getByRole("button").first().textContent())?.match(/\d+$/)?.[0],
+    (await solo(page).getByRole("button").first().getAttribute("aria-label"))?.match(/\d+$/)?.[0],
   );
   await rows(page).first().focus();
   await page.keyboard.press("End");
@@ -371,6 +371,13 @@ test("rows in view stay put when what is above them grows, as the browser keeps 
   page,
 }) => {
   await seed(page);
+  // A workspace, so Orchestrators is there: an empty section stays away.
+  await page.evaluate(async () => {
+    const mock = window.gramMock!;
+    const home = mock.world.projects()[0]!;
+    await mock.saveWorkspace({ name: "docs", projectIds: [home.id], homeProjectId: home.id });
+  });
+  await expect(overview(page).getByTestId("overview-section-orchestrators")).toBeVisible();
   await scrollOverview(page, 2_000);
   const row = rows(page).and(page.getByRole("button", { name: /^Quiet thread 60,/ }));
   await expect(row).toBeInViewport();

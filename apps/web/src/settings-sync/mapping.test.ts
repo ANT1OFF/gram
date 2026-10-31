@@ -88,16 +88,21 @@ describe("settingsPatch", () => {
     expect(settingsPatch(hidden, { ...hidden })).toBeUndefined();
   });
 
-  it("saves the overview sections turned off, only them, and clears the field with all on", () => {
+  it("saves the overview sections unlike their default, and clears the field with all at it", () => {
+    const standard: SyncedSettings = { ...base, overviewHidden: ["usage"] };
     const off: SyncedSettings = { ...base, overviewHidden: ["solo", "usage"] };
-    expect(settingsPatch(base, off)).toEqual({
-      layout: { overviewSections: { solo: false, usage: false } },
+    expect(settingsPatch(standard, off)).toEqual({
+      layout: { overviewSections: { solo: false } },
     });
-    expect(settingsPatch(off, base)).toEqual({ layout: { overviewSections: null } });
+    expect(settingsPatch(off, standard)).toEqual({ layout: { overviewSections: null } });
+    // Usage is off by default, so turning it on is what is stored.
+    expect(settingsPatch(standard, base)).toEqual({
+      layout: { overviewSections: { usage: true } },
+    });
     expect(settingsPatch(off, { ...off, overviewHidden: ["solo", "usage"] })).toBeUndefined();
     // With another layout change, both go in the one layout patch.
-    expect(settingsPatch(base, { ...off, focusMode: true })).toEqual({
-      layout: { focusMode: true, overviewSections: { solo: false, usage: false } },
+    expect(settingsPatch(standard, { ...off, focusMode: true })).toEqual({
+      layout: { focusMode: true, overviewSections: { solo: false } },
     });
   });
 

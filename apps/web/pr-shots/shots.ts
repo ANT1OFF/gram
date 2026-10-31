@@ -1930,8 +1930,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "overview-sidebar-extras",
-    title:
-      "The overview at 1440 px with Pull requests and Done today opened, and its foot: usage meters and worker slots",
+    title: "The overview at 1440 px with Pull requests and Done today opened",
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
       for (const id of ["pullRequests", "doneToday"]) {
@@ -1942,8 +1941,7 @@ export const SHOTS: readonly Shot[] = [
         if ((await title.getAttribute("aria-expanded")) === "false") await title.click();
       }
       await page.getByTestId("overview-done").first().waitFor();
-      await page.getByTestId("overview-foot").waitFor();
-      // Done today sits last in the column, above the foot.
+      // Done today sits last in the column.
       await page.getByTestId("overview-done").last().scrollIntoViewIfNeeded();
       // Off the column, so no row shows its hover.
       await page.mouse.move(1200, 400);

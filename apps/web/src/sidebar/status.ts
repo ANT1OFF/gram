@@ -234,6 +234,21 @@ export const rowStatus = (
   return { ...display, title: display.label, working: false };
 };
 
+/** How long a resting row stays as it is before it fades. */
+export const SETTLED_AFTER_MS = 86_400_000;
+
+/** Whether a row has rested for a day: nothing runs under it and nothing waits on the user. */
+export const settledRow = (
+  status: ThreadStatus,
+  display: Pick<RowStatus, "working" | "running">,
+  lastActivityAt: number,
+  now: number,
+): boolean =>
+  (status === "idle" || status === "cold" || status === "ended") &&
+  !display.working &&
+  display.running === undefined &&
+  now - lastActivityAt >= SETTLED_AFTER_MS;
+
 /**
  * A thread's status as every row, header and list draws it: `rowStatus` over its summary, so work
  * running under it, a compaction and its completion show wherever it does. `detail` is its live

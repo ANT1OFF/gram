@@ -163,7 +163,7 @@ export function useScopeCommands(
           label: thread.parked ? "Unpark thread" : "Park thread",
           run: actions.togglePark,
         },
-        ...(actions.toggleDone === undefined
+        ...(actions.toggleDone === undefined || actions.doneHeld
           ? []
           : [
               {

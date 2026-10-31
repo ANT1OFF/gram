@@ -5,12 +5,14 @@ import {
   ASKS_YOU,
   foldByKey,
   foldedSummaryText,
+  nowLineShown,
+  orchestratorHover,
   orchestratorLine,
   overviewFeatures,
   overviewState,
   overviewSummary,
+  stateWordShown,
   rowTone,
-  stageTicks,
   stationDotClass,
   tileLetters,
   tileWorking,
@@ -292,11 +294,16 @@ describe("workLineText", () => {
   });
 });
 
-describe("stageTicks", () => {
-  it("marks the stations before the card's as passed, its own as current, the rest ahead", () => {
-    expect(stageTicks("briefed")).toEqual(["current", "ahead", "ahead", "ahead", "ahead"]);
-    expect(stageTicks("checks")).toEqual(["past", "past", "current", "ahead", "ahead"]);
-    expect(stageTicks("merged")).toEqual(["past", "past", "past", "past", "current"]);
+describe("nowLineShown", () => {
+  it("drops a now line that only says what the dot does, for an ask, a failure or nothing else", () => {
+    for (const now of ["working", "briefed", "in review", "idle"]) {
+      expect(nowLineShown({ now, askKey: undefined, failed: false }), now).toBe(false);
+    }
+    for (const now of ["running tests", "checks failing", "ready to merge", "blocked"]) {
+      expect(nowLineShown({ now, askKey: undefined, failed: false }), now).toBe(true);
+    }
+    expect(nowLineShown({ now: "working", askKey: "ask-1", failed: false })).toBe(true);
+    expect(nowLineShown({ now: "working", askKey: undefined, failed: true })).toBe(true);
   });
 });
 
@@ -311,38 +318,53 @@ describe("a workspace's line", () => {
     expect(overviewState(undefined, false)).toBe("idle");
   });
 
-  it("has one dot and phrase whatever its workers: the ask colour, held, working, else idle", () => {
+  it("has one dot whatever its workers: the ask colour, held, working, else idle", () => {
     expect(orchestratorLine("working", { working: 2, asks: 1 })).toEqual({
       dot: "bg-status-needs",
       pulse: false,
-      phrase: "2 working",
     });
     expect(orchestratorLine("working", { working: 2, asks: 0 })).toEqual({
       dot: "bg-status-working",
       pulse: true,
-      phrase: "2 working",
     });
     // The orchestrator works itself, with no worker at work.
-    expect(orchestratorLine("working", { working: 0, asks: 0 })).toMatchObject({
-      pulse: true,
-      phrase: "working",
-    });
-    // Workers at work while the state word still holds idle say so, dot and words alike.
+    expect(orchestratorLine("working", { working: 0, asks: 0 })).toMatchObject({ pulse: true });
+    // Workers at work while the state word still holds idle say so in the dot.
     expect(orchestratorLine("idle", { working: 1, asks: 0 })).toMatchObject({
       dot: "bg-status-working",
-      phrase: "1 working",
     });
     expect(orchestratorLine("idle", { working: 0, asks: 0 })).toEqual({
       dot: "bg-status-idle",
       pulse: false,
-      phrase: "idle",
     });
-    expect(orchestratorLine("in review", { working: 0, asks: 0 }).phrase).toBe("in review");
     expect(orchestratorLine("paused", { working: 1, asks: 0 })).toEqual({
       dot: "border border-muted-foreground bg-transparent",
       pulse: false,
-      phrase: "paused · 1 working",
     });
+  });
+
+  it("keeps a state word on the line only while the orchestrator doesn't work", () => {
+    expect(stateWordShown("paused")).toBe(true);
+    expect(stateWordShown("parked")).toBe(true);
+    expect(stateWordShown("working")).toBe(false);
+    expect(stateWordShown("in review")).toBe(false);
+    expect(stateWordShown("idle")).toBe(false);
+  });
+
+  it("leaves its workers, who works, its state and its slots to the hover", () => {
+    expect(orchestratorHover("working", { live: 7, working: 1, asks: 5 }, "6 of 8 · 1 held")).toBe(
+      "7 workers · 1 working · 5 need you · Worker slots 6 of 8 · 1 held",
+    );
+    // The orchestrator works itself: the count doesn't say so, the word does.
+    expect(orchestratorHover("working", { live: 2, working: 0, asks: 0 }, "2 of 8")).toBe(
+      "working · 2 workers · Worker slots 2 of 8",
+    );
+    expect(orchestratorHover("paused", { live: 1, working: 1, asks: 1 }, undefined)).toBe(
+      "paused · 1 worker · 1 working · 1 needs you",
+    );
+    expect(orchestratorHover("idle", { live: 0, working: 0, asks: 0 }, undefined)).toBe(
+      "idle · 0 workers",
+    );
   });
 
   it("sums a folded workspace up in what it has, else its state", () => {
