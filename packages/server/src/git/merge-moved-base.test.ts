@@ -565,9 +565,10 @@ describe("armed merges on a base that moved", () => {
         ({ service, threads, merged, launches }) =>
           Effect.gen(function* () {
             yield* service.check(threads[0]!);
+            // Not `=== 1`: a lost reply's retry comes a recheck later, and can beat this look.
             yield* waitReal(
               "the first launched",
-              Effect.sync(() => launches.length === 1),
+              Effect.sync(() => launches.length > 0),
             );
             yield* service.check(threads[1]!);
             // No move to fence: the tip is where it was, and the pass on it still stands.
