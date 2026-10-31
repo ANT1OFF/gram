@@ -486,11 +486,15 @@ it.effect(
         [...new Set(replay.inFlight.map((i) => i.seq))].toSorted((a, b) => a - b),
       );
       expect(replay.lastSeq).toBeGreaterThanOrEqual(replay.inFlight.at(-1)!.seq);
-      const expected = displayed.retainedReplay.map((c) =>
-        c.type === "tool-output-available"
-          ? { ...c, output: { stdout: tail, stderr: "", interrupted: false } }
-          : c,
-      );
+      const expected = displayed.retainedReplay.map((c) => {
+        if (c.type === "tool-output-available") {
+          return { ...c, output: { stdout: tail, stderr: "", interrupted: false } };
+        }
+        // The turn is over and this reply is held: a reconnect learns how it ended from its finish.
+        if (c.type !== "finish") return c;
+        const turnEnd = { at: 0, reason: "completed" as const };
+        return { ...c, messageMetadata: { ...c.messageMetadata, turnEnd } };
+      });
       expect(
         replay.inFlight.map(({ event }) => {
           if (event.type !== "chunk") return event;

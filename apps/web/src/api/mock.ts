@@ -49,6 +49,7 @@ import type {
   WorkspaceId,
   AskInput,
   WorkerQuestion,
+  TurnEndReason,
 } from "@gram/contracts";
 import {
   effectiveCheckout,
@@ -823,6 +824,18 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     await this.#continue(threadId, script(input, this.#ids));
   }
 
+  /** Like the server's: the turn's reply says how it ended, in a whole-message write. */
+  #stampTurnEnd(runtime: ThreadRuntime, reason: TurnEndReason) {
+    const reply = runtime.fold.store
+      .getState()
+      .messages.findLast(
+        (m) => m.role === "assistant" && m.metadata?.parentToolUseId === undefined,
+      );
+    if (reply === undefined) return;
+    const turnEnd = { at: Date.now(), reason };
+    this.#putMessage(runtime, { ...reply, metadata: { ...reply.metadata, turnEnd } });
+  }
+
   async #continue(threadId: ThreadId, steps: Step[]) {
     const runtime = this.#runtime(threadId);
     runtime.running = true;
@@ -838,6 +851,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     const interrupted = runtime.interrupted;
     runtime.steer = undefined;
     runtime.interrupted = false;
+    this.#stampTurnEnd(runtime, steer || interrupted ? "interrupted" : "completed");
     this.#setStatus(runtime, "idle");
     this.#update(runtime, { lastActivityAt: Date.now() });
     if (runtime.restartAfterTurn) {

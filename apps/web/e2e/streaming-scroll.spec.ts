@@ -911,7 +911,7 @@ test("rapid thread switches retire pending scroll work and restore bottom follow
   await page.evaluate(
     (targetId) =>
       window.gramMock!.simulateChunks(targetId as never, "scroll-next" as never, [
-        { type: "start", messageId: "scroll-next" },
+        { type: "start", messageId: "scroll-next", messageMetadata: { initiator: "agent" } },
         { type: "text-start", id: "next" },
         { type: "text-delta", id: "next", delta: "A fresh invented stream.\n\n".repeat(30) },
       ]),

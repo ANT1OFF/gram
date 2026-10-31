@@ -401,6 +401,7 @@ const make = Effect.gen(function* () {
     appendChunk,
     appendDataPart,
     closeOpenMessages,
+    stampTurnEnd,
     closeLanes,
   } = makeFeedWriter({
     store,
@@ -445,6 +446,7 @@ const make = Effect.gen(function* () {
     publishMessage,
     appendDataPart,
     closeOpenMessages,
+    stampTurnEnd,
     setRetrying: (rt, retrying, detail) => setRetrying(rt, retrying, detail),
     clearPendingRequests: (rt, reason) => clearPendingRequests(rt, reason),
   });

@@ -60,6 +60,8 @@ test("native Codex web cards show supplied search, open and find metadata", asyn
 
 test("a run of tool calls folds into one line and opens to its cards", async ({ page }) => {
   await page.goto("/t/t-flaky");
+  // The turn folds its finished steps once it has gone past them.
+  await page.getByTestId("turn-fold").click({ timeout: 20_000 });
   const group = page.getByTestId("tool-group").first();
   const toggle = group.getByRole("button", { name: "Ran 1 command, read 1 file" });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");

@@ -1,12 +1,20 @@
 import { ChevronRight } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
 import { Expand } from "@/motion";
 
 import { ToolCard, type ToolCardProps } from "./tool-cards";
 import { EditCounts } from "./file-edit-card";
-import { runEdits, runState, runSummary, stepLabel } from "./tool-group-model";
+import {
+  runEdits,
+  runState,
+  runSummary,
+  stepLabel,
+  turnFoldLabel,
+  type TurnSummary,
+} from "./tool-group-model";
 
 /**
  * A run of tool calls folded into one line: what it did once it's finished ("Edited retry.ts, ran 2
@@ -73,5 +81,51 @@ export function ToolGroup({
         )}
       </Expand>
     </div>
+  );
+}
+
+/**
+ * A turn folded to one row: how long it took and what it used. Opening it shows the turn as it
+ * happened, under the row; failures stay countable on the closed line, as on `ToolGroup`'s.
+ */
+export function TurnFoldRow({
+  turn,
+  open,
+  onToggle,
+}: {
+  turn: TurnSummary;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const running = turn.state === "running";
+  const row = useRef<HTMLButtonElement>(null);
+  const now = useNow(running, row);
+  return (
+    <button
+      ref={row}
+      type="button"
+      data-testid="turn-fold"
+      data-state={turn.state}
+      aria-expanded={open}
+      className={cn(
+        "flex max-w-full items-center gap-1 self-start rounded-sm py-0.5 text-left text-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+        running ? "text-foreground" : "text-muted-foreground",
+      )}
+      onClick={onToggle}
+    >
+      <span className="truncate">{turnFoldLabel(turn, now)}</span>
+      {turn.failed > 0 && (
+        <span className="shrink-0 text-destructive">
+          · {turn.failed === 1 ? "1 failed" : `${turn.failed} failed`}
+        </span>
+      )}
+      <ChevronRight
+        aria-hidden
+        className={cn(
+          "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+          open && "rotate-90",
+        )}
+      />
+    </button>
   );
 }

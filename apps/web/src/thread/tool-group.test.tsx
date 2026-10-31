@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { AnyToolPart } from "./parts";
-import { ToolGroup } from "./tool-group";
+import { ToolGroup, TurnFoldRow } from "./tool-group";
 
 const tool = (id: string, name: string, input: object, state: AnyToolPart["state"]) =>
   ({ type: `tool-${name}`, toolCallId: id, state, input, output: "" }) as AnyToolPart;
@@ -72,5 +72,19 @@ describe("ToolGroup", () => {
     ];
     render(<ToolGroup run={run} {...card} />);
     expect(screen.getAllByTestId("tool-card")).toHaveLength(2);
+  });
+});
+
+describe("TurnFoldRow", () => {
+  const turn = { state: "failed", startedAt: 0, endedAt: 161_000, tools: 4, failed: 1 } as const;
+
+  it("counts failures on the closed line and says when it's open", () => {
+    const toggled: string[] = [];
+    render(<TurnFoldRow turn={turn} open={false} onToggle={() => toggled.push("toggle")} />);
+    const row = screen.getByTestId("turn-fold");
+    expect(row.textContent).toBe("Failed after 2m 41s · 4 tools· 1 failed");
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(row);
+    expect(toggled).toEqual(["toggle"]);
   });
 });

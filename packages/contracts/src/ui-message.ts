@@ -28,6 +28,17 @@ import type { WrapUpData } from "./wrap-up.ts";
 // ---------------------------------------------------------------------------------------------
 // Metadata and data parts
 
+export const TurnEndReason = Schema.Literals(["completed", "interrupted", "error", "maxTurns"]);
+export type TurnEndReason = typeof TurnEndReason.Type;
+
+/** How and when a turn ended, which is what a transcript can't tell from its messages. */
+export const TurnEnd = Schema.Struct({
+  /** Epoch ms. */
+  at: Schema.Number,
+  reason: TurnEndReason,
+});
+export type TurnEnd = typeof TurnEnd.Type;
+
 export const MessageMetadataSchema = Schema.Struct({
   turnId: Schema.optionalKey(TurnId),
   /** Epoch ms. */
@@ -45,6 +56,8 @@ export const MessageMetadataSchema = Schema.Struct({
   /** More than one actual wire model occurred in this MAIN turn; a single model cannot represent it. */
   modelConflict: Schema.optionalKey(Schema.Boolean),
   usage: Schema.optionalKey(UsageSummary),
+  /** On a turn's last reply, once the turn is over; absent from turns older than this field. */
+  turnEnd: Schema.optionalKey(TurnEnd),
   /** Set on subagent transcript messages nested under a Task tool card. */
   parentToolUseId: Schema.optionalKey(Schema.String),
   /**

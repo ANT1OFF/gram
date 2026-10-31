@@ -1,14 +1,19 @@
+import type { GramUIMessage, TurnEnd, TurnId } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import type { AnyToolPart, MessagePart } from "./parts";
 import {
   missingToolImageLabel,
+  reuseFolds,
   runState,
   runSummary,
   stepLabel,
   toolImageName,
   toolImagesOf,
   toolRuns,
+  turnFoldLabel,
+  turnFolds,
+  type TurnSummary,
 } from "./tool-group-model";
 
 let calls = 0;
@@ -205,5 +210,258 @@ describe("toolImagesOf", () => {
     expect(
       missingToolImageLabel({ toolCallId: "c", mediaType: "image/heic", size: 900 }, "unstored"),
     ).toBe("Image can't be previewed · image/heic");
+  });
+});
+
+const user = (id: string, createdAt = 1_000): GramUIMessage => ({
+  id,
+  role: "user",
+  metadata: { turnId: `turn-${id}` as TurnId, createdAt },
+  parts: [{ type: "text", text: "Do it" }],
+});
+const reply = (id: string, parts: MessagePart[], end?: TurnEnd): GramUIMessage => ({
+  id,
+  role: "assistant",
+  metadata: end === undefined ? {} : { turnEnd: end },
+  parts,
+});
+const chapter = { type: "data-chapter", id: "c", data: { id: "c", title: "Fix" } } as MessagePart;
+const chip = { type: "data-task-chip", id: "t", data: { id: "t" } } as MessagePart;
+const failure = { type: "data-agent-error", id: "e", data: {} } as MessagePart;
+const failedTool = () =>
+  ({ ...tool("Bash", {}, "output-error"), errorText: "exit 1" }) as AnyToolPart;
+const worked = { at: 186_000, reason: "completed" } as const;
+
+describe("turnFolds", () => {
+  it("folds everything before the last words, and keeps the last words", () => {
+    const parts = [text("a"), chapter, tool("Read"), text("b"), tool("Bash"), text("final")];
+    const fold = turnFolds([user("u"), reply("r", parts, worked)], false).get("r")!;
+    expect([...fold.hidden]).toEqual([0, 1, 2, 3, 4]);
+    expect(fold.row).toEqual({
+      state: "worked",
+      startedAt: 1_000,
+      endedAt: 186_000,
+      tools: 2,
+      failed: 0,
+    });
+  });
+
+  it("keeps a last message split into text parts whole", () => {
+    const parts = [text("a"), tool("Bash"), text("one"), { type: "step-start" }, text("two")];
+    const fold = turnFolds([user("u"), reply("r", parts as MessagePart[], worked)], false);
+    expect([...fold.get("r")!.hidden]).toEqual([0, 1]);
+  });
+
+  it("folds what the agent did after its last words", () => {
+    const parts = [text("a"), text("final"), chapter, tool("Bash")];
+    const fold = turnFolds([user("u"), reply("r", parts)], false).get("r")!;
+    expect([...fold.hidden]).toEqual([2, 3]);
+  });
+
+  it("has no row for a turn with nothing to fold", () => {
+    expect(turnFolds([user("u"), reply("r", [text("final")])], false).size).toBe(0);
+  });
+
+  it("has no row when it would save none, a lone tool line keeping what it says", () => {
+    const lone = [tool("Read"), text("final")];
+    expect(turnFolds([user("u"), reply("r", lone)], false).size).toBe(0);
+    const run = [tool("Read"), tool("Bash"), text("final")];
+    expect(turnFolds([user("u"), reply("r", run)], false).size).toBe(0);
+    const onlyTools = [tool("Bash")];
+    expect(turnFolds([user("u"), reply("r", onlyTools)], false).size).toBe(0);
+  });
+
+  it("counts what it hides across a turn's replies", () => {
+    const messages = [user("u"), reply("r1", [tool("Read")]), reply("r2", [tool("Bash")])];
+    expect(turnFolds(messages, false).get("r1")?.row?.tools).toBe(2);
+  });
+
+  it("keeps a call that returned but goes on in view", () => {
+    const agent = tool("Agent");
+    const parts = [text("a"), tool("Read"), agent, text("final")];
+    const working = new Set([agent.toolCallId]);
+    const fold = turnFolds([user("u"), reply("r", parts)], false, working).get("r")!;
+    expect([...fold.hidden]).toEqual([0, 1]);
+  });
+
+  it("keeps errors, failed tools and waiting approvals out of the fold", () => {
+    const failed = failedTool();
+    const waiting = tool("Bash", {}, "approval-requested");
+    const parts = [text("a"), failed, tool("Read"), waiting, text("final"), failure];
+    const fold = turnFolds(
+      [user("u"), reply("r", parts, { at: 2_000, reason: "error" })],
+      false,
+    ).get("r")!;
+    expect([...fold.hidden]).toEqual([0, 2]);
+    expect([...fold.apart].toSorted()).toEqual([0, 1, 2, 3]);
+    expect(fold.row).toMatchObject({ state: "failed", tools: 3, failed: 1 });
+    expect(toolRuns(parts, fold.apart).starts.size).toBe(0);
+  });
+
+  it("keeps words still arriving in view, whatever the thread's status says", () => {
+    const thinking = { type: "reasoning", text: "", state: "streaming" } as MessagePart;
+    const parts = [text("a"), tool("Read"), text("final"), thinking];
+    const fold = turnFolds([user("u"), reply("r", parts)], false).get("r");
+    expect([...(fold?.hidden ?? [])]).toEqual([0, 1]);
+  });
+
+  it("keeps a tool still running in a finished turn in view", () => {
+    const parts = [text("a"), tool("Read"), tool("Task", {}, "input-available"), text("final")];
+    expect([...turnFolds([user("u"), reply("r", parts)], false).get("r")!.hidden]).toEqual([0, 1]);
+  });
+
+  it("moves an offered task under the reply, row or no row", () => {
+    const folded = [text("a"), tool("Bash"), chip, text("final")];
+    expect([...turnFolds([user("u"), reply("r", folded)], false).get("r")!.under]).toEqual([2]);
+    const short = turnFolds([user("u"), reply("r", [chip, text("final")])], false).get("r")!;
+    expect([...short.under]).toEqual([0]);
+    expect(short.row).toBeUndefined();
+  });
+
+  it("folds finished steps of a running turn and leaves the current one", () => {
+    const parts = [text("a"), tool("Read"), text("b"), tool("Bash", {}, "input-available")];
+    const fold = turnFolds([user("u"), reply("r", parts)], true).get("r")!;
+    expect([...fold.hidden]).toEqual([0, 1]);
+    expect(fold.row).toMatchObject({ state: "running", endedAt: undefined, tools: 2 });
+  });
+
+  it("shows a running turn whole until it has a step behind it", () => {
+    expect(turnFolds([user("u"), reply("r", [tool("Read"), tool("Bash")])], true).size).toBe(0);
+  });
+
+  it("only takes the thread's latest turn for the running one", () => {
+    const messages = [
+      user("u1"),
+      reply("r1", [text("a"), tool("Read"), text("final")], worked),
+      user("u2"),
+      reply("r2", [text("a"), tool("Read"), text("b")]),
+    ];
+    const folds = turnFolds(messages, true);
+    expect(folds.get("r1")!.row?.state).toBe("worked");
+    expect(folds.get("r2")!.row?.state).toBe("running");
+  });
+
+  it("believes a stamp over the thread's status", () => {
+    const messages = [user("u"), reply("r", [text("a"), tool("Read"), text("b")], worked)];
+    expect(turnFolds(messages, true).get("r")!.row?.state).toBe("worked");
+  });
+
+  it("names a stopped turn, and a failure from before the stamp", () => {
+    const stopped = { at: 2_000, reason: "interrupted" } as const;
+    const parts = [text("a"), tool("Read"), text("final")];
+    expect(turnFolds([user("u"), reply("r", parts, stopped)], false).get("r")!.row?.state).toBe(
+      "stopped",
+    );
+    expect(
+      turnFolds([user("u"), reply("r", [...parts, failure])], false).get("r")!.row?.state,
+    ).toBe("failed");
+  });
+
+  it("carries the row on a turn's first reply and empties the ones between", () => {
+    const messages = [
+      user("u"),
+      reply("r1", [tool("Read")]),
+      reply("r2", [text("a"), tool("Bash")]),
+      reply("r3", [tool("Bash"), text("final")]),
+    ];
+    const folds = turnFolds(messages, false);
+    expect(folds.get("r1")).toMatchObject({ row: { tools: 3 }, empty: false });
+    expect(folds.get("r2")).toMatchObject({ row: undefined, empty: true });
+    expect(folds.get("r3")).toMatchObject({ row: undefined, empty: false });
+  });
+
+  it("gives a reply after its turn ended a turn of its own", () => {
+    const parts = [text("a"), tool("Read"), text("final")];
+    const messages = [user("u"), reply("r1", parts, worked), reply("r2", parts)];
+    const folds = turnFolds(messages, false);
+    expect(folds.get("r1")!.turn).toBe("turn-u");
+    expect(folds.get("r1")!.hidden.has(2)).toBe(false);
+    expect(folds.get("r2")!.turn).toBe("r2");
+  });
+
+  it("gives a reply the agent started a turn of its own", () => {
+    const final = reply("r1", [text("a"), tool("Read"), text("final")]);
+    const started = {
+      ...reply("r2", [text("b")]),
+      metadata: { initiator: "agent" as const },
+    };
+    const fold = turnFolds([user("u"), final, started], false).get("r1")!;
+    expect(fold.hidden.has(2)).toBe(false);
+  });
+
+  it("leaves a subagent's transcript alone", () => {
+    const nested = { ...reply("n", [text("a"), tool("Read")]) };
+    nested.metadata = { parentToolUseId: "task" };
+    const folds = turnFolds([user("u"), nested, reply("r", [text("final")])], false);
+    expect(folds.has("n")).toBe(false);
+  });
+
+  it("folds a turn whose prompt has no turn id, by the prompt", () => {
+    const prompt = { ...user("u"), metadata: { createdAt: 1 } };
+    const parts = [text("a"), tool("Read"), text("final")];
+    expect(turnFolds([prompt, reply("r", parts)], false).get("r")!.turn).toBe("u");
+  });
+});
+
+const messages = (extra: string): GramUIMessage[] => [
+  { id: "u", role: "user", metadata: { createdAt: 1 }, parts: [text("Do it")] },
+  { id: "r", role: "assistant", parts: [text("a"), tool("Read"), text(extra)] },
+];
+
+describe("reuseFolds", () => {
+  it("keeps a fold nothing changed in, so its row's memo holds", () => {
+    const first = turnFolds(messages("one"), false);
+    const second = reuseFolds(first, turnFolds(messages("two"), false));
+    expect(second.get("r")).toBe(first.get("r"));
+  });
+
+  it("takes a fold that changed", () => {
+    const first = turnFolds(messages("one"), false);
+    const next = turnFolds(
+      [
+        ...messages("one").slice(0, 1),
+        { id: "r", role: "assistant", parts: [text("a"), text("b"), tool("Read"), text("c")] },
+      ],
+      false,
+    );
+    expect(reuseFolds(first, next).get("r")).toBe(next.get("r"));
+  });
+});
+
+const turn = (over: Partial<TurnSummary>): TurnSummary => ({
+  state: "worked",
+  startedAt: 0,
+  endedAt: 185_000,
+  tools: 5,
+  failed: 0,
+  ...over,
+});
+
+describe("turnFoldLabel", () => {
+  it("says how long the turn took and what it used", () => {
+    expect(turnFoldLabel(turn({}), 0)).toBe("Worked for 3m 05s · 5 tools");
+    expect(turnFoldLabel(turn({ tools: 1 }), 0)).toBe("Worked for 3m 05s · 1 tool");
+    expect(turnFoldLabel(turn({ tools: 0 }), 0)).toBe("Worked for 3m 05s");
+  });
+
+  it("words each ending", () => {
+    expect(turnFoldLabel(turn({ state: "failed", endedAt: 161_000, tools: 4 }), 0)).toBe(
+      "Failed after 2m 41s · 4 tools",
+    );
+    expect(turnFoldLabel(turn({ state: "stopped", endedAt: 72_000, tools: 3 }), 0)).toBe(
+      "Stopped after 1m 12s · 3 tools",
+    );
+  });
+
+  it("counts a running turn up from its start", () => {
+    const running = turn({ state: "running", endedAt: undefined, tools: 4 });
+    expect(turnFoldLabel(running, 134_000)).toBe("Working for 2m 14s · 4 tools");
+  });
+
+  it("drops the duration of a turn from before the stamp", () => {
+    expect(turnFoldLabel(turn({ endedAt: undefined }), 0)).toBe("Worked · 5 tools");
+    expect(turnFoldLabel(turn({ state: "failed", endedAt: undefined }), 0)).toBe(
+      "Failed · 5 tools",
+    );
   });
 });
