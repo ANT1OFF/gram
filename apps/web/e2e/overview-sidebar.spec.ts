@@ -243,19 +243,20 @@ test("an idle row fades after a day and comes back on hover; one needing you nev
   page,
 }) => {
   await start(page);
-  const row = unparked(page).and(page.locator('[data-thread-id="t-flaky"]'));
-  const stale = () =>
-    page.evaluate(() => {
-      const mock = window.gramMock!;
-      const { thread } = mock.world.summary("t-flaky" as never);
+  // Threads no mock script plays: a script moves its thread's status under the test.
+  const row = threadRow(page, "t-release");
+  const waiting = threadRow(page, "t-question");
+  await expect(waiting).toHaveAccessibleName(/, Needs input$/);
+  await page.evaluate(() => {
+    const mock = window.gramMock!;
+    for (const id of ["t-release", "t-question"]) {
+      const { thread } = mock.world.summary(id as never);
       mock.world.replaceThread({ ...thread, lastActivityAt: Date.now() - 25 * 60 * 60_000 });
-    });
-  // It waits on the user, so age alone leaves it as it is.
-  await stale();
-  await expect(row).not.toHaveAttribute("data-settled");
-  await page.evaluate(() => window.gramMock!.simulateStatus("t-flaky" as never, "idle"));
-  await stale();
+    }
+  });
   await expect(row).toHaveAttribute("data-settled", "true");
+  // As old, but it waits on the user, so it stays as it is.
+  await expect(waiting).not.toHaveAttribute("data-settled");
   await page.mouse.move(1200, 400);
   await expect(row).toHaveCSS("filter", /grayscale\(1\)/);
   await row.hover();
@@ -1472,9 +1473,10 @@ test("a solo thread at work trades its age for a pulsing dot, and can't be marke
   page,
 }) => {
   await start(page);
-  const row = unparked(page).first();
+  // A thread no mock script plays: a script moves its thread's status under the test.
+  const id = "t-release";
+  const row = threadRow(page, id);
   await expect(row).toBeVisible();
-  const id = (await row.getAttribute("data-thread-id"))!;
   const dot = row.locator("[data-working]");
   const age = row.locator("span.tabular-nums");
   await page.evaluate((threadId) => {
