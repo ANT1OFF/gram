@@ -33,7 +33,10 @@ if (process.argv.includes("--version")) { console.log("codex-cli 0.160.0"); proc
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === "initialize" && ${hangInitialize}) {
-    require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+    // Renamed into place: a watcher woken by the file's creation would read it empty, as pid 0.
+    const fs = require("node:fs");
+    fs.writeFileSync(${JSON.stringify(`${pidFile}.tmp`)}, String(process.pid));
+    fs.renameSync(${JSON.stringify(`${pidFile}.tmp`)}, ${JSON.stringify(pidFile)});
     return;
   }
   if (message.id === undefined) return;
@@ -85,6 +88,8 @@ describe.skipIf(process.platform === "win32")("owned CodexServers exit observati
           });
           const opening = yield* Effect.forkScoped(servers.acquire(undefined, "user"));
           const pid = yield* initialized.pipe(Effect.timeout("5 seconds"));
+          // `process.kill(0, 0)` signals this process's own group, so it never throws.
+          expect(pid).toBeGreaterThan(0);
           yield* Fiber.interrupt(opening);
           expect(yield* servers.running).toEqual([]);
           yield* servers.retireAll;
