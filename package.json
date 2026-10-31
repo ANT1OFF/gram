@@ -16,7 +16,7 @@
       "ai": "7.0.143",
       "@modelcontextprotocol/sdk": "1.32.1",
       "node-pty": "1.1.0",
-      "sherpa-onnx-node": "1.13.8",
+      "sherpa-onnx-node": "2.0.0",
       "ghostty-web": "0.4.0",
       "@types/node": "26.6.5",
       "oxfmt": "0.73.0",
@@ -91,12 +91,13 @@
     "vitest": "catalog:"
   },
   "overrides": {
-    "sherpa-onnx-darwin-arm64": "1.13.8",
-    "sherpa-onnx-darwin-x64": "1.13.8",
-    "sherpa-onnx-linux-arm64": "1.13.8",
-    "sherpa-onnx-linux-x64": "1.13.8",
-    "sherpa-onnx-win-ia32": "1.13.8",
-    "sherpa-onnx-win-x64": "1.13.8"
+    "sherpa-onnx-darwin-arm64": "2.0.0",
+    "sherpa-onnx-darwin-x64": "2.0.0",
+    "sherpa-onnx-linux-arm64": "2.0.0",
+    "sherpa-onnx-linux-x64": "2.0.0",
+    "sherpa-onnx-win-arm64": "2.0.0",
+    "sherpa-onnx-win-ia32": "2.0.0",
+    "sherpa-onnx-win-x64": "2.0.0"
   },
   "engines": {
     "bun": ">=1.4.3",

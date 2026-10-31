@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Puts the text-to-speech-free sherpa-onnx build from tools/sherpa-onnx/darwin-arm64/ over the npm
 // sherpa-onnx-darwin-arm64 package, so development, tests and the packaged app all load it. The npm
-// build statically links espeak-ng (GPL-3.0-or-later) for TTS, which Gram never uses;
-// build-darwin-arm64.sh says how these files are made. Runs as the root postinstall; a no-op where
+// build carries TTS, which Gram never uses, and up to 1.13.8 statically linked espeak-ng
+// (GPL-3.0-or-later) for it; build-darwin-arm64.sh says how these files are made. Runs as the root postinstall; a no-op where
 // the darwin-arm64 package isn't installed.
 //
 //   node tools/sherpa-onnx/install.mjs

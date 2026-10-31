@@ -111,7 +111,7 @@ win:
     - package.json
     - "!**/node_modules/node-pty/build/**"
     - "!**/node_modules/node-pty/prebuilds/{darwin-*,win32-arm64}/**"
-    - "!**/node_modules/sherpa-onnx-{darwin-*,linux-*,win-ia32}/**"
+    - "!**/node_modules/sherpa-onnx-{darwin-*,linux-*,win-arm64,win-ia32}/**"
 
 nsis:
   # The updater downloads the installer by exactly this name, with the x64 arch (`INSTALLER_PATTERN`

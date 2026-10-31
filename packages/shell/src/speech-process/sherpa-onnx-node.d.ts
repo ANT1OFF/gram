@@ -1,5 +1,5 @@
 // sherpa-onnx-node ships JSDoc, not declarations; this is the slice of its API the speech process
-// uses, as of 1.13.8.
+// uses, as of 2.0.0.
 declare module "sherpa-onnx-node" {
   export interface OnlineStream {
     acceptWaveform(wave: { readonly sampleRate: number; readonly samples: Float32Array }): void;
