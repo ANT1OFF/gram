@@ -610,7 +610,7 @@ export const CodexServersLive = (
           managedHold = managed;
           if (helperCwd !== undefined && prepared.cliVersion !== CODEX_HELPER_VERSION)
             return yield* unavailable(
-              "Codex guided helpers require the qualified CLI 0.162.1. Select that installed runtime, then refresh; unknown or other versions have not been qualified.",
+              "Codex guided helpers require the pinned CLI 0.164.0. Select that installed runtime, then refresh; unknown or other versions have not been qualified.",
             );
           if (home === "owned" && profileId !== undefined)
             return yield* unavailable(

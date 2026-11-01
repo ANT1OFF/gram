@@ -10,7 +10,7 @@ const seed = (page: Page, state = "sample") =>
       JSON.stringify({
         tools: [
           { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.296" },
-          { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.162.1" },
+          { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.164.0" },
           { tool: "git", found: true, path: "/mock/bin/git" },
           { tool: "gh", found: true, path: "/mock/bin/gh" },
         ],

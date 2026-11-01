@@ -49,4 +49,4 @@ export interface HelperAdapter {
 }
 
 export const CODEX_HELPER_RESTRICTION =
-  "This Codex adapter has no guided subscription helper transport. Select a qualified Codex 0.162.1 runtime and refresh. Ordinary Codex chats still work.";
+  "This Codex adapter has no guided subscription helper transport. Select a Codex 0.164.0 runtime and refresh. Ordinary Codex chats still work.";

@@ -45,6 +45,7 @@ export type { GitDiffToRemoteResponse } from "./GitDiffToRemoteResponse.ts";
 export type { GitSha } from "./GitSha.ts";
 export type { ImageDetail } from "./ImageDetail.ts";
 export type { ImageGenerationFailure } from "./ImageGenerationFailure.ts";
+export type { ImageGenerationInputImage } from "./ImageGenerationInputImage.ts";
 export type { ImageGenerationItem } from "./ImageGenerationItem.ts";
 export type { InitializeCapabilities } from "./InitializeCapabilities.ts";
 export type { InitializeParams } from "./InitializeParams.ts";

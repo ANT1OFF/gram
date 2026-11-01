@@ -317,7 +317,7 @@ const harness = (
               return {
                 rpc,
                 cliVersion:
-                  options.cliVersion === null ? undefined : (options.cliVersion ?? "0.162.1"),
+                  options.cliVersion === null ? undefined : (options.cliVersion ?? "0.164.0"),
                 openThread: (_resumeId, open) => open,
                 waitForThreadExit: () => Effect.void,
                 configCurrent: Effect.succeed(true),
@@ -1434,7 +1434,7 @@ describe("CodexHost confined sessions", () => {
               mcp: { url: "http://127.0.0.1:4317/mcp", headers: {} },
             }).pipe(Effect.provide(h.layer)),
           );
-          expect(error.message).toContain("Codex Dream is verified");
+          expect(error.message).toContain("Codex Dream is pinned");
           expect(h.calls).toEqual([]);
           yield* openSession().pipe(Effect.provide(h.layer));
           expect(h.calls.some(([method]) => method === "thread/start")).toBe(true);

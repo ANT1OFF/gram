@@ -132,7 +132,7 @@ describe("only-Codex guided subscription helper child", () => {
           expect(starts).toHaveLength(3);
           expect(new Set(starts.map((row) => row.pid)).size).toBe(3);
           const helpers = starts.filter((row) =>
-            (row.args as Array<string>).includes("features.stable_environment_tools=false"),
+            (row.args as Array<string>).includes("features.view_image=false"),
           );
           expect(helpers).toHaveLength(2);
           expect(new Set(helpers.map((row) => row.cwd)).size).toBe(2);
@@ -217,7 +217,13 @@ describe("only-Codex guided subscription helper child", () => {
               expect(row.apiEnvironment).toEqual([]);
               expect(row.path).toBe(f.root);
               expect(existsSync(String(row.cwd))).toBe(false);
-              expect(row.args).toContain("features.stable_environment_tools=false");
+              for (const name of [
+                "view_image",
+                "executor_capability_discovery_v2",
+                "multi_env_copy_file",
+                "request_permissions_tool",
+              ])
+                expect(row.args).toContain(`features.${name}=false`);
               expect(row.args).toContain("features.shell_tool=false");
               expect(row.args).toContain("agents.enabled=false");
               expect(row.args).toContain(`openai_base_url="${CODEX_HELPER_SUBSCRIPTION_BASE_URL}"`);

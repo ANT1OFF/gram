@@ -69,7 +69,7 @@ async function open(page: Page, turns = 120, mode: "light" | "dark" = "dark", he
         ghSignedIn: false,
         tools: [
           { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.296" },
-          { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.162.1" },
+          { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.164.0" },
           { tool: "git", found: true, path: "/mock/bin/git", version: "2.47.1" },
           { tool: "gh", found: false },
         ],

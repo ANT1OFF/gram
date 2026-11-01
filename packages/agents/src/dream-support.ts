@@ -1,6 +1,6 @@
 import type { AgentKind } from "@gram/contracts";
-// Qualified independently from generated protocol bindings; regeneration is not verification.
-const VERIFIED_CODEX_DREAM_VERSION = "0.162.1";
+// Pinned independently of the generated protocol bindings; regeneration is not verification.
+const VERIFIED_CODEX_DREAM_VERSION = "0.164.0";
 
 export type DreamSupportEvidence =
   | { readonly kind: "implementation" }
@@ -30,7 +30,7 @@ export const dreamSupportFor = (agent: AgentKind, evidence: DreamSupportEvidence
         return {
           mode: "unknown",
           verifiedCliVersion: VERIFIED_CODEX_DREAM_VERSION,
-          reason: `Codex Dream is verified with CLI ${VERIFIED_CODEX_DREAM_VERSION}; ${evidence.cliVersion === undefined ? "the installed version could not be determined" : `installed CLI ${evidence.cliVersion} has not been qualified`}. Select the verified runtime or another supported Dream harness. Ordinary Codex chats remain available.`,
+          reason: `Codex Dream is pinned to CLI ${VERIFIED_CODEX_DREAM_VERSION}; ${evidence.cliVersion === undefined ? "the installed version could not be determined" : `installed CLI ${evidence.cliVersion} has not been qualified`}. Select the pinned runtime or another supported Dream harness. Ordinary Codex chats remain available.`,
         };
       }
       return {

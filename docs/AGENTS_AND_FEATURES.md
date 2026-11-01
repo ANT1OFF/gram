@@ -455,9 +455,10 @@ Claude helpers use an isolated one-shot SDK query: no tools, strict empty MCP,
 empty setting sources, disabled hooks/plugins, no persisted history, Standard
 speed and a deny permission callback. Context waits for restriction verification.
 
-Codex helpers use the guided adapter qualified for **CLI 0.162.1**. It uses
-separate ephemeral threads, disables environment tools, requests read-only/no-network
-permissions and forbids escalation. The child pins and verifies the built-in
+Codex helpers use the guided adapter pinned to **CLI 0.164.0**. It uses
+separate ephemeral threads with no environment, requests read-only/no-network
+permissions and forbids escalation. Some models can still be offered `apply_patch`, which
+has no environment to run in. The child pins and verifies the built-in
 ChatGPT inference route before delivering context, overriding inherited custom
 endpoints only for that helper child. Other/unknown versions refuse with setup
 advice. Residual native tools and ambient CLI host instructions/skills remain
@@ -483,7 +484,7 @@ Claude Code supports bounded file-tool Dream on macOS/Linux with
 `/usr/bin/python3`: snapshot inputs read-only, candidate/notes writable, native
 tools disabled.
 
-Codex Dream is guided at CLI 0.162.1: workspace-write sandbox and on-request
+Codex Dream is guided at CLI 0.164.0: workspace-write sandbox and on-request
 approvals, with instructions guiding snapshot reads and candidate writes. Native
 tools can access other permitted files. Gram validates candidates before Review/Adopt or per-run Auto applies them. Complete file-only native-tool confinement is unavailable;
 strict file-only policy refuses this route. Other/unknown installed Codex versions
@@ -518,7 +519,7 @@ Source: [scheduler](../packages/server/src/orchestration/automatic-dream.ts).
 ## Codex ownership and reopening
 
 The provider-thread fence outlives Gram listeners and discovery-server retirement.
-At pinned 0.162.1, `thread/closed` or unsubscribe acknowledgement cannot establish
+As measured at 0.162.1 and assumed since, `thread/closed` or unsubscribe acknowledgement cannot establish
 recorder/writer release. Only observed **owning-child exit** clears the fence.
 After closing the final Gram scope, both replacement-child resume and same cached
 child reopen refuse while that owner lives, including normal closed-thread reopen.
