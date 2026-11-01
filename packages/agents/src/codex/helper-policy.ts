@@ -1,8 +1,8 @@
 /**
  * Supported 0.164.0 controls. No environment is distinct from a complete tool allowlist: no key
- * here removes `apply_patch`, which 0.164.0 can still declare on some models and which can't run
- * with `environments: []`. `config/read` echoes a removed feature's key, so it proves nothing
- * about the behaviour that key once switched; only a live key belongs in this list.
+ * found removes `apply_patch`, which 0.164.0 can still declare on some models and which can't run
+ * with `environments: []`. `config/read` echoes a removed feature's key (`js_repl` here), so
+ * reading one back proves nothing about the behaviour it once switched.
  */
 export const CODEX_HELPER_VERSION = "0.164.0";
 /** Built-in ChatGPT auth route for 0.164.0, never the user's custom endpoint. */
