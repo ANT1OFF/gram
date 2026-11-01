@@ -282,7 +282,9 @@ The `macos` jobs run on GitHub-hosted `macos-15`; every other job runs on `ubunt
 No signing or notarization secret reaches CI: releases are signed on the publisher's Mac. Workflows keep same-repository
 guards, read-only token permissions, SHA-pinned actions, download-only caches and pinned frozen
 installs. They use synthetic agents; CI does not qualify x64 Linux, signed or notarized Mac
-builds, Windows behaviour or paid providers. [Dependabot](../.github/dependabot.yml) proposes weekly
+builds, Windows behaviour or paid providers. `bun install` refuses to resolve a release younger than
+a day (`minimumReleaseAge` in `bunfig.toml`); frozen installs take what `bun.lock` records without
+that check. [Dependabot](../.github/dependabot.yml) proposes weekly
 updates no younger than 7 days and leaves Electron and its packaging, the Effect family,
 sherpa-onnx and Node type majors to deliberate bumps. Its security updates arrive through
 `npm_and_yarn` with only `package.json` changed, because GitHub has no Bun security updates;
