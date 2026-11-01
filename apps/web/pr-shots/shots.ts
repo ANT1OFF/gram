@@ -1321,7 +1321,7 @@ export const SHOTS: readonly Shot[] = [
           JSON.stringify({
             tools: [
               { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.296" },
-              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.162.1" },
+              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.164.0" },
               { tool: "git", found: true },
               { tool: "gh", found: true },
             ],
@@ -1363,7 +1363,7 @@ export const SHOTS: readonly Shot[] = [
           JSON.stringify({
             tools: [
               { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.296" },
-              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.162.1" },
+              { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.164.0" },
               { tool: "git", found: true },
               { tool: "gh", found: true },
             ],

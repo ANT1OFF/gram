@@ -177,12 +177,12 @@ describe("agent runtime policy", () => {
   it("judges each agent against its own baseline", () => {
     expect(judgeAgainstBaseline("codex", CODEX).verdict).toBe("supported");
     expect(judgeAgainstBaseline("codex", patch(CODEX, 5)).verdict).toBe("supported");
-    expect(judgeAgainstBaseline("codex", patch(CODEX, -1)).verdict).toBe("graceful");
     expect(judgeAgainstBaseline("codex", minor(CODEX, -1)).verdict).toBe("unsupported");
     expect(judgeAgainstBaseline("codex", minor(CODEX, 1)).verdict).toBe("unknown");
     expect(judgeAgainstBaseline("codex", `${minor(CODEX, 1)}-alpha.2`).verdict).toBe("unknown");
     // Claude's SDK pairs a CLI line, and allows ten patches past it.
     expect(BASELINES.claude.cliVersion).toMatch(/^2\.1\.\d+$/);
+    expect(judgeAgainstBaseline("claude", patch(CLAUDE, -1)).verdict).toBe("graceful");
     expect(judgeAgainstBaseline("claude", patch(CLAUDE, 10)).verdict).toBe("supported");
     expect(judgeAgainstBaseline("claude", patch(CLAUDE, 11))).toMatchObject({
       verdict: "unknown",
@@ -348,7 +348,7 @@ describe("updating the user's own CLI", () => {
       Effect.gen(function* () {
         const path = "/Users/me/.local/bin/codex";
         const real = `/Users/me/.codex/packages/standalone/releases/${CODEX}-aarch64-apple-darwin/bin/codex`;
-        const installed = checks([{ tool: "codex", found: true, path, version: patch(CODEX, -1) }]);
+        const installed = checks([{ tool: "codex", found: true, path, version: minor(CODEX, -1) }]);
         const own = { checks: installed, realpath: () => real };
         const baselineOnly = (yield* run(own))["codex"]!;
         expect(baselineOnly.installation).toMatchObject({ installer: "native", realPath: real });
@@ -827,7 +827,7 @@ describe("resolveAgentRuntimes", () => {
 
   it.effect("steers an old install to the baseline with its own installer", () =>
     Effect.gen(function* () {
-      const old = patch(CODEX, -1);
+      const old = minor(CODEX, -1);
       const all = yield* run({
         checks: checks([
           { tool: "codex", found: true, path: "/opt/homebrew/bin/codex", version: old },
@@ -835,7 +835,7 @@ describe("resolveAgentRuntimes", () => {
         realpath: () => `/opt/homebrew/Cellar/codex/${old}/bin/codex`,
       });
       expect(all["codex"]).toMatchObject({
-        verdict: "graceful",
+        verdict: "unsupported",
         reason: expect.stringContaining("older than"),
         // With no newer release checked, Homebrew's "latest" isn't offered; the pinned npm is.
         installSteps: [{ installer: "npm", command: `npm i -g @openai/codex@${CODEX}` }],
@@ -845,7 +845,7 @@ describe("resolveAgentRuntimes", () => {
 
   it.effect("offers a 'latest' command only when the latest is past its wait and supported", () =>
     Effect.gen(function* () {
-      const old = patch(CODEX, -1);
+      const old = minor(CODEX, -1);
       const brewed = {
         checks: checks([
           { tool: "codex", found: true, path: "/opt/homebrew/bin/codex", version: old },

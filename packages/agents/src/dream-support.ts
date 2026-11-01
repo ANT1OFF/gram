@@ -1,6 +1,6 @@
 import type { AgentKind } from "@gram/contracts";
 // Qualified independently from generated protocol bindings; regeneration is not verification.
-const VERIFIED_CODEX_DREAM_VERSION = "0.162.1";
+const VERIFIED_CODEX_DREAM_VERSION = "0.164.0";
 
 export type DreamSupportEvidence =
   | { readonly kind: "implementation" }

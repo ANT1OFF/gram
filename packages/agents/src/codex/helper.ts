@@ -107,7 +107,7 @@ const helperConfig = (server: CodexServer, cwd: string) =>
       return yield* new HelperTransportError({
         failure: "restriction",
         detail:
-          "Codex did not verify the ChatGPT subscription endpoint. Check the selected 0.162.1 runtime and refresh. Custom endpoints require explicit gateway helper configuration and separate permission. No helper context was sent.",
+          "Codex did not verify the ChatGPT subscription endpoint. Check the selected 0.164.0 runtime and refresh. Custom endpoints require explicit gateway helper configuration and separate permission. No helper context was sent.",
       });
     if (
       config.model_provider !== "openai" ||

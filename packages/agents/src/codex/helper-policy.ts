@@ -1,6 +1,6 @@
-/** Supported 0.162.1 controls. No environment is distinct from a complete tool allowlist. */
-export const CODEX_HELPER_VERSION = "0.162.1";
-/** Qualified built-in ChatGPT auth route in 0.162.1, never the user's custom endpoint. */
+/** Supported 0.164.0 controls. No environment is distinct from a complete tool allowlist. */
+export const CODEX_HELPER_VERSION = "0.164.0";
+/** Built-in ChatGPT auth route for 0.164.0, never the user's custom endpoint. */
 export const CODEX_HELPER_SUBSCRIPTION_BASE_URL = "https://chatgpt.com/backend-api/codex";
 export const CODEX_HELPER_FEATURES = Object.fromEntries(
   [

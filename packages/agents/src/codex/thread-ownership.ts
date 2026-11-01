@@ -31,9 +31,9 @@ const unavailable = (threadId: string, detail: string) =>
 /**
  * Provider ownership outlives Gram's listeners and the acquisition cache. Each physical home has
  * one writer per thread, but only scopes on the exact same child/auth identity may share it.
- * At pinned 0.162.1, thread/closed can follow failed persistence shutdown while the shared
- * recorder retains its writer. Neither that notification nor unsubscribe proves release;
- * only observed owning-child exit clears our fence. No lock-file probing, delay/retry, or
+ * Measured at 0.162.1 and assumed since: thread/closed can follow failed persistence shutdown
+ * while the shared recorder retains its writer. Neither that notification nor unsubscribe proves
+ * release; only observed owning-child exit clears our fence. No lock-file probing, delay/retry, or
  * termination of held siblings belongs here.
  */
 export const makeThreadOwnership = (
@@ -93,7 +93,7 @@ export const makeThreadOwnership = (
               closing.detail = `thread/unsubscribe failed: ${error.message}; awaiting owning app-server exit`;
             },
             onSuccess: (response) => {
-              // Pinned 0.162.1 has no qualified protocol acknowledgement of recorder/writer release.
+              // No qualified protocol acknowledgement of recorder/writer release (measured at 0.162.1).
               if (lease.uncertainOpen) return;
               const status = response?.status;
               closing.detail =

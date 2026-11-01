@@ -1,7 +1,7 @@
 // Invented app-server, never contacts a provider or reads credentials.
 const fs = require('node:fs');
 const { randomUUID } = require('node:crypto');
-if (process.argv.includes('--version')) { console.log('codex-cli ' + (process.env.GRAM_HELPER_VERSION || '0.162.1')); process.exit(0); }
+if (process.argv.includes('--version')) { console.log('codex-cli ' + (process.env.GRAM_HELPER_VERSION || '0.164.0')); process.exit(0); }
 const record = (row) => fs.appendFileSync(process.env.GRAM_HELPER_EVIDENCE, JSON.stringify(row) + '\n');
 const write = (message) => process.stdout.write(JSON.stringify(message) + '\n');
 record({start:true, pid:process.pid, cwd:process.cwd(), args:process.argv.slice(2), path:process.env.PATH, apiEnvironment:Object.keys(process.env).filter((name)=> /^(OPENAI_API_KEY|OPENAI_BASE_URL|ANTHROPIC_API_KEY|ANTHROPIC_BASE_URL|ANTHROPIC_AUTH_TOKEN|LLM_API_KEY)$/i.test(name) && process.env[name])});
