@@ -1434,7 +1434,7 @@ describe("CodexHost confined sessions", () => {
               mcp: { url: "http://127.0.0.1:4317/mcp", headers: {} },
             }).pipe(Effect.provide(h.layer)),
           );
-          expect(error.message).toContain("Codex Dream is verified");
+          expect(error.message).toContain("Codex Dream is pinned");
           expect(h.calls).toEqual([]);
           yield* openSession().pipe(Effect.provide(h.layer));
           expect(h.calls.some(([method]) => method === "thread/start")).toBe(true);

@@ -20,7 +20,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',(line)
  case 'config/read': {
   const features={};const args=process.argv.slice(2);
   for(const arg of args) if(arg.startsWith('features.')&&arg.endsWith('=false')) features[arg.slice(9,-6)]=false;
-  if(process.env.GRAM_HELPER_UNSAFE_CONFIG) features.stable_environment_tools=true;
+  if(process.env.GRAM_HELPER_UNSAFE_CONFIG) features.view_image=true;
   const forcedBase=process.env.GRAM_HELPER_RETURNED_BASE_URL;
   const pinnedBase=args.find((arg)=>arg.startsWith('openai_base_url='));
   const baseUrl=forcedBase || (pinnedBase?JSON.parse(pinnedBase.slice('openai_base_url='.length)):process.env.GRAM_HELPER_TOML_BASE_URL);

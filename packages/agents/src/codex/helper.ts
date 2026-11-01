@@ -24,13 +24,13 @@ import {
 import { GatewayKeyProvider } from "../gateway.ts";
 
 export const CODEX_GUIDED_HELPER_DETAIL =
-  "Guided · Standard speed. Uses your Codex subscription. Environment tools, MCP, apps and plugins are disabled; residual native tools and your CLI's host instructions/skills may still participate. Context permission applies to this provider.";
+  "Guided · Standard speed. Uses your Codex subscription. It runs with no environment, and MCP, apps and plugins are disabled; residual native tools and your CLI's host instructions/skills may still participate. Context permission applies to this provider.";
 
 const failed = (failure: HelperTransportError["failure"]) => new HelperTransportError({ failure });
 const classify = (error: unknown): HelperTransportError => {
   if (error instanceof HelperTransportError) return error;
   const message = error instanceof Error ? error.message : "";
-  if (message.startsWith("Codex guided helpers require the qualified CLI"))
+  if (message.startsWith("Codex guided helpers require the pinned CLI"))
     return new HelperTransportError({ failure: "unavailable", detail: message });
   return failed(
     /unauthorized|authentication|not.logged.in|login expired/i.test(message)

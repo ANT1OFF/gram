@@ -305,7 +305,7 @@ function LocalProviderPicker({
       </div>
       {provider === "codex" && (
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Guided generation uses your Codex subscription with environment tools disabled. Residual
+          Guided generation uses your Codex subscription with no environment. Residual
           native tools and CLI host instructions/skills may still participate.
         </p>
       )}

@@ -456,8 +456,9 @@ empty setting sources, disabled hooks/plugins, no persisted history, Standard
 speed and a deny permission callback. Context waits for restriction verification.
 
 Codex helpers use the guided adapter pinned to **CLI 0.164.0**. It uses
-separate ephemeral threads, disables environment tools, requests read-only/no-network
-permissions and forbids escalation. The child pins and verifies the built-in
+separate ephemeral threads with no environment, requests read-only/no-network
+permissions and forbids escalation. Some models can still be offered `apply_patch`, which
+has no environment to run in. The child pins and verifies the built-in
 ChatGPT inference route before delivering context, overriding inherited custom
 endpoints only for that helper child. Other/unknown versions refuse with setup
 advice. Residual native tools and ambient CLI host instructions/skills remain
