@@ -4,9 +4,9 @@ import { dreamSupportFor } from "./dream-support.ts";
 
 describe("Dream support evidence", () => {
   it("keeps guided native permissions distinct from file-only support", () => {
-    expect(dreamSupportFor("codex", { kind: "installed", cliVersion: "0.164.0" })).toMatchObject({
+    expect(dreamSupportFor("codex", { kind: "installed", cliVersion: "0.166.0" })).toMatchObject({
       mode: "guided",
-      verifiedCliVersion: "0.164.0",
+      verifiedCliVersion: "0.166.0",
     });
     expect(dreamSupportFor("codex", { kind: "implementation" }).reason).toContain(
       "native tools can read or change other permitted files",

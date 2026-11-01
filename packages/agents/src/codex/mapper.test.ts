@@ -893,6 +893,22 @@ describe("makeCodexMapper failures", () => {
         true,
       ),
     ).toEqual({ kind: "network", code: "responseStreamDisconnected", retryable: true });
+    expect(
+      codexFailure(
+        { message: "Model gone", codexErrorInfo: "modelNotFound", additionalDetails: null },
+        false,
+      ),
+    ).toEqual({ kind: "modelUnavailable", code: "modelNotFound", retryable: false });
+    expect(
+      codexFailure(
+        {
+          message: "Policy-restricted capacity is unavailable. Please try again later.",
+          codexErrorInfo: "policyCapacityUnavailable",
+          additionalDetails: null,
+        },
+        false,
+      ),
+    ).toEqual({ kind: "rateLimit", code: "policyCapacityUnavailable", retryable: true });
   });
 
   it("reads a 401 as auth and a 404 as a model the gateway doesn't have", () => {

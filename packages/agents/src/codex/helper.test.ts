@@ -261,6 +261,26 @@ describe("only-Codex guided subscription helper child", () => {
         .pipe(Effect.ensuring(Effect.sync(() => rmSync(f.root, { recursive: true, force: true }))));
     },
   );
+  it.effect("omits an unset reasoning effort rather than sending null, which Codex refuses", () => {
+    const f = fixture();
+    const { effort: _effort, ...unset } = call;
+    return f
+      .provide(
+        Effect.gen(function* () {
+          const adapter = makeCodexHelper(f.config, yield* GatewayKeyProvider);
+          expect(yield* adapter.generate(unset)).toEqual({ text: '{"goal":"synthetic"}' });
+          const params = f.rows().find((row) => row.method === "thread/start")?.params as
+            | { config: Record<string, unknown> }
+            | undefined;
+          expect(params?.config).toBeDefined();
+          expect(params?.config).not.toHaveProperty("model_reasoning_effort");
+          expect(f.rows().find((row) => row.method === "turn/start")).toMatchObject({
+            hasEffort: false,
+          });
+        }),
+      )
+      .pipe(Effect.ensuring(Effect.sync(() => rmSync(f.root, { recursive: true, force: true }))));
+  });
   for (const [extra, failure, delivery] of [
     [{ GRAM_HELPER_AUTH: "off" }, "auth", false],
     [{ GRAM_HELPER_AUTH: "api" }, "auth", false],

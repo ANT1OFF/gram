@@ -47,7 +47,7 @@ test("captured CLI windows show the same percentages and 24-hour resets on Usage
       JSON.stringify({
         tools: [
           { tool: "claude", found: true, path: "/mock/claude", version: "2.1.301" },
-          { tool: "codex", found: true, path: "/mock/codex", version: "0.164.0" },
+          { tool: "codex", found: true, path: "/mock/codex", version: "0.166.0" },
         ],
         claudeSignIn: "notSignedIn",
         codexSignIn: "notSignedIn",

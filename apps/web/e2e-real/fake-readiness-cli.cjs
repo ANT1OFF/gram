@@ -5,7 +5,7 @@ const args = process.argv.slice(2);
 const auth = process.env.GRAM_REAL_E2E_AGENT_AUTH;
 if (auth !== "signed-in" && auth !== "signed-out") process.exit(2);
 if (args.length === 1 && args[0] === "--version") {
-  console.log(agent === "claude" ? "2.1.273 (Claude Code)" : "codex-cli 0.164.0");
+  console.log(agent === "claude" ? "2.1.273 (Claude Code)" : "codex-cli 0.166.0");
   process.exit(0);
 }
 if (agent === "claude" && args.join(" ") === "auth status --json") {

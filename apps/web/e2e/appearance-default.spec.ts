@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 const launchChecks = {
   tools: [
     { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.296" },
-    { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.164.0" },
+    { tool: "codex", found: true, path: "/mock/bin/codex", version: "0.166.0" },
     { tool: "git", found: true, path: "/mock/bin/git", version: "2.47.1" },
     { tool: "gh", found: false },
   ],

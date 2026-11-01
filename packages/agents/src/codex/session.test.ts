@@ -317,7 +317,7 @@ const harness = (
               return {
                 rpc,
                 cliVersion:
-                  options.cliVersion === null ? undefined : (options.cliVersion ?? "0.164.0"),
+                  options.cliVersion === null ? undefined : (options.cliVersion ?? "0.166.0"),
                 openThread: (_resumeId, open) => open,
                 waitForThreadExit: () => Effect.void,
                 configCurrent: Effect.succeed(true),

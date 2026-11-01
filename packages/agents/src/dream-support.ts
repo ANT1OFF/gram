@@ -1,6 +1,6 @@
 import type { AgentKind } from "@gram/contracts";
 // Pinned independently of the generated protocol bindings; regeneration is not verification.
-const VERIFIED_CODEX_DREAM_VERSION = "0.164.0";
+const VERIFIED_CODEX_DREAM_VERSION = "0.166.0";
 
 export type DreamSupportEvidence =
   | { readonly kind: "implementation" }

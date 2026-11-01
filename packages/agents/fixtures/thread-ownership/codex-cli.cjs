@@ -2,7 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 if (process.argv.includes("--version")) {
-  console.log("codex-cli 0.164.0");
+  console.log("codex-cli 0.166.0");
   process.exit(0);
 }
 const home = process.env.CODEX_HOME;

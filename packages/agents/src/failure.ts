@@ -85,6 +85,10 @@ const CODEX_KINDS: Record<string, readonly [AgentFailureKind, boolean]> = {
   rateLimitExceeded: ["rateLimit", true],
   flexUnavailable: ["modelUnavailable", true],
   serverOverloaded: ["rateLimit", true],
+  // 0.166.0 split this out of `serverOverloaded`; Codex still retries it the same way.
+  policyCapacityUnavailable: ["rateLimit", true],
+  // Terminal since 0.165.0: Codex no longer retries a provider's `model_not_found`.
+  modelNotFound: ["modelUnavailable", false],
   cyberPolicy: ["unknown", false],
   misalignmentPolicyViolation: ["unknown", false],
   internalServerError: ["unknown", true],
