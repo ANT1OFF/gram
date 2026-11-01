@@ -1,4 +1,5 @@
 # Electron and native lifecycle scripts resolve build tools from the root install.
 [install]
 linker = "hoisted"
-minimumReleaseAge = "1d"
+# Plain seconds, not "1d": Dependabot's Bun can't parse unit strings.
+minimumReleaseAge = 86400
