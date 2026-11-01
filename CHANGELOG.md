@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/ANT1OFF/gram/compare/v1.3.0...v1.3.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **codex:** move to 0.166.0 and omit unset reasoning effort ([#64](https://github.com/ANT1OFF/gram/issues/64)) ([2d805fe](https://github.com/ANT1OFF/gram/commit/2d805fecd77360a0ea46e145f1a6b0f477b77b97))
+* **deps:** write minimumReleaseAge as seconds for Dependabot's Bun ([#62](https://github.com/ANT1OFF/gram/issues/62)) ([3f2d2ea](https://github.com/ANT1OFF/gram/commit/3f2d2ea1d9d7016e83ac4a3494e5c890abdfd02b))
+
 ## [1.3.0](https://github.com/ANT1OFF/gram/compare/v1.2.2...v1.3.0) (2026-10-31)
 
 
