@@ -1,7 +1,7 @@
 // Invented app-server with real owned stdio, per-child configuration and writer files.
 const fs = require("node:fs");
 const path = require("node:path");
-if (process.argv.includes("--version")) { console.log("codex-cli 0.164.0"); process.exit(0); }
+if (process.argv.includes("--version")) { console.log("codex-cli 0.166.0"); process.exit(0); }
 const home = process.env.CODEX_HOME;
 const log = (msg) => fs.appendFileSync(process.env.GRAM_RESTART_LOG, JSON.stringify({ pid: process.pid, msg }) + "\n");
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");

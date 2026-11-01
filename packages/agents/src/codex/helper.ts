@@ -107,7 +107,7 @@ const helperConfig = (server: CodexServer, cwd: string) =>
       return yield* new HelperTransportError({
         failure: "restriction",
         detail:
-          "Codex did not verify the ChatGPT subscription endpoint. Check the selected 0.164.0 runtime and refresh. Custom endpoints require explicit gateway helper configuration and separate permission. No helper context was sent.",
+          "Codex did not verify the ChatGPT subscription endpoint. Check the selected 0.166.0 runtime and refresh. Custom endpoints require explicit gateway helper configuration and separate permission. No helper context was sent.",
       });
     if (
       config.model_provider !== "openai" ||
@@ -188,7 +188,8 @@ export const makeCodexHelper = (
               config: {
                 model_provider: "openai",
                 openai_base_url: CODEX_HELPER_SUBSCRIPTION_BASE_URL,
-                model_reasoning_effort: call.effort ?? null,
+                // Unset means the model's default: Codex refuses a null `model_reasoning_effort`.
+                ...(call.effort === undefined ? {} : { model_reasoning_effort: call.effort }),
                 service_tier: "default",
                 web_search: "disabled",
                 agents: { enabled: false },
@@ -332,7 +333,7 @@ export const makeCodexHelper = (
                     threadId,
                     input: [{ type: "text", text: call.prompt, text_elements: [] }],
                     model: call.model,
-                    effort: call.effort ?? null,
+                    ...(call.effort === undefined ? {} : { effort: call.effort }),
                     serviceTier: "default",
                     environments: [],
                     approvalPolicy: "never",

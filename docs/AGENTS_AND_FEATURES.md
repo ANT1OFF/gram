@@ -455,7 +455,7 @@ Claude helpers use an isolated one-shot SDK query: no tools, strict empty MCP,
 empty setting sources, disabled hooks/plugins, no persisted history, Standard
 speed and a deny permission callback. Context waits for restriction verification.
 
-Codex helpers use the guided adapter pinned to **CLI 0.164.0**. It uses
+Codex helpers use the guided adapter pinned to **CLI 0.166.0**. It uses
 separate ephemeral threads with no environment, requests read-only/no-network
 permissions and forbids escalation. Some models can still be offered `apply_patch`, which
 has no environment to run in. The child pins and verifies the built-in
@@ -484,7 +484,7 @@ Claude Code supports bounded file-tool Dream on macOS/Linux with
 `/usr/bin/python3`: snapshot inputs read-only, candidate/notes writable, native
 tools disabled.
 
-Codex Dream is guided at CLI 0.164.0: workspace-write sandbox and on-request
+Codex Dream is guided at CLI 0.166.0: workspace-write sandbox and on-request
 approvals, with instructions guiding snapshot reads and candidate writes. Native
 tools can access other permitted files. Gram validates candidates before Review/Adopt or per-run Auto applies them. Complete file-only native-tool confinement is unavailable;
 strict file-only policy refuses this route. Other/unknown installed Codex versions

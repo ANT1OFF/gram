@@ -21,7 +21,7 @@ const signedIn: LaunchChecks = {
   checkedAt: 7,
   tools: [
     { tool: "claude", found: true, version: "2.1.296" },
-    { tool: "codex", found: true, version: "0.164.0" },
+    { tool: "codex", found: true, version: "0.166.0" },
   ],
   claudeSignIn: "signedIn",
   codexSignIn: "signedIn",
@@ -63,7 +63,7 @@ describe("selected harness read-only service", () => {
           model: { agent: "codex", model: "invented-model" },
         });
         expect(result.availability).toEqual({ state: "available" });
-        expect(result.version).toBe("0.164.0");
+        expect(result.version).toBe("0.166.0");
         expect(result.support.dream?.state).toBe("supported");
         expect(result.support.dreamGuided?.state).toBe("supported");
         expect(result.support.dreamFiles?.state).toBe("unsupported");

@@ -9,7 +9,7 @@ if (process.env.GRAM_FIXTURE_SUBSCRIPTION_ONLY === "1" && (apiEnvPresent || othe
   process.exit(10);
 }
 if (args.includes("--version")) {
-  console.log("codex-cli 0.164.0");
+  console.log("codex-cli 0.166.0");
   process.exit(0);
 }
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
@@ -60,7 +60,7 @@ const dreamTools = async () => {
     if (result.isError) throw new Error(`Synthetic ${name} failed`);
     return result.content[0].text;
   };
-  await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "synthetic-codex", version: "0.164.0" } });
+  await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "synthetic-codex", version: "0.166.0" } });
   const tools = await rpc("tools/list", {});
   record({ dreamToolNames: tools.tools.map((tool) => tool.name) });
   await call("dream_list", { path: "input/memory" });
