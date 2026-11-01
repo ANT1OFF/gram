@@ -135,7 +135,7 @@ export function themeVariables(
   };
 }
 
-/** Matches the repo formatter (oxfmt), so generated files pass `bun run fmt:check` unchanged. */
+/** Matches the repo formatter (`bun fmt`), so generated files pass `bun run fmt:check` unchanged. */
 const PRINT_WIDTH = 100;
 
 function declaration(name: string, value: string): string {
