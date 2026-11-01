@@ -33,7 +33,7 @@ import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { useDerivedAsks } from "@/orchestration/needs-you-store";
 import { allWorkspacesPaused, setAllWorkspacesPaused } from "@/orchestration/pause-workspace";
 import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
-import { workersByTab, type WorkerRow } from "@/orchestration/workers-model";
+import { startOfDay, workersByTab, type WorkerRow } from "@/orchestration/workers-model";
 import { useServerSettings } from "@/settings-sync/store";
 import { UsageMeter } from "@/shell/usage-meter";
 import { useThreadsStore } from "@/stores/threads";
@@ -107,9 +107,10 @@ export function useQuietStrip(all: readonly WorkspaceAsks[]): StripWorkspace[] {
           orchestratorThreadId: w.orchestratorThreadId,
           workers: tabs.now.flatMap((feature) => feature.rows),
           asks: w.asks.length,
-          mergedToday: tabs.doneToday
+          mergedToday: tabs.done
             .flatMap((feature) => feature.rows)
-            .filter((row) => row.glyph === "merged").length,
+            .filter((row) => row.glyph === "merged" && (row.finishedAt ?? 0) >= startOfDay(now))
+            .length,
         };
       }),
     ),

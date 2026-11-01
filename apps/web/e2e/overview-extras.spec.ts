@@ -3,11 +3,11 @@ import { expect, test, type Page } from "@playwright/test";
 import type { MockOneThreadSimulation } from "../src/api/mock-asks";
 import { pressFirstWorkspaceKey } from "./thread-row";
 
-// The overview sidebar's extras: Pull requests and Done
-// today, folded until opened, the usage meters and worker slots at its foot, off by default, ⌘J's jump into its
-// workers, and Settings → General's Sidebar sections. Each is checked against what the right
-// panel's PR lists, ⌘J's list, the title bar's meter and the ledger say. Mock state lives in memory, so every
-// step after the seed stays inside the app, bar the reload the settings are kept across.
+// The overview sidebar's extras: Pull requests and Done, folded until opened, the usage meters and
+// worker slots at its foot, off by default, ⌘J's jump into its workers, and Settings → General's
+// Sidebar sections. Each is checked against what the right panel's PR lists, ⌘J's list, the title
+// bar's meter and the ledger say. Mock state lives in memory, so every step after the seed stays
+// inside the app, bar the reload the settings are kept across.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
@@ -189,15 +189,21 @@ test("Pull requests stays folded until opened, kept across a reload, and leaves 
   await expect(kinds.and(page.locator('[data-kind="yours"]')).first()).toBeVisible();
 });
 
-test("Done today starts folded and has ⌘J's Done today rows, opening one as ⌘J does", async ({
+test("Done starts folded and has the week of ⌘J's Done rows by day, opening one as ⌘J does", async ({
   page,
 }) => {
   const made = await start(page);
   const title = sectionTitle(page, "doneToday");
   await expect(title).toHaveAttribute("aria-expanded", "false");
+  await expect(title).toHaveAccessibleName(/^Done, \d+$/);
   await title.click();
   const rows = section(page, "doneToday").getByTestId("overview-done");
   await expect(rows.first()).toBeVisible();
+  // Under their days, today's first.
+  const days = section(page, "doneToday").getByTestId("overview-done-day");
+  await expect(days.first()).toHaveText("Today");
+  for (const day of await days.allTextContents())
+    expect(day).toMatch(/^(Today|Yesterday|\w{3} \d{1,2} \w{3})$/);
 
   // ⌘J's own list, with the overview hidden so ⌘J opens it.
   await page.keyboard.press("ControlOrMeta+KeyB");
@@ -206,7 +212,7 @@ test("Done today starts folded and has ⌘J's Done today rows, opening one as �
   const list = page.getByTestId("workers-list");
   await expect(list).toBeVisible();
   const fromList = await list
-    .getByTestId("workers-section-doneToday")
+    .getByTestId("workers-section-done")
     .getByTestId("worker-row")
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-thread-id")));
   expect(fromList).toContain(made.doneToday);
@@ -215,24 +221,57 @@ test("Done today starts folded and has ⌘J's Done today rows, opening one as �
   await page.keyboard.press("ControlOrMeta+KeyB");
   await expect(overview(page)).toBeVisible();
 
+  // The overview keeps the last seven days of them, in ⌘J's order; ⌘J has the older ones too.
   const here = rows.and(page.locator(`[data-workspace-id="${made.workspaceId}"]`));
-  await expect(here).toHaveCount(fromList.length);
   const fromOverview = await here.evaluateAll((els) =>
     els.map((el) => el.getAttribute("data-thread-id")),
   );
-  expect(fromOverview.toSorted()).toEqual(fromList.toSorted());
+  expect(fromOverview).toEqual(fromList.filter((id) => fromOverview.includes(id)));
+  expect(fromOverview).toContain(made.doneToday);
+  expect(fromOverview).toContain(made.earlier[0]);
+  expect(fromList).toEqual(expect.arrayContaining([...made.earlier]));
+  expect(fromOverview).not.toContain(made.earlier[1]);
+  expect(fromOverview).not.toContain(made.earlier[2]);
 
   const merged = rows.and(page.locator(`[data-thread-id="${made.doneToday}"]`));
   await expect(merged).toHaveAttribute("data-merged", "true");
   await expect(merged.getByTestId("overview-done-time")).toHaveText(/^\d{2}:\d{2}$/);
   // One line, grey until hovered: what became of it is on its hover and in its name.
   await expect(merged).toHaveAttribute("title", /^agent-platform · merged api#\d+$/);
-  await expect(merged).toHaveAccessibleName(/, agent-platform · merged api#\d+, \d{2}:\d{2}$/);
+  await expect(merged).toHaveAccessibleName(
+    /, agent-platform · merged api#\d+, Today \d{2}:\d{2}$/,
+  );
   await expect(merged).toHaveCSS("filter", /grayscale\(1\)/);
   await merged.hover();
   await expect(merged).not.toHaveCSS("filter", /grayscale\(1\)/);
   await merged.click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.doneToday}$`));
+});
+
+test("Done shows its first ten rows, and Show all opens ⌘J on its Done", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/t/t-flaky");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  // Archived groups: more finished this week than the column shows.
+  await page.evaluate(() => window.gramMock!.simulateArchivedGroups());
+  await pressFirstWorkspaceKey(page);
+  const title = sectionTitle(page, "doneToday");
+  await expect(title).toHaveAccessibleName(/^Done, \d+$/);
+  const count = Number((await title.getAttribute("aria-label"))!.split(", ")[1]);
+  expect(count).toBeGreaterThan(10);
+  // Folded, it says how many it holds; open, it shows ten of them and the way to the rest.
+  await expect(title).toContainText(String(count));
+  await title.click();
+  const done = section(page, "doneToday");
+  await expect(done.getByTestId("overview-done")).toHaveCount(10);
+  const more = done.getByTestId("overview-done-more");
+  await expect(more).toHaveText(/^Show all in Workers \(.+\)$/);
+  await more.click();
+  const list = page.getByTestId("workers-list");
+  await expect(list).toBeVisible();
+  const listed = list.getByTestId("workers-section-done");
+  await expect(listed.getByTestId("workers-day").first()).toBeInViewport();
+  await expect(listed.getByTestId("worker-row").first()).toHaveAttribute("aria-selected", "true");
 });
 
 test("the foot is off by default, and the orchestrator's line keeps the slots on its hover", async ({
@@ -378,7 +417,7 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
   const labels = {
     solo: "Solo threads",
     pullRequests: "Pull requests",
-    doneToday: "Done today",
+    doneToday: "Done",
     usage: "Usage and slots",
   } as const;
   await expect(group.getByRole("checkbox")).toHaveCount(4);

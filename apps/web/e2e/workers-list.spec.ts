@@ -66,14 +66,20 @@ test("⌘J lists every worker by section and feature, and opens one in two steps
       .filter({ has: page.locator(`[data-thread-id="${made.doneToday}"]`) }),
   ).toHaveCount(0);
 
-  // Done today and Earlier are sections of the same list, a click away without a tab.
-  const doneToday = page.getByTestId("workers-section-doneToday");
+  // Done is a section of the same list, a click away without a tab, by the day each finished:
+  // today's first, and every earlier day ⌘J still has, past the overview's week too.
+  const done = page.getByTestId("workers-section-done");
   await expect(
-    doneToday.locator(`[data-thread-id="${made.doneToday}"]`).getByTestId("worker-now"),
+    done.locator(`[data-thread-id="${made.doneToday}"]`).getByTestId("worker-now"),
   ).toHaveText(/^merged \d{2}:\d{2}$/);
-  const earlier = page.getByTestId("workers-section-earlier");
   for (const id of made.earlier)
-    await expect(earlier.locator(`[data-thread-id="${id}"]`)).toBeAttached();
+    await expect(done.locator(`[data-thread-id="${id}"]`)).toBeAttached();
+  const days = done.getByTestId("workers-day");
+  await expect(days.first()).toHaveText("Today");
+  // Three earlier days at least: 3, 9 and 12 days back.
+  await expect.poll(() => days.count()).toBeGreaterThanOrEqual(4);
+  for (const day of await days.allTextContents())
+    expect(day).toMatch(/^(Today|Yesterday|\w{3} \d{1,2} \w{3})$/);
 
   // The search box filters every section.
   const search = page.getByTestId("workers-search");

@@ -17,20 +17,21 @@ import {
 import { dateTimeFormat } from "@/lib/intl";
 
 import { liveWorkerEntry, workerTitle } from "./board-model";
+import { dayLabel } from "./outputs-model";
 import { workerTone, type RailTone } from "./rail-model";
 import { threadWorking } from "./tree-model";
 import { workerActivity, workerWait, type WorkerActivity, type WorkerBusy } from "./wait-model";
 
-// The ⌘J Workers list: every worker of a workspace in three tabs, grouped by feature, each with a
-// "now" line of four words or fewer. Pure and deterministic (no helper model), so it is tested
-// without a browser and two windows always say the same thing.
+// The ⌘J Workers list: every worker of a workspace in Now and Done, grouped by feature (and in
+// Done, by the day it finished), each with a "now" line of four words or fewer. Pure and
+// deterministic (no helper model), so it is tested without a browser and two windows always say
+// the same thing.
 
-export type WorkersTab = "now" | "doneToday" | "earlier";
+export type WorkersTab = "now" | "done";
 
 export const WORKERS_TABS: readonly { readonly id: WorkersTab; readonly label: string }[] = [
   { id: "now", label: "Now" },
-  { id: "doneToday", label: "Done today" },
-  { id: "earlier", label: "Earlier" },
+  { id: "done", label: "Done" },
 ];
 
 export { NOW_LINE_WORDS } from "@gram/contracts";
@@ -69,9 +70,18 @@ export interface WorkerRow {
   readonly cleanedUp?: true | undefined;
 }
 
+/** A local day finished work is listed under: its midnight, and its heading. */
+export interface DoneDay {
+  readonly start: number;
+  /** `Today`, `Yesterday`, else `Thu 30 Oct`. */
+  readonly label: string;
+}
+
 export interface WorkerFeature {
   readonly feature: string;
   readonly rows: readonly WorkerRow[];
+  /** In Done, the day its rows finished on: a feature that finished over two days is in both. */
+  readonly day?: DoneDay | undefined;
 }
 
 export type WorkersByTab = Readonly<Record<WorkersTab, readonly WorkerFeature[]>>;
@@ -87,21 +97,40 @@ export interface WorkerLiveFacts {
   readonly asking?: ReadonlySet<ThreadId>;
 }
 
-/** Local midnight of the day `now` falls on. */
-export const startOfDay = (now: number): number => {
+/** Local midnight `days` days before the day `now` falls on, by the calendar (so across DST too). */
+export const daysBefore = (now: number, days: number): number => {
   const day = new Date(now);
   day.setHours(0, 0, 0, 0);
+  day.setDate(day.getDate() - days);
   return day.getTime();
+};
+
+/** Local midnight of the day `now` falls on. */
+export const startOfDay = (now: number): number => daysBefore(now, 0);
+
+/** Where finished work with no time to go by is listed: after every day. */
+const UNDATED: DoneDay = { start: 0, label: "Earlier" };
+
+/** The day finished work at `at` is listed under, headed as the outputs' days are. */
+export const doneDay = (at: number | undefined, now: number): DoneDay => {
+  if (at === undefined) return UNDATED;
+  const start = startOfDay(at);
+  return { start, label: dayLabel(start, now) };
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** `14:12` for today, `12 Oct` before; 24-hour, as the product's times are. */
-export const finishedWhen = (at: number, now: number): string => {
+/** `14:12`, on the 24-hour clock the product's times are on. */
+export const clockTime = (at: number): string => {
   const date = new Date(at);
-  if (at >= startOfDay(now)) return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  return dateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(date);
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
+
+/** `14:12` for today, `12 Oct` before: a now line, which is read outside Done's days too. */
+export const finishedWhen = (at: number, now: number): string =>
+  at >= startOfDay(now)
+    ? clockTime(at)
+    : dateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(at));
 
 // The now line's words are the feature cards' (contracts `feature-cards.ts`), so a worker reads the
 // same in the Workers list and on its card.
@@ -253,11 +282,7 @@ export const workerRow = (
   const busy = liveActivity(live, summary, statusDetail[worker.threadId], ownedCi);
   const done = wait.bucket === "done";
   const at = done ? finishedAt(live, summary) : undefined;
-  const tab: WorkersTab = !done
-    ? "now"
-    : at !== undefined && at >= startOfDay(now)
-      ? "doneToday"
-      : "earlier";
+  const tab: WorkersTab = done ? "done" : "now";
   const tone = liveWorkerTone(worker, {
     summary,
     detail: statusDetail[worker.threadId],
@@ -293,7 +318,12 @@ export const workerRow = (
   if (live.state === "error") return row(undefined, "stopped on an error");
   if (done) {
     const when = at === undefined ? "" : ` ${finishedWhen(at, now)}`;
-    if (live.state === "merged") return row("merged", `merged${when}`);
+    // Archived once merged, as the orchestrator does after a merge, it still reads merged.
+    if (
+      live.state === "merged" ||
+      (live.state === "archived" && live.stateBase?.state === "merged")
+    )
+      return row("merged", `merged${when}`);
     if (live.state === "archived") return row("archived", "archived");
     return row(FINISHED_GLYPH[live.state] ?? "delivered", `done${when}`);
   }
@@ -333,7 +363,7 @@ export const finishedRow = (worker: FinishedWorker, now: number): WorkerRow => {
     title: worker.title,
     feature: worker.feature,
     repo: finishedRepo(worker),
-    tab: worker.closedAt >= startOfDay(now) ? "doneToday" : "earlier",
+    tab: "done",
     state: merged ? "merged" : "archived",
     status: "idle",
     glyph: merged ? "merged" : "archived",
@@ -348,15 +378,16 @@ export const finishedRow = (worker: FinishedWorker, now: number): WorkerRow => {
 
 /**
  * Every worker of the workspace by tab, grouped by feature. Now keeps the ledger's feature order
- * and its spawn order within a feature, so rows don't jump as workers change state; the done tabs
- * show the most recently finished feature first.
+ * and its spawn order within a feature, so rows don't jump as workers change state. Done is by the
+ * day each finished, latest first, and within a day by feature, the most recently finished first;
+ * archived workers that finished are there too, and every closed one Gram still lists.
  */
 export const workersByTab = (
   ledger: Pick<OrchestratorLedger, "features"> | undefined,
   facts: WorkerLiveFacts,
   finished: readonly FinishedWorker[] = [],
 ): WorkersByTab => {
-  const tabs: Record<WorkersTab, WorkerFeature[]> = { now: [], doneToday: [], earlier: [] };
+  const tabs: Record<WorkersTab, WorkerFeature[]> = { now: [], done: [] };
   const add = (tab: WorkersTab, feature: string, rows: readonly WorkerRow[]) => {
     const at = tabs[tab].findIndex((each) => each.feature === feature);
     if (at === -1) tabs[tab].push({ feature, rows });
@@ -381,14 +412,15 @@ export const workersByTab = (
     const row = finishedRow(worker, facts.now);
     add(row.tab, row.feature, [row]);
   }
-  const latest = (feature: WorkerFeature) =>
-    Math.max(...feature.rows.map((row) => row.finishedAt ?? 0));
-  for (const id of ["doneToday", "earlier"] as const) {
-    tabs[id].sort((a, b) => latest(b) - latest(a));
-    tabs[id] = tabs[id].map((feature) => ({
-      ...feature,
-      rows: feature.rows.toSorted((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0)),
-    }));
+  const done = tabs.done
+    .flatMap((feature) => feature.rows)
+    .toSorted((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
+  tabs.done = [];
+  for (const row of done) {
+    const day = doneDay(row.finishedAt, facts.now);
+    const at = tabs.done.findIndex((f) => f.day?.start === day.start && f.feature === row.feature);
+    if (at === -1) tabs.done.push({ feature: row.feature, day, rows: [row] });
+    else tabs.done[at] = { ...tabs.done[at]!, rows: [...tabs.done[at]!.rows, row] };
   }
   return tabs;
 };
@@ -430,13 +462,13 @@ export const searchWorkers = (
       const text = `${row.title} ${row.feature} ${row.repo}`.toLowerCase();
       return words.every((word) => text.includes(word));
     });
-    return rows.length === 0 ? [] : [{ feature: feature.feature, rows }];
+    return rows.length === 0 ? [] : [{ ...feature, rows }];
   });
 };
 
-/** The tab the list opens on: Now, unless nothing is going on and something finished today. */
+/** The tab the list opens on: Now, unless nothing is going on and something has finished. */
 export const openingTab = (tabs: WorkersByTab): WorkersTab =>
-  tabs.now.length === 0 && tabs.doneToday.length > 0 ? "doneToday" : "now";
+  tabs.now.length === 0 && tabs.done.length > 0 ? "done" : "now";
 
 /** A ledger feature's row for one worker, for the worker view's compact status. */
 export const workerEntryOf = (

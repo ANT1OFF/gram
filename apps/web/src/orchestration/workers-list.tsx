@@ -14,7 +14,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { create } from "zustand";
 
 import { useApi } from "@/api/context";
@@ -160,9 +160,9 @@ const useFinishedWorkers = (workspaceId: WorkspaceId | undefined) => {
 };
 
 /**
- * ⌘J: every worker of the workspace in front of you, in Now, Done today and Earlier, grouped by
- * feature. One click, or ↑↓ and Return, opens a worker in the focused pane; opening it never
- * touches the worker.
+ * ⌘J: every worker of the workspace in front of you, in Now and Done, grouped by feature, and in
+ * Done under the day each finished. One click, or ↑↓ and Return, opens a worker in the focused
+ * pane; opening it never touches the worker.
  */
 export function WorkersList() {
   const open = useWorkersListStore((s) => s.open);
@@ -203,7 +203,7 @@ function WorkersBody() {
   const { trees, ledgers } = useWorkspaceStatuses(threads);
   const tree = trees.find((each) => each.workspace.id === workspaceId);
   const ledger = workspaceId === undefined ? undefined : ledgers.get(workspaceId);
-  // Minute resolution is enough for "today" and the times rows show.
+  // Minute resolution is enough for the days and the times rows show.
   const now = useNow(true, undefined, 60_000);
   // Workers closed with their worktree, which the ledger no longer has; read-only when opened.
   const finished = useFinishedWorkers(workspaceId);
@@ -222,7 +222,7 @@ function WorkersBody() {
   const [active, setActive] = useState(0);
   const openThread = useOpenThread();
 
-  // One list in three sections, so every worker is a click away once it is open; the search
+  // One list in two sections, so every worker is a click away once it is open; the search
   // box filters all of them.
   const sections = WORKERS_TABS.map(({ id, label }) => ({
     id,
@@ -232,8 +232,8 @@ function WorkersBody() {
   const rows = sections.flatMap((section) => section.features.flatMap((feature) => feature.rows));
   const activeIndex = Math.min(active, rows.length - 1);
 
-  // Opened on a section (the rail's "done today"): its first row active, the section in view, once
-  // it has rows.
+  // Opened on a section (the overview's Show all, on Done): its first row active, the section in
+  // view, once it has rows.
   const listRef = useRef<HTMLDivElement>(null);
   const openedOn = useWorkersListStore((s) => s.section);
   const [placed, setPlaced] = useState(false);
@@ -325,29 +325,40 @@ function WorkersBody() {
                 {tabCount(section.features)}
               </span>
             </h2>
-            {section.features.map((feature) => (
-              <div key={feature.feature} role="group" aria-label={feature.feature} className="mb-1">
-                <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
-                  {feature.feature}
+            {section.features.map((feature, i) => (
+              <Fragment key={`${feature.day?.start ?? ""}:${feature.feature}`}>
+                {feature.day !== undefined &&
+                  feature.day.start !== section.features[i - 1]?.day?.start && (
+                    <h3
+                      data-testid="workers-day"
+                      className="px-2 pt-1.5 pb-0.5 text-xs text-muted-foreground"
+                    >
+                      {feature.day.label}
+                    </h3>
+                  )}
+                <div role="group" aria-label={feature.feature} className="mb-1">
+                  <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
+                    {feature.feature}
+                  </div>
+                  <PresenceList>
+                    {feature.rows.map((row) => {
+                      index++;
+                      const at = index;
+                      return (
+                        <PresenceItem key={row.threadId}>
+                          <WorkerListRow
+                            row={row}
+                            index={at}
+                            active={at === activeIndex}
+                            onHover={() => setActive(at)}
+                            onOpen={() => pick(row)}
+                          />
+                        </PresenceItem>
+                      );
+                    })}
+                  </PresenceList>
                 </div>
-                <PresenceList>
-                  {feature.rows.map((row) => {
-                    index++;
-                    const at = index;
-                    return (
-                      <PresenceItem key={row.threadId}>
-                        <WorkerListRow
-                          row={row}
-                          index={at}
-                          active={at === activeIndex}
-                          onHover={() => setActive(at)}
-                          onOpen={() => pick(row)}
-                        />
-                      </PresenceItem>
-                    );
-                  })}
-                </PresenceList>
-              </div>
+              </Fragment>
             ))}
           </section>
         ))}

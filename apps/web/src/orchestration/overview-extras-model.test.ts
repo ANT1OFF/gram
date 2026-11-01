@@ -15,14 +15,15 @@ import { describe, expect, it } from "vitest";
 import type { UsageLimits } from "@/stores/usage-limits";
 
 import {
-  doneTodayRows,
+  DONE_DAYS,
+  doneRows,
   footMeters,
   MAX_SLOT_PIPS,
   overviewPrRows,
   prSubLine,
   workerSlots,
 } from "./overview-extras-model";
-import { workersByTab } from "./workers-model";
+import { daysBefore, workersByTab } from "./workers-model";
 
 // Wednesday 15 October 2026, 14:40 local time.
 const NOW = new Date(2026, 9, 15, 14, 40).getTime();
@@ -132,7 +133,8 @@ const closed = (id: string, closedAt: number, merged: boolean): FinishedWorker =
   kept: "closed",
 });
 
-describe("Done today across the workspaces", () => {
+describe("Done across the workspaces", () => {
+  const DAY = 24 * 60 * 60_000;
   const ledger = {
     features: [
       {
@@ -142,6 +144,13 @@ describe("Done today across the workspaces", () => {
           worker("t-done", "delivered"),
           worker("t-live", "working", { status: "running" }),
           worker("t-old", "merged"),
+          // Archived by the orchestrator once its PR merged: finished all the same.
+          worker("t-archived", "archived", {
+            stateBase: { state: "merged", parked: true },
+            pr: { repo: "example/api", number: 400 },
+          }),
+          worker("t-week", "delivered"),
+          worker("t-gone", "merged"),
         ],
       },
     ],
@@ -149,7 +158,11 @@ describe("Done today across the workspaces", () => {
   const byId = {
     "t-merged": summary("t-merged", { completedAt: at(13, 5) }),
     "t-done": summary("t-done", { completedAt: at(9, 30) }),
-    "t-old": summary("t-old", { completedAt: at(9) - 24 * 60 * 60_000 }),
+    "t-old": summary("t-old", { completedAt: at(9) - DAY }),
+    "t-archived": summary("t-archived", { completedAt: at(16) - 3 * DAY }),
+    // The first minute of the week's first day, and the last of the day before it.
+    "t-week": summary("t-week", { completedAt: daysBefore(NOW, DONE_DAYS - 1) }),
+    "t-gone": summary("t-gone", { completedAt: daysBefore(NOW, DONE_DAYS - 1) - 60_000 }),
   };
   const facts = { byId, statusDetail: {}, now: NOW };
   const sources = [
@@ -163,38 +176,62 @@ describe("Done today across the workspaces", () => {
       workspaceId: "w2" as WorkspaceId,
       name: "infra",
       ledger: undefined,
-      finished: [closed("t-closed", at(11, 45), true), closed("t-swept", at(8), false)],
+      finished: [
+        closed("t-closed", at(11, 45), true),
+        closed("t-swept", at(8), false),
+        closed("t-swept-old", at(8) - 10 * DAY, false),
+      ],
     },
   ];
+  const ids = ["t-merged", "t-closed", "t-done", "t-swept", "t-old", "t-archived", "t-week"];
 
-  it("has the rows ⌘J's Done today has for each workspace, latest first across them", () => {
-    const rows = doneTodayRows(sources, facts);
-    expect(rows.map((row) => row.threadId)).toEqual(["t-merged", "t-closed", "t-done", "t-swept"]);
+  it("has the rows of the last seven days ⌘J's Done has for each workspace, latest first", () => {
+    const rows = doneRows(sources, facts);
+    expect(rows.map((row) => row.threadId)).toEqual(ids);
+    const since = daysBefore(NOW, DONE_DAYS - 1);
     for (const source of sources) {
-      const listed = workersByTab(source.ledger, facts, source.finished).doneToday.flatMap((f) =>
-        f.rows.map((row) => row.threadId),
-      );
+      const listed = workersByTab(source.ledger, facts, source.finished)
+        .done.flatMap((f) => f.rows)
+        .filter((row) => (row.finishedAt ?? 0) >= since)
+        .map((row) => row.threadId);
       expect(
         rows.filter((row) => row.workspaceId === source.workspaceId).map((row) => row.threadId),
-      ).toEqual(expect.arrayContaining(listed));
-      expect(rows.filter((row) => row.workspaceId === source.workspaceId)).toHaveLength(
-        listed.length,
-      );
+      ).toEqual(listed);
     }
   });
 
-  it("gives each its time on a 24-hour clock and its workspace and outcome", () => {
-    const rows = doneTodayRows(sources, facts);
-    expect(rows.map((row) => [row.time, row.merged, row.sub])).toEqual([
-      ["13:05", true, "agent-platform · merged api#412"],
-      ["11:45", true, "infra · merged infra#88"],
-      ["09:30", false, "agent-platform · done"],
-      ["08:00", false, "infra · cleaned up"],
-    ]);
+  it("stops at the week's first midnight: ⌘J keeps what is older", () => {
+    const rows = doneRows(sources, facts).map((row) => row.threadId);
+    expect(rows).toContain("t-week");
+    expect(rows).not.toContain("t-gone");
+    expect(rows).not.toContain("t-swept-old");
+    const all = sources.flatMap((source) =>
+      workersByTab(source.ledger, facts, source.finished).done.flatMap((f) =>
+        f.rows.map((row) => row.threadId),
+      ),
+    );
+    expect(all).toEqual(expect.arrayContaining(["t-gone", "t-swept-old"]));
   });
 
-  it("is empty with nothing finished today", () => {
-    expect(doneTodayRows([], facts)).toEqual([]);
+  it("gives each its day, its time on a 24-hour clock, and its workspace and outcome", () => {
+    const rows = doneRows(sources, facts);
+    expect(rows.map((row) => [row.day.label, row.time, row.merged, row.sub])).toEqual([
+      ["Today", "13:05", true, "agent-platform · merged api#412"],
+      ["Today", "11:45", true, "infra · merged infra#88"],
+      ["Today", "09:30", false, "agent-platform · done"],
+      ["Today", "08:00", false, "infra · cleaned up"],
+      ["Yesterday", "09:00", true, "agent-platform · merged"],
+      ["Mon 12 Oct", "16:00", true, "agent-platform · merged api#400"],
+      ["Fri 9 Oct", "00:00", false, "agent-platform · done"],
+    ]);
+    expect(rows[0]!.day.start).toBe(daysBefore(NOW, 0));
+  });
+
+  it("is empty with nothing finished this week", () => {
+    expect(doneRows([], facts)).toEqual([]);
+    expect(
+      doneRows([{ ...sources[1]!, finished: [closed("x", at(8) - 8 * DAY, true)] }], facts),
+    ).toEqual([]);
   });
 });
 

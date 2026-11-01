@@ -1951,7 +1951,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "overview-sidebar-extras",
-    title: "The overview at 1440 px with Pull requests and Done today opened",
+    title: "The overview at 1440 px with Pull requests and Done opened",
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
       for (const id of ["pullRequests", "doneToday"]) {
@@ -1962,12 +1962,29 @@ export const SHOTS: readonly Shot[] = [
         if ((await title.getAttribute("aria-expanded")) === "false") await title.click();
       }
       await page.getByTestId("overview-done").first().waitFor();
-      // Done today sits last in the column.
+      // Done sits last in the column.
       await page.getByTestId("overview-done").last().scrollIntoViewIfNeeded();
       // Off the column, so no row shows its hover.
       await page.mouse.move(1200, 400);
       await page.waitForTimeout(400);
     },
+  },
+  {
+    name: "overview-done-week",
+    title: "The overview's Done opened on a busy week: its days, ten rows and Show all",
+    open: async (page) => {
+      await seedMockSettings(page, { panel: { open: false } });
+      await openOrchestratorOf(page, () => window.gramMock!.simulateArchivedGroups());
+      const title = page
+        .getByTestId("overview-section-doneToday")
+        .getByRole("heading")
+        .getByRole("button");
+      if ((await title.getAttribute("aria-expanded")) === "false") await title.click();
+      await page.getByTestId("overview-done").last().scrollIntoViewIfNeeded();
+      await page.mouse.move(1200, 400);
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("overview-sidebar"),
   },
   {
     name: "overview-sidebar-hover",
@@ -2146,12 +2163,15 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "workers-list-earlier",
-    title: "⌘J scrolled to Earlier, with its search",
+    title: "⌘J scrolled to its earlier days (Earlier before Done took it in), with its search",
     modes: ["dark"],
     open: async (page) => {
       await openWorkersScenario(page);
       await pressWorkersList(page);
-      await page.getByTestId("workers-section-earlier").scrollIntoViewIfNeeded();
+      // The last day's heading in Done; before it, the Earlier section.
+      const days = page.getByTestId("workers-day");
+      if ((await days.count()) > 0) await days.last().scrollIntoViewIfNeeded();
+      else await page.getByTestId("workers-section-earlier").scrollIntoViewIfNeeded();
       await page.getByTestId("workers-search").waitFor();
     },
     element: (page) => page.getByTestId("workers-list"),
@@ -2241,12 +2261,12 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "workers-list-done-today",
-    title: "⌘J's Done today, with a worker whose worktree was cleaned up",
+    title: "⌘J's Done (Done today before), with a worker whose worktree was cleaned up",
     modes: ["dark"],
     open: async (page) => {
       await openReachingScenario(page);
       await pressWorkersList(page);
-      await page.getByTestId("workers-section-doneToday").scrollIntoViewIfNeeded();
+      await page.getByTestId(/^workers-section-(done|doneToday)$/).scrollIntoViewIfNeeded();
     },
     element: (page) => page.getByTestId("workers-list"),
   },

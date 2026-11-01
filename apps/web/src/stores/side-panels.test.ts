@@ -590,7 +590,7 @@ describe("side panels", () => {
     expect(sanitizeOverviewView({ overviewBeforeHide: "hidden" })).toEqual({});
   });
 
-  it("starts Pull requests and Done today folded, and remembers them opened", () => {
+  it("starts Pull requests and Done folded, and remembers them opened", () => {
     const folded = (section: OverviewSection) => overviewSectionFolded(s(), section);
     expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["pullRequests", "doneToday"]);
     expect(folded("pullRequests")).toBe(true);

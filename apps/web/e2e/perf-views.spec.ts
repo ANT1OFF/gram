@@ -32,7 +32,7 @@ const TRACKED = [
   "BoardHeader",
   "AskStack",
   "WorkersButton",
-  "OverviewDoneToday",
+  "OverviewDone",
   "NeedsYouShortcut",
   "NeedsYou",
   "AwayNotifications",
