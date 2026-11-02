@@ -2216,6 +2216,23 @@ describe("prompts", () => {
     expect(prompt).toContain('"Platform"');
     expect(prompt).toContain("`report` tool");
     expect(prompt).toContain("`interface`");
+    expect(prompt).toContain("say what you tried and ruled out, not only what worked");
+    expect(prompt).toContain(
+      "After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment",
+    );
+  });
+
+  it("tells the orchestrator to attach the user's words and invent nothing they didn't ask for", () => {
+    const prompt = rolePrompt({ workspaceName: "w", projects: [], autonomy: "publish" });
+    expect(prompt).toContain(
+      "When a brief comes from what the user asked, attach their words rather than retyping them",
+    );
+    expect(prompt).toContain("`userMessages`");
+    expect(prompt).toContain(
+      "adds no requirements, acceptance criteria or checklists the user didn't ask for",
+    );
+    // Briefs are still the orchestrator's to write.
+    expect(prompt).toContain("Write the brief so it stands alone");
   });
 
   it("opens a session on an empty memory by saying so", () => {
@@ -2571,7 +2588,7 @@ describe("restart notes", () => {
   it("names every worker the restart cut off in one note, and the work that stopped", () => {
     expect(restartNote([restartCost("Idle")])).toBeUndefined();
     expect(restartNote([restartCost("Mail", { cutOff: true })])).toBe(
-      "A restart cut this worker off mid-turn, so it isn't working now whatever the ledger says: “Mail” [thread t-Mail] (idle until messaged).",
+      "A restart cut this worker off mid-turn, so it isn't working now whatever the ledger says: “Mail” [thread t-Mail] (idle until messaged). Before you set one going again, have it check its worktree, git history and GitHub so no push, pull request or comment goes out twice.",
     );
     const many = Array.from({ length: 12 }, (_, i) => restartCost(`W${i}`, { cutOff: true }));
     const note = restartNote([
@@ -2623,6 +2640,9 @@ describe("restart notes", () => {
   it("asks a cut-off worker to check its work before it goes on", () => {
     expect(restartContinuation([])).toContain("Continue where you left off");
     expect(restartContinuation([])).toContain("The PR monitors you turned on are still on");
+    expect(restartContinuation([])).toContain(
+      "checking your worktree, git history and GitHub: don't repeat a push, a pull request or a comment that already went through",
+    );
     expect(restartContinuation([shell])).toContain(
       "The restart also stopped your background work (shell `pnpm check`)",
     );

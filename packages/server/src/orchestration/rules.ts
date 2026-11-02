@@ -1928,7 +1928,7 @@ export const restartNote = (costs: ReadonlyArray<RestartCost>): string | undefin
         `${who(cost)} (${cost.continued ? "asked to continue where it left off" : "idle until messaged"})`,
     );
     parts.push(
-      `A restart cut ${cut.length === 1 ? "this worker" : `these ${cut.length} workers`} off mid-turn, so ${cut.length === 1 ? "it isn't" : "none is"} working now whatever the ledger says: ${listed.join(", ")}.`,
+      `A restart cut ${cut.length === 1 ? "this worker" : `these ${cut.length} workers`} off mid-turn, so ${cut.length === 1 ? "it isn't" : "none is"} working now whatever the ledger says: ${listed.join(", ")}. Before you set one going again, have it check its worktree, git history and GitHub so no push, pull request or comment goes out twice.`,
     );
   }
   if (stopped.length > 0) {
@@ -1941,7 +1941,7 @@ export const restartNote = (costs: ReadonlyArray<RestartCost>): string | undefin
 
 /** What a worker the restart cut off is sent to pick up again, when the user has that on. */
 export const restartContinuation = (lost: ReadonlyArray<BackgroundWork>): string =>
-  `Gram restarted while your turn was running, and that cut it off. Continue where you left off, after checking what state your work was left in. The PR monitors you turned on are still on, and tell you of anything that settled while it was down.${
+  `Gram restarted while your turn was running, and that cut it off. Continue where you left off, after checking your worktree, git history and GitHub: don't repeat a push, a pull request or a comment that already went through. The PR monitors you turned on are still on, and tell you of anything that settled while it was down.${
     lost.length === 0
       ? ""
       : ` The restart also stopped your background work (${workList(lost)}); start again what you still need.`
