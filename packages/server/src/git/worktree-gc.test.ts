@@ -30,6 +30,7 @@ import {
   checkWorktree,
   freeUnlessInUse,
   inUse,
+  keepDetachedHead,
   lsofCwds,
   openPrArgs,
   othersCheckouts,
@@ -38,6 +39,7 @@ import {
   MERGED_GRACE_MS,
   sweepDue,
   sweepStep,
+  SWEPT_REFS,
   type SweepFacts,
   type WorktreeCheck,
 } from "./worktree-gc.ts";
@@ -241,9 +243,10 @@ describe("sweepDue", () => {
     }
   });
 
-  it("removes an archived worker with no PR a day after, only once its branch has none open", () => {
+  it("removes an archived worker with no PR a day after it was archived", () => {
     const { boundPr: _, ...unbound } = thread();
-    const archived = (ago: number) => facts({ thread: { ...unbound, lastActivityAt: NOW - ago } });
+    const archived = (ago: number) =>
+      facts({ thread: { ...unbound, lastActivityAt: NOW - ago, parkedAt: NOW - ago } });
     expect(sweepDue(archived(ARCHIVED_GRACE_MS - 1), SWEEP, NOW)).toBeUndefined();
     expect(sweepDue(archived(ARCHIVED_GRACE_MS), SWEEP, NOW)).toEqual({
       free: false,
@@ -254,6 +257,49 @@ describe("sweepDue", () => {
       free: true,
       remove: true,
       withoutPr: true,
+    });
+  });
+
+  it("counts a no-PR worker's grace from its archive, not from when it went quiet", () => {
+    const { boundPr: _, ...unbound } = thread();
+    // Quiet for three days, archived an hour ago: a day to unarchive it still.
+    const justArchived = facts({
+      thread: { ...unbound, lastActivityAt: NOW - 3 * DAY, parkedAt: NOW - 3_600_000 },
+    });
+    expect(sweepDue(justArchived, SWEEP, NOW)).toEqual({ free: true, remove: false });
+    // Archived before the time was recorded: it waits the full M days from its last activity.
+    const legacy = (ago: number) => facts({ thread: { ...unbound, lastActivityAt: NOW - ago } });
+    expect(sweepDue(legacy(3 * DAY), SWEEP, NOW)).toEqual({ free: true, remove: false });
+    expect(sweepDue(legacy(14 * DAY), SWEEP, NOW)).toEqual({
+      free: true,
+      remove: true,
+      withoutPr: true,
+    });
+  });
+
+  it("never removes a thread with a pending wake, which the close would delete", () => {
+    const { boundPr: _, ...unbound } = thread();
+    const noPr = facts({
+      thread: { ...unbound, lastActivityAt: NOW - 5 * DAY, parkedAt: NOW - 5 * DAY },
+      hasWake: true,
+    });
+    // Freeing `node_modules` leaves the thread, and its wake, alone.
+    expect(sweepDue(noPr, SWEEP, NOW)).toEqual({ free: true, remove: false });
+    const merged = facts({
+      thread: thread({
+        parked: false,
+        completedReason: "prMerged",
+        completedAt: NOW - DAY,
+        lastActivityAt: NOW - DAY,
+      }),
+      badge: badge("MERGED"),
+      status: "idle",
+      hasWake: true,
+    });
+    expect(sweepDue(merged, SWEEP, NOW)).toBeUndefined();
+    expect(sweepDue({ ...merged, hasWake: false }, SWEEP, NOW)).toEqual({
+      free: false,
+      remove: true,
     });
   });
 
@@ -625,6 +671,35 @@ describe.skipIf(!hasGit)("the sweep's git", () => {
       yield* checkWorktree(tree, unbound, true, true).pipe(withGh(ghOut(0, "[]"), detached));
       expect(detached.map((call) => call.args)).toEqual([openPrArgs({ head })]);
     }),
+  );
+
+  it.effect(
+    "keeps a detached HEAD under a ref before its worktree goes, and nothing for a branch",
+    () =>
+      Effect.gen(function* () {
+        const { repo, tree } = setup();
+        expect(yield* keepDetachedHead(tree, "t-1").pipe(Effect.provide(ProcLive))).toBe(true);
+        expect(run(repo, "for-each-ref", SWEPT_REFS)).toBe("");
+        // A reviewer's detached HEAD with a commit only a remote branch holds.
+        run(tree, "checkout", "-q", "--detach");
+        write(nodePath.join(tree, "fix.txt"), "fix\n");
+        run(tree, "add", "-A");
+        run(tree, "commit", "-qm", "review fix");
+        run(tree, "push", "-q", "origin", "HEAD:refs/heads/review-fix");
+        const head = run(tree, "rev-parse", "HEAD").trim();
+        expect(yield* keepDetachedHead(tree, "t-1").pipe(Effect.provide(ProcLive))).toBe(true);
+        run(repo, "worktree", "remove", tree);
+        // The remote branch is deleted and pruned: the ref still holds the commit.
+        run(repo, "push", "-q", "origin", "--delete", "review-fix");
+        run(repo, "fetch", "-q", "--prune", "origin");
+        expect(run(repo, "rev-parse", `${SWEPT_REFS}/t-1`).trim()).toBe(head);
+        // Somewhere git can't run: refuses, and the sweep keeps the worktree.
+        expect(
+          yield* keepDetachedHead(nodePath.join(repo, "no-such"), "t-2").pipe(
+            Effect.provide(ProcLive),
+          ),
+        ).toBe(false);
+      }),
   );
 
   it.effect(

@@ -3,7 +3,9 @@
 // or `MERGED_GRACE_MS` after its PR merged. Every thread kind but an orchestrator: a worker once the
 // ledger reads it finished, any other thread once it is archived or its PRs are all merged or closed.
 // An archived worker with no PR of its own (a reviewer, a research or release worker) goes
-// `ARCHIVED_GRACE_MS` after its last activity, once clean, pushed and with no PR open for its branch.
+// `ARCHIVED_GRACE_MS` after it was archived (`parkedAt`), once clean, pushed and with no PR open for
+// its branch. Only worktrees in the repo's own `.worktrees/` folder are ever taken, and a thread
+// with a pending wake is never closed: its wake would go with it.
 //
 // Invariants. It only ever looks at a finished thread at rest with nothing waiting on the user, in a
 // linked worktree no other thread holds, and never at a main checkout or at a worker spanning
@@ -99,6 +101,8 @@ export interface SweepFacts {
   readonly missingPrs?: GitState["missingPrs"] | undefined;
   /** Every checkout the other threads hold or follow (`othersCheckouts`). */
   readonly heldByOthers: ReadonlyArray<string>;
+  /** It has a pending wake (`schedule_wake`), which closing it would delete. */
+  readonly hasWake?: boolean;
 }
 
 /**
@@ -168,8 +172,9 @@ const mergedDone = (facts: SweepFacts): boolean => {
 export const MERGED_GRACE_MS = 10 * 60_000;
 
 /**
- * How long after its last activity an archived worker with no PR of its own has its worktree
- * removed: a day to unarchive it, after which `restore_worktree` can still bring its branch back.
+ * How long after it was archived (`parkedAt`, or its last activity if that came later) a worker
+ * with no PR of its own has its worktree removed: a day to unarchive it. After that the thread is
+ * closed with its worktree; its branch stays, and a detached HEAD is kept under `SWEPT_REFS`.
  */
 export const ARCHIVED_GRACE_MS = DAY_MS;
 
@@ -221,13 +226,33 @@ export const sweepDue = (
   }
   if (!AT_REST.has(facts.status) || facts.pendingRequests > 0 || facts.busy) return undefined;
   if (facts.heldByOthers.some((held) => samePath(held, checkout.path))) return undefined;
+  const due = finishedDue(facts, sweep, now, worker);
+  if (due === undefined) return undefined;
+  // Closing the thread deletes its pending wakes, so it isn't removed while it has one.
+  if (facts.hasWake === true && due.remove)
+    return due.free ? { free: true, remove: false } : undefined;
+  return due;
+};
+
+/** `sweepDue` past its guards: what is due for a thread found at rest in a worktree of its own. */
+const finishedDue = (
+  facts: SweepFacts,
+  sweep: WorktreeSweep,
+  now: number,
+  worker: boolean,
+): SweepDue | undefined => {
+  const { thread } = facts;
   if (!(worker ? isFinishedWorker(facts) : isFinishedThread(facts))) return undefined;
   const age = now - finishedSince(thread);
   const hasPr = thread.boundPr !== undefined || facts.badge !== undefined;
   const free = age >= sweep.freeAfterDays * DAY_MS;
-  // An archived worker following no PR at all: archiving is what says its work is over.
+  // An archived worker following no PR at all: archiving is what says its work is over. Its grace
+  // counts from the archive; one archived before that was recorded waits the full M days.
   if (!hasPr && (thread.extraPrs?.length ?? 0) === 0 && worker && thread.parked) {
-    const remove = age >= ARCHIVED_GRACE_MS;
+    const remove =
+      thread.parkedAt === undefined
+        ? age >= sweep.removeAfterDays * DAY_MS
+        : now - Math.max(finishedSince(thread), thread.parkedAt) >= ARCHIVED_GRACE_MS;
     if (remove) return { free, remove, withoutPr: true };
     return free ? { free, remove } : undefined;
   }
@@ -385,6 +410,35 @@ export const checkMissingWorktree = (
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
     };
   });
+
+/** Where the sweep keeps a removed worktree's detached HEAD: `refs/gram/swept/<thread id>`. */
+export const SWEPT_REFS = "refs/gram/swept";
+
+/**
+ * Before the worktree at `path` goes: a detached HEAD is kept under `SWEPT_REFS`, since its
+ * commits may sit only on a remote branch that is later deleted, and nothing else names them once
+ * the worktree is gone. `true` when HEAD is on a branch (the branch stays) or was kept; `false`
+ * when git couldn't say or write it, and then the worktree stays too.
+ */
+export const keepDetachedHead = (
+  path: string,
+  threadId: string,
+): Effect.Effect<boolean, never, Proc> =>
+  Effect.gen(function* () {
+    const branch = yield* git(path, ["symbolic-ref", "--quiet", "HEAD"]);
+    if (branch.status === 0) return true;
+    if (branch.status !== 1) return false;
+    const head = yield* git(path, ["rev-parse", "--verify", "HEAD"]);
+    if (head.status !== 0) return false;
+    const kept = yield* git(path, [
+      "update-ref",
+      "-m",
+      "gram: worktree sweep",
+      `${SWEPT_REFS}/${threadId}`,
+      head.stdout.trim(),
+    ]);
+    return kept.status === 0;
+  }).pipe(Effect.orElseSucceed(() => false));
 
 /**
  * `node_modules` folders under `root`, `NODE_MODULES_DEPTH` deep at most, never through a link and
@@ -574,6 +628,7 @@ const sweepOnce = (
     const gate = Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate));
     const summaries = yield* runtimes.snapshot;
     const working = new Set(yield* runtimes.working);
+    const woken = new Set((yield* store.listThreadWakes).map((wake) => wake.threadId));
     const threads = summaries.map((summary) => summary.thread);
     const now = Date.now();
     const counts = { freed: 0, removed: 0, kept: 0 };
@@ -596,6 +651,7 @@ const sweepOnce = (
           extraBadges: yield* publisher.extraBadgesFor(thread),
           missingPrs: (yield* publisher.stateForThread(thread))?.missingPrs,
           heldByOthers: othersCheckouts(threads, thread.id),
+          hasWake: woken.has(thread.id),
         },
         sweep,
         now,
@@ -618,11 +674,17 @@ const sweepOnce = (
         counts.kept += 1;
         continue;
       }
-      // Asked again with the step in hand: another thread may have followed its agent in since, or
-      // a process the threads don't know about may work there.
+      // Asked again with the step in hand: another thread may have followed its agent in since. A
+      // free step asks about processes under its own lock below; a removal asks here, and whether
+      // a wake was set since, and keeps a detached HEAD before anything goes.
       const held = othersCheckouts(yield* store.listThreads, thread.id);
-      const used = gone ? held.some((each) => samePath(each, path)) : yield* inUse(path, held);
-      if (used) {
+      const kept =
+        held.some((each) => samePath(each, path)) ||
+        (step === "remove" &&
+          ((yield* store.listThreadWakes).some((wake) => wake.threadId === thread.id) ||
+            (!gone &&
+              ((yield* inUse(path, held)) || !(yield* keepDetachedHead(path, thread.id))))));
+      if (kept) {
         counts.kept += 1;
         continue;
       }

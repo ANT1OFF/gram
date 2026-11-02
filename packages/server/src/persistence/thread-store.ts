@@ -88,6 +88,23 @@ import {
 } from "./stored.ts";
 import { DAY_MS } from "../zone-time.ts";
 
+/**
+ * `next` with `parkedAt` kept in step with `parked`: stamped `now` when an edit archives the thread,
+ * kept while it stays archived, and dropped when it is unarchived. The worktree sweep counts an
+ * archived worker's grace from it.
+ */
+export const stampParked = (before: Thread, next: Thread, now: number): Thread => {
+  if (!next.parked) {
+    if (next.parkedAt === undefined) return next;
+    const { parkedAt: _, ...unparked } = next;
+    return unparked;
+  }
+  if (!before.parked) return { ...next, parkedAt: now };
+  return before.parkedAt === undefined || next.parkedAt !== undefined
+    ? next
+    : { ...next, parkedAt: before.parkedAt };
+};
+
 /** One of a closed orchestrator's workers: the worker, and the feature it was spawned for. */
 export const ClosedWorker = Schema.Struct({ threadId: ThreadId, feature: Schema.String });
 export type ClosedWorker = typeof ClosedWorker.Type;
@@ -1258,7 +1275,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               authorityCaller === undefined
                 ? undefined
                 : yield* readThreadAuthority(thread, authorityCaller);
-            return yield* writeThread(normalizeThreadPrs(f(thread, context)));
+            return yield* writeThread(
+              stampParked(thread, normalizeThreadPrs(f(thread, context)), Date.now()),
+            );
           }),
         );
 

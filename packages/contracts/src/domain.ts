@@ -660,6 +660,11 @@ export const Thread = Schema.Struct({
   labels: ThreadLabels,
   pinned: Schema.Boolean,
   parked: Schema.Boolean,
+  /**
+   * Epoch ms it was last archived (`parked` set), stamped by the store's update and dropped when
+   * it is unarchived. Absent for a thread archived before this was recorded, or created archived.
+   */
+  parkedAt: Schema.optionalKey(Schema.Number),
   /** Older persisted forks may only identify the source conversation, not its Gram thread. */
   forkedFrom: Schema.optionalKey(
     Schema.Struct({
