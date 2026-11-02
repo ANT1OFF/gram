@@ -26,7 +26,6 @@ import { formatKeys } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
 import {
   DrawnCheck,
-  NumberTicker,
   PresenceItem,
   PresenceList,
   PulseOnce,
@@ -436,7 +435,7 @@ const composerHolds = (pane: Element, threadId: ThreadId | undefined): boolean =
 
 /**
  * Every ask waiting in the orchestrator's workspace, docked above its composer: the top one open,
- * the rest a count. Equal approvals are one ask, and the orchestrator's own requests and open
+ * the rest behind its stepper. Equal approvals are one ask, and the orchestrator's own requests and open
  * questions are asks too. With focus on nothing that types, ⏎ takes the first option, 1 and 2
  * pick and → steps; in the composer ⌘⏎, ⌥1 and ⌥2 do, so typing is never taken. An answer waits
  * `UNDO_MS` before it goes out.
@@ -655,21 +654,15 @@ export function AskStack({
           <section
             data-testid="ask-stack"
             aria-label="Asks"
+            data-count={asks.length}
             data-expanded={expanded || undefined}
             className="w-full overflow-clip rounded-(--composer-radius) border border-(--composer-outline) bg-card"
           >
             <header className="flex items-center gap-2 py-1.5 pr-2 pl-3.5 text-xs text-muted-foreground">
               <Inbox aria-hidden className="size-3.5 shrink-0" />
-              <span>
-                <NumberTicker
-                  value={asks.length}
-                  className="font-medium text-foreground tabular-nums"
-                />{" "}
-                <span data-testid="ask-stack-count" className="sr-only">
-                  {asks.length}
-                </span>
-                {asks.length === 1 ? "ask" : "asks"}
-              </span>
+              {/* No count of its own: the stepper says how many, and the workspace's badge counts
+                  them with everything else that needs you (`needsYouCounts`). */}
+              <span className="font-medium text-foreground">Asks</span>
               {last !== undefined && (
                 <span
                   key={last.key}
@@ -701,9 +694,10 @@ export function AskStack({
                       .openOrchestrator({ workspaceId: w.workspaceId })
                       .then((orchestrator) => open(orchestrator.id));
                   }}
+                  title={`Open ${w.name}'s orchestrator`}
                   className="truncate rounded-sm px-1 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {w.asks.length} in {w.name}
+                  Also in {w.name}
                 </button>
               ))}
               {!expanded && asks.length > 1 && (

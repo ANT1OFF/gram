@@ -14,9 +14,11 @@ import { useViewStore } from "@/views/view-store";
 import { useAskStackStore } from "./ask-stack-store";
 import { useDerivedAsks } from "./needs-you-store";
 import {
+  needsYouCounts,
   stepItem,
   type NeedsYouFilter,
   type NeedsYouGroup,
+  type NeedsYouCounts,
   type NeedsYouItem,
 } from "./needs-you-items";
 import { useOpenQuestionsOf } from "./use-board-actions";
@@ -242,9 +244,18 @@ export const setNeedsYouStepper = (next: (by: 1 | -1) => void) => {
 };
 export const stepNeedsYou = (by: 1 | -1) => stepper?.(by);
 
+/**
+ * Every needs-you count (`needsYouCounts`): the pill's total and each workspace's badge, in the
+ * open overview, the compact rail and the workspace switcher. Nothing else counts what needs you.
+ */
+export function useNeedsYouCounts(): NeedsYouCounts {
+  const { groups } = useNeedsYouList();
+  return useMemo(() => needsYouCounts(groups), [groups]);
+}
+
 /** Needs you's count and its toggle, for the overview's pill, the rail's and ⌘⌥3. */
 export function useNeedsYou() {
-  const { items } = useNeedsYouList();
+  const { total } = useNeedsYouCounts();
   const hint = useShortcutHint("view.needsYou");
-  return { count: items.length, open: openNeedsYou, label: "Needs you", hint };
+  return { count: total, open: openNeedsYou, label: "Needs you", hint };
 }

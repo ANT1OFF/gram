@@ -19,6 +19,7 @@ import {
   stationDotClass,
   tileLetters,
   tileWorking,
+  steplessLine,
   workLineText,
   type OverviewWorkerRow,
 } from "./overview-model";
@@ -119,7 +120,7 @@ describe("overviewFeatures", () => {
       now: "#211 head e7c7c0b3",
       prs: [{ ...pr, number: 211, state: "merged" }],
     });
-    expect(overviewFeatures([card("usage-page-design", [cleaned])], new Map(), new Set())).toEqual(
+    expect(overviewFeatures([card("usage-page-design", [cleaned])], new Map(), new Map())).toEqual(
       [],
     );
 
@@ -133,7 +134,7 @@ describe("overviewFeatures", () => {
         ]),
       ],
       new Map(),
-      new Set(["icons" as ThreadId]),
+      new Map([["icons" as ThreadId, false]]),
     );
     expect(group).toMatchObject({
       station: "review",
@@ -165,7 +166,7 @@ describe("overviewFeatures", () => {
       ],
       new Map(),
       // The ledger has neither: a running worker is live whatever the ledger and card say.
-      new Set(),
+      new Map(),
       running,
     );
     expect(groups.map((group) => group.feature)).toEqual(["stable-delivery", "arb-losses"]);
@@ -260,6 +261,21 @@ describe("rowTone", () => {
       [{ threadId: "tag" as ThreadId, title: "tag", feature: "release" }],
     );
     expect(rowTone(feature!.rows[0]!, { status: "running", working: true })).toBe("working");
+  });
+});
+
+describe("steplessLine", () => {
+  it("drops the plan's step count from a row, keeping what it does", () => {
+    expect(steplessLine("Step 2 of 4 · Reading code")).toBe("Reading code");
+    expect(steplessLine("Step 12 of 12 · Running a command")).toBe("Running a command");
+    expect(steplessLine("Step 1 of 3")).toBe("Working");
+  });
+
+  it("leaves every other line as it is", () => {
+    expect(steplessLine("Next: open the PR")).toBe("Next: open the PR");
+    expect(steplessLine("Reading code")).toBe("Reading code");
+    expect(steplessLine("Waiting on CI · #69")).toBe("Waiting on CI · #69");
+    expect(steplessLine("Steps 2 of 4 left")).toBe("Steps 2 of 4 left");
   });
 });
 

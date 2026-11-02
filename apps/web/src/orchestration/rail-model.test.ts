@@ -78,16 +78,15 @@ describe("railRows", () => {
   });
 
   it("puts each worker on the station its card gives it, and draws the line to the furthest", () => {
-    const [row] = railRows(
-      [
-        card("mail-trigger", [
-          worker("queue"),
-          worker("endpoint", { station: "review", state: "inReview", project: "web" }),
-          worker("schema", { station: "merged", state: "merged" }),
-        ]),
-      ],
-      facts(),
-    );
+    const cards = [
+      card("mail-trigger", [
+        worker("queue"),
+        worker("endpoint", { station: "review", state: "inReview", project: "web" }),
+        worker("schema", { station: "merged", state: "merged" }),
+      ]),
+    ];
+    // With finished work shown, the merged one too.
+    const [row] = railRows(cards, facts(), "all");
     expect(row?.cells.working.map((w) => w.threadId)).toEqual(["queue"]);
     expect(row?.cells.review.map((w) => w.threadId)).toEqual(["endpoint"]);
     expect(row?.cells.merged.map((w) => w.threadId)).toEqual(["schema"]);
@@ -95,6 +94,11 @@ describe("railRows", () => {
     expect(row?.reach).toBe(4);
     expect(row?.projects).toEqual(["api", "web"]);
     expect(row?.finished).toBe(false);
+    // Hidden, the merged one is in Done, as the sidebar has it, and the line reaches Review.
+    const [going] = railRows(cards, facts());
+    expect(going?.cells.merged).toEqual([]);
+    expect(going?.reach).toBe(3);
+    expect(going?.settled).toBe(false);
   });
 
   it("leaves archived workers off the line, and a feature with only those off the board", () => {
@@ -188,7 +192,7 @@ describe("archived work", () => {
   });
 
   it("puts them back as finished when shown", () => {
-    const rows = railRows(cards, facts(), true);
+    const rows = railRows(cards, facts(), "all");
     expect(rows.map((row) => row.feature)).toEqual(["kept", "gone"]);
     expect(rows[1]).toMatchObject({ finished: true, state: "archived" });
     expect(rows[0]?.cells.review.map((w) => [w.threadId, w.tone])).toEqual([["c", "merged"]]);
@@ -356,7 +360,7 @@ describe("lines that leave the Board", () => {
       card("closed", [closed]),
       card("going", [worker("g")]),
     ];
-    const live = { ...facts(), live: new Set(["g" as ThreadId]) };
+    const live = { ...facts(), over: new Map([["g" as ThreadId, false]]) };
     const rows = railRows(cards, live);
     expect(rows.map((row) => [row.feature, row.settled])).toEqual([
       ["closed", true],
@@ -368,13 +372,32 @@ describe("lines that leave the Board", () => {
     expect(hiddenWorkerCount(cards, boardRows(rows, false))).toBe(2);
   });
 
-  it("keeps a line the ledger no longer has while its worker runs or asks, or before it is read", () => {
-    const cards = [card("closed", [closed])];
-    const live = new Set<ThreadId>();
+  it("keeps a line the ledger no longer has while its worker runs or asks, or by its card before it is read", () => {
+    const going = worker("c", { title: "Release notes", state: "inReview", station: "review" });
+    const cards = [card("closed", [going])];
+    const over = new Map<ThreadId, boolean>();
     expect(railRows(cards, facts())[0]?.settled).toBe(false);
-    expect(railRows(cards, { ...facts(), live })[0]?.settled).toBe(true);
-    expect(railRows(cards, { ...facts([], { c: "running" }), live })[0]?.settled).toBe(false);
-    expect(railRows(cards, { ...facts(["c"]), live })[0]?.settled).toBe(false);
+    expect(railRows(cards, { ...facts(), over })[0]?.settled).toBe(true);
+    expect(railRows(cards, { ...facts([], { c: "running" }), over })[0]?.settled).toBe(false);
+    expect(railRows(cards, { ...facts(["c"]), over })[0]?.settled).toBe(false);
+    expect(
+      railRows(cards, { ...facts(), running: new Set(["c" as ThreadId]), over })[0]?.settled,
+    ).toBe(false);
+    // Before the ledger is read, a card that says its work is over has it leave too.
+    expect(railRows([card("closed", [closed])], facts())[0]?.settled).toBe(true);
+  });
+
+  it("keeps a worker that reported done while it has a PR open or something pending, as the sidebar does", () => {
+    const cards = [card("reported", [closed])];
+    expect(
+      railRows(cards, { ...facts(), over: new Map([["c" as ThreadId, false]]) })[0],
+    ).toMatchObject({
+      settled: false,
+      title: "Release notes",
+    });
+    expect(
+      railRows(cards, { ...facts(), over: new Map([["c" as ThreadId, true]]) })[0]?.settled,
+    ).toBe(true);
   });
 
   it("drops a closed worker's line even with its plan unfinished, as the overview does", () => {
@@ -382,12 +405,17 @@ describe("lines that leave the Board", () => {
       ...card("release", [closed]),
       stage: { plan: ["build", "rc", "ship"], current: "rc" },
     };
-    const [row] = railRows([stalled], { ...facts(), live: new Set<ThreadId>() });
+    const [row] = railRows([stalled], { ...facts(), over: new Map<ThreadId, boolean>() });
     expect(row).toMatchObject({ finished: false, settled: true });
   });
 
-  it("names a line by its first worker's title, its feature only with none", () => {
+  it("names a line by its worker's title, by its feature with several or none", () => {
     expect(railRows([card("closed", [closed])], facts())[0]?.title).toBe("Release notes");
+    const pair = card("mail-trigger", [worker("queue", { title: "Queue" }), worker("form")]);
+    expect(railRows([pair], facts())[0]?.title).toBe("mail-trigger");
+    // One of them in Done: the line draws one, named by it.
+    const one = card("mail-trigger", [worker("queue", { title: "Queue" }), { ...closed }]);
+    expect(railRows([one], facts())[0]?.title).toBe("Queue");
     const held = {
       id: "held-1",
       title: "Refresh docs",

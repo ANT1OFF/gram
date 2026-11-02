@@ -269,7 +269,9 @@ test("one Waiting on you across threads: Needs you counts it, the Board groups a
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
   await expect(page.getByTestId("rail-board")).toBeVisible();
   const chip = page.getByTestId("rail-waiting-chip");
-  await expect(chip).toHaveAttribute("aria-label", "5 waiting on you");
+  // No number on the chip: the workspace's badge counts these with its asks.
+  await expect(chip).toHaveAttribute("aria-label", "Waiting on you");
+  await expect(chip).toHaveAttribute("data-count", "5");
   await chip.click();
   const band = page.getByTestId("rail-waiting");
   const groups = band.getByTestId("board-waiting-group");

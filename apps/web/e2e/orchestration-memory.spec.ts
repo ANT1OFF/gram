@@ -282,7 +282,7 @@ test("the board answers open questions in its Waiting on you, which the banner u
   const band = page.getByTestId("rail-waiting");
   // Folded until asked for: nothing is blocked on a question.
   const chip = page.getByTestId("rail-waiting-chip");
-  await expect(chip).toHaveAttribute("aria-label", "2 waiting on you");
+  await expect(chip).toHaveAttribute("data-count", "2");
   await expect(chip).toHaveAttribute("aria-expanded", "false");
   await chip.click();
   await expect(chip).toHaveAttribute("aria-expanded", "true");
@@ -304,7 +304,7 @@ test("the board answers open questions in its Waiting on you, which the banner u
   await q3.getByRole("textbox").fill("Yes.");
   await q3.getByRole("button", { name: "Send to the orchestrator" }).click();
   await expect(band.getByTestId("memory-question")).toHaveCount(1);
-  await expect(chip).toHaveAttribute("aria-label", "1 waiting on you");
+  await expect(chip).toHaveAttribute("data-count", "1");
 
   // The workspace's row opens the orchestrator, whose ask stack holds the question left; its tray
   // doesn't repeat it.

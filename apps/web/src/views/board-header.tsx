@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { NumberTicker } from "@/motion";
 import { WAITING_BAND } from "@/orchestration/board-waiting";
 import { midTurnWorkers } from "@/orchestration/tree-model";
 import { useTitlebarSlot } from "@/shell/titlebar-slot";
@@ -78,21 +77,21 @@ export function BoardHeader({
         slot === null ? "h-12 shrink-0 px-4" : "pl-2",
       )}
     >
+      {/* No number: the workspace's badge and Needs you count it with the asks (`needsYouCounts`). */}
       {waiting > 0 && (
         <button
           type="button"
           data-testid="rail-waiting-chip"
+          data-count={waiting}
           aria-expanded={waitingOpen}
           aria-controls={WAITING_BAND}
-          // The ticker's digit reels can't be read back from the DOM.
-          aria-label={`${waiting} waiting on you`}
+          aria-label="Waiting on you"
           title="What the orchestrator and its workers left for you: drafts, links, steps, decisions and questions"
           onClick={onWaiting}
           className="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-needs/50 bg-status-needs/10 px-2 py-0.5 text-xs text-status-needs outline-none [-webkit-app-region:no-drag] hover:bg-status-needs/20 focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-status-needs/20"
         >
           <Inbox aria-hidden className="size-3" />
-          <NumberTicker value={waiting} className="tabular-nums" />
-          <span className="@max-2xl/titlebar:sr-only">waiting on you</span>
+          <span className="@max-2xl/titlebar:sr-only">Waiting on you</span>
         </button>
       )}
       <span data-titlebar-room="0" className="flex-1" />

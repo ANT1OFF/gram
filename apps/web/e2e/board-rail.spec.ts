@@ -72,20 +72,22 @@ test("the ask stack docks below the lines, and an answer there clears it everywh
   const docked = await stack.boundingBox();
   expect(docked!.y).toBeGreaterThan(lines!.y);
 
-  const before = Number(await stack.getByTestId("ask-stack-count").textContent());
+  // The stack shows no count of its own; `data-count` is how many it holds.
+  const before = Number(await stack.getAttribute("data-count"));
   await stack.getByTestId("ask-expand").click();
   const push = stack.getByTestId("ask-item").filter({ hasText: "git push" });
   // Approvals show the exact command.
   await expect(push).toContainText("git push -u origin feat/mail-trigger");
   await push.getByRole("button", { name: /^Allow/ }).click();
-  await expect(stack.getByTestId("ask-stack-count")).toHaveText(String(before - 1));
+  await expect(stack).toHaveAttribute("data-count", String(before - 1));
   await expect(chip(page, made.pushers[0])).not.toHaveAttribute("data-tone", "needs");
 
   // Back in Chat, the orchestrator's own stack has lost it too.
   await page.keyboard.press("Escape");
-  await expect(
-    page.locator("[data-pane-root]").getByTestId("ask-stack").getByTestId("ask-stack-count"),
-  ).toHaveText(String(before - 1));
+  await expect(page.locator("[data-pane-root]").getByTestId("ask-stack")).toHaveAttribute(
+    "data-count",
+    String(before - 1),
+  );
 });
 
 test("a worker's name opens it, in Chat", async ({ page }) => {

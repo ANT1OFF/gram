@@ -76,6 +76,7 @@ import {
   plainRunning,
   rowTone,
   stateWordShown,
+  steplessLine,
   workLineText,
   type OverviewFeature,
   type OverviewState,
@@ -90,11 +91,11 @@ import { TONE_DOT, type RailTone } from "./rail-model";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
 import { NeedsYouPopover } from "./needs-you-popover";
-import { useNeedsYou } from "./use-needs-you";
+import { useNeedsYou, useNeedsYouCounts } from "./use-needs-you";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
-import { workerActivities, workerTones } from "./workers-model";
+import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
 
 // The overview sidebar: the Orchestrator layout's left
 // column. What needs you across every workspace, one line per workspace with the one the window is
@@ -110,8 +111,12 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
   const cards = useFeatureCards(workspaceId);
   const all = useWorkspaceAsks();
   const asks = all.find((each) => each.workspaceId === workspaceId)?.asks;
-  // The workers the ledger has are the live ones: a worker closed with its worktree is gone from it.
+  // Which workers show is the Board's rule (`workerShown`): the ledger's, while their work isn't
+  // over. A worker closed with its worktree is gone from it.
   const ledger = useOrchestratorLedger(workspaceId).data;
+  const over = useThreadsStore(
+    useSame((s) => (ledger === undefined ? undefined : ledgerWorkersOver(ledger, s.byId))),
+  );
   // What each worker does, by the selector Quiet and the Board share.
   const activities = useThreadsStore(
     useSame((s) => workerActivities(ledger, s.byId, s.statusDetail)),
@@ -145,12 +150,6 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
       running.push({ threadId: flat[i] as ThreadId, title: flat[i + 1]!, feature: flat[i + 2]! });
     }
     const keys = askKeysByThread(asks ?? []);
-    const live =
-      ledger === undefined
-        ? undefined
-        : new Set(
-            ledger.features.flatMap((feature) => feature.workers.map((worker) => worker.threadId)),
-          );
     const held = new Set(
       ledger?.features.flatMap((feature) =>
         feature.workers.filter((worker) => worker.userIntervened).map((worker) => worker.threadId),
@@ -163,8 +162,8 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
         reports.set(worker.threadId, { at: report.at, nextStep: report.evidence?.nextStep });
       }
     }
-    return overviewFeatures(cards, keys, live, running, held, activities, reports, tones);
-  }, [cards, asks, ledger, flat, activities, tones]);
+    return overviewFeatures(cards, keys, over, running, held, activities, reports, tones);
+  }, [cards, asks, ledger, over, flat, activities, tones]);
 }
 
 /** ⌘/Ctrl-click: beside the chat rather than in its own view. */
@@ -382,18 +381,10 @@ function Orchestrators() {
     ),
   );
   const { statuses } = useWorkspaceStatuses(own);
-  // Each workspace's asks, and the workers they wait on.
-  const waiting = useMemo(
-    () =>
-      new Map(
-        asks.map((each) => [
-          each.workspaceId as string,
-          {
-            count: each.asks.length,
-            asking: new Set(askKeysByThread(each.asks).keys()),
-          },
-        ]),
-      ),
+  // Each workspace's share of Needs you, the pill's count, and the workers its asks wait on.
+  const { byWorkspace } = useNeedsYouCounts();
+  const asking = useMemo(
+    () => new Map(asks.map((each) => [each.workspaceId as string, askingOf(each.asks)] as const)),
     [asks],
   );
   // Every line counts its workers from its ledger, folded or open, so both say the same.
@@ -409,8 +400,8 @@ function Orchestrators() {
             key={id}
             state={state}
             here={id === current?.workspace.id}
-            asks={waiting.get(id)?.count ?? 0}
-            asking={waiting.get(id)?.asking ?? NO_ASKING}
+            asks={byWorkspace.get(id) ?? 0}
+            asking={asking.get(id) ?? NO_ASKING}
             word={overviewState(statuses.get(id), state.paused !== undefined)}
             ledger={ledgers.get(id)}
           />
@@ -422,10 +413,14 @@ function Orchestrators() {
 
 const NO_ASKING: ReadonlySet<ThreadId> = new Set();
 
+/** The workers a workspace's asks wait on. */
+export const askingOf = (asks: Parameters<typeof askKeysByThread>[0]): ReadonlySet<ThreadId> =>
+  new Set(askKeysByThread(asks).keys());
+
 /**
  * A workspace's line, and under it, open, its features with their live workers. Every workspace's
  * line has the same form, folded or open, with no worker or many: its dot, its name, one number,
- * the asks that need you, and the chevron. Paused or parked, it says that too; the rest (its live
+ * its share of Needs you (`needsYouCounts`), and the chevron. Paused or parked, it says that too; the rest (its live
  * workers, who works, its state and its worker slots) is on its hover and in its name. The chevron,
  * or ← and → on the line, folds what is under it, kept per workspace across reloads. An ask
  * arriving never unfolds it: its count says so. Only an open workspace, or the current one, reads
@@ -787,17 +782,34 @@ function WorkerNow({ row, asking }: { row: OverviewWorkerRow; asking: boolean })
 function WorkerStep({ row }: { row: OverviewWorkerRow }) {
   const step = useWorkLine(row.threadId, row.report);
   if (step === undefined) return <WorkerNow row={row} asking={false} />;
+  // The plan's step count only on hover: the row says what it does.
+  const shown = steplessLine(step);
   return (
     <span
       data-testid="overview-worker-step"
+      title={shown === step ? undefined : step}
       className="col-span-2 col-start-2 min-w-0 truncate text-xs text-muted-foreground"
     >
-      {step}
+      {shown}
     </span>
   );
 }
 
-/** A worker on hover: its feature, agent, title, station and now line, first PR and last activity. */
+/** A worker's step on its hover card in full, its plan's step count included. */
+function WorkerCardStep({ row }: { row: OverviewWorkerRow }) {
+  const step = useWorkLine(row.threadId, row.report);
+  if (step === undefined) return null;
+  return (
+    <p data-testid="overview-worker-card-step" className="text-xs text-muted-foreground">
+      {step}
+    </p>
+  );
+}
+
+/**
+ * A worker on hover: its feature, agent, title, station and now line, its whole step while it
+ * works, first PR and last activity.
+ */
 function WorkerCard({
   row,
   feature,
@@ -861,6 +873,7 @@ function WorkerCard({
           {time}
         </time>
       </p>
+      {tone === "working" && !asking && !row.failed && <WorkerCardStep row={row} />}
       {pause !== undefined && (
         <p
           data-testid="overview-worker-card-paused"
@@ -1056,7 +1069,8 @@ const useWorkLine = (threadId: ThreadId, report?: ReportNext | undefined): strin
 };
 
 function WorkLine({ threadId }: { threadId: ThreadId }) {
-  return <>{useWorkLine(threadId)}</>;
+  const line = useWorkLine(threadId);
+  return <>{line === undefined ? line : steplessLine(line)}</>;
 }
 
 /**

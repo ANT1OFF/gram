@@ -4,6 +4,8 @@ import {
   type PendingRequest,
   type RequestId,
   type ThreadId,
+  type WaitId,
+  type WorkspaceId,
 } from "@gram/contracts";
 import { cleanup, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,8 +21,8 @@ import { useThreadsStore } from "@/stores/threads";
 import type * as AskModel from "./ask-model";
 import { askTotals, useWorkspaceAsks } from "./ask-stack";
 import { THREADS_GROUP } from "./needs-you-items";
-import { resetDerivedAsks, useDerivedAsks } from "./needs-you-store";
-import { NeedsYouSource, useNeedsYouList } from "./use-needs-you";
+import { needsYouCount, resetDerivedAsks, useDerivedAsks } from "./needs-you-store";
+import { NeedsYouSource, useNeedsYou, useNeedsYouCounts, useNeedsYouList } from "./use-needs-you";
 
 // Asks and Needs you are derived once per window (`NeedsYouSource`) and read by every view that
 // shows them. Ten views used to derive them each, on every change to any thread.
@@ -248,5 +250,107 @@ describe("NeedsYouSource", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/** Every count of what needs you, as each surface reads it, beside the lists they open. */
+function Counts({ workspaces }: { workspaces: readonly WorkspaceId[] }) {
+  // The pill, in the open overview and the compact rail, which opens the Needs you popover.
+  const pill = useNeedsYou().count;
+  // Each workspace's badge: its overview line, its rail tile and its switcher row.
+  const { byWorkspace } = useNeedsYouCounts();
+  // What the popover and the panel list, by workspace.
+  const { groups, items } = useNeedsYouList();
+  return (
+    <>
+      <span data-testid="pill">{pill}</span>
+      <span data-testid="listed">{items.length}</span>
+      {workspaces.map((id) => (
+        <span key={id} data-testid={`badge-${id}`}>
+          {byWorkspace.get(id) ?? 0}
+        </span>
+      ))}
+      {groups.map((group) => (
+        <span key={group.key} data-testid={`group-${group.key}`}>
+          {group.items.length}
+        </span>
+      ))}
+    </>
+  );
+}
+
+describe("one needs-you count", () => {
+  it("gives the pill, each workspace's badge, the title and the lists one number, asks, failures and waits mixed", async () => {
+    // The ask scenario with its two failures, in a window of its own.
+    api = createMockApi({ speed: 0, autoplay: false, persist: false });
+    const made = await api.simulateFailures();
+    const workspaces = [made.workspaceId, made.other.workspaceId];
+    const view = renderWithApi(
+      <>
+        <Window />
+        <Counts workspaces={workspaces} />
+      </>,
+      api,
+    );
+    await waitFor(() => expect(shown(view, "pill")).toBeGreaterThan(0));
+    // A thread outside any workspace stops on an error.
+    api.simulateStatus("t-deps" as ThreadId, "error");
+    // A worker in the second workspace leaves the user a step to take.
+    const byId = useThreadsStore.getState().byId;
+    const waiter = byId[made.other.asking]!;
+    useThreadsStore.setState({
+      byId: {
+        ...byId,
+        [waiter.thread.id]: {
+          ...waiter,
+          waits: [
+            {
+              id: "w-step" as WaitId,
+              kind: "action",
+              title: "Rotate the staging key",
+              source: "agent",
+              createdAt: 1,
+            },
+          ],
+        },
+      },
+    });
+    await waitFor(() => {
+      const kinds = new Set(useDerivedAsks.getState().needsYou.items.map((item) => item.kind));
+      expect(kinds).toEqual(expect.objectContaining(new Set(["approval", "failure", "wait"])));
+    });
+    // One ask put away for Later: it leaves every count at once.
+    const before = shown(view, "pill");
+    const ask = useDerivedAsks.getState().asks.flatMap((w) => w.asks)[0]!;
+    const settings = useServerSettings.getState().settings!;
+    useServerSettings.setState({
+      settings: {
+        ...settings,
+        inbox: { ...settings.inbox, snoozed: ask.ids.map((id) => `${id} ${Date.now() + 60_000}`) },
+      },
+    });
+    await waitFor(() => expect(shown(view, "pill")).toBe(before - 1));
+
+    const { groups } = useDerivedAsks.getState().needsYou;
+    // The pill is the list it opens, and the window title and the dock badge say the same.
+    expect(shown(view, "pill")).toBe(shown(view, "listed"));
+    expect(needsYouCount()).toBe(shown(view, "pill"));
+    // Each workspace's badge is its section of that list, and they add up with the solo threads'.
+    for (const id of workspaces) {
+      expect(shown(view, `badge-${id}`)).toBe(shown(view, `group-${id}`));
+      expect(shown(view, `badge-${id}`)).toBeGreaterThan(0);
+    }
+    const threads = groups.find((group) => group.key === THREADS_GROUP)?.items.length ?? 0;
+    expect(threads).toBeGreaterThan(0);
+    expect(workspaces.reduce((sum, id) => sum + shown(view, `badge-${id}`), threads)).toBe(
+      shown(view, "pill"),
+    );
+    // A badge counts its failures and waits too, not only the asks its stack shows.
+    const other = groups.find((group) => group.key === made.other.workspaceId)!;
+    expect(other.items.some((item) => item.kind === "wait")).toBe(true);
+    const stack = useDerivedAsks
+      .getState()
+      .asks.find((w) => w.workspaceId === made.other.workspaceId)!.asks.length;
+    expect(shown(view, `badge-${made.other.workspaceId}`)).toBeGreaterThan(stack);
   });
 });

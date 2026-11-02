@@ -35,7 +35,6 @@ import { OVERVIEW_FLYOUT, OVERVIEW_ROOT, toggleOverviewSidebar } from "@/views/s
 import { soloThreads } from "@/views/solo-threads";
 import { useViewWorkspace } from "@/views/view-workspace";
 
-import { askKeysByThread } from "./ask-model";
 import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
 import {
@@ -50,6 +49,7 @@ import {
   type OverviewState,
 } from "./overview-model";
 import {
+  askingOf,
   besideKey,
   overviewKeys,
   SoloRow,
@@ -63,7 +63,7 @@ import { ROW } from "./overview-section";
 import { peek } from "./peek-store";
 import { workingWorkerThreads } from "./tree-model";
 import { NeedsYouPopover } from "./needs-you-popover";
-import { useNeedsYou } from "./use-needs-you";
+import { useNeedsYou, useNeedsYouCounts } from "./use-needs-you";
 import { ledgerSlotsText } from "./overview-extras-model";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { useWorkspaces } from "./use-orchestration";
@@ -191,15 +191,11 @@ function WorkspaceTiles() {
     ),
   );
   const { statuses, ledgers } = useWorkspaceStatuses(own);
-  // Each workspace's asks, and the workers they wait on, as the open overview's lines read them.
-  const waiting = useMemo(
-    () =>
-      new Map(
-        asks.map((each) => [
-          each.workspaceId as string,
-          { count: each.asks.length, asking: new Set(askKeysByThread(each.asks).keys()) },
-        ]),
-      ),
+  // Each workspace's share of Needs you, and the workers its asks wait on, as the open overview's
+  // lines read them.
+  const { byWorkspace } = useNeedsYouCounts();
+  const asking = useMemo(
+    () => new Map(asks.map((each) => [each.workspaceId as string, askingOf(each.asks)] as const)),
     [asks],
   );
   return workspaces.map((state) => {
@@ -209,8 +205,8 @@ function WorkspaceTiles() {
         key={id}
         state={state}
         here={id === current?.workspace.id}
-        asks={waiting.get(id)?.count ?? 0}
-        asking={waiting.get(id)?.asking ?? NO_ASKING}
+        asks={byWorkspace.get(id) ?? 0}
+        asking={asking.get(id) ?? NO_ASKING}
         ledger={ledgers.get(id)}
         word={overviewState(statuses.get(id), state.paused !== undefined)}
       />

@@ -55,7 +55,8 @@ const linePrs = (row: RailRow): readonly LinePr[] => {
 
 /** The sheet for `card`, or `undefined` once every worker of it is archived. */
 export const featureSheet = (card: FeatureCard, facts: RailFacts): FeatureSheet | undefined => {
-  const [row] = railRows([card], facts);
+  // The sheet lists all of the feature's work, finished workers too; only the archived leave it.
+  const [row] = railRows([card], facts, "unarchived");
   if (row === undefined) return undefined;
   const workers = lineWorkers(row);
   const counts = Object.fromEntries(
