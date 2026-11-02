@@ -18,7 +18,15 @@ import {
   type ProjectLocalCheck,
   type ProjectId,
 } from "@gram/contracts";
-import { canonicalizeOrOwned, git, isInside, PathProbe, Proc, realPathSync, type ProcOutput } from "@gram/git";
+import {
+  canonicalizeOrOwned,
+  git,
+  isInside,
+  PathProbe,
+  Proc,
+  realPathSync,
+  type ProcOutput,
+} from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -57,6 +65,20 @@ import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { dropOldest } from "../bounded.ts";
 import { DAY_MS } from "../zone-time.ts";
 import { makeAdmission } from "./keyed-lock.ts";
+
+/** A publisher Git read's stdout; any failure or truncation refuses the publish. */
+const requiredPublisherGit = (result: ProcOutput | undefined) => {
+  if (result?.status !== 0 || result.truncated)
+    throw new Error("publisher Git metadata unavailable");
+  return result.stdout;
+};
+
+/** A private selected-source preparation step's stdout; any failure or truncation refuses it. */
+const requirePreparedGit = (out: ProcOutput | undefined) => {
+  if (out?.status !== 0 || out.truncated)
+    throw new Error("private selected Git preparation failed");
+  return out.stdout;
+};
 
 /** All configuration affecting reuse; a record without a project never authorizes a project's gate. */
 export interface LocalCheckRun {
@@ -145,7 +167,13 @@ export const runIdOf = (run: {
         ...(run.profile === undefined ? [] : [run.profile, run.qualification ?? null]),
         ...(run.preparation === undefined
           ? []
-          : [run.preparation.manifest, run.preparation.sha256, ...(run.preparation.inputConfigSha256 === undefined ? [] : [run.preparation.inputConfigSha256])]),
+          : [
+              run.preparation.manifest,
+              run.preparation.sha256,
+              ...(run.preparation.inputConfigSha256 === undefined
+                ? []
+                : [run.preparation.inputConfigSha256]),
+            ]),
       ]),
     )
     .digest("hex")
@@ -196,8 +224,7 @@ function verifySelectedWorktree(root: string, selection: ReadonlyArray<SelectedS
       const path = nodePath.join(dir, name);
       const metadata = lstatSync(path);
       if (metadata.isDirectory()) {
-        if (!directories.has(relative))
-          throw new Error("unexpected selected worktree directory");
+        if (!directories.has(relative)) throw new Error("unexpected selected worktree directory");
         visit(path, relative);
         continue;
       }
@@ -208,7 +235,12 @@ function verifySelectedWorktree(root: string, selection: ReadonlyArray<SelectedS
       try {
         const before = fstatSync(fd);
         const mode = (before.mode & 0o111) !== 0 ? "100755" : "100644";
-        if (!before.isFile() || mode !== row.mode || before.dev !== metadata.dev || before.ino !== metadata.ino)
+        if (
+          !before.isFile() ||
+          mode !== row.mode ||
+          before.dev !== metadata.dev ||
+          before.ino !== metadata.ino
+        )
           throw new Error("selected worktree mode differs");
         const hash = createHash("sha1").update(`blob ${before.size}\0`);
         const buffer = Buffer.allocUnsafe(64 * 1024);
@@ -220,9 +252,15 @@ function verifySelectedWorktree(root: string, selection: ReadonlyArray<SelectedS
           hash.update(buffer.subarray(0, count));
         }
         const after = fstatSync(fd);
-        if (bytes !== before.size || hash.digest("hex") !== row.oid ||
-            before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
-            before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs)
+        if (
+          bytes !== before.size ||
+          hash.digest("hex") !== row.oid ||
+          before.dev !== after.dev ||
+          before.ino !== after.ino ||
+          before.size !== after.size ||
+          before.mtimeMs !== after.mtimeMs ||
+          before.ctimeMs !== after.ctimeMs
+        )
           throw new Error("selected worktree bytes differ");
       } finally {
         closeSync(fd);
@@ -274,7 +312,8 @@ function selectedSourceManifest(
       v.schema !== "gram.selected-source/v1" ||
       v.head !== head ||
       v.base !== base ||
-      typeof v.tree !== "string" || !/^[a-f0-9]{40}$/.test(v.tree) ||
+      typeof v.tree !== "string" ||
+      !/^[a-f0-9]{40}$/.test(v.tree) ||
       (tree !== undefined && v.tree !== tree) ||
       !Array.isArray(v.entries) ||
       v.entries.length === 0 ||
@@ -376,7 +415,11 @@ export const LocalCheck = Schema.Struct({
   status: Schema.Literals(["running", "passed", "failed"]),
   command: Schema.String,
   preparation: Schema.optionalKey(
-    Schema.Struct({ manifest: Schema.String, sha256: Schema.String, inputConfigSha256: Schema.optionalKey(Schema.String) }),
+    Schema.Struct({
+      manifest: Schema.String,
+      sha256: Schema.String,
+      inputConfigSha256: Schema.optionalKey(Schema.String),
+    }),
   ),
   omittedSources: Schema.optionalKey(
     Schema.Array(
@@ -517,82 +560,195 @@ const isGitControl = (name: string): boolean =>
   !["GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_ASKPASS"].includes(name.toUpperCase());
 
 /** Shared selected checkout and raw-byte verification for native and explicit publisher preparation. */
-type SelectedGit = (args: ReadonlyArray<string>, env?: Record<string, string>, more?: { readonly stdin?: string }) => Effect.Effect<ProcOutput | undefined>;
-const checkoutSelected = (dir: string, selection: ReadonlyArray<SelectedSource>, runGit: SelectedGit) =>
+type SelectedGit = (
+  args: ReadonlyArray<string>,
+  env?: Record<string, string>,
+  more?: { readonly stdin?: string },
+) => Effect.Effect<ProcOutput | undefined>;
+const checkoutSelected = (
+  dir: string,
+  selection: ReadonlyArray<SelectedSource>,
+  runGit: SelectedGit,
+) =>
   Effect.gen(function* () {
-    const files = selection.filter((row) => row.selected).map((row) => row.path + "\0").join("");
+    const files = selection
+      .filter((row) => row.selected)
+      .map((row) => row.path + "\0")
+      .join("");
     const checkout = yield* runGit(
-      ["-c", "core.hooksPath=/dev/null", "-c", "core.attributesFile=/dev/null", "-c", "core.autocrlf=false", "checkout-index", "--stdin", "-z"],
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "core.attributesFile=/dev/null",
+        "-c",
+        "core.autocrlf=false",
+        "checkout-index",
+        "--stdin",
+        "-z",
+      ],
       { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1" },
       { stdin: files },
     );
     if (checkout?.status !== 0 || checkout.truncated) return "selected-source checkout failed";
-    try { verifySelectedWorktree(dir, selection); return undefined; } catch { return "selected-source materialization differs"; }
+    try {
+      verifySelectedWorktree(dir, selection);
+      return undefined;
+    } catch {
+      return "selected-source materialization differs";
+    }
   });
 
 /** Prepare an already indexed, empty publisher using the same selected checkout as native checks.
  * This is preparation only; provider approval, partial-store safety and the local check remain separate.
  */
 export const materializeSelectedPublisher = (
-  dir: string, preparation: NonNullable<ProjectLocalCheck["preparation"]>, head: string, base: string, tree: string,
-) => Effect.gen(function* () {
-  if (!nodePath.isAbsolute(dir) || nodePath.normalize(dir) !== dir || realPathSync(dir) !== dir ||
-      !lstatSync(dir).isDirectory() || lstatSync(dir).isSymbolicLink() ||
-      !lstatSync(nodePath.join(dir, ".git")).isFile() || lstatSync(nodePath.join(dir, ".git")).isSymbolicLink() ||
-      readdirSync(dir).some((name) => name !== ".git")) throw new Error("publisher is not an empty canonical linked worktree");
-  const selection = selectedSourceManifest(preparation, head, base, tree).entries;
-  const proc = yield* Proc;
-  const g: SelectedGit = (args, env, more) => git(dir, args, {
-    ...more, omitEnv: isGitControl,
-    env: { GIT_TERMINAL_PROMPT: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: "/dev/null",
-      GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1", GIT_ATTR_NOSYSTEM: "1", ...env },
-  }).pipe(Effect.provideService(Proc, proc), Effect.option,
-    Effect.map((out) => out._tag === "Some" ? out.value : undefined));
-  const required = (result: ProcOutput | undefined) => {
-    if (result?.status !== 0 || result.truncated) throw new Error("publisher Git metadata unavailable");
-    return result.stdout;
-  };
-  const identity = required(yield* g(["rev-parse", "HEAD", "HEAD^{tree}"])).trim().split("\n");
-  if (identity.length !== 2 || identity[0] !== head || identity[1] !== tree) throw new Error("publisher head/tree differs");
-  const expected = new Map(selection.map((row) => [row.path, `${row.mode} ${row.oid}`]));
-  const top = required(yield* g(["rev-parse", "--show-toplevel"])).trim();
-  if (top !== dir) throw new Error("publisher Git root differs");
-  if (required(yield* g(["for-each-ref", "--format=%(refname)", "refs/replace/"])).trim() !== "")
-    throw new Error("publisher replacement refs forbidden");
-  // GIT_GRAFT_FILE is deliberately /dev/null for child commands, so asking
-  // rev-parse for info/grafts would return that override rather than the real file.
-  const common = required(yield* g(["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
-  if (!nodePath.isAbsolute(common) || realPathSync(common) !== common)
-    throw new Error("publisher common Git directory is not canonical");
-  const attrs = required(yield* g(["rev-parse", "--path-format=absolute", "--git-path", "info/attributes"])).trim();
-  if (!nodePath.isAbsolute(attrs)) throw new Error("publisher Git attributes path is not absolute");
-  for (const [label, path] of [["info/grafts", nodePath.join(common, "info/grafts")], ["info/attributes", attrs]]) {
-    try { lstatSync(path!); throw new Error(`publisher ${label} forbidden`); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  }
-  const treeRows = required(yield* g(["ls-tree", "-r", "-z", "--full-tree", head])).split("\0").filter(Boolean);
-  if (treeRows.length !== expected.size || treeRows.some((row) => {
-    const tab = row.indexOf("\t"), meta = row.slice(0, tab).split(" ");
-    return tab < 0 || meta.length !== 3 || meta[1] !== "blob" || expected.get(row.slice(tab + 1)) !== `${meta[0]} ${meta[2]}`;
-  })) throw new Error("publisher tree differs from selection");
-  const index = required(yield* g(["ls-files", "--stage", "-z"])).split("\0").filter(Boolean);
-  if (index.length !== expected.size || index.some((row) => {
-    const tab = row.indexOf("\t"), meta = row.slice(0, tab).split(" ");
-    return tab < 0 || meta.length !== 3 || meta[2] !== "0" || expected.get(row.slice(tab + 1)) !== `${meta[0]} ${meta[1]}`;
-  })) throw new Error("publisher index differs from selection");
-  const flags = required(yield* g(["ls-files", "-v", "-z"])).split("\0").filter(Boolean);
-  if (flags.length !== expected.size || flags.some((row) => !row.startsWith("H ") || !expected.has(row.slice(2))))
-    throw new Error("publisher index flags differ");
-  const selectedNames = selection.filter((row) => row.selected).map((row) => row.path + "\0").join("");
-  const attributes = required(yield* g(["-c", "core.attributesFile=/dev/null", "check-attr", "--cached", "--all", "--stdin", "-z"], undefined, { stdin: selectedNames })).split("\0");
-  if (attributes.at(-1) === "") attributes.pop();
-  if (attributes.length % 3 !== 0 || attributes.some((value, i) => i % 3 === 1 && value === "filter"))
-    throw new Error("publisher selected filter attributes are forbidden");
-  const checkoutError = yield* checkoutSelected(dir, selection, g);
-  if (checkoutError !== undefined) throw new Error(checkoutError);
-  selectedSourceManifest(preparation, head, base, tree);
-  return { head, base, tree, selectionSha256: preparation.sha256, selected: selection.filter((row) => row.selected).length };
-});
+  dir: string,
+  preparation: NonNullable<ProjectLocalCheck["preparation"]>,
+  head: string,
+  base: string,
+  tree: string,
+) =>
+  Effect.gen(function* () {
+    if (
+      !nodePath.isAbsolute(dir) ||
+      nodePath.normalize(dir) !== dir ||
+      realPathSync(dir) !== dir ||
+      !lstatSync(dir).isDirectory() ||
+      lstatSync(dir).isSymbolicLink() ||
+      !lstatSync(nodePath.join(dir, ".git")).isFile() ||
+      lstatSync(nodePath.join(dir, ".git")).isSymbolicLink() ||
+      readdirSync(dir).some((name) => name !== ".git")
+    )
+      throw new Error("publisher is not an empty canonical linked worktree");
+    const selection = selectedSourceManifest(preparation, head, base, tree).entries;
+    const proc = yield* Proc;
+    const g: SelectedGit = (args, env, more) =>
+      git(dir, args, {
+        ...more,
+        omitEnv: isGitControl,
+        env: {
+          GIT_TERMINAL_PROMPT: "0",
+          GIT_NO_REPLACE_OBJECTS: "1",
+          GIT_GRAFT_FILE: "/dev/null",
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_NO_LAZY_FETCH: "1",
+          GIT_ATTR_NOSYSTEM: "1",
+          ...env,
+        },
+      }).pipe(
+        Effect.provideService(Proc, proc),
+        Effect.option,
+        Effect.map((out) => (out._tag === "Some" ? out.value : undefined)),
+      );
+    const identity = requiredPublisherGit(yield* g(["rev-parse", "HEAD", "HEAD^{tree}"]))
+      .trim()
+      .split("\n");
+    if (identity.length !== 2 || identity[0] !== head || identity[1] !== tree)
+      throw new Error("publisher head/tree differs");
+    const expected = new Map(selection.map((row) => [row.path, `${row.mode} ${row.oid}`]));
+    const top = requiredPublisherGit(yield* g(["rev-parse", "--show-toplevel"])).trim();
+    if (top !== dir) throw new Error("publisher Git root differs");
+    if (
+      requiredPublisherGit(
+        yield* g(["for-each-ref", "--format=%(refname)", "refs/replace/"]),
+      ).trim() !== ""
+    )
+      throw new Error("publisher replacement refs forbidden");
+    // GIT_GRAFT_FILE is deliberately /dev/null for child commands, so asking
+    // rev-parse for info/grafts would return that override rather than the real file.
+    const common = requiredPublisherGit(
+      yield* g(["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+    ).trim();
+    if (!nodePath.isAbsolute(common) || realPathSync(common) !== common)
+      throw new Error("publisher common Git directory is not canonical");
+    const attrs = requiredPublisherGit(
+      yield* g(["rev-parse", "--path-format=absolute", "--git-path", "info/attributes"]),
+    ).trim();
+    if (!nodePath.isAbsolute(attrs))
+      throw new Error("publisher Git attributes path is not absolute");
+    for (const [label, path] of [
+      ["info/grafts", nodePath.join(common, "info/grafts")],
+      ["info/attributes", attrs],
+    ]) {
+      try {
+        lstatSync(path!);
+        throw new Error(`publisher ${label} forbidden`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    const treeRows = requiredPublisherGit(yield* g(["ls-tree", "-r", "-z", "--full-tree", head]))
+      .split("\0")
+      .filter(Boolean);
+    if (
+      treeRows.length !== expected.size ||
+      treeRows.some((row) => {
+        const tab = row.indexOf("\t"),
+          meta = row.slice(0, tab).split(" ");
+        return (
+          tab < 0 ||
+          meta.length !== 3 ||
+          meta[1] !== "blob" ||
+          expected.get(row.slice(tab + 1)) !== `${meta[0]} ${meta[2]}`
+        );
+      })
+    )
+      throw new Error("publisher tree differs from selection");
+    const index = requiredPublisherGit(yield* g(["ls-files", "--stage", "-z"]))
+      .split("\0")
+      .filter(Boolean);
+    if (
+      index.length !== expected.size ||
+      index.some((row) => {
+        const tab = row.indexOf("\t"),
+          meta = row.slice(0, tab).split(" ");
+        return (
+          tab < 0 ||
+          meta.length !== 3 ||
+          meta[2] !== "0" ||
+          expected.get(row.slice(tab + 1)) !== `${meta[0]} ${meta[1]}`
+        );
+      })
+    )
+      throw new Error("publisher index differs from selection");
+    const flags = requiredPublisherGit(yield* g(["ls-files", "-v", "-z"]))
+      .split("\0")
+      .filter(Boolean);
+    if (
+      flags.length !== expected.size ||
+      flags.some((row) => !row.startsWith("H ") || !expected.has(row.slice(2)))
+    )
+      throw new Error("publisher index flags differ");
+    const selectedNames = selection
+      .filter((row) => row.selected)
+      .map((row) => row.path + "\0")
+      .join("");
+    const attributes = requiredPublisherGit(
+      yield* g(
+        ["-c", "core.attributesFile=/dev/null", "check-attr", "--cached", "--all", "--stdin", "-z"],
+        undefined,
+        { stdin: selectedNames },
+      ),
+    ).split("\0");
+    if (attributes.at(-1) === "") attributes.pop();
+    if (
+      attributes.length % 3 !== 0 ||
+      attributes.some((value, i) => i % 3 === 1 && value === "filter")
+    )
+      throw new Error("publisher selected filter attributes are forbidden");
+    const checkoutError = yield* checkoutSelected(dir, selection, g);
+    if (checkoutError !== undefined) throw new Error(checkoutError);
+    selectedSourceManifest(preparation, head, base, tree);
+    return {
+      head,
+      base,
+      tree,
+      selectionSha256: preparation.sha256,
+      selected: selection.filter((row) => row.selected).length,
+    };
+  });
 
 /** Gram's own variables stay out of the check, whose tests set what they need themselves. */
 const checkEnv = (
@@ -1310,130 +1466,257 @@ const fixedIdentity = {
 
 // Shared native metadata-first selected tree preparation; both LocalChecks
 // and the explicit private-publisher entry use this identical path.
-type SelectedTreeGit = (cwd: string, args: ReadonlyArray<string>, env?: Record<string,string>, more?: { readonly stdin?: string; readonly tier?: "local" | "slow" }) => Effect.Effect<ProcOutput | undefined>;
-const selectedTreeOf = (own: string, repoDir: string, head: string, base: string, fetch: boolean,
-  preparation: NonNullable<ProjectLocalCheck["preparation"]>, g: SelectedTreeGit,
-  hasCommit: (dir: string, sha: string, noLazy?: boolean) => Effect.Effect<boolean>, trees: Map<string,string|null>) =>
+type SelectedTreeGit = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+  env?: Record<string, string>,
+  more?: { readonly stdin?: string; readonly tier?: "local" | "slow" },
+) => Effect.Effect<ProcOutput | undefined>;
+const selectedTreeOf = (
+  own: string,
+  repoDir: string,
+  head: string,
+  base: string,
+  fetch: boolean,
+  preparation: NonNullable<ProjectLocalCheck["preparation"]>,
+  g: SelectedTreeGit,
+  hasCommit: (dir: string, sha: string, noLazy?: boolean) => Effect.Effect<boolean>,
+  trees: Map<string, string | null>,
+) =>
   Effect.gen(function* () {
-          // A partial source repository is kept separate from ordinary checks,
-          // so an earlier full fetch cannot supply a selected check's objects.
-          let selection: { tree: string; entries: Array<SelectedSource> };
-          try {
-            selection = selectedSourceManifest(preparation, head, base);
-          } catch {
-            return undefined;
-          }
-          const cachedKey = `selected:${preparation.sha256}:${head}:${base}`;
-          if (!fetch) return trees.get(cachedKey);
-          const env = { GIT_NO_LAZY_FETCH: "1", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
-          const upload = "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack";
-          // Git otherwise silently falls back to a full fetch if the server
-          // does not advertise filtering. Check the local upload-pack's v2
-          // capability before requesting any candidate objects.
-          const advertise = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "ls-remote", upload, pathToFileURL(repoDir).href], { ...env, GIT_TRACE_PACKET: "1" });
-          // The client receives the server's v2 capability advertisement over
-          // the transport. A separated upload-pack does not share its stderr.
-          if (advertise?.status !== 0 || advertise.truncated ||
-              !/ls-remote< fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr)) return undefined;
-          for (const sha of [head, base]) {
-            if (yield* hasCommit(own, sha, true)) continue;
-            const result = yield* g(own, ["-c", "protocol.file.allow=always", "-c", "protocol.version=2", "fetch", "--quiet", "--no-tags", "--filter=blob:none", upload, pathToFileURL(repoDir).href, sha], env);
-            if (result?.status !== 0 || !(yield* hasCommit(own, sha, true))) return undefined;
-          }
-          const ancestor = yield* g(own, ["merge-base", base, head], env);
-          const parent = ancestor?.status === 0 ? ancestor.stdout.trim() : "";
-          if (!SHA.test(parent)) return undefined;
-          const inputTrees: Array<Map<string, { mode: string; oid: string }>> = [];
-          for (const rev of [parent, base, head]) {
-            const census = yield* g(own, ["ls-tree", "-r", "-z", "--full-tree", rev], env);
-            if (census?.status !== 0 || census.truncated) return undefined;
-            const entries = new Map<string, { mode: string; oid: string }>();
-            for (const item of census.stdout.split("\0").filter(Boolean)) {
-              const at = item.indexOf("\t");
-              const meta = item.slice(0, at).split(" ");
-              const path = item.slice(at + 1);
-              if (at < 0 || meta.length !== 3 || meta[1] !== "blob" ||
-                  !["100644", "100755", "120000"].includes(meta[0]!) || !SHA.test(meta[2]!) || entries.has(path))
-                return undefined;
-              entries.set(path, { mode: meta[0]!, oid: meta[2]! });
-            }
-            inputTrees.push(entries);
-          }
-          const selected = new Map(selection.entries.filter((row) => row.selected).map((row) => [row.path, row]));
-          const omitted = new Map(selection.entries.filter((row) => !row.selected).map((row) => [row.path, row]));
-          const paths = new Set([...selection.entries.map((row) => row.path), ...inputTrees.flatMap((tree) => [...tree.keys()])]);
-          const needed = new Set<string>();
-          const excluded = new Set<string>();
-          for (const path of paths) {
-            const values = inputTrees.map((tree) => tree.get(path));
-            if (selected.has(path)) {
-              for (const row of values) {
-                if (row !== undefined && !["100644", "100755"].includes(row.mode)) return undefined;
-                if (row !== undefined) needed.add(row.oid);
-              }
-            } else {
-              // Only an unchanged omitted blob can pass to merge-tree; do not
-              // give Git the opportunity to merge or lazily fetch its bytes.
-              const target = omitted.get(path);
-              if (target === undefined) return undefined;
-              if (values.some((row) => row?.oid !== target.oid || row.mode !== target.mode)) return undefined;
-              excluded.add(target.oid);
-            }
-          }
-          if ([...needed].some((oid) => excluded.has(oid))) return undefined;
-          if (fetch) {
-            const blobs = [...needed];
-            for (let offset = 0; offset < blobs.length; offset += 128) {
-              const result = yield* g(own, ["-c", "protocol.file.allow=always", "fetch", "--quiet", "--no-tags", upload, pathToFileURL(repoDir).href, ...blobs.slice(offset, offset + 128)], env);
-              if (result?.status !== 0) return undefined;
-            }
-          }
-          const merged = yield* g(own, ["merge-tree", "--write-tree", "--no-messages", base, head], env);
-          const tree = merged?.status === 0 ? merged.stdout.split("\n")[0]!.trim() : undefined;
-          if (tree !== selection.tree) return undefined;
-          trees.set(cachedKey, tree);
-          return tree;
+    // A partial source repository is kept separate from ordinary checks,
+    // so an earlier full fetch cannot supply a selected check's objects.
+    let selection: { tree: string; entries: Array<SelectedSource> };
+    try {
+      selection = selectedSourceManifest(preparation, head, base);
+    } catch {
+      return undefined;
+    }
+    const cachedKey = `selected:${preparation.sha256}:${head}:${base}`;
+    if (!fetch) return trees.get(cachedKey);
+    const env = {
+      GIT_NO_LAZY_FETCH: "1",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+    };
+    const upload =
+      "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack";
+    // Git otherwise silently falls back to a full fetch if the server
+    // does not advertise filtering. Check the local upload-pack's v2
+    // capability before requesting any candidate objects.
+    const advertise = yield* g(
+      own,
+      [
+        "-c",
+        "protocol.file.allow=always",
+        "-c",
+        "protocol.version=2",
+        "ls-remote",
+        upload,
+        pathToFileURL(repoDir).href,
+      ],
+      { ...env, GIT_TRACE_PACKET: "1" },
+    );
+    // The client receives the server's v2 capability advertisement over
+    // the transport. A separated upload-pack does not share its stderr.
+    if (
+      advertise?.status !== 0 ||
+      advertise.truncated ||
+      !/ls-remote< fetch=[^\r\n]*\bfilter\b/.test(advertise.stderr)
+    )
+      return undefined;
+    for (const sha of [head, base]) {
+      if (yield* hasCommit(own, sha, true)) continue;
+      const result = yield* g(
+        own,
+        [
+          "-c",
+          "protocol.file.allow=always",
+          "-c",
+          "protocol.version=2",
+          "fetch",
+          "--quiet",
+          "--no-tags",
+          "--filter=blob:none",
+          upload,
+          pathToFileURL(repoDir).href,
+          sha,
+        ],
+        env,
+      );
+      if (result?.status !== 0 || !(yield* hasCommit(own, sha, true))) return undefined;
+    }
+    const ancestor = yield* g(own, ["merge-base", base, head], env);
+    const parent = ancestor?.status === 0 ? ancestor.stdout.trim() : "";
+    if (!SHA.test(parent)) return undefined;
+    const inputTrees: Array<Map<string, { mode: string; oid: string }>> = [];
+    for (const rev of [parent, base, head]) {
+      const census = yield* g(own, ["ls-tree", "-r", "-z", "--full-tree", rev], env);
+      if (census?.status !== 0 || census.truncated) return undefined;
+      const revTree = new Map<string, { mode: string; oid: string }>();
+      for (const item of census.stdout.split("\0").filter(Boolean)) {
+        const at = item.indexOf("\t");
+        const meta = item.slice(0, at).split(" ");
+        const path = item.slice(at + 1);
+        if (
+          at < 0 ||
+          meta.length !== 3 ||
+          meta[1] !== "blob" ||
+          !["100644", "100755", "120000"].includes(meta[0]!) ||
+          !SHA.test(meta[2]!) ||
+          revTree.has(path)
+        )
+          return undefined;
+        revTree.set(path, { mode: meta[0]!, oid: meta[2]! });
+      }
+      inputTrees.push(revTree);
+    }
+    const selected = new Map(
+      selection.entries.filter((row) => row.selected).map((row) => [row.path, row]),
+    );
+    const omitted = new Map(
+      selection.entries.filter((row) => !row.selected).map((row) => [row.path, row]),
+    );
+    const paths = new Set([
+      ...selection.entries.map((row) => row.path),
+      ...inputTrees.flatMap((tree) => [...tree.keys()]),
+    ]);
+    const needed = new Set<string>();
+    const excluded = new Set<string>();
+    for (const path of paths) {
+      const values = inputTrees.map((tree) => tree.get(path));
+      if (selected.has(path)) {
+        for (const row of values) {
+          if (row !== undefined && !["100644", "100755"].includes(row.mode)) return undefined;
+          if (row !== undefined) needed.add(row.oid);
+        }
+      } else {
+        // Only an unchanged omitted blob can pass to merge-tree; do not
+        // give Git the opportunity to merge or lazily fetch its bytes.
+        const target = omitted.get(path);
+        if (target === undefined) return undefined;
+        if (values.some((row) => row?.oid !== target.oid || row.mode !== target.mode))
+          return undefined;
+        excluded.add(target.oid);
+      }
+    }
+    if ([...needed].some((oid) => excluded.has(oid))) return undefined;
+    if (fetch) {
+      const blobs = [...needed];
+      for (let offset = 0; offset < blobs.length; offset += 128) {
+        const result = yield* g(
+          own,
+          [
+            "-c",
+            "protocol.file.allow=always",
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            upload,
+            pathToFileURL(repoDir).href,
+            ...blobs.slice(offset, offset + 128),
+          ],
+          env,
+        );
+        if (result?.status !== 0) return undefined;
+      }
+    }
+    const merged = yield* g(own, ["merge-tree", "--write-tree", "--no-messages", base, head], env);
+    const tree = merged?.status === 0 ? merged.stdout.split("\n")[0]!.trim() : undefined;
+    if (tree !== selection.tree) return undefined;
+    trees.set(cachedKey, tree);
+    return tree;
   });
 
 /** Create a fresh isolated selected-only Git store and empty indexed publisher.
  * This does not materialize selected source or run a local check.
  */
 export const prepareSelectedPrivatePublisher = (
-  sourceRepo: string, own: string, publisher: string, head: string, base: string, tree: string,
+  sourceRepo: string,
+  own: string,
+  publisher: string,
+  head: string,
+  base: string,
+  tree: string,
   preparation: NonNullable<ProjectLocalCheck["preparation"]>,
-) => Effect.gen(function* () {
-  const parent = nodePath.dirname(own);
-  if (![sourceRepo, own, publisher].every((p) => nodePath.isAbsolute(p) && nodePath.normalize(p) === p && realPathSync(p) === p)
-      || own === publisher || nodePath.dirname(publisher) !== parent || realPathSync(parent) !== parent
-      || lstatSync(parent).uid !== process.getuid?.() || (lstatSync(parent).mode & 0o777) !== 0o700
-      || !lstatSync(own).isDirectory() || !lstatSync(publisher).isDirectory()
-      || readdirSync(own).length !== 0 || readdirSync(publisher).length !== 0)
-    throw new Error("private selected publisher paths are not fresh and owned");
-  selectedSourceManifest(preparation, head, base, tree);
-  const proc = yield* Proc;
-  const g: SelectedTreeGit = (cwd, args, env, more) => git(cwd, args, {
-    ...more, omitEnv: isGitControl,
-    env: { GIT_TERMINAL_PROMPT: "0", GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: "/dev/null",
-      GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1", ...env },
-  }).pipe(Effect.provideService(Proc, proc), Effect.option,
-    Effect.map((out) => out._tag === "Some" ? out.value : undefined));
-  const requireOk = (out: ProcOutput | undefined) => {
-    if (out?.status !== 0 || out.truncated) throw new Error("private selected Git preparation failed");
-    return out.stdout;
-  };
-  requireOk(yield* g(own, ["init", "--quiet", "--bare", "--template=", own]));
-  const hasCommit = (dir: string, sha: string, noLazy = false) =>
-    g(dir, ["cat-file", "-e", `${sha}^{commit}`], noLazy ? { GIT_NO_LAZY_FETCH: "1" } : undefined)
-      .pipe(Effect.map((out) => out?.status === 0));
-  const selected = yield* selectedTreeOf(own, sourceRepo, head, base, true, preparation, g, hasCommit, new Map());
-  if (selected !== tree) throw new Error("private selected tree unavailable or differs");
-  requireOk(yield* g(own, ["-c", "core.hooksPath=/dev/null", "worktree", "add", "--no-checkout", "--detach", publisher, head]));
-  requireOk(yield* g(publisher, ["read-tree", head]));
-  if (!lstatSync(nodePath.join(publisher, ".git")).isFile() || readdirSync(publisher).some((n) => n !== ".git"))
-    throw new Error("private publisher unexpectedly materialized source");
-  selectedSourceManifest(preparation, head, base, tree);
-  return { head, base, tree, selectionSha256: preparation.sha256, own, publisher };
-});
+) =>
+  Effect.gen(function* () {
+    const parent = nodePath.dirname(own);
+    if (
+      ![sourceRepo, own, publisher].every(
+        (p) => nodePath.isAbsolute(p) && nodePath.normalize(p) === p && realPathSync(p) === p,
+      ) ||
+      own === publisher ||
+      nodePath.dirname(publisher) !== parent ||
+      realPathSync(parent) !== parent ||
+      lstatSync(parent).uid !== process.getuid?.() ||
+      (lstatSync(parent).mode & 0o777) !== 0o700 ||
+      !lstatSync(own).isDirectory() ||
+      !lstatSync(publisher).isDirectory() ||
+      readdirSync(own).length !== 0 ||
+      readdirSync(publisher).length !== 0
+    )
+      throw new Error("private selected publisher paths are not fresh and owned");
+    selectedSourceManifest(preparation, head, base, tree);
+    const proc = yield* Proc;
+    const g: SelectedTreeGit = (cwd, args, env, more) =>
+      git(cwd, args, {
+        ...more,
+        omitEnv: isGitControl,
+        env: {
+          GIT_TERMINAL_PROMPT: "0",
+          GIT_NO_REPLACE_OBJECTS: "1",
+          GIT_GRAFT_FILE: "/dev/null",
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_NO_LAZY_FETCH: "1",
+          ...env,
+        },
+      }).pipe(
+        Effect.provideService(Proc, proc),
+        Effect.option,
+        Effect.map((out) => (out._tag === "Some" ? out.value : undefined)),
+      );
+    requirePreparedGit(yield* g(own, ["init", "--quiet", "--bare", "--template=", own]));
+    const hasCommit = (dir: string, sha: string, noLazy = false) =>
+      g(
+        dir,
+        ["cat-file", "-e", `${sha}^{commit}`],
+        noLazy ? { GIT_NO_LAZY_FETCH: "1" } : undefined,
+      ).pipe(Effect.map((out) => out?.status === 0));
+    const selected = yield* selectedTreeOf(
+      own,
+      sourceRepo,
+      head,
+      base,
+      true,
+      preparation,
+      g,
+      hasCommit,
+      new Map(),
+    );
+    if (selected !== tree) throw new Error("private selected tree unavailable or differs");
+    requirePreparedGit(
+      yield* g(own, [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "worktree",
+        "add",
+        "--no-checkout",
+        "--detach",
+        publisher,
+        head,
+      ]),
+    );
+    requirePreparedGit(yield* g(publisher, ["read-tree", head]));
+    if (
+      !lstatSync(nodePath.join(publisher, ".git")).isFile() ||
+      readdirSync(publisher).some((n) => n !== ".git")
+    )
+      throw new Error("private publisher unexpectedly materialized source");
+    selectedSourceManifest(preparation, head, base, tree);
+    return { head, base, tree, selectionSha256: preparation.sha256, own, publisher };
+  });
 
 export const LocalChecksLive = Layer.effect(
   LocalChecks,
@@ -1613,7 +1896,15 @@ export const LocalChecksLive = Layer.effect(
         const own = nodePath.join(
           checksDir,
           "repos",
-          `${createHash("sha256").update(source).update(wanted?.preparation === undefined ? "" : "\0selected-metadata-v1\0" + wanted.preparation.sha256).digest("hex").slice(0, 16)}.git`,
+          `${createHash("sha256")
+            .update(source)
+            .update(
+              wanted?.preparation === undefined
+                ? ""
+                : "\0selected-metadata-v1\0" + wanted.preparation.sha256,
+            )
+            .digest("hex")
+            .slice(0, 16)}.git`,
         );
         if (!existsSync(nodePath.join(own, "HEAD"))) {
           yield* Effect.sync(() => mkdirSync(own, { recursive: true }));
@@ -1623,8 +1914,11 @@ export const LocalChecksLive = Layer.effect(
       });
 
     const hasCommit = (dir: string, sha: string, noLazy = false) =>
-      g(dir, ["cat-file", "-e", `${sha}^{commit}`], noLazy ? { GIT_NO_LAZY_FETCH: "1" } : undefined)
-        .pipe(Effect.map((out) => out?.status === 0));
+      g(
+        dir,
+        ["cat-file", "-e", `${sha}^{commit}`],
+        noLazy ? { GIT_NO_LAZY_FETCH: "1" } : undefined,
+      ).pipe(Effect.map((out) => out?.status === 0));
 
     /** Fetches `sha` into Gram's repository from `repoDir`'s, after fetching it there if need be. */
     const fetchInto = (own: string, repoDir: string, sha: string) =>
@@ -1649,10 +1943,27 @@ export const LocalChecksLive = Layer.effect(
      * The tree of `head` merged onto `base` in Gram's repository; `null` on conflicts; undefined
      * when unknowable, which it is until `fetch` brought both commits in.
      */
-    const treeOf = (own: string, repoDir: string, head: string, base: string, fetch: boolean, wanted?: LocalCheckRun) =>
+    const treeOf = (
+      own: string,
+      repoDir: string,
+      head: string,
+      base: string,
+      fetch: boolean,
+      wanted?: LocalCheckRun,
+    ) =>
       Effect.gen(function* () {
         if (wanted?.preparation !== undefined)
-          return yield* selectedTreeOf(own, repoDir, head, base, fetch, wanted.preparation, g, hasCommit, trees);
+          return yield* selectedTreeOf(
+            own,
+            repoDir,
+            head,
+            base,
+            fetch,
+            wanted.preparation,
+            g,
+            hasCommit,
+            trees,
+          );
         const cached = trees.get(`${head}:${base}`);
         if (cached !== undefined) return cached;
         for (const sha of [head, base]) {
@@ -1866,9 +2177,12 @@ export const LocalChecksLive = Layer.effect(
               ? Effect.gen(function* () {
                   if (selection !== undefined) {
                     const index = yield* g(dir, ["read-tree", sha], { GIT_NO_LAZY_FETCH: "1" });
-                    const checkoutError = index?.status === 0
-                      ? yield* checkoutSelected(dir, selection, (args, env, more) => g(dir, args, env, more))
-                      : "selected-source checkout failed";
+                    const checkoutError =
+                      index?.status === 0
+                        ? yield* checkoutSelected(dir, selection, (args, env, more) =>
+                            g(dir, args, env, more),
+                          )
+                        : "selected-source checkout failed";
                     if (checkoutError !== undefined)
                       return {
                         ok: false,
@@ -1954,8 +2268,14 @@ export const LocalChecksLive = Layer.effect(
           if (wanted.preparation === undefined) return undefined;
           const key = keyOf(head, base, null, wanted);
           const failed: LocalCheck = {
-            head, base, tree: "", status: "failed", ...wanted, startedAt,
-            finishedAt: startedAt, host: hostname(),
+            head,
+            base,
+            tree: "",
+            status: "failed",
+            ...wanted,
+            startedAt,
+            finishedAt: startedAt,
+            host: hostname(),
             reason: "selected-source metadata preparation refused",
             failure: { kind: "unstartable" },
           };
