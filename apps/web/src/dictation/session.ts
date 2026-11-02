@@ -3,6 +3,7 @@ import {
   type MicrophoneAccess,
   type SpeechClientMessage,
   type SpeechErrorCode,
+  type SpeechMode,
   type SpeechOpenRequest,
   type SpeechPerformance,
   type SpeechServerMessage,
@@ -69,6 +70,8 @@ export interface Capture {
 export interface DictationTarget {
   readonly modelId: string;
   readonly performance?: SpeechPerformance | undefined;
+  /** How text commits; the shell runs `accurate` only with its models installed. */
+  readonly mode?: SpeechMode | undefined;
 }
 type DictationOpenRequest = SpeechOpenRequest;
 
@@ -246,6 +249,7 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
       sessionId,
       modelId: target.modelId,
       ...(target.performance === undefined ? {} : { performance: target.performance }),
+      ...(wanted.mode === undefined ? {} : { mode: wanted.mode }),
     };
     /** What the microphone heard before the session could take it. */
     let early: Float32Array[] | undefined = [];

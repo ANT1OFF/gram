@@ -1,12 +1,15 @@
 import {
   keepMicrophoneReadyOf,
+  SPEECH_ACCURATE_MODELS,
   SPEECH_MODEL_FOR_STOP,
   speechModelBytes,
+  speechModeOf,
   speechPerformanceOf,
   VOICE_UNSUPPORTED_NOTE,
   voiceInputOn,
   voiceSupported,
   type MicrophoneAccess,
+  type SpeechMode,
   type SpeechModelId,
   type SpeechPerformance,
   type SpeechStatus,
@@ -28,14 +31,18 @@ import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { DialogShell } from "@/thread/dialog-shell";
 
-import { SettingRow, Toggle } from "./fields";
+import { OptionGroup, SettingRow, Toggle } from "./fields";
 import { SETTINGS_CARD } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 import {
+  accurateFits,
+  combinedProgress,
   FAILURE_TITLES,
   formatSize,
   installedBytes,
   LOCAL_HINTS_HELP,
+  MODE_HELP,
+  MODE_OPTIONS,
   progressOf,
   removeModels,
   STOP_HELP,
@@ -44,7 +51,18 @@ import {
   stopOf,
 } from "./voice-input-model";
 
-const MODELS: readonly SpeechModelId[] = STOPS.map((stop) => SPEECH_MODEL_FOR_STOP[stop]);
+const MODELS: readonly SpeechModelId[] = [
+  ...STOPS.map((stop) => SPEECH_MODEL_FOR_STOP[stop]),
+  ...SPEECH_ACCURATE_MODELS,
+];
+
+/** The statuses of what `accurate` mode adds, once every one of them is known. */
+const accurateStatuses = (
+  statuses: Readonly<Record<string, SpeechStatus | undefined>>,
+): readonly SpeechStatus[] | undefined => {
+  const known = SPEECH_ACCURATE_MODELS.flatMap((id) => statuses[id] ?? []);
+  return known.length === SPEECH_ACCURATE_MODELS.length ? known : undefined;
+};
 
 /** Every pinned variant's status, kept current through each one's watch. */
 function useSpeechStatuses(): Readonly<Record<string, SpeechStatus | undefined>> {
@@ -110,9 +128,12 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
     setError(undefined);
     inOrder(step).catch((cause: unknown) => setError(errorMessage(cause)));
   };
-  const turnOn = () =>
+  const accurate = accurateStatuses(statuses);
+  const turnOn = (mode: SpeechMode) =>
     change(async () => {
-      await save({ experimental: { voiceInput: true } });
+      await save({ experimental: { voiceInput: true }, voice: { mode } });
+      if (mode === "accurate")
+        for (const id of SPEECH_ACCURATE_MODELS) await api.installSpeechModel(id);
       await api.installSpeechModel(model);
     });
   // The switch reads on until everything is gone, so turning it on again can't race the deletion.
@@ -154,6 +175,7 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
       {asking === "on" && current !== undefined && (
         <DownloadNotice
           status={current}
+          accurate={accurateFits(current) ? accurate : undefined}
           onCancel={() => setAsking(undefined)}
           onDownload={turnOn}
         />
@@ -201,7 +223,9 @@ export function VoiceInputSection() {
   // Experimental until 0.9: off, the page opens Diagnostics, unless it was turned off right here.
   if (!on && !seenOn) return <Navigate to="/settings/diagnostics" replace />;
   const stop = speechPerformanceOf(settings);
+  const mode = speechModeOf(settings);
   const current = statuses[SPEECH_MODEL_FOR_STOP[stop]];
+  const accurate = accurateStatuses(statuses);
   const fail = (cause: unknown) => setError(errorMessage(cause));
   const download = (id: SpeechModelId) => {
     setError(undefined);
@@ -232,6 +256,25 @@ export function VoiceInputSection() {
             fallback={fallbackStop(stop, statuses)}
             onDownload={download}
             disabled={pending}
+          />
+        )}
+        {on && (
+          <ModeRow
+            mode={mode}
+            disabled={pending}
+            onChange={(next) => {
+              setError(undefined);
+              save({ voice: { mode: next } }).catch(fail);
+            }}
+          />
+        )}
+        {on && mode === "accurate" && accurate !== undefined && (
+          <AccurateModelsRow
+            statuses={accurate}
+            disabled={pending}
+            onDownload={() => {
+              for (const id of SPEECH_ACCURATE_MODELS) download(id);
+            }}
           />
         )}
         {on && <MicrophoneRow held={keepMicrophoneReadyOf(settings)} />}
@@ -289,35 +332,16 @@ const fallbackStop = (
   return STOPS.find((other) => statuses[SPEECH_MODEL_FOR_STOP[other]]?.installed !== undefined);
 };
 
-/** What turning voice input on downloads, under what licence, before anything is fetched. */
-function DownloadNotice({
-  status,
-  onCancel,
-  onDownload,
-}: {
-  status: SpeechStatus;
-  onCancel: () => void;
-  onDownload: () => void;
-}) {
+/** One model on a consent screen: its name and size, and the licence that comes with it. */
+function ConsentModel({ status }: { status: SpeechStatus }) {
   const { model } = status;
-  const size = speechModelBytes(model);
   return (
-    <DialogShell
-      testId="voice-input-notice"
-      title="Download the speech model?"
-      description="This engine recognises speech on this computer: audio and text never leave it."
-      onClose={onCancel}
-    >
+    <div className="flex flex-col gap-1">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
         <dt className="text-muted-foreground">Model</dt>
         <dd>{model.name}</dd>
         <dt className="text-muted-foreground">Download</dt>
-        <dd>
-          {formatSize(size)}
-          {status.freeBytes === undefined ? "" : ` (${formatSize(status.freeBytes)} free)`}
-        </dd>
-        <dt className="text-muted-foreground">Memory</dt>
-        <dd>About {formatSize(model.memoryBytes)} while dictating</dd>
+        <dd>{formatSize(speechModelBytes(model))}</dd>
         <dt className="text-muted-foreground">Licence</dt>
         <dd>
           <a
@@ -331,6 +355,247 @@ function DownloadNotice({
         </dd>
       </dl>
       <p className="text-xs text-muted-foreground">{model.license.attribution}.</p>
+    </div>
+  );
+}
+
+const totalSize = (statuses: readonly SpeechStatus[]) =>
+  statuses.reduce((sum, status) => sum + speechModelBytes(status.model), 0);
+
+const totalMemory = (statuses: readonly SpeechStatus[]) =>
+  statuses.reduce((sum, status) => sum + status.model.memoryBytes, 0);
+
+/**
+ * What a download fetches, under what licences, before anything is fetched: every model named,
+ * each with its own licence and notice.
+ */
+function DownloadNotice({
+  status,
+  accurate,
+  onCancel,
+  onDownload,
+}: {
+  /** The streaming model. */
+  status: SpeechStatus;
+  /** What `accurate` adds; absent where it doesn't fit, and then only `status` is offered. */
+  accurate: readonly SpeechStatus[] | undefined;
+  onCancel: () => void;
+  onDownload: (mode: SpeechMode) => void;
+}) {
+  const everything = [status, ...(accurate ?? [])];
+  const size = totalSize(everything);
+  return (
+    <DialogShell
+      testId="voice-input-notice"
+      title={accurate === undefined ? "Download the speech model?" : "Download the speech models?"}
+      description="These recognise speech on this computer: audio and text never leave it."
+      onClose={onCancel}
+    >
+      <div className="flex flex-col gap-3">
+        {everything.map((each) => (
+          <ConsentModel key={each.model.id} status={each} />
+        ))}
+      </div>
+      <p className="text-sm">
+        <span className="text-muted-foreground">In all: </span>
+        {formatSize(size)}
+        {status.freeBytes === undefined ? "" : ` (${formatSize(status.freeBytes)} free)`}, about{" "}
+        {formatSize(totalMemory(everything))} of memory while dictating.
+      </p>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="ghost" onClick={onCancel}>
+          Not now
+        </Button>
+        {accurate !== undefined && (
+          <Button variant="outline" onClick={() => onDownload("live")}>
+            Live only, {formatSize(speechModelBytes(status.model))}
+          </Button>
+        )}
+        <Button onClick={() => onDownload(accurate === undefined ? "live" : "accurate")}>
+          Download {formatSize(size)}
+        </Button>
+      </div>
+    </DialogShell>
+  );
+}
+
+/** Accurate or Live, with what the choice does. */
+function ModeRow({
+  mode,
+  disabled,
+  onChange,
+}: {
+  mode: SpeechMode;
+  disabled: boolean;
+  onChange: (mode: SpeechMode) => void;
+}) {
+  return (
+    <SettingRow
+      label="Transcription"
+      description={MODE_HELP[mode]}
+      keywords={["accuracy", "accurate", "live", "punctuation", "parakeet"]}
+    >
+      <OptionGroup
+        label="Transcription"
+        options={MODE_OPTIONS}
+        value={mode}
+        disabled={disabled}
+        onChange={onChange}
+      />
+    </SettingRow>
+  );
+}
+
+/** What Accurate adds: consent, then its download, as one row. */
+function AccurateModelsRow({
+  statuses,
+  disabled,
+  onDownload,
+}: {
+  statuses: readonly SpeechStatus[];
+  disabled: boolean;
+  onDownload: () => void;
+}) {
+  const api = useApi();
+  const [asking, setAsking] = useState(false);
+  const progress = combinedProgress(statuses);
+  const label = "Accurate models";
+  const names = statuses.map((status) => status.model.name).join(" and ");
+  const memory = `About ${formatSize(totalMemory(statuses))} more memory while dictating.`;
+  const fallback = "Dictation stays Live until then.";
+  switch (progress.kind) {
+    case "ready":
+      return (
+        <SettingRow
+          label={label}
+          description={`${names}: ${formatSize(progress.sizeBytes)} on disk. ${statuses.map((status) => `${status.model.license.attribution}.`).join(" ")}`}
+        >
+          <span
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            data-testid="voice-accurate-ready"
+          >
+            <CircleCheck aria-hidden className="size-3.5 text-success" />
+            Ready
+          </span>
+        </SettingRow>
+      );
+    case "downloading":
+    case "verifying":
+      return (
+        <SettingRow
+          label={label}
+          description={
+            progress.kind === "verifying"
+              ? "Checking every file against its pinned digest…"
+              : `Downloading ${formatSize(progress.receivedBytes)} of ${formatSize(progress.totalBytes)}. ${fallback}`
+          }
+          detail={
+            <ProgressBar
+              value={progress.kind === "verifying" ? undefined : progress.receivedBytes}
+              max={progress.kind === "verifying" ? undefined : progress.totalBytes}
+            />
+          }
+        >
+          {progress.kind === "downloading" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => {
+                for (const status of statuses) void api.cancelSpeechInstall(status.model.id);
+              }}
+            >
+              Pause
+            </Button>
+          )}
+        </SettingRow>
+      );
+    case "paused":
+      return (
+        <SettingRow
+          label={label}
+          description={`Paused at ${formatSize(progress.receivedBytes)} of ${formatSize(progress.totalBytes)}. ${fallback}`}
+          detail={<ProgressBar value={progress.receivedBytes} max={progress.totalBytes} />}
+        >
+          <Button size="sm" variant="outline" disabled={disabled} onClick={onDownload}>
+            Resume
+          </Button>
+        </SettingRow>
+      );
+    case "absent":
+      return (
+        <SettingRow label={label} description={`${names} aren't downloaded. ${memory} ${fallback}`}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={disabled}
+            data-testid="voice-accurate-download"
+            onClick={() => setAsking(true)}
+          >
+            Download {formatSize(progress.totalBytes)}
+          </Button>
+          {asking && (
+            <AccurateNotice
+              statuses={statuses}
+              onCancel={() => setAsking(false)}
+              onDownload={() => {
+                setAsking(false);
+                onDownload();
+              }}
+            />
+          )}
+        </SettingRow>
+      );
+    case "failed":
+      return (
+        <SettingRow
+          label={label}
+          detail={
+            <Alert variant="destructive" data-testid="voice-accurate-failed">
+              <TriangleAlert aria-hidden />
+              <AlertTitle>{FAILURE_TITLES[progress.reason]}</AlertTitle>
+              <AlertDescription>{progress.message}</AlertDescription>
+            </Alert>
+          }
+        >
+          <Button size="sm" variant="outline" disabled={disabled} onClick={onDownload}>
+            {progress.resumable ? "Resume" : "Try again"}
+          </Button>
+        </SettingRow>
+      );
+  }
+}
+
+/** The consent for adding Accurate to a voice input that is already on. */
+function AccurateNotice({
+  statuses,
+  onCancel,
+  onDownload,
+}: {
+  statuses: readonly SpeechStatus[];
+  onCancel: () => void;
+  onDownload: () => void;
+}) {
+  const size = totalSize(statuses);
+  const free = statuses[0]?.freeBytes;
+  return (
+    <DialogShell
+      testId="voice-accurate-notice"
+      title="Download the Accurate models?"
+      description="These recognise speech on this computer: audio and text never leave it."
+      onClose={onCancel}
+    >
+      <div className="flex flex-col gap-3">
+        {statuses.map((status) => (
+          <ConsentModel key={status.model.id} status={status} />
+        ))}
+      </div>
+      <p className="text-sm">
+        <span className="text-muted-foreground">In all: </span>
+        {formatSize(size)}
+        {free === undefined ? "" : ` (${formatSize(free)} free)`}, about{" "}
+        {formatSize(totalMemory(statuses))} more memory while dictating.
+      </p>
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>
           Not now

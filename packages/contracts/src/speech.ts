@@ -36,6 +36,35 @@ export const SPEECH_MODEL_FOR_STOP: Readonly<Record<SpeechPerformance, SpeechMod
   efficient: SpeechModelId.make("nemotron-speech-en-0.6b-1120ms-int8"),
 };
 
+/**
+ * How dictation turns speech into committed text. `live` commits what the streaming model heard.
+ * `accurate` still shows the streaming model's words as they come, then runs an offline model over
+ * each finished utterance and commits its text, with punctuation and capitals, in their place.
+ */
+export const SpeechMode = Schema.Literals(["live", "accurate"]);
+export type SpeechMode = typeof SpeechMode.Type;
+
+/** The mode voice input runs unless the user chose: the one that makes the fewest mistakes. */
+export const DEFAULT_SPEECH_MODE: SpeechMode = "accurate";
+
+/** The offline model `accurate` commits text from. */
+export const SPEECH_ACCURATE_MODEL = SpeechModelId.make("parakeet-tdt-0.6b-v2-en-int8");
+
+/** The voice activity detector that trims silence off each utterance `accurate` passes on. */
+export const SPEECH_VAD_MODEL = SpeechModelId.make("silero-vad-v5");
+
+/** What `accurate` needs beyond the streaming model: both installed, or dictation stays `live`. */
+export const SPEECH_ACCURATE_MODELS: readonly SpeechModelId[] = [
+  SPEECH_ACCURATE_MODEL,
+  SPEECH_VAD_MODEL,
+];
+
+/**
+ * Below this much memory a new install starts on `live`: `accurate` keeps two models resident while
+ * dictating, about 2.6 GB.
+ */
+export const SPEECH_ACCURATE_MIN_MEMORY_BYTES = 16 * 1024 ** 3;
+
 /** A file's relative path inside a model directory: no `..`, no absolute path, no backslash. */
 const ModelPath = Schema.String.check(
   Schema.isPattern(/^(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/),
@@ -64,8 +93,10 @@ export type SpeechModelLicense = typeof SpeechModelLicense.Type;
 
 /** The upstream checkpoint the files were exported from, which EXAMPLE's CI re-exports to audit them. */
 export const SpeechModelSource = Schema.Struct({
-  /** The Hugging Face repo id, `nvidia/nemotron-speech-streaming-en-0.6b`. */
+  /** The Hugging Face repo id, `nvidia/nemotron-speech-streaming-en-0.6b`, or `url`'s name for it. */
   repo: Schema.String,
+  /** Where the source lives, when that isn't Hugging Face. */
+  url: Schema.optionalKey(Schema.String),
   /** The pinned commit of that repo. */
   revision: Schema.String,
   /** SHA-256 of the checkpoint the export read. */
@@ -79,15 +110,30 @@ const HfRepo = Schema.String.check(
 );
 
 /** The files of `files` the speech process loads, by role. */
-export const SpeechRecognizer = Schema.Struct({
-  kind: Schema.Literal("sherpa-onnx-online-transducer"),
-  encoder: ModelPath,
-  decoder: ModelPath,
-  joiner: ModelPath,
-  tokens: ModelPath,
-  /** The streaming chunk the encoder was exported for, which the recogniser flushes on stop. */
-  chunkMs: Schema.Int.check(Schema.isGreaterThan(0)),
-});
+export const SpeechRecognizer = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("sherpa-onnx-online-transducer"),
+    encoder: ModelPath,
+    decoder: ModelPath,
+    joiner: ModelPath,
+    tokens: ModelPath,
+    /** The streaming chunk the encoder was exported for, which the recogniser flushes on stop. */
+    chunkMs: Schema.Int.check(Schema.isGreaterThan(0)),
+  }),
+  /** A NeMo transducer that decodes a finished clip at once. */
+  Schema.Struct({
+    kind: Schema.Literal("sherpa-onnx-offline-transducer"),
+    encoder: ModelPath,
+    decoder: ModelPath,
+    joiner: ModelPath,
+    tokens: ModelPath,
+  }),
+  /** A voice activity detector, which recognises no words. */
+  Schema.Struct({
+    kind: Schema.Literal("sherpa-onnx-silero-vad"),
+    model: ModelPath,
+  }),
+]);
 export type SpeechRecognizer = typeof SpeechRecognizer.Type;
 
 /** What was checked about a model's files, and how it came out. */
@@ -198,6 +244,8 @@ export const SpeechStatus = Schema.Struct({
   install: SpeechInstallState,
   /** Free bytes where the model would go; absent when the disk couldn't be asked. */
   freeBytes: Schema.optionalKey(Schema.Number),
+  /** This computer's memory, for choosing a mode; absent from shells that predate it. */
+  totalMemoryBytes: Schema.optionalKey(Schema.Number),
 });
 export type SpeechStatus = typeof SpeechStatus.Type;
 

@@ -12,6 +12,8 @@ import { installedTarget } from "@/dictation/use-dictation";
 import { speechModelsBridge } from "@/api/speech/bridge";
 
 import {
+  accurateFits,
+  combinedProgress,
   formatSize,
   installedBytes,
   progressOf,
@@ -111,5 +113,62 @@ describe("voice input settings", () => {
       removeSpeechModel: async () => undefined,
     };
     await expect(removeModels(failing, ids)).rejects.toThrow("disk");
+  });
+});
+
+describe("Accurate mode's models", () => {
+  const PARAKEET = 3;
+  const SILERO = 4;
+  const parakeetBytes = 652_184_296 + 7_257_753 + 1_739_080 + 9_384;
+  const sileroBytes = 2_313_101;
+
+  it("read as one row: what's left, what's arrived, and failure before the rest", () => {
+    expect(combinedProgress([status(PARAKEET), status(SILERO)])).toEqual({
+      kind: "absent",
+      totalBytes: parakeetBytes + sileroBytes,
+    });
+    const silero = status(SILERO, {
+      installed: { id: MOCK_SPEECH_MODELS[SILERO]!.id, sizeBytes: sileroBytes, installedAt: 1 },
+    });
+    expect(
+      combinedProgress([
+        status(PARAKEET, {
+          install: { state: "downloading", receivedBytes: 100, totalBytes: parakeetBytes },
+        }),
+        silero,
+      ]),
+    ).toEqual({
+      kind: "downloading",
+      receivedBytes: 100 + sileroBytes,
+      totalBytes: parakeetBytes + sileroBytes,
+    });
+    expect(
+      combinedProgress([
+        status(PARAKEET, { install: { state: "idle", resumableBytes: 7 } }),
+        silero,
+      ]),
+    ).toMatchObject({ kind: "paused", receivedBytes: 7 + sileroBytes });
+    expect(
+      combinedProgress([
+        status(PARAKEET, {
+          install: { state: "failed", reason: "proxy", message: "Allow huggingface.co." },
+        }),
+        silero,
+      ]),
+    ).toMatchObject({ kind: "failed", reason: "proxy" });
+    expect(
+      combinedProgress([
+        status(PARAKEET, {
+          installed: { id: MOCK_SPEECH_MODELS[PARAKEET]!.id, sizeBytes: 9, installedAt: 1 },
+        }),
+        silero,
+      ]),
+    ).toEqual({ kind: "ready", sizeBytes: 9 + sileroBytes });
+  });
+
+  it("are offered where there are 16 GB of memory, or where the shell doesn't say", () => {
+    expect(accurateFits(status(0, { totalMemoryBytes: 8 * 1024 ** 3 }))).toBe(false);
+    expect(accurateFits(status(0, { totalMemoryBytes: 16 * 1024 ** 3 }))).toBe(true);
+    expect(accurateFits(status(0))).toBe(true);
   });
 });

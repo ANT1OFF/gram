@@ -1,8 +1,10 @@
 import type { SpeechServerMessage } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import type { SpeechModelPaths, SpeechProcessMessage } from "./protocol.ts";
+import { createUtterance, planClip } from "./accurate.ts";
+import type { SpeechAccuratePaths, SpeechModelPaths, SpeechProcessMessage } from "./protocol.ts";
 import {
+  type AccuratePass,
   createSpeechService,
   type RecogniserStream,
   type SessionPort,
@@ -22,7 +24,10 @@ const MODEL: SpeechModelPaths = {
  * A recogniser that "hears" one word per non-silent frame: a frame whose first sample is 1 adds
  * "word", and a frame of all zeros after speech is an endpoint.
  */
+const noAccurate = () => Promise.reject(new Error("no accurate pass in this test"));
+
 const fakeRuntime = (log: string[] = []): SpeechRuntime => ({
+  loadAccurate: noAccurate,
   load: (model, threads) => {
     log.push(`load ${model.encoder} ${threads}`);
     return {
@@ -138,6 +143,7 @@ describe("speech service", () => {
       const accepted: number[] = [];
       const runtime = fakeRuntime();
       const { service } = setup(() => ({
+        loadAccurate: noAccurate,
         load: (model, threads) => {
           const recogniser = runtime.load(model, threads);
           return {
@@ -254,6 +260,7 @@ describe("speech service", () => {
   it("reports a model the recogniser refuses, and prewarms one it takes", () => {
     let refuse = true;
     const { open, service, toMain } = setup(() => ({
+      loadAccurate: noAccurate,
       load: (model, threads) => {
         if (refuse) throw new Error("bad onnx");
         return fakeRuntime().load(model, threads);
@@ -289,6 +296,206 @@ describe("speech service", () => {
     port.send({ type: "stop" });
     expect(logs.join("\n")).not.toContain("word");
     expect(logs.at(-1)).toBe('session ended {"frames":1,"decodeMs":0}');
+  });
+});
+
+/** The accurate pass: speech is any sample of 1, and the text says how many frames of it it heard. */
+const fakePass = (
+  calls: string[] = [],
+  delay: Promise<void> = Promise.resolve(),
+): AccuratePass => ({
+  segments: (samples) => {
+    const segments: { start: number; end: number }[] = [];
+    let start = -1;
+    samples.forEach((sample, i) => {
+      if (sample === 1 && start < 0) start = i;
+      if (sample !== 1 && start >= 0) {
+        segments.push({ start, end: i });
+        start = -1;
+      }
+    });
+    if (start >= 0) segments.push({ start, end: samples.length });
+    return segments;
+  },
+  transcribe: async (samples) => {
+    await delay;
+    const frames = Math.round(samples.filter((sample) => sample === 1).length / 1_600);
+    calls.push(`transcribe ${samples.length}`);
+    return `Heard ${frames}.`;
+  },
+});
+
+const ACCURATE: SpeechAccuratePaths = {
+  encoder: "/p/encoder.int8.onnx",
+  decoder: "/p/decoder.int8.onnx",
+  joiner: "/p/joiner.int8.onnx",
+  tokens: "/p/tokens.txt",
+  vad: "/v/silero_vad_v5.onnx",
+};
+
+const settle = async () => {
+  for (let i = 0; i < 10; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+};
+
+const openAccurate = (loadAccurate: SpeechRuntime["loadAccurate"]) => {
+  const { service, logs, toMain } = setup(() => ({ ...fakeRuntime(), loadAccurate }));
+  const port = fakePort();
+  service.receive({ type: "open", sessionId: "s1", model: MODEL, threads: 2, accurate: ACCURATE }, [
+    port.port,
+  ]);
+  return { port, logs, toMain, service };
+};
+
+describe("speech service, accurate mode", () => {
+  it("commits the offline model's text for each utterance, trimmed of its silence", async () => {
+    const calls: string[] = [];
+    const { port, logs } = openAccurate(async () => fakePass(calls));
+    port.send({ type: "audio", samples: speech() });
+    port.send({ type: "audio", samples: speech() });
+    port.send({ type: "audio", samples: silence() });
+    await settle();
+    port.send({ type: "audio", samples: speech() });
+    port.send({ type: "stop" });
+    await settle();
+    expect(port.sent.slice(1)).toEqual([
+      { type: "partial", text: "word" },
+      { type: "partial", text: "word word" },
+      { type: "final", text: "Heard 2.", reason: "endpoint" },
+      { type: "partial", text: "word" },
+      { type: "final", text: "Heard 1.", reason: "stop" },
+    ]);
+    // 300 ms of lead, two frames of speech, one of silence: the first 50 ms of the lead go, since
+    // only 250 ms are kept before the speech, and the clip ends before the 250 ms after it would.
+    expect(calls[0]).toBe("transcribe 8800");
+    expect(port.closed()).toBe(true);
+    expect(logs.join("\n")).not.toMatch(/Heard|word/);
+  });
+
+  it("holds the next utterance's partials until this one's text has committed", async () => {
+    let release!: () => void;
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    const { port } = openAccurate(async () => fakePass([], slow));
+    port.send({ type: "audio", samples: speech() });
+    port.send({ type: "audio", samples: silence() });
+    port.send({ type: "audio", samples: speech() });
+    await settle();
+    expect(port.sent.at(-1)).toEqual({ type: "partial", text: "word" });
+    release();
+    await settle();
+    expect(port.sent.slice(2)).toEqual([
+      { type: "final", text: "Heard 1.", reason: "endpoint" },
+      { type: "partial", text: "word" },
+    ]);
+  });
+
+  it("commits nothing for an utterance the detector heard nobody in", async () => {
+    const calls: string[] = [];
+    const { port } = openAccurate(async () => ({
+      ...fakePass(calls),
+      segments: () => [],
+    }));
+    port.send({ type: "audio", samples: speech() });
+    port.send({ type: "audio", samples: silence() });
+    port.send({ type: "stop" });
+    await settle();
+    expect(port.sent.filter((message) => message.type === "final")).toEqual([
+      { type: "final", text: "", reason: "stop" },
+    ]);
+    expect(calls).toEqual([]);
+  });
+
+  it("falls back to the stream's text when the pass won't load, and tries again next time", async () => {
+    let attempts = 0;
+    const { port, service } = openAccurate(() => {
+      attempts++;
+      return Promise.reject(new Error("bad onnx"));
+    });
+    port.send({ type: "audio", samples: speech() });
+    port.send({ type: "stop" });
+    await settle();
+    expect(port.sent.at(-1)).toEqual({ type: "final", text: "word", reason: "stop" });
+    const again = fakePort();
+    service.receive(
+      { type: "open", sessionId: "s2", model: MODEL, threads: 2, accurate: ACCURATE },
+      [again.port],
+    );
+    await settle();
+    expect(attempts).toBe(2);
+  });
+
+  it("loads the pass once and keeps it across sessions until release", async () => {
+    let loads = 0;
+    const { port, service } = openAccurate(async () => {
+      loads++;
+      return fakePass();
+    });
+    port.send({ type: "cancel" });
+    const second = fakePort();
+    service.receive(
+      { type: "open", sessionId: "s2", model: MODEL, threads: 2, accurate: ACCURATE },
+      [second.port],
+    );
+    await settle();
+    expect(loads).toBe(1);
+    service.receive({ type: "release" }, []);
+    const third = fakePort();
+    service.receive(
+      { type: "open", sessionId: "s3", model: MODEL, threads: 2, accurate: ACCURATE },
+      [third.port],
+    );
+    await settle();
+    expect(loads).toBe(2);
+  });
+
+  it("drops what an utterance was still committing when the page cancels", async () => {
+    let release!: () => void;
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    const { port } = openAccurate(async () => fakePass([], slow));
+    port.send({ type: "audio", samples: speech() });
+    port.send({ type: "stop" });
+    port.send({ type: "cancel" });
+    release();
+    await settle();
+    expect(port.sent.filter((message) => message.type === "final")).toEqual([]);
+    expect(port.closed()).toBe(true);
+  });
+});
+
+describe("the clip an utterance passes on", () => {
+  const second = 16_000;
+  it("keeps 250 ms around the speech and nothing when nobody spoke", () => {
+    expect(planClip([], 3 * second, false)).toEqual({ speech: undefined });
+    expect(planClip([{ start: second, end: 2 * second }], 3 * second, false)).toEqual({
+      speech: { start: 12_000, end: 36_000 },
+    });
+    expect(planClip([{ start: 1_000, end: 3 * second }], 3 * second, false)).toEqual({
+      speech: { start: 0, end: 3 * second },
+    });
+  });
+
+  it("stops a clip cut off mid-speech at its last pause, carrying the rest forward", () => {
+    const segments = [
+      { start: 0, end: 20 * second },
+      { start: 21 * second, end: 30 * second },
+    ];
+    expect(planClip(segments, 30 * second, true)).toEqual({
+      speech: { start: 0, end: 20 * second + 4_000 },
+      carryFrom: 21 * second - 4_000,
+    });
+    // On stop nothing comes after, so all of it goes now.
+    expect(planClip(segments, 30 * second, false).carryFrom).toBeUndefined();
+    // Nor when the speaker had stopped before the cut, or there's no pause to stop at.
+    expect(planClip([{ start: 0, end: 25 * second }], 30 * second, true).carryFrom).toBeUndefined();
+    expect(planClip([segments[1]!], 30 * second, true).carryFrom).toBeUndefined();
+  });
+
+  it("gathers frames into one clip and starts empty again", () => {
+    const utterance = createUtterance();
+    utterance.push(new Float32Array([1, 2]));
+    utterance.push(new Float32Array([3]));
+    expect(utterance.length()).toBe(3);
+    expect([...utterance.take()]).toEqual([1, 2, 3]);
+    expect(utterance.length()).toBe(0);
   });
 });
 

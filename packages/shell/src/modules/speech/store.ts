@@ -1,3 +1,5 @@
+import { totalmem } from "node:os";
+
 import {
   FsError,
   SpeechRefused,
@@ -100,6 +102,7 @@ export const makeSpeechStore = (options: SpeechStoreOptions) =>
           ...(installed === undefined ? {} : { installed: { id: manifest.id, ...installed } }),
           install: install ?? { state: "idle" },
           ...(free === undefined ? {} : { freeBytes: free }),
+          totalMemoryBytes: totalmem(),
         };
       });
 

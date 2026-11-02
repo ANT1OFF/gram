@@ -2,6 +2,7 @@ import {
   keepMicrophoneReadyOf,
   openSpeechSession,
   SPEECH_MODEL_FOR_STOP,
+  speechModeOf,
   speechPerformanceOf,
   voiceInputOn,
   type DesktopSpeech,
@@ -115,6 +116,7 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
   const on = settings !== undefined && voiceInputOn(settings);
   const performance = settings === undefined ? undefined : speechPerformanceOf(settings);
   const keepReady = settings !== undefined && on && keepMicrophoneReadyOf(settings);
+  const mode = settings === undefined ? undefined : speechModeOf(settings);
   const bridge = on ? speechBridge() : undefined;
   const [state, setState] = useState<DictationState>({ phase: "idle" });
   const [partial, setPartial] = useState("");
@@ -178,7 +180,11 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
       // Settings is installing or deleting models; a session now could outlive a turn-off.
       if (lifecyclePending()) return;
       if (performance === undefined) return;
-      const wanted: DictationTarget = { modelId: SPEECH_MODEL_FOR_STOP[performance], performance };
+      const wanted: DictationTarget = {
+        modelId: SPEECH_MODEL_FOR_STOP[performance],
+        performance,
+        mode,
+      };
       void dictation.current?.start(wanted);
     },
     prewarm: () => {
@@ -191,7 +197,7 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
         .check(performance)
         .then((ready) =>
           ready.ok && ready.target !== undefined && lifecycleUnchanged(mark)
-            ? bridge.prewarm(ready.target.modelId, ready.target.performance)
+            ? bridge.prewarm(ready.target.modelId, ready.target.performance, mode)
             : undefined,
         )
         .catch((error: unknown) => console.warn("dictation", error));

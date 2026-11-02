@@ -1,7 +1,7 @@
 // Supervises the speech process (`speech-process/`): forks it on the first session or prewarm, hands each
 // session one end of a fresh MessageChannelMain while the page gets the other, tells the page when
 // the process dies under it, and shuts it down once it has been idle a while, which is the only
-// way the model's 1.3 GB goes back to the OS. A crash is reported and never restarts anything by
+// way the models' memory goes back to the OS. A crash is reported and never restarts anything by
 // itself; the next session forks a fresh process. Nothing here can take the app down.
 
 import {
@@ -13,6 +13,7 @@ import {
 } from "@gram/contracts";
 
 import type {
+  SpeechAccuratePaths,
   SpeechCrashPayload,
   SpeechHostMessage,
   SpeechPortPayload,
@@ -45,6 +46,8 @@ export interface SpeechHostOptions {
   /** `new MessageChannelMain()`. */
   readonly channel: () => { readonly port1: unknown; readonly port2: unknown };
   readonly resolveModel: (modelId: unknown) => Promise<SpeechModelResolution>;
+  /** What `accurate` mode runs, undefined unless all of it is installed; none when absent. */
+  readonly resolveAccurate?: (() => Promise<SpeechAccuratePaths | undefined>) | undefined;
   readonly setTimeout: (callback: () => void, ms: number) => unknown;
   readonly clearTimeout: (timer: unknown) => void;
   readonly log: (fields: Readonly<Record<string, unknown>>, message: string) => void;
@@ -223,6 +226,7 @@ export function createSpeechHost(options: SpeechHostOptions) {
       const language = typeof request.language === "string" ? request.language : undefined;
       const asked = generation;
       const model = await options.resolveModel(request.modelId);
+      const accurate = request.mode === "accurate" ? await options.resolveAccurate?.() : undefined;
       if (asked !== generation || updating) return STOPPED;
       if (!model.ok) return model;
       const speechProcess = ensureChild();
@@ -238,6 +242,7 @@ export function createSpeechHost(options: SpeechHostOptions) {
           model: model.paths,
           threads: threadsFor(request.performance),
           ...(language === undefined ? {} : { language }),
+          ...(accurate === undefined ? {} : { accurate }),
         },
         [port1],
       );
@@ -246,10 +251,15 @@ export function createSpeechHost(options: SpeechHostOptions) {
     },
 
     /** Starts the process and loads the model, so the next session doesn't wait for it. */
-    async prewarm(modelId: unknown, performance?: unknown): Promise<SpeechOpenResult> {
+    async prewarm(
+      modelId: unknown,
+      performance?: unknown,
+      mode?: unknown,
+    ): Promise<SpeechOpenResult> {
       const threads = threadsFor(performance);
       const asked = generation;
       const model = await options.resolveModel(modelId);
+      const accurate = mode === "accurate" ? await options.resolveAccurate?.() : undefined;
       if (asked !== generation || updating) return STOPPED;
       if (!model.ok) return model;
       const speechProcess = ensureChild();
@@ -257,8 +267,15 @@ export function createSpeechHost(options: SpeechHostOptions) {
       clearIdle();
       const requestId = nextRequest++;
       const result = new Promise<SpeechOpenResult>((resolve) => prewarms.set(requestId, resolve));
+      const prewarm: SpeechHostMessage = {
+        type: "prewarm",
+        requestId,
+        model: model.paths,
+        threads,
+        ...(accurate === undefined ? {} : { accurate }),
+      };
       // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron UtilityProcess
-      speechProcess.postMessage({ type: "prewarm", requestId, model: model.paths, threads });
+      speechProcess.postMessage(prewarm);
       return result;
     },
 

@@ -3,8 +3,19 @@ import { dirname, posix, win32 } from "node:path";
 
 import type * as Sherpa from "sherpa-onnx-node";
 
-import type { SpeechModelPaths } from "./protocol.ts";
-import type { Recogniser, SpeechRuntime } from "./service.ts";
+import type { SpeechSegment } from "./accurate.ts";
+import type { SpeechAccuratePaths, SpeechModelPaths } from "./protocol.ts";
+import type { AccuratePass, Recogniser, SpeechRuntime } from "./service.ts";
+
+/**
+ * ONNX Runtime threads for the offline model, whatever the slider's stop: on an M5 Pro a 5 s clip
+ * took 730 ms on one thread, 220 ms on two, and no less on four or six.
+ */
+const OFFLINE_THREADS = 2;
+
+/** The detector's window, Silero v5's for 16 kHz audio, and its own buffer of what it heard. */
+const VAD_WINDOW_SAMPLES = 512;
+const VAD_BUFFER_SECONDS = 60;
 
 /** ONNX Runtime's library, by the names it ships under on each platform. */
 const ONNX_RUNTIME = /(?:^|[\\/])(?:lib)?onnxruntime(?:\.[\d.]+)?\.(?:dll|dylib|so(?:\.[\d.]+)?)$/i;
@@ -67,7 +78,60 @@ export function loadSherpaRuntime(from: string): SpeechRuntime {
     );
   }
 
+  const loadAccurate = async (paths: SpeechAccuratePaths): Promise<AccuratePass> => {
+    const recognizer = await sherpa.OfflineRecognizer.createAsync({
+      featConfig: { sampleRate: 16_000, featureDim: 80 },
+      modelConfig: {
+        transducer: { encoder: paths.encoder, decoder: paths.decoder, joiner: paths.joiner },
+        tokens: paths.tokens,
+        modelType: "nemo_transducer",
+        numThreads: OFFLINE_THREADS,
+        provider: "cpu",
+        debug: 0,
+      },
+      decodingMethod: "greedy_search",
+    });
+    const vad = new sherpa.Vad(
+      {
+        sileroVad: {
+          model: paths.vad,
+          threshold: 0.5,
+          // Short enough to hear the pause between two sentences, which is where a cut goes.
+          minSilenceDuration: 0.3,
+          minSpeechDuration: 0.15,
+          maxSpeechDuration: 30,
+          windowSize: VAD_WINDOW_SAMPLES,
+        },
+        sampleRate: 16_000,
+        numThreads: 1,
+        debug: 0,
+      },
+      VAD_BUFFER_SECONDS,
+    );
+    return {
+      segments: (samples) => {
+        vad.reset();
+        for (let at = 0; at < samples.length; at += VAD_WINDOW_SAMPLES)
+          vad.acceptWaveform(samples.subarray(at, at + VAD_WINDOW_SAMPLES));
+        vad.flush();
+        const segments: SpeechSegment[] = [];
+        while (!vad.isEmpty()) {
+          const { start, samples: heard } = vad.front(false);
+          segments.push({ start, end: start + heard.length });
+          vad.pop();
+        }
+        return segments;
+      },
+      transcribe: async (samples) => {
+        const stream = recognizer.createStream();
+        stream.acceptWaveform({ sampleRate: 16_000, samples });
+        return (await recognizer.decodeAsync(stream)).text;
+      },
+    };
+  };
+
   return {
+    loadAccurate,
     load: (model: SpeechModelPaths, threads: number): Recogniser => {
       const recognizer = new sherpa.OnlineRecognizer({
         featConfig: { sampleRate: 16_000, featureDim: 128 },

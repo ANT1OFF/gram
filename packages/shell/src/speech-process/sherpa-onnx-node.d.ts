@@ -15,4 +15,25 @@ declare module "sherpa-onnx-node" {
     reset(stream: OnlineStream): void;
     getResult(stream: OnlineStream): { readonly text: string };
   }
+  export interface OfflineStream {
+    acceptWaveform(wave: { readonly sampleRate: number; readonly samples: Float32Array }): void;
+  }
+  export class OfflineRecognizer {
+    static createAsync(config: unknown): Promise<OfflineRecognizer>;
+    createStream(): OfflineStream;
+    decodeAsync(stream: OfflineStream): Promise<{ readonly text: string }>;
+  }
+  export class Vad {
+    constructor(config: unknown, bufferSizeInSeconds: number);
+    acceptWaveform(samples: Float32Array): void;
+    isEmpty(): boolean;
+    /** Electron refuses external buffers, so the page's copy is asked for with `false`. */
+    front(enableExternalBuffer: boolean): {
+      readonly start: number;
+      readonly samples: Float32Array;
+    };
+    pop(): void;
+    flush(): void;
+    reset(): void;
+  }
 }

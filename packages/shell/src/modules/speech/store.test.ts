@@ -9,7 +9,9 @@ import {
   SpeechModelId,
   SpeechModelManifest,
   SpeechRefused,
+  SPEECH_ACCURATE_MODEL,
   SPEECH_MODEL_FOR_STOP,
+  SPEECH_VAD_MODEL,
   speechModelBytes,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -19,7 +21,7 @@ import { afterEach, beforeEach, vi } from "vitest";
 
 import { downloadModel, fileUrl, modelDir, stagingDir, type SpeechFetch } from "./download.ts";
 import { electronFetch, type ElectronNet } from "./net.ts";
-import { DEFAULT_HF_BASE, SPEECH_MODELS } from "./manifest.ts";
+import { DEFAULT_HF_BASE, SPEECH_MODELS, speechManifest } from "./manifest.ts";
 import { openSpeechModelStore, speechModelBase } from "./models.ts";
 import { makeSpeechStore } from "./store.ts";
 
@@ -519,15 +521,35 @@ describe("pinned speech models", () => {
       SPEECH_MODEL_FOR_STOP.balanced,
       SPEECH_MODEL_FOR_STOP.responsive,
       SPEECH_MODEL_FOR_STOP.efficient,
+      SPEECH_ACCURATE_MODEL,
+      SPEECH_VAD_MODEL,
     ]);
     for (const model of SPEECH_MODELS) {
       expect(Schema.decodeUnknownSync(SpeechModelManifest)(model)).toEqual(model);
       const paths = model.files.map((file) => file.path);
-      const { kind, chunkMs, ...roles } = model.recognizer;
-      expect(model.repo).toContain(`-${chunkMs}ms-`);
-      expect(kind).toBe("sherpa-onnx-online-transducer");
-      for (const path of Object.values(roles)) expect(paths, path).toContain(path);
+      const { kind, ...roles } = model.recognizer;
+      if ("chunkMs" in roles) {
+        const { chunkMs, ...files } = roles;
+        expect(model.repo).toContain(`-${chunkMs}ms-`);
+        expect(kind).toBe("sherpa-onnx-online-transducer");
+        for (const path of Object.values(files)) expect(paths, path).toContain(path);
+      } else {
+        for (const path of Object.values(roles)) expect(paths, path).toContain(path);
+      }
       expect(new Set(paths).size).toBe(paths.length);
+    }
+    // What CC BY 4.0 asks of the offline model: who made it, the licence, and that it's changed.
+    const parakeet = speechManifest(SPEECH_ACCURATE_MODEL)!;
+    expect(parakeet.license.id).toBe("cc-by-4.0");
+    expect(parakeet.license.attribution).toMatch(/NVIDIA.*CC BY 4\.0.*converted/);
+    expect(speechManifest(SPEECH_VAD_MODEL)!.license.id).toBe("mit");
+  });
+
+  it("credits every pinned model in the notices the app ships", async () => {
+    const notices = await readFile(join(import.meta.dirname, "MODEL-NOTICES.md"), "utf8");
+    for (const model of SPEECH_MODELS) {
+      expect(notices, model.id).toContain(model.license.attribution);
+      expect(notices, model.id).toContain(model.license.url);
     }
   });
 });
