@@ -9,7 +9,16 @@
 // list in their own autostart settings.
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import type { LaunchAtLogin } from "@gram/contracts";
@@ -35,11 +44,31 @@ export interface LoginItemApi {
 export interface Autostart {
   /** The executable to start: the AppImage itself (`$APPIMAGE`), else the installed binary. */
   readonly exec: string;
-  /** The entry's text; undefined when there is none. */
+  /** The entry's text; undefined when there is none. Throws when one is there but can't be read. */
   read(): string | undefined;
   write(text: string): void;
   remove(): void;
+  /** Whether an executable an entry names is still there. */
+  exists(path: string): boolean;
 }
+
+/**
+ * What a login launch starts. `$APPIMAGE` is the AppImage file only when this process runs from
+ * that AppImage's mount (`$APPDIR`): an app started from another AppImage's terminal inherits the
+ * other app's `$APPIMAGE`, and a .deb install there would point the entry at that app. Otherwise
+ * the binary itself.
+ */
+export const autostartExec = (
+  env: Readonly<Record<string, string | undefined>>,
+  execPath: string,
+  exists: (path: string) => boolean = existsSync,
+): string => {
+  const appImage = env["APPIMAGE"];
+  const appDir = env["APPDIR"]?.replace(/\/+$/, "");
+  return appImage && appDir && execPath.startsWith(`${appDir}/`) && exists(appImage)
+    ? appImage
+    : execPath;
+};
 
 /**
  * One argument of a desktop entry's `Exec` key, as the Desktop Entry spec reads it back. `%` is
@@ -80,7 +109,32 @@ export const isGramEntry = (text: string): boolean =>
   text.split(/\r?\n/).includes(GRAM_ENTRY_MARK) ||
   (/^Name=Gram\s*$/m.test(text) && new RegExp(`^Exec=.* ${LOGIN_ARG}\\s*$`, "m").test(text));
 
-const execLine = (text: string): string | undefined => /^Exec=.*$/m.exec(text)?.[0];
+/**
+ * The executable an `Exec` line names when it has the one shape Gram writes: one argument, quoted
+ * as `desktopExecArg` quotes it, then `--launched-at-login`. Undefined for anything a person wrote
+ * (an `env` prefix, more arguments), which Gram then leaves as it is.
+ */
+export const gramExecTarget = (line: string): string | undefined => {
+  const rest = /^Exec=(.*) --launched-at-login\s*$/.exec(line)?.[1];
+  if (rest === undefined) return undefined;
+  const target =
+    rest.length >= 2 && rest.startsWith('"') && rest.endsWith('"')
+      ? // The string value's escapes first, then the quoting's, then the doubled `%`.
+        rest
+          .slice(1, -1)
+          .replaceAll("\\\\", "\\")
+          .replace(/\\(["`$\\])/g, "$1")
+          .replaceAll("%%", "%")
+      : rest.replaceAll("%%", "%");
+  // Only what Gram would have written itself: anything else is someone's own line.
+  try {
+    return desktopExecArg(target) === rest ? target : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const EXEC_LINE = /^Exec=.*$/m;
 
 /** Why turning the setting on or off leaves a `gram.desktop` that isn't Gram's alone. */
 export const FOREIGN_ENTRY_MESSAGE =
@@ -103,22 +157,33 @@ export const fileAutostart = (path: string, exec: string): Autostart => ({
   read: () => {
     try {
       return readFileSync(path, "utf8");
-    } catch {
-      return undefined;
+    } catch (error) {
+      // Only a missing entry is no entry; one that can't be read is someone's, and kept.
+      if ((error as { code?: string }).code === "ENOENT") return undefined;
+      throw error;
     }
   },
   write: (text) => {
-    mkdirSync(dirname(path), { recursive: true });
-    const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+    // An entry linked from a dotfiles repository is written through the link, onto its target, so
+    // the link stays.
+    let target = path;
+    try {
+      if (lstatSync(path).isSymbolicLink()) target = realpathSync(path);
+    } catch {
+      // No entry yet, or a dangling link: written at `path`.
+    }
+    mkdirSync(dirname(target), { recursive: true });
+    const temp = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
     try {
       writeFileSync(temp, text, { flag: "wx", mode: 0o644 });
-      renameSync(temp, path);
+      renameSync(temp, target);
     } catch (error) {
       rmSync(temp, { force: true });
       throw error;
     }
   },
   remove: () => rmSync(path, { force: true }),
+  exists: (target) => existsSync(target),
 });
 
 export interface LoginItem {
@@ -151,30 +216,45 @@ export function createLoginItem(deps: {
     deps.packaged && (platform === "darwin" || platform === "win32" || autostart !== undefined);
   const args = platform === "win32" ? { args: [LOGIN_ARG] } : {};
 
-  // An entry Gram wrote for another executable (a versioned AppImage since replaced, or one moved)
-  // would start nothing at login while Settings said on: at launch it is pointed at this one. Only
-  // an entry that is on and Gram's own; failing that, the next set() writes it.
+  // An entry Gram wrote for an executable that is gone (a versioned AppImage since replaced, or one
+  // moved) would start nothing at login while Settings said on: at launch its `Exec` line, and only
+  // that line, is pointed at this one. Only an entry that is on and Gram's own, whose `Exec` still
+  // has the shape Gram writes; every other line, and any `Exec` a person changed, stays theirs.
   if (supported && autostart !== undefined) {
     try {
       const text = autostart.read();
-      const fresh = autostartEntry(autostart.exec);
+      const line = text === undefined ? undefined : EXEC_LINE.exec(text)?.[0];
+      const stale = line === undefined ? undefined : gramExecTarget(line);
       if (
         text !== undefined &&
         isGramEntry(text) &&
         autostartEnabled(text) &&
-        execLine(text) !== execLine(fresh)
+        stale !== undefined &&
+        stale !== autostart.exec &&
+        !autostart.exists(stale)
       ) {
-        autostart.write(fresh);
+        const fresh = EXEC_LINE.exec(autostartEntry(autostart.exec))![0];
+        autostart.write(text.replace(EXEC_LINE, () => fresh));
       }
     } catch {
-      // A path that can't go in an entry, or a folder that can't be written: left as it is.
+      // Unreadable, a path that can't go in an entry, or a folder that can't be written: left as is.
     }
   }
+
+  /** The entry, or `foreign` when there is one Gram can't read, which is never Gram's to touch. */
+  const readEntry = (): string | undefined | "foreign" => {
+    try {
+      return autostart?.read();
+    } catch {
+      return "foreign";
+    }
+  };
 
   const state = (): LaunchAtLogin | null => {
     if (!supported) return null;
     if (autostart !== undefined) {
-      return { enabled: autostartEnabled(autostart.read()), needsApproval: false };
+      const text = readEntry();
+      return { enabled: text !== "foreign" && autostartEnabled(text), needsApproval: false };
     }
     const settings = api.getLoginItemSettings(args);
     const needsApproval = platform === "darwin" && settings.status === "requires-approval";
@@ -195,8 +275,9 @@ export function createLoginItem(deps: {
     set(enabled) {
       if (!supported) return null;
       if (autostart !== undefined) {
-        const text = autostart.read();
-        if (text !== undefined && !isGramEntry(text)) throw new Error(FOREIGN_ENTRY_MESSAGE);
+        const text = readEntry();
+        if (text === "foreign" || (text !== undefined && !isGramEntry(text)))
+          throw new Error(FOREIGN_ENTRY_MESSAGE);
         if (enabled) autostart.write(autostartEntry(autostart.exec));
         else if (text !== undefined) autostart.remove();
       } else {

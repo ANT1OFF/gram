@@ -1,5 +1,15 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -20,8 +30,10 @@ import {
   autostartEntry,
   createLoginItem,
   desktopExecArg,
+  autostartExec,
   fileAutostart,
   FOREIGN_ENTRY_MESSAGE,
+  gramExecTarget,
   isGramEntry,
   LOGIN_ARG,
   LOGIN_ITEMS_SETTINGS_URL,
@@ -77,10 +89,16 @@ const linux = (autostart: Autostart | undefined, packaged = true, argv: string[]
     openExternal: async () => {},
     ...(autostart === undefined ? {} : { autostart }),
   });
-const memoryAutostart = (text?: string, exec = "/opt/Gram/gram") => {
+/** An entry in memory; `present` lists the executables that still exist. */
+const memoryAutostart = (
+  text?: string,
+  exec = "/opt/Gram/gram",
+  present: readonly string[] = [exec],
+) => {
   const box = { text };
   const autostart: Autostart = {
     exec,
+    exists: (path) => present.includes(path),
     read: () => box.text,
     write: (next) => {
       box.text = next;
@@ -199,6 +217,101 @@ describe("createLoginItem", () => {
     expect(remove).not.toHaveBeenCalled();
     expect(write).not.toHaveBeenCalled();
     expect(box.text).toBe(mine);
+  });
+
+  it("ignores an $APPIMAGE inherited from another app, as a .deb launched from its terminal", () => {
+    const cursor = { APPIMAGE: "/home/me/Apps/Cursor.AppImage", APPDIR: "/tmp/.mount_CursorX1" };
+    // The exact case: a .deb install started from inside another AppImage's terminal.
+    expect(autostartExec(cursor, "/opt/Gram/gram", () => true)).toBe("/opt/Gram/gram");
+    expect(autostartExec({ APPIMAGE: cursor.APPIMAGE }, "/opt/Gram/gram", () => true)).toBe(
+      "/opt/Gram/gram",
+    );
+    // Gram's own AppImage: the binary runs from its mount, and the file is there.
+    const gram = { APPIMAGE: "/home/me/Apps/Gram-1.4.0.AppImage", APPDIR: "/tmp/.mount_GramAb/" };
+    expect(autostartExec(gram, "/tmp/.mount_GramAb/gram", () => true)).toBe(gram.APPIMAGE);
+    expect(autostartExec(gram, "/tmp/.mount_GramAb/gram", () => false)).toBe(
+      "/tmp/.mount_GramAb/gram",
+    );
+    // And the deb's entry is left pointing at the deb.
+    const entry = autostartEntry("/opt/Gram/gram");
+    const exec = autostartExec(cursor, "/opt/Gram/gram", () => true);
+    const { box, autostart } = memoryAutostart(entry, exec, [exec, cursor.APPIMAGE]);
+    linux(autostart);
+    expect(box.text).toBe(entry);
+  });
+
+  it("repoints only a stale Exec and keeps the rest of a user's edits", () => {
+    const old = `${autostartEntry("/home/me/Apps/Gram-1.3.1.AppImage")}X-GNOME-Autostart-Delay=20\n`;
+    const { box, autostart } = memoryAutostart(old, "/home/me/Apps/Gram-1.4.0.AppImage");
+    linux(autostart);
+    expect(box.text).toBe(old.replace("Gram-1.3.1.AppImage", "Gram-1.4.0.AppImage"));
+  });
+
+  it("leaves an Exec a person wrote, or one whose target is still there", () => {
+    const edited = autostartEntry("/opt/Gram/gram").replace(
+      "Exec=/opt/Gram/gram",
+      "Exec=env GDK_SCALE=2 /home/me/Apps/Gram-1.3.1.AppImage",
+    );
+    const other = autostartEntry("/opt/Gram/gram");
+    for (const [text, present] of [
+      [edited, []],
+      [other, ["/opt/Gram/gram"]],
+    ] as const) {
+      const { box, autostart } = memoryAutostart(text, "/home/me/Apps/Gram-1.4.0.AppImage", [
+        "/home/me/Apps/Gram-1.4.0.AppImage",
+        ...present,
+      ]);
+      linux(autostart);
+      expect(box.text).toBe(text);
+    }
+  });
+
+  it("reads back the executable from the Exec line Gram writes, and nothing else", () => {
+    for (const path of [
+      "/opt/Gram/gram",
+      "/home/me/My Apps/Gram.AppImage",
+      '/a b/$c"d`e',
+      "/x/100%/g",
+    ]) {
+      const line = /^Exec=.*$/m.exec(autostartEntry(path))![0];
+      expect(gramExecTarget(line)).toBe(path);
+    }
+    expect(gramExecTarget("Exec=env A=1 /opt/Gram/gram --launched-at-login")).toBeUndefined();
+    expect(gramExecTarget("Exec=/opt/Gram/gram")).toBeUndefined();
+  });
+
+  it("treats an entry it can't read as someone else's", () => {
+    const { autostart } = memoryAutostart(undefined);
+    autostart.read = () => {
+      throw Object.assign(new Error("denied"), { code: "EACCES" });
+    };
+    const write = vi.spyOn(autostart, "write");
+    const remove = vi.spyOn(autostart, "remove");
+    const item = linux(autostart);
+    expect(item.state()).toEqual({ enabled: false, needsApproval: false });
+    expect(() => item.set(true)).toThrow(FOREIGN_ENTRY_MESSAGE);
+    expect(() => item.set(false)).toThrow(FOREIGN_ENTRY_MESSAGE);
+    expect(write).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("writes a linked entry through its link, which stays a link", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-autostart-link-"));
+    try {
+      mkdirSync(join(dir, "dotfiles"));
+      mkdirSync(join(dir, "autostart"));
+      const real = join(dir, "dotfiles", "gram.desktop");
+      writeFileSync(real, autostartEntry("/old/gram"));
+      const link = join(dir, "autostart", "gram.desktop");
+      symlinkSync(real, link);
+      const autostart = fileAutostart(link, "/opt/Gram/gram");
+      autostart.write(autostartEntry("/opt/Gram/gram"));
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(readFileSync(real, "utf8")).toBe(autostartEntry("/opt/Gram/gram"));
+      expect(readdirSync(join(dir, "dotfiles"))).toEqual(["gram.desktop"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("knows its own entry, marked or written before the mark", () => {

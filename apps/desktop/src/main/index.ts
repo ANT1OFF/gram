@@ -78,7 +78,7 @@ import { APP_ID } from "./app-id.ts";
 import { devAllowedOrigins, devBootUrl, logLevelFromMessage } from "./boot.ts";
 import { appIconDir, createAppIcon } from "./app-icon.ts";
 import { registerIpc } from "./ipc.ts";
-import { createLoginItem, fileAutostart, startsHidden } from "./login-item.ts";
+import { autostartExec, createLoginItem, fileAutostart, startsHidden } from "./login-item.ts";
 import { installSmokeIpc } from "./smoke-ipc.ts";
 import {
   claimSingleInstance,
@@ -587,7 +587,7 @@ async function runApp() {
       ? {
           autostart: fileAutostart(
             join(app.getPath("appData"), "autostart", "gram.desktop"),
-            process.env["APPIMAGE"] || process.execPath,
+            autostartExec(process.env, process.execPath),
           ),
         }
       : {}),

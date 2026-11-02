@@ -161,14 +161,27 @@ const LINUX_KEYRING_PREFIX = "v11";
 const linuxKeyringCiphertext = (encrypted: Buffer): boolean =>
   encrypted.subarray(0, 3).toString("latin1") === LINUX_KEYRING_PREFIX;
 
-/** The refs whose base64 ciphertext isn't under the Linux keyring: `v10`, or anything else. */
-const weakEntries = (entries: Record<string, string>): string[] =>
+/**
+ * The refs whose ciphertext isn't under the Linux keyring: `v10`, anything else, and any value that
+ * isn't a base64 string at all, which would otherwise make every write fail.
+ */
+const weakEntries = (entries: Record<string, unknown>): string[] =>
   Object.entries(entries)
-    .filter(([, encrypted]) => !linuxKeyringCiphertext(Buffer.from(encrypted, "base64")))
+    .filter(
+      ([, encrypted]) =>
+        typeof encrypted !== "string" || !linuxKeyringCiphertext(Buffer.from(encrypted, "base64")),
+    )
     .map(([ref]) => ref);
 
-const without = (entries: Record<string, string>, refs: readonly string[]) =>
-  Object.fromEntries(Object.entries(entries).filter(([ref]) => !refs.includes(ref)));
+const without = (
+  entries: Record<string, unknown>,
+  refs: readonly string[],
+): Record<string, string> =>
+  // What's left after `weakEntries` is only base64 strings.
+  Object.fromEntries(Object.entries(entries).filter(([ref]) => !refs.includes(ref))) as Record<
+    string,
+    string
+  >;
 
 /**
  * Answers the server's key requests (sent over the utilityProcess port), or `undefined` for any
@@ -247,7 +260,11 @@ export async function handleVaultRequest(
           return fail("couldn't read the key store");
         }
         if (encrypted === undefined) return { type: "vault.response", id, ok: true };
-        if (linux && !linuxKeyringCiphertext(Buffer.from(encrypted, "base64"))) {
+        if (
+          linux &&
+          (typeof encrypted !== "string" ||
+            !linuxKeyringCiphertext(Buffer.from(encrypted, "base64")))
+        ) {
           // Readable by anyone with the file: dropped unread, with every other such entry, and the
           // key reads as missing, so Settings asks for it again.
           await serialised(store, async () => {

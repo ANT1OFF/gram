@@ -309,6 +309,29 @@ describe("handleVaultRequest", () => {
     expect(Object.keys(await store.read())).toEqual(["r"]);
   });
 
+  it("purges a malformed entry instead of failing every Linux write", async () => {
+    const store = memoryStore();
+    store.entries = { bad: 42 } as unknown as Record<string, string>;
+    const crypto = linuxKeyringCrypto();
+    const set = await handle(
+      { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
+      crypto,
+      store,
+      "linux",
+    );
+    expect(set).toEqual({ type: "vault.response", id: "s", ok: true });
+    expect(Object.keys(await store.read())).toEqual(["r"]);
+    store.entries = { r: 7 } as unknown as Record<string, string>;
+    const get = await handle(
+      { type: "vault.request", id: "g", op: "get", ref: "r" },
+      crypto,
+      store,
+      "linux",
+    );
+    expect(get).toEqual({ type: "vault.response", id: "g", ok: true });
+    expect(await store.read()).toEqual({});
+  });
+
   it("leaves macOS's v10 ciphertext alone", async () => {
     const store = memoryStore();
     const v10 = Buffer.concat([Buffer.from("v10"), Buffer.from("mac")]).toString("base64");
