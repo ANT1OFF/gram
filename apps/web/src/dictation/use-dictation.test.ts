@@ -2,7 +2,7 @@ import { SPEECH_MODEL_FOR_STOP, type SpeechPerformance } from "@gram/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import { inOrder } from "./lifecycle";
-import { rememberedTarget } from "./use-dictation";
+import { committedText, rememberedTarget } from "./use-dictation";
 
 const api = (installed: () => readonly SpeechPerformance[]) => {
   const speechStatus = vi.fn(async (model: string) => ({
@@ -48,5 +48,21 @@ describe("the remembered target", () => {
     installed = [];
     target.forget();
     expect(await target.check("balanced")).toMatchObject({ ok: false });
+  });
+});
+
+describe("committed text", () => {
+  const all = { fillers: true, formatting: true, symbols: true };
+
+  it("is cleaned up as Settings says", () => {
+    expect(committedText("Um, rename foo underscore bar", all)).toBe("Rename foo_bar");
+    expect(
+      committedText("Um, foo underscore bar", { fillers: false, formatting: true, symbols: false }),
+    ).toBe("Um, foo underscore bar");
+  });
+
+  it("commits nothing for an utterance that was only filler, but keeps a spoken line break", () => {
+    expect(committedText("Um.", all)).toBeUndefined();
+    expect(committedText("New paragraph.", all)).toBe("\n\n");
   });
 });

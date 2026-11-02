@@ -27,6 +27,7 @@ import {
   sendKeyOf,
   speechModelOf,
   speechPerformanceOf,
+  dictationCleanupOf,
   dictationSoundVolumeOf,
   keepMicrophoneReadyOf,
   speechModeOf,
@@ -356,6 +357,19 @@ describe("voice input", () => {
     expect(
       keepMicrophoneReadyOf(applySettingsPatch(ready, { voice: { keepMicrophoneReady: null } })),
     ).toBe(false);
+    const all = { fillers: true, formatting: true, symbols: true };
+    expect(dictationCleanupOf(DEFAULT_SETTINGS)).toEqual(all);
+    const plain = applySettingsPatch(DEFAULT_SETTINGS, {
+      voice: { removeFillers: false, spokenFormatting: false, spokenSymbols: false },
+    });
+    expect(dictationCleanupOf(plain)).toEqual({
+      fillers: false,
+      formatting: false,
+      symbols: false,
+    });
+    expect(
+      dictationCleanupOf(applySettingsPatch(plain, { voice: { spokenSymbols: null } })).symbols,
+    ).toBe(true);
     expect(speechPerformanceOf(DEFAULT_SETTINGS)).toBe("balanced");
     expect(speechModelOf(DEFAULT_SETTINGS)).toBe("nemotron-speech-en-0.6b-560ms-int8");
     const patch = Schema.decodeUnknownSync(SettingsPatch)({

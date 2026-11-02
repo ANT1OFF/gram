@@ -454,6 +454,10 @@ describe("dictation", () => {
     expect(spacedAfter("Fix", "the bug.")).toBe(" the bug.");
     expect(spacedAfter("Fix ", "it.")).toBe("it.");
     expect(spacedAfter("Line\n", "Next.")).toBe("Next.");
+    // Clean-up can start an utterance with a break or closing punctuation.
+    expect(spacedAfter("Done", "\nNext")).toBe("\nNext");
+    expect(spacedAfter("foo", ", bar")).toBe(", bar");
+    expect(spacedAfter("call(x", ")")).toBe(")");
   });
 });
 

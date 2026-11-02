@@ -9,8 +9,9 @@
 //   notices follow;
 // - the libraries compiled into sherpa-onnx's addon, from native-components.json, which ship with
 //   no notices of their own;
-// - the notices already kept beside the motion kit's drawings and the terminal's symbol font, and
-//   those of the speech models Voice input downloads, which the app doesn't ship but credits.
+// - the notices already kept beside the motion kit's drawings, the terminal's symbol font and the
+//   dictation clean-up rules ported from Hex, and those of the speech models Voice input
+//   downloads, which the app doesn't ship but credits.
 //
 // electron-builder ships the file in Resources/ (electron-builder.yml), afterPack fails a package
 // without it and verify-package.mjs checks it covers every bundled package.
@@ -50,6 +51,10 @@ const KEPT_NOTICES = [
   {
     title: "Terminal symbol font",
     file: "apps/web/src/panels/terminal/fonts/THIRD-PARTY-NOTICES.txt",
+  },
+  {
+    title: "Dictation clean-up rules",
+    file: "apps/web/src/dictation/THIRD-PARTY-NOTICES.md",
   },
   {
     title: "Speech models Voice input downloads",
