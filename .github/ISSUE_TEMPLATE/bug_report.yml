@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in Gram doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Gram can also file this for you: open the command palette (⌘K) and choose **Report an issue…**.
+
+        Security problems go through [private reporting](https://github.com/ANT1OFF/gram/security/advisories/new), not here.
+  - type: input
+    id: gram-version
+    attributes:
+      label: Gram version
+      description: Settings → Diagnostics → Version, or Gram → About Gram.
+      placeholder: "1.3.1"
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Apple menu → About This Mac.
+      placeholder: "macOS 27.0"
+    validations:
+      required: true
+  - type: input
+    id: cli-versions
+    attributes:
+      label: Claude Code and Codex CLI versions
+      description: Output of `claude --version` and/or `codex --version`, whichever the bug involves.
+      placeholder: "claude x.y.z, codex x.y.z"
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: The part of Gram the bug is in, if you know.
+      options:
+        - Not sure
+        - Web UI (threads, board, settings)
+        - Desktop app (window, menus, updates)
+        - Local server (git, worktrees, pull requests)
+        - Agents (Claude Code or Codex integration)
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a workspace
+        2. Start a worker on …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or diagnostics
+      description: |
+        Settings → Diagnostics → **Copy diagnostics**, or the relevant lines from the log file shown there.
+        **Before pasting, remove tokens, API keys, private repository names, home-folder paths and anything from a private conversation.**
+      render: text

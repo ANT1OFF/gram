@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest something Gram should do, or do differently.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not sure yet what you want, or want to talk it through first? Start in [Ideas](https://github.com/ANT1OFF/gram/discussions/categories/ideas).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and what got in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like
+      description: How Gram could solve it. A sketch or a screenshot of something similar helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Workarounds you use today, or other ways it could work.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Not sure
+        - Web UI (threads, board, settings)
+        - Desktop app (window, menus, updates)
+        - Local server (git, worktrees, pull requests)
+        - Agents (Claude Code or Codex integration)

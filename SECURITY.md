@@ -4,8 +4,9 @@
 
 ## Reporting a vulnerability
 
-Report it privately through GitHub:
+Report it privately through GitHub's private vulnerability reporting:
 [Security → Report a vulnerability](https://github.com/ANT1OFF/gram/security/advisories/new).
+Only the maintainer sees the report until an advisory is published.
 Please don't open a public issue, pull request or discussion for it. Include the version, what you
 did and what happened, and how to reproduce it if you can.
 

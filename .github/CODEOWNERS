@@ -1,0 +1,3 @@
+# Requests the maintainer's review on every pull request. The main ruleset doesn't require code
+# owner approval, so this never blocks a merge on its own.
+* @ANT1OFF
