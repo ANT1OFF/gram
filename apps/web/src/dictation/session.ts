@@ -30,7 +30,7 @@ export type DictationState =
   /** Asking for the microphone and opening the session; the model may still be loading. */
   | { readonly phase: "starting" }
   | { readonly phase: "listening" }
-  /** Stopped capturing; waiting for the last of the text. */
+  /** Told to stop: capturing the last of the speech, then waiting for the last of the text. */
   | { readonly phase: "stopping" }
   | { readonly phase: "error"; readonly code: DictationErrorCode; readonly message: string };
 
@@ -54,6 +54,8 @@ type OpenResult =
 
 /** A running microphone capture. */
 export interface Capture {
+  /** Hands `onFrame` everything captured so far, a last short frame included, then resolves. */
+  flush(): Promise<void>;
   stop(): void;
 }
 
@@ -85,6 +87,8 @@ export interface DictationDeps {
   readonly newSessionId: () => string;
   /** How long a stop waits for its last `final`. */
   readonly stopTimeoutMs?: number | undefined;
+  /** How long a stop keeps capturing. */
+  readonly stopTailMs?: number | undefined;
 }
 
 export interface DictationEvents {
@@ -102,6 +106,13 @@ export interface DictationEvents {
 export const LEAD_SILENCE_FRAMES = 3;
 
 const STOP_TIMEOUT_MS = 5_000;
+
+/**
+ * How long capture runs on past a stop: people let go as the last word ends, or a little before.
+ * Hex's corpus keeps that word 7 times in 10 on a release 100 ms early with nothing after it, and
+ * every time from the release on with this tail.
+ */
+export const STOP_TAIL_MS = 200;
 
 /** What a `getUserMedia` rejection means for the user. */
 const captureError = (error: unknown): { code: DictationErrorCode; message: string } => {
@@ -136,9 +147,9 @@ export interface Dictation {
   /** How loud the microphone was in its latest frame while listening, from 0 to 1; else 0. */
   readonly level: () => number;
   start(target: DictationTarget): Promise<void>;
-  /** Stops listening; what was heard still commits. */
+  /** Stops listening, after a short tail for the last word; what was heard still commits. */
   stop(): void;
-  /** Stops and throws away the uncommitted words. */
+  /** Stops at once and throws away the uncommitted words. */
   cancel(): void;
 }
 
@@ -247,8 +258,8 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
     try {
       started = await deps.startCapture((samples) => {
         // Copied, never transferred: a transferred buffer reaches the speech process as `null`.
-        if (state.phase !== "listening") return;
-        level = loudness(samples);
+        if (state.phase === "listening") level = loudness(samples);
+        else if (state.phase !== "stopping") return;
         port?.postMessage({ type: "audio", samples });
       });
     } catch (error) {
@@ -262,19 +273,27 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
     set({ phase: "listening" });
   };
 
-  const stop = () => {
-    if (state.phase === "starting") return cancel();
-    if (state.phase !== "listening" || port === undefined) return;
+  /** Takes the last of the audio off the microphone, then asks for the last of the text. */
+  const finish = async () => {
+    const mine = generation;
+    await capture?.flush();
+    if (mine !== generation) return;
     capture?.stop();
     capture = undefined;
-    level = 0;
-    port.postMessage({ type: "stop" });
-    set({ phase: "stopping" });
+    port?.postMessage({ type: "stop" });
     stopTimer = setTimeout(() => {
       // The last message never came: keep what was shown rather than lose it.
       commit(partial);
       end({ phase: "idle" });
     }, deps.stopTimeoutMs ?? STOP_TIMEOUT_MS);
+  };
+
+  const stop = () => {
+    if (state.phase === "starting") return cancel();
+    if (state.phase !== "listening") return;
+    level = 0;
+    set({ phase: "stopping" });
+    stopTimer = setTimeout(() => void finish(), deps.stopTailMs ?? STOP_TAIL_MS);
   };
 
   const cancel = () => {

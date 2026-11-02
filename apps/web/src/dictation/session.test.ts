@@ -41,7 +41,15 @@ const fakePort = () => {
 const setup = (overrides: Partial<DictationDeps> = {}) => {
   const session = fakePort();
   let frame: ((samples: Float32Array) => void) | undefined;
-  const capture = { stop: vi.fn() };
+  const order: string[] = [];
+  const capture = {
+    flush: vi.fn(async () => {
+      order.push("flush");
+    }),
+    stop: vi.fn(() => {
+      order.push("capture stopped");
+    }),
+  };
   const states: DictationState[] = [];
   const partials: string[] = [];
   const commits: string[] = [];
@@ -54,6 +62,7 @@ const setup = (overrides: Partial<DictationDeps> = {}) => {
         return capture;
       },
       newSessionId: () => "s1",
+      stopTailMs: 0,
       ...overrides,
     },
     {
@@ -66,6 +75,7 @@ const setup = (overrides: Partial<DictationDeps> = {}) => {
     dictation,
     session,
     capture,
+    order,
     open,
     states,
     partials,
@@ -119,9 +129,9 @@ describe("dictation", () => {
 
     t.session.say({ type: "partial", text: "Again" });
     t.dictation.stop();
-    expect(t.capture.stop).toHaveBeenCalled();
-    expect(t.session.sent.at(-1)).toEqual({ type: "stop" });
     expect(t.dictation.state().phase).toBe("stopping");
+    await vi.waitFor(() => expect(t.session.sent.at(-1)).toEqual({ type: "stop" }));
+    expect(t.capture.stop).toHaveBeenCalled();
     t.session.say({ type: "final", text: " Again. ", reason: "stop" });
     expect(t.commits).toEqual(["Hello world.", "Again."]);
     expect(t.dictation.state()).toEqual({ phase: "idle" });
@@ -171,9 +181,121 @@ describe("dictation", () => {
       await t.dictation.start({ modelId: "m" });
       t.session.say({ type: "partial", text: "almost there" });
       t.dictation.stop();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.commits).toEqual([]);
       await vi.advanceTimersByTimeAsync(1000);
       expect(t.commits).toEqual(["almost there"]);
       expect(t.dictation.state()).toEqual({ phase: "idle" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps capturing past a stop, takes the short last frame, and only then says stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup({ stopTailMs: 200 });
+      await t.dictation.start({ modelId: "m" });
+      t.frame(new Float32Array(1600).fill(0.1));
+      const beforeStop = t.session.sent.length;
+
+      t.dictation.stop();
+      // The status changes on the release; the microphone doesn't.
+      expect(t.dictation.state().phase).toBe("stopping");
+      expect(t.dictation.level()).toBe(0);
+      await vi.advanceTimersByTimeAsync(199);
+      t.frame(new Float32Array(1600).fill(0.2));
+      expect(t.dictation.level()).toBe(0);
+      expect(t.session.sent).toHaveLength(beforeStop + 1);
+      expect(t.capture.flush).not.toHaveBeenCalled();
+      expect(t.capture.stop).not.toHaveBeenCalled();
+
+      t.capture.flush.mockImplementationOnce(async () => {
+        t.order.push("flush");
+        t.frame(new Float32Array(40).fill(0.3));
+      });
+      await vi.advanceTimersByTimeAsync(1);
+      expect(t.session.sent.at(-2)).toMatchObject({ type: "audio", samples: { length: 40 } });
+      expect(t.session.sent.at(-1)).toEqual({ type: "stop" });
+      expect(t.order).toEqual(["flush", "capture stopped"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives Escape no tail, even one that comes during a stop's", async () => {
+    vi.useFakeTimers();
+    try {
+      const during = setup({ stopTailMs: 200 });
+      await during.dictation.start({ modelId: "m" });
+      during.dictation.stop();
+      await vi.advanceTimersByTimeAsync(100);
+      during.dictation.cancel();
+      expect(during.capture.stop).toHaveBeenCalledOnce();
+      expect(during.session.sent.at(-1)).toEqual({ type: "cancel" });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(during.capture.flush).not.toHaveBeenCalled();
+      expect(during.session.sent.some((m) => m.type === "stop")).toBe(false);
+      expect(during.dictation.state()).toEqual({ phase: "idle" });
+
+      const direct = setup({ stopTailMs: 200 });
+      await direct.dictation.start({ modelId: "m" });
+      direct.dictation.cancel();
+      expect(direct.capture.stop).toHaveBeenCalledOnce();
+      expect(direct.capture.flush).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops at once when a stop overtakes the start: a tap that never got to listen", async () => {
+    const { promise, resolve } = Promise.withResolvers<{ ok: true }>();
+    const t = setup({ preflight: () => promise, stopTailMs: 200 });
+    const starting = t.dictation.start({ modelId: "m" });
+    t.dictation.stop();
+    expect(t.dictation.state()).toEqual({ phase: "idle" });
+    resolve({ ok: true });
+    await starting;
+    expect(t.open).not.toHaveBeenCalled();
+  });
+
+  it("commits a pause heard during the tail, and an error then ends it", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup({ stopTailMs: 200 });
+      await t.dictation.start({ modelId: "m" });
+      t.dictation.stop();
+      t.session.say({ type: "final", text: "Before the end.", reason: "endpoint" });
+      expect(t.commits).toEqual(["Before the end."]);
+      expect(t.dictation.state().phase).toBe("stopping");
+
+      t.session.say({ type: "error", code: "crashed", message: "The speech process stopped." });
+      expect(t.dictation.state().phase).toBe("error");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(t.capture.flush).not.toHaveBeenCalled();
+      expect(t.dictation.state().phase).toBe("error");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores a second stop during the tail, and a cancel while the flush is out wins", async () => {
+    vi.useFakeTimers();
+    try {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      const t = setup({ stopTailMs: 200 });
+      await t.dictation.start({ modelId: "m" });
+      t.capture.flush.mockReturnValueOnce(promise);
+      t.dictation.stop();
+      await vi.advanceTimersByTimeAsync(100);
+      t.dictation.stop();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(t.capture.flush).toHaveBeenCalledOnce();
+      t.dictation.cancel();
+      resolve();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(t.session.sent.some((m) => m.type === "stop")).toBe(false);
+      expect(t.capture.stop).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }

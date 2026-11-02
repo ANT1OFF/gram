@@ -1,6 +1,7 @@
 // Runs on the audio rendering thread. The AudioContext runs at 16 kHz, so Chromium has already
 // resampled the device's 44.1 or 48 kHz to what the model wants; this only downmixes to mono and
-// batches the 128-sample render quanta into 100 ms frames.
+// batches the 128-sample render quanta into 100 ms frames. A "flush" from the page posts the part
+// of a frame gathered so far, then "flushed", so the page knows it has every sample up to there.
 
 declare class AudioWorkletProcessor {
   readonly port: MessagePort;
@@ -15,6 +16,20 @@ const CAPTURE_PROCESSOR = "gram-capture";
 class CaptureProcessor extends AudioWorkletProcessor {
   #buffer = new Float32Array(FRAME);
   #filled = 0;
+
+  constructor() {
+    super();
+    this.port.addEventListener("message", () => {
+      if (this.#filled > 0) {
+        const rest = this.#buffer.slice(0, this.#filled);
+        this.port.postMessage(rest, [rest.buffer]);
+        this.#filled = 0;
+      }
+      // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a MessagePort has no origin
+      this.port.postMessage("flushed");
+    });
+    this.port.start();
+  }
 
   process(inputs: Float32Array[][]): boolean {
     const channels = inputs[0];
