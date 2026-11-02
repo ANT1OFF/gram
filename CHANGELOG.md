@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.4.0](https://github.com/ANT1OFF/gram/compare/v1.3.1...v1.4.0) (2026-11-02)
+
+
+### Features
+
+* **agents:** identify Gram's Claude processes as the gram entrypoint ([#91](https://github.com/ANT1OFF/gram/issues/91)) ([f7dd703](https://github.com/ANT1OFF/gram/commit/f7dd703eee5da11dea17ecdf07617ddb4ebbe12f))
+* **desktop:** run on Linux ([#82](https://github.com/ANT1OFF/gram/issues/82)) ([1d37deb](https://github.com/ANT1OFF/gram/commit/1d37debd4ba6dbcd61f9f2ba9e573a891ed877ac))
+* **desktop:** turn voice input off on Linux with one check ([#79](https://github.com/ANT1OFF/gram/issues/79)) ([470ff8b](https://github.com/ANT1OFF/gram/commit/470ff8b2a0cfe1b5084d0abae659c42794701bc2))
+* **orchestration:** a person's PR comment wakes the worker that owns it ([#86](https://github.com/ANT1OFF/gram/issues/86)) ([19bdc1c](https://github.com/ANT1OFF/gram/commit/19bdc1c0dd3366885d2c6f81b33d5b7f5601467c))
+* **orchestration:** a wrap-up turn when a worker stops without reporting ([#88](https://github.com/ANT1OFF/gram/issues/88)) ([36a07fb](https://github.com/ANT1OFF/gram/commit/36a07fbb6e69dfc1f3dcaa8da4eefb947a4f75e9))
+* **orchestration:** workers say what they ruled out and check before repeating ([#90](https://github.com/ANT1OFF/gram/issues/90)) ([8bdce01](https://github.com/ANT1OFF/gram/commit/8bdce0156500e5cf1080cf4b2e05d11a7db70654))
+* **release:** publish and update Linux AppImage and .deb ([#95](https://github.com/ANT1OFF/gram/issues/95)) ([c33c464](https://github.com/ANT1OFF/gram/commit/c33c46458905e469ccbf64a704a90b4c3a4b3fc3))
+* **voice:** an accurate mode with a Parakeet pass on each pause ([#83](https://github.com/ANT1OFF/gram/issues/83)) ([2b04a52](https://github.com/ANT1OFF/gram/commit/2b04a529333a039ffb8f3ce9fb2f71bc5d3271cb))
+* **voice:** hold one key to talk, with a tone at each end ([#87](https://github.com/ANT1OFF/gram/issues/87)) ([1a9b3ef](https://github.com/ANT1OFF/gram/commit/1a9b3ef168f232e5aea2293de5302a6463d5554e))
+* **voice:** start capture at the press, and an opt-in ready microphone ([#81](https://github.com/ANT1OFF/gram/issues/81)) ([505d240](https://github.com/ANT1OFF/gram/commit/505d240a6c6e4d7d79520248b0818acd9264d342))
+* **web:** a Done section that keeps the last 7 days ([#65](https://github.com/ANT1OFF/gram/issues/65)) ([8c7bd49](https://github.com/ANT1OFF/gram/commit/8c7bd491870f93ae961fd7d3cc6e1412940ca351))
+* **web:** Done lists every finished chat ([#67](https://github.com/ANT1OFF/gram/issues/67)) ([c91d9ac](https://github.com/ANT1OFF/gram/commit/c91d9ac51a3f7bfafba756faa2fa40059e1cab03))
+* **web:** one attention count, quieter rows, a sidebar and board that agree ([#92](https://github.com/ANT1OFF/gram/issues/92)) ([f193da4](https://github.com/ANT1OFF/gram/commit/f193da4a57fcbd01accbd76fd695da3bb7dbb5f3))
+* **web:** orchestrator → workers in the sidebar, a board that matches ([#80](https://github.com/ANT1OFF/gram/issues/80)) ([686e737](https://github.com/ANT1OFF/gram/commit/686e7372d43ae639fa066c7be2afa16ccca28713))
+
+
+### Bug Fixes
+
+* **desktop:** harden the Linux key vault and autostart entry ([#85](https://github.com/ANT1OFF/gram/issues/85)) ([4b35eac](https://github.com/ANT1OFF/gram/commit/4b35eac88ff85820c535415031668488e9f533c6))
+* **e2e:** hold the t-flaky turn while the smoke test reads its opening line ([#93](https://github.com/ANT1OFF/gram/issues/93)) ([2edc4ac](https://github.com/ANT1OFF/gram/commit/2edc4ac289ef17b396f68ef25d44751d21affc1a))
+* **e2e:** release the dictation tap as soon as a word is heard ([#94](https://github.com/ANT1OFF/gram/issues/94)) ([7781194](https://github.com/ANT1OFF/gram/commit/778119452d8e8a39c73e5a1c82c8c865d0bdaf6b))
+* prepare only approved local-check sources ([#32](https://github.com/ANT1OFF/gram/issues/32)) ([af3fab7](https://github.com/ANT1OFF/gram/commit/af3fab78c17a9d7a42feb6b4fd733d7645f95fc2))
+* repair main after [#32](https://github.com/ANT1OFF/gram/issues/32) ([#68](https://github.com/ANT1OFF/gram/issues/68)) ([ce352e6](https://github.com/ANT1OFF/gram/commit/ce352e608d7949828db4af6a4b3d125fd35d4cb2))
+* **voice:** keep the last word after release ([#78](https://github.com/ANT1OFF/gram/issues/78)) ([cc40a47](https://github.com/ANT1OFF/gram/commit/cc40a471c32e814e4ef92caa23d37cb8c667140f))
+
 ## [1.3.1](https://github.com/ANT1OFF/gram/compare/v1.3.0...v1.3.1) (2026-11-01)
 
 
