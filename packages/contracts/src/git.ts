@@ -123,6 +123,11 @@ export const PrStatus = Schema.Struct({
   personComments: Schema.optionalKey(
     Schema.Array(PersonComment).check(Schema.isMaxLength(MAX_PERSON_COMMENTS)),
   ),
+  /**
+   * From when `personComments` is whole, ISO 8601: a listing that came back full may have left
+   * older comments out. Absent when nothing was cut.
+   */
+  personCommentsFrom: Schema.optionalKey(Schema.String),
   /** Set while the badge is carried over failed refreshes; cleared by the next successful one. */
   stale: Schema.optionalKey(PrStale),
 });

@@ -195,11 +195,15 @@ interface Sent {
 /** What one command posted: its bodies, or `posts` with none read when it posted all the same. */
 interface Posting {
   readonly sent: ReadonlyArray<Sent>;
-  /** It posts a comment or review, whatever its body was built from. */
-  readonly posts: boolean;
+  /** How many comments or reviews it posts, whatever their bodies were built from. */
+  readonly posts: number;
+  /** It also runs a `gh` command that posts nothing: a read, whose output prints others' links. */
+  readonly reads: boolean;
 }
 
-const NONE: Posting = { sent: [], posts: false };
+const NONE: Posting = { sent: [], posts: 0, reads: false };
+/** A `gh` command that posts nothing. */
+const READ: Posting = { sent: [], posts: 0, reads: true };
 
 const PR_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)(?:[/#?].*)?$/;
 const OWNER_REPO = /^[\w.-]+\/[\w.-]+$/;
@@ -243,7 +247,11 @@ const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): P
   // `bash -lc '…'`, as Codex runs a command line.
   if (words.length >= 3 && SHELLS.has(words[0]!) && /^-\w*c$/.test(words[1]!)) {
     const inner = shellCommands(words[2]!).map((each) => postingOf(each, files));
-    return { sent: inner.flatMap((each) => each.sent), posts: inner.some((each) => each.posts) };
+    return {
+      sent: inner.flatMap((each) => each.sent),
+      posts: inner.reduce((n, each) => n + each.posts, 0),
+      reads: inner.some((each) => each.reads),
+    };
   }
   const gh = words.indexOf("gh");
   if (gh === -1) return NONE;
@@ -269,10 +277,11 @@ const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): P
     const pr = targetOf(rest);
     return {
       sent: bodies.map((body) => ({ body, ...(pr === undefined ? {} : { pr }) })),
-      posts: true,
+      posts: 1,
+      reads: false,
     };
   }
-  if (args[0] !== "api") return NONE;
+  if (args[0] !== "api") return READ;
   let path: string | undefined;
   let method: string | undefined;
   for (let k = 1; k < args.length; k++) {
@@ -304,8 +313,8 @@ const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): P
   }
   // A body field makes gh POST unless told otherwise; a read of the comments posts nothing.
   if (path === undefined || !API_POSTS.test(path) || (method !== undefined && method !== "POST"))
-    return NONE;
-  if (bodies.length === 0) return { sent: [], posts: method === "POST" };
+    return READ;
+  if (bodies.length === 0) return method === "POST" ? { sent: [], posts: 1, reads: false } : READ;
   const numbered = API_PATH.exec(path);
   const repo = numbered?.[1];
   const pr: PostTarget | undefined =
@@ -317,7 +326,8 @@ const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): P
         };
   return {
     sent: bodies.map((body) => ({ body, ...(pr === undefined ? {} : { pr }) })),
-    posts: true,
+    posts: 1,
+    reads: false,
   };
 };
 
@@ -329,7 +339,9 @@ const strings = (value: unknown, out: Array<string>, depth = 0): void => {
     for (const each of Object.values(value)) strings(each, out, depth + 1);
 };
 
-const GITHUB_LINK = /https:\/\/github\.com\/[^\s"'<>()\]]+/g;
+/** A link to one comment, review or review comment on a PR or issue: what a post prints back. */
+const COMMENT_LINK =
+  /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+#(?:issuecomment-\d+|discussion_r\d+|pullrequestreview-\d+)/g;
 
 interface ToolCall {
   readonly name: string;
@@ -402,10 +414,11 @@ export const postsIn = (messages: ReadonlyArray<GramUIMessage>): Array<Post> => 
   const posts: Array<Post> = [];
   for (const call of calls) {
     let sent: Array<Sent> = [];
-    let posting = false;
+    let posting = 0;
+    let reads = false;
     // Gram's own review-reply tool, under any agent's name for it: on the thread's own PR.
     if (call.name.endsWith("pr_reply_to_thread")) {
-      posting = true;
+      posting = 1;
       const body = str(call.input["body"]);
       if (body !== undefined) sent.push({ body });
     }
@@ -417,13 +430,18 @@ export const postsIn = (messages: ReadonlyArray<GramUIMessage>): Array<Post> => 
         : [];
     for (const each of parsed) {
       const posted = postingOf(each, files);
-      posting ||= posted.posts;
+      posting += posted.posts;
+      reads ||= posted.reads;
       sent = [...sent, ...posted.sent];
     }
-    if (!posting) continue;
+    if (posting === 0) continue;
     const printed: Array<string> = [];
     strings(call.output, printed);
-    const urls = printed.flatMap((text) => text.match(GITHUB_LINK) ?? []);
+    const links = [...new Set(printed.flatMap((text) => text.match(COMMENT_LINK) ?? []))];
+    // The links name the posts' own comments only when nothing else in the call could have printed
+    // one: no `gh` read beside the post, and no more links than posts. Otherwise the text match
+    // still covers the posts, and a person's comment the read printed stays theirs.
+    const urls = !reads && links.length <= posting ? links : [];
     const at = call.at;
     if (sent.length === 0) posts.push({ key: call.key, urls, ...(at === undefined ? {} : { at }) });
     sent.forEach((each, i) => {

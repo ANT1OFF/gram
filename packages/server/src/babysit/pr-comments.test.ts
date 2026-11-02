@@ -263,8 +263,8 @@ const noticeCount = (threadId: ThreadId, n: number) =>
 
 const seenOf = (threadId: ThreadId) =>
   Effect.gen(function* () {
-    return (yield* (yield* ThreadStore).getThread(threadId)).boundPr?.seen?.comments?.map(
-      (c) => c.id,
+    return (yield* (yield* ThreadStore).getThread(threadId)).boundPr?.seen?.comments?.map((c) =>
+      typeof c === "string" ? c : c.id,
     );
   });
 
@@ -813,6 +813,146 @@ describe("a person's comment on a worker's PR", () => {
         const three = yield* noticeCount(id, 3);
         expect(three[2]!.text).toContain("Lagged.");
       }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("delivers the user's comment after a post chained with a read in one command", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* workerThread([]);
+      const hold = comment("IC_1", "owner", "Please hold off on the merge.", {
+        viewerDidAuthor: true,
+        url: "https://github.com/acme/web/pull/12#issuecomment-123",
+      });
+      yield* toolCall(
+        id,
+        "Bash",
+        { command: 'gh pr comment 12 --body "Pushed the fix." && gh pr view 12 --json comments' },
+        `https://github.com/acme/web/pull/12#issuecomment-1\n${JSON.stringify({ comments: [{ url: hold.url }] })}`,
+      );
+      yield* publish(id, badge(listed(hold)));
+      const [notice] = yield* noticeCount(id, 1);
+      expect(notice!.text).toContain("Please hold off on the merge.");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("never replays a handled comment after a 100-comment flood is deleted", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* workerThread([]);
+      const trusted = comment("IC_alice", "alice", "Please revert the parser change.");
+      yield* publish(id, badge(listed(trusted)));
+      yield* noticeCount(id, 1);
+      const flood: Array<FetchedComment> = [];
+      for (let n = 0; n < 100; n++) {
+        flood.push(comment(`IC_s${String(n).padStart(3, "0")}`, "stranger", `spam ${n}`));
+        if (n % 10 === 9) {
+          const window = flood.slice(-10);
+          // Ten issue comments came back: the listing is whole only from the oldest of them.
+          yield* publish(
+            id,
+            badge(listed(...window), { personCommentsFrom: window[0]!.createdAt }),
+          );
+          yield* waitFor(
+            "the flood passed over",
+            seenOf(id).pipe(Effect.map((seen) => seen?.includes(flood.at(-1)!.id))),
+          );
+        }
+      }
+      // The stranger deletes all of it: alice's comment is back in the window, with nothing newer.
+      yield* publish(id, badge(listed(trusted), { title: "after the deletes" }));
+      yield* TestClock.adjust("2 hours");
+      yield* quiet;
+      expect(yield* commentNotices(id)).toHaveLength(1);
+      expect(world.calls.filter((call) => call.includes("IC_alice"))).toEqual(["fetch IC_alice"]);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("skips what a flood pushed out of the listing, and never delivers it later", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* workerThread([]);
+      const first = comment("IC_first", "alice", "First, delivered.");
+      yield* publish(id, badge(listed(first)));
+      yield* noticeCount(id, 1);
+      // Before the next poll: alice's second comment, then ten from a stranger that push it out.
+      const pushedOut = comment("IC_out", "alice", "Pushed out by the flood.");
+      const flood = Array.from({ length: 10 }, (_, n) =>
+        comment(`IC_f${n}`, "stranger", `spam ${n}`),
+      );
+      const after = comment("IC_after", "alice", "Posted after the flood.");
+      yield* publish(
+        id,
+        badge(listed(...flood.slice(1), after), { personCommentsFrom: flood[1]!.createdAt }),
+      );
+      yield* TestClock.adjust("1 minute");
+      const [, second] = yield* noticeCount(id, 2);
+      expect(second!.text).toContain("Posted after the flood.");
+      // The flood is deleted and the skipped comment shows again: it stays skipped.
+      yield* publish(id, badge(listed(first, pushedOut, after), { title: "after the deletes" }));
+      yield* TestClock.adjust("2 hours");
+      yield* quiet;
+      expect(yield* commentNotices(id)).toHaveLength(2);
+      expect(world.calls.some((call) => call.includes("IC_out"))).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("keeps delivering when a listed comment has no time", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* workerThread([]);
+      const stranger = comment("IC_s", "stranger", "spam");
+      const timeless = comment("IC_t", "alice", "No time on this one.");
+      const fine = comment("IC_ok", "alice", "This one is fine.");
+      yield* publish(
+        id,
+        badge([...listed(stranger), { id: timeless.id, author: "alice", at: "" }, ...listed(fine)]),
+      );
+      const [notice] = yield* noticeCount(id, 1);
+      expect(notice!.text).toContain("This one is fine.");
+      yield* waitFor(
+        "the mark kept",
+        seenOf(id).pipe(Effect.map((seen) => seen?.includes("IC_ok"))),
+      );
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("sets a retry timer after the PR is merged and reopened inside the back-off", () =>
+    Effect.gen(function* () {
+      reset();
+      world.failing = new Map([["alice", 1]]);
+      const id = yield* workerThread([]);
+      const first = comment("IC_1", "alice", "Before the merge.");
+      yield* publish(id, badge(listed(first)));
+      yield* quiet;
+      yield* publish(id, badge(listed(first), { state: "CLOSED" }));
+      yield* TestClock.adjust("10 seconds");
+      yield* publish(id, badge(listed(first)));
+      world.failing = new Map([["alice", 1]]);
+      const second = comment("IC_2", "alice", "After it reopened.");
+      yield* publish(id, badge(listed(first, second)));
+      yield* quiet;
+      yield* TestClock.adjust("1 minute");
+      const [notice] = yield* noticeCount(id, 1);
+      expect(notice!.text).toContain("After it reopened.");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("reads a mark an earlier build kept as plain ids", () =>
+    Effect.gen(function* () {
+      reset();
+      const runtimes = yield* ThreadRuntimes;
+      const id = yield* workerThread([]);
+      const old = comment("IC_old", "alice", "Delivered by an earlier build.");
+      yield* runtimes.updateThread(id, (t) => ({
+        ...t,
+        boundPr: { ...t.boundPr!, seen: { comments: ["IC_old"] } },
+      }));
+      const fresh = comment("IC_new", "alice", "New since.");
+      yield* publish(id, badge(listed(old, fresh)));
+      const [notice] = yield* noticeCount(id, 1);
+      expect(notice!.text).toContain("New since.");
+      expect(notice!.text).not.toContain("earlier build");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
   it.effect("wakes no thread that isn't a worker", () =>

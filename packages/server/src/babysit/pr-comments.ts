@@ -109,10 +109,17 @@ const stampOf = (c: PersonComment): Stamp => ({ at: c.at, id: c.id });
 export const LATE_COMMENT_GRACE_MS = 5 * 60_000;
 
 /** A stamp `ms` milliseconds before `stamp`, before any comment posted then. */
-const before = (stamp: Stamp, ms: number): Stamp => ({
-  at: new Date(msOf(stamp.at) - ms).toISOString(),
-  id: "",
-});
+const before = (stamp: Stamp, ms: number): Stamp | undefined => {
+  const at = msOf(stamp.at) - ms;
+  return Number.isFinite(at) ? { at: new Date(at).toISOString(), id: "" } : undefined;
+};
+
+/** Whether `stamp` has a time that can be put in order. */
+const timed = (stamp: Stamp): boolean => Number.isFinite(msOf(stamp.at));
+
+/** A kept entry, from a mark that may hold a plain id an earlier build wrote: that one has no time. */
+const keptEntry = (each: string | { readonly id: string; readonly at: string }) =>
+  typeof each === "string" ? ([each, ""] as const) : ([each.id, each.at] as const);
 
 /** A new comment not decided yet. */
 interface Pending {
@@ -242,8 +249,8 @@ export const PrCommentWakesLive = Layer.effectDiscard(
       const open = [
         ...[...watch.pending.values()].map((p) => stampOf(p.listed)),
         ...watch.ready.map((r) => stampOf(r.listed)),
-      ];
-      const newest = latest(handled);
+      ].filter(timed);
+      const newest = latest(handled.filter(timed));
       const firstOpen = oldest(open);
       let floor = newest === undefined ? undefined : before(newest, LATE_COMMENT_GRACE_MS);
       // A comment still open stays after the floor, so a restart finds it new again.
@@ -306,7 +313,9 @@ export const PrCommentWakesLive = Layer.effectDiscard(
             pr,
             floor: baseline ? undefined : kept?.commentsFloor,
             seen: new Map(
-              (baseline ? listed : (kept?.comments ?? [])).map((c) => [c.id, c.at] as const),
+              baseline
+                ? listed.map((c) => [c.id, c.at] as const)
+                : (kept?.comments ?? []).map(keptEntry),
             ),
             pending: new Map(),
             ready: [],
@@ -316,6 +325,34 @@ export const PrCommentWakesLive = Layer.effectDiscard(
           if (baseline) return yield* remember(thread.id, bound, watch);
         }
         const w = watch;
+        // A full listing whose oldest is after the floor may have pushed comments out between them
+        // (a flood): those are skipped, never delivered later, and the floor moves up to the
+        // listing so none of them can slide back in.
+        let floorRaised = false;
+        const from = badge.personCommentsFrom;
+        if (from !== undefined && w.floor !== undefined && isAfter({ at: from, id: "" }, w.floor)) {
+          let raised = before({ at: from, id: "" }, 1);
+          const firstOpen = oldest(
+            [...[...w.pending.values()].map((p) => p.listed), ...w.ready.map((r) => r.listed)]
+              .map(stampOf)
+              .filter(timed),
+          );
+          if (raised !== undefined && firstOpen !== undefined && !isAfter(firstOpen, raised))
+            raised = before(firstOpen, 1);
+          if (raised !== undefined && isAfter(raised, w.floor)) {
+            // Times only: who wrote what stays out of the log.
+            yield* Effect.logInfo("pr comments older than the listing may have been skipped").pipe(
+              Effect.annotateLogs({
+                threadId: thread.id,
+                pr: bound.number,
+                from: w.floor.at,
+                to: raised.at,
+              }),
+            );
+            w.floor = raised;
+            floorRaised = true;
+          }
+        }
         // New means after the floor and not handled: a comment that slides back into the badge's
         // window when newer ones are deleted is at or before the floor, whatever `seen` forgot.
         const fresh = listed.filter(
@@ -340,9 +377,11 @@ export const PrCommentWakesLive = Layer.effectDiscard(
           w.ready = [];
           yield* FiberMap.remove(wakeTimers, thread.id);
           yield* FiberMap.remove(retryTimers, thread.id);
+          retryAt.delete(thread.id);
           return yield* remember(thread.id, bound, w);
         }
-        if (fresh.length === 0) return;
+        if (fresh.length === 0)
+          return floorRaised ? yield* remember(thread.id, bound, w) : undefined;
         for (const each of fresh) w.pending.set(each.id, { listed: each, attempts: 0 });
         yield* offer(thread.id);
       });

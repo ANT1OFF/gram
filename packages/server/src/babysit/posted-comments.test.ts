@@ -111,6 +111,32 @@ describe("postsIn", () => {
     ]);
   });
 
+  it("drops a posting call's links when it also reads, or prints more links than it posted", () => {
+    const users = "https://github.com/acme/web/pull/12#issuecomment-123";
+    const own = "https://github.com/acme/web/pull/12#issuecomment-124";
+    const urls = (command: string, output: string) =>
+      postsIn([bash(command, output)]).flatMap((post) => post.urls);
+    // A post chained with a read: the read printed the user's link.
+    expect(
+      urls(
+        'gh pr comment 12 --body "Pushed the fix." && gh pr view 12 --json comments',
+        `${own}\n{"comments":[{"url":"${users}"}]}`,
+      ),
+    ).toEqual([]);
+    // One post, two comment links: which is its own can't be told.
+    expect(urls('gh pr comment 12 -b "x" && cat notes.md', `${own}\n${users}`)).toEqual([]);
+    // One post, its own link, and a link that names no comment.
+    expect(
+      urls('gh pr comment 12 -b "x"', `${own}\nhttps://github.com/acme/web/pull/new/feature`),
+    ).toEqual([own]);
+    // The body still counts when the links don't.
+    expect(
+      postsIn([bash('gh pr comment 12 --body "Pushed the fix." && gh pr view 12', users)]).map(
+        (post) => post.body,
+      ),
+    ).toEqual(["Pushed the fix."]);
+  });
+
   it("takes nothing from calls that only read comments, whatever links they print", () => {
     const listing = JSON.stringify({
       comments: [{ url: "https://github.com/acme/web/pull/12#issuecomment-123", body: "Hold off" }],

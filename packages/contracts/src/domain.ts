@@ -458,9 +458,10 @@ export const MonitorMark = Schema.Struct({
    * the thread, or passed over as a bot's, a Gram thread's own or an untrusted author's.
    */
   comments: Schema.optionalKey(
-    Schema.Array(Schema.Struct({ id: Schema.String, at: Schema.String })).check(
-      Schema.isMaxLength(MONITOR_MARK_COMMENTS_MAX),
-    ),
+    // A plain id is how an earlier build kept one; it has no time, so it reads as old.
+    Schema.Array(
+      Schema.Union([Schema.String, Schema.Struct({ id: Schema.String, at: Schema.String })]),
+    ).check(Schema.isMaxLength(MONITOR_MARK_COMMENTS_MAX)),
   ),
   /**
    * What is old: a comment at or before it never wakes the thread, whatever `comments` forgot. It
