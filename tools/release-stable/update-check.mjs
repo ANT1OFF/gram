@@ -3,8 +3,11 @@
 // native-feed.ts) from `--source`. Run with Bun, which resolves the feed's imports.
 //
 //   bun update-check.mjs --source <checkout> --feed private|public --repo <owner/name>
-//                        --current <version> [--simulate-publish <tag>]
-//                        [--api <origin>] [--web <origin>]
+//                        --current <version> [--target mac|appimage|deb]
+//                        [--simulate-publish <tag>] [--api <origin>] [--web <origin>]
+//
+// `--target` is whose files a check looks for: the signed Mac's (the default), the Linux
+// AppImage's (`latest-linux.yml`) or the .deb's, which reads no manifest.
 //
 // The private feed is the app's `gh` feed, through your own `gh` login, which sees drafts; every
 // call here is a GET, and anything else throws. `--simulate-publish` shows a draft as GitHub would serve it once published (draft false,
@@ -23,6 +26,7 @@ const { values } = parseArgs({
     feed: { type: "string" },
     repo: { type: "string" },
     current: { type: "string" },
+    target: { type: "string" },
     "simulate-publish": { type: "string" },
     api: { type: "string" },
     web: { type: "string" },
@@ -31,6 +35,9 @@ const { values } = parseArgs({
 const { source, feed, repo, current } = values;
 if (!source || !["private", "public"].includes(feed ?? "") || !repo || !current)
   throw new Error("update-check needs --source, --feed private|public, --repo and --current.");
+const target = values.target ?? "mac";
+if (!["mac", "appimage", "deb"].includes(target))
+  throw new Error("--target is mac, appimage or deb.");
 const simulate = values["simulate-publish"];
 if (simulate && feed !== "private")
   throw new Error("--simulate-publish needs the private feed: drafts are invisible anonymously.");
@@ -82,11 +89,12 @@ try {
   for (const channel of ["stable", "prerelease"]) {
     const releases =
       feed === "private"
-        ? createGhFeed({ gh: readOnlyGh, repo, tempDir: temp, currentVersion: current })
+        ? createGhFeed({ gh: readOnlyGh, repo, tempDir: temp, currentVersion: current, target })
         : createPublicFeed({
             fetch: anonymousFetch,
             repo,
             currentVersion: current,
+            target,
             ...(values.api ? { api: values.api } : {}),
             ...(values.web ? { web: values.web } : {}),
           });
@@ -95,15 +103,24 @@ try {
     process.stdout.write(
       `${RESULT} ${JSON.stringify(
         info.version === current || !picked
-          ? { channel, status: "upToDate", version: current }
+          ? { channel, target, status: "upToDate", version: current }
           : {
               channel,
+              target,
               status: "available",
               version: info.version,
               tag: picked.tag,
-              zip: { id: picked.zip.id, name: picked.zip.name, digest: picked.zip.digest },
+              payload: {
+                id: picked.payload.id,
+                name: picked.payload.name,
+                digest: picked.payload.digest,
+              },
               manifest: { id: picked.manifest.id, name: picked.manifest.name },
-              url: feed === "public" ? releases.assetUrl(picked.zip).href : undefined,
+              sha512: info.sha512 || undefined,
+              url:
+                feed === "public" && target !== "deb"
+                  ? releases.assetUrl(picked.payload).href
+                  : undefined,
             },
       )}\n`,
     );

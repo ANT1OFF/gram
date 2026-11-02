@@ -1,0 +1,223 @@
+name: Linux release build
+
+# The x64 AppImage and .deb of a stable release, built on a GitHub-hosted runner from the exact
+# release commit. `bun run release:rc --stable` dispatches it on main right after its preconditions
+# (HEAD is origin/main), waits for it while the Mac build runs, downloads the artifact, verifies the
+# attestations and attaches the files to the same draft with your own `gh` login. Nothing here
+# writes to a release or holds a write token: `build` runs the repository's code with a read-only
+# token, and `attest`, which may mint an OIDC token for the attestation, runs no repository code.
+#
+# A pull request that changes this workflow or tools/release-linux/ runs the same build as a dry
+# run, without the attestation, so the release path is exercised before it merges.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, e.g. 1.4.0 (all three version fields must already say it)
+        required: true
+        type: string
+      source_sha:
+        description: The release commit; must be main's head when the run starts
+        required: true
+        type: string
+      nonce:
+        description: 16 hex characters naming this run for release:rc
+        required: true
+        type: string
+      dry_run:
+        description: Build and check only; no attestation
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/release-linux.yml
+      - tools/release-linux/**
+
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+  && format('Linux release {0} ({1})', inputs.version, inputs.nonce)
+  || format('Linux release dry run ({0})', github.head_ref) }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.nonce || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  build:
+    name: build
+    # Only same-repository PRs run CI.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    outputs:
+      appimage_sha256: ${{ steps.record.outputs.appimage_sha256 }}
+      deb_sha256: ${{ steps.record.outputs.deb_sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Inputs reach the shell only as environment variables, never spliced into a script.
+      - name: Check the request
+        id: request
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          VERSION: ${{ inputs.version }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          NONCE: ${{ inputs.nonce }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a stable version: $VERSION"; exit 1; }
+            [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha is not a full commit SHA"; exit 1; }
+            [[ "$NONCE" =~ ^[0-9a-f]{16}$ ]] || { echo "nonce is not 16 hex characters"; exit 1; }
+            [ "$REF" = refs/heads/main ] || { echo "a release builds only from main, not $REF"; exit 1; }
+            # The attestation names the run's commit, so the run must be the release commit.
+            [ "$SHA" = "$SOURCE_SHA" ] || { echo "main moved: the run is at $SHA, the release at $SOURCE_SHA"; exit 1; }
+          fi
+          echo "sha=$SHA" >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ steps.request.outputs.sha }}
+      - name: Check the version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          root=$(node -p 'require("./package.json").version')
+          desktop=$(node -p 'require("./apps/desktop/package.json").version')
+          manifest=$(node -p 'require("./.release-please-manifest.json")["."]')
+          [ "$EVENT" = workflow_dispatch ] || VERSION=$root
+          for field in "$root" "$desktop" "$manifest"; do
+            [ "$field" = "$VERSION" ] || { echo "version fields say $root/$desktop/$manifest, not $VERSION"; exit 1; }
+          done
+          echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # No cache: a release build installs from the lockfile alone.
+      - run: bun install --frozen-lockfile
+      - run: bun run build:bundles
+      - name: Compile node-pty against Electron's headers
+        run: bun run rebuild:node-pty
+        working-directory: apps/desktop
+      - name: Package the AppImage and .deb
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bun run electron-builder --linux --x64 --publish never "-c.extraMetadata.version=$VERSION"
+        working-directory: apps/desktop
+      - run: bun run verify:package
+        working-directory: apps/desktop
+      - name: Install the .deb on Ubuntu 24.04
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends xvfb xauth ./apps/desktop/release/gram_*_amd64.deb
+          missing=$(ldd /opt/Gram/gram | grep "not found" || true)
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+      - name: Install the .deb on Debian 12 and load node-pty there
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src \
+            debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 \
+            bash -euo pipefail -c '
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends ./apps/desktop/release/gram_*_amd64.deb >/dev/null
+              pty=/opt/Gram/resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node
+              missing=$(ldd /opt/Gram/gram "$pty" | grep "not found" || true)
+              if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+              scratch=$(mktemp -d)
+              ELECTRON_RUN_AS_NODE=1 /opt/Gram/gram tools/release-rc/native-probe.cjs \
+                /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 no-speech'
+      - name: Smoke the installed app and the AppImage under Xvfb
+        run: |
+          for app in /opt/Gram/gram "$PWD/apps/desktop/release/gram_"*"_x86_64.AppImage"; do
+            work=$(mktemp -d)
+            mkdir -p "$work/stubs" "$work/home" "$work/tmp"
+            # No agent CLI or GitHub login reaches the smoke: these stand in for them.
+            for cli in claude codex gh; do
+              printf '#!/bin/sh\nexit 127\n' >"$work/stubs/$cli"
+              chmod +x "$work/stubs/$cli"
+            done
+            args=(--smoke --password-store=basic "--user-data-dir=$work/electron")
+            # The AppImage runs from its own extraction: the runner has no FUSE 2.
+            case "$app" in *.AppImage) args=(--appimage-extract-and-run "${args[@]}") ;; esac
+            echo "::group::$app --smoke"
+            env -i PATH="$work/stubs:/usr/bin:/bin" HOME="$work/home" TMPDIR="$work/tmp" \
+              XDG_CONFIG_HOME="$work/xdg-config" XDG_DATA_HOME="$work/xdg-data" \
+              XDG_CACHE_HOME="$work/xdg-cache" CODEX_HOME="$work/codex" \
+              CLAUDE_CONFIG_DIR="$work/claude" GH_CONFIG_DIR="$work/gh" GRAM_DATA_DIR="$work/gram" \
+              GRAM_FAKE_AGENT=1 GRAM_FAKE_AGENT_REPLY=echo CI=1 LANG=C.UTF-8 \
+              timeout 150 xvfb-run -a "$app" "${args[@]}" 2>&1 | tee "$work/smoke.log" || true
+            echo "::endgroup::"
+            grep -q "SMOKE OK" "$work/smoke.log" || { echo "$app: no SMOKE OK"; exit 1; }
+          done
+      - name: Record the build
+        id: record
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SOURCE: ${{ steps.request.outputs.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node tools/release-linux/build-record.mjs --release apps/desktop/release \
+            --out "$RUNNER_TEMP/linux-release" --version "$VERSION" --source "$SOURCE" \
+            --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" | tee "$RUNNER_TEMP/sums.txt"
+          echo "appimage_sha256=$(awk '/\.AppImage$/ {print $1}' "$RUNNER_TEMP/sums.txt")" >>"$GITHUB_OUTPUT"
+          echo "deb_sha256=$(awk '/\.deb$/ {print $1}' "$RUNNER_TEMP/sums.txt")" >>"$GITHUB_OUTPUT"
+      - name: Upload the release files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gram-linux-release
+          path: ${{ runner.temp }}/linux-release/
+          retention-days: 7
+          if-no-files-found: error
+
+  # The attestation: an OIDC token proves this workflow, on main at the release commit, on a
+  # GitHub-hosted runner, built these exact bytes. This job checks out nothing and runs no
+  # repository code; it only compares the downloaded files with the build's digests and signs.
+  attest:
+    name: attest
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gram-linux-release
+          path: linux-release
+      - name: Compare with the build's digests
+        env:
+          APPIMAGE_SHA256: ${{ needs.build.outputs.appimage_sha256 }}
+          DEB_SHA256: ${{ needs.build.outputs.deb_sha256 }}
+        run: |
+          set -euo pipefail
+          cd linux-release
+          [ "$(ls -1 | wc -l)" = 3 ] || { ls -l; exit 1; }
+          [ "$(sha256sum gram_*_x86_64.AppImage | cut -d' ' -f1)" = "$APPIMAGE_SHA256" ]
+          [ "$(sha256sum gram_*_amd64.deb | cut -d' ' -f1)" = "$DEB_SHA256" ]
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            linux-release/gram_*_x86_64.AppImage
+            linux-release/gram_*_amd64.deb

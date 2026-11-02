@@ -216,7 +216,7 @@ const cardText = (body) => body.replace(/<kbd>(.*?)<\/kbd>/g, "`$1`");
  * using the app), plus requirements and how to install. No PR titles, SHAs, test counts or
  * process.
  */
-export function renderPublicNotes({ version, cards, minimumMacOS }) {
+export function renderPublicNotes({ version, cards, minimumMacOS, linux = false }) {
   const shown = cards.filter((card) => !card.platform || card.platform === "darwin");
   const lines = [];
   if (shown.length) {
@@ -228,14 +228,35 @@ export function renderPublicNotes({ version, cards, minimumMacOS }) {
     "## Requirements",
     "",
     `- macOS ${minimumMacOS} or later on Apple silicon.`,
+    ...(linux
+      ? [
+          "- Or Linux on x64: the AppImage, or the .deb for Debian 12, Ubuntu 24.04 and later. Gateway keys need a desktop keyring (GNOME Keyring or KWallet). Voice dictation isn't available on Linux yet.",
+        ]
+      : []),
     "- Claude Code and/or Codex installed and signed in with your own account. Gram runs them; it adds no subscription of its own.",
     "- `git`. The GitHub CLI (`gh`) is optional, for pull request features.",
     "",
     "## Install or update",
     "",
     `- New install: download \`gram_${version}_darwin-arm64_signed.zip\`, unzip it and move Gram to Applications.`,
+    ...(linux
+      ? [
+          `- Linux AppImage: download \`gram_${version}_x86_64.AppImage\`, make it executable and run it.`,
+          `- Linux .deb: download \`gram_${version}_amd64.deb\` and install it with apt.`,
+        ]
+      : []),
     "- Already installed: Settings → Updates. Nothing installs without your click.",
-    "- The app is signed with a Developer ID and notarized by Apple. `SHA256SUMS.txt` lists the download's checksum.",
+    ...(linux
+      ? [
+          "- The AppImage updates itself from Settings → Updates; a .deb install shows the new release, for apt to install.",
+        ]
+      : []),
+    `- The ${linux ? "macOS " : ""}app is signed with a Developer ID and notarized by Apple. \`SHA256SUMS.txt\` lists the download's checksum${linux ? "s" : ""}.`,
+    ...(linux
+      ? [
+          "- The Linux packages are not signed; each has a GitHub build attestation from this repository's release workflow, which `gh attestation verify` checks.",
+        ]
+      : []),
     "",
     "Gram is not affiliated with Anthropic or OpenAI.",
     "",

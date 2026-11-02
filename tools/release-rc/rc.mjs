@@ -11,7 +11,10 @@
 //
 // `--stable` is the stable path's first phase: the same check, build, signing (required),
 // smoke and assets, with latest-mac.yml, then a private draft that is neither prerelease nor
-// latest, and `release.json` in the work dir. `bun run release:stable` takes it from there
+// latest, and `release.json` in the work dir. It also dispatches the Linux x64 build
+// (.github/workflows/release-linux.yml) on GitHub for the same commit, waits for it, verifies its
+// attestations and attaches the AppImage, .deb, LINUX-BUILD.json and latest-linux.yml to the same
+// draft; with --dry-run that build runs without an attestation and nothing is uploaded. `bun run release:stable` takes it from there
 // (docs/RELEASING.md).
 //
 // The version is stamped into the package only (electron-builder extraMetadata); nothing is
@@ -70,6 +73,8 @@ import {
 import { writeUpdaterManifest } from "./updater-manifest.mjs";
 import { withReleaseCheckSlot } from "./check-slot.mjs";
 import { preflightNotary } from "./notary-preflight.mjs";
+import { linuxAssetNames, linuxPackageNames } from "../release-linux/linux-lib.mjs";
+import { collectLinuxBuild, startLinuxBuild } from "../release-linux/linux-release.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const started = Date.now();
@@ -384,6 +389,20 @@ function step(
   return { ok: r.status === 0, output, record };
 }
 
+// The Linux build runs on GitHub from this exact commit while the Mac checks, builds and notarizes.
+// It is dispatched once the setup is settled, minutes after HEAD was origin/main's head: the workflow refuses a main that
+// has moved, since its attestation names the run's commit.
+const ghRun = (args) => tryRun("gh", args);
+const linuxBuild = (() => {
+  if (!stable) return undefined;
+  try {
+    const dispatched = startLinuxBuild({ gh: ghRun, version, sha, dryRun: !options.publish });
+    say(`  linux build dispatched (${dispatched.nonce}${dispatched.dryRun ? ", dry run" : ""})`);
+    return dispatched;
+  } catch (error) {
+    return fail(error.message);
+  }
+})();
 // ---------------------------------------------------------------------------------------------
 // Check: install, scaffold, docs, release metadata, static, then the tests once.
 say("▸ Check");
@@ -844,8 +863,37 @@ steps.push({
   seconds: Math.round(seconds(extractBegin) * 10) / 10,
 });
 
+// The Linux files, from the dispatched run: checked here (names, sizes, SHA-256s, the build record,
+// each package's attestation) before any of them is listed or uploaded.
+let linux;
+if (linuxBuild) {
+  say("  waiting for the Linux build …");
+  const linuxBegin = Date.now();
+  try {
+    linux = await collectLinuxBuild(linuxBuild, {
+      gh: ghRun,
+      into: join(work, "linux"),
+      assets,
+      say,
+    });
+  } catch (error) {
+    fail(`linux build: ${error.message}`);
+  }
+  steps.push({
+    name: "linux-build",
+    command: `${linux.runUrl} + gh attestation verify`,
+    exit: 0,
+    seconds: Math.round(seconds(linuxBegin) * 10) / 10,
+  });
+  say(
+    `  linux build … ok (${linux.files.map((file) => file.name).join(", ")}${
+      linuxBuild.dryRun ? ", dry run: no attestation" : `, ${linux.attestations.length} attested`
+    })`,
+  );
+}
+
 const covered = [];
-for (const name of names.slice(0, 5))
+for (const name of [...names.slice(0, 5), ...(linux ? linuxAssetNames(version).covered : [])])
   covered.push({ name, sha256: await sha256File(join(assets, name)) });
 writeFileSync(join(assets, "SHA256SUMS.txt"), checksumLines(covered));
 const check6 = tryRun("/usr/bin/shasum", ["-a", "256", "-c", "SHA256SUMS.txt"], { cwd: assets });
@@ -865,6 +913,23 @@ if (signing.signed) {
   } catch (error) {
     fail(`electron-updater manifest: ${error.message}`);
   }
+}
+// The AppImage updates through electron-updater's latest-linux.yml, by its SHA-512.
+if (linux) {
+  try {
+    const manifest = await writeUpdaterManifest({
+      source,
+      assets,
+      version,
+      zipName: linuxPackageNames(version).appImage,
+      releaseDate: new Date().toISOString(),
+      target: "appimage",
+    });
+    say(`  ${manifest.name} … ok (read back through electron-updater's parser)`);
+  } catch (error) {
+    fail(`electron-updater Linux manifest: ${error.message}`);
+  }
+  uploads.push(...linuxAssetNames(version).all);
 }
 const local = [];
 for (const name of uploads) {
@@ -926,6 +991,19 @@ const writeState = (release) =>
         minimumMacOS: inspection.minimumMacOS,
         notesPath,
         assets: local,
+        ...(linux
+          ? {
+              linux: {
+                runId: linux.runId,
+                runUrl: linux.runUrl,
+                appImage: linuxPackageNames(version).appImage,
+                deb: linuxPackageNames(version).deb,
+                manifest: linuxAssetNames(version).manifest,
+                attested: !linuxBuild.dryRun,
+                attestations: linux.attestations,
+              },
+            }
+          : {}),
       },
       null,
       2,
