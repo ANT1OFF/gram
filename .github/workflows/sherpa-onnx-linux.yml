@@ -5,7 +5,9 @@ name: sherpa-onnx linux-x64
 #
 # - `rebuild` runs tools/sherpa-onnx/build-linux-x64.sh from scratch (its pinned manylinux image,
 #   Node, upstream commit and dependency hashes; no cache) and requires the same bytes as the
-#   committed files, so what ships is what the script makes from its pinned sources.
+#   committed files, so what ships is what the script makes from its pinned sources. The Linux
+#   release build (release-linux.yml) repeats this before it packages them, since nothing makes
+#   this job pass before a merge.
 # - `live speech` installs the repository as a developer does (the postinstall puts the committed
 #   build over the npm package) and runs apps/desktop/src/speech.live.test.ts on the real
 #   recogniser: Nemotron streaming, then Accurate mode's Parakeet pass with Silero VAD, over the

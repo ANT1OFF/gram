@@ -160,8 +160,10 @@ same way.
 `release:rc --stable` dispatches [release-linux.yml](../.github/workflows/release-linux.yml) on
 `main` once its preconditions pass, with the version, the source commit and a nonce that names
 the run. The workflow refuses to build unless main's head is that commit, since its attestation
-names the run's commit. On a GitHub-hosted `ubuntu-24.04` runner it installs from the lockfile
-with no Actions cache at all (not even setup-bun's or setup-node's), packages with the version
+names the run's commit. On a GitHub-hosted `ubuntu-24.04` runner it first rebuilds the committed
+TTS-free sherpa-onnx (`tools/sherpa-onnx/build-linux-x64.sh`, from its pinned sources) and requires
+the same bytes, then installs from the lockfile with no Actions cache at all (not even setup-bun's
+or setup-node's), which puts those files in place, packages with the version
 stamped in, runs `verify:package`, installs the .deb on Ubuntu 24.04 and Debian 12, smokes the
 installed app and the AppImage, and checks the packaged version, source commit and .deb fields. Then it writes `LINUX-BUILD.json`.
 
@@ -176,7 +178,7 @@ installed app and the AppImage, and checks the packaged version, source commit a
   same `gh release create`, with your own login.
 - `release:rc --stable --dry-run` dispatches the workflow with `dry_run`: it builds and checks
   everything but signs no attestation, and nothing is uploaded. A pull request that changes the
-  workflow or `tools/release-linux/` runs the same dry build.
+  workflow, `tools/release-linux/` or `tools/sherpa-onnx/` runs the same dry build.
 - No GPG key or other secret is involved. The packages carry no publisher signature: their
   integrity rests on HTTPS to GitHub, the checksums and the attestation.
 
