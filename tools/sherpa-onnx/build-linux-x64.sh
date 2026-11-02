@@ -7,8 +7,10 @@
 #
 # The build runs in a manylinux_2_28 container pinned by digest (AlmaLinux 8, glibc 2.28, GCC 14
 # from gcc-toolset), so the files load on any glibc from 2.28 up, below the package's 2.34 floor,
-# and every input is pinned: the image, Node by SHA-256, the sherpa-onnx commit, and upstream's
-# dependency downloads, which its cmake/ files pin by SHA-256. Flags are upstream's
+# and every input is pinned: the image, Node and its headers by SHA-256, the sherpa-onnx commit,
+# upstream's dependency downloads, which its cmake/ files pin by SHA-256, and the addon's build
+# tooling (cmake-js, node-addon-api and what they pull in), which addon-tooling/package-lock.json
+# pins and `npm ci` installs. Flags are upstream's
 # npm-addon-linux-x64.yaml with SHERPA_ONNX_ENABLE_TTS=OFF, and the addon is compiled in the same
 # container (upstream compiles it on the runner, which raises its glibc floor to 2.32). It gets
 # node-addon.patch, which drops its TTS bindings and the rpath to this build's install dir (only
@@ -26,10 +28,9 @@ set -euo pipefail
 
 TAG=v2.0.0
 COMMIT=8abb7c8f87eae85b2e75f9a4115236c978980add
-CMAKE_JS=7.4.0
-NODE_ADDON_API=8.9.2
 NODE=26.12.0 # .node-version; the addon uses Node-API only, so Electron loads it as is.
 NODE_SHA256=fd47865ecd6391ebb431fc815e01b9135bf83ded5cf373247e9331e196b7aded # node-v26.12.0-linux-x64.tar.xz
+NODE_HEADERS_SHA256=6abd0ddeccf3ebec9abe99582710c594669ee9510a40a1d1d990133dec36a1fc # node-v26.12.0-headers.tar.gz
 # quay.io/pypa/manylinux_2_28_x86_64:2026.10.10-1
 IMAGE=quay.io/pypa/manylinux_2_28_x86_64@sha256:4131ddd7acb9c6c966af02fe7e71edc51e078c2d41f475966697676430bfa2ae
 # The npm package whose libonnxruntime.so ships beside the build: bun.lock's integrity for it.
@@ -55,12 +56,17 @@ fi
 mkdir -p /tmp/work/home
 cd /tmp/work
 
-# Node, for cmake-js and the npm checks.
+# Node, for cmake-js and the npm checks, and the headers the addon compiles against: cmake-js would
+# download those itself and check them only against the same server's SHASUMS256.txt.
 curl --fail --silent --show-error --location --output node.tar.xz \
   "https://nodejs.org/dist/v$NODE/node-v$NODE-linux-x64.tar.xz"
 echo "$NODE_SHA256  node.tar.xz" | sha256sum --check --quiet
 mkdir node && tar -xJf node.tar.xz -C node --strip-components 1
 export PATH=/tmp/work/node/bin:$PATH
+curl --fail --silent --show-error --location --output node-headers.tar.gz \
+  "https://nodejs.org/dist/v$NODE/node-v$NODE-headers.tar.gz"
+echo "$NODE_HEADERS_SHA256  node-headers.tar.gz" | sha256sum --check --quiet
+mkdir node-headers && tar -xzf node-headers.tar.gz -C node-headers --strip-components 1
 
 src=/tmp/work/sherpa-onnx
 git clone --quiet --depth 1 --branch "$TAG" https://github.com/k2-fsa/sherpa-onnx.git "$src"
@@ -88,17 +94,14 @@ cmake -S "$src" -B "$src/build" "${FLAGS[@]}" \
 cmake --build "$src/build" --parallel "$(nproc)"
 cmake --install "$src/build"
 
+# cmake-js and node-addon-api, with every package they pull in, at the versions and integrity
+# hashes addon-tooling/package-lock.json pins.
 addon=$src/scripts/node-addon-api
-cat >"$addon/package.json" <<JSON
-{
-  "name": "sherpa-onnx-node-addon-build",
-  "private": true,
-  "dependencies": { "cmake-js": "$CMAKE_JS", "node-addon-api": "$NODE_ADDON_API" }
-}
-JSON
-(cd "$addon" && npm install --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/)
-(cd "$addon" && SHERPA_ONNX_INSTALL_DIR="$src/build/install" ./node_modules/.bin/cmake-js compile \
-  "${ADDON_FLAGS[@]}" --CDCMAKE_CXX_FLAGS="-ffile-prefix-map=$src=/sherpa-onnx")
+cp /tools/addon-tooling/package.json /tools/addon-tooling/package-lock.json "$addon/"
+(cd "$addon" && npm ci --ignore-scripts --no-audit --no-fund)
+(cd "$addon" && SHERPA_ONNX_INSTALL_DIR="$src/build/install" npm_config_nodedir=/tmp/work/node-headers \
+  ./node_modules/.bin/cmake-js compile "${ADDON_FLAGS[@]}" \
+  --CDCMAKE_CXX_FLAGS="-ffile-prefix-map=$src=/sherpa-onnx")
 
 # The npm package, checked against bun.lock's integrity, for its ONNX Runtime.
 mkdir npm && (cd npm && npm pack --silent --registry=https://registry.npmjs.org/ "$NPM_PACKAGE" >/dev/null)
@@ -153,6 +156,8 @@ Built by tools/sherpa-onnx/build-linux-x64.sh; SHA256SUMS lists the files.
 sherpa-onnx: https://github.com/k2-fsa/sherpa-onnx $TAG ($COMMIT) + node-addon.patch
 cmake flags: ${FLAGS[*]} -DCMAKE_C_FLAGS=-ffile-prefix-map=<src>=/sherpa-onnx -DCMAKE_CXX_FLAGS=-ffile-prefix-map=<src>=/sherpa-onnx
 addon: cmake-js $(installed cmake-js), node-addon-api $(installed node-addon-api), ${ADDON_FLAGS[*]}
+addon tooling: addon-tooling/package-lock.json $(sha256sum /tools/addon-tooling/package-lock.json | cut -d' ' -f1), npm ci
+node headers: node-v$NODE-headers.tar.gz $NODE_HEADERS_SHA256
 image: $IMAGE
 compiler: $(gcc --version | head -1)
 cmake: $(cmake --version | head -1)

@@ -126,3 +126,27 @@ describe.each([
     expect(PLATFORMS).toContain(platform);
   });
 });
+
+/** A file of the addon's build tooling, which both build scripts install. */
+const tooling = (name) => new URL(`./addon-tooling/${name}`, import.meta.url);
+
+describe("the addon's build tooling", () => {
+  it("is pinned exactly, every package with its integrity, and installed with npm ci", () => {
+    const manifest = JSON.parse(readFileSync(tooling("package.json"), "utf8"));
+    for (const version of Object.values(manifest.dependencies))
+      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    const lock = JSON.parse(readFileSync(tooling("package-lock.json"), "utf8"));
+    expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
+    const locked = Object.entries(lock.packages).filter(([path]) => path !== "");
+    expect(locked.length).toBeGreaterThan(0);
+    for (const [path, entry] of locked) {
+      expect(entry.resolved, path).toMatch(/^https:\/\/registry\.npmjs\.org\//);
+      expect(entry.integrity, path).toMatch(/^sha512-/);
+    }
+    for (const script of ["build-darwin-arm64.sh", "build-linux-x64.sh"]) {
+      const text = readFileSync(new URL(`./${script}`, import.meta.url), "utf8");
+      expect(text, script).toContain("npm ci --ignore-scripts");
+      expect(text, script).not.toMatch(/npm install\b/);
+    }
+  });
+});

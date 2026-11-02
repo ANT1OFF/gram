@@ -276,3 +276,78 @@ describe("the notices", () => {
     expect(pinned).toBe(catalog["sherpa-onnx-node"]);
   });
 });
+
+/**
+ * The first name of each C++ entity outside `std` that `file` defines or uses, from its mangled
+ * symbols (`_ZN<length><name>`; Mach-O adds a leading underscore). That is a namespace, or a class
+ * in the global namespace, and either marks the library the code came from.
+ */
+function cxxNamespaces(file) {
+  const text = readFileSync(file).toString("latin1");
+  const found = new Set();
+  for (const match of text.matchAll(/_ZN[KVRO]*(St)?(\d+)/g)) {
+    if (match[1]) continue;
+    const length = Number(match[2]);
+    const at = match.index + match[0].length;
+    const name = text.slice(at, at + length);
+    if (name.length === length && /^[A-Za-z_]\w*$/.test(name)) found.add(name);
+  }
+  return found;
+}
+
+describe.each(["darwin-arm64", "linux-x64"])("the committed %s sherpa-onnx build", (platform) => {
+  const manifest = JSON.parse(
+    readFileSync(new URL("./native-components.json", import.meta.url), "utf8"),
+  );
+  const build = new URL(`../sherpa-onnx/${platform}/`, import.meta.url);
+  const files = readFileSync(new URL("SHA256SUMS", build), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => new URL(line.split(/\s+\*?/)[1], build));
+
+  it("has a notice for every library its C++ symbols name", () => {
+    const own = Object.entries(manifest.ownNamespaces)
+      .filter(([key]) => key !== "$comment")
+      .flatMap(([, names]) => names);
+    const accounted = (name) =>
+      manifest.components.some((component) => component.namespaces?.includes(name)) ||
+      own.some((pattern) =>
+        pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern,
+      );
+    const unaccounted = files.flatMap((file) =>
+      [...cxxNamespaces(file)]
+        .filter((name) => !accounted(name))
+        .map((name) => `${name} (${file.pathname.split("/").at(-1)})`),
+    );
+    expect(unaccounted).toEqual([]);
+  });
+
+  it("carries every library the notices list", () => {
+    const namespaces = new Set(files.flatMap((file) => [...cxxNamespaces(file)]));
+    const text = files.map((file) => readFileSync(file).toString("latin1")).join("\n");
+    const absent = manifest.components
+      .filter(
+        (component) =>
+          !(component.namespaces ?? []).some((name) => namespaces.has(name)) &&
+          !(component.symbols ?? []).some((symbol) => text.includes(symbol)),
+      )
+      .map((component) => component.name);
+    expect(absent).toEqual([]);
+  });
+});
+
+describe("native-components.json", () => {
+  it("names how each component shows in the binaries, and ships its licence texts", () => {
+    const { components } = JSON.parse(
+      readFileSync(new URL("./native-components.json", import.meta.url), "utf8"),
+    );
+    for (const component of components) {
+      expect(
+        [...(component.namespaces ?? []), ...(component.symbols ?? [])].length,
+        component.name,
+      ).toBeGreaterThan(0);
+      for (const text of component.texts)
+        expect(readFileSync(new URL(`./texts/${text}`, import.meta.url), "utf8")).not.toBe("");
+    }
+  });
+});
