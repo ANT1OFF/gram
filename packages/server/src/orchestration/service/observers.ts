@@ -346,8 +346,8 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
           ),
         );
       if (!sent) return false;
-      yield* updateMemo(workspaceId, thread.id, (memo) => {
-        const { quiet: _, ...rest } = memo;
+      yield* updateMemo(workspaceId, thread.id, (current) => {
+        const { quiet: _, ...rest } = current;
         return { ...rest, wrapUp: true };
       });
       yield* orchestrationChanged(workspaceId);
