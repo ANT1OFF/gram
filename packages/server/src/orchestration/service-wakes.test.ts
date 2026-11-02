@@ -41,6 +41,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   waitSent,
   waitStatus,
@@ -146,7 +147,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const { session, workspaceId } = yield* openOrchestrator(world);
           const orchestrator = session.options.threadId;
           const worker = yield* spawn(session, { feature: "stacked", title: "Stacked" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           const other = { repo: "acme/app", number: 99 };
           world.prBadges.set("acme/app#99", otherBadge());
 
@@ -187,17 +188,18 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             ),
           );
           expect(digest.text).toContain("fired: acme/app#99 got a new push (head h2).");
-          expect(worker.session.sent).toHaveLength(1);
+          // The brief and the wrap-up of its silent stop.
+          expect(worker.session.sent).toHaveLength(2);
           // The worker's kept what it saw, so a restart measures its merge from the new head.
           expect((yield* outboxOf(workspaceId)).wakes?.[0]?.seen).toMatchObject({ head: "h2" });
 
           yield* watchedPr(world, other, otherBadge({ state: "MERGED", headRefOid: "h2" }));
-          const woken = yield* waitSent(worker.thread.id, 2);
-          expect(woken.sent[1]?.text).toContain("on acme/app#99 fired: it merged.");
-          expect(woken.sent[1]?.text).toContain(
+          const woken = yield* waitSent(worker.thread.id, 3);
+          expect(woken.sent[2]?.text).toContain("on acme/app#99 fired: it merged.");
+          expect(woken.sent[2]?.text).toContain(
             "```pr-event\npr: acme/app#99\nevent: merged\nhead: h2",
           );
-          yield* completeTurn(woken);
+          yield* stopSilently(woken);
           expect((yield* outboxOf(workspaceId)).wakes).toBeUndefined();
           expect(world.prWatches.get(`orchestration ${workspaceId}`)).toEqual([]);
           const late = yield* worker.session
@@ -503,7 +505,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const store = yield* ThreadStore;
         const { session, workspaceId } = yield* openOrchestrator(world);
         const worker = yield* spawn(session, { feature: "transient-reservation" });
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         yield* TestClock.adjust("16 minutes");
         yield* settle;
         yield* waitStatus(worker.thread.id, "cold");
@@ -529,7 +531,8 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         yield* TestClock.adjust("6 minutes");
         yield* settle;
         expect(yield* store.listQueue(worker.thread.id)).toHaveLength(0);
-        expect(worker.session.sent).toHaveLength(1);
+        // The brief and the wrap-up of its silent stop.
+        expect(worker.session.sent).toHaveLength(2);
 
         yield* Deferred.succeed(release, undefined);
         yield* Fiber.join(reservation);
@@ -642,7 +645,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const handlers = yield* orchestrationHandlers;
           const { session, workspaceId } = yield* openOrchestrator(world);
           const worker = yield* spawn(session, { feature: "mail-trigger", title: "Queue worker" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           const memo = outboxOf(workspaceId).pipe(
             Effect.map((outbox) => outbox.workers[worker.thread.id]),
           );

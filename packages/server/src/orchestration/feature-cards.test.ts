@@ -12,6 +12,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   withServer,
 } from "./test-harness.ts";
@@ -28,7 +29,7 @@ describe("feature cards", () => {
           const orchestration = yield* Orchestration;
           const { session, workspaceId } = yield* openOrchestrator(world);
           const worker = yield* spawn(session, { feature: "mail-trigger", title: "Queue worker" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           yield* settle;
 
           const one = yield* orchestration.featureCards(workspaceId);

@@ -624,6 +624,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           if (target.status !== "running" && target.status !== "starting") {
             return { threadId: target.thread.id, stopped: false, status: target.status };
           }
+          if (orchestration !== undefined) yield* orchestration.noteStop(caller, target.thread.id);
           yield* runtimes.interrupt(target.thread.id);
           return { threadId: target.thread.id, stopped: true };
         }).pipe(Effect.mapError(toolError("stop_thread"))),

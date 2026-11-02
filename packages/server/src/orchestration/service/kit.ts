@@ -722,6 +722,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const retrying = new Set<ThreadId>();
   /** Threads this service started in `auto`, until their first turn ends: see `onUpsert`. */
   const openedInAuto = new Set<ThreadId>();
+  /** Workers their orchestrator stopped with `stop_thread`, until that turn's end is heard. */
+  const stopsAsked = new Set<ThreadId>();
   const completedSeen = new Set<ThreadId>();
   const requestSeen = new Map<RequestId, { readonly threadId: ThreadId; readonly at: number }>();
   /** By thread id for a worker's own PR, and by thread id and URL for each extra one. */
@@ -951,6 +953,13 @@ export const makeOrchestrationKit = Effect.gen(function* () {
       const state = yield* findWorkspace(caller.workspaceId);
       return isDelegated({ caller, target, workspace: state?.workspace });
     });
+
+  const noteStop: OrchestrationShape["noteStop"] = (callerId, targetId) =>
+    delegated(callerId, targetId).pipe(
+      Effect.map((own) => {
+        if (own) stopsAsked.add(targetId);
+      }),
+    );
 
   // Message-only authority: current workers can coordinate with their bound parent or siblings.
   // Read persisted relationships on every gate and dispatch; no thread text establishes ownership.
@@ -1217,6 +1226,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     parkedWorkers,
     retrying,
     openedInAuto,
+    stopsAsked,
+    noteStop,
     completedSeen,
     requestSeen,
     prMarks,

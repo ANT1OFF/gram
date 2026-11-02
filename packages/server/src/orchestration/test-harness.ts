@@ -50,6 +50,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import { OrchestrationMemory } from "./memory.ts";
 import { decodeOutbox } from "./outbox.ts";
+import { wrapUpText } from "./rules.ts";
 import { Orchestration, OrchestrationLive } from "./service.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
@@ -458,16 +459,19 @@ const countedTurnEnds = (threadId: ThreadId) =>
 
 /**
  * Ends the running turn as the adapter would, and waits for the thread to be idle again. For a
- * worker it also waits until the service has heard of it, so a test that moves the clock next
- * moves it over a window that is already open.
+ * worker it waits instead until the service has heard of it, which it does only once the turn has
+ * ended, so a test that moves the clock next moves it over a window that is already open. A
+ * worker's own status isn't waited on: the service may give it its next turn (a wrap-up) as soon
+ * as it hears, before any look sees it idle.
  */
 export const completeTurn = (session: FakeSession, text?: string) =>
   Effect.gen(function* () {
     const { threadId } = session.options;
     const before = yield* countedTurnEnds(threadId);
     yield* session.completeTurn(text);
-    yield* waitStatus(threadId, "idle");
-    if (before !== undefined) {
+    if (before === undefined) {
+      yield* waitStatus(threadId, "idle");
+    } else {
       yield* waitReal(
         "the service to hear of the turn end",
         countedTurnEnds(threadId).pipe(
@@ -476,6 +480,25 @@ export const completeTurn = (session: FakeSession, text?: string) =>
       );
     }
     yield* settle;
+  });
+
+/**
+ * A worker's silent stop as the orchestrator comes to hear of it: its turn ends with no report,
+ * the service sends it its one wrap-up turn (`wrapUpDue`), which must arrive, and that turn ends
+ * with no report either. Returns the wrap-up's text.
+ */
+export const stopSilently = (session: FakeSession, text?: string) =>
+  Effect.gen(function* () {
+    const { threadId } = session.options;
+    const before = session.sent.length;
+    yield* completeTurn(session, text);
+    const worker = yield* waitSent(threadId, before + 1);
+    const sent = worker.sent[before]?.text;
+    if (sent !== wrapUpText("ended")) {
+      return yield* Effect.die(new Error(`expected a wrap-up turn, got ${JSON.stringify(sent)}`));
+    }
+    yield* completeTurn(worker);
+    return sent;
   });
 
 /** The project of `world.repo`. */

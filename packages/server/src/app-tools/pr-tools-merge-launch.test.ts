@@ -22,6 +22,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   withServer,
   type World,
@@ -217,7 +218,7 @@ describe("merge_when_ready", () => {
             const registry = yield* AppToolRegistry;
             const { session, thread, workspaceId } = yield* openOrchestrator(world);
             const worker = yield* spawn(session, { feature: "voice-desktop" });
-            yield* completeTurn(worker.session);
+            yield* stopSilently(worker.session);
             yield* atAutonomy(thread, "full");
             world.prHeads.set(12, { headRefName: worker.thread.checkout.branch! });
             const tools = registry.forTransport(worker.thread.id, "worker");

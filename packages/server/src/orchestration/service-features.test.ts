@@ -20,6 +20,7 @@ import { hasGit, makeRepo } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { orchestrationHandlers } from "./handler.ts";
+import { wrapUpText } from "./rules.ts";
 import { Orchestration } from "./service.ts";
 import {
   atAutonomy,
@@ -32,6 +33,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   stallGit,
   waitReal,
   waitSent,
@@ -50,7 +52,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const { session, thread, workspaceId } = yield* openOrchestrator(world);
           const worker = yield* spawn(session, { feature: "mail-trigger" });
           const parked = yield* spawn(session, { feature: "billing" });
-          yield* completeTurn(parked.session);
+          yield* stopSilently(parked.session);
           yield* session.callTool("archive_thread", { threadId: parked.thread.id });
           expect(session.options.instructions).toContain("autonomy is `publish`");
           expect(worker.session.options.instructions).toContain(
@@ -76,6 +78,10 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(freed.options.instructions).toContain(
             "Push and open pull requests without approval",
           );
+          // Its turn ended without a word, so the session at full opens on its wrap-up turn.
+          yield* waitSent(worker.thread.id, 1);
+          expect(freed.sent[0]?.text).toBe(wrapUpText("ended"));
+          yield* completeTurn(freed);
 
           const supervised = yield* atAutonomy(thread, "supervised");
           expect(supervised.options).toMatchObject({ outwardGate: "all" });
@@ -247,7 +253,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           yield* settle;
           expect(session.sent).toHaveLength(1);
           // …and is in the next digest that something else sends.
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           yield* TestClock.adjust("60 seconds");
           yield* waitSent(thread.id, 2);
           const digest = session.sent[1]!.text;
@@ -291,8 +297,8 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(busy.message).toContain("Form, Api are still running or waiting on you");
           expect((yield* store.getThread(form.result.threadId)).parked).toBe(false);
 
-          yield* completeTurn(form.session);
-          yield* completeTurn(api.session);
+          yield* stopSilently(form.session);
+          yield* stopSilently(api.session);
           yield* settle;
           const parked = yield* handlers["orchestrator.archiveFeature"]({
             workspaceId,
@@ -416,7 +422,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(session.sent).toHaveLength(sentBefore);
 
           // …while another feature's news does, and carries the pause and the paused feature's row.
-          yield* completeTurn(docs.session);
+          yield* stopSilently(docs.session);
           yield* TestClock.adjust("60 seconds");
           yield* waitSent(thread.id, sentBefore + 1);
           const digest = session.sent[sentBefore]!.text;
@@ -483,7 +489,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           // A digest is acknowledged with both features in its snapshot.
           yield* settle;
           const sentBefore = session.sent.length;
-          yield* completeTurn(docs.session);
+          yield* stopSilently(docs.session);
           yield* TestClock.adjust("60 seconds");
           yield* waitSent(thread.id, sentBefore + 1);
           yield* completeTurn(session);
@@ -637,7 +643,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const orchestration = yield* Orchestration;
           const { session, workspaceId } = yield* openOrchestrator(world);
           const form = yield* spawn(session, { feature: "board", title: "Form" });
-          yield* completeTurn(form.session);
+          yield* stopSilently(form.session);
           yield* orchestration.setFeaturePaused(workspaceId, "board", true);
           // Idle with its session open, as a pause leaves it: a monitor's notice is queued, not sent.
           expect(
@@ -648,17 +654,18 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           yield* settle;
           yield* TestClock.adjust("10 minutes");
           yield* settle;
-          expect(yield* allSent(form.thread.id)).toHaveLength(1);
+          // The brief and the wrap-up of its silent stop.
+          expect(yield* allSent(form.thread.id)).toHaveLength(2);
 
           yield* orchestration.setFeaturePaused(workspaceId, "board", false);
-          const sent = yield* sentCount(form.thread.id, 2);
-          expect(sent[1]).toContain("CI failed on #7");
-          yield* completeTurn(form.session);
+          const sent = yield* sentCount(form.thread.id, 3);
+          expect(sent[2]).toContain("CI failed on #7");
+          yield* stopSilently(form.session);
 
           // The user typing into a paused feature's worker is their own call.
           yield* orchestration.setFeaturePaused(workspaceId, "board", true);
           yield* runtimes.send(form.thread.id, { text: "Look at the form again." });
-          expect((yield* sentCount(form.thread.id, 3))[2]).toContain("Look at the form again.");
+          expect((yield* sentCount(form.thread.id, 5))[4]).toContain("Look at the form again.");
         }),
       ),
   );
@@ -778,7 +785,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const session = yield* atAutonomy(thread, "full");
           const sender = yield* spawn(session, { feature: "sender" });
           const receiver = yield* spawn(session, { feature: "receiver" });
-          yield* completeTurn(receiver.session);
+          yield* stopSilently(receiver.session);
           const hosted = registry
             .forTransport(sender.thread.id, "worker")
             .find((tool) => tool.descriptor.name === "send_message")!;
@@ -796,7 +803,8 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             .pipe(Effect.flip);
           expect(answered.message).toContain("feature_paused:");
           yield* settle;
-          expect(receiver.session.sent).toHaveLength(1);
+          // The brief and the wrap-up of its silent stop, and nothing since.
+          expect(receiver.session.sent).toHaveLength(2);
           // Resumed, the same message goes through.
           yield* orchestration.setFeaturePaused(workspaceId, "receiver", false);
           expect(

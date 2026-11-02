@@ -52,6 +52,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   waitSent,
   type World,
@@ -1084,7 +1085,7 @@ describe.skipIf(!hasGit)("joining a workspace", () => {
           const a = yield* openOrchestrator(world);
           const b = yield* openSecondWorkspace("second");
           const worker = yield* spawn(a.session, { feature: "mail" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           yield* worker.session.callTool("schedule_wake", { inMinutes: 30, note: "check CI" });
           yield* store.updateThread(worker.thread.id, (t) => ({
             ...t,
