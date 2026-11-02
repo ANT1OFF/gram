@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
@@ -15,11 +16,16 @@ import * as Layer from "effect/Layer";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
 import {
   ARCHIVED_GRACE_MS,
+  anyInside,
   asChecked,
   checkMissingWorktree,
   checkWorktree,
+  freeUnlessInUse,
+  inUse,
+  lsofCwds,
   othersCheckouts,
   freeNodeModules,
+  processInside,
   MERGED_GRACE_MS,
   sweepDue,
   sweepStep,
@@ -282,6 +288,16 @@ describe("sweepDue", () => {
       ],
       ["a worker that only went idle", facts({ thread: thread({ parked: false }) })],
       [
+        // As `feat-voice-vocab` was: open, cold between turns, no PR yet, never completed.
+        "a live worker with no PR, cold between turns",
+        facts({
+          thread: (() => {
+            const { boundPr: _, ...live } = thread({ parked: false });
+            return live;
+          })(),
+        }),
+      ],
+      [
         "a worker reopened since its merge",
         facts({
           thread: thread({
@@ -318,6 +334,29 @@ describe("sweepDue", () => {
       expect(sweepDue(facts({ status }), SWEEP, NOW), status).toBeUndefined();
     }
   });
+});
+
+describe("processes inside a worktree", () => {
+  it("reads every working folder lsof lists", () => {
+    const out = "p1\nn/Users/a/.worktrees/x\np2\nn/\np3\nn/tmp/y (deleted)\nf cwd\n";
+    expect(lsofCwds(out)).toEqual(["/Users/a/.worktrees/x", "/", "/tmp/y (deleted)"]);
+  });
+
+  it("counts the worktree itself and anything below it, never a sibling", () => {
+    expect(anyInside(PATH, PATH, [PATH])).toBe(true);
+    expect(anyInside(PATH, PATH, [`${PATH}/node_modules/.bin`])).toBe(true);
+    expect(anyInside(PATH, PATH, ["/r/.worktrees/feat-x2", "/r", "/"])).toBe(false);
+    // Through a link: the process reports the real folder.
+    expect(
+      anyInside(PATH, "/private/r/.worktrees/feat-x", ["/private/r/.worktrees/feat-x/apps"]),
+    ).toBe(true);
+  });
+
+  it.effect("keeps a worktree another thread holds whatever its processes", () =>
+    Effect.gen(function* () {
+      expect(yield* inUse(PATH, [`${PATH}/`]).pipe(Effect.provide(ProcLive))).toBe(true);
+    }),
+  );
 });
 
 describe("asChecked", () => {
@@ -495,6 +534,41 @@ describe.skipIf(!hasGit)("the sweep's git", () => {
         );
         expect(failed.noPrOpen).toBe(false);
       }),
+  );
+
+  it.effect.skipIf(process.platform !== "darwin" && process.platform !== "linux")(
+    "never touches a file in a worktree a process works in, node_modules included",
+    () =>
+      Effect.gen(function* () {
+        const { tree } = setup();
+        const deps = nodePath.join(tree, "node_modules", "a");
+        write(nodePath.join(deps, "index.js"), "a\n");
+        // A process the threads know nothing about, like an agent's or a dev server's, works in it.
+        const child = spawn("sleep", ["60"], { cwd: deps, stdio: "ignore" });
+        try {
+          yield* Effect.promise(
+            () => new Promise<void>((resolve) => child.once("spawn", () => resolve())),
+          );
+          expect(yield* processInside(tree).pipe(Effect.provide(ProcLive))).toBe(true);
+          expect(yield* freeUnlessInUse(tree, []).pipe(Effect.provide(ProcLive))).toBeUndefined();
+          expect(fs.existsSync(nodePath.join(deps, "index.js"))).toBe(true);
+        } finally {
+          child.kill();
+        }
+        yield* Effect.promise(
+          () =>
+            new Promise<void>((resolve) =>
+              child.exitCode !== null || child.signalCode !== null
+                ? resolve()
+                : child.once("exit", () => resolve()),
+            ),
+        );
+        // With it gone, the same step frees them.
+        expect(yield* processInside(tree).pipe(Effect.provide(ProcLive))).toBe(false);
+        expect(yield* freeUnlessInUse(tree, []).pipe(Effect.provide(ProcLive))).toBe(1);
+        expect(fs.existsSync(nodePath.join(tree, "node_modules"))).toBe(false);
+      }),
+    15_000,
   );
 
   it.effect("frees untracked node_modules at the top and in packages, never tracked ones", () =>

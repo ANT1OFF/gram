@@ -9,13 +9,15 @@
 // linked worktree no other thread holds, and never at a main checkout or at a worker spanning
 // repos. Before either step, git is asked afresh: a worktree with uncommitted changes, or whose HEAD
 // no remote has, is left alone; one whose folder was deleted outside Gram has nothing left to lose,
-// and is removed (its registration pruned) once due.
+// and is removed (its registration pruned) once due. Last, right before either step, no process
+// may work inside it (`processInside`): an agent, a dev server or a shell the threads don't know
+// about keeps it, and so does a platform or a scan that can't tell.
 // Removal also needs the PR merged or closed (for an archived worker with none, no PR open), goes
 // through `closeAtRest` (the app's own close, which refuses a dirty tree, a thread that got busy or a
 // terminal running a command, and removes on the `slow` tier), and never deletes a branch. It logs counts, never paths, and tells each workspace one digest line.
 //
-// Known and accepted gap. Whether another thread holds or follows the worktree is read last right
-// before the deletion, not held across it: an agent elsewhere that moves into this worktree while
+// Known and accepted gap. Whether another thread holds or follows the worktree, or a process works
+// in it, is read last right before the deletion, not held across it: an agent elsewhere that moves into this worktree while
 // `freeNodeModules` or `git worktree remove` is still running can lose `node_modules` (back with
 // `pnpm install`) or the checked-out tree, whose work passed the clean-and-pushed check. Taking a
 // worktree days after its last activity makes that rare, and closing it needs a checkout lock
@@ -23,7 +25,8 @@
 // threads, which is a follow-up of its own (the same family as the archive race), not this sweep.
 
 import type { Dirent } from "node:fs";
-import { lstat, readdir, rm } from "node:fs/promises";
+import { lstat, readdir, readlink, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import {
   combinePrFacts,
@@ -40,7 +43,7 @@ import {
   type WorkspaceId,
   type WorktreeSweep,
 } from "@gram/contracts";
-import { git, Pr, samePath, type Proc } from "@gram/git";
+import { git, isInside, Pr, Proc, realPathOrOwned, samePath } from "@gram/git";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -369,6 +372,85 @@ export const freeNodeModules = (path: string): Effect.Effect<number, never, Proc
     return freed;
   });
 
+/** The working folders in `lsof -d cwd -Fn` output: one `n<path>` line per process. */
+export const lsofCwds = (stdout: string): ReadonlyArray<string> =>
+  stdout
+    .split("\n")
+    .filter((line) => line.startsWith("n/"))
+    .map((line) => line.slice(1));
+
+/** Every process's working folder, or `undefined` where they can't be listed. */
+const processCwds = (): Effect.Effect<ReadonlyArray<string> | undefined, never, Proc> =>
+  Effect.gen(function* () {
+    if (process.platform === "linux") {
+      return yield* Effect.promise(async () => {
+        const pids = await readdir("/proc").catch(() => undefined);
+        if (pids === undefined) return undefined;
+        const cwds = await Promise.all(
+          // Another user's process, or one gone since, has no folder to read: it isn't ours.
+          pids
+            .filter((pid) => /^\d+$/.test(pid))
+            .map((pid) => readlink(`/proc/${pid}/cwd`).catch(() => undefined)),
+        );
+        return cwds.filter((cwd): cwd is string => cwd !== undefined);
+      });
+    }
+    if (process.platform !== "darwin") return undefined;
+    const proc = yield* Proc;
+    const out = yield* proc
+      .run("/usr/sbin/lsof", ["-n", "-d", "cwd", "-Fn"], {
+        cwd: homedir(),
+        tier: "local",
+        env: { PATH: "/usr/bin:/bin:/usr/sbin", LC_ALL: "C" },
+        maxOutputBytes: 16 * 1024 * 1024,
+      })
+      .pipe(Effect.option);
+    // lsof exits 1 when it couldn't read some process, and still lists the rest.
+    if (Option.isNone(out) || out.value.truncated || out.value.status > 1) return undefined;
+    const cwds = lsofCwds(out.value.stdout);
+    return cwds.length === 0 ? undefined : cwds;
+  });
+
+/** Whether one of `cwds` is `path` or below it, as written or through its links. */
+export const anyInside = (path: string, real: string, cwds: ReadonlyArray<string>): boolean =>
+  cwds.some((cwd) => isInside(path, cwd) || isInside(real, cwd));
+
+/**
+ * Whether a process works inside the worktree at `path`: an agent, a dev server or a shell, the
+ * threads' state aside. `true` when that can't be told, so the sweep leaves the worktree be.
+ */
+export const processInside = (path: string): Effect.Effect<boolean, never, Proc> =>
+  Effect.gen(function* () {
+    const cwds = yield* processCwds();
+    if (cwds === undefined) return true;
+    const real = yield* Effect.promise(() => realPathOrOwned(path));
+    return anyInside(path, real, cwds);
+  });
+
+/**
+ * The last look before the sweep takes anything from the worktree at `path`: another thread holds
+ * or follows its agent into it (`held`), or a process works inside it (`processInside`).
+ */
+export const inUse = (
+  path: string,
+  held: ReadonlyArray<string>,
+): Effect.Effect<boolean, never, Proc> =>
+  held.some((each) => samePath(each, path)) ? Effect.succeed(true) : processInside(path);
+
+/**
+ * The free step's deletion behind its last look: `freeNodeModules` unless the worktree is `inUse`,
+ * since `node_modules` pulled from under a running process breaks it. How many went, or
+ * `undefined` when it was left be.
+ */
+export const freeUnlessInUse = (
+  path: string,
+  held: ReadonlyArray<string>,
+): Effect.Effect<number | undefined, never, Proc> =>
+  Effect.gen(function* () {
+    if (yield* inUse(path, held)) return undefined;
+    return yield* freeNodeModules(path);
+  });
+
 /** The checkouts threads other than `self` hold or follow their agent into (`usedCheckoutPaths`). */
 export const othersCheckouts = (
   threads: ReadonlyArray<Thread>,
@@ -459,11 +541,11 @@ const sweepOnce = (
         counts.kept += 1;
         continue;
       }
-      // Asked again with the step in hand: another thread may have followed its agent in since.
-      const followed = othersCheckouts(yield* store.listThreads, thread.id).some((held) =>
-        samePath(held, path),
-      );
-      if (followed) {
+      // Asked again with the step in hand: another thread may have followed its agent in since, or
+      // a process the threads don't know about may work there.
+      const held = othersCheckouts(yield* store.listThreads, thread.id);
+      const used = gone ? held.some((each) => samePath(each, path)) : yield* inUse(path, held);
+      if (used) {
         counts.kept += 1;
         continue;
       }
@@ -500,10 +582,10 @@ const sweepOnce = (
               Effect.gen(function* () {
                 // Last look before anything goes: another thread's agent may have moved in. Not held
                 // across the deletion; see "Known and accepted gap" at the top.
-                const used = othersCheckouts(yield* store.listThreads, thread.id);
-                return used.some((held) => samePath(held, path))
-                  ? undefined
-                  : yield* freeNodeModules(path);
+                return yield* freeUnlessInUse(
+                  path,
+                  othersCheckouts(yield* store.listThreads, thread.id),
+                );
               }),
               asChecked(thread),
             );
