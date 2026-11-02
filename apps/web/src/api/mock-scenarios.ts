@@ -16,6 +16,7 @@ import type {
 } from "@gram/contracts";
 import { askQuestion, closeQuestion, questionDate } from "@gram/contracts";
 import { MOCK_DEPS_GIT, MOCK_DEPS_PLAN, MOCK_DEPS_RECAP } from "./mock-assist";
+import type { MockReadmeSimulation } from "./mock-readme";
 import {
   type MockBoardSimulation,
   type MockFinishedSimulation,
@@ -215,6 +216,11 @@ export async function simulateWorkerQuestions(
  */
 export function simulateQuietBusy(core: MockCoreScenes): Promise<MockQuietBusySimulation> {
   return core.orchestration.simulateQuietBusy(PROJECTS.map((project) => project.id));
+}
+
+/** Dev and screenshot hook: `storefront`, the README's calm scene (`mock-readme.ts`). */
+export function simulateReadme(core: MockCoreScenes): Promise<MockReadmeSimulation> {
+  return core.orchestration.simulateReadme(PROJECTS.map((project) => project.id));
 }
 
 /**

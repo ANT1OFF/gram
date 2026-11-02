@@ -265,6 +265,42 @@ const openQuietBusy = async (page: Page): Promise<string> => {
   return page.evaluate(() => sessionStorage.getItem("gram.shots.workspace") ?? "");
 };
 
+/** The seeded solo threads that ask or read oddly out of context, parked for the README's shots. */
+const README_PARKED = ["t-flaky", "t-question", "t-plan", "t-background", "t-edits-codex"];
+
+/**
+ * The README's scene (`simulateReadme`): `storefront`'s orchestrator in the default look, the right
+ * panel closed and no usage limits reported, at `width` × `height`. The README's images in
+ * `docs/assets/` are `readme-hero`, `readme-board` and `readme-quiet`, resized to 1600 px wide and
+ * palette-quantised.
+ */
+const openReadme = async (page: Page, width: number, height: number) => {
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.limits", "none"));
+  await seedMockSettings(page, { panel: { open: false } });
+  // Wide enough for the full sidebar, whose workspace row opens the orchestrator; resized below.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/t/t-deps");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  const made = await page.evaluate(async (parked) => {
+    const mock = window.gramMock!;
+    for (const id of parked) await mock.park(id as never, true);
+    const scene = await mock.simulateReadme();
+    // A memory with one decision in it, so the orchestrator doesn't offer an import.
+    await mock.writeMemory(
+      scene.workspaceId,
+      "decisions.md",
+      "# Decisions\n\n- Checkout and the emails show the same delivery information.\n",
+    );
+    return scene;
+  }, README_PARKED);
+  await openOrchestrator(page, made.orchestratorThreadId);
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await page.getByText("Started six workers", { exact: false }).waitFor();
+  await page.setViewportSize({ width, height });
+  await page.mouse.move(width - 4, height - 4);
+  await page.waitForTimeout(800);
+};
+
 /** Board in the title bar's view switcher. */
 const openBoardView = async (page: Page) => {
   await page
@@ -901,6 +937,37 @@ export const SHOTS: readonly Shot[] = [
       await page.locator(`[data-testid="quiet-strip-workspace"][data-workspace="${made}"]`).click();
       await page.getByTestId("quiet-peek").waitFor();
       await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "readme-hero",
+    title:
+      "README: `storefront`'s orchestrator, its workers in the sidebar and one question for you",
+    modes: ["dark"],
+    open: (page) => openReadme(page, 1280, 1000),
+  },
+  {
+    name: "readme-board",
+    title: "README: `storefront` on the Board",
+    modes: ["dark"],
+    open: async (page) => {
+      // Narrow and without the sidebar, which the hero shows, so the rows read at README width.
+      await openReadme(page, 1120, 660);
+      await page.getByRole("button", { name: "Hide sidebar" }).click();
+      await openBoardView(page);
+      await page.getByTestId("rail-worker").first().waitFor();
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "readme-quiet",
+    title: "README: Quiet over `storefront`, its one question as the card",
+    modes: ["dark"],
+    open: async (page) => {
+      await openReadme(page, 1024, 640);
+      await page.getByTestId("quiet-toggle").click();
+      await page.getByTestId("quiet-card").waitFor();
+      await page.waitForTimeout(800);
     },
   },
   {

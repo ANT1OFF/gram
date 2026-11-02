@@ -70,6 +70,7 @@ import {
 } from "./mock-board";
 import { simulateWaits } from "./mock-board-waits";
 import { simulateQuietBusy, simulateQuietWorkspaces } from "./mock-quiet";
+import { simulateReadme } from "./mock-readme";
 import { simulateRelease } from "./mock-release";
 import { simulate } from "./mock-orchestration-report";
 import { ledgerEntry, slugOf, groupByFeature } from "./mock-ledger";
@@ -1718,6 +1719,11 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     /** `simulateQuietBusy` (`mock-quiet.ts`). */
     simulateQuietBusy(projectIds: readonly ProjectId[]) {
       return simulateQuietBusy(scenes, projectIds);
+    },
+
+    /** `simulateReadme` (`mock-readme.ts`). */
+    simulateReadme(projectIds: readonly ProjectId[]) {
+      return simulateReadme(scenes, projectIds);
     },
 
     /** `simulateRelease` (`mock-release.ts`). */
