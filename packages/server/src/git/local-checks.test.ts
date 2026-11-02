@@ -245,7 +245,8 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
       }),
   );
 
-  it.live.skipIf(process.platform === "win32")(
+  // Selected-source preparation runs only on Linux; the test after these checks it refuses elsewhere.
+  it.live.skipIf(process.platform !== "linux")(
     "prepares only an approved merged-tree selection and refuses substitutions",
     () =>
       Effect.gen(function* () {
@@ -520,7 +521,8 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
       }),
   );
 
-  it.live.skipIf(process.platform === "win32")(
+  // Selected-source preparation runs only on Linux; the test after these checks it refuses elsewhere.
+  it.live.skipIf(process.platform !== "linux")(
     "refuses attribute-transformed selected bytes before starting the command",
     () =>
       Effect.gen(function* () {
@@ -572,6 +574,47 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
         expect(outcome).toMatchObject({
           status: "failed",
           reason: "selected-source materialization differs",
+        });
+        expect(invoked).toBe(false);
+        removeDir(dir);
+      }),
+  );
+
+  it.live.skipIf(process.platform === "linux" || process.platform === "win32")(
+    "refuses a selected-source check off Linux before starting the command",
+    () =>
+      Effect.gen(function* () {
+        const { dir, repo, head, base } = fixture();
+        const tree = fixtureTree(dir, repo, base, head);
+        const raw = JSON.stringify({
+          schema: "gram.selected-source/v1",
+          head,
+          base,
+          tree,
+          entries: [],
+        });
+        const manifest = nodePath.join(dir, "selection.json");
+        write(manifest, raw);
+        let invoked = false;
+        const runner: LocalCheckRunnerShape["run"] = () =>
+          Effect.sync(() => {
+            invoked = true;
+            return { ok: true };
+          });
+        const outcome = yield* Effect.gen(function* () {
+          yield* configured(repo, {
+            command: "synthetic",
+            preparation: {
+              manifest,
+              sha256: createHash("sha256").update(raw).digest("hex"),
+            },
+          });
+          return yield* checked(repo, head, base);
+        }).pipe(Effect.provide(layer(nodePath.join(dir, "off-linux.db"), dir, runner, false)));
+        expect(outcome).toMatchObject({
+          status: "failed",
+          reason: "selected-source metadata preparation refused",
+          failure: { kind: "unstartable" },
         });
         expect(invoked).toBe(false);
         removeDir(dir);

@@ -3,7 +3,15 @@ import { ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { materializeSelectedPublisher } from "./local-checks.ts";
@@ -20,7 +28,8 @@ const run = (cwd: string, ...args: string[]) =>
     },
   }).trim();
 const fixture = (attributes = "", source = "public synthetic source\n", archive = false) => {
-  const root = mkdtempSync(path.join(tmpdir(), "gram-selected-publisher-"));
+  // Canonical, as the publisher must be: macOS's temp folder is behind a symlink.
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "gram-selected-publisher-")));
   const repo = path.join(root, "repo");
   mkdirSync(repo);
   run(repo, "init", "-q", "--template=");
@@ -118,7 +127,22 @@ const materialize = (f: ReturnType<typeof fixture>, sha256 = f.sha256) =>
     ).pipe(Effect.provide(ProcLive)),
   );
 
-describe("explicit selected publisher preparation", () => {
+// Selected-source preparation runs only on Linux (`selectedSourceManifest`); elsewhere it refuses.
+const linux = process.platform === "linux";
+
+describe.skipIf(linux)("explicit selected publisher preparation off Linux", () => {
+  it("refuses before materializing anything", async () => {
+    const f = fixture();
+    try {
+      await expect(materialize(f)).rejects.toThrow("selected-source preparation requires Linux");
+      expect(existsSync(path.join(f.publisher, "source.txt"))).toBe(false);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.runIf(linux)("explicit selected publisher preparation", () => {
   it("prepares selected raw bytes and leaves the omitted synthetic object absent", async () => {
     const f = fixture();
     try {

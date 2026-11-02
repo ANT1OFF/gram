@@ -3,7 +3,7 @@ import { ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { prepareSelectedPrivatePublisher } from "./local-checks.ts";
@@ -21,7 +21,8 @@ const run = (cwd: string, ...args: string[]) =>
     },
   }).trim();
 const fixture = (kind: "valid" | "changed" | "alias") => {
-  const root = mkdtempSync(path.join(tmpdir(), "gram-private-selected-"));
+  // Canonical, as the publisher must be: macOS's temp folder is behind a symlink.
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "gram-private-selected-")));
   const source = path.join(root, "source"),
     runroot = path.join(root, "private");
   mkdirSync(source);
@@ -105,7 +106,22 @@ const prepare = (f: ReturnType<typeof fixture>) =>
     }).pipe(Effect.provide(ProcLive)),
   );
 
-describe("private selected publisher preparation", () => {
+// Selected-source preparation runs only on Linux (`selectedSourceManifest`); elsewhere it refuses.
+const linux = process.platform === "linux";
+
+describe.skipIf(linux)("private selected publisher preparation off Linux", () => {
+  it("refuses before preparing the publisher", async () => {
+    const f = fixture("valid");
+    try {
+      await expect(prepare(f)).rejects.toThrow("selected-source preparation requires Linux");
+      expect(existsSync(path.join(f.publisher, ".git"))).toBe(false);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.runIf(linux)("private selected publisher preparation", () => {
   it("prepares a private indexed worktree without selected or omitted checkout", async () => {
     const f = fixture("valid");
     try {
