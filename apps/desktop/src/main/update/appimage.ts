@@ -101,6 +101,41 @@ export async function verifyAppImageCandidate(options: {
     throw new Error("The downloaded update changed while it was being verified.");
 }
 
+interface FileIdentity {
+  readonly file: boolean;
+  readonly dev: bigint;
+  readonly ino: bigint;
+  readonly size: bigint;
+  readonly mtimeNs: bigint;
+  readonly ctimeNs: bigint;
+}
+
+/**
+ * What tells one file at `path` from another put there since. The inode alone doesn't: ext4 hands
+ * a deleted file's inode number straight to the next one created, so a file removed and rewritten
+ * keeps it. Its size and its modification and change times, to the nanosecond, change all the same.
+ */
+async function identity(path: string): Promise<FileIdentity> {
+  const info = await lstat(path, { bigint: true });
+  return {
+    file: info.isFile(),
+    dev: info.dev,
+    ino: info.ino,
+    size: info.size,
+    mtimeNs: info.mtimeNs,
+    ctimeNs: info.ctimeNs,
+  };
+}
+
+const sameFile = (a: FileIdentity, b: FileIdentity) =>
+  a.file &&
+  b.file &&
+  a.dev === b.dev &&
+  a.ino === b.ino &&
+  a.size === b.size &&
+  a.mtimeNs === b.mtimeNs &&
+  a.ctimeNs === b.ctimeNs;
+
 /**
  * Writes `snapshot` over the AppImage at `target` in one step: its bytes, streamed from the
  * snapshot's descriptor and digest-checked as they go (the last chunk is withheld unless they
@@ -112,8 +147,8 @@ export async function installAppImage(
   snapshot: Pick<CandidateSnapshot, "deliver">,
   target: string,
 ): Promise<void> {
-  const before = await lstat(target);
-  if (!before.isFile()) throw new Error("The AppImage to replace isn't a file any more.");
+  const before = await identity(target);
+  if (!before.file) throw new Error("The AppImage to replace isn't a file any more.");
   const temp = join(
     dirname(target),
     `.${basename(target)}.gram-update-${randomBytes(6).toString("hex")}`,
@@ -135,8 +170,7 @@ export async function installAppImage(
     await owned.close();
     handle = undefined;
     await chmod(temp, 0o755);
-    const now = await lstat(target);
-    if (!now.isFile() || now.ino !== before.ino || now.dev !== before.dev)
+    if (!sameFile(before, await identity(target)))
       throw new Error("The AppImage was replaced while the update was written.");
     await rename(temp, target);
   } catch (error) {
