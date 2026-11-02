@@ -20,6 +20,8 @@ import {
   git,
   gitFailMsg,
   porcelainChanges,
+  STRICT_REMOVE_CONFIG,
+  STRICT_STATUS_ARGS,
   tryRepoRoots,
   tryRepoTop,
 } from "./exec.ts";
@@ -559,7 +561,7 @@ export const worktreeCleanliness = (dir: string): Effect.Effect<WorktreeCleanlin
     const own = tryRealPathSync(dir);
     if (top.status !== 0 || own === undefined || tryRealPathSync(top.stdout.trim()) !== own)
       return "unknown" as const;
-    const status = yield* git(dir, ["status", "--porcelain"]);
+    const status = yield* git(dir, STRICT_STATUS_ARGS);
     if (status.status !== 0 || status.truncated) return "unknown" as const;
     return porcelainChanges(status.stdout) > 0 ? ("dirty" as const) : ("clean" as const);
   }).pipe(Effect.orElseSucceed(() => "unknown" as const));
@@ -600,7 +602,14 @@ export const removeDirAllResilient = (path: string): Effect.Effect<void, Worktre
  */
 export const removeWorktreeDir = (repoPath: string, worktreeDir: string, force: boolean) =>
   Effect.gen(function* () {
-    const args = ["-c", "core.longpaths=true", "worktree", "remove", worktreeDir];
+    const args = [
+      "-c",
+      "core.longpaths=true",
+      ...STRICT_REMOVE_CONFIG,
+      "worktree",
+      "remove",
+      worktreeDir,
+    ];
     if (force) args.push("--force");
     const out = yield* git(repoPath, args, { tier: "slow" }).pipe(Effect.mapError(toFailed));
     if (out.status === 0) return;

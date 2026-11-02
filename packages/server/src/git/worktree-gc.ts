@@ -2,18 +2,24 @@
 // they have sat for `freeAfterDays`, and closes the thread with its worktree after `removeAfterDays`,
 // or `MERGED_GRACE_MS` after its PR merged. Every thread kind but an orchestrator: a worker once the
 // ledger reads it finished, any other thread once it is archived or its PRs are all merged or closed.
+// An archived worker with no PR of its own (a reviewer, a research or release worker) goes
+// `ARCHIVED_GRACE_MS` after it was archived (`parkedAt`), once clean, pushed and with no PR open for
+// its branch. Only worktrees in the repo's own `.worktrees/` folder are ever taken, and a thread
+// with a pending wake is never closed: its wake would go with it.
 //
 // Invariants. It only ever looks at a finished thread at rest with nothing waiting on the user, in a
 // linked worktree no other thread holds, and never at a main checkout or at a worker spanning
 // repos. Before either step, git is asked afresh: a worktree with uncommitted changes, or whose HEAD
 // no remote has, is left alone; one whose folder was deleted outside Gram has nothing left to lose,
-// and is removed (its registration pruned) once due.
-// Removal also needs the PR merged or closed, goes through `closeAtRest` (the app's own close, which refuses a dirty tree, a
-// thread that got busy or a terminal running a command, and removes on the `slow` tier), and never
-// deletes a branch. It logs counts, never paths, and tells each workspace one digest line.
+// and is removed (its registration pruned) once due. Last, right before either step, no process
+// may work inside it (`processInside`): an agent, a dev server or a shell the threads don't know
+// about keeps it, and so does a platform or a scan that can't tell.
+// Removal also needs the PR merged or closed (for an archived worker with none, no PR open), goes
+// through `closeAtRest` (the app's own close, which refuses a dirty tree, a thread that got busy or a
+// terminal running a command, and removes on the `slow` tier), and never deletes a branch. It logs counts, never paths, and tells each workspace one digest line.
 //
-// Known and accepted gap. Whether another thread holds or follows the worktree is read last right
-// before the deletion, not held across it: an agent elsewhere that moves into this worktree while
+// Known and accepted gap. Whether another thread holds or follows the worktree, or a process works
+// in it, is read last right before the deletion, not held across it: an agent elsewhere that moves into this worktree while
 // `freeNodeModules` or `git worktree remove` is still running can lose `node_modules` (back with
 // `pnpm install`) or the checked-out tree, whose work passed the clean-and-pushed check. Taking a
 // worktree days after its last activity makes that rare, and closing it needs a checkout lock
@@ -21,7 +27,8 @@
 // threads, which is a follow-up of its own (the same family as the archive race), not this sweep.
 
 import type { Dirent } from "node:fs";
-import { lstat, readdir, rm } from "node:fs/promises";
+import { lstat, readdir, readlink, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import {
   combinePrFacts,
@@ -38,7 +45,16 @@ import {
   type WorkspaceId,
   type WorktreeSweep,
 } from "@gram/contracts";
-import { git, Pr, samePath, type Proc } from "@gram/git";
+import {
+  gh,
+  git,
+  isInside,
+  Pr,
+  Proc,
+  realPathOrOwned,
+  samePath,
+  STRICT_STATUS_ARGS,
+} from "@gram/git";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -85,6 +101,8 @@ export interface SweepFacts {
   readonly missingPrs?: GitState["missingPrs"] | undefined;
   /** Every checkout the other threads hold or follow (`othersCheckouts`). */
   readonly heldByOthers: ReadonlyArray<string>;
+  /** It has a pending wake (`schedule_wake`), which closing it would delete. */
+  readonly hasWake?: boolean;
 }
 
 /**
@@ -128,15 +146,37 @@ const isFinishedThread = (facts: SweepFacts): boolean => {
   );
 };
 
-/** Whether the thread is done because its PRs merged: its worktree goes without the long wait. */
-const mergedDone = (facts: SweepFacts): boolean =>
-  mergedAndDone(facts.thread, workerPrBadges({ ...facts, extraBadges: facts.extraBadges ?? [] }));
+/**
+ * Whether the thread is done because its PRs merged: its worktree goes without the long wait. An
+ * archived thread's badge is dropped once GitHub answers that its PR merged, so there its own record
+ * stands in: completed on a merge, no other PR followed, and no badge it still has open.
+ * `checkWorktree` asks GitHub afresh before anything goes.
+ */
+const mergedDone = (facts: SweepFacts): boolean => {
+  const { thread } = facts;
+  const badges = workerPrBadges({ ...facts, extraBadges: facts.extraBadges ?? [] });
+  if (mergedAndDone(thread, badges)) return true;
+  return (
+    thread.parked &&
+    thread.completedReason === "prMerged" &&
+    thread.completedAt !== undefined &&
+    (thread.extraPrs?.length ?? 0) === 0 &&
+    badges.every((badge) => badge === undefined || badge.state !== "OPEN")
+  );
+};
 
 /**
  * How long after a merge its worktree is removed: long enough for a look at the result, short
  * enough that the next sweep takes it.
  */
 export const MERGED_GRACE_MS = 10 * 60_000;
+
+/**
+ * How long after it was archived (`parkedAt`, or its last activity if that came later) a worker
+ * with no PR of its own has its worktree removed: a day to unarchive it. After that the thread is
+ * closed with its worktree; its branch stays, and a detached HEAD is kept under `SWEPT_REFS`.
+ */
+export const ARCHIVED_GRACE_MS = DAY_MS;
 
 /** Epoch ms from which a finished thread's age is counted: its last activity or completion. */
 const finishedSince = (thread: Thread): number =>
@@ -145,8 +185,10 @@ const finishedSince = (thread: Thread): number =>
 /** Which steps are due for a thread, before git has been asked. */
 export interface SweepDue {
   readonly free: boolean;
-  /** Old enough to remove, and with a PR whose state can be asked. */
+  /** Old enough to remove, and with a PR whose state can be asked or an archived worker with none. */
   readonly remove: boolean;
+  /** Removal needs no settled PR: an archived worker that never had one (`ARCHIVED_GRACE_MS`). */
+  readonly withoutPr?: true;
 }
 
 /**
@@ -165,12 +207,9 @@ export const sweepDue = (
   const { checkout } = thread;
   if (thread.role !== undefined) return undefined;
   const worker = thread.spawnedBy !== undefined;
-  // A plain thread may have been opened in a worktree some other tool or the user made: only one
-  // in Gram's own `.worktrees/` folder is the sweep's to take.
-  if (
-    !worker &&
-    (checkout.repoRoot === undefined || !underWorktreesFolder(checkout.repoRoot, checkout.path))
-  ) {
+  // A thread of any kind, a worker adopting one included, may work in a worktree some other tool
+  // or the user made: only one in Gram's own `.worktrees/` folder is the sweep's to take.
+  if (checkout.repoRoot === undefined || !underWorktreesFolder(checkout.repoRoot, checkout.path)) {
     return undefined;
   }
   if (checkout.kind !== "worktree") return undefined;
@@ -187,14 +226,38 @@ export const sweepDue = (
   }
   if (!AT_REST.has(facts.status) || facts.pendingRequests > 0 || facts.busy) return undefined;
   if (facts.heldByOthers.some((held) => samePath(held, checkout.path))) return undefined;
+  const due = finishedDue(facts, sweep, now, worker);
+  if (due === undefined) return undefined;
+  // Closing the thread deletes its pending wakes, so it isn't removed while it has one.
+  if (facts.hasWake === true && due.remove)
+    return due.free ? { free: true, remove: false } : undefined;
+  return due;
+};
+
+/** `sweepDue` past its guards: what is due for a thread found at rest in a worktree of its own. */
+const finishedDue = (
+  facts: SweepFacts,
+  sweep: WorktreeSweep,
+  now: number,
+  worker: boolean,
+): SweepDue | undefined => {
+  const { thread } = facts;
   if (!(worker ? isFinishedWorker(facts) : isFinishedThread(facts))) return undefined;
   const age = now - finishedSince(thread);
   const hasPr = thread.boundPr !== undefined || facts.badge !== undefined;
+  const free = age >= sweep.freeAfterDays * DAY_MS;
+  // An archived worker following no PR at all: archiving is what says its work is over. Its grace
+  // counts from the archive; one archived before that was recorded waits the full M days.
+  if (!hasPr && (thread.extraPrs?.length ?? 0) === 0 && worker && thread.parked) {
+    const remove =
+      thread.parkedAt === undefined
+        ? age >= sweep.removeAfterDays * DAY_MS
+        : now - Math.max(finishedSince(thread), thread.parkedAt) >= ARCHIVED_GRACE_MS;
+    if (remove) return { free, remove, withoutPr: true };
+    return free ? { free, remove } : undefined;
+  }
   const removeAfter = mergedDone(facts) ? MERGED_GRACE_MS : sweep.removeAfterDays * DAY_MS;
-  const due = {
-    free: age >= sweep.freeAfterDays * DAY_MS,
-    remove: hasPr && age >= removeAfter,
-  };
+  const due = { free, remove: hasPr && age >= removeAfter };
   return due.free || due.remove ? due : undefined;
 };
 
@@ -206,24 +269,72 @@ export interface WorktreeCheck {
   readonly pushed: boolean;
   /** The PR is merged or closed. */
   readonly prSettled: boolean;
+  /**
+   * GitHub answered a lookup of its own (`openPrLookup`), asked only for a worker with no PR: none
+   * is open for its branch or HEAD. Absent when not asked; a failed or unready lookup is `false`.
+   */
+  readonly noPrOpen?: boolean;
 }
 
 /** The step to take, from what is due and what git said; `undefined` leaves the worktree be. */
 export const sweepStep = (due: SweepDue, check: WorktreeCheck): "free" | "remove" | undefined => {
   if (!check.clean || !check.pushed) return undefined;
-  if (due.remove && check.prSettled) return "remove";
+  const settled = due.withoutPr === true ? check.noPrOpen === true : check.prSettled;
+  if (due.remove && settled) return "remove";
   return due.free ? "free" : undefined;
 };
 
-/** Asks git, and gh when a PR is wanted, what `sweepStep` needs. Any failure reads as "no". */
+/** The `gh pr list` arguments that find an open PR for `target`: a branch, or a detached HEAD. */
+export const openPrArgs = (
+  target: { readonly branch: string } | { readonly head: string },
+): ReadonlyArray<string> => [
+  "pr",
+  "list",
+  "--state",
+  "open",
+  ...("branch" in target ? ["--head", target.branch] : ["--search", target.head]),
+  "--limit",
+  "1",
+  "--json",
+  "number",
+];
+
+/**
+ * Whether GitHub says no PR is open for `target`, asked of `gh` in `cwd`: `true` only on an answer
+ * that lists none. `gh` missing, signed out, offline or answering anything else is `false`. Not
+ * `Pr.status`, whose `undefined` is also what an unready `gh` reads as.
+ */
+export const openPrLookup = (
+  cwd: string,
+  target: { readonly branch: string } | { readonly head: string },
+): Effect.Effect<boolean, never, Proc> =>
+  gh(cwd, openPrArgs(target)).pipe(
+    Effect.map((out) => {
+      if (out.status !== 0 || out.truncated) return false;
+      try {
+        const listed: unknown = JSON.parse(out.stdout);
+        return Array.isArray(listed) && listed.length === 0;
+      } catch {
+        return false;
+      }
+    }),
+    Effect.orElseSucceed(() => false),
+  );
+
+/**
+ * Asks git, and gh when a PR is wanted, what `sweepStep` needs. Any failure reads as "no".
+ * `askOpen`, for a worker with no PR, asks `openPrLookup` instead of the PR's state.
+ */
 export const checkWorktree = (
   path: string,
   thread: Thread,
   wantPr: boolean,
+  askOpen = false,
 ): Effect.Effect<WorktreeCheck, never, Proc | Pr> =>
   Effect.gen(function* () {
     const no: WorktreeCheck = { clean: false, pushed: false, prSettled: false };
-    const status = yield* git(path, ["status", "--porcelain"]).pipe(Effect.option);
+    // Strict whatever the user's config: a hidden untracked file is still work to lose.
+    const status = yield* git(path, STRICT_STATUS_ARGS).pipe(Effect.option);
     if (Option.isNone(status) || status.value.status !== 0 || status.value.truncated) return no;
     const clean = status.value.stdout.trim() === "";
     const rev = yield* git(path, ["rev-parse", "--verify", "HEAD"]).pipe(Effect.option);
@@ -239,8 +350,19 @@ export const checkWorktree = (
     ]).pipe(Effect.option);
     const onRemote =
       Option.isSome(remote) && remote.value.status === 0 && remote.value.stdout.trim() !== "";
-    if (!wantPr)
-      return { clean, pushed: headPushed({ head, headOnRemote: onRemote }), prSettled: false };
+    const pushed = headPushed({ head, headOnRemote: onRemote });
+    if (askOpen) {
+      const branch = yield* git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]).pipe(
+        Effect.option,
+      );
+      if (Option.isNone(branch) || branch.value.status > 1) {
+        return { clean, pushed, prSettled: false, noPrOpen: false };
+      }
+      const name = branch.value.status === 0 ? branch.value.stdout.trim() : "";
+      const target = name === "" ? { head } : { branch: name };
+      return { clean, pushed, prSettled: false, noPrOpen: yield* openPrLookup(path, target) };
+    }
+    if (!wantPr) return { clean, pushed, prSettled: false };
     const pr = yield* Pr;
     const badge = yield* asBackground(pr.status(path, thread.boundPr)).pipe(Effect.option);
     const settled = Option.isSome(badge) ? badge.value : undefined;
@@ -255,14 +377,24 @@ export const checkWorktree = (
  * `checkWorktree` for a worktree whose folder was deleted outside Gram: nothing is left in it
  * to lose, so it reads clean and pushed, and only the PR has to have settled. That is asked of gh
  * from the repo's main checkout for a bound PR, and otherwise read off the last badge, since a
- * branch lookup needs the folder.
+ * branch lookup needs the folder. `askOpen` asks `openPrLookup` from the main checkout for the
+ * branch the thread recorded; with none recorded, nothing can be asked and it reads as no.
  */
 export const checkMissingWorktree = (
   thread: Thread,
   badge: PrStatus | undefined,
   wantPr: boolean,
-): Effect.Effect<WorktreeCheck, never, Pr> =>
+  askOpen = false,
+): Effect.Effect<WorktreeCheck, never, Pr | Proc> =>
   Effect.gen(function* () {
+    if (askOpen) {
+      const { repoRoot, branch } = thread.checkout;
+      const noPrOpen =
+        repoRoot !== undefined && branch !== undefined && branch !== ""
+          ? yield* openPrLookup(repoRoot, { branch })
+          : false;
+      return { clean: true, pushed: true, prSettled: false, noPrOpen };
+    }
     if (!wantPr) return { clean: true, pushed: true, prSettled: false };
     const root = thread.checkout.repoRoot;
     const pr = yield* Pr;
@@ -278,6 +410,35 @@ export const checkMissingWorktree = (
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
     };
   });
+
+/** Where the sweep keeps a removed worktree's detached HEAD: `refs/gram/swept/<thread id>`. */
+export const SWEPT_REFS = "refs/gram/swept";
+
+/**
+ * Before the worktree at `path` goes: a detached HEAD is kept under `SWEPT_REFS`, since its
+ * commits may sit only on a remote branch that is later deleted, and nothing else names them once
+ * the worktree is gone. `true` when HEAD is on a branch (the branch stays) or was kept; `false`
+ * when git couldn't say or write it, and then the worktree stays too.
+ */
+export const keepDetachedHead = (
+  path: string,
+  threadId: string,
+): Effect.Effect<boolean, never, Proc> =>
+  Effect.gen(function* () {
+    const branch = yield* git(path, ["symbolic-ref", "--quiet", "HEAD"]);
+    if (branch.status === 0) return true;
+    if (branch.status !== 1) return false;
+    const head = yield* git(path, ["rev-parse", "--verify", "HEAD"]);
+    if (head.status !== 0) return false;
+    const kept = yield* git(path, [
+      "update-ref",
+      "-m",
+      "gram: worktree sweep",
+      `${SWEPT_REFS}/${threadId}`,
+      head.stdout.trim(),
+    ]);
+    return kept.status === 0;
+  }).pipe(Effect.orElseSucceed(() => false));
 
 /**
  * `node_modules` folders under `root`, `NODE_MODULES_DEPTH` deep at most, never through a link and
@@ -336,6 +497,85 @@ export const freeNodeModules = (path: string): Effect.Effect<number, never, Proc
     return freed;
   });
 
+/** The working folders in `lsof -d cwd -Fn` output: one `n<path>` line per process. */
+export const lsofCwds = (stdout: string): ReadonlyArray<string> =>
+  stdout
+    .split("\n")
+    .filter((line) => line.startsWith("n/"))
+    .map((line) => line.slice(1));
+
+/** Every process's working folder, or `undefined` where they can't be listed. */
+const processCwds = (): Effect.Effect<ReadonlyArray<string> | undefined, never, Proc> =>
+  Effect.gen(function* () {
+    if (process.platform === "linux") {
+      return yield* Effect.promise(async () => {
+        const pids = await readdir("/proc").catch(() => undefined);
+        if (pids === undefined) return undefined;
+        const cwds = await Promise.all(
+          // Another user's process, or one gone since, has no folder to read: it isn't ours.
+          pids
+            .filter((pid) => /^\d+$/.test(pid))
+            .map((pid) => readlink(`/proc/${pid}/cwd`).catch(() => undefined)),
+        );
+        return cwds.filter((cwd): cwd is string => cwd !== undefined);
+      });
+    }
+    if (process.platform !== "darwin") return undefined;
+    const proc = yield* Proc;
+    const out = yield* proc
+      .run("/usr/sbin/lsof", ["-n", "-d", "cwd", "-Fn"], {
+        cwd: homedir(),
+        tier: "local",
+        env: { PATH: "/usr/bin:/bin:/usr/sbin", LC_ALL: "C" },
+        maxOutputBytes: 16 * 1024 * 1024,
+      })
+      .pipe(Effect.option);
+    // lsof exits 1 when it couldn't read some process, and still lists the rest.
+    if (Option.isNone(out) || out.value.truncated || out.value.status > 1) return undefined;
+    const cwds = lsofCwds(out.value.stdout);
+    return cwds.length === 0 ? undefined : cwds;
+  });
+
+/** Whether one of `cwds` is `path` or below it, as written or through its links. */
+export const anyInside = (path: string, real: string, cwds: ReadonlyArray<string>): boolean =>
+  cwds.some((cwd) => isInside(path, cwd) || isInside(real, cwd));
+
+/**
+ * Whether a process works inside the worktree at `path`: an agent, a dev server or a shell, the
+ * threads' state aside. `true` when that can't be told, so the sweep leaves the worktree be.
+ */
+export const processInside = (path: string): Effect.Effect<boolean, never, Proc> =>
+  Effect.gen(function* () {
+    const cwds = yield* processCwds();
+    if (cwds === undefined) return true;
+    const real = yield* Effect.promise(() => realPathOrOwned(path));
+    return anyInside(path, real, cwds);
+  });
+
+/**
+ * The last look before the sweep takes anything from the worktree at `path`: another thread holds
+ * or follows its agent into it (`held`), or a process works inside it (`processInside`).
+ */
+export const inUse = (
+  path: string,
+  held: ReadonlyArray<string>,
+): Effect.Effect<boolean, never, Proc> =>
+  held.some((each) => samePath(each, path)) ? Effect.succeed(true) : processInside(path);
+
+/**
+ * The free step's deletion behind its last look: `freeNodeModules` unless the worktree is `inUse`,
+ * since `node_modules` pulled from under a running process breaks it. How many went, or
+ * `undefined` when it was left be.
+ */
+export const freeUnlessInUse = (
+  path: string,
+  held: ReadonlyArray<string>,
+): Effect.Effect<number | undefined, never, Proc> =>
+  Effect.gen(function* () {
+    if (yield* inUse(path, held)) return undefined;
+    return yield* freeNodeModules(path);
+  });
+
 /** The checkouts threads other than `self` hold or follow their agent into (`usedCheckoutPaths`). */
 export const othersCheckouts = (
   threads: ReadonlyArray<Thread>,
@@ -388,6 +628,7 @@ const sweepOnce = (
     const gate = Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate));
     const summaries = yield* runtimes.snapshot;
     const working = new Set(yield* runtimes.working);
+    const woken = new Set((yield* store.listThreadWakes).map((wake) => wake.threadId));
     const threads = summaries.map((summary) => summary.thread);
     const now = Date.now();
     const counts = { freed: 0, removed: 0, kept: 0 };
@@ -410,6 +651,7 @@ const sweepOnce = (
           extraBadges: yield* publisher.extraBadgesFor(thread),
           missingPrs: (yield* publisher.stateForThread(thread))?.missingPrs,
           heldByOthers: othersCheckouts(threads, thread.id),
+          hasWake: woken.has(thread.id),
         },
         sweep,
         now,
@@ -417,20 +659,32 @@ const sweepOnce = (
       if (due === undefined) continue;
       const path = thread.checkout.path;
       const gone = !(yield* folderExists(path));
+      const askOpen = due.remove && due.withoutPr === true;
       const check = gone
-        ? yield* checkMissingWorktree(thread, yield* publisher.badgeFor(thread), due.remove)
-        : yield* checkWorktree(path, thread, due.remove);
+        ? yield* checkMissingWorktree(
+            thread,
+            yield* publisher.badgeFor(thread),
+            due.remove,
+            askOpen,
+          )
+        : yield* checkWorktree(path, thread, due.remove, askOpen);
       const step = sweepStep(due, check);
       // A folder that is gone holds no `node_modules`; it waits to be removed with its thread.
       if (step === undefined || (gone && step === "free")) {
         counts.kept += 1;
         continue;
       }
-      // Asked again with the step in hand: another thread may have followed its agent in since.
-      const followed = othersCheckouts(yield* store.listThreads, thread.id).some((held) =>
-        samePath(held, path),
-      );
-      if (followed) {
+      // Asked again with the step in hand: another thread may have followed its agent in since. A
+      // free step asks about processes under its own lock below; a removal asks here, and whether
+      // a wake was set since, and keeps a detached HEAD before anything goes.
+      const held = othersCheckouts(yield* store.listThreads, thread.id);
+      const kept =
+        held.some((each) => samePath(each, path)) ||
+        (step === "remove" &&
+          ((yield* store.listThreadWakes).some((wake) => wake.threadId === thread.id) ||
+            (!gone &&
+              ((yield* inUse(path, held)) || !(yield* keepDetachedHead(path, thread.id))))));
+      if (kept) {
         counts.kept += 1;
         continue;
       }
@@ -467,10 +721,10 @@ const sweepOnce = (
               Effect.gen(function* () {
                 // Last look before anything goes: another thread's agent may have moved in. Not held
                 // across the deletion; see "Known and accepted gap" at the top.
-                const used = othersCheckouts(yield* store.listThreads, thread.id);
-                return used.some((held) => samePath(held, path))
-                  ? undefined
-                  : yield* freeNodeModules(path);
+                return yield* freeUnlessInUse(
+                  path,
+                  othersCheckouts(yield* store.listThreads, thread.id),
+                );
               }),
               asChecked(thread),
             );

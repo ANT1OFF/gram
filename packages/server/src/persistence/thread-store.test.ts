@@ -160,6 +160,30 @@ describe("ThreadStore", () => {
       }),
     ),
   );
+  it.effect(
+    "stamps when an edit archives a thread, keeps it while archived, drops it on unarchive",
+    () =>
+      withStore(
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const project = yield* store.ensureProject({ root: "/work/parked", name: "parked" });
+          const inserted = yield* store.insertThread(thread(project.id));
+          expect(inserted.parkedAt).toBeUndefined();
+          const before = Date.now();
+          const parked = yield* store.updateThread(inserted.id, (t) => ({ ...t, parked: true }));
+          expect(parked.parkedAt).toBeGreaterThanOrEqual(before);
+          // Another edit while archived, even one that drops the field, keeps the archive's time.
+          const renamed = yield* store.updateThread(inserted.id, (t) => {
+            const { parkedAt: _, ...rest } = t;
+            return { ...rest, title: "renamed" };
+          });
+          expect(renamed.parkedAt).toBe(parked.parkedAt);
+          const unparked = yield* store.updateThread(inserted.id, (t) => ({ ...t, parked: false }));
+          expect(unparked.parkedAt).toBeUndefined();
+          expect((yield* store.getThread(inserted.id)).parkedAt).toBeUndefined();
+        }),
+      ),
+  );
   it.effect("reuses a project per root", () =>
     withStore(
       Effect.gen(function* () {

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
@@ -9,19 +10,36 @@ import type {
   ThreadStatus,
   WorkspaceId,
 } from "@gram/contracts";
-import { Pr, ProcLive } from "@gram/git";
+import {
+  Pr,
+  PrLookupError,
+  Proc,
+  ProcLive,
+  ProcSpawnError,
+  removeWorktreeDir,
+  type ProcOutput,
+} from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
 import {
+  ARCHIVED_GRACE_MS,
+  anyInside,
   asChecked,
   checkMissingWorktree,
   checkWorktree,
+  freeUnlessInUse,
+  inUse,
+  keepDetachedHead,
+  lsofCwds,
+  openPrArgs,
   othersCheckouts,
   freeNodeModules,
+  processInside,
   MERGED_GRACE_MS,
   sweepDue,
   sweepStep,
+  SWEPT_REFS,
   type SweepFacts,
   type WorktreeCheck,
 } from "./worktree-gc.ts";
@@ -74,18 +92,60 @@ const facts = (overrides: Partial<SweepFacts> = {}): SweepFacts => ({
   ...overrides,
 });
 
+/** `Pr` answering `answer` for every lookup, or failing with `PrLookupError` on `"fail"`. */
+const prAnswering = (answer: PrStatus | undefined | "fail", asked?: { cwd: string }) =>
+  Layer.succeed(Pr, {
+    status: (cwd) =>
+      answer === "fail"
+        ? Effect.fail(new PrLookupError({ message: "gh down" }))
+        : Effect.sync(() => {
+            if (asked !== undefined) asked.cwd = cwd;
+            return answer;
+          }),
+    checks: () => Effect.succeed([]),
+    prime: () => Effect.void,
+    seenChecks: () => Effect.succeed(undefined),
+    detail: () => Effect.succeed({ available: false }),
+  });
+
 /** Real git, and gh answering `answer` for every PR lookup. */
 const withPr = (answer: PrStatus | undefined) =>
+  Effect.provide(Layer.mergeAll(ProcLive, prAnswering(answer)));
+
+const ghOut = (status: number, stdout: string): ProcOutput => ({
+  status,
+  stdout,
+  stderr: "",
+  truncated: false,
+});
+
+/**
+ * Real git, `gh` itself answering `gh` (`"missing"`: not installed) with every call recorded in
+ * `calls`, and `Pr` answering `answer`, which a no-PR lookup must never go by.
+ */
+const withGh = (
+  answer: ProcOutput | "missing",
+  calls: Array<{ args: ReadonlyArray<string>; cwd: string }> = [],
+  pr: PrStatus | undefined | "fail" = undefined,
+) =>
   Effect.provide(
     Layer.mergeAll(
-      ProcLive,
-      Layer.succeed(Pr, {
-        status: () => Effect.succeed(answer),
-        checks: () => Effect.succeed([]),
-        prime: () => Effect.void,
-        seenChecks: () => Effect.succeed(undefined),
-        detail: () => Effect.succeed({ available: false }),
-      }),
+      Layer.effect(
+        Proc,
+        Effect.gen(function* () {
+          const live = yield* Proc;
+          return {
+            run: (bin: string, args: ReadonlyArray<string>, options: { readonly cwd: string }) => {
+              if (bin !== "gh") return live.run(bin, args, options as never);
+              calls.push({ args, cwd: options.cwd });
+              return answer === "missing"
+                ? Effect.fail(new ProcSpawnError({ bin, message: "gh not found" }))
+                : Effect.succeed(answer);
+            },
+          };
+        }),
+      ).pipe(Layer.provide(ProcLive)),
+      prAnswering(pr),
     ),
   );
 
@@ -153,12 +213,119 @@ describe("sweepDue", () => {
     expect(sweepDue(elsewhere, SWEEP, NOW)).toBeUndefined();
   });
 
-  it("never removes a worker with no PR to ask about, only frees it", () => {
+  it("removes an archived merged worker after the grace, though its badge was dropped", () => {
+    // Archived, the publisher drops a thread's state once GitHub answers its PR merged.
+    const archived = (finishedAgo: number, overrides: Partial<Thread> = {}) =>
+      facts({
+        thread: thread({
+          completedReason: "prMerged",
+          completedAt: NOW - finishedAgo,
+          lastActivityAt: NOW - finishedAgo,
+          settledMerge: { merged: [{ number: 7, url: "https://github.com/o/r/pull/7" }] },
+          ...overrides,
+        }),
+      });
+    expect(sweepDue(archived(MERGED_GRACE_MS - 1), SWEEP, NOW)).toBeUndefined();
+    expect(sweepDue(archived(MERGED_GRACE_MS), SWEEP, NOW)).toEqual({ free: false, remove: true });
+    // Not merged, or following another PR, or a badge still open: the full M days.
+    const later: ReadonlyArray<[string, SweepFacts]> = [
+      ["completed by hand", archived(DAY, { completedReason: "user" })],
+      ["never completed", facts({ thread: thread({ lastActivityAt: NOW - DAY }) })],
+      [
+        "following another PR",
+        archived(DAY, { extraPrs: [{ repo: "o/lib", number: 9, monitor: false }] }),
+      ],
+      ["not archived", { ...archived(DAY, { parked: false }), status: "idle" }],
+      ["with its PR open again", { ...archived(DAY), badge: badge("OPEN") }],
+    ];
+    for (const [what, input] of later) {
+      expect(sweepDue(input, SWEEP, NOW)?.remove ?? false, what).toBe(false);
+    }
+  });
+
+  it("removes an archived worker with no PR a day after it was archived", () => {
     const { boundPr: _, ...unbound } = thread();
-    expect(sweepDue(facts({ thread: unbound }), SWEEP, NOW)).toEqual({
+    const archived = (ago: number) =>
+      facts({ thread: { ...unbound, lastActivityAt: NOW - ago, parkedAt: NOW - ago } });
+    expect(sweepDue(archived(ARCHIVED_GRACE_MS - 1), SWEEP, NOW)).toBeUndefined();
+    expect(sweepDue(archived(ARCHIVED_GRACE_MS), SWEEP, NOW)).toEqual({
+      free: false,
+      remove: true,
+      withoutPr: true,
+    });
+    expect(sweepDue(archived(5 * DAY), SWEEP, NOW)).toEqual({
+      free: true,
+      remove: true,
+      withoutPr: true,
+    });
+  });
+
+  it("counts a no-PR worker's grace from its archive, not from when it went quiet", () => {
+    const { boundPr: _, ...unbound } = thread();
+    // Quiet for three days, archived an hour ago: a day to unarchive it still.
+    const justArchived = facts({
+      thread: { ...unbound, lastActivityAt: NOW - 3 * DAY, parkedAt: NOW - 3_600_000 },
+    });
+    expect(sweepDue(justArchived, SWEEP, NOW)).toEqual({ free: true, remove: false });
+    // Archived before the time was recorded: it waits the full M days from its last activity.
+    const legacy = (ago: number) => facts({ thread: { ...unbound, lastActivityAt: NOW - ago } });
+    expect(sweepDue(legacy(3 * DAY), SWEEP, NOW)).toEqual({ free: true, remove: false });
+    expect(sweepDue(legacy(14 * DAY), SWEEP, NOW)).toEqual({
+      free: true,
+      remove: true,
+      withoutPr: true,
+    });
+  });
+
+  it("never removes a thread with a pending wake, which the close would delete", () => {
+    const { boundPr: _, ...unbound } = thread();
+    const noPr = facts({
+      thread: { ...unbound, lastActivityAt: NOW - 5 * DAY, parkedAt: NOW - 5 * DAY },
+      hasWake: true,
+    });
+    // Freeing `node_modules` leaves the thread, and its wake, alone.
+    expect(sweepDue(noPr, SWEEP, NOW)).toEqual({ free: true, remove: false });
+    const merged = facts({
+      thread: thread({
+        parked: false,
+        completedReason: "prMerged",
+        completedAt: NOW - DAY,
+        lastActivityAt: NOW - DAY,
+      }),
+      badge: badge("MERGED"),
+      status: "idle",
+      hasWake: true,
+    });
+    expect(sweepDue(merged, SWEEP, NOW)).toBeUndefined();
+    expect(sweepDue({ ...merged, hasWake: false }, SWEEP, NOW)).toEqual({
+      free: false,
+      remove: true,
+    });
+  });
+
+  it("never removes a thread with no PR that isn't an archived worker", () => {
+    const { boundPr: _, ...unbound } = thread();
+    // A worker done with no PR that nobody archived: not the sweep's at all.
+    const done = facts({
+      thread: { ...unbound, parked: false, completedReason: "user", completedAt: NOW - 5 * DAY },
+      status: "idle",
+    });
+    expect(sweepDue(done, SWEEP, NOW)).toBeUndefined();
+    // A plain thread archived in Gram's worktree folder is the user's own: never removed unasked.
+    const { spawnedBy: _s, ...plain } = unbound;
+    expect(sweepDue(facts({ thread: plain }), SWEEP, NOW)).toEqual({
       free: true,
       remove: false,
     });
+    // An archived worker that follows a PR, even without a bound one, waits for it as before.
+    const following = facts({
+      thread: {
+        ...unbound,
+        lastActivityAt: NOW - 5 * DAY,
+        extraPrs: [{ repo: "o/lib", number: 9, monitor: false }],
+      },
+    });
+    expect(sweepDue(following, SWEEP, NOW)).toEqual({ free: true, remove: false });
   });
 
   it("never touches a thread that isn't finished and at rest in a worktree of its own", () => {
@@ -166,6 +333,45 @@ describe("sweepDue", () => {
     const never: ReadonlyArray<[string, SweepFacts]> = [
       ["a plain thread still open for work", facts({ thread: { ...plain, parked: false } })],
       ["an orchestrator", facts({ thread: thread({ role: "orchestrator" }) })],
+      [
+        // A worker adopting a worktree the user made, outside Gram's own folder.
+        "an archived worker with no PR in a worktree Gram didn't make",
+        facts({
+          thread: (() => {
+            const { boundPr: _bound, ...unbound } = thread({
+              checkout: { kind: "worktree", path: "/r/wt-mine", branch: "mine", repoRoot: "/r" },
+            });
+            return unbound;
+          })(),
+        }),
+      ],
+      [
+        "a merged worker in a worktree Gram didn't make",
+        facts({
+          thread: thread({
+            checkout: { kind: "worktree", path: "/elsewhere/x", branch: "feat/x", repoRoot: "/r" },
+            completedReason: "prMerged",
+            completedAt: NOW - DAY,
+          }),
+        }),
+      ],
+      [
+        "a worker in a nested folder below `.worktrees`",
+        facts({
+          thread: thread({
+            checkout: {
+              kind: "worktree",
+              path: "/r/.worktrees/a/b",
+              branch: "feat/x",
+              repoRoot: "/r",
+            },
+          }),
+        }),
+      ],
+      [
+        "a worker whose repo isn't known",
+        facts({ thread: thread({ checkout: { kind: "worktree", path: PATH, branch: "feat/x" } }) }),
+      ],
       [
         "the main checkout",
         facts({ thread: thread({ checkout: { kind: "main", path: "/r", branch: "main" } }) }),
@@ -213,6 +419,16 @@ describe("sweepDue", () => {
       ],
       ["a worker that only went idle", facts({ thread: thread({ parked: false }) })],
       [
+        // As `feat-voice-vocab` was: open, cold between turns, no PR yet, never completed.
+        "a live worker with no PR, cold between turns",
+        facts({
+          thread: (() => {
+            const { boundPr: _bound, ...live } = thread({ parked: false });
+            return live;
+          })(),
+        }),
+      ],
+      [
         "a worker reopened since its merge",
         facts({
           thread: thread({
@@ -251,6 +467,29 @@ describe("sweepDue", () => {
   });
 });
 
+describe("processes inside a worktree", () => {
+  it("reads every working folder lsof lists", () => {
+    const out = "p1\nn/Users/a/.worktrees/x\np2\nn/\np3\nn/tmp/y (deleted)\nf cwd\n";
+    expect(lsofCwds(out)).toEqual(["/Users/a/.worktrees/x", "/", "/tmp/y (deleted)"]);
+  });
+
+  it("counts the worktree itself and anything below it, never a sibling", () => {
+    expect(anyInside(PATH, PATH, [PATH])).toBe(true);
+    expect(anyInside(PATH, PATH, [`${PATH}/node_modules/.bin`])).toBe(true);
+    expect(anyInside(PATH, PATH, ["/r/.worktrees/feat-x2", "/r", "/"])).toBe(false);
+    // Through a link: the process reports the real folder.
+    expect(
+      anyInside(PATH, "/private/r/.worktrees/feat-x", ["/private/r/.worktrees/feat-x/apps"]),
+    ).toBe(true);
+  });
+
+  it.effect("keeps a worktree another thread holds whatever its processes", () =>
+    Effect.gen(function* () {
+      expect(yield* inUse(PATH, [`${PATH}/`]).pipe(Effect.provide(ProcLive))).toBe(true);
+    }),
+  );
+});
+
 describe("asChecked", () => {
   it("holds only while the worker is in the checked checkout and nothing that made it due moved", () => {
     const checked = thread();
@@ -280,6 +519,19 @@ describe("sweepStep", () => {
   it("never acts on uncommitted or unpushed work", () => {
     expect(sweepStep(due, { ...CLEAN_PUSHED_SETTLED, clean: false })).toBeUndefined();
     expect(sweepStep(due, { ...CLEAN_PUSHED_SETTLED, pushed: false })).toBeUndefined();
+    const withoutPr = { ...due, withoutPr: true as const };
+    expect(sweepStep(withoutPr, { ...CLEAN_PUSHED_SETTLED, clean: false })).toBeUndefined();
+    expect(sweepStep(withoutPr, { ...CLEAN_PUSHED_SETTLED, pushed: false })).toBeUndefined();
+  });
+
+  it("removes a worker with no PR only once GitHub answered none is open for it", () => {
+    const withoutPr = { free: false, remove: true, withoutPr: true as const };
+    const none: WorktreeCheck = { clean: true, pushed: true, prSettled: false, noPrOpen: true };
+    expect(sweepStep(withoutPr, none)).toBe("remove");
+    // A PR open for its branch, or a lookup that failed.
+    expect(sweepStep(withoutPr, { ...none, noPrOpen: false })).toBeUndefined();
+    expect(sweepStep(withoutPr, { clean: true, pushed: true, prSettled: false })).toBeUndefined();
+    expect(sweepStep({ ...withoutPr, free: true }, { ...none, noPrOpen: false })).toBe("free");
   });
 });
 
@@ -288,15 +540,7 @@ describe("checkMissingWorktree", () => {
     Effect.gen(function* () {
       const asked = { cwd: "" };
       const answering = (answer: PrStatus | undefined) =>
-        Effect.provide(
-          Layer.succeed(Pr, {
-            status: (cwd) => Effect.sync(() => ((asked.cwd = cwd), answer)),
-            checks: () => Effect.succeed([]),
-            prime: () => Effect.void,
-            seenChecks: () => Effect.succeed(undefined),
-            detail: () => Effect.succeed({ available: false }),
-          }),
-        );
+        Effect.provide(Layer.mergeAll(ProcLive, prAnswering(answer, asked)));
       // A bound PR is asked about from the main checkout, the one folder git can run in.
       expect(
         yield* checkMissingWorktree(thread(), undefined, true).pipe(answering(badge("MERGED"))),
@@ -319,6 +563,38 @@ describe("checkMissingWorktree", () => {
       expect(
         yield* checkMissingWorktree(thread(), undefined, false).pipe(answering(badge("MERGED"))),
       ).toEqual({ clean: true, pushed: true, prSettled: false });
+    }),
+  );
+
+  it.effect("asks gh itself for an open PR on a no-PR worker's branch, and refuses on doubt", () =>
+    Effect.gen(function* () {
+      const { boundPr: _bound, ...unbound } = thread();
+      const calls: Array<{ args: ReadonlyArray<string>; cwd: string }> = [];
+      expect(
+        yield* checkMissingWorktree(unbound, undefined, true, true).pipe(
+          withGh(ghOut(0, "[]\n"), calls),
+        ),
+      ).toEqual({ clean: true, pushed: true, prSettled: false, noPrOpen: true });
+      expect(calls).toEqual([{ args: openPrArgs({ branch: "feat/x" }), cwd: "/r" }]);
+      const refused: ReadonlyArray<[string, ReturnType<typeof withGh>]> = [
+        ["an open PR", withGh(ghOut(0, '[{"number":5}]'))],
+        ["gh signed out", withGh(ghOut(1, ""))],
+        ["gh not installed", withGh("missing")],
+        ["gh answering garbage", withGh(ghOut(0, "not json"))],
+      ];
+      for (const [what, layer] of refused) {
+        const check = yield* checkMissingWorktree(unbound, undefined, true, true).pipe(layer);
+        expect(check.noPrOpen, what).toBe(false);
+      }
+      // No branch recorded: nothing to ask, so no.
+      const { branch: _b, ...noBranch } = unbound.checkout;
+      const lost = yield* checkMissingWorktree(
+        { ...unbound, checkout: noBranch },
+        undefined,
+        true,
+        true,
+      ).pipe(withGh(ghOut(0, "[]")));
+      expect(lost.noPrOpen).toBe(false);
     }),
   );
 });
@@ -363,6 +639,126 @@ describe.skipIf(!hasGit)("the sweep's git", () => {
         yield* checkWorktree(tree, thread(), true).pipe(withPr(badge("CLOSED", head))),
       ).toEqual(CLEAN_PUSHED_SETTLED);
     }),
+  );
+
+  it.effect("reads no PR open only on gh's own empty answer, never on an unready Pr.status", () =>
+    Effect.gen(function* () {
+      const { tree } = setup();
+      const { boundPr: _, ...unbound } = thread();
+      const calls: Array<{ args: ReadonlyArray<string>; cwd: string }> = [];
+      expect(
+        yield* checkWorktree(tree, unbound, true, true).pipe(withGh(ghOut(0, "[]"), calls)),
+      ).toEqual({ clean: true, pushed: true, prSettled: false, noPrOpen: true });
+      expect(calls.map((call) => call.args)).toEqual([openPrArgs({ branch: "feat/x" })]);
+      // `Pr.status` answers `undefined` when gh isn't ready: that must never read as "none".
+      const unready: ReadonlyArray<[string, ReturnType<typeof withGh>]> = [
+        ["gh signed out", withGh(ghOut(1, ""), [], undefined)],
+        ["gh not installed", withGh("missing", [], undefined)],
+        ["gh timing out", withGh(ghOut(-1, ""), [], undefined)],
+        ["an open PR", withGh(ghOut(0, '[{"number":5}]'), [], undefined)],
+      ];
+      for (const [what, layer] of unready) {
+        const check = yield* checkWorktree(tree, unbound, true, true).pipe(layer);
+        expect(check.noPrOpen, what).toBe(false);
+        expect(sweepStep({ free: false, remove: true, withoutPr: true }, check), what).toBe(
+          undefined,
+        );
+      }
+      // A detached HEAD, as a reviewer's, is looked up by its commit.
+      const head = run(tree, "rev-parse", "HEAD").trim();
+      run(tree, "checkout", "-q", "--detach");
+      const detached: Array<{ args: ReadonlyArray<string>; cwd: string }> = [];
+      yield* checkWorktree(tree, unbound, true, true).pipe(withGh(ghOut(0, "[]"), detached));
+      expect(detached.map((call) => call.args)).toEqual([openPrArgs({ head })]);
+    }),
+  );
+
+  it.effect(
+    "keeps a detached HEAD under a ref before its worktree goes, and nothing for a branch",
+    () =>
+      Effect.gen(function* () {
+        const { repo, tree } = setup();
+        expect(yield* keepDetachedHead(tree, "t-1").pipe(Effect.provide(ProcLive))).toBe(true);
+        expect(run(repo, "for-each-ref", SWEPT_REFS)).toBe("");
+        // A reviewer's detached HEAD with a commit only a remote branch holds.
+        run(tree, "checkout", "-q", "--detach");
+        write(nodePath.join(tree, "fix.txt"), "fix\n");
+        run(tree, "add", "-A");
+        run(tree, "commit", "-qm", "review fix");
+        run(tree, "push", "-q", "origin", "HEAD:refs/heads/review-fix");
+        const head = run(tree, "rev-parse", "HEAD").trim();
+        expect(yield* keepDetachedHead(tree, "t-1").pipe(Effect.provide(ProcLive))).toBe(true);
+        run(repo, "worktree", "remove", tree);
+        // The remote branch is deleted and pruned: the ref still holds the commit.
+        run(repo, "push", "-q", "origin", "--delete", "review-fix");
+        run(repo, "fetch", "-q", "--prune", "origin");
+        expect(run(repo, "rev-parse", `${SWEPT_REFS}/t-1`).trim()).toBe(head);
+        // Somewhere git can't run: refuses, and the sweep keeps the worktree.
+        expect(
+          yield* keepDetachedHead(nodePath.join(repo, "no-such"), "t-2").pipe(
+            Effect.provide(ProcLive),
+          ),
+        ).toBe(false);
+      }),
+  );
+
+  it.effect(
+    "reads untracked files hidden by status.showUntrackedFiles=no, and git keeps them",
+    () =>
+      Effect.gen(function* () {
+        const { repo, tree } = setup();
+        run(tree, "config", "status.showUntrackedFiles", "no");
+        write(nodePath.join(tree, "report.md"), "uncommitted report\n");
+        // The user's own status hides it.
+        expect(run(tree, "status", "--porcelain")).toBe("");
+        const check = yield* checkWorktree(tree, thread(), true).pipe(withPr(badge("MERGED")));
+        expect(check.clean).toBe(false);
+        expect(sweepStep({ free: true, remove: true }, check)).toBeUndefined();
+        // And the removal the sweep and the close share refuses it on its own.
+        const removed = yield* removeWorktreeDir(repo, tree, false).pipe(
+          Effect.provide(ProcLive),
+          Effect.result,
+        );
+        expect(removed._tag).toBe("Failure");
+        expect(fs.readFileSync(nodePath.join(tree, "report.md"), "utf8")).toBe(
+          "uncommitted report\n",
+        );
+      }),
+  );
+
+  it.effect.skipIf(process.platform !== "darwin" && process.platform !== "linux")(
+    "never touches a file in a worktree a process works in, node_modules included",
+    () =>
+      Effect.gen(function* () {
+        const { tree } = setup();
+        const deps = nodePath.join(tree, "node_modules", "a");
+        write(nodePath.join(deps, "index.js"), "a\n");
+        // A process the threads know nothing about, like an agent's or a dev server's, works in it.
+        const child = spawn("sleep", ["60"], { cwd: deps, stdio: "ignore" });
+        try {
+          yield* Effect.promise(
+            () => new Promise<void>((resolve) => child.once("spawn", () => resolve())),
+          );
+          expect(yield* processInside(tree).pipe(Effect.provide(ProcLive))).toBe(true);
+          expect(yield* freeUnlessInUse(tree, []).pipe(Effect.provide(ProcLive))).toBeUndefined();
+          expect(fs.existsSync(nodePath.join(deps, "index.js"))).toBe(true);
+        } finally {
+          child.kill();
+        }
+        yield* Effect.promise(
+          () =>
+            new Promise<void>((resolve) =>
+              child.exitCode !== null || child.signalCode !== null
+                ? resolve()
+                : child.once("exit", () => resolve()),
+            ),
+        );
+        // With it gone, the same step frees them.
+        expect(yield* processInside(tree).pipe(Effect.provide(ProcLive))).toBe(false);
+        expect(yield* freeUnlessInUse(tree, []).pipe(Effect.provide(ProcLive))).toBe(1);
+        expect(fs.existsSync(nodePath.join(tree, "node_modules"))).toBe(false);
+      }),
+    15_000,
   );
 
   it.effect("frees untracked node_modules at the top and in packages, never tracked ones", () =>

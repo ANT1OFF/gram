@@ -30,6 +30,25 @@ export const git = (
     });
   });
 
+/**
+ * `git status` for deciding whether removing a checkout loses work: every untracked file listed
+ * and dirty submodules counted whatever the user's config says (`status.showUntrackedFiles=no`,
+ * `submodule.*.ignore`), ignored files left out as git's own removal check leaves them.
+ */
+export const STRICT_STATUS_ARGS: ReadonlyArray<string> = [
+  "status",
+  "--porcelain",
+  "--untracked-files=all",
+  "--ignore-submodules=none",
+  "--ignored=no",
+];
+
+/**
+ * Config for `git worktree remove` without `--force`: its own clean check runs `git status`, which
+ * otherwise follows `status.showUntrackedFiles` and deletes untracked files it was told to hide.
+ */
+export const STRICT_REMOVE_CONFIG: ReadonlyArray<string> = ["-c", "status.showUntrackedFiles=all"];
+
 const GH_TIMEOUT_MS = 10_000;
 
 /** Run `gh` in `cwd`; bounded at 10 s by default since `gh` network calls are known to hang. */

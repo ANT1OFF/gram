@@ -477,7 +477,7 @@ function AutomaticCleanup() {
   return (
     <Toggle
       label="Clean up finished threads"
-      description="Removes clean, pushed worktrees once the PR merges or after the days below."
+      description="Removes clean, pushed worktrees once the PR merges or after the days below, and archived workers with no PR a day after archiving."
       keywords={["sweep", "disk", "space", "node_modules", "worktrees", "garbage", "merged"]}
       checked={sweep !== undefined}
       error={error}
