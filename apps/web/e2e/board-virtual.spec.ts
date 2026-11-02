@@ -126,7 +126,8 @@ test("an open group plan keeps its unsaved draft when another row takes focus an
     .getByTestId("rail-feature")
     .focus();
   await scrollBoard(page, "end");
-  await expect(entries(page).last()).toHaveAttribute("data-index", String(FEATURES + 4));
+  // The bulk lines and five others: `changelog-tool` and `q3-cleanup` are finished, so off the Board.
+  await expect(entries(page).last()).toHaveAttribute("data-index", String(FEATURES + 2));
   await expect(note).toHaveValue("Keep this unsaved plan note");
   await scrollBoard(page, 0);
   await expect(note).toBeVisible();

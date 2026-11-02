@@ -9,7 +9,10 @@ import {
   orchestratorHover,
   orchestratorLine,
   overviewFeatures,
+  overviewItems,
   overviewState,
+  plainActivity,
+  plainRunning,
   overviewSummary,
   stateWordShown,
   rowTone,
@@ -433,5 +436,75 @@ describe("tileLetters", () => {
     expect(tileWorking("paused", 2)).toBe(false);
     expect(tileWorking("parked", 1)).toBe(false);
     expect(tileWorking("in review", 0)).toBe(false);
+  });
+});
+
+describe("overviewItems", () => {
+  it("lists the workers straight under the orchestrator, needs you first, then working, then waiting", () => {
+    const held = {
+      id: "held-1",
+      title: "Refresh docs",
+      project: "docs",
+      agent: "codex",
+      window: "fiveHour" as const,
+      usedPct: 85,
+      until: 5_000,
+    };
+    const features = overviewFeatures(
+      [
+        card("release", [
+          worker("idle", { state: "inReview", station: "review", now: "in review" }),
+          worker("ci", { state: "inReview", station: "review" }),
+        ]),
+        card("docs", [worker("asker"), worker("busy")]),
+        { ...card("later", []), held: [held] },
+      ],
+      new Map([["asker" as ThreadId, "ask-1"]]),
+      undefined,
+      [],
+      new Set(),
+      {},
+      new Map(),
+      { ci: "waiting", busy: "working", idle: "idle" },
+    );
+    const items = overviewItems(features);
+    expect(
+      items.map((item) => (item.kind === "worker" ? item.row.threadId : `held:${item.held.id}`)),
+    ).toEqual(["asker", "busy", "ci", "idle", "held:held-1"]);
+    // Each keeps its feature, for its hover card.
+    expect(items[0]).toMatchObject({ kind: "worker", feature: "docs" });
+  });
+
+  it("keeps the cards' order within a tone", () => {
+    const features = overviewFeatures(
+      [card("a", [worker("one")]), card("b", [worker("two")]), card("c", [worker("three")])],
+      new Map(),
+    );
+    expect(
+      overviewItems(features).map((item) => (item.kind === "worker" ? item.row.threadId : "")),
+    ).toEqual(["one", "two", "three"]);
+  });
+});
+
+describe("plain status lines", () => {
+  it("says what kind of thing a thread runs, never the command or a path", () => {
+    expect(plainActivity("Running grep -n 'needle' apps/web/package.json")).toBe(
+      "Running a command",
+    );
+    expect(plainActivity("Running cd /tmp/[project] && sed -n 1,70p src/a.ts")).toBe(
+      "Running a command",
+    );
+    expect(plainActivity("Reading …/[scratch]/notes.md")).toBe("Reading code");
+    expect(plainActivity("Editing src/a.ts")).toBe("Editing code");
+    expect(plainActivity("Running bun run test")).toBe("Running tests");
+    expect(plainActivity("Thinking")).toBe("Thinking");
+    expect(plainActivity("Using gram: list_threads")).toBe("Using gram");
+  });
+
+  it("says work under a resting thread without listing what each one runs", () => {
+    expect(plainRunning("Running: a background shell")).toBe("Running a background shell");
+    expect(plainRunning("Running: 2 shells and a subagent")).toBe(
+      "Running 2 shells and a subagent",
+    );
   });
 });

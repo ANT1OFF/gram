@@ -55,6 +55,13 @@ export interface RailRow {
   readonly needs: boolean;
   /** Every worker merged or delivered: the line is done. */
   readonly finished: boolean;
+  /**
+   * Its work is over and it has left the Board for Done: finished, or none of its workers is in
+   * the ledger any more (closed with its worktree) and none runs. Show finished brings it back.
+   */
+  readonly settled: boolean;
+  /** What the line is called: its first worker's title, else its first held brief's, else its feature. */
+  readonly title: string;
   readonly cells: Readonly<Record<FeatureStation, readonly RailWorker[]>>;
   /** Its briefs held until a usage limit resets, drawn on Briefed beside its workers. */
   readonly held: readonly FeatureCardHeld[];
@@ -79,6 +86,11 @@ export interface RailFacts {
    * ledger no longer has or not yet read, takes its tone from its card.
    */
   readonly tones?: Readonly<Record<string, RailTone>> | undefined;
+  /**
+   * The workers the ledger still has, once it is read. A card keeps a worker closed with its
+   * worktree as it last was; one the ledger no longer has, and that doesn't run, is over.
+   */
+  readonly live?: ReadonlySet<ThreadId> | undefined;
 }
 
 /** A card's plan with steps still to come: its line isn't finished, whatever its workers say. */
@@ -191,6 +203,26 @@ export const railRows = (
       });
     }
     const tones = Object.values(cells).flatMap((cell) => cell.map((worker) => worker.tone));
+    const finished =
+      held.length === 0 &&
+      !planGoesOn(card.stage) &&
+      workers.every(
+        (worker) => DONE.has(worker.state) && facts.ongoing?.has(worker.threadId) !== true,
+      );
+    // The rule the overview goes by: a card keeps a closed worker as it last was, unfinished plan
+    // included, but with no worker left nothing can carry that plan on.
+    const gone =
+      facts.live !== undefined &&
+      held.length === 0 &&
+      workers.every((worker) => {
+        const status = facts.status(worker.threadId);
+        return (
+          facts.live?.has(worker.threadId) !== true &&
+          status !== "running" &&
+          status !== "starting" &&
+          !facts.asking.has(worker.threadId)
+        );
+      });
     return [
       {
         feature: card.feature,
@@ -203,12 +235,9 @@ export const railRows = (
         ],
         reach,
         needs: tones.includes("needs"),
-        finished:
-          held.length === 0 &&
-          !planGoesOn(card.stage) &&
-          workers.every(
-            (worker) => DONE.has(worker.state) && facts.ongoing?.has(worker.threadId) !== true,
-          ),
+        finished,
+        settled: finished || gone,
+        title: workers[0]?.title ?? held[0]?.title ?? card.feature,
         cells,
         held,
       },
@@ -217,6 +246,27 @@ export const railRows = (
   return [...rows.filter((row) => !row.finished), ...rows.filter((row) => row.finished)];
 };
 
+/**
+ * The lines the Board shows: with finished work hidden, a line whose work is over (`settled`)
+ * leaves it for Done; with it shown, every line stays.
+ */
+export const boardRows = (rows: readonly RailRow[], finishedShown: boolean): readonly RailRow[] =>
+  finishedShown ? rows : rows.filter((row) => !row.settled);
+
+/**
+ * How many workers the Board leaves out while finished work is hidden: the header's Show finished
+ * count. Every worker on the cards, less those its lines show.
+ */
+export const hiddenWorkerCount = (
+  cards: readonly FeatureCard[],
+  shown: readonly RailRow[],
+): number =>
+  cards.reduce((sum, card) => sum + card.workers.length, 0) -
+  shown.reduce(
+    (sum, row) => sum + Object.values(row.cells).reduce((n, cell) => n + cell.length, 0),
+    0,
+  );
+
 /** The advisory overlap in words: who the worker shares files with, and which; none without. */
 export const overlapHint = (worker: Pick<RailWorker, "overlaps" | "overlapFiles">) =>
   worker.overlaps.length === 0
@@ -224,13 +274,6 @@ export const overlapHint = (worker: Pick<RailWorker, "overlaps" | "overlapFiles"
     : `Shares files with ${worker.overlaps.join(", ")}${
         worker.overlapFiles.length === 0 ? "" : `: ${worker.overlapFiles.join(", ")}`
       }`;
-
-/** Workers the line leaves out until archived work is shown: the header's Show archived count. */
-export const archivedCount = (cards: readonly FeatureCard[]): number =>
-  cards.reduce(
-    (sum, card) => sum + card.workers.filter((worker) => worker.state === "archived").length,
-    0,
-  );
 
 /** Several features run as one effort: the band over their lines, with the whole's stage. */
 export interface RailGroup {
@@ -243,9 +286,14 @@ export interface RailGroup {
   readonly finished: boolean;
 }
 
-/** One entry of the Board's list: a feature line, or a group's band over its lines. */
+/**
+ * One entry of the Board's list: a feature line, or a group's band over its lines. `headed` marks
+ * the first line in no group under a band: it draws the Other heading over itself, so the lines
+ * after a band never read as the band's. The heading is part of its line's entry rather than one of
+ * its own, as Tab moves through the list by entries and a heading has nothing to stop on.
+ */
 export type RailEntry =
-  | { readonly kind: "line"; readonly row: RailRow }
+  | { readonly kind: "line"; readonly row: RailRow; readonly headed?: true }
   | { readonly kind: "group"; readonly group: RailGroup };
 
 const band = (group: RailGroup): RailEntry => ({ kind: "group", group });
@@ -253,9 +301,10 @@ const band = (group: RailGroup): RailEntry => ({ kind: "group", group });
 /**
  * The lines dealt into their groups (`FeatureCard.group`), each band where its first line stood:
  * bands still going lead, in the workspace's order with their features in the order they joined,
- * finished ones last, then the lines in no group as `railRows` ordered them, then the finished bands. A group the
- * workspace doesn't list yet still gets a band, so nothing is dropped while the two disagree; one
- * with no line left keeps its band only while its plan has steps to come.
+ * then the lines in no group as `railRows` ordered them, under an Other heading when a band is
+ * above them, then the finished bands. A group the workspace doesn't list yet still gets a band, so
+ * nothing is dropped while the two disagree; one with no line left keeps its band only while its
+ * plan has steps to come.
  */
 export const railEntries = (
   rows: readonly RailRow[],
@@ -287,9 +336,13 @@ export const railEntries = (
       },
     ];
   });
+  const going = bands.filter((group) => !group.finished).map(band);
+  const loose = rows.filter((row) => row.group === undefined);
   return [
-    ...bands.filter((group) => !group.finished).map(band),
-    ...rows.flatMap((row): RailEntry[] => (row.group === undefined ? [{ kind: "line", row }] : [])),
+    ...going,
+    ...loose.map((row, index): RailEntry =>
+      index === 0 && going.length > 0 ? { kind: "line", row, headed: true } : { kind: "line", row },
+    ),
     ...bands.filter((group) => group.finished).map(band),
   ];
 };

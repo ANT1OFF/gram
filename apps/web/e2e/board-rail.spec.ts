@@ -47,6 +47,9 @@ test("each feature is a line, its workers on the stations their cards give them"
   await expect(group.getByTestId("rail-group-state")).toHaveText("Needs you");
   await expect(group.getByTestId("rail-needs")).toHaveCount(0);
   await expect(line(page, "docs-refresh").getByTestId("rail-needs")).toBeVisible();
+  // The line in no group is under a heading of its own, not in the band above it.
+  await expect(board(page).getByTestId("rail-other")).toHaveText("Other");
+  await expect(group.locator('[data-feature="docs-refresh"]')).toHaveCount(0);
   await expect(chip(page, made.inReview)).toHaveAttribute("data-station", /checks|review/);
   await expect(chip(page, made.briefed)).toBeVisible();
 

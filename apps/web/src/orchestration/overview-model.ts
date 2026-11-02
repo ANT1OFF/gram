@@ -9,6 +9,7 @@ import {
   type PlanHeadline,
   type ThreadId,
   type ThreadStatus,
+  activityGist,
   planText,
 } from "@gram/contracts";
 
@@ -181,6 +182,76 @@ export const overviewFeatures = (
   }
   return features;
 };
+
+/** One line under a workspace in the overview: a live worker, or a brief held for a limit. */
+export type OverviewItem =
+  | {
+      readonly kind: "worker";
+      readonly row: OverviewWorkerRow;
+      /** The feature it works on, for its hover card. */
+      readonly feature: string;
+      /** Its feature card's last change, for its hover card. */
+      readonly updatedAt: number;
+    }
+  | { readonly kind: "held"; readonly held: FeatureCardHeld; readonly feature: string };
+
+/**
+ * Where a tone sorts in the overview: what needs the user, then what works, then what waits on
+ * automation, then the rest.
+ */
+const TONE_RANK: Readonly<Record<RailTone, number>> = {
+  needs: 0,
+  attention: 0,
+  error: 0,
+  working: 1,
+  waiting: 2,
+  idle: 3,
+  merged: 4,
+};
+
+/**
+ * The overview's workers under their orchestrator, with no feature between them: needs you first,
+ * then working, then waiting on CI or a review, then the rest, each band in the cards' order; the
+ * held briefs last. `toneOf` is each row's tone as its dot shows it (`rowTone`).
+ */
+export const overviewItems = (
+  features: readonly OverviewFeature[],
+  toneOf: (row: OverviewWorkerRow) => RailTone = (row) => rowTone(row, { working: false }),
+): readonly OverviewItem[] => {
+  const workers = features.flatMap((feature) =>
+    feature.rows.map((row): OverviewItem => ({
+      kind: "worker",
+      row,
+      feature: feature.feature,
+      updatedAt: feature.updatedAt,
+    })),
+  );
+  const rank = (item: OverviewItem) => (item.kind === "worker" ? TONE_RANK[toneOf(item.row)] : 5);
+  const held = features.flatMap((feature) =>
+    feature.held.map((each): OverviewItem => ({
+      kind: "held",
+      held: each,
+      feature: feature.feature,
+    })),
+  );
+  return [...workers.toSorted((a, b) => rank(a) - rank(b)), ...held];
+};
+
+/**
+ * The server's activity line ("Running grep -n x src/a.ts", "Reading /Users/…/a.ts", "Thinking")
+ * in the overview's plain words: what kind of thing it does ("Running a command", "Reading code",
+ * "Thinking"), never the command or a path. The words are the Board's (`activityGist`).
+ */
+export const plainActivity = (activity: string): string => {
+  const gist = activityGist(activity);
+  return gist === "" ? gist : `${gist[0]!.toUpperCase()}${gist.slice(1)}`;
+};
+
+/**
+ * Work running under a resting thread in plain words: "Running: a background shell" reads
+ * "Running a background shell", without the list of what each one runs.
+ */
+export const plainRunning = (label: string): string => label.replace(/^Running: /, "Running ");
 
 /** What the window knows live of a row's thread, beside its card. */
 export interface RowLive {

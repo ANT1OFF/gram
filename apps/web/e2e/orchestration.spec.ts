@@ -612,7 +612,7 @@ test("a new workspace is one sheet, and what it should work on is briefed into a
   await expect(briefing).toHaveCount(0);
 });
 
-test("the overview nests a workspace's features and workers, and a worker's thread names both", async ({
+test("the overview lists a workspace's workers under it, and a worker's thread names its feature", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
@@ -620,21 +620,27 @@ test("the overview nests a workspace's features and workers, and a worker's thre
   await expect(page.getByTestId("overview-workspace")).toHaveCount(0);
   const made = await simulateBoard(page);
 
-  // The workspace the window is on opens into its features, each over its live workers; Solo
-  // threads lists none of the workspace's threads.
+  // The workspace the window is on opens into its live workers, with no feature heading between;
+  // Solo threads lists none of the workspace's threads.
   const workspace = workspaceRow(page, made.workspaceId);
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAccessibleName(
     /^agent-platform, /,
   );
-  const inFeature = (feature: string, threadId: string) =>
+  await expect(workspace.getByTestId("overview-workers").getByRole("heading")).toHaveCount(0);
+  const listed = (threadId: string) =>
     workspace.locator(
-      `[data-testid="overview-feature"][data-feature="${feature}"] [data-testid="overview-worker"][data-thread-id="${threadId}"]`,
+      `[data-testid="overview-workers"] [data-testid="overview-worker"][data-thread-id="${threadId}"]`,
     );
-  for (const threadId of [made.working, made.inReview, made.waiting[0], made.waiting[1]]) {
-    await expect(inFeature("mail-trigger", threadId)).toBeVisible();
+  for (const threadId of [
+    made.working,
+    made.inReview,
+    made.waiting[0],
+    made.waiting[1],
+    made.briefed,
+    made.ungrouped,
+  ]) {
+    await expect(listed(threadId)).toBeVisible();
   }
-  await expect(inFeature("registry-paging", made.briefed)).toBeVisible();
-  await expect(inFeature("docs-refresh", made.ungrouped)).toBeVisible();
   for (const threadId of [made.orchestratorThreadId, made.working, made.waiting[0]]) {
     await expect(soloRow(page, threadId)).toHaveCount(0);
   }
@@ -850,7 +856,7 @@ test("a working thread's spinner turns in its pane header", async ({ page }) => 
     .toBe(true);
 });
 
-test("the Board hides archived workers until asked, and remembers that per workspace", async ({
+test("the Board hides finished work until asked, and remembers that per workspace", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
@@ -867,26 +873,28 @@ test("the Board hides archived workers until asked, and remembers that per works
   const spike = board.locator('[data-testid="rail-row"][data-feature="sse-spike"]');
   const cleanup = board.locator('[data-testid="rail-group"][data-group="q3-cleanup"]');
 
-  // Archived work is off the Board, its line with it. Merged and delivered work stays, and
-  // `q3-cleanup`, a group with nothing still going, is folded to one line.
-  // Board's header is the title bar's.
+  // Finished work is off the Board for Done: archived, merged and delivered lines, and `q3-cleanup`,
+  // a group with nothing still going. Board's header is the title bar's.
   const toggle = page.getByTestId("shell-titlebar").getByTestId("rail-show-archived");
-  // It counts archived workers only: a finished group's are shown, folded.
-  await expect(toggle).toHaveAccessibleName("Show archived (1)");
+  await expect(toggle).toHaveAccessibleName(/^Show finished \(\d+\)$/);
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(spike).toHaveCount(0);
   await expect(chip(made.archived)).toHaveCount(0);
-  await expect(chip(made.delivered)).toBeVisible();
+  await expect(chip(made.delivered)).toHaveCount(0);
+  await expect(cleanup).toHaveCount(0);
+  // A merged worker of a feature still going stays on its line.
   await expect(chip(made.merged[3]!)).toBeVisible();
-  await expect(cleanup).toHaveAttribute("data-finished", "true");
-  await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "false");
-  await expect(chip(made.merged[0]!).locator("xpath=ancestor::*[@inert]")).toHaveCount(1);
 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   // Back on its line, done with.
   await expect(spike.getByTestId("rail-worker")).toHaveAttribute("data-tone", "merged");
   await expect(spike).toHaveAttribute("data-finished", "true");
+  await expect(chip(made.delivered)).toBeVisible();
+  // A group with nothing still going is folded to one line.
+  await expect(cleanup).toHaveAttribute("data-finished", "true");
+  await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(chip(made.merged[0]!).locator("xpath=ancestor::*[@inert]")).toHaveCount(1);
   // The finished group opens on a click.
   await cleanup.getByTestId("rail-group-toggle").click();
   await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "true");

@@ -1162,6 +1162,38 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "overview-board",
+    title:
+      "The sidebar's workers under their orchestrator, plain status lines, and the Board beside",
+    open: async (page) => {
+      const made = await openBoardSidebar(page);
+      await page.evaluate((id) => {
+        window.gramMock!.simulateStatus(
+          id.working as never,
+          "running",
+          "Running grep -n needle src/mail/trigger.ts",
+        );
+        window.gramMock!.simulateStatus(
+          id.ungrouped as never,
+          "running",
+          "Reading /tmp/[scratch]/docs/guide.md",
+        );
+      }, made);
+      await openBoardView(page);
+      await page.getByTestId("rail-worker").first().waitFor();
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "board-finished",
+    title: "Board: finished work gone to Done, Show finished in the bar brings it back",
+    open: async (page) => {
+      await openOrchestratorOf(page, () => window.gramMock!.simulateFinishedWork());
+      await openBoardView(page);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
     name: "board-failing",
     title: "Board: the Failing strip above the docked stack, a stopped worker and red CI",
     open: async (page) => {

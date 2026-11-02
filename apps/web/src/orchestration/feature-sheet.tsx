@@ -98,6 +98,16 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
     useSame((s) => workerActivities(ledger, s.byId, s.statusDetail)),
   );
   // Merged or delivered workers the ledger still sees at work, so their line isn't done yet.
+  // The workers the ledger still has: one a card keeps after it closed is over.
+  const live = useMemo(
+    () =>
+      ledger === undefined
+        ? undefined
+        : new Set(
+            ledger.features.flatMap((feature) => feature.workers.map((worker) => worker.threadId)),
+          ),
+    [ledger],
+  );
   const ongoing = useMemo(
     () =>
       new Set(
@@ -136,13 +146,14 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
       ongoing,
       activity,
       tones,
+      live,
       // A thread on no card isn't drawn here; it reads as it stands, as before.
       status: (threadId) =>
         Object.hasOwn(statuses, threadId)
           ? statuses[threadId]
           : useThreadsStore.getState().byId[threadId]?.status,
     }),
-    [asking, ongoing, activity, tones, statuses],
+    [asking, ongoing, activity, tones, live, statuses],
   );
 }
 
