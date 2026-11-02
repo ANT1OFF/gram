@@ -13,7 +13,7 @@
       "@effect/platform-node": "4.0.5",
       "@effect/sql-sqlite-node": "4.0.5",
       "@effect/vitest": "4.0.5",
-      "ai": "7.0.153",
+      "ai": "7.0.154",
       "@modelcontextprotocol/sdk": "1.32.2",
       "node-pty": "1.1.0",
       "sherpa-onnx-node": "2.0.0",
