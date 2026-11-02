@@ -93,6 +93,29 @@ export const isIgnored = (relative: string, ignore: RootIgnore): boolean => {
   return components.some((c) => ignore.anyDepth.includes(c));
 };
 
+/**
+ * Whether a watch failed on the OS's watch limit rather than the path: Linux's inotify watches
+ * (`ENOSPC`, "No space left on device") or instances (`EMFILE`), as Node or @parcel/watcher word
+ * it, here or in the error's cause.
+ */
+export const isWatchLimitError = (error: unknown): boolean => {
+  for (let e: unknown = error, depth = 0; e !== undefined && e !== null && depth < 4; depth++) {
+    const code: unknown = typeof e === "object" ? Reflect.get(e, "code") : undefined;
+    if (code === "ENOSPC" || code === "EMFILE") return true;
+    const message = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+    if (/ENOSPC|EMFILE|No space left on device|Too many open files/i.test(message)) return true;
+    e = typeof e === "object" ? Reflect.get(e, "cause") : undefined;
+  }
+  return false;
+};
+
+/** What the log says, once per process, when a root couldn't be watched for the limit. */
+export const WATCH_LIMIT_MESSAGE =
+  "file watching hit the system's inotify limit, so some checkouts' git state won't update live; " +
+  "raise fs.inotify.max_user_watches (and max_user_instances) with sysctl, then restart Gram";
+
+let watchLimitLogged = false;
+
 /** Receives absolute event paths, or `undefined` when events were lost. */
 export type RootListener = (paths: ReadonlyArray<string> | undefined) => void;
 
@@ -393,11 +416,18 @@ export const watchGitState = (
           roots.set(checkout.top, { topLevel: [".git"], anyDepth: PRUNE_DIRS });
       }
       for (const [dir, ignore] of roots) {
-        // A root that can't be watched (OS limit, permissions) degrades to no live updates for it.
+        // A root that can't be watched (OS limit, permissions) degrades to no live updates for it;
+        // the OS limit, which the user can raise, is logged once.
         yield* Effect.option(
           Effect.acquireRelease(
             Effect.tryPromise(() => subscribeRoot(backend, dir, ignore, onEvents)),
             (release) => Effect.promise(release).pipe(Effect.ignore),
+          ).pipe(
+            Effect.tapError((error) => {
+              if (watchLimitLogged || !isWatchLimitError(error)) return Effect.void;
+              watchLimitLogged = true;
+              return Effect.logWarning(WATCH_LIMIT_MESSAGE);
+            }),
           ),
         );
       }

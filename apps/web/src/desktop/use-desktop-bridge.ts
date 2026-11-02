@@ -184,7 +184,8 @@ export function useDesktopBridge() {
       bridge.setVibrancy(isTranslucentLook(state.look));
       const vibrancy = vibrancyAttribute(
         state.look,
-        true,
+        // Linux has no vibrancy to show through: the look paints its own backdrop there.
+        bridge.platform !== "linux",
         window.matchMedia?.("(prefers-reduced-transparency: reduce)").matches ?? false,
       );
       if (vibrancy) document.documentElement.dataset["vibrancy"] = vibrancy;

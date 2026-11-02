@@ -1,13 +1,40 @@
 import * as Schema from "effect/Schema";
 
+/**
+ * The `safeStorage` backends on Linux that encrypt with a real keyring: the Secret Service (GNOME
+ * Keyring, KeePassXC and others) and KWallet. `basic_text`, its fallback without one, encrypts with
+ * a key hard-coded in Chromium, which is plaintext to anyone who can read the file.
+ */
+export const KEYRING_BACKENDS: ReadonlySet<string> = new Set([
+  "gnome_libsecret",
+  "kwallet",
+  "kwallet5",
+  "kwallet6",
+]);
+
+/**
+ * Whether gateway keys may be stored under `backend`: wherever `safeStorage` names none (macOS,
+ * Windows), and on Linux only with a real keyring. `unknown`, before `ready` or from a backend
+ * Electron added since, is refused too: a key is never stored where it isn't known to be encrypted.
+ */
+export const keyringBackendOk = (backend: string | undefined): boolean =>
+  backend === undefined || KEYRING_BACKENDS.has(backend);
+
+/** Why a key can't be saved on Linux without a keyring, for the vault's error and for Settings. */
+export const NO_KEYRING_MESSAGE =
+  "No system keyring is available, so Gram won't store API keys. Install or unlock GNOME Keyring " +
+  "or KWallet (on other desktops, start Gram with --password-store=gnome-libsecret), then restart " +
+  "Gram.";
+
 /** Where gateway keys are kept, so Settings can say it plainly. */
 export const VaultInfo = Schema.Struct({
   /**
    * What protects keys under Electron `safeStorage`: the macOS Keychain, Windows DPAPI for the
-   * user's account, or a Linux keyring. `unencrypted` when Linux has no keyring and `safeStorage`
-   * falls back to `basic_text`; `memory` in browser dev, where nothing is saved.
+   * user's account, or a Linux keyring. `no-keyring` when Linux has none, where keys aren't stored
+   * at all (never in `basic_text`, which doesn't encrypt); `memory` in browser dev, where nothing
+   * is saved.
    */
-  kind: Schema.Literals(["keychain", "dpapi", "libsecret", "unencrypted", "memory"]),
+  kind: Schema.Literals(["keychain", "dpapi", "libsecret", "no-keyring", "memory"]),
   /** False when keys are lost once the server stops (browser dev without the desktop app). */
   persisted: Schema.Boolean,
   /** The store in words, e.g. "the macOS Keychain". */

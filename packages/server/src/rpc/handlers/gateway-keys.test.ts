@@ -198,10 +198,17 @@ describe("vaultInfo", () => {
       label: "the system keyring",
     });
     expect(vaultInfo("safeStorage", "linux", "basic_text")).toEqual({
-      kind: "unencrypted",
-      persisted: true,
-      label: "an unencrypted file, as no system keyring is available",
+      kind: "no-keyring",
+      persisted: false,
+      label: "nowhere: no system keyring is available",
     });
+    // Neither a backend Electron added since nor an unanswered read counts as a keyring.
+    for (const backend of ["unknown", "unavailable", undefined]) {
+      expect(vaultInfo("safeStorage", "linux", backend).kind).toBe("no-keyring");
+    }
+    for (const backend of ["gnome_libsecret", "kwallet", "kwallet5", "kwallet6"]) {
+      expect(vaultInfo("safeStorage", "linux", backend).kind).toBe("libsecret");
+    }
     expect(vaultInfo("memory", "darwin")).toEqual({
       kind: "memory",
       persisted: false,

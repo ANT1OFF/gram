@@ -291,7 +291,7 @@ class CommandRunner extends Context.Service<
 const probePath = (run: CommandRunner["Service"]["run"]): Effect.Effect<string> => {
   const fallback = process.env["PATH"] ?? process.env["Path"] ?? "";
   if (process.platform === "win32") return Effect.succeed(fallback);
-  const shell = process.env["SHELL"] ?? "/bin/zsh";
+  const shell = process.env["SHELL"] ?? (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
   return run(
     shell,
     shell,

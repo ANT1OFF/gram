@@ -30,6 +30,13 @@ headers. Live port discovery also needs `lsof` and `ps` on PATH. The exact root 
 are trusted for dependency lifecycle scripts. Correct a failed hook before
 claiming native loading; a no-op install need not rerun it. No blanket script trust.
 
+On a Linux desktop the app keeps the desktop's window frame, and the menu bar shows on Alt.
+Gateway keys need a system keyring: GNOME Keyring or another Secret Service, or KWallet. Without
+one Gram refuses to store them and Settings says why; it never falls back to `basic_text`. File
+watching uses inotify. If `fs.inotify.max_user_watches` is reached, git state for the affected
+checkouts stops updating live and the server log says which limit to raise. Voice input isn't
+available on Linux yet.
+
 Run from the checkout's physical directory (`pwd -P`). In particular, macOS
 `/tmp` resolves to `/private/tmp`; passing another checkout's absolute tsconfig
 to `tsc -b` can lose project-reference redirects. Use the root scripts in the

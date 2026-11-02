@@ -1,6 +1,7 @@
 /**
- * The app's BrowserWindows: macOS hidden-inset and Windows overlay title bars, theme and
- * vibrancy sync, the dock badge and Windows overlay/flash, notifications with click-to-focus, and
+ * The app's BrowserWindows: macOS hidden-inset and Windows overlay title bars (Linux keeps the
+ * desktop's frame), theme and vibrancy sync, the dock badge and Windows overlay/flash, notifications
+ * with click-to-focus, and
  * every link that leaves the app's origin sent through the shell's link trust. What the app
  * provides comes in as a `WindowContext`: the preload, the title, and how links open.
  */
@@ -24,6 +25,7 @@ import { windowArg } from "../window-arg.ts";
 
 const isMac = process.platform === "darwin";
 const isWindows = process.platform === "win32";
+const isLinux = process.platform === "linux";
 
 /** What every window needs from the shell that makes it. */
 export interface WindowContext {
@@ -43,7 +45,9 @@ let vibrancyWanted = false;
 let overlayDot: NativeImage | undefined;
 const liveNotifications = new Set<Notification>();
 
-const vibrancyActive = () => vibrancyWanted && !nativeTheme.prefersReducedTransparency;
+// Linux has no vibrancy or Mica: a translucent look paints its own backdrop there, on an opaque window.
+const vibrancyActive = () =>
+  (isMac || isWindows) && vibrancyWanted && !nativeTheme.prefersReducedTransparency;
 
 function applyAppearance(win: BrowserWindow) {
   const glass = vibrancyActive();
@@ -89,6 +93,9 @@ export function createWindow({
           titleBarOverlay: { color: theme.background, symbolColor: theme.foreground, height: 40 },
         }
       : {}),
+    // Linux keeps the desktop's own frame and window buttons, which follow its theme and button
+    // layout. The menu bar would be a second row under it; Alt shows it, and its accelerators work.
+    ...(isLinux ? { autoHideMenuBar: true } : {}),
     webPreferences: {
       preload: context.preloadPath,
       additionalArguments: info === undefined ? [] : [windowArg(info)],
@@ -189,7 +196,13 @@ export function setVibrancy(enabled: boolean) {
 
 export function setBadge(count: number) {
   if (!isWindows) {
+    // Linux shows a count only where the launcher reads Unity's API (KDE's task manager, Dash to
+    // Dock); the window's urgency hint, which every taskbar shows, is what's left elsewhere.
     app.setBadgeCount(count);
+    if (isLinux) {
+      for (const win of BrowserWindow.getAllWindows())
+        win.flashFrame(count > 0 && !win.isFocused());
+    }
     return;
   }
   overlayDot ??= nativeImage.createFromBitmap(overlayDotBitmap(16), { width: 16, height: 16 });

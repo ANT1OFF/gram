@@ -19,6 +19,8 @@ import {
   type SlashCommand,
   type ThreadId,
   type VaultInfo,
+  keyringBackendOk,
+  NO_KEYRING_MESSAGE,
 } from "@gram/contracts";
 import type { AgentHost } from "@gram/agents";
 import * as Effect from "effect/Effect";
@@ -94,14 +96,15 @@ export const vaultInfo = (
         label: "a file encrypted with Windows data protection for your account",
       };
     default:
-      // With no keyring, `safeStorage` falls back to `basic_text`, which doesn't encrypt.
-      return backend === "basic_text"
-        ? {
-            kind: "unencrypted",
-            persisted: true,
-            label: "an unencrypted file, as no system keyring is available",
-          }
-        : { kind: "libsecret", persisted: true, label: "the system keyring" };
+      // With no keyring `safeStorage` falls back to `basic_text`, which doesn't encrypt, so the
+      // desktop refuses to store keys there (`keyringBackendOk`) and Settings says why.
+      return backend !== undefined && keyringBackendOk(backend)
+        ? { kind: "libsecret", persisted: true, label: "the system keyring" }
+        : {
+            kind: "no-keyring",
+            persisted: false,
+            label: "nowhere: no system keyring is available",
+          };
   }
 };
 
@@ -217,13 +220,16 @@ export const makeGateway = ({
         yield* store.upsertProfile({ ...profile, keyRef: ref });
       }
     }).pipe(
-      // Not the vault's own reason: it may quote what it was handed.
-      Effect.catchTag("VaultError", () =>
+      // Not the vault's own reason, which may quote what it was handed; only the fixed no-keyring
+      // text, which says what to do, comes through.
+      Effect.catchTag("VaultError", (error) =>
         Effect.fail(
           new GatewayError({
             profileId: profile.id,
             message:
-              "Couldn't update the stored key: the key store refused it. Try again, or restart Gram.",
+              error.message === NO_KEYRING_MESSAGE
+                ? NO_KEYRING_MESSAGE
+                : "Couldn't update the stored key: the key store refused it. Try again, or restart Gram.",
           }),
         ),
       ),

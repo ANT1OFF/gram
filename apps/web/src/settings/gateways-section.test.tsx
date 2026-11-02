@@ -1,5 +1,10 @@
 // @vitest-environment happy-dom
-import { EXAMPLE_GATEWAY, type GatewayProfile, type ProfileId } from "@gram/contracts";
+import {
+  EXAMPLE_GATEWAY,
+  NO_KEYRING_MESSAGE,
+  type GatewayProfile,
+  type ProfileId,
+} from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -251,11 +256,6 @@ describe("GatewaysSettings", () => {
       "Encrypted with Windows data protection for your account",
     ],
     ["libsecret", "the system keyring", "Saved securely in the system keyring"],
-    [
-      "unencrypted",
-      "an unencrypted file, as no system keyring is available",
-      "Stored unencrypted: no system keyring is available, so anyone who can read your files can read the key",
-    ],
   ] as const)("names the %s vault", async (kind, label, status) => {
     const api = mockApi();
     await api.setProfileKey(LITELLM, "sk-x");
@@ -263,6 +263,39 @@ describe("GatewaysSettings", () => {
     renderWithApi(<GatewaysSettings />, api);
     const litellm = within(await card("Personal Gateway"));
     expect(await litellm.findByText(status)).toBeTruthy();
+  });
+
+  it("refuses to save or import a key without a system keyring, and says why", async () => {
+    const api = mockApi();
+    vi.spyOn(api, "vaultInfo").mockResolvedValue({
+      kind: "no-keyring",
+      persisted: false,
+      label: "nowhere: no system keyring is available",
+    });
+    const setKey = vi.spyOn(api, "setProfileKey");
+    renderWithApi(<GatewaysSettings />, api);
+    const litellm = within(await card("Personal Gateway"));
+
+    expect((await litellm.findByRole("status")).textContent).toBe(NO_KEYRING_MESSAGE);
+    fireEvent.change(litellm.getByLabelText("API key"), { target: { value: "sk-x" } });
+    const save = litellm.getByRole<HTMLButtonElement>("button", { name: "Save key" });
+    expect(save.disabled).toBe(true);
+    fireEvent.submit(save.closest("form")!);
+    expect(setKey).not.toHaveBeenCalled();
+  });
+
+  it("offers no key field when adding a gateway without a system keyring", async () => {
+    const api = mockApi();
+    vi.spyOn(api, "vaultInfo").mockResolvedValue({
+      kind: "no-keyring",
+      persisted: false,
+      label: "nowhere: no system keyring is available",
+    });
+    renderWithApi(<GatewaysSettings />, api);
+    fireEvent.click(await screen.findByRole("button", { name: "Add gateway" }));
+    const form = within(await screen.findByRole("form", { name: "Add gateway" }));
+    expect(form.queryByLabelText("API key (optional)")).toBeNull();
+    expect(form.getByRole("status").textContent).toBe(NO_KEYRING_MESSAGE);
   });
 
   it("reports a failed model listing without failing the save", async () => {

@@ -3,6 +3,7 @@ import type * as FsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { NO_KEYRING_MESSAGE } from "@gram/contracts";
 import type { ProcShape } from "@gram/git/proc";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -158,6 +159,59 @@ describe("macOS keychain compatibility", () => {
 });
 
 describe("handleVaultRequest", () => {
+  it("refuses to store or read a key on a Linux backend that doesn't encrypt", async () => {
+    for (const backend of ["basic_text", "unknown", "unavailable"]) {
+      const store = memoryStore();
+      const write = vi.spyOn(store, "write");
+      const crypto = { ...fakeCrypto(), backend: () => backend };
+      const encrypt = vi.spyOn(crypto, "encrypt");
+      const set = await handleVaultRequest(
+        { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
+        crypto,
+        store,
+      );
+      expect(set).toEqual({
+        type: "vault.response",
+        id: "s",
+        ok: false,
+        message: NO_KEYRING_MESSAGE,
+      });
+      expect(encrypt).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+      const get = await handleVaultRequest(
+        { type: "vault.request", id: "g", op: "get", ref: "r" },
+        crypto,
+        store,
+      );
+      expect(get).toMatchObject({ ok: false, message: NO_KEYRING_MESSAGE });
+    }
+  });
+
+  it("still removes a key without a keyring", async () => {
+    const store = memoryStore();
+    await store.write({ r: "c2VjcmV0" });
+    const crypto = { ...fakeCrypto(), available: () => false, backend: () => "unavailable" };
+    await handleVaultRequest(
+      { type: "vault.request", id: "d", op: "delete", ref: "r" },
+      crypto,
+      store,
+    );
+    expect(await store.read()).toEqual({});
+  });
+
+  it("stores a key with a real keyring backend", async () => {
+    for (const backend of ["gnome_libsecret", "kwallet", "kwallet5", "kwallet6"]) {
+      const store = memoryStore();
+      const crypto = { ...fakeCrypto(), backend: () => backend };
+      const set = await handleVaultRequest(
+        { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
+        crypto,
+        store,
+      );
+      expect(set).toEqual({ type: "vault.response", id: "s", ok: true });
+    }
+  });
+
   it("reports the Linux storage backend, and nothing where there is none to report", async () => {
     const store = memoryStore();
     const linux = { ...fakeCrypto(), backend: () => "basic_text" };

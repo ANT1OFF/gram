@@ -7,6 +7,7 @@ import type { AgentHost } from "@gram/agents";
 import {
   AgentUnavailable,
   GatewayError,
+  NO_KEYRING_MESSAGE,
   NotFound,
   type GatewayProfile,
   type ProfileId,
@@ -216,6 +217,31 @@ describe("gateway handlers", () => {
           expect(error.message).not.toContain(SECRET);
           expect((yield* store.listProfiles)[0]?.keyRef).toBe("");
         }),
+    );
+
+    it.effect("setKey says why when Linux has no keyring, and stores nothing", () =>
+      Effect.gen(function* () {
+        const { handlers, store } = yield* setup();
+        yield* handlers["profiles.upsert"]({ profile: profile("a") });
+        const refusing = makeGateway({
+          store,
+          hosts: AgentHosts.fromHosts([codexHost]),
+          vault: {
+            ...makeMemoryVault(),
+            set: () => Effect.fail(new VaultError({ message: NO_KEYRING_MESSAGE })),
+          },
+          fetcher: async () => ({ ok: true, status: 200, json: async () => ({}) }),
+          home,
+        });
+        const error = yield* Effect.flip(
+          refusing.handlers["profiles.setKey"]({
+            profileId: "a" as ProfileId,
+            key: Redacted.make(SECRET),
+          }),
+        );
+        expect(error.message).toBe(NO_KEYRING_MESSAGE);
+        expect((yield* store.listProfiles)[0]?.keyRef).toBe("");
+      }),
     );
 
     it.effect("remove deletes the profile and its key", () =>

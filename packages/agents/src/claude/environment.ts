@@ -104,7 +104,10 @@ export const ClaudeEnvironmentLive = (
 
       const probe = Effect.gen(function* () {
         if (process.platform === "win32") return { env: inherited, warnings: [] };
-        const shell = config.shell ?? process.env["SHELL"] ?? "/bin/zsh";
+        const shell =
+          config.shell ??
+          process.env["SHELL"] ??
+          (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
         return yield* runCommand(shell, ["-ilc", PROBE_SCRIPT], {
           timeoutMs: probeTimeoutMs,
           isolateSession: true,

@@ -2,6 +2,7 @@ import type { ThreadId } from "@gram/contracts";
 import { MessageSquare, MessageSquarePlus, X } from "lucide-react";
 import { createContext, useContext, useMemo, useState, type KeyboardEvent } from "react";
 
+import { keyLabel } from "@/keyboard/registry";
 import { Button } from "@/components/ui/button";
 import {
   commentLabel,
@@ -179,7 +180,7 @@ export function CommentEditorRow({
           </Button>
           <Button size="xs" disabled={note.trim() === ""} onClick={submit}>
             {submitLabel}
-            <kbd className="font-mono text-[10px] opacity-70">⌘⏎</kbd>
+            <kbd className="font-mono text-[10px] opacity-70">{keyLabel("⌘⏎")}</kbd>
           </Button>
         </div>
       </td>

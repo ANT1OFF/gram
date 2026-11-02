@@ -55,7 +55,9 @@ export function createAppIcon({ file, dir }: { file: string; dir: string }) {
     get: (): AppIconId => current,
     /** After `ready`, before the first window: applies the saved icon and keeps new windows on it. */
     start() {
-      if (current !== DEFAULT_APP_ICON) {
+      // Linux windows have no icon of their own, so an unpackaged run (and X11 taskbars that read
+      // the window rather than its .desktop entry) would show Electron's; set the default there too.
+      if (current !== DEFAULT_APP_ICON || process.platform === "linux") {
         image = load(current);
         apply();
       }

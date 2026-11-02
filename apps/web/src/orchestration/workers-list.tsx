@@ -25,6 +25,7 @@ import {
 import { create } from "zustand";
 
 import { Button } from "@/components/ui/button";
+import { keyLabel } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { useNow } from "@/lib/use-now";
@@ -442,10 +443,10 @@ function WorkersBody() {
         className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground"
       >
         <span>
-          <kbd className="font-sans">⏎</kbd> open
+          <kbd className="font-sans">{keyLabel("⏎")}</kbd> open
         </span>
         <span>
-          <kbd className="font-sans">⌘⏎</kbd> keep beside
+          <kbd className="font-sans">{keyLabel("⌘⏎")}</kbd> keep beside
         </span>
       </div>
     </div>

@@ -8,6 +8,7 @@ import {
   FSEVENTS_RESTART_SETTLE_MS,
   defaultBackend,
   isIgnored,
+  isWatchLimitError,
   parcelIgnore,
   subscribeRoot,
   type RootIgnore,
@@ -177,4 +178,26 @@ describe("watch backends", () => {
       expect(lost).toBe(1);
     },
   );
+});
+
+describe("isWatchLimitError", () => {
+  it("knows the OS's watch limit, in Node's words, parcel's or a wrapped cause", () => {
+    expect(isWatchLimitError(Object.assign(new Error("watch"), { code: "ENOSPC" }))).toBe(true);
+    expect(isWatchLimitError(Object.assign(new Error("watch"), { code: "EMFILE" }))).toBe(true);
+    expect(
+      isWatchLimitError(new Error("inotify_add_watch on '/r' failed: No space left on device")),
+    ).toBe(true);
+    expect(
+      isWatchLimitError(
+        new Error("wrapped", { cause: new Error("inotify_init1: Too many open files") }),
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves other failures to the quiet path", () => {
+    expect(
+      isWatchLimitError(new Error("inotify_add_watch on '/r' failed: Permission denied")),
+    ).toBe(false);
+    expect(isWatchLimitError(undefined)).toBe(false);
+  });
 });
