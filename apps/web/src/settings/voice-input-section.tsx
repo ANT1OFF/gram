@@ -1,4 +1,6 @@
 import {
+  DEFAULT_DICTATION_SOUND_VOLUME,
+  dictationSoundVolumeOf,
   keepMicrophoneReadyOf,
   SPEECH_ACCURATE_MODELS,
   SPEECH_MODEL_FOR_STOP,
@@ -19,7 +21,11 @@ import { Navigate } from "@tanstack/react-router";
 import { useEffect, useId, useState } from "react";
 
 import { useApi } from "@/api/context";
-import { isMac } from "@/keyboard/registry";
+import { Switch } from "@/components/ui/switch";
+import { playTone } from "@/dictation/sounds";
+import { effectiveKeys } from "@/keyboard/bindings-store";
+import { DICTATE_KEYS } from "@/keyboard/catalog";
+import { isLoneModifier, isMac } from "@/keyboard/registry";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { errorMessage } from "@/api/errors";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -218,6 +224,8 @@ export function VoiceInputSection() {
   const [seenOn, setSeenOn] = useState(false);
   if (on && !seenOn) setSeenOn(true);
   const dictateKeys = useShortcutHint("composer.dictate");
+  // Read again whenever the hint changes, which follows the bindings.
+  const heldAlone = isLoneModifier(effectiveKeys("composer.dictate", DICTATE_KEYS) ?? "");
 
   if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
   // Experimental until 0.9: off, the page opens Diagnostics, unless it was turned off right here.
@@ -241,7 +249,7 @@ export function VoiceInputSection() {
       <div className={SETTINGS_CARD}>
         <VoiceInputSwitch
           label="Voice input"
-          description={`Dictate into the composer with its mic button${dictateKeys === "" ? "" : ` or ${dictateKeys}: tap it to start and stop, or hold it while you talk`}. Experimental.`}
+          description={`Dictate into the composer with its mic button${dictateKeys === "" ? "" : ` or ${dictateKeys}: ${heldAlone ? "hold it anywhere in Gram while you talk, or double-tap it to keep listening" : "tap it to start and stop, or hold it while you talk"}`}. Experimental.`}
         />
         {on && (
           <SettingRow
@@ -296,6 +304,16 @@ export function VoiceInputSection() {
               // Now, not when a composer next renders: there may be none behind Settings.
               if (!next) microphone.keepReady(false);
               save({ voice: { keepMicrophoneReady: next } }).catch(fail);
+            }}
+          />
+        )}
+        {on && (
+          <SoundsRow
+            on={dictationSoundVolumeOf(settings) > 0}
+            stored={settings.voice?.soundVolume ?? DEFAULT_DICTATION_SOUND_VOLUME}
+            onChange={(patch) => {
+              setError(undefined);
+              save({ voice: patch }).catch(fail);
             }}
           />
         )}
@@ -766,6 +784,62 @@ function MicrophoneRow({ held }: { held: boolean }) {
           Open System Settings
         </Button>
       )}
+    </SettingRow>
+  );
+}
+
+/** The start and stop tones: on or off, and how loud, with a tone to hear each change by. */
+function SoundsRow({
+  on,
+  stored,
+  onChange,
+}: {
+  on: boolean;
+  /** The volume kept for when they're on. */
+  stored: number;
+  onChange: (patch: { sounds?: boolean; soundVolume?: number }) => void;
+}) {
+  const id = useId();
+  const [draft, setDraft] = useState<number>();
+  const shown = draft ?? stored;
+  const commit = () => {
+    if (draft === undefined) return;
+    setDraft(undefined);
+    playTone("start", draft);
+    onChange({ soundVolume: draft });
+  };
+  return (
+    <SettingRow
+      label="Sounds"
+      htmlFor={id}
+      description="A tone when dictation starts listening and another when it stops. A tap or a discarded press makes none."
+      keywords={["tone", "beep", "volume", "audio", "chime"]}
+    >
+      {on && (
+        <input
+          type="range"
+          aria-label="Sound volume"
+          data-testid="dictation-sound-volume"
+          min={0.05}
+          max={1}
+          step={0.05}
+          value={shown}
+          aria-valuetext={`${Math.round(shown * 100)} %`}
+          className="w-28 accent-primary"
+          onChange={(event) => setDraft(Number(event.target.value))}
+          onPointerUp={commit}
+          onKeyUp={commit}
+          onBlur={commit}
+        />
+      )}
+      <Switch
+        id={id}
+        checked={on}
+        onCheckedChange={(next) => {
+          if (next) playTone("start", stored);
+          onChange({ sounds: next });
+        }}
+      />
     </SettingRow>
   );
 }

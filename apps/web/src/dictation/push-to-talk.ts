@@ -95,3 +95,126 @@ export const releasesChord = (keys: string, event: KeyboardEvent, mac = isMac())
   }
   return modifier === "mod" && !mac ? chord.mod || chord.ctrl : chord[modifier];
 };
+
+/** How soon after a tap a second one locks dictation on, as a double-click would. */
+export const DOUBLE_TAP_MS = 350;
+
+export interface ModifierHoldDeps {
+  readonly now: () => number;
+  /** Starting, listening or finishing. */
+  readonly active: () => boolean;
+  /** Starts dictation, provisionally: it makes no sound until `confirm`. */
+  readonly start: () => void;
+  /** The press is a hold or a lock, not a tap or part of a shortcut. */
+  readonly confirm: () => void;
+  /** Stops listening, keeping what was heard. */
+  readonly stop: () => void;
+  /** Stops and throws away what was heard, silently. */
+  readonly cancel: () => void;
+}
+
+export interface ModifierHold {
+  /** The modifier went down; `repeat` is the OS's key repeat, which does nothing. */
+  down(repeat: boolean): void;
+  /** The modifier came up. */
+  up(): void;
+  /** Any other key went down while it was held: a shortcut, not dictation. */
+  other(): void;
+  /** The window lost the focus, so the key-up won't come here. */
+  blur(): void;
+  /** Escape discarded what was heard. */
+  reset(): void;
+}
+
+/**
+ * Push-to-talk on one modifier held alone (Right ⌥, say), as Hex has it: dictation starts at the
+ * press so nothing is missed, and the press then turns out to be one of these:
+ *
+ * - a hold of `HOLD_MS` or more, which talks until the key comes up;
+ * - a tap, which throws away what it heard without a sound;
+ * - part of a shortcut: another key went down before it came up, so that shortcut works as ever
+ *   and dictation is thrown away;
+ * - a second tap within `DOUBLE_TAP_MS` of a tap, which locks dictation on until the next press.
+ *
+ * A press while dictation runs (locked, or from the mic button) stops it.
+ */
+export function createModifierHold(deps: ModifierHoldDeps): ModifierHold {
+  type State =
+    | { readonly kind: "idle" }
+    /** Held: `second` when it came soon after a tap, so a tap of it locks. */
+    | { readonly kind: "holding"; readonly at: number; readonly second: boolean }
+    /** Held, but this press stopped dictation or was part of a shortcut: its key-up does nothing. */
+    | { readonly kind: "spent" }
+    | { readonly kind: "locked" };
+  let state: State = { kind: "idle" };
+  let lastTap: number | undefined;
+  /** Confirms a hold as soon as it's long enough, so its sound plays while the key is still down. */
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const settle = (next: State) => {
+    clearTimeout(holdTimer);
+    holdTimer = undefined;
+    state = next;
+  };
+
+  return {
+    down: (repeat) => {
+      if (repeat || state.kind === "holding" || state.kind === "spent") return;
+      if (state.kind === "locked" || deps.active()) {
+        settle({ kind: "spent" });
+        deps.stop();
+        return;
+      }
+      const at = deps.now();
+      const second = lastTap !== undefined && at - lastTap <= DOUBLE_TAP_MS;
+      lastTap = undefined;
+      settle({ kind: "holding", at, second });
+      deps.start();
+      holdTimer = setTimeout(() => {
+        holdTimer = undefined;
+        if (state.kind === "holding" && deps.active()) deps.confirm();
+      }, HOLD_MS);
+    },
+    up: () => {
+      if (state.kind !== "holding") {
+        if (state.kind === "spent") settle({ kind: "idle" });
+        return;
+      }
+      const { at, second } = state;
+      const held = deps.now() - at;
+      if (held >= HOLD_MS) {
+        settle({ kind: "idle" });
+        if (deps.active()) deps.stop();
+      } else if (second) {
+        settle({ kind: "locked" });
+        if (deps.active()) deps.confirm();
+        else settle({ kind: "idle" });
+      } else {
+        settle({ kind: "idle" });
+        lastTap = deps.now();
+        deps.cancel();
+      }
+    },
+    other: () => {
+      lastTap = undefined;
+      if (state.kind !== "holding") return;
+      settle({ kind: "spent" });
+      deps.cancel();
+    },
+    blur: () => {
+      lastTap = undefined;
+      if (state.kind !== "holding") {
+        if (state.kind === "spent") settle({ kind: "idle" });
+        return;
+      }
+      const long = deps.now() - state.at >= HOLD_MS;
+      settle({ kind: "idle" });
+      if (long && deps.active()) deps.stop();
+      else deps.cancel();
+    },
+    reset: () => {
+      lastTap = undefined;
+      settle({ kind: "idle" });
+    },
+  };
+}

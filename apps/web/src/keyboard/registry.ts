@@ -98,8 +98,36 @@ const byCharacter = (key: string) => key.length === 1 && !/[a-z0-9\\/.[\]]/.test
 export const isAltGraphText = (event: KeyboardEvent, mac = isMac()): boolean =>
   !mac && event.ctrlKey && event.altKey && event.key.length === 1 && !/^[a-z0-9]$/i.test(event.key);
 
+/**
+ * Keys strings for one modifier held alone, named as `KeyboardEvent.code` names its key, lowercased
+ * (`altright` for Right ⌥): push-to-talk's binding. They are never a chord: `matches` and the
+ * registry ignore them, and push-to-talk watches them itself.
+ */
+const LONE_MODIFIERS: Readonly<Record<string, { readonly mac: string; readonly other: string }>> = {
+  altright: { mac: "Right ⌥", other: "Right Alt" },
+  altleft: { mac: "Left ⌥", other: "Left Alt" },
+  metaright: { mac: "Right ⌘", other: "Right Win" },
+  metaleft: { mac: "Left ⌘", other: "Left Win" },
+  controlright: { mac: "Right ⌃", other: "Right Ctrl" },
+  controlleft: { mac: "Left ⌃", other: "Left Ctrl" },
+  shiftright: { mac: "Right ⇧", other: "Right Shift" },
+  shiftleft: { mac: "Left ⇧", other: "Left Shift" },
+};
+
+const loneModifier = (keys: string) =>
+  Object.hasOwn(LONE_MODIFIERS, keys.toLowerCase())
+    ? LONE_MODIFIERS[keys.toLowerCase()]
+    : undefined;
+
+/** Whether `keys` is one modifier held alone, such as `altright`. */
+export const isLoneModifier = (keys: string): boolean => loneModifier(keys) !== undefined;
+
+/** The keys string for a press of one modifier, such as `altright` for Right ⌥, else `undefined`. */
+export const loneModifierFromEvent = (event: Pick<KeyboardEvent, "code">): string | undefined =>
+  isLoneModifier(event.code) ? event.code.toLowerCase() : undefined;
+
 export function matches(keys: string, event: KeyboardEvent, mac = isMac()): boolean {
-  if (isAltGraphText(event, mac)) return false;
+  if (isAltGraphText(event, mac) || loneModifier(keys) !== undefined) return false;
   const chord = parseKeys(keys);
   // Off macOS, `mod` and `ctrl` are both the Control key.
   const wantMeta = mac && chord.mod;
@@ -192,6 +220,8 @@ const WORDS: Record<string, string> = {
 };
 
 export function formatKeys(keys: string, mac = isMac()): string {
+  const lone = loneModifier(keys);
+  if (lone !== undefined) return mac ? lone.mac : lone.other;
   const chord = parseKeys(keys);
   const key = (mac ? undefined : WORDS[chord.key]) ?? GLYPHS[chord.key] ?? chord.key.toUpperCase();
   if (mac) {

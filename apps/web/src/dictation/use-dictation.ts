@@ -1,4 +1,5 @@
 import {
+  dictationSoundVolumeOf,
   keepMicrophoneReadyOf,
   openSpeechSession,
   SPEECH_MODEL_FOR_STOP,
@@ -15,6 +16,7 @@ import { useServerSettings } from "@/settings-sync/store";
 
 import { microphone } from "./capture";
 import { lifecycleMark, lifecyclePending, lifecycleUnchanged } from "./lifecycle";
+import { playTone } from "./sounds";
 import type { Api } from "@/api/types";
 
 import {
@@ -49,6 +51,13 @@ export interface DictationControls {
   /** How loud the microphone is now, from 0 to 1; read by the listening bars on each clock step. */
   level(): number;
   toggle(): void;
+  /**
+   * Starts dictation for a press that may turn out to be a tap or part of a shortcut, so it makes
+   * no sound until `confirm`.
+   */
+  startProvisionally(): void;
+  /** The provisional start is a real one: the start tone plays once listening. */
+  confirm(): void;
   /** Gets everything ready ahead of a start, the model above all; for the field's focus. */
   prewarm(): void;
   stop(): void;
@@ -81,6 +90,25 @@ export const installedTarget = async (
     code: "model-missing",
     message: "The speech model isn't downloaded yet (Settings → Voice input).",
   };
+};
+
+/**
+ * The tones of the dictation under way: the start one plays once capture is live and the start is
+ * confirmed, and the stop one only after a start one, so a discard makes no sound.
+ */
+interface Tones {
+  /** Not a press that may yet turn out to be a tap or part of a shortcut. */
+  confirmed: boolean;
+  /** Capturing. */
+  live: boolean;
+  /** The start tone played. */
+  started: boolean;
+}
+
+const startTone = (tones: Tones, volume: number) => {
+  if (tones.started || !tones.live || !tones.confirmed) return;
+  tones.started = true;
+  playTone("start", volume);
 };
 
 /**
@@ -120,6 +148,12 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
   const bridge = on ? speechBridge() : undefined;
   const [state, setState] = useState<DictationState>({ phase: "idle" });
   const [partial, setPartial] = useState("");
+  const soundVolume = settings === undefined ? 0 : dictationSoundVolumeOf(settings);
+  const volume = useRef(soundVolume);
+  useEffect(() => {
+    volume.current = soundVolume;
+  }, [soundVolume]);
+  const tones = useRef<Tones>({ confirmed: true, live: false, started: false });
   const commit = useRef(onCommit);
   useEffect(() => {
     commit.current = onCommit;
@@ -155,6 +189,18 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
       {
         onState: (next) => {
           if (next.phase === "error" && next.code === "model-missing") target.current.forget();
+          const t = tones.current;
+          if (next.phase === "listening") {
+            t.live = true;
+            startTone(t, volume.current);
+          } else if (next.phase === "stopping") {
+            if (t.started) playTone("stop", volume.current);
+            t.live = false;
+            t.started = false;
+          } else if (next.phase !== "starting") {
+            t.live = false;
+            t.started = false;
+          }
           setState(next);
         },
         onPartial: setPartial,
@@ -170,6 +216,18 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
 
   const active =
     state.phase === "starting" || state.phase === "listening" || state.phase === "stopping";
+  const begin = (confirmed: boolean) => {
+    // Settings is installing or deleting models; a session now could outlive a turn-off.
+    if (lifecyclePending()) return;
+    if (performance === undefined) return;
+    tones.current = { confirmed, live: false, started: false };
+    const wanted: DictationTarget = {
+      modelId: SPEECH_MODEL_FOR_STOP[performance],
+      performance,
+      mode,
+    };
+    void dictation.current?.start(wanted);
+  };
   return {
     available: bridge !== undefined,
     state,
@@ -177,15 +235,14 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
     active,
     toggle: () => {
       if (active) return dictation.current?.stop();
-      // Settings is installing or deleting models; a session now could outlive a turn-off.
-      if (lifecyclePending()) return;
-      if (performance === undefined) return;
-      const wanted: DictationTarget = {
-        modelId: SPEECH_MODEL_FOR_STOP[performance],
-        performance,
-        mode,
-      };
-      void dictation.current?.start(wanted);
+      begin(true);
+    },
+    startProvisionally: () => {
+      if (!active) begin(false);
+    },
+    confirm: () => {
+      tones.current.confirmed = true;
+      startTone(tones.current, volume.current);
     },
     prewarm: () => {
       // Not while Settings changes what's installed: a prewarm after its `shutdown` would start

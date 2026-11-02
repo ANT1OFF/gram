@@ -1,7 +1,15 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { dispatchShortcut, formatKeys, matches, registerShortcut, runShortcut } from "./registry";
+import {
+  dispatchShortcut,
+  formatKeys,
+  isLoneModifier,
+  loneModifierFromEvent,
+  matches,
+  registerShortcut,
+  runShortcut,
+} from "./registry";
 
 const key = (init: KeyboardEventInit & { code?: string }, target?: EventTarget) => {
   const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -78,6 +86,26 @@ describe("formatKeys", () => {
     expect(formatKeys("escape", false)).toBe("Esc");
     expect(formatKeys("mod+alt+arrowleft", true)).toBe("⌘⌥←");
     expect(formatKeys("mod+alt+arrowright", false)).toBe("Ctrl+Alt+→");
+  });
+});
+
+describe("one modifier alone", () => {
+  it("names a modifier by its side, never matches as a chord, and reads the press's code", () => {
+    expect(formatKeys("altright", true)).toBe("Right ⌥");
+    expect(formatKeys("altright", false)).toBe("Right Alt");
+    expect(formatKeys("metaleft", false)).toBe("Left Win");
+    expect(isLoneModifier("ShiftRight")).toBe(true);
+    expect(isLoneModifier("alt+a")).toBe(false);
+    expect(loneModifierFromEvent({ code: "AltRight" })).toBe("altright");
+    expect(loneModifierFromEvent({ code: "KeyA" })).toBeUndefined();
+    const press = { key: "Alt", code: "AltRight", altKey: true } as KeyboardEvent;
+    expect(
+      matches(
+        "altright",
+        { ...press, metaKey: false, ctrlKey: false, shiftKey: false } as KeyboardEvent,
+        true,
+      ),
+    ).toBe(false);
   });
 });
 

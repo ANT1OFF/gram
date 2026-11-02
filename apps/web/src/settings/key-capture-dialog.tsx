@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { normaliseKeys, type BindingRow } from "@/keyboard/bindings";
 import type { BindingOverrides } from "@/keyboard/bindings-store";
-import { formatKeys, isAltGraphText, isMac, keysFromEvent } from "@/keyboard/registry";
+import {
+  formatKeys,
+  isAltGraphText,
+  isMac,
+  keysFromEvent,
+  loneModifierFromEvent,
+} from "@/keyboard/registry";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
 /** Shortcuts macOS keeps for itself, so the app may never see them. */
@@ -55,7 +61,10 @@ export function KeyCaptureDialog({
 
   useEffect(() => {
     if (!recording) return;
+    /** A modifier down on its own, which its key-up records where the shortcut takes one alone. */
+    let lone: string | undefined;
     const onKeyDown = (event: KeyboardEvent) => {
+      lone = row.loneModifier && !event.repeat ? loneModifierFromEvent(event) : undefined;
       // Escape still reaches the dialog, which closes.
       if (event.key === "Escape") return;
       event.preventDefault();
@@ -74,9 +83,19 @@ export function KeyCaptureDialog({
       setUnusable(undefined);
       setCapture({ state: "recorded", keys });
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (lone === undefined || loneModifierFromEvent(event) !== lone) return;
+      event.preventDefault();
+      setUnusable(undefined);
+      setCapture({ state: "recorded", keys: lone });
+    };
     window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [recording, mac]);
+    window.addEventListener("keyup", onKeyUp, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+    };
+  }, [recording, mac, row.loneModifier]);
 
   const keys = capture.state === "recorded" ? capture.keys : undefined;
   const clashes =
@@ -107,7 +126,7 @@ export function KeyCaptureDialog({
     >
       <p data-testid="key-capture-status" role="status" aria-live="polite" className="text-sm">
         {recording
-          ? "Recording: press the new keys. Escape cancels; Backspace turns the shortcut off."
+          ? `Recording: press the new keys${row.loneModifier ? `, or tap one modifier such as ${formatKeys("altright", mac)} alone` : ""}. Escape cancels; Backspace turns the shortcut off.`
           : capture.state === "off"
             ? `${row.label} will be off.`
             : `Recorded ${shown}.`}

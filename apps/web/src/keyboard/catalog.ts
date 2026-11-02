@@ -1,6 +1,6 @@
 import type { ExperimentalSettings, Settings } from "@gram/contracts";
 
-import type { ShortcutGroup } from "./registry";
+import { isMac, type ShortcutGroup } from "./registry";
 
 export interface ShortcutDefinition {
   id: string;
@@ -10,6 +10,8 @@ export interface ShortcutDefinition {
   group: ShortcutGroup;
   /** The experimental switch its feature is still behind: listed only while that is on. */
   experimental?: keyof ExperimentalSettings;
+  /** May be bound to one modifier held alone (`altright`), for push-to-talk. */
+  loneModifier?: boolean;
 }
 
 /**
@@ -20,6 +22,12 @@ export const paneMoveKeys = (
   key: string,
   platform: string | undefined = typeof window === "undefined" ? undefined : window.gram?.platform,
 ): string => (platform === "linux" ? `alt+shift+${key}` : `mod+alt+${key}`);
+
+/**
+ * Dictation's default: Right ⌥ held on macOS, which few shortcuts use. Elsewhere Right Alt is AltGr
+ * on many layouts, which types brackets, so the chord stays.
+ */
+export const DICTATE_KEYS = isMac() ? "altright" : "mod+shift+space";
 
 const paneMove = (
   [
@@ -201,10 +209,11 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   { id: "composer.stash", keys: "mod+s", label: "Stash the draft", group: "Composer" },
   {
     id: "composer.dictate",
-    keys: "mod+shift+space",
-    label: "Dictate: tap to start or stop, hold to talk",
+    keys: DICTATE_KEYS,
+    label: "Dictate: hold to talk",
     group: "Composer",
     experimental: "voiceInput",
+    loneModifier: true,
   },
   // Answered in the composer's text area through `shortcutPressed`, and only while a suggested
   // reply shows there, so they shadow nothing: the caret is already at the end.
