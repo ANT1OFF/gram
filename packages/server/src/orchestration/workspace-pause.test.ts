@@ -11,13 +11,13 @@ import { LIMIT_RESUME_BATCH_GAP_MS, LIMIT_RESUME_JITTER_MS } from "../runtime/li
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Orchestration } from "./service.ts";
 import {
-  completeTurn,
   GIT_HEAVY,
   makeWorld,
   openOrchestrator,
   outboxOf,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   waitSent,
   withServer,
@@ -312,13 +312,14 @@ describe.skipIf(!hasGit)("the user's pause of a workspace", () => {
             const runtimes = yield* ThreadRuntimes;
             const { session, workspaceId } = yield* openOrchestrator(world);
             const worker = yield* spawn(session, { feature: "review" });
-            yield* completeTurn(worker.session);
+            yield* stopSilently(worker.session);
             yield* orchestration.setPaused(workspaceId, true);
             yield* runtimes.sendNotice(worker.thread.id, "review:acme/app#7", {
               text: "HELD REVIEW 1",
             });
             yield* settle;
-            expect(yield* sentTo(worker.thread.id)).toHaveLength(1);
+            // The brief and the wrap-up of its silent stop; the notice waits.
+            expect(yield* sentTo(worker.thread.id)).toHaveLength(2);
             return { workspaceId, workerId: worker.thread.id };
           }),
         );
@@ -364,7 +365,7 @@ describe.skipIf(!hasGit)("the user's pause of a workspace", () => {
           const orchestration = yield* Orchestration;
           const { session, workspaceId } = yield* openOrchestrator(world);
           const worker = yield* spawn(session, { feature: "reports" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           yield* orchestration.setPaused(workspaceId, true);
           yield* settle;
           // At rest when the pause landed: nothing to stop then.

@@ -22,6 +22,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   waitSent,
   waitStatus,
@@ -38,9 +39,9 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const { session, workspaceId } = yield* openOrchestrator(world);
         const a = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
         const b = yield* spawn(session, { feature: "billing", title: "Billing" });
-        yield* completeTurn(a.session);
+        yield* stopSilently(a.session);
         yield* TestClock.adjust("40 seconds");
-        yield* completeTurn(b.session);
+        yield* stopSilently(b.session);
         // The second reason restarted the window: a minute after the first, nothing has gone out.
         yield* TestClock.adjust("40 seconds");
         yield* settle;
@@ -283,7 +284,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         expect(session.sent).toHaveLength(2);
         // The next one ends with no word at all, which is.
         yield* session.callTool("send_message", { threadId: a.thread.id, text: "Go on." });
-        yield* completeTurn(a.session);
+        yield* stopSilently(a.session);
         yield* TestClock.adjust("60 seconds");
         yield* waitSent(orchestrator, 3);
         expect(session.sent[2]!.text).toContain("ended its turn without reporting");
@@ -346,10 +347,11 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             chunk: { type: "tool-output-available", toolCallId: "long", output: "finished" },
           });
           yield* a.session.emit({ type: "backgroundTasks", tasks: [] });
-          yield* completeTurn(a.session);
+          yield* stopSilently(a.session);
           yield* TestClock.adjust("60 seconds");
           yield* waitSent(session.options.threadId, 3);
-          expect(session.sent[2]!.text).toContain("last tool Bash");
+          // The stop told is the wrap-up turn's, which ended with no tool and no word.
+          expect(session.sent[2]!.text).toContain("last tool none");
           expect(
             (session.sent[2]!.notice as OrchestrationDigest).features[0]?.workers[0],
           ).toMatchObject({ quiet: { kind: "turnEnded" } });
@@ -364,7 +366,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const orchestrator = session.options.threadId;
         const a = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
         const b = yield* spawn(session, { feature: "billing", title: "Billing" });
-        yield* completeTurn(a.session);
+        yield* stopSilently(a.session);
         yield* publishGit(world, a.thread, {
           pr: prBadge({ state: "MERGED", checks: "passing" }),
         });
@@ -387,7 +389,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         expect((yield* outboxOf(workspaceId)).tidyNoted).toEqual([`archive:${a.thread.id}`]);
 
         // Still true, and already said: the next digest, about another worker, leaves it out.
-        yield* completeTurn(b.session);
+        yield* stopSilently(b.session);
         yield* TestClock.adjust("60 seconds");
         yield* waitSent(orchestrator, 4);
         expect(session.sent[3]!.text).toContain("'Billing' finished a turn");
@@ -558,7 +560,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const events = yield* collectEvents(["notify"]);
           const { session, thread, workspaceId } = yield* openOrchestrator(world);
           const worker = yield* spawn(session, { feature: "mail-trigger" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           yield* TestClock.adjust("60 seconds");
           yield* waitSent(thread.id, 2);
           const flight = (yield* outboxOf(workspaceId)).inFlight;
@@ -652,7 +654,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         yield* waitSent(thread.id, 2);
         yield* session.emit({ type: "turnEnd", reason: "error", error: "overloaded" });
         yield* waitStatus(thread.id, "error");
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         yield* TestClock.adjust("60 seconds");
         yield* waitSent(thread.id, 3);
         expect(session.sent[2]?.text).toContain("finished a turn");
@@ -664,7 +666,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         // A digest waiting behind a turn that fails isn't failed with it, and goes once it settles.
         yield* runtimes.send(thread.id, { text: "again" });
         yield* waitSent(thread.id, 4);
-        yield* completeTurn(other.session);
+        yield* stopSilently(other.session);
         yield* TestClock.adjust("60 seconds");
         yield* settle;
         yield* session.emit({ type: "turnEnd", reason: "error", error: "overloaded" });
@@ -686,7 +688,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const orchestration = yield* Orchestration;
         const { session, thread, workspaceId } = yield* openOrchestrator(world);
         const worker = yield* spawn(session, { feature: "mail-trigger" });
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         yield* runtimes.send(thread.id, { text: "hello" });
         yield* waitSent(thread.id, 2);
         yield* session.emit({ type: "turnEnd", reason: "error", error: "overloaded" });

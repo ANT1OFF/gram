@@ -155,6 +155,11 @@ export const WorkerMemo = Schema.Struct({
   turnEndsAtReport: Schema.optionalKey(Schema.Int),
   /** The latest unreported stop; a new turn or report supersedes it. */
   quiet: Schema.optionalKey(WorkerQuiet),
+  /**
+   * Its last stop was sent a wrap-up turn (`wrapUpDue`), which the digest waits on rather than
+   * calling the stop silent; the next turn end takes it off, and gets no wrap-up of its own.
+   */
+  wrapUp: Schema.optionalKey(Schema.Boolean),
   /** The advisory `spawn_worker.scope` claim. */
   scope: Schema.optionalKey(Schema.Array(Schema.String)),
   /** Its background work as last reported; absent when it has none. A restart stops all of it. */

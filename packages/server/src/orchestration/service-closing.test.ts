@@ -31,6 +31,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   stallGit,
   waitReal,
   waitSent,
@@ -47,7 +48,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const orchestration = yield* Orchestration;
           const { session, workspaceId } = yield* openOrchestrator(world);
           const worker = yield* spawn(session, { feature: "mail-trigger" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           const notWorker = yield* orchestration.detach(session.options.threadId).pipe(Effect.flip);
           expect(notWorker).toMatchObject({ _tag: "InvalidState" });
 
@@ -81,7 +82,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
               const { thread, session, workspaceId } = yield* openOrchestrator(world);
               const old = yield* spawn(session, { feature: "old", group: "old-release" });
               const live = yield* spawn(session, { feature: "live" });
-              yield* completeTurn(old.session);
+              yield* stopSilently(old.session);
               yield* publishGit(world, old.thread, {
                 pr: prBadge({ state: "MERGED", checks: "passing" }),
               });
@@ -99,7 +100,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
 
               let count = 2;
               if (snapshotArchived) {
-                yield* completeTurn(live.session);
+                yield* stopSilently(live.session);
                 yield* TestClock.adjust("60 seconds");
                 yield* waitSent(thread.id, ++count);
                 yield* completeTurn(session);
@@ -168,9 +169,9 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const { thread, session, workspaceId } = yield* openOrchestrator(world);
         const worker = yield* spawn(session, { feature: "old" });
         const other = yield* spawn(session, { feature: "live" });
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         yield* session.callTool("archive_thread", { threadId: worker.thread.id, force: true });
-        yield* completeTurn(other.session);
+        yield* stopSilently(other.session);
         yield* TestClock.adjust("60 seconds");
         yield* waitSent(thread.id, 2);
         yield* completeTurn(session);
@@ -201,12 +202,12 @@ describe.skipIf(!hasGit)("orchestration service", () => {
               const { thread, session, workspaceId } = yield* openOrchestrator(world);
               const worker = yield* spawn(session, { feature: "old" });
               const other = yield* spawn(session, { feature: "live" });
-              yield* completeTurn(worker.session);
+              yield* stopSilently(worker.session);
               yield* session.callTool("archive_thread", {
                 threadId: worker.thread.id,
                 force: true,
               });
-              yield* completeTurn(other.session);
+              yield* stopSilently(other.session);
               yield* TestClock.adjust("60 seconds");
               yield* waitSent(thread.id, 2);
               yield* completeTurn(session);
@@ -304,7 +305,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             const runtimes = yield* ThreadRuntimes;
             const { thread, session, workspaceId } = yield* openOrchestrator(world);
             const worker = yield* spawn(session, { feature: "old" });
-            yield* completeTurn(worker.session);
+            yield* stopSilently(worker.session);
             yield* publishGit(world, worker.thread, {
               pr: prBadge({ state: "MERGED", checks: "passing" }),
             });
@@ -367,7 +368,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           // At full, so a Codex worker needs no gateway profile to ask before a push.
           yield* atAutonomy(thread, "full");
           const worker = yield* spawn(session, { feature: "mail-trigger" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           yield* TestClock.adjust("30 seconds");
           const events = yield* collectEvents(["thread.upsert", "workspaces.changed"]);
 
@@ -582,7 +583,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const store = yield* ThreadStore;
         const { session, workspaceId } = yield* openOrchestrator(world);
         const worker = yield* spawn(session, { feature: "mail-trigger" });
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         const newer = JSON.stringify({ version: OUTBOX_VERSION + 1, generation: 9, wakes: {} });
         yield* store.putOutbox(workspaceId, newer);
         // The window's digest surveys first, which sets the row aside before its pause lands.
@@ -832,7 +833,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const audit = yield* store.listOrchestrationEvents(workspaceId, 0);
         expect(audit.map((event) => event.kind)).toContain("orchestratorEdits");
 
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         yield* TestClock.adjust("60 seconds");
         yield* waitSent(thread.id, 3);
         expect(session.sent[2]?.text).toContain("You changed 1 file in shop yourself");

@@ -23,6 +23,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   waitSent,
   waitStatus,
@@ -45,7 +46,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
               feature: "mail-trigger",
               title: "Mail trigger",
             });
-            yield* completeTurn(worker.session);
+            yield* stopSilently(worker.session);
             yield* TestClock.adjust("60 seconds");
             yield* waitSent(thread.id, 2);
             yield* completeTurn(session);
@@ -244,11 +245,11 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             const parked = yield* spawn(session, { feature: "old", title: "Parked" });
             const completed = yield* spawn(session, { feature: "older", title: "Completed" });
             const unknown = yield* spawn(session, { feature: "oldest", title: "Unknown PR" });
-            yield* completeTurn(unknown.session);
-            yield* completeTurn(cut.session);
-            yield* completeTurn(idle.session);
-            yield* completeTurn(parked.session);
-            yield* completeTurn(completed.session);
+            yield* stopSilently(unknown.session);
+            yield* stopSilently(cut.session);
+            yield* stopSilently(idle.session);
+            yield* stopSilently(parked.session);
+            yield* stopSilently(completed.session);
             yield* idle.session.emit({
               type: "backgroundTasks",
               tasks: [
@@ -407,7 +408,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const store = yield* ThreadStore;
           const { session, thread, workspaceId } = yield* openOrchestrator(world);
           const cut = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
-          yield* completeTurn(cut.session);
+          yield* stopSilently(cut.session);
           yield* TestClock.adjust("60 seconds");
           yield* waitSent(thread.id, 2);
           yield* completeTurn(session);
@@ -632,7 +633,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             contextTokens: 184_000,
           });
           yield* completeTurn(session);
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           yield* TestClock.adjust("60 seconds");
           yield* waitSent(thread.id, 3);
           expect(session.sent[2]?.text).toContain(
@@ -760,7 +761,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const fake = yield* FakeAgentControl;
         const { session, thread, workspaceId } = yield* openOrchestrator(world);
         const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         yield* TestClock.adjust("60 seconds");
         yield* waitSent(thread.id, 2);
         expect((yield* outboxOf(workspaceId)).inFlight?.generation).toBe(2);

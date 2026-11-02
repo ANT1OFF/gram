@@ -24,12 +24,12 @@ import { LIMIT_CLEARED_TEXT, LIMIT_RESUME_BATCH_GAP_MS } from "../runtime/limit-
 import { HELD_RETRY_MS, refusalPasses } from "./limit-pause.ts";
 import { Orchestration, type HeldSpawn } from "./service.ts";
 import {
-  completeTurn,
   makeWorld,
   openOrchestrator,
   outboxOf,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   waitSent,
   withServer,
@@ -697,7 +697,7 @@ describe.skipIf(!hasGit)("holding low-priority briefs near a limit", () => {
 
           // Once the busy worker rests archived, the next retry starts it: a turn it still ran
           // would keep its slot.
-          yield* completeTurn(busy.session);
+          yield* stopSilently(busy.session);
           yield* session.callTool("archive_thread", { threadId: busy.thread.id });
           yield* settle;
           yield* TestClock.adjust(HELD_RETRY_MS);

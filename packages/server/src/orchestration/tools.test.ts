@@ -38,6 +38,7 @@ import {
   publishGit,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   waitSent,
   waitStatus,
@@ -1001,7 +1002,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
             stage: "shipped",
             note: "old notes",
           });
-          yield* completeTurn(a.session);
+          yield* stopSilently(a.session);
           yield* session.callTool("archive_thread", { threadId: a.thread.id });
           for (const detail of [false, true]) {
             const result = (yield* session.callTool("list_workers", {
@@ -1104,7 +1105,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
 
         // Back-to-back follow-ups to a brief are fine, carry depth 1, and are counted; the one to
         // a running worker is steered.
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         expect(
           yield* session.callTool("send_message", {
             threadId: worker.thread.id,
@@ -1124,7 +1125,8 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           role: "orchestrator",
           mode: "steer",
         };
-        expect(worker.session.sent[1]).toEqual({ text: "Also add tests.", origin });
+        // After the brief and the wrap-up of its silent stop.
+        expect(worker.session.sent[2]).toEqual({ text: "Also add tests.", origin });
         expect(worker.session.steered).toEqual([{ text: "And docs.", origin }]);
         const ledger = (yield* session.callTool("list_workers", {
           detail: true,
@@ -1180,7 +1182,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         });
         yield* worker.session.completeTurn();
         yield* waitSent(worker.thread.id, 2);
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         expect(yield* to(worker.thread.id, "Idle, so this starts a turn.")).toMatchObject({
           delivered: "sent",
         });
@@ -1496,7 +1498,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           const fake = yield* FakeAgentControl;
           const { session, thread, workspaceId } = yield* openOrchestratorAcross(world);
           const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           const input = { threadId: worker.thread.id, project: "warehouse" };
 
           const tool = yield* orchestratorTool(thread.id, "add_worker_repo");
@@ -1706,7 +1708,7 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           const fake = yield* FakeAgentControl;
           const { session, thread } = yield* openOrchestrator(world);
           const worker = yield* spawn(session, { feature: "mail-trigger" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           yield* waitStatus(worker.thread.id, "idle");
           const stranger = yield* runtimes.create({
             projectRoot: world.repo,

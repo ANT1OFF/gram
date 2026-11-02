@@ -272,6 +272,11 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
             memo.turnEndsAtReport === undefined ? [] : [[threadId, memo.turnEndsAtReport]],
           ),
         ),
+        wrappingUp: new Set(
+          Object.entries(outbox.workers).flatMap(([threadId, memo]) =>
+            memo.wrapUp === true ? [threadId] : [],
+          ),
+        ),
         autonomy: autonomyOf(state.charter),
         paused: new Set(state.pausedFeatures ?? []),
       });

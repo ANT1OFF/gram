@@ -3,6 +3,7 @@
 // input and git state, to drift, overlapping changes, dragging dependencies, requests that age and
 // threads that come and go.
 import {
+  isOpenQuestion,
   autonomyOf,
   effectiveCheckout,
   type BackgroundTask,
@@ -41,8 +42,10 @@ import {
   wakesOf,
   withNotes,
   type BackgroundWork,
+  type OutboxState,
   type StoredHeldBrief,
 } from "../outbox.ts";
+import { questionsOf } from "../worker-questions.ts";
 import {
   contextNote,
   restartContinuation,
@@ -55,6 +58,9 @@ import {
   userHoldLapsesAt,
   dependencyDragWhy,
   type WorkerFiles,
+  wrapUpDue,
+  wrapUpText,
+  type WrapUpFacts,
 } from "../rules.ts";
 import {
   projectOfCheckout,
@@ -74,6 +80,8 @@ import type { Adoption } from "./adoption.ts";
 const LIMIT_REASON = "your usage limit has reset";
 /** The `sendNotice` key of the one continuation a restart sends a cut-off worker. */
 const RESTART_CONTINUE_KEY = "restart-continue";
+/** The `sendNotice` key of the one wrap-up turn a silent stop is sent (`wrapUp`). */
+const WRAP_UP_KEY = "wrap-up";
 
 /** What the observers take from the rest of the service. */
 export interface ObserversDeps {
@@ -108,6 +116,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
     updateMemo,
     readOutbox,
     openedInAuto,
+    stopsAsked,
     sampleExtras,
     changedFiles,
     extraFacts,
@@ -268,6 +277,83 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       }
     });
 
+  /**
+   * Sends a worker whose stop the ledger reads as silent its one wrap-up turn (`wrapUpDue`), and
+   * marks it, so the digest waits for the report that turn files instead of calling the stop
+   * silent, and the stop that ends it gets none. `true` once the turn is on its way, which takes
+   * the turn end's wake with it: the worker isn't finished.
+   */
+  const wrapUp = (
+    state: WorkspaceState,
+    thread: Thread,
+    end: ObservedTurnEnd,
+    facts: { readonly stopAsked: boolean; readonly outbox: OutboxState },
+  ) =>
+    Effect.gen(function* () {
+      const workspaceId = state.workspace.id;
+      const memo = facts.outbox.workers[thread.id];
+      const due = (pending: WrapUpFacts["pending"], ledgerQuiet: boolean) =>
+        wrapUpDue({
+          reason: end.reason,
+          synthesized: end.synthesized,
+          queueEmpty: end.queueEmpty,
+          stopAsked: facts.stopAsked,
+          reported: memo?.reportInTurn === true,
+          idleCompaction: end.idleCompaction !== undefined,
+          limitWait: thread.limitWait !== undefined,
+          parked: thread.parked === true || thread.completedAt !== undefined,
+          paused: state.paused !== undefined || pausedFeatureOf(state, thread) !== undefined,
+          userIntervened: memo?.userIntervened === true,
+          pending,
+          afterWrapUp: memo?.wrapUp === true,
+          ledgerQuiet,
+        });
+      // What costs nothing first, so most turn ends read no more than they did.
+      if (due([], true) === undefined) return false;
+      // The live session's own word on what still runs, beside what the memo last heard of it.
+      const live = yield* runtimes.summaryOf(thread.id);
+      const pending: Array<WrapUpFacts["pending"][number]> = [];
+      if (waitingOnAutomation(thread, wakesOf(facts.outbox, thread.id))) pending.push("automation");
+      if (
+        [thread.boundPr, ...(thread.extraPrs ?? [])].some((pr) => (pr?.dependsOn?.length ?? 0) > 0)
+      )
+        pending.push("dependency");
+      if ((live?.background?.length ?? 0) > 0 || (memo?.background?.length ?? 0) > 0)
+        pending.push("background");
+      if (
+        questionsOf(facts.outbox).some(
+          (question) => question.threadId === thread.id && isOpenQuestion(question),
+        )
+      )
+        pending.push("question");
+      if ((live?.pendingRequests.length ?? 0) > 0) pending.push("request");
+      // Everything but the ledger first, so most turn ends never survey it.
+      if (due(pending, true) === undefined) return false;
+      const row = (yield* survey(state, false)).features
+        .flatMap((feature) => feature.workers)
+        .find((worker) => worker.threadId === thread.id);
+      const why = due(pending, row?.quiet?.kind === "turnEnded");
+      if (why === undefined) return false;
+      const sent = yield* runtimes
+        .sendNotice(thread.id, WRAP_UP_KEY, { text: wrapUpText(why) })
+        .pipe(
+          Effect.as(true),
+          Effect.catch((e) =>
+            Effect.logWarning("couldn't send a worker its wrap-up turn").pipe(
+              Effect.annotateLogs({ threadId: thread.id, error: e.message }),
+              Effect.as(false),
+            ),
+          ),
+        );
+      if (!sent) return false;
+      yield* updateMemo(workspaceId, thread.id, (memo) => {
+        const { quiet: _, ...rest } = memo;
+        return { ...rest, wrapUp: true };
+      });
+      yield* orchestrationChanged(workspaceId);
+      return true;
+    });
+
   const onTurnEnd = (thread: Thread, end: ObservedTurnEnd) =>
     Effect.gen(function* () {
       openedInAuto.delete(thread.id);
@@ -280,6 +366,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         yield* observeContext(own.workspace.id, thread.id);
         return yield* handoffAfterTurn(own.workspace.id, thread, end);
       }
+      const stopAsked = stopsAsked.delete(thread.id);
       const state = yield* listeningWorkspace(thread);
       if (state === undefined) return;
       // A worker stopped by a limit waits to resume on its own: the ledger shows it waiting, and
@@ -287,11 +374,11 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       if (thread.limitWait !== undefined) return yield* orchestrationChanged(state.workspace.id);
       // Nothing else looks at a worker's other repos, and a turn is when they change.
       if (yield* sampleExtras(thread)) yield* noteOverlaps(thread, state);
+      const before = yield* readOutbox(state.workspace.id);
       const deliberateWait =
-        end.reason !== "error" &&
-        waitingOnAutomation(thread, wakesOf(yield* readOutbox(state.workspace.id), thread.id));
+        end.reason !== "error" && waitingOnAutomation(thread, wakesOf(before, thread.id));
       yield* updateMemo(state.workspace.id, thread.id, (memo) => {
-        const { reportInTurn, turnEndsAtReport: _, quiet: _quiet, ...rest } = memo;
+        const { reportInTurn, turnEndsAtReport: _, quiet: _quiet, wrapUp: _wrapUp, ...rest } = memo;
         const turnEnds = end.queueEmpty ? memo.turnEnds + 1 : memo.turnEnds;
         if (reportInTurn !== true)
           return end.queueEmpty && !deliberateWait
@@ -307,6 +394,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
             : { ...rest, turnEnds };
         return { ...rest, turnEnds, ...(end.queueEmpty ? { turnEndsAtReport: turnEnds } : {}) };
       });
+      if (yield* wrapUp(state, thread, end, { stopAsked, outbox: before })) return;
       // The idle status can reach subscribers before extra-repo sampling and this memo write.
       yield* orchestrationChanged(state.workspace.id);
       if (end.queueEmpty) {

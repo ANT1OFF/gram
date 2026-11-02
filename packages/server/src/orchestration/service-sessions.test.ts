@@ -19,6 +19,7 @@ import {
   outboxOf,
   settle,
   spawn,
+  stopSilently,
   waitReal,
   waitSent,
   waitStatus,
@@ -119,7 +120,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const runtimes = yield* ThreadRuntimes;
         const { session, workspaceId } = yield* openOrchestrator(world);
         const worker = yield* spawn(session, { feature: "mail-trigger", title: "Mail trigger" });
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         const held = outboxOf(workspaceId).pipe(
           Effect.map((outbox) => outbox.workers[worker.thread.id]?.userIntervened === true),
         );
@@ -170,7 +171,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         const worker = yield* spawn(session, { feature: "mail-trigger" });
         yield* limited.session.emit({ type: "status", status: "retrying" });
         yield* settle;
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         yield* TestClock.adjust("119 seconds");
         yield* settle;
         expect(session.sent).toHaveLength(1);
@@ -189,7 +190,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         yield* runtimes.send(thread.id, { text: "first from the user" });
         yield* waitSent(thread.id, 2);
         yield* runtimes.send(thread.id, { text: "second from the user" });
-        yield* completeTurn(worker.session);
+        yield* stopSilently(worker.session);
         yield* TestClock.adjust("60 seconds");
         yield* settle;
         const summary = (yield* runtimes.snapshot).find((s) => s.thread.id === thread.id);
@@ -505,9 +506,9 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           // At full, so a Codex worker needs no gateway profile to ask before a push.
           yield* atAutonomy(thread, "full");
           const worker = yield* spawn(session, { feature: "mail-trigger" });
-          yield* completeTurn(worker.session);
+          yield* stopSilently(worker.session);
           const codexWorker = yield* spawn(session, { feature: "docs" });
-          yield* completeTurn(codexWorker.session);
+          yield* stopSilently(codexWorker.session);
           yield* store.updateSettings((settings) => ({
             ...settings,
             agents: { ...settings.agents, restartOnMcpChange: false },

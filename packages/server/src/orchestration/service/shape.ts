@@ -499,6 +499,11 @@ export interface OrchestrationShape {
   authorityOf(threadId: ThreadId): Effect.Effect<Authority | undefined>;
   /** The delegation rule for one call; reads only, since a gate may ask twice. */
   isDelegated(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
+  /**
+   * The caller is about to stop `targetId`'s running turn with `stop_thread`: when it is the
+   * caller's own worker, that stop is sent a wrap-up turn (`wrapUpDue`) once it ends.
+   */
+  noteStop(callerId: ThreadId, targetId: ThreadId): Effect.Effect<void>;
   /** Resolves an active worker's current bound parent, regardless of autonomy, or refuses before approval. */
   resolveWorkerParent(callerId: ThreadId): Effect.Effect<
     {

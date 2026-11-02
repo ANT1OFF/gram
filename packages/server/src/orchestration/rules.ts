@@ -1154,8 +1154,9 @@ const snapshotStates = (snapshot: DigestSnapshot): ReadonlyMap<string, WorkerSta
  * alone would leave the orchestrator waiting on a worker that is waiting on it. `turnEnds` is each
  * worker's count now; one that has grown since the snapshot, on a worker that is at rest and filed
  * no report, is a change. Not when the turn that ended is the one that filed its last report
- * (`turnEndsAtReport`), which the orchestrator has read already, and not for a worker the user is
- * talking to, whose turns are the user's to follow.
+ * (`turnEndsAtReport`), which the orchestrator has read already, not for a worker the user is
+ * talking to, whose turns are the user's to follow, and not while a wrap-up turn sent at that stop
+ * (`wrappingUp`) has yet to end: its report says more, and its own silent end is told instead.
  *
  * `worthWaking` is false when nothing changed and no report is unacknowledged, and for noise alone:
  * a worker arriving in, or moving between, `briefed` and `working` is the orchestrator's own spawn
@@ -1180,6 +1181,8 @@ export const digestDiff = (input: {
   readonly interfaces?: Readonly<Record<string, string>> | undefined;
   /** By thread id, `turnEnds` as of the stop that ended the last turn the worker reported in. */
   readonly turnEndsAtReport?: Readonly<Record<string, number>> | undefined;
+  /** Workers sent a wrap-up turn at their last stop, whose report is still to come (`wrapUpDue`). */
+  readonly wrappingUp?: ReadonlySet<string> | undefined;
   /** The workspace's level, which decides whose a merge is. */
   readonly autonomy?: Autonomy | undefined;
   /** Epoch ms from the service clock, for quiet ages. */
@@ -1234,6 +1237,7 @@ export const digestDiff = (input: {
       const wentQuiet =
         !worker.userIntervened &&
         !worker.reportStands &&
+        input.wrappingUp?.has(worker.threadId) !== true &&
         !(
           AT_REST.has(worker.status) &&
           (worker.waitingOnAutomation === true || (worker.wakes?.length ?? 0) > 0)
@@ -1942,6 +1946,76 @@ export const restartContinuation = (lost: ReadonlyArray<BackgroundWork>): string
       ? ""
       : ` The restart also stopped your background work (${workList(lost)}); start again what you still need.`
   }`;
+
+// ---------------------------------------------------------------------------------------------
+// Wrap-up turns
+// ---------------------------------------------------------------------------------------------
+
+/** What a worker's turn end says about whether it gets a wrap-up turn (`wrapUpDue`). */
+export interface WrapUpFacts {
+  readonly reason: "completed" | "interrupted" | "error" | "maxTurns";
+  /** The host ended the turn itself: a crash, a closed session, the interrupt watchdog. */
+  readonly synthesized: boolean;
+  /** Nothing was queued behind it. */
+  readonly queueEmpty: boolean;
+  /** Its orchestrator stopped it with `stop_thread`. */
+  readonly stopAsked: boolean;
+  /** It called `report` in the turn that ended. */
+  readonly reported: boolean;
+  /** Gram opened the turn to compact the idle thread. */
+  readonly idleCompaction: boolean;
+  /** It is waiting out a usage limit, which resumes it on its own. */
+  readonly limitWait: boolean;
+  /** Archived or marked completed. */
+  readonly parked: boolean;
+  /** The user paused the workspace or its feature. */
+  readonly paused: boolean;
+  /** The user typed into it since its last report and still holds it. */
+  readonly userIntervened: boolean;
+  /**
+   * Something it started is still to come back to it, so the stop is a wait, not silence: a
+   * scheduled wake, a run or PR monitor, a merge when ready, a PR dependency, a background shell,
+   * subagent or workflow, its open `ask_question`, or a request waiting on the user.
+   */
+  readonly pending: ReadonlyArray<
+    "automation" | "dependency" | "background" | "question" | "request"
+  >;
+  /** The turn that ended was itself a wrap-up, so this stop gets none. */
+  readonly afterWrapUp: boolean;
+  /** The ledger reads it as having ended its turn without reporting. */
+  readonly ledgerQuiet: boolean;
+}
+
+/**
+ * Whether a worker's stop earns one wrap-up turn, and why: it ended a turn without a `report`
+ * (`ended`), or its orchestrator stopped it (`stopped`). Never for a stop that isn't silent: one
+ * the user paused, holds or archived, one waiting on a limit or on anything else still to come
+ * back to it (`pending`), one that errored or that a restart cut off, or the stop that ends a
+ * wrap-up turn itself.
+ */
+export const wrapUpDue = (facts: WrapUpFacts): "ended" | "stopped" | undefined => {
+  if (
+    !facts.queueEmpty ||
+    facts.reported ||
+    facts.idleCompaction ||
+    facts.limitWait ||
+    facts.parked ||
+    facts.paused ||
+    facts.userIntervened ||
+    facts.pending.length > 0 ||
+    facts.afterWrapUp ||
+    !facts.ledgerQuiet ||
+    facts.reason === "error"
+  )
+    return undefined;
+  if (facts.stopAsked) return "stopped";
+  // An interrupt nobody here asked for is the user's; a synthesized end is a crash or a restart's.
+  return facts.reason === "interrupted" || facts.synthesized ? undefined : "ended";
+};
+
+/** The one turn a worker is sent when it stops without a word (`wrapUpDue`). */
+export const wrapUpText = (why: "ended" | "stopped"): string =>
+  `${why === "stopped" ? "Your orchestrator stopped you." : "Your turn ended without a `report`."} Don't start new work. Call \`report\` once, saying what is done, what you tried and ruled out, and what remains, then end your turn.`;
 
 // ---------------------------------------------------------------------------------------------
 // Scheduled wakes
