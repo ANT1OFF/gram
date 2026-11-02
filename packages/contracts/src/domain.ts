@@ -454,17 +454,20 @@ export const MonitorMark = Schema.Struct({
     Schema.Array(Schema.String).check(Schema.isMaxLength(MONITOR_MARK_REVIEWS_MAX)),
   ),
   /**
-   * People's comments already seen, by id, newest last: delivered to the thread, or passed over as
-   * a bot's, the thread's own, an untrusted author's or from before the monitor looked.
+   * People's comments handled after `commentsFloor`, by id and when each was posted: delivered to
+   * the thread, or passed over as a bot's, a Gram thread's own or an untrusted author's.
    */
   comments: Schema.optionalKey(
-    Schema.Array(Schema.String).check(Schema.isMaxLength(MONITOR_MARK_COMMENTS_MAX)),
+    Schema.Array(Schema.Struct({ id: Schema.String, at: Schema.String })).check(
+      Schema.isMaxLength(MONITOR_MARK_COMMENTS_MAX),
+    ),
   ),
   /**
-   * The newest comment handled, by when it was posted and then by id: only a comment after it is
-   * new, so one that slides back into the badge's window after `comments` forgot it stays seen.
+   * What is old: a comment at or before it never wakes the thread, whatever `comments` forgot. It
+   * stays a little behind the newest handled, so one GitHub lists late with an earlier time still
+   * counts, and every comment handled after it is in `comments`.
    */
-  commentsUpTo: Schema.optionalKey(Schema.Struct({ at: Schema.String, id: Schema.String })),
+  commentsFloor: Schema.optionalKey(Schema.Struct({ at: Schema.String, id: Schema.String })),
   /** When comments last woke the thread, epoch ms, oldest first: the rate limit survives a restart. */
   commentWakes: Schema.optionalKey(
     Schema.Array(Schema.Number).check(Schema.isMaxLength(MONITOR_MARK_COMMENT_WAKES_MAX)),

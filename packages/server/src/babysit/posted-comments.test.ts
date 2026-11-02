@@ -1,6 +1,6 @@
 import type { GramUIMessage } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
-import { postedIn, sameText, shellCommands } from "./posted-comments.ts";
+import { postsIn, sameText, shellCommands, type Post } from "./posted-comments.ts";
 
 let calls = 0;
 const call = (toolName: string, input: unknown, output: unknown = ""): GramUIMessage =>
@@ -43,9 +43,12 @@ describe("shellCommands", () => {
   });
 });
 
-describe("postedIn", () => {
+const bodies = (posts: ReadonlyArray<Post>) =>
+  posts.flatMap((post) => (post.body === undefined ? [] : [post.body]));
+
+describe("postsIn", () => {
   it("reads the bodies gh comment, review and api calls sent, however they were passed", () => {
-    const posted = postedIn([
+    const posts = postsIn([
       bash('gh pr comment 12 --body "Fixed in abc1234."'),
       bash("gh pr review 12 --comment -b 'Looks fine to me'"),
       bash(
@@ -60,7 +63,7 @@ describe("postedIn", () => {
         body: "Fixed in def5678: done.",
       }),
     ]);
-    expect([...posted.bodies].toSorted()).toEqual(
+    expect(bodies(posts).toSorted()).toEqual(
       [
         "Fixed in abc1234.",
         "Looks fine to me",
@@ -73,24 +76,64 @@ describe("postedIn", () => {
     );
   });
 
-  it("keeps the links gh printed, which name the comment exactly", () => {
-    const posted = postedIn([
+  it("names the PR each post went to, as its command gave it", () => {
+    const targets = postsIn([
+      bash("gh pr comment 12 -b one"),
+      bash("gh pr comment '#13' --repo acme/web -b two"),
+      bash("gh pr comment https://github.com/acme/api/pull/14 -b three"),
+      bash("gh pr comment -b four"),
+      bash("gh api repos/acme/web/issues/15/comments -f body=five"),
+      bash("gh api repos/{owner}/{repo}/pulls/16/comments -f body=six"),
+      bash("gh api -X POST repos/acme/web/pulls/comments/7/replies -f body=seven"),
+      call("mcp__gram__pr_reply_to_thread", { reviewThreadId: "T", body: "eight" }),
+    ]).map((post) => [post.body, post.pr]);
+    expect(targets).toEqual([
+      ["one", { number: 12 }],
+      ["two", { repo: "acme/web", number: 13 }],
+      ["three", { repo: "acme/api", number: 14 }],
+      ["four", undefined],
+      ["five", { repo: "acme/web", number: 15 }],
+      ["six", { number: 16 }],
+      ["seven", undefined],
+      ["eight", undefined],
+    ]);
+  });
+
+  it("keeps the links a posting call printed, which name its comment exactly", () => {
+    const posts = postsIn([
       bash(
         'gh pr comment 12 --body "Pushed $(git rev-parse --short HEAD)"',
         "https://github.com/acme/web/pull/12#issuecomment-99\n",
       ),
     ]);
-    expect(posted.urls.has("https://github.com/acme/web/pull/12#issuecomment-99")).toBe(true);
+    expect(posts.flatMap((post) => post.urls)).toEqual([
+      "https://github.com/acme/web/pull/12#issuecomment-99",
+    ]);
+  });
+
+  it("takes nothing from calls that only read comments, whatever links they print", () => {
+    const listing = JSON.stringify({
+      comments: [{ url: "https://github.com/acme/web/pull/12#issuecomment-123", body: "Hold off" }],
+    });
+    expect(
+      postsIn([
+        bash("gh pr view 12 --json comments", listing),
+        bash("gh api repos/acme/web/issues/12/comments", listing),
+        bash("gh api -X GET repos/acme/web/issues/12/comments -f per_page=100", listing),
+        call("mcp__gram__pr_review_threads", {}, listing),
+        call("WebFetch", { url: "https://github.com/acme/web/pull/12" }, listing),
+      ]),
+    ).toEqual([]);
   });
 
   it("finds no body in commands that merely mention the words", () => {
-    const posted = postedIn([
+    const posts = postsIn([
       bash("git fetch origin && git rebase origin/main && bun run test"),
       bash("echo ok; go test ./...; kill -STOP 1"),
       call("Write", { file_path: "/repo/a.ts", content: "// Stop.\nexport const ok = 1;" }),
     ]);
-    expect(posted.bodies.size).toBe(0);
+    expect(posts).toEqual([]);
     for (const short of ["Stop.", "ok", "rebase", "go", "test"])
-      expect(posted.bodies.has(sameText(short))).toBe(false);
+      expect(bodies(posts)).not.toContain(sameText(short));
   });
 });

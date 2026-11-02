@@ -18,10 +18,15 @@ export const fenceFooter = (nonce: string): string => `${FENCE_FOOTER} ${nonce}]
 /** Terminal escape sequences: CSI (`ESC [ … final`) and OSC (`ESC ] … BEL|ST`). */
 // oxlint-disable-next-line no-control-regex -- matching escape sequences is the point
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g;
-/** Zero-width, soft-hyphen and bidi formatting characters, which hide or reorder what a reader sees. */
+/**
+ * Characters that hide or reorder what a reader sees but a model still reads: zero-width, soft
+ * hyphen, the combining grapheme joiner, bidi formatting, variation selectors, and Unicode tag
+ * characters (the "ASCII smuggling" range).
+ */
 const INVISIBLE = new RegExp(
-  "[\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff]",
-  "g",
+  "[\\u00ad\\u034f\\u061c\\u180e\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069" +
+    "\\ufe00-\\ufe0f\\ufeff\\u{e0000}-\\u{e007f}\\u{e0100}-\\u{e01ef}]",
+  "gu",
 );
 /** Control characters, except tab and newline. */
 // oxlint-disable-next-line no-control-regex -- stripping them is the point

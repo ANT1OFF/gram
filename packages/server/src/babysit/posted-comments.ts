@@ -1,16 +1,9 @@
 // What a thread posted on GitHub, read back from its tool calls: the bodies its `gh pr comment`,
-// `gh pr review`, `gh api … -f body=` and review-reply calls sent, and the GitHub links their
-// output printed. A comment counts as the thread's own only when its whole text is one of those
-// bodies, or its link was printed: never because a few of its words turn up in some command, which
-// would drop the user's "Stop." or "rebase" as the thread's own.
+// `gh pr review`, `gh api … -f body=` and review-reply calls sent, the PR each named, and the GitHub
+// links those posting calls printed back. Only posting calls count: a read that prints other
+// people's comments (`gh pr view --json comments`) never makes one of them the thread's own.
 
 import type { GramUIMessage } from "@gram/contracts";
-
-/** What a thread posted, normalised by `sameText`. */
-export interface Posted {
-  readonly bodies: ReadonlySet<string>;
-  readonly urls: ReadonlySet<string>;
-}
 
 /** Text as compared: trimmed, line endings and runs of whitespace made one space. */
 export const sameText = (text: string): string => text.replaceAll(/\s+/g, " ").trim();
@@ -186,56 +179,146 @@ const unwrap = (value: string): string => CAT_HEREDOC.exec(value)?.[3] ?? value;
 
 const SHELLS = new Set(["bash", "sh", "zsh", "/bin/bash", "/bin/sh", "/bin/zsh"]);
 
-/** The bodies one shell command posts: gh's comment and review flags, and `gh api`'s body field. */
-const bodiesOf = (
-  command: ShellCommand,
-  files: ReadonlyMap<string, string>,
-): ReadonlyArray<string> => {
+/** The PR a post went to, as its command named it. */
+export interface PostTarget {
+  /** `owner/repo`; absent when the command named none (the checkout's). */
+  readonly repo?: string | undefined;
+  readonly number: number;
+}
+
+/** One body a command posted, and where to; `pr` absent when it named no PR (the branch's own). */
+interface Sent {
+  readonly body: string;
+  readonly pr?: PostTarget | undefined;
+}
+
+/** What one command posted: its bodies, or `posts` with none read when it posted all the same. */
+interface Posting {
+  readonly sent: ReadonlyArray<Sent>;
+  /** It posts a comment or review, whatever its body was built from. */
+  readonly posts: boolean;
+}
+
+const NONE: Posting = { sent: [], posts: false };
+
+const PR_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)(?:[/#?].*)?$/;
+const OWNER_REPO = /^[\w.-]+\/[\w.-]+$/;
+/** `gh api` paths that post a comment or review on a numbered PR or issue. */
+const API_PATH =
+  /^\/?repos\/([^/]+\/[^/]+)\/(?:issues|pulls)\/(\d+)\/(?:comments|reviews)(?:[/?].*)?$/;
+/** `gh api` paths that post one with no PR number in the path, such as a reply in a thread. */
+const API_POSTS = /^\/?repos\/[^/]+\/[^/]+\/(?:issues|pulls)\/(?:\d+\/)?(?:comments|reviews)\b/;
+
+/** `gh pr comment|review` and `gh issue comment` flags that take a value. */
+const VALUED = new Set(["--body", "-b", "--body-file", "-F", "--repo", "-R"]);
+
+/** The PR a `gh pr|issue` command names: its argument (a number, `#N` or URL) and `--repo`. */
+const targetOf = (args: ReadonlyArray<string>): PostTarget | undefined => {
+  let repo: string | undefined;
+  let named: string | undefined;
+  for (let k = 0; k < args.length; k++) {
+    const arg = args[k]!;
+    if (arg === "--repo" || arg === "-R") repo = args[k + 1];
+    else if (arg.startsWith("--repo=")) repo = arg.slice("--repo=".length);
+    if (VALUED.has(arg)) {
+      k++;
+      continue;
+    }
+    if (!arg.startsWith("-") && named === undefined) named = arg;
+  }
+  if (named === undefined) return undefined;
+  const url = PR_URL.exec(named);
+  if (url !== null) return { repo: url[1], number: Number(url[2]) };
+  const number = /^#?(\d+)$/.exec(named)?.[1];
+  if (number === undefined) return undefined;
+  return {
+    repo: repo !== undefined && OWNER_REPO.test(repo) ? repo : undefined,
+    number: Number(number),
+  };
+};
+
+/** What one shell command posted: gh's comment and review flags, and `gh api`'s body field. */
+const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): Posting => {
   const { words } = command;
   // `bash -lc '…'`, as Codex runs a command line.
   if (words.length >= 3 && SHELLS.has(words[0]!) && /^-\w*c$/.test(words[1]!)) {
-    return shellCommands(words[2]!).flatMap((inner) => bodiesOf(inner, files));
+    const inner = shellCommands(words[2]!).map((each) => postingOf(each, files));
+    return { sent: inner.flatMap((each) => each.sent), posts: inner.some((each) => each.posts) };
   }
   const gh = words.indexOf("gh");
-  if (gh === -1) return [];
+  if (gh === -1) return NONE;
   const args = words.slice(gh + 1);
   const sub = args.slice(0, 2).join(" ");
   const fromFile = (path: string) => {
     if (path === "-") return command.stdin;
     return files.get(path) ?? [...files].find(([written]) => written.endsWith(`/${path}`))?.[1];
   };
-  const out: Array<string> = [];
+  const bodies: Array<string> = [];
   if (sub === "pr comment" || sub === "pr review" || sub === "issue comment") {
-    for (let k = 2; k < args.length; k++) {
-      const arg = args[k]!;
-      const value = args[k + 1];
-      if ((arg === "--body" || arg === "-b") && value !== undefined) out.push(unwrap(value));
-      else if (arg.startsWith("--body=")) out.push(unwrap(arg.slice("--body=".length)));
+    const rest = args.slice(2);
+    for (let k = 0; k < rest.length; k++) {
+      const arg = rest[k]!;
+      const value = rest[k + 1];
+      if ((arg === "--body" || arg === "-b") && value !== undefined) bodies.push(unwrap(value));
+      else if (arg.startsWith("--body=")) bodies.push(unwrap(arg.slice("--body=".length)));
       else if ((arg === "--body-file" || arg === "-F") && value !== undefined) {
         const text = fromFile(value);
-        if (text !== undefined) out.push(text);
+        if (text !== undefined) bodies.push(text);
       }
     }
-  } else if (args[0] === "api") {
-    for (let k = 1; k < args.length; k++) {
-      const arg = args[k]!;
-      const value = args[k + 1];
-      const field =
-        (arg === "-f" || arg === "-F" || arg === "--field" || arg === "--raw-field") &&
-        value !== undefined
-          ? value
-          : arg.startsWith("--field=") || arg.startsWith("--raw-field=")
-            ? arg.slice(arg.indexOf("=") + 1)
-            : undefined;
-      if (field === undefined || !field.startsWith("body=")) continue;
+    const pr = targetOf(rest);
+    return {
+      sent: bodies.map((body) => ({ body, ...(pr === undefined ? {} : { pr }) })),
+      posts: true,
+    };
+  }
+  if (args[0] !== "api") return NONE;
+  let path: string | undefined;
+  let method: string | undefined;
+  for (let k = 1; k < args.length; k++) {
+    const arg = args[k]!;
+    const value = args[k + 1];
+    if (arg === "-X" || arg === "--method") {
+      method = value?.toUpperCase();
+      k++;
+      continue;
+    }
+    const field =
+      (arg === "-f" || arg === "-F" || arg === "--field" || arg === "--raw-field") &&
+      value !== undefined
+        ? value
+        : arg.startsWith("--field=") || arg.startsWith("--raw-field=")
+          ? arg.slice(arg.indexOf("=") + 1)
+          : undefined;
+    if (field !== undefined) {
+      if (!arg.includes("=")) k++;
+      if (!field.startsWith("body=")) continue;
       const text = field.slice("body=".length);
       if (text.startsWith("@")) {
         const file = fromFile(text.slice(1));
-        if (file !== undefined) out.push(file);
-      } else out.push(unwrap(text));
+        if (file !== undefined) bodies.push(file);
+      } else bodies.push(unwrap(text));
+      continue;
     }
+    if (!arg.startsWith("-") && path === undefined) path = arg;
   }
-  return out;
+  // A body field makes gh POST unless told otherwise; a read of the comments posts nothing.
+  if (path === undefined || !API_POSTS.test(path) || (method !== undefined && method !== "POST"))
+    return NONE;
+  if (bodies.length === 0) return { sent: [], posts: method === "POST" };
+  const numbered = API_PATH.exec(path);
+  const repo = numbered?.[1];
+  const pr: PostTarget | undefined =
+    numbered === null || numbered === undefined
+      ? undefined
+      : {
+          repo: repo !== undefined && OWNER_REPO.test(repo) ? repo : undefined,
+          number: Number(numbered[2]),
+        };
+  return {
+    sent: bodies.map((body) => ({ body, ...(pr === undefined ? {} : { pr }) })),
+    posts: true,
+  };
 };
 
 const strings = (value: unknown, out: Array<string>, depth = 0): void => {
@@ -252,13 +335,17 @@ interface ToolCall {
   readonly name: string;
   readonly input: Record<string, unknown>;
   readonly output: unknown;
+  /** When its message was written, epoch ms. */
+  readonly at?: number | undefined;
+  /** Where it sits in the thread: its message id and place. */
+  readonly key: string;
 }
 
 const toolCalls = (messages: ReadonlyArray<GramUIMessage>): Array<ToolCall> =>
   messages.flatMap((message) =>
     message.role !== "assistant"
       ? []
-      : message.parts.flatMap((part): Array<ToolCall> => {
+      : message.parts.flatMap((part, index): Array<ToolCall> => {
           if (part.type !== "dynamic-tool" && !part.type.startsWith("tool-")) return [];
           const raw = part as {
             readonly toolName?: unknown;
@@ -271,14 +358,40 @@ const toolCalls = (messages: ReadonlyArray<GramUIMessage>): Array<ToolCall> =>
             typeof raw.input === "object" && raw.input !== null && !Array.isArray(raw.input)
               ? (raw.input as Record<string, unknown>)
               : {};
-          return [{ name, input, output: raw.output }];
+          return [
+            {
+              name,
+              input,
+              output: raw.output,
+              at: message.metadata?.createdAt,
+              key: `${message.id}:${index}`,
+            },
+          ];
         }),
   );
 
 const str = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
 
-/** What `messages` posted to GitHub: every body their tool calls sent, and every link printed back. */
-export const postedIn = (messages: ReadonlyArray<GramUIMessage>): Posted => {
+/** One comment a thread's tool call posted to GitHub. */
+export interface Post {
+  /** Unique across a thread's calls, so one post explains one comment. */
+  readonly key: string;
+  /** What it said, by `sameText`; absent when it was built where it can't be read. */
+  readonly body?: string | undefined;
+  /** The PR it named; absent for the checkout's own, as `gh pr comment` with no number posts to. */
+  readonly pr?: PostTarget | undefined;
+  /** The GitHub links the posting call printed back: the new comment's own. */
+  readonly urls: ReadonlyArray<string>;
+  /** When its message was written, epoch ms. */
+  readonly at?: number | undefined;
+}
+
+/**
+ * Every comment `messages` posted to GitHub, with the links the posting call printed. Only a call
+ * that posts counts: a read such as `gh pr view --json comments` prints others' links too, and
+ * those never make a comment the thread's own.
+ */
+export const postsIn = (messages: ReadonlyArray<GramUIMessage>): Array<Post> => {
   const calls = toolCalls(messages);
   const files = new Map<string, string>();
   for (const call of calls) {
@@ -286,13 +399,15 @@ export const postedIn = (messages: ReadonlyArray<GramUIMessage>): Posted => {
     const content = str(call.input["content"]);
     if (path !== undefined && content !== undefined) files.set(path, content);
   }
-  const bodies = new Set<string>();
-  const urls = new Set<string>();
+  const posts: Array<Post> = [];
   for (const call of calls) {
-    // Gram's own review-reply tool, under any agent's name for it.
+    let sent: Array<Sent> = [];
+    let posting = false;
+    // Gram's own review-reply tool, under any agent's name for it: on the thread's own PR.
     if (call.name.endsWith("pr_reply_to_thread")) {
+      posting = true;
       const body = str(call.input["body"]);
-      if (body !== undefined) bodies.add(sameText(body));
+      if (body !== undefined) sent.push({ body });
     }
     const command = call.input["command"] ?? call.input["cmd"];
     const parsed: ReadonlyArray<ShellCommand> = Array.isArray(command)
@@ -300,11 +415,27 @@ export const postedIn = (messages: ReadonlyArray<GramUIMessage>): Posted => {
       : typeof command === "string"
         ? shellCommands(command)
         : [];
-    for (const each of parsed) for (const body of bodiesOf(each, files)) bodies.add(sameText(body));
+    for (const each of parsed) {
+      const posted = postingOf(each, files);
+      posting ||= posted.posts;
+      sent = [...sent, ...posted.sent];
+    }
+    if (!posting) continue;
     const printed: Array<string> = [];
     strings(call.output, printed);
-    for (const text of printed) for (const link of text.match(GITHUB_LINK) ?? []) urls.add(link);
+    const urls = printed.flatMap((text) => text.match(GITHUB_LINK) ?? []);
+    const at = call.at;
+    if (sent.length === 0) posts.push({ key: call.key, urls, ...(at === undefined ? {} : { at }) });
+    sent.forEach((each, i) => {
+      const body = sameText(each.body);
+      posts.push({
+        key: `${call.key}:${i}`,
+        ...(body === "" ? {} : { body }),
+        ...(each.pr === undefined ? {} : { pr: each.pr }),
+        urls,
+        ...(at === undefined ? {} : { at }),
+      });
+    });
   }
-  bodies.delete("");
-  return { bodies, urls };
+  return posts;
 };

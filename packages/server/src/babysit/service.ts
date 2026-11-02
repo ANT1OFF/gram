@@ -560,7 +560,7 @@ export const BabysitLive = Layer.effect(
           ...(humanReviews === undefined ? {} : { humanReviews }),
           // The comment watch's (`pr-comments.ts`), which writes it on its own.
           ...(mark?.comments === undefined ? {} : { comments: mark.comments }),
-          ...(mark?.commentsUpTo === undefined ? {} : { commentsUpTo: mark.commentsUpTo }),
+          ...(mark?.commentsFloor === undefined ? {} : { commentsFloor: mark.commentsFloor }),
           ...(mark?.commentWakes === undefined ? {} : { commentWakes: mark.commentWakes }),
         };
       };

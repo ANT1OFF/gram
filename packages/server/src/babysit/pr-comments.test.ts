@@ -38,12 +38,15 @@ const world: {
   permissions: Map<string, RepoPermission>;
   /** Every lookup made: `fetch <ids>` or `permission <login>`. */
   calls: Array<string>;
+  /** How many more permission lookups of each login fail before it is answered. */
+  failing: Map<string, number>;
 } = {
   observer: undefined,
   state: undefined,
   comments: new Map(),
   permissions: new Map(),
   calls: [],
+  failing: new Map(),
 };
 
 const reset = () => {
@@ -56,6 +59,7 @@ const reset = () => {
     ["stranger", "none"],
   ]);
   world.calls = [];
+  world.failing = new Map();
 };
 
 const FakePublisher = Layer.succeed(GitStatePublisher, {
@@ -87,6 +91,11 @@ const FakeReads = Layer.succeed(PrCommentReads, {
   permission: (_workTree, repo, login) =>
     Effect.gen(function* () {
       world.calls.push(`permission ${repo} ${login}`);
+      const fails = world.failing.get(login) ?? 0;
+      if (fails > 0) {
+        world.failing.set(login, fails - 1);
+        return yield* new ReviewActionError({ message: "HTTP 502" });
+      }
       const permission = world.permissions.get(login);
       if (permission === undefined) return yield* new ReviewActionError({ message: "HTTP 502" });
       return permission;
@@ -169,7 +178,7 @@ const listed = (...comments: ReadonlyArray<FetchedComment>): Array<PersonComment
 const ORCHESTRATOR = "orchestrator-thread" as ThreadId;
 
 /** A worker bound to acme/web#12 with the review monitor on; `seen` as its mark keeps it. */
-const workerThread = (seen?: ReadonlyArray<string>) =>
+const workerThread = (seen?: ReadonlyArray<{ readonly id: string; readonly at: string }>) =>
   Effect.gen(function* () {
     const dir = tempDir();
     yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
@@ -186,7 +195,9 @@ const workerThread = (seen?: ReadonlyArray<string>) =>
         number: 12,
         monitor: true,
         reviewMonitor: true,
-        ...(seen === undefined ? {} : { seen: { comments: [...seen] } }),
+        ...(seen === undefined
+          ? {}
+          : { seen: { comments: seen.map(({ id, at }) => ({ id, at })) } }),
       },
     }));
     return thread.id;
@@ -198,6 +209,26 @@ const publish = (threadId: ThreadId, pr: PrStatus) =>
     const thread = yield* (yield* ThreadStore).getThread(threadId);
     if (world.observer === undefined) return yield* Effect.die(new Error("never observed"));
     yield* world.observer.onState(thread, world.state);
+  });
+
+/** Writes a tool call into `threadId`'s transcript, as its agent made it. */
+const toolCall = (threadId: ThreadId, toolName: string, input: unknown, output: unknown = "") =>
+  Effect.gen(function* () {
+    const n = ++postedCount;
+    yield* (yield* ThreadStore).upsertMessage(threadId, {
+      id: `tool-${n}`,
+      role: "assistant",
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolName,
+          toolCallId: `call-${n}`,
+          state: "output-available",
+          input,
+          output,
+        },
+      ],
+    } as unknown as GramUIMessage);
   });
 
 /** Every input sent, steered or queued to the thread's agent. */
@@ -232,7 +263,9 @@ const noticeCount = (threadId: ThreadId, n: number) =>
 
 const seenOf = (threadId: ThreadId) =>
   Effect.gen(function* () {
-    return (yield* (yield* ThreadStore).getThread(threadId)).boundPr?.seen?.comments;
+    return (yield* (yield* ThreadStore).getThread(threadId)).boundPr?.seen?.comments?.map(
+      (c) => c.id,
+    );
   });
 
 describe("a person's comment on a worker's PR", () => {
@@ -402,9 +435,9 @@ describe("a person's comment on a worker's PR", () => {
     Effect.gen(function* () {
       reset();
       // As a restart finds it: IC_1 was delivered before the app went down.
-      const id = yield* workerThread(["IC_1"]);
       const first = comment("IC_1", "alice", "First thought.");
       const second = comment("IC_2", "alice", "Second thought.");
+      const id = yield* workerThread(listed(first));
       yield* publish(id, badge(listed(first, second)));
       const [notice] = yield* noticeCount(id, 1);
       expect(notice!.text).toContain("Second thought.");
@@ -659,6 +692,127 @@ describe("a person's comment on a worker's PR", () => {
       yield* TestClock.adjust("1 minute");
       yield* noticeCount(id, 1);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("delivers the user's comment after the worker read it back with gh pr view", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* workerThread([]);
+      const hold = comment("IC_1", "owner", "Please hold off on the merge until I look.", {
+        viewerDidAuthor: true,
+      });
+      // Woken by something else, the worker reads the thread before the next poll: the read
+      // prints the user's comment and its link, which never makes it the worker's own.
+      yield* toolCall(
+        id,
+        "Bash",
+        { command: "gh pr view 12 --json comments" },
+        JSON.stringify({ comments: [{ url: hold.url, body: hold.body }] }),
+      );
+      yield* toolCall(
+        id,
+        "Bash",
+        { command: "gh api repos/acme/web/issues/12/comments" },
+        hold.url,
+      );
+      yield* publish(id, badge(listed(hold)));
+      const [notice] = yield* noticeCount(id, 1);
+      expect(notice!.text).toContain("Please hold off on the merge until I look.");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect('delivers the user\'s "Thanks!" though a sibling said the same on another PR', () =>
+    Effect.gen(function* () {
+      reset();
+      const runtimes = yield* ThreadRuntimes;
+      const id = yield* workerThread([]);
+      const dir = tempDir();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const sibling = yield* runtimes.create({
+        projectRoot: dir,
+        checkout: { kind: "main", path: dir },
+      });
+      yield* runtimes.updateThread(sibling.id, (t) => ({
+        ...t,
+        spawnedBy: { threadId: ORCHESTRATOR, feature: "f" },
+      }));
+      yield* toolCall(sibling.id, "Bash", { command: 'gh pr comment 12 --body "Thanks!"' });
+      yield* toolCall(sibling.id, "Bash", { command: 'gh pr comment 99 --body "Thanks!"' });
+      // The worker itself said it on another PR, too.
+      yield* toolCall(id, "Bash", { command: 'gh pr comment 99 --body "Thanks!"' });
+      const thanks = comment("IC_1", "owner", "Thanks!", { viewerDidAuthor: true });
+      yield* publish(id, badge(listed(thanks)));
+      const [notice] = yield* noticeCount(id, 1);
+      expect(notice!.text).toContain("\nThanks!\n");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("counts each post the worker made for one comment, not two", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* workerThread([]);
+      yield* toolCall(id, "Bash", { command: 'gh pr comment 12 --body "Done."' });
+      const own = comment("IC_1", "owner", "Done.", { viewerDidAuthor: true });
+      const users = comment("IC_2", "owner", "Done.", { viewerDidAuthor: true });
+      yield* publish(id, badge(listed(own, users)));
+      const [notice] = yield* noticeCount(id, 1);
+      expect(notice!.text.split("\n")[0]).toBe("Comment from @owner on #12.");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect(
+    "retries a lookup that failed after another, even when the first one's retry works",
+    () =>
+      Effect.gen(function* () {
+        reset();
+        world.failing = new Map([
+          ["alice", 1],
+          ["carol", 1],
+        ]);
+        world.permissions.set("carol", "write");
+        const id = yield* workerThread([]);
+        const first = comment("IC_1", "alice", "From alice.");
+        yield* publish(id, badge(listed(first)));
+        yield* quiet;
+        yield* TestClock.adjust("30 seconds");
+        const second = comment("IC_2", "carol", "From carol.");
+        yield* publish(id, badge(listed(first, second)));
+        yield* quiet;
+        // Alice's retry, at one minute, works; carol's is due at a minute and a half.
+        yield* TestClock.adjust("30 seconds");
+        yield* noticeCount(id, 1);
+        yield* TestClock.adjust("3 minutes");
+        const both = yield* noticeCount(id, 2);
+        expect(both[1]!.text).toContain("From carol.");
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect(
+    "delivers a comment GitHub lists late with the same second as one already handled",
+    () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* workerThread([]);
+        const later = comment("PRR_b", "alice", "Handled first.", {
+          createdAt: "2026-11-02T12:00:00Z",
+        });
+        yield* publish(id, badge(listed(later)));
+        yield* noticeCount(id, 1);
+        // Posted in the same second, with an id that sorts before it, and listed only now.
+        const late = comment("IC_a", "alice", "Listed late.", {
+          createdAt: "2026-11-02T12:00:00Z",
+        });
+        yield* publish(id, badge(listed(late, later)));
+        yield* TestClock.adjust("1 minute");
+        const both = yield* noticeCount(id, 2);
+        expect(both[1]!.text).toContain("Listed late.");
+        // A read that lagged a few seconds behind: still inside the grace, still new.
+        const lagged = comment("IC_c", "alice", "Lagged.", { createdAt: "2026-11-02T11:59:57Z" });
+        yield* publish(id, badge(listed(lagged, late, later)));
+        yield* TestClock.adjust("1 minute");
+        const three = yield* noticeCount(id, 3);
+        expect(three[2]!.text).toContain("Lagged.");
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
   it.effect("wakes no thread that isn't a worker", () =>

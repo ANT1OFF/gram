@@ -4,7 +4,7 @@
 import { isBotLogin, type ReviewBot } from "@gram/contracts";
 import type { FetchedComment } from "@gram/git";
 import { fence, FENCE_OPENER } from "../git/untrusted-fence.ts";
-import { sameText, type Posted } from "./posted-comments.ts";
+import { sameText, type Post, type PostTarget } from "./posted-comments.ts";
 
 /** The most of one comment a notice carries; the rest is cut and the worker pointed at GitHub. */
 export const COMMENT_NOTICE_CHARS = 4000;
@@ -59,20 +59,73 @@ export const passOver = (
   return undefined;
 };
 
+/** A thread's posts, as `isOwnComment` weighs them. */
+export interface PostSource {
+  readonly posts: ReadonlyArray<Post>;
+  /**
+   * `self`: the worker, whose posts naming no PR went to its own. `orchestrator`: its posts count
+   * by body only when they named this PR. `sibling`: another worker, whose posts count only by the
+   * link its posting call printed, never by what they said.
+   */
+  readonly kind: "self" | "orchestrator" | "sibling";
+}
+
+/** How long after its post a comment can be the post's: GitHub's clock against ours. */
+export const POST_CLOCK_SKEW_MS = 2 * 60_000;
+
+const samePr = (target: PostTarget, pr: { readonly repo: string; readonly number: number }) =>
+  target.number === pr.number &&
+  (target.repo === undefined || target.repo.toLowerCase() === pr.repo.toLowerCase());
+
 /**
- * Whether a comment posted with the user's `gh` login is a Gram thread's own: GitHub's link to it
- * (or to one of its inline comments) was printed by one of the thread's tool calls, or every text
- * it carries is, whole, a body one of them posted. Its words merely turning up in a command or a
- * file never count, so the user's "Stop." or "rebase" isn't taken for the thread's.
+ * Whether a comment posted with the user's `gh` login is a Gram thread's own, and the posts that
+ * explain it. Either a posting call printed GitHub's link to it (or to one of its inline
+ * comments), or every text it carries is, whole, a body posted to this PR before it, each by a
+ * post not already spent on another comment (`used`). Its words merely turning up in a command, a
+ * file or another PR's post never count.
  */
-export const isOwnComment = (comment: FetchedComment, posted: Posted): boolean => {
+export const ownCommentPosts = (
+  comment: FetchedComment,
+  sources: ReadonlyArray<PostSource>,
+  pr: { readonly repo: string; readonly number: number },
+  used: ReadonlySet<string>,
+): ReadonlyArray<string> | undefined => {
   const links = [comment.url, ...comment.inline.map((each) => each.url)].filter((u) => u !== "");
-  if (links.some((link) => posted.urls.has(link))) return true;
+  for (const source of sources)
+    for (const post of source.posts)
+      if (post.urls.some((url) => links.includes(url))) return [post.key];
   const texts = [comment.body, ...comment.inline.map((each) => each.body)]
     .map(sameText)
     .filter((text) => text !== "");
-  return texts.length > 0 && texts.every((text) => posted.bodies.has(text));
+  if (texts.length === 0) return undefined;
+  const postedAt = Date.parse(comment.createdAt);
+  const taken = new Set(used);
+  const keys: Array<string> = [];
+  for (const text of texts) {
+    const post = sources
+      .filter((source) => source.kind !== "sibling")
+      .flatMap((source) =>
+        source.posts.filter(
+          (p) =>
+            p.body === text &&
+            !taken.has(p.key) &&
+            (p.pr === undefined ? source.kind === "self" : samePr(p.pr, pr)) &&
+            (p.at === undefined || Number.isNaN(postedAt) || p.at <= postedAt + POST_CLOCK_SKEW_MS),
+        ),
+      )[0];
+    if (post === undefined) return undefined;
+    taken.add(post.key);
+    keys.push(post.key);
+  }
+  return keys;
 };
+
+/** `ownCommentPosts` as a yes or no, spending nothing. */
+export const isOwnComment = (
+  comment: FetchedComment,
+  sources: ReadonlyArray<PostSource>,
+  pr: { readonly repo: string; readonly number: number },
+): boolean => ownCommentPosts(comment, sources, pr, new Set()) !== undefined;
 
 const GITHUB_URL = /^https:\/\/github\.com\/[\w./#%-]+$/;
 
@@ -81,12 +134,23 @@ const cut = (text: string): string =>
     ? text
     : `${text.slice(0, COMMENT_NOTICE_CHARS)}\n… [cut: ${text.length - COMMENT_NOTICE_CHARS} more characters; read the rest on GitHub]`;
 
+/** A Markdown link-reference definition, `[label]: …`, which GitHub renders as nothing. */
+const LINK_DEFINITION = /^ {0,3}\[[^\]\n]*\]:[ \t]/;
+
 /**
- * `text` with each HTML comment (`<!-- … -->`) marked as such. GitHub hides them, so words a
- * collaborator put there are words the user never saw on the page; the worker is told so.
+ * `text` with what GitHub hides marked as such: HTML comments (`<!-- … -->`) and link-reference
+ * definitions, the `[//]: # (…)` comment form among them. Words a collaborator put there are words
+ * the user never saw on the page; the worker is told so.
  */
 export const markHidden = (text: string): string =>
-  text.replaceAll("<!--", "[hidden on GitHub: ").replaceAll("-->", " :end of hidden]");
+  text
+    .replaceAll("<!--", "[hidden on GitHub: ")
+    .replaceAll("-->", " :end of hidden]")
+    .split("\n")
+    .map((line) =>
+      LINK_DEFINITION.test(line) ? `[hidden on GitHub: ${line} :end of hidden]` : line,
+    )
+    .join("\n");
 
 /** What `comment` says, as the fence carries it: the body, then each inline comment by place. */
 const commentText = (comment: FetchedComment): string => {

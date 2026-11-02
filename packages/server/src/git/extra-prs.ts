@@ -96,7 +96,7 @@ const MARK_KEYS = [
   "reviewsRead",
   "humanReviews",
   "comments",
-  "commentsUpTo",
+  "commentsFloor",
   "commentWakes",
 ] as const satisfies ReadonlyArray<keyof MonitorMark>;
 
