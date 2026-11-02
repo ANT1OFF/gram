@@ -128,10 +128,11 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: false
 
-# x64 only, and without local dictation: sherpa-onnx's Linux packages carry text-to-speech, which
-# links GPL code, so none of it ships (afterPack and verify-package.mjs fail a package that holds
-# any). node-pty has no Linux prebuilds: the packaging job compiles build/Release/pty.node against
-# Electron's headers first (scripts/rebuild-node-pty.mjs), and npmRebuild stays off.
+# x64 only. Local dictation ships sherpa-onnx-linux-x64 with its addon and C APIs replaced by the
+# TTS-free build in tools/sherpa-onnx/linux-x64 (the root postinstall puts it in place; afterPack
+# and verify-package.mjs fail a package whose files differ from it). node-pty has no Linux
+# prebuilds: the packaging job compiles build/Release/pty.node against Electron's headers first
+# (scripts/rebuild-node-pty.mjs), and npmRebuild stays off.
 linux:
   target:
     - target: AppImage
@@ -183,8 +184,7 @@ linux:
     - "!**/node_modules/node-pty/build/node_gyp_bins/**"
     - "!**/node_modules/node-pty/build/Release/{.deps,node-addon-api,obj.target,obj,test}/**"
     - "!**/node_modules/node-pty/build/Release/*.{a,o,d}"
-    - "!**/node_modules/sherpa-onnx-*/**"
-    - "!**/node_modules/sherpa-onnx-*"
+    - "!**/node_modules/sherpa-onnx-{darwin-*,linux-arm64,win-*}/**"
 
 appImage:
   # The AppImage carries its libraries but uses the host's FUSE 2 to mount itself (libfuse2, or

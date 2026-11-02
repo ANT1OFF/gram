@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { install, readSums } from "./install.mjs";
+import { install, PLATFORMS, readSums } from "./install.mjs";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
@@ -86,25 +86,67 @@ describe("install", () => {
   });
 });
 
-describe("the committed build", () => {
+describe.each([
+  {
+    platform: "darwin-arm64",
+    lib: "dylib",
+    compiler: /^compiler: .+clang/m,
+    host: /^macOS: .+ SDK /m,
+  },
+  {
+    platform: "linux-x64",
+    lib: "so",
+    compiler: /^compiler: gcc .+GCC/m,
+    host: /^image: quay\.io\/pypa\/manylinux_2_28_x86_64@sha256:[0-9a-f]{64}$/m,
+  },
+])("the committed $platform build", ({ platform, lib, compiler, host }) => {
+  const file = (name) => new URL(`./${platform}/${name}`, import.meta.url);
+
   it("lists the addon and both C APIs, and matches the catalog's sherpa-onnx", () => {
-    const build = fileURLToPath(new URL("./darwin-arm64/", import.meta.url));
-    expect(readSums(build).map((entry) => entry.name)).toEqual([
+    expect(readSums(fileURLToPath(file(""))).map((entry) => entry.name)).toEqual([
       "sherpa-onnx.node",
-      "libsherpa-onnx-c-api.dylib",
-      "libsherpa-onnx-cxx-api.dylib",
+      `libsherpa-onnx-c-api.${lib}`,
+      `libsherpa-onnx-cxx-api.${lib}`,
     ]);
     const catalog = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"))
       .workspaces.catalog;
-    expect(readFileSync(join(build, "VERSION"), "utf8").trim()).toBe(catalog["sherpa-onnx-node"]);
+    expect(readFileSync(file("VERSION"), "utf8").trim()).toBe(catalog["sherpa-onnx-node"]);
   });
 
   it("records the upstream tag, the TTS-off flags and the toolchain it was built with", () => {
-    const info = readFileSync(new URL("./darwin-arm64/BUILD-INFO", import.meta.url), "utf8");
-    const version = readFileSync(new URL("./darwin-arm64/VERSION", import.meta.url), "utf8").trim();
+    const info = readFileSync(file("BUILD-INFO"), "utf8");
+    const version = readFileSync(file("VERSION"), "utf8").trim();
     expect(info).toContain(`k2-fsa/sherpa-onnx v${version} (`);
     expect(info).toContain("-DSHERPA_ONNX_ENABLE_TTS=OFF");
-    expect(info).toMatch(/^compiler: .+clang/m);
-    expect(info).toMatch(/^macOS: .+ SDK /m);
+    expect(info).toMatch(compiler);
+    expect(info).toMatch(host);
+  });
+
+  it("is installed by the postinstall", () => {
+    expect(PLATFORMS).toContain(platform);
+  });
+});
+
+/** A file of the addon's build tooling, which both build scripts install. */
+const tooling = (name) => new URL(`./addon-tooling/${name}`, import.meta.url);
+
+describe("the addon's build tooling", () => {
+  it("is pinned exactly, every package with its integrity, and installed with npm ci", () => {
+    const manifest = JSON.parse(readFileSync(tooling("package.json"), "utf8"));
+    for (const version of Object.values(manifest.dependencies))
+      expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    const lock = JSON.parse(readFileSync(tooling("package-lock.json"), "utf8"));
+    expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
+    const locked = Object.entries(lock.packages).filter(([path]) => path !== "");
+    expect(locked.length).toBeGreaterThan(0);
+    for (const [path, entry] of locked) {
+      expect(entry.resolved, path).toMatch(/^https:\/\/registry\.npmjs\.org\//);
+      expect(entry.integrity, path).toMatch(/^sha512-/);
+    }
+    for (const script of ["build-darwin-arm64.sh", "build-linux-x64.sh"]) {
+      const text = readFileSync(new URL(`./${script}`, import.meta.url), "utf8");
+      expect(text, script).toContain("npm ci --ignore-scripts");
+      expect(text, script).not.toMatch(/npm install\b/);
+    }
   });
 });

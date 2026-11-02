@@ -129,8 +129,21 @@ export type SpeechServerMessage =
   /** The session is over and the port closes. */
   | { readonly type: "error"; readonly code: SpeechErrorCode; readonly message: string };
 
-/** The system's microphone permission for the app, as macOS (or Windows) reports it. */
+/**
+ * The system's microphone permission for the app, as macOS (or Windows) reports it. Linux has no
+ * per-app permission to read, so it is always `unknown` there.
+ */
 export type MicrophoneAccess = "granted" | "denied" | "restricted" | "not-determined" | "unknown";
+
+/**
+ * Whether opening the microphone now can't be the system's first ask: macOS or Windows has granted
+ * it, or this is Linux, where Chromium opens the sound server's (PipeWire's or PulseAudio's) default
+ * input without asking.
+ */
+export const microphoneOpensUnasked = (
+  access: MicrophoneAccess,
+  platform: string | undefined,
+): boolean => access === "granted" || (access === "unknown" && platform === "linux");
 
 /**
  * Why a model store call failed, as plain data: a tagged error doesn't survive IPC, so the page

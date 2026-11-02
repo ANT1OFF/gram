@@ -1,25 +1,14 @@
-// Run by the packaged Gram in Node mode (ELECTRON_RUN_AS_NODE=1) from tools/release-rc/rc.mjs:
-// loads the speech and PTY natives through the production app.asar and has the PTY run a shell
-// that prints a marker. Arguments: <app.asar> <scratch dir> <marker> [no-speech]. With
-// `no-speech`, a package without local dictation (Linux), it instead proves sherpa-onnx can't load,
-// and that @parcel/watcher, which only that package carries, reports a file change.
+// Run by the packaged Gram in Node mode (ELECTRON_RUN_AS_NODE=1) from tools/release-rc/rc.mjs, and
+// on Linux from verify-package.mjs and CI: loads the speech and PTY natives through the production
+// app.asar and has the PTY run a shell that prints a marker. Arguments: <app.asar> <scratch dir>
+// <marker> [watch]. With `watch` (the Linux package) it also proves that @parcel/watcher, which
+// only that package carries, reports a file change.
 const { createRequire } = require("node:module");
 const path = require("node:path");
 
-const [asar, scratch, marker, voice = "speech"] = process.argv.slice(2);
+const [asar, scratch, marker, watch] = process.argv.slice(2);
 const load = createRequire(path.join(asar, "package.json"));
-let speech;
-if (voice === "no-speech") {
-  try {
-    load("sherpa-onnx-node");
-    console.error("Native probe: sherpa-onnx-node loads in a package without local dictation");
-    process.exit(1);
-  } catch (error) {
-    if (error?.code !== "MODULE_NOT_FOUND") throw error;
-  }
-} else {
-  speech = load("sherpa-onnx-node");
-}
+const speech = load("sherpa-onnx-node");
 const pty = load("node-pty");
 
 /** Watches `scratch` through the packaged @parcel/watcher until it sees a file appear. */
@@ -38,7 +27,7 @@ const watchedAFile = async () => {
   });
   await (await seen).unsubscribe();
 };
-const watching = voice === "no-speech" ? watchedAFile() : Promise.resolve();
+const watching = watch === "watch" ? watchedAFile() : Promise.resolve();
 
 const child = pty.spawn("/bin/sh", ["-c", `printf ${marker}`], {
   name: "xterm",
@@ -65,7 +54,7 @@ child.onExit(({ exitCode }) => {
         electron: process.versions.electron,
         node: process.versions.node,
         arch: process.arch,
-        speechExports: speech === undefined ? null : Object.keys(speech).length,
+        speechExports: Object.keys(speech).length,
         markerSeen: true,
       }),
     );

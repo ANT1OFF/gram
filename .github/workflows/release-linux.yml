@@ -7,8 +7,9 @@ name: Linux release build
 # writes to a release or holds a write token: `build` runs the repository's code with a read-only
 # token, and `attest`, which may mint an OIDC token for the attestation, runs no repository code.
 #
-# A pull request that changes this workflow or tools/release-linux/ runs the same build as a dry
-# run, without the attestation, so the release path is exercised before it merges.
+# A pull request that changes this workflow, tools/release-linux/ or the sherpa-onnx build it ships
+# (tools/sherpa-onnx/) runs the same build as a dry run, without the attestation, so the release
+# path is exercised before it merges.
 
 on:
   workflow_dispatch:
@@ -34,6 +35,7 @@ on:
     paths:
       - .github/workflows/release-linux.yml
       - tools/release-linux/**
+      - tools/sherpa-onnx/**
 
 run-name: >-
   ${{ github.event_name == 'workflow_dispatch'
@@ -52,7 +54,7 @@ jobs:
     # Only same-repository PRs run CI.
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 50
     permissions:
       contents: read
     outputs:
@@ -101,6 +103,19 @@ jobs:
             [ "$field" = "$VERSION" ] || { echo "version fields say $root/$desktop/$manifest, not $VERSION"; exit 1; }
           done
           echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+      # The shipped sherpa-onnx files are committed (tools/sherpa-onnx/linux-x64) and the install
+      # below copies them in; nothing makes the PR that changed them pass its byte-identical
+      # rebuild, so the release build rebuilds them from their pinned sources and requires the
+      # same bytes before packaging them. Docker only, no cache; about four minutes.
+      - name: Rebuild sherpa-onnx linux-x64 and compare with the committed files
+        run: |
+          set -euo pipefail
+          SHERPA_ONNX_OUT="$RUNNER_TEMP/sherpa-onnx-rebuild" tools/sherpa-onnx/build-linux-x64.sh
+          committed=tools/sherpa-onnx/linux-x64
+          diff <(ls "$committed") <(ls "$RUNNER_TEMP/sherpa-onnx-rebuild")
+          for file in "$committed"/*; do
+            cmp "$file" "$RUNNER_TEMP/sherpa-onnx-rebuild/$(basename "$file")"
+          done
       # No Actions cache anywhere in a release build: Node and Bun come from their pinned versions
       # and packages from the lockfile, so the attested files depend on pinned inputs alone, never
       # on anything an earlier run left in a cache.
@@ -130,19 +145,21 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends xvfb xauth ./apps/desktop/release/gram_*_amd64.deb
           missing=$(ldd /opt/Gram/gram | grep "not found" || true)
           if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
-      - name: Install the .deb on Debian 12 and load node-pty there
+      - name: Install the .deb on Debian 12 and load node-pty and sherpa-onnx there
         run: |
           docker run --rm -v "$PWD:/src:ro" -w /src \
             debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 \
             bash -euo pipefail -c '
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends ./apps/desktop/release/gram_*_amd64.deb >/dev/null
-              pty=/opt/Gram/resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node
-              missing=$(ldd /opt/Gram/gram "$pty" | grep "not found" || true)
+              unpacked=/opt/Gram/resources/app.asar.unpacked/node_modules
+              missing=$(ldd /opt/Gram/gram "$unpacked/node-pty/build/Release/pty.node" \
+                "$unpacked"/sherpa-onnx-linux-x64/*.so "$unpacked/sherpa-onnx-linux-x64/sherpa-onnx.node" \
+                | grep "not found" || true)
               if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
               scratch=$(mktemp -d)
               ELECTRON_RUN_AS_NODE=1 /opt/Gram/gram tools/release-rc/native-probe.cjs \
-                /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 no-speech'
+                /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 watch'
       - name: Smoke the installed app and the AppImage under Xvfb
         run: |
           for app in /opt/Gram/gram "$PWD/apps/desktop/release/gram_"*"_x86_64.AppImage"; do

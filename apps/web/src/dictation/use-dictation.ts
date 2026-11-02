@@ -2,6 +2,7 @@ import {
   dictationCleanupOf,
   dictationSoundVolumeOf,
   keepMicrophoneReadyOf,
+  microphoneOpensUnasked,
   openSpeechSession,
   SPEECH_MODEL_FOR_STOP,
   speechModeOf,
@@ -298,7 +299,8 @@ export function useDictation(
         void bridge
           .microphoneAccess()
           .then((access) => {
-            if (access === "granted" && lifecycleUnchanged(mark)) microphone.ready();
+            if (microphoneOpensUnasked(access, window.gram?.platform) && lifecycleUnchanged(mark))
+              microphone.ready();
           })
           .catch((error: unknown) => console.warn("dictation", error));
     },

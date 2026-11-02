@@ -21,9 +21,8 @@ set -euo pipefail
 
 TAG=v2.0.0
 COMMIT=8abb7c8f87eae85b2e75f9a4115236c978980add
-CMAKE_JS=7.4.0
-NODE_ADDON_API=8.9.2
 NODE_HEADERS=26.12.0 # .node-version; the addon uses Node-API only, so Electron loads it as is.
+NODE_HEADERS_SHA256=6abd0ddeccf3ebec9abe99582710c594669ee9510a40a1d1d990133dec36a1fc # node-v26.12.0-headers.tar.gz
 MACOS=13.0 # Electron's LSMinimumSystemVersion; cmake-js would otherwise target the build machine's.
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -68,17 +67,21 @@ cmake -S "$src" -B "$src/build" "${FLAGS[@]}" \
 cmake --build "$src/build" --parallel "$(sysctl -n hw.ncpu)"
 cmake --install "$src/build"
 
+# The headers the addon compiles against, by SHA-256 (cmake-js would download them itself and
+# check them only against the same server's SHASUMS256.txt), and cmake-js and node-addon-api with
+# every package they pull in, at the versions and integrity hashes addon-tooling/package-lock.json
+# pins.
+headers=$WORK/node-headers
+rm -rf "$headers" && mkdir -p "$headers"
+curl --fail --silent --show-error --location --output "$WORK/node-headers.tar.gz" \
+  "https://nodejs.org/dist/v$NODE_HEADERS/node-v$NODE_HEADERS-headers.tar.gz"
+echo "$NODE_HEADERS_SHA256  $WORK/node-headers.tar.gz" | shasum -a 256 --check --quiet
+tar -xzf "$WORK/node-headers.tar.gz" -C "$headers" --strip-components 1
 addon=$src/scripts/node-addon-api
-cat >"$addon/package.json" <<JSON
-{
-  "name": "sherpa-onnx-node-addon-build",
-  "private": true,
-  "dependencies": { "cmake-js": "$CMAKE_JS", "node-addon-api": "$NODE_ADDON_API" }
-}
-JSON
-(cd "$addon" && npm install --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/)
-(cd "$addon" && SHERPA_ONNX_INSTALL_DIR="$src/build/install" ./node_modules/.bin/cmake-js compile \
-  "${ADDON_FLAGS[@]}")
+cp "$HERE/addon-tooling/package.json" "$HERE/addon-tooling/package-lock.json" "$addon/"
+(cd "$addon" && npm ci --ignore-scripts --no-audit --no-fund)
+(cd "$addon" && SHERPA_ONNX_INSTALL_DIR="$src/build/install" npm_config_nodedir="$headers" \
+  ./node_modules/.bin/cmake-js compile "${ADDON_FLAGS[@]}")
 
 npm_package=$ROOT/node_modules/sherpa-onnx-darwin-arm64
 if ! cmp -s "$src/build/install/lib/libonnxruntime.dylib" "$npm_package/libonnxruntime.dylib"; then
@@ -111,6 +114,8 @@ Built by tools/sherpa-onnx/build-darwin-arm64.sh; SHA256SUMS lists the files.
 sherpa-onnx: https://github.com/k2-fsa/sherpa-onnx $TAG ($COMMIT) + node-addon.patch
 cmake flags: ${FLAGS[*]} -DCMAKE_C_FLAGS=-ffile-prefix-map=<src>=/sherpa-onnx -DCMAKE_CXX_FLAGS=-ffile-prefix-map=<src>=/sherpa-onnx
 addon: cmake-js $(installed cmake-js), node-addon-api $(installed node-addon-api), ${ADDON_FLAGS[*]}
+addon tooling: addon-tooling/package-lock.json $(shasum -a 256 "$HERE/addon-tooling/package-lock.json" | cut -d' ' -f1), npm ci
+node headers: node-v$NODE_HEADERS-headers.tar.gz $NODE_HEADERS_SHA256
 macOS: $(sw_vers -productVersion) ($(sw_vers -buildVersion)) $(uname -m), SDK $(xcrun --show-sdk-version)
 compiler: $(xcrun clang --version | head -1)
 cmake: $(cmake --version | head -1)

@@ -8,9 +8,7 @@ import {
   speechModelBytes,
   speechModeOf,
   speechPerformanceOf,
-  VOICE_UNSUPPORTED_NOTE,
   voiceInputOn,
-  voiceSupported,
   voiceVocabularyOf,
   type MicrophoneAccess,
   type SpeechMode,
@@ -121,7 +119,6 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
   const [error, setError] = useState<string>();
   const pending = useLifecyclePending();
   const desktop = speechBridge() !== undefined;
-  const supported = voiceSupported(window.gram?.platform);
 
   const on = settings !== undefined && voiceInputOn(settings);
   const stop = settings === undefined ? "balanced" : speechPerformanceOf(settings);
@@ -155,7 +152,7 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
     <>
       <Toggle
         label={label}
-        description={supported ? description : `${description} ${VOICE_UNSUPPORTED_NOTE}`}
+        description={description}
         keywords={["dictation", "speech", "microphone", "mic", "transcribe", "voice", "enable"]}
         checked={on}
         disabled={pending || (!desktop && !on)}
@@ -164,9 +161,7 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
             ? on
               ? "Turning voice input off…"
               : "Turning voice input on…"
-            : supported
-              ? "Voice input needs the Gram app; a browser has no speech process."
-              : VOICE_UNSUPPORTED_NOTE
+            : "Voice input needs the Gram app; a browser has no speech process."
         }
         error={error}
         onChange={(next) => setAsking(next ? "on" : "off")}
@@ -786,7 +781,21 @@ function ProgressBar({ value, max }: { value: number | undefined; max: number | 
  */
 function MicrophoneRow({ held }: { held: boolean }) {
   const access = useMicrophoneAccess();
-  if (access === undefined || access === "unknown") return null;
+  if (access === undefined) return null;
+  if (access === "unknown") {
+    // Linux has no per-app permission to show: Chromium opens the sound server's default input.
+    if (window.gram?.platform !== "linux") return null;
+    return (
+      <SettingRow
+        label="Microphone"
+        description={`Your system's default input, through PipeWire or PulseAudio. Linux doesn't ask per app: choose or unmute the microphone in your sound settings. ${
+          held
+            ? "Gram keeps it open while it's ready, and uses what it hears only when you dictate."
+            : "Gram listens only while you dictate."
+        }`}
+      />
+    );
+  }
   const denied = access === "denied" || access === "restricted";
   return (
     <SettingRow

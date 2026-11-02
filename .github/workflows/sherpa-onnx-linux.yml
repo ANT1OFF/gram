@@ -1,0 +1,129 @@
+name: sherpa-onnx linux-x64
+
+# The TTS-free sherpa-onnx build the Linux package ships (tools/sherpa-onnx/linux-x64), checked two
+# ways on a GitHub-hosted x64 runner:
+#
+# - `rebuild` runs tools/sherpa-onnx/build-linux-x64.sh from scratch (its pinned manylinux image,
+#   Node, upstream commit and dependency hashes; no cache) and requires the same bytes as the
+#   committed files, so what ships is what the script makes from its pinned sources. The Linux
+#   release build (release-linux.yml) repeats this before it packages them, since nothing makes
+#   this job pass before a merge.
+# - `live speech` installs the repository as a developer does (the postinstall puts the committed
+#   build over the npm package) and runs apps/desktop/src/speech.live.test.ts on the real
+#   recogniser: Nemotron streaming, then Accurate mode's Parakeet pass with Silero VAD, over the
+#   model export's own test clip (test_wavs/0.wav, LibriSpeech, "...yellow lamps..."). Model files
+#   come from Hugging Face at the revisions and SHA-256s in packages/shell/src/modules/speech/
+#   manifest.ts. It proves the addon loads and recognises on x64 Linux, not microphone capture.
+#
+# Nothing here holds a write token or a secret.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/sherpa-onnx-linux.yml
+      - tools/sherpa-onnx/**
+      - packages/shell/src/speech-process/**
+      - apps/desktop/src/speech.live.test.ts
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/sherpa-onnx-linux.yml
+      - tools/sherpa-onnx/**
+      - packages/shell/src/speech-process/**
+      - apps/desktop/src/speech.live.test.ts
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild:
+    name: rebuild
+    # Only same-repository PRs run CI.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build from the pinned sources
+        run: SHERPA_ONNX_OUT="$RUNNER_TEMP/rebuild" tools/sherpa-onnx/build-linux-x64.sh
+      - name: Compare with the committed build
+        run: |
+          set -euo pipefail
+          committed=tools/sherpa-onnx/linux-x64
+          diff <(ls "$committed") <(ls "$RUNNER_TEMP/rebuild")
+          for file in "$committed"/*; do
+            cmp "$file" "$RUNNER_TEMP/rebuild/$(basename "$file")"
+          done
+          echo "the rebuild is byte-identical:"
+          cat "$committed/SHA256SUMS"
+          ls -l "$RUNNER_TEMP/rebuild"
+
+  live-speech:
+    name: live speech
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+          no-cache: true
+      - run: bun install --frozen-lockfile
+      - name: The TTS-free build is the one installed
+        run: |
+          set -euo pipefail
+          cd node_modules/sherpa-onnx-linux-x64
+          sha256sum --check ../../tools/sherpa-onnx/linux-x64/SHA256SUMS
+      - name: Download the models (manifest.ts's revisions and SHA-256s)
+        run: |
+          set -euo pipefail
+          models="$RUNNER_TEMP/models"
+          fetch() { # <repo> <revision> <path> <sha256> <into>
+            mkdir -p "$(dirname "$5")"
+            curl --fail --silent --show-error --location --retry 3 --output "$5" \
+              "https://huggingface.co/$1/resolve/$2/$3"
+            echo "$4  $5" | sha256sum --check --quiet
+          }
+          nemotron=csukuangfj2/sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25
+          rev=52056fdc070914a48dcd68b31b44d6a6f5b85902
+          fetch $nemotron $rev encoder.int8.onnx 7d932213491ad355c6e5576705dc3494731a52af87d7a1b954559340147909d8 "$models/nemotron/encoder.int8.onnx"
+          fetch $nemotron $rev decoder.int8.onnx 0be9702c2f427a2b6bb241d298e0d3836a558de1f5b9fd3018f1cce6e2b3fa98 "$models/nemotron/decoder.int8.onnx"
+          fetch $nemotron $rev joiner.int8.onnx a35eac38a22ebceb04d230ed7afe0d68f446ba6914a036b97f14fece95967e23 "$models/nemotron/joiner.int8.onnx"
+          fetch $nemotron $rev tokens.txt dc0b4584ab2e4ddbf888425c076c61b736e7356a015250db7d307e6f1a8188ff "$models/nemotron/tokens.txt"
+          fetch $nemotron $rev test_wavs/0.wav 6bc58a4efdf20daac252b6b1502632601a71efe0308f6757dc1eda34891a7e4f "$models/nemotron/test_wavs/0.wav"
+          parakeet=csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8
+          rev=1ab9323565ddb038682214b292f588070a538ce2
+          fetch $parakeet $rev encoder.int8.onnx a32b12d17bbbc309d0686fbbcc2987b5e9b8333a7da83fa6b089f0a2acd651ab "$models/parakeet/encoder.int8.onnx"
+          fetch $parakeet $rev decoder.int8.onnx b6bb64963457237b900e496ee9994b59294526439fbcc1fecf705b31a15c6b4e "$models/parakeet/decoder.int8.onnx"
+          fetch $parakeet $rev joiner.int8.onnx 7946164367946e7f9f29a122407c3252b680dbae9a51343eb2488d057c3c43d2 "$models/parakeet/joiner.int8.onnx"
+          fetch $parakeet $rev tokens.txt ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d "$models/parakeet/tokens.txt"
+          fetch csukuangfj/vad fba88cd2e921609e7675c3aaf51e0b9b295da4bc silero_vad_v5.onnx 6b99cbfd39246b6706f98ec13c7c50c6b299181f2474fa05cbc8046acc274396 "$models/silero_vad_v5.onnx"
+      - name: Run the live speech test
+        env:
+          GRAM_LIVE_SPEECH: "1"
+        run: |
+          set -euo pipefail
+          models="$RUNNER_TEMP/models"
+          GRAM_LIVE_SPEECH_MODEL="$models/nemotron" GRAM_LIVE_SPEECH_ACCURATE="$models/parakeet" \
+            GRAM_LIVE_SPEECH_VAD="$models/silero_vad_v5.onnx" \
+            bunx vitest run --project desktop apps/desktop/src/speech.live.test.ts

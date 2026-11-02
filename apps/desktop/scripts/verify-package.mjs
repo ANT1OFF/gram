@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // Checks an unpacked `electron-builder --dir` build: bundle id, Electron's fuses, asar contents,
-// minified bundles, native binaries for the right platform/arch, sherpa-onnx's addon (on macOS,
-// without the GPL espeak-ng), the bundled web app, the third-party notices, and node-pty's
-// spawn-helper exec bit (macOS).
+// minified bundles, native binaries for the right platform/arch, sherpa-onnx's addon (on macOS and
+// Linux, the TTS-free build from tools/sherpa-onnx, without the GPL espeak-ng), the bundled web
+// app, the third-party notices, and node-pty's spawn-helper exec bit (macOS).
 //
-// Linux ships without local dictation, so there it checks that no sherpa-onnx is packaged or
-// noticed, that node-pty's compiled addon stays within Debian 12's glibc, and, on a Linux host of
-// the package's arch, loads node-pty through the packaged app (tools/release-rc/native-probe.cjs).
-// It then checks the AppImage and .deb electron-builder made beside the unpacked app: their
-// metadata, desktop entry, icons, and that each carries the same app.asar and pty.node.
+// On Linux it also checks that the compiled addons (node-pty, @parcel/watcher, sherpa-onnx and its
+// ONNX Runtime) stay within Debian 12's glibc, and, on a Linux host of the package's arch, loads
+// them through the packaged app (tools/release-rc/native-probe.cjs). It then checks the AppImage
+// and .deb electron-builder made beside the unpacked app: their metadata, desktop entry, icons,
+// and that each carries the same app.asar, pty.node and sherpa-onnx files.
 //
 // The shipped bundles are minified with their comments stripped (shipped-code.ts), so what each
 // one carries comes from the lists its build recorded (tools/notices/bundled-packages.mjs), matched
@@ -25,6 +25,9 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
+
+/** A file's SHA-256, in hex. */
+const sha = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
 /** The package a `node_modules/...` folder holds: its innermost `node_modules` entry. */
 const packageName = (dir) => {
@@ -92,8 +95,6 @@ const { values } = parseArgs({
   },
 });
 const { release, platform, arch, lists } = values;
-/** Linux packages leave local dictation out: no sherpa-onnx ships (electron-builder.yml). */
-const speech = platform !== "linux";
 
 let failures = 0;
 function check(label, ok, detail) {
@@ -233,10 +234,6 @@ if (fs.existsSync(asar)) {
   );
   const tests = entries.map((e) => e.path).filter((p) => /\.(test|spec)\.[cm]?[jt]sx?\b/.test(p));
   check("no test files in the asar", tests.length === 0, tests.join(", "));
-  if (!speech) {
-    const sherpaEntries = entries.map((e) => e.path).filter((p) => /(^|\/)sherpa-onnx/.test(p));
-    check("no sherpa-onnx in the asar", sherpaEntries.length === 0, sherpaEntries.join(", "));
-  }
   const packedNatives = [...packed].filter((p) => p.endsWith(".node"));
   check("no native modules inside the asar", packedNatives.length === 0, packedNatives.join(", "));
   // Main must only fork the server. A bundle that requires it runs the server in the main
@@ -379,38 +376,67 @@ const onnxRuntime =
     : platform === "linux"
       ? "libonnxruntime.so"
       : "libonnxruntime.dylib";
-if (speech) {
+check(
+  `sherpa-onnx ${platform}-${arch} addon bundled`,
+  ["sherpa-onnx.node", onnxRuntime].every((file) =>
+    fs.existsSync(path.join(unpacked, sherpaPackage, file)),
+  ) && fs.existsSync(path.join(unpacked, "node_modules", "sherpa-onnx-node", "addon.js")),
+  sherpaPackage,
+);
+const sherpaPackages = fs.existsSync(path.join(unpacked, "node_modules"))
+  ? fs.readdirSync(path.join(unpacked, "node_modules")).filter((n) => n.startsWith("sherpa-onnx-"))
+  : [];
+check(
+  "sherpa-onnx for this platform only",
+  sherpaPackages.every(
+    (name) => name === "sherpa-onnx-node" || name === path.basename(sherpaPackage),
+  ),
+  sherpaPackages.join(", "),
+);
+
+// The npm darwin-arm64 and linux-x64 builds carry text-to-speech, and up to 1.13.8 statically
+// linked espeak-ng (GPL-3.0-or-later) through piper-phonemize for it; Gram ships the
+// speech-recognition-only builds from tools/sherpa-onnx instead (install.mjs puts them over the npm
+// package). On Linux the files must be the committed ones byte for byte (macOS's are re-signed
+// when packaged). The symbol scan stands on its own: case matters, since "OfflineSpeaker" holds
+// "eSpeak"; TTS's engine classes mangle as sherpa_onnx::OfflineTts... (11sherpa_onnx<len>OfflineTts),
+// while the C API's TTS functions and the C++ API's sherpa_onnx::cxx::OfflineTts wrapper stay as
+// stubs that return null with TTS off.
+const ttsFree = path.resolve(
+  import.meta.dirname,
+  "../../../tools/sherpa-onnx",
+  `${platform}-${arch}`,
+);
+if (platform === "linux") {
+  const differ = fs
+    .readFileSync(path.join(ttsFree, "SHA256SUMS"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => line.split(/\s+\*?/))
+    .filter(([hash, name]) => {
+      const shipped = path.join(unpacked, sherpaPackage, name);
+      return !fs.existsSync(shipped) || sha(shipped) !== hash;
+    })
+    .map(([, name]) => name);
   check(
-    `sherpa-onnx ${platform}-${arch} addon bundled`,
-    ["sherpa-onnx.node", onnxRuntime].every((file) =>
-      fs.existsSync(path.join(unpacked, sherpaPackage, file)),
-    ) && fs.existsSync(path.join(unpacked, "node_modules", "sherpa-onnx-node", "addon.js")),
-    sherpaPackage,
-  );
-} else {
-  // Its Linux builds carry text-to-speech, which links GPL code (espeak-ng, piper-phonemize).
-  const sherpa = fs.existsSync(path.join(unpacked, "node_modules"))
-    ? fs.readdirSync(path.join(unpacked, "node_modules")).filter((n) => n.startsWith("sherpa-onnx"))
-    : [];
-  const onnx = listFiles(unpacked).filter((f) => /onnx|espeak|piper/i.test(path.basename(f)));
-  check(
-    "no sherpa-onnx or ONNX Runtime packaged (Linux ships without dictation)",
-    sherpa.length === 0 && onnx.length === 0,
-    [...sherpa, ...onnx.map((f) => path.relative(unpacked, f))].join(", "),
+    `sherpa-onnx is the TTS-free build in tools/sherpa-onnx/${platform}-${arch}`,
+    differ.length === 0,
+    differ.join(", "),
   );
 }
-
-// The npm darwin-arm64 build carries text-to-speech, and up to 1.13.8 statically linked espeak-ng
-// (GPL-3.0-or-later) through piper-phonemize for it; Gram ships the speech-recognition-only build
-// from tools/sherpa-onnx instead.
-// Case matters: "OfflineSpeaker" holds "eSpeak".
-if (platform === "darwin") {
-  const gpl = findBinaries(path.join(unpacked, sherpaPackage)).flatMap(({ file }) => {
+if (platform === "darwin" || platform === "linux") {
+  const tts = findBinaries(path.join(unpacked, sherpaPackage)).flatMap(({ file }) => {
     const symbols = execFileSync("nm", ["-a", file], { encoding: "utf8", maxBuffer: 256 << 20 });
-    const found = symbols.split("\n").filter((line) => /espeak|Espeak|piper|Piper/.test(line));
+    const found = symbols
+      .split("\n")
+      .filter((line) => /espeak|Espeak|piper|Piper|11sherpa_onnx\d+OfflineTts/.test(line));
     return found.length > 0 ? [`${path.basename(file)} (${found.length} symbols)`] : [];
   });
-  check("sherpa-onnx without espeak-ng or piper-phonemize", gpl.length === 0, gpl.join(", "));
+  check(
+    "sherpa-onnx without text-to-speech, espeak-ng or piper-phonemize",
+    tts.length === 0,
+    tts.join(", "),
+  );
 }
 
 // electron-updater names its download cache from this; it names no feed, which is set in code.
@@ -439,17 +465,12 @@ if (notices && fs.existsSync(asar)) {
       if (!noticed.has(name)) uncovered.add(name);
   const nativePackages = ["electron", "node-pty"];
   if (platform === "linux") nativePackages.push("@parcel/watcher", WATCHER_LINUX);
-  if (speech) nativePackages.push("sherpa-onnx-node", path.basename(sherpaPackage));
+  nativePackages.push("sherpa-onnx-node", path.basename(sherpaPackage));
   for (const name of nativePackages) if (!noticed.has(name)) uncovered.add(name);
-  if (!speech) {
-    // Notices for what doesn't ship would claim it does.
-    const sherpaNotices = [...noticed].filter((name) => name.startsWith("sherpa-onnx"));
-    check(
-      "notices name no sherpa-onnx package or library",
-      sherpaNotices.length === 0 && !notices.includes("Libraries compiled into sherpa-onnx"),
-      sherpaNotices.join(", "),
-    );
-  }
+  check(
+    "notices list the libraries compiled into sherpa-onnx",
+    notices.includes("Libraries compiled into sherpa-onnx"),
+  );
   check(
     "notices cover every bundled and native package",
     noticed.size > 0 && uncovered.size === 0,
@@ -472,7 +493,6 @@ if (platform === "darwin") {
   }
 }
 
-const sha = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 const mib = (file) => `${(fs.statSync(file).size / 1024 / 1024).toFixed(1)} MiB`;
 
 /** A .desktop file's [Desktop Entry] keys. */
@@ -527,10 +547,14 @@ if (platform === "linux") {
     watcherForeign.map((b) => b.file).join(", ") || WATCHER_LINUX,
   );
 
-  // Built on Ubuntu 24.04 (glibc 2.39), node-pty has to load on Debian 12 (glibc 2.36).
+  // Built on Ubuntu 24.04 (glibc 2.39), node-pty has to load on Debian 12 (glibc 2.36); so do the
+  // rest, whose builds aim lower (sherpa-onnx's at 2.28, ONNX Runtime's at 2.17).
   for (const [label, addon] of [
     ["node-pty", ptyAddon],
     ["@parcel/watcher", watcherAddon],
+    ...listFiles(path.join(unpacked, sherpaPackage))
+      .filter((f) => /\.(node|so)$/.test(f))
+      .map((f) => [path.basename(f), f]),
   ]) {
     if (!fs.existsSync(addon)) continue;
     let symbols;
@@ -553,9 +577,9 @@ if (platform === "linux") {
     }
   }
 
-  // node-pty and @parcel/watcher loading in the packaged Electron, as Node, resolved as the server
-  // resolves them from inside the asar: a shell through a pty, a file change through a watch; and
-  // sherpa-onnx-node failing to resolve. Only a host that can run the package can do this.
+  // node-pty, @parcel/watcher and sherpa-onnx loading in the packaged Electron, as Node, resolved as
+  // the server and speech process resolve them from inside the asar: a shell through a pty and a
+  // file change through a watch. Only a host that can run the package can do this.
   if (process.platform === "linux" && process.arch === arch) {
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "gram-native-probe-"));
     try {
@@ -565,7 +589,7 @@ if (platform === "linux") {
       try {
         output = execFileSync(
           path.join(appDir, "gram"),
-          [probe, path.join(resources, "app.asar"), scratch, marker, "no-speech"],
+          [probe, path.join(resources, "app.asar"), scratch, marker, "watch"],
           {
             encoding: "utf8",
             env: { PATH: "/usr/bin:/bin", HOME: scratch, ELECTRON_RUN_AS_NODE: "1" },
@@ -580,7 +604,7 @@ if (platform === "linux") {
         fs.readFileSync(require.resolve("electron/package.json"), "utf8"),
       ).version;
       check(
-        "packaged app runs a pty and a file watch; sherpa-onnx doesn't resolve",
+        "packaged app loads sherpa-onnx and runs a pty and a file watch",
         output.includes("NATIVE OK") && runtime.electron === electron && runtime.arch === arch,
         output.includes("NATIVE OK")
           ? `Electron ${runtime.electron} ${runtime.arch}`
@@ -614,9 +638,14 @@ function verifyLinuxArtifacts() {
     ),
     gram: sha(path.join(appDir, "gram")),
   };
+  // Local dictation's addon, C APIs and ONNX Runtime, as checked above.
+  for (const file of listFiles(path.join(unpacked, sherpaPackage)).filter((f) =>
+    /\.(node|so)$/.test(f),
+  ))
+    reference[`resources/app.asar.unpacked/${path.relative(unpacked, file)}`] = sha(file);
   const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
 
-  /** The packaged app inside an extracted artifact matches the unpacked one, without sherpa. */
+  /** The packaged app inside an extracted artifact matches the unpacked one. */
   const checkPayload = (label, root) => {
     const differ = Object.entries(reference)
       .filter(
@@ -632,14 +661,6 @@ function verifyLinuxArtifacts() {
     check(
       `${label} carries the web app and notices`,
       fs.existsSync(web) && fs.existsSync(path.join(root, "resources", "THIRD-PARTY-NOTICES.txt")),
-    );
-    const sherpa = listFiles(root).filter((f) =>
-      /sherpa-onnx|onnxruntime/i.test(path.relative(root, f)),
-    );
-    check(
-      `${label} holds no sherpa-onnx`,
-      sherpa.length === 0,
-      sherpa.map((f) => path.relative(root, f)).join(", "),
     );
   };
 

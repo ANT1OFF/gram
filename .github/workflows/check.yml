@@ -439,19 +439,21 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends xvfb xauth ./apps/desktop/release/gram_*_amd64.deb
           missing=$(ldd /opt/Gram/gram | grep "not found" || true)
           if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
-      - name: Install the .deb on Debian 12 and load node-pty there
+      - name: Install the .deb on Debian 12 and load node-pty and sherpa-onnx there
         run: |
           docker run --rm -v "$PWD:/src:ro" -w /src \
             debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 \
             bash -euo pipefail -c '
               apt-get update -qq
               apt-get install -y -qq --no-install-recommends ./apps/desktop/release/gram_*_amd64.deb >/dev/null
-              pty=/opt/Gram/resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node
-              missing=$(ldd /opt/Gram/gram "$pty" | grep "not found" || true)
+              unpacked=/opt/Gram/resources/app.asar.unpacked/node_modules
+              missing=$(ldd /opt/Gram/gram "$unpacked/node-pty/build/Release/pty.node" \
+                "$unpacked"/sherpa-onnx-linux-x64/*.so "$unpacked/sherpa-onnx-linux-x64/sherpa-onnx.node" \
+                | grep "not found" || true)
               if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
               scratch=$(mktemp -d)
               ELECTRON_RUN_AS_NODE=1 /opt/Gram/gram tools/release-rc/native-probe.cjs \
-                /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 no-speech'
+                /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 watch'
       - name: Smoke the installed app and the AppImage under Xvfb
         run: |
           for app in /opt/Gram/gram "$PWD/apps/desktop/release/gram_"*"_x86_64.AppImage"; do

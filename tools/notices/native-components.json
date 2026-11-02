@@ -1,5 +1,5 @@
 {
-  "$comment": "Libraries compiled into the sherpa-onnx darwin-arm64 build Gram ships: tools/sherpa-onnx/darwin-arm64, built from sherpa-onnx 2.0.0 with text-to-speech off (tools/sherpa-onnx/build-darwin-arm64.sh), so no espeak-ng or piper-phonemize. Versions are the ones sherpa-onnx 2.0.0's cmake/ pins; each was confirmed by its symbols in that build's libsherpa-onnx-c-api.dylib. Recheck when the sherpa-onnx-node catalog pin changes: generate.mjs fails if it does.",
+  "$comment": "Libraries compiled into the sherpa-onnx builds Gram ships: tools/sherpa-onnx/darwin-arm64 and tools/sherpa-onnx/linux-x64, built from sherpa-onnx 2.0.0 with text-to-speech off (tools/sherpa-onnx/build-darwin-arm64.sh, build-linux-x64.sh), so no espeak-ng or piper-phonemize. Versions are the ones sherpa-onnx 2.0.0's cmake/ pins; each was confirmed by its symbols in both builds' libsherpa-onnx-c-api. Recheck when the sherpa-onnx-node catalog pin changes: generate.mjs fails if it does. Each component names the C++ namespaces or C symbol prefixes that mark it in the binaries; notices.test.mjs fails when either committed build carries a namespace no component or ownNamespaces entry accounts for.",
   "sherpaOnnx": "2.0.0",
   "components": [
     {
@@ -8,7 +8,8 @@
       "license": "MIT",
       "source": "https://github.com/microsoft/onnxruntime",
       "where": "libonnxruntime (a separate library beside the addon)",
-      "texts": ["onnxruntime-LICENSE.txt", "onnxruntime-ThirdPartyNotices.txt"]
+      "texts": ["onnxruntime-LICENSE.txt", "onnxruntime-ThirdPartyNotices.txt"],
+      "namespaces": ["Ort"]
     },
     {
       "name": "OpenFst",
@@ -16,7 +17,8 @@
       "license": "Apache-2.0",
       "source": "https://github.com/csukuangfj/openfst",
       "where": "statically linked into libsherpa-onnx-c-api",
-      "texts": ["openfst-COPYING.txt", "Apache-2.0.txt"]
+      "texts": ["openfst-COPYING.txt", "Apache-2.0.txt"],
+      "namespaces": ["fst", "FlagRegister", "FlagRegisterer", "LogMessage"]
     },
     {
       "name": "kaldi-native-fbank",
@@ -24,7 +26,8 @@
       "license": "Apache-2.0",
       "source": "https://github.com/csukuangfj/kaldi-native-fbank",
       "where": "statically linked into libsherpa-onnx-c-api",
-      "texts": ["Apache-2.0.txt"]
+      "texts": ["Apache-2.0.txt"],
+      "namespaces": ["knf"]
     },
     {
       "name": "utf8proc",
@@ -32,7 +35,8 @@
       "license": "MIT AND Unicode-DFS-2015",
       "source": "https://github.com/JuliaStrings/utf8proc",
       "where": "statically linked into libsherpa-onnx-c-api",
-      "texts": ["utf8proc-LICENSE.txt"]
+      "texts": ["utf8proc-LICENSE.txt"],
+      "symbols": ["utf8proc_"]
     },
     {
       "name": "KISS FFT",
@@ -40,7 +44,8 @@
       "license": "BSD-3-Clause",
       "source": "https://github.com/mborgerding/kissfft",
       "where": "statically linked into libsherpa-onnx-c-api (through kaldi-native-fbank)",
-      "texts": ["kissfft-COPYING.txt"]
+      "texts": ["kissfft-COPYING.txt"],
+      "symbols": ["kiss_fft"]
     },
     {
       "name": "kaldi-decoder (with kaldifst)",
@@ -48,7 +53,8 @@
       "license": "Apache-2.0",
       "source": "https://github.com/k2-fsa/kaldi-decoder",
       "where": "statically linked into libsherpa-onnx-c-api",
-      "texts": ["Apache-2.0.txt"]
+      "texts": ["Apache-2.0.txt"],
+      "namespaces": ["kaldi_decoder", "kaldifst"]
     },
     {
       "name": "simple-sentencepiece",
@@ -56,7 +62,26 @@
       "license": "Apache-2.0",
       "source": "https://github.com/pkufool/simple-sentencepiece",
       "where": "statically linked into libsherpa-onnx-c-api",
-      "texts": ["Apache-2.0.txt"]
+      "texts": ["Apache-2.0.txt"],
+      "namespaces": ["ssentencepiece"]
+    },
+    {
+      "name": "darts-clone",
+      "version": "0.32",
+      "license": "BSD-2-Clause",
+      "source": "https://github.com/s-yata/darts-clone",
+      "where": "statically linked into libsherpa-onnx-c-api (vendored in simple-sentencepiece as darts.h)",
+      "texts": ["darts-clone-LICENSE.txt"],
+      "namespaces": ["Darts"]
+    },
+    {
+      "name": "ThreadPool",
+      "version": "9a42ec1329f259a5f4881a291db1dcb8f2ad9040",
+      "license": "Zlib",
+      "source": "https://github.com/progschj/ThreadPool",
+      "where": "statically linked into libsherpa-onnx-c-api (vendored in simple-sentencepiece as threadpool.h)",
+      "texts": ["threadpool-COPYING.txt"],
+      "namespaces": ["ThreadPool"]
     },
     {
       "name": "hclust-cpp (fastcluster)",
@@ -64,7 +89,8 @@
       "license": "BSD-2-Clause",
       "source": "https://github.com/csukuangfj/hclust-cpp",
       "where": "statically linked into libsherpa-onnx-c-api",
-      "texts": ["hclust-cpp-LICENSE.txt"]
+      "texts": ["hclust-cpp-LICENSE.txt"],
+      "namespaces": ["fastclustercpp"]
     },
     {
       "name": "nlohmann/json",
@@ -72,7 +98,8 @@
       "license": "MIT",
       "source": "https://github.com/nlohmann/json",
       "where": "compiled into libsherpa-onnx-c-api",
-      "texts": ["nlohmann-json-LICENSE.txt"]
+      "texts": ["nlohmann-json-LICENSE.txt"],
+      "namespaces": ["nlohmann"]
     },
     {
       "name": "Eigen",
@@ -80,7 +107,28 @@
       "license": "MPL-2.0",
       "source": "https://gitlab.com/libeigen/eigen (source code form available there)",
       "where": "compiled into libsherpa-onnx-c-api",
-      "texts": ["MPL-2.0.txt"]
+      "texts": ["MPL-2.0.txt"],
+      "namespaces": ["Eigen"]
+    },
+    {
+      "name": "node-addon-api",
+      "version": "8.9.2",
+      "license": "MIT",
+      "source": "https://github.com/nodejs/node-addon-api",
+      "where": "compiled into sherpa-onnx.node (its C++ wrapper of Node-API, header-only)",
+      "texts": ["node-addon-api-LICENSE.txt"],
+      "namespaces": ["Napi"]
     }
-  ]
+  ],
+  "ownNamespaces": {
+    "$comment": "Namespaces in the builds that are no third-party library's: sherpa-onnx's own code (its notice is the sherpa-onnx-node package's) and the C++ runtime's ABI support, which the GCC Runtime Library Exception and LLVM's Apache-2.0 WITH LLVM-exception leave without a notice duty.",
+    "sherpa-onnx": [
+      "sherpa_onnx",
+      "SherpaOnnx*",
+      "CreateRecognizerAsyncWorker",
+      "DecodeOfflineStreamAsyncWorker",
+      "SpeakerDiarizationProcessWorker"
+    ],
+    "C++ runtime": ["__cxxabiv1"]
+  }
 }

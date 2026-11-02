@@ -24,7 +24,8 @@ in its own git worktree, from task to merged pull request.
 
 - macOS on Apple silicon, or Linux on x64 (the AppImage, or the .deb for Debian 12, Ubuntu 24.04
   and later). On Linux, gateway keys need a desktop keyring (GNOME Keyring or another Secret
-  Service, or KWallet), and voice dictation isn't available yet.
+  Service, or KWallet), and voice dictation uses the system's default input through PipeWire or
+  PulseAudio.
 - [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) and/or the
   [Codex CLI](https://github.com/openai/codex), installed and signed in (`claude /login`,
   `codex login`). Gram runs them on your own subscriptions; no API key is needed.

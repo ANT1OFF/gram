@@ -49,6 +49,14 @@ describe("release-linux.yml", () => {
     );
   });
 
+  it("rebuilds the committed sherpa-onnx and requires the same bytes before installing them", () => {
+    const build = job("build");
+    const rebuild = build.indexOf("tools/sherpa-onnx/build-linux-x64.sh");
+    expect(rebuild).toBeGreaterThan(0);
+    expect(build.slice(rebuild)).toMatch(/cmp "\$file"/);
+    expect(rebuild).toBeLessThan(build.indexOf("bun install --frozen-lockfile"));
+  });
+
   it("pins every action to a full commit SHA", () => {
     for (const line of text.split("\n").filter((l) => /^\s+(- )?uses: /.test(l)))
       expect(line).toMatch(/@[0-9a-f]{40} # v\d/);
