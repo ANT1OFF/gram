@@ -1,6 +1,5 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
 import {
-  STATION_LABELS,
   type OrchestratorLedger,
   type ThreadId,
   type ThreadSummary,
@@ -40,9 +39,12 @@ import { askKeysByThread } from "./ask-model";
 import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
 import {
+  overviewItems,
   overviewState,
   orchestratorHover,
   overviewSummary,
+  plainActivity,
+  plainRunning,
   tileLetters,
   tileWorking,
   type OverviewState,
@@ -489,44 +491,28 @@ const Empty = ({ children }: { children: ReactNode }) => (
   <p className="px-1.5 py-1 text-xs text-muted-foreground">{children}</p>
 );
 
-/** The workspace the window is on: its live workers by feature, the open overview's rows. */
+/** The workspace the window is on: its live workers, most urgent first, as the open overview has them. */
 function CurrentWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
   const features = useOverviewFeatures(workspaceId);
   const orchestratorAgent = useOrchestratorAgent(workspaceId);
-  const rows = features.filter((feature) => feature.rows.length > 0);
-  if (rows.length === 0) {
+  const items = useMemo(() => overviewItems(features), [features]);
+  const workers = items.flatMap((item) => (item.kind === "worker" ? [item] : []));
+  if (workers.length === 0) {
     return (
       <OrchestratorAtWork workspaceId={workspaceId} className="px-1.5 py-1">
         No workers now.
       </OrchestratorAtWork>
     );
   }
-  return rows.map((feature) => (
-    <section
-      key={feature.feature}
-      aria-label={`${feature.feature}, ${STATION_LABELS[feature.station]}`}
-      data-testid="overview-feature"
-      data-feature={feature.feature}
-      data-station={feature.station}
-      className="flex flex-col"
-    >
-      <h4
-        title={`Stage: ${STATION_LABELS[feature.station]}`}
-        className="truncate px-1.5 pt-1 pb-0.5 text-xs font-medium text-muted-foreground"
-      >
-        {feature.feature}
-      </h4>
-      {feature.rows.map((row) => (
-        <WorkerRow
-          key={row.threadId}
-          row={row}
-          feature={feature.feature}
-          updatedAt={feature.updatedAt}
-          orchestratorAgent={orchestratorAgent}
-          card={false}
-        />
-      ))}
-    </section>
+  return workers.map((item) => (
+    <WorkerRow
+      key={item.row.threadId}
+      row={item.row}
+      feature={item.feature}
+      updatedAt={item.updatedAt}
+      orchestratorAgent={orchestratorAgent}
+      card={false}
+    />
   ));
 }
 
@@ -549,7 +535,7 @@ function OtherWorkerRow({ summary }: { summary: ThreadSummary }) {
   const title = threadDisplayTitle(thread);
   const detail = useThreadsStore((s) => s.statusDetail[thread.id]);
   const display = threadStatusOf(summary, detail);
-  const now = detail ?? display.label;
+  const now = detail ? plainActivity(detail) : plainRunning(display.label);
   return (
     <button
       type="button"

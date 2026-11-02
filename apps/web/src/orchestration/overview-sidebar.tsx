@@ -1,6 +1,5 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
 import {
-  STATION_LABELS,
   type FeatureCardHeld,
   type OrchestratorLedger,
   type ThreadId,
@@ -37,13 +36,7 @@ import { focusSidebar, overviewStops } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { useSwitchWorkspace } from "@/shell/workspace-switcher";
-import {
-  activityLine,
-  settledRow,
-  SETTLED_AFTER_MS,
-  statusHint,
-  threadStatusOf,
-} from "@/sidebar/status";
+import { activityLine, settledRow, SETTLED_AFTER_MS, threadStatusOf } from "@/sidebar/status";
 import { overviewFoldKey, useLayoutStore, type ShellFit } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
@@ -76,7 +69,10 @@ import {
   orchestratorHover,
   orchestratorLine,
   overviewFeatures,
+  overviewItems,
   overviewState,
+  plainActivity,
+  plainRunning,
   rowTone,
   stateWordShown,
   workLineText,
@@ -581,7 +577,10 @@ export const useOrchestratorAgent = (workspaceId: WorkspaceId): string | undefin
   );
 };
 
-/** An open workspace: its features with their live workers, each feature's stage on its hover. */
+/**
+ * An open workspace: its live workers straight under its orchestrator, most urgent first
+ * (`overviewItems`), then its briefs held for a limit. A worker's feature and stage are on its hover.
+ */
 function WorkspaceFeatures({
   workspaceId,
   features,
@@ -590,7 +589,8 @@ function WorkspaceFeatures({
   features: readonly OverviewFeature[];
 }) {
   const orchestratorAgent = useOrchestratorAgent(workspaceId);
-  if (features.length === 0) {
+  const items = useMemo(() => overviewItems(features), [features]);
+  if (items.length === 0) {
     return (
       <OrchestratorAtWork workspaceId={workspaceId} className="pb-1 pl-6">
         No workers now.
@@ -599,41 +599,27 @@ function WorkspaceFeatures({
   }
   return (
     <div
-      data-testid="overview-features"
+      data-testid="overview-workers"
       className="mb-1 ml-3 flex flex-col gap-px border-l border-border pl-2"
     >
-      {features.map((feature) => (
-        <section
-          key={feature.feature}
-          aria-label={`${feature.feature}, ${STATION_LABELS[feature.station]}`}
-          data-testid="overview-feature"
-          data-feature={feature.feature}
-          data-station={feature.station}
-          className="flex flex-col"
-        >
-          <h3
-            title={`Stage: ${STATION_LABELS[feature.station]}`}
-            className="truncate px-1.5 pt-1.5 pb-0.5 text-xs font-medium text-muted-foreground"
-          >
-            {feature.feature}
-          </h3>
-          <PresenceList>
-            {feature.rows.map((row) => (
-              <PresenceItem key={row.threadId}>
-                <WorkerRow
-                  row={row}
-                  feature={feature.feature}
-                  updatedAt={feature.updatedAt}
-                  orchestratorAgent={orchestratorAgent}
-                />
-              </PresenceItem>
-            ))}
-          </PresenceList>
-          {feature.held.map((held) => (
-            <HeldRow key={held.id} held={held} />
-          ))}
-        </section>
-      ))}
+      <PresenceList>
+        {items.map((item) =>
+          item.kind === "worker" ? (
+            <PresenceItem key={item.row.threadId}>
+              <WorkerRow
+                row={item.row}
+                feature={item.feature}
+                updatedAt={item.updatedAt}
+                orchestratorAgent={orchestratorAgent}
+              />
+            </PresenceItem>
+          ) : (
+            <PresenceItem key={item.held.id}>
+              <HeldRow held={item.held} />
+            </PresenceItem>
+          ),
+        )}
+      </PresenceList>
     </div>
   );
 }
@@ -1042,9 +1028,8 @@ const workingOrchestrator = (
 };
 
 /**
- * What a thread at work is doing, as its tree row says it: its plan's step and what it runs, else
- * what it runs. An orchestrator has no plan headline, so its line is always what it runs. A
- * needs-you headline is left to the ask stack and the row's glyph.
+ * What a thread at work is doing, in plain words (`plainActivity`): what kind of thing it runs,
+ * never the command or a path. With nothing of its own running, the work left running under it.
  */
 const workLineOf = (s: ThreadsState, threadId: ThreadId): string | undefined => {
   const summary = s.byId[threadId];
@@ -1052,11 +1037,18 @@ const workLineOf = (s: ThreadsState, threadId: ThreadId): string | undefined => 
   const activity = activityLine(summary.status, s.statusDetail[threadId], summary.activity);
   const display = threadStatusOf(summary, s.statusDetail[threadId]);
   if (!display.working && display.running === undefined) return undefined;
-  return activity ?? statusHint(display, activity);
+  if (activity !== undefined) return plainActivity(activity);
+  // The glyph's title lists each command under the work it counts; its label alone stays plain.
+  return display.running === undefined ? display.title : plainRunning(display.label);
 };
 
+/**
+ * What a thread at work is doing, as its row says it: its plan's step and what it runs, else what
+ * it runs. An orchestrator has no plan headline, so its line is always what it runs. A needs-you
+ * headline is left to the ask stack and the row's glyph.
+ */
 const useWorkLine = (threadId: ThreadId, report?: ReportNext | undefined): string | undefined => {
-  const { headline } = useThreadHeadline(threadId);
+  const { headline } = useThreadHeadline(threadId, plainActivity);
   const running = useThreadsStore((s) => workLineOf(s, threadId));
   const planAt = useThreadsStore((s) => s.byId[threadId]?.plan?.updatedAt);
   return workLineText(headline, planAt, report, running);

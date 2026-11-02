@@ -139,9 +139,12 @@ test("Archive parks a quiet feature's workers and it leaves the Board; a busy on
   await expect(page.getByText("Couldn't archive mail-trigger")).toBeVisible();
   await expect(line(page, "mail-trigger")).toBeVisible();
 
-  // auth-refresh is merged, with nothing running: from its sheet, Archive takes it off. Its group,
-  // q3-cleanup, is finished, so its band is folded to one line until opened. It is the Board's last
-  // entry, drawn once scrolled to.
+  // auth-refresh is merged, with nothing running, so it has left the Board for Done until Show
+  // finished brings it back; from its sheet, Archive parks it. Its group, q3-cleanup, is finished, so
+  // its band is folded to one line until opened. It is the Board's last entry, drawn once scrolled to.
+  const showFinished = page.getByTestId("shell-titlebar").getByTestId("rail-show-archived");
+  await expect(line(page, "auth-refresh")).toHaveCount(0);
+  await showFinished.click();
   await page
     .getByTestId("rail-board")
     .getByRole("list", { name: "Features", exact: true })
@@ -153,6 +156,10 @@ test("Archive parks a quiet feature's workers and it leaves the Board; a busy on
     .locator('[data-testid="rail-group"][data-group="q3-cleanup"]')
     .getByTestId("rail-group-toggle")
     .click();
+  const parked = await line(page, "auth-refresh")
+    .getByTestId("rail-worker")
+    .first()
+    .getAttribute("data-thread-id");
   await line(page, "auth-refresh").getByTestId("rail-feature").click();
   await sheet(page).getByTestId("feature-menu").press("Enter");
   const items = page.getByTestId("feature-menu-popup").getByRole("menuitem");
@@ -166,6 +173,12 @@ test("Archive parks a quiet feature's workers and it leaves the Board; a busy on
   ]);
   await items.filter({ hasText: "Archive" }).press("Enter");
   await expect(sheet(page)).toBeHidden();
+  await expect
+    .poll(() =>
+      page.evaluate((id) => window.gramMock!.world.summary(id as never).thread.parked, parked),
+    )
+    .toBe(true);
+  await showFinished.click();
   await expect(line(page, "auth-refresh")).toHaveCount(0);
   await expect(line(page, "mail-trigger")).toBeVisible();
 });

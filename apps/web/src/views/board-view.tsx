@@ -8,7 +8,7 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { CircleAlert, Layers, SquareKanban } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
@@ -28,7 +28,8 @@ import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { HeldBriefChip } from "@/orchestration/held-brief";
 import { useBoardBand } from "@/orchestration/open-board";
 import {
-  archivedCount,
+  boardRows,
+  hiddenWorkerCount,
   overlapHint,
   railEntries,
   railRows,
@@ -63,10 +64,13 @@ const COLUMNS = "grid-cols-[minmax(8rem,12rem)_repeat(5,minmax(0,1fr))]";
 function WorkerChip({
   worker,
   station,
+  named,
   onOpen,
 }: {
   worker: RailWorker;
   station: FeatureStation;
+  /** Whether it says its title: a line's only worker leaves that to the line's name. */
+  named: boolean;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
   const tone = RAIL_TONES[worker.tone];
@@ -92,12 +96,25 @@ function WorkerChip({
         className="flex min-w-0 items-center gap-1.5 text-left outline-none after:absolute after:inset-0 after:content-['']"
       >
         <tone.icon aria-hidden className={cn("size-3 shrink-0", tone.tone)} />
-        <span className="min-w-0 truncate font-medium">{worker.title}</span>
+        {named ? (
+          <span className="min-w-0 truncate font-medium">{worker.title}</span>
+        ) : (
+          <span data-testid="rail-now" className="min-w-0 truncate text-muted-foreground">
+            {worker.now}
+          </span>
+        )}
       </button>
-      <span className="flex min-w-0 items-center gap-1.5 pl-4.5 text-[11px] text-muted-foreground">
-        <span data-testid="rail-now" className="min-w-0 truncate">
-          {worker.now}
-        </span>
+      <span
+        className={cn(
+          "flex min-w-0 items-center gap-1.5 pl-4.5 text-[11px] text-muted-foreground",
+          !named && worker.pr === undefined && overlap === undefined && "hidden",
+        )}
+      >
+        {named && (
+          <span data-testid="rail-now" className="min-w-0 truncate">
+            {worker.now}
+          </span>
+        )}
         <span className="flex-1" />
         {worker.pr !== undefined &&
           (worker.pr.url === undefined ? (
@@ -183,7 +200,7 @@ function FeatureLine({
       data-feature={row.feature}
       data-reach={row.reach}
       data-finished={row.finished || undefined}
-      aria-label={row.feature}
+      aria-label={row.title}
       className={cn(
         "group/line grid gap-x-2 gap-y-1.5 px-4 py-2.5 hover:bg-sidebar-row-hover/50",
         COLUMNS,
@@ -197,11 +214,21 @@ function FeatureLine({
           <button
             type="button"
             data-testid="rail-feature"
+            title={`${row.title} · ${row.feature}`}
             onClick={() => openFeatureSheet(row.card.workspaceId, row.feature)}
             className="min-w-0 truncate rounded-sm text-left underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {row.feature}
+            {row.title}
           </button>
+          {workerCount(row) > 1 && (
+            <span
+              data-testid="rail-more"
+              title={`${workerCount(row)} workers`}
+              className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums"
+            >
+              +{workerCount(row) - 1}
+            </span>
+          )}
           {row.card.paused === true && <PausedBadge testId="rail-paused" />}
           {needsMark && row.needs && (
             <CircleAlert
@@ -239,7 +266,13 @@ function FeatureLine({
           style={{ gridColumnStart: index + 2 }}
         >
           {row.cells[station].map((worker) => (
-            <WorkerChip key={worker.threadId} worker={worker} station={station} onOpen={onOpen} />
+            <WorkerChip
+              key={worker.threadId}
+              worker={worker}
+              station={station}
+              named={workerCount(row) > 1}
+              onOpen={onOpen}
+            />
           ))}
           {station === "briefed" &&
             row.held.map((held) => (
@@ -252,6 +285,30 @@ function FeatureLine({
             ))}
         </ul>
       ))}
+    </li>
+  );
+}
+
+/** How many workers a line draws on its stations. */
+const workerCount = (row: RailRow): number =>
+  Object.values(row.cells).reduce((sum, cell) => sum + cell.length, 0);
+
+/** The first line in no group under the bands, headed, so it doesn't read as the band's above it. */
+function OtherLine({ place, children }: { place: RowPlace; children: ReactNode }) {
+  return (
+    <li
+      ref={place.ref}
+      data-index={place["data-index"]}
+      style={place.style}
+      className={place.className}
+    >
+      <p
+        data-testid="rail-other"
+        className="bg-card/40 px-4 py-2 text-sm font-medium text-muted-foreground"
+      >
+        Other
+      </p>
+      <ul aria-label="Features in no group">{children}</ul>
     </li>
   );
 }
@@ -290,10 +347,19 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   }, []);
   const cards = useFeatureCards(workspaceId);
   const facts = useRailFacts(workspaceId);
-  const archived = useLayoutStore((s) => s.boardArchivedShown.includes(workspaceId));
+  // Show finished: archived workers, and the lines whose work is over, back on the Board.
+  const finishedShown = useLayoutStore((s) => s.boardArchivedShown.includes(workspaceId));
   const onOpen = useOpenWorker();
   const setStage = useSetStage(workspaceId);
-  const rows = useMemo(() => railRows(cards, facts, archived), [cards, facts, archived]);
+  const rows = useMemo(
+    () => boardRows(railRows(cards, facts, finishedShown), finishedShown),
+    [cards, facts, finishedShown],
+  );
+  // What Show finished would add: counted against the Board as it shows with them hidden.
+  const hidden = useMemo(
+    () => hiddenWorkerCount(cards, boardRows(railRows(cards, facts), false)),
+    [cards, facts],
+  );
   const entries = useMemo(() => railEntries(rows, state.groups), [rows, state.groups]);
   // Every open editor keeps its group's local draft mounted, even after another row takes focus.
   const [editingGroups, setEditingGroups] = useState<ReadonlySet<string>>(() => new Set());
@@ -330,7 +396,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
     >
       <BoardHeader
         state={state}
-        archived={archivedCount(cards)}
+        hidden={hidden}
         waiting={waiting.count}
         waitingOpen={bandOpen}
         onWaiting={() => useBoardBand.getState().setOpen(workspaceId, !bandOpen)}
@@ -389,7 +455,11 @@ function RailBoard({ state }: { state: WorkspaceState }) {
             >
               {(entry, index, place) =>
                 entry.kind === "line" ? (
-                  line(entry.row, placed(place, index))
+                  entry.headed === true ? (
+                    <OtherLine place={placed(place, index)}>{line(entry.row)}</OtherLine>
+                  ) : (
+                    line(entry.row, placed(place, index))
+                  )
                 ) : (
                   <GroupBand
                     workspaceId={workspaceId}

@@ -15,16 +15,19 @@ import { pauseClock, pauseLeavesRunning, pauseText } from "@/thread/orchestratio
 
 import { useViewStore } from "./view-store";
 
-// The Board's header: what waits on you, and Show archived; the stations below say who works. It
+// The Board's header: what waits on you, and Show finished; the stations below say who works. It
 // is the window's title bar's, one bar not two: the switcher there names the workspace, and Tidy up
 // and Pause or Resume are the bar's own. A pause says so in a line under it, in the shared pause
 // words.
 
-/** Show archived, while there is any: the workspace's choice. */
-function ArchivedToggle({ workspaceId, count }: { workspaceId: string; count: number }) {
+/**
+ * Show finished, while the Board leaves any worker out: archived ones, and the lines whose work is
+ * over, which Done lists. The workspace's choice.
+ */
+function FinishedToggle({ workspaceId, count }: { workspaceId: string; count: number }) {
   const shown = useLayoutStore((s) => s.boardArchivedShown.includes(workspaceId));
   if (count === 0) return null;
-  const label = shown ? `Hide archived (${count})` : `Show archived (${count})`;
+  const label = shown ? `Hide finished (${count})` : `Show finished (${count})`;
   return (
     <Hint
       label={label}
@@ -35,7 +38,7 @@ function ArchivedToggle({ workspaceId, count }: { workspaceId: string; count: nu
           variant="ghost"
           data-testid="rail-show-archived"
           aria-pressed={shown}
-          aria-label={`Show archived (${count})`}
+          aria-label={`Show finished (${count})`}
           className="text-muted-foreground [-webkit-app-region:no-drag] aria-pressed:bg-accent aria-pressed:text-foreground"
           onClick={() => useLayoutStore.getState().toggleBoardArchived(workspaceId)}
         />
@@ -48,14 +51,14 @@ function ArchivedToggle({ workspaceId, count }: { workspaceId: string; count: nu
 
 export function BoardHeader({
   state,
-  archived,
+  hidden,
   waiting,
   waitingOpen,
   onWaiting,
 }: {
   state: WorkspaceState;
-  /** Archived workers the lines leave out until shown. */
-  archived: number;
+  /** Workers the Board leaves out until finished work is shown. */
+  hidden: number;
   /** What Waiting on you holds. */
   waiting: number;
   waitingOpen: boolean;
@@ -93,7 +96,7 @@ export function BoardHeader({
         </button>
       )}
       <span data-titlebar-room="0" className="flex-1" />
-      <ArchivedToggle workspaceId={workspace.id} count={archived} />
+      <FinishedToggle workspaceId={workspace.id} count={hidden} />
     </header>
   );
   return (

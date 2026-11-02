@@ -10,10 +10,11 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import {
-  archivedCount,
+  boardRows,
   groupFolded,
   groupFoldKey,
   groupNames,
+  hiddenWorkerCount,
   overlapHint,
   railEntries,
   railRows,
@@ -183,7 +184,7 @@ describe("archived work", () => {
   ];
 
   it("counts the archived workers the lines leave out", () => {
-    expect(archivedCount(cards)).toBe(2);
+    expect(hiddenWorkerCount(cards, boardRows(railRows(cards, facts()), false))).toBe(2);
   });
 
   it("puts them back as finished when shown", () => {
@@ -239,6 +240,8 @@ describe("railEntries", () => {
         entry.kind === "line" ? entry.row.feature : `[${entry.group.group}]`,
       ),
     ).toEqual(["[release]", "[spike]", "solo", "[cleanup]"]);
+    // The ungrouped line carries a heading of its own, not reading as the band's above it.
+    expect(entries[2]).toMatchObject({ kind: "line", headed: true });
     const [release] = entries;
     expect(release?.kind === "group" && release.group).toMatchObject({
       // Its features in the order they joined; its state its least advanced line's.
@@ -248,6 +251,27 @@ describe("railEntries", () => {
       finished: false,
     });
     expect(entries.at(-1)).toMatchObject({ kind: "group", group: { finished: true } });
+  });
+
+  it("gives ungrouped lines no heading with no band above them", () => {
+    const rows = railRows([grouped("solo", undefined), grouped("adhoc", undefined)], facts());
+    expect(railEntries(rows, {})).toEqual(rows.map((row) => ({ kind: "line", row })));
+    // A finished band below them doesn't need one either: its own band heads it.
+    const done = railRows(
+      [grouped("solo", undefined), grouped("lint", "cleanup", { state: "merged" })],
+      facts(),
+    );
+    expect(railEntries(done, {})[0]).toEqual({ kind: "line", row: done[0] });
+  });
+
+  it("heads only the first ungrouped line under a band", () => {
+    const rows = railRows(
+      [grouped("api", "release"), grouped("solo", undefined), grouped("adhoc", undefined)],
+      facts(),
+    );
+    const entries = railEntries(rows, {});
+    expect(entries[1]).toMatchObject({ row: { feature: "solo" }, headed: true });
+    expect(entries[2]).toEqual({ kind: "line", row: rows[2] });
   });
 
   it("puts a band's finished lines after those still going", () => {
@@ -319,5 +343,61 @@ describe("a line still going", () => {
   it("isn't finished while its plan has steps to come", () => {
     expect(railRows([staged("verify")], facts())[0]?.finished).toBe(false);
     expect(railRows([staged("publish")], facts())[0]?.finished).toBe(true);
+  });
+});
+
+describe("lines that leave the Board", () => {
+  const merged = worker("m", { state: "merged", station: "merged" });
+  const closed = worker("c", { title: "Release notes", state: "done", station: "review" });
+
+  it("drops a finished line, and one whose workers the ledger no longer has, unless shown", () => {
+    const cards = [
+      card("shipped", [merged]),
+      card("closed", [closed]),
+      card("going", [worker("g")]),
+    ];
+    const live = { ...facts(), live: new Set(["g" as ThreadId]) };
+    const rows = railRows(cards, live);
+    expect(rows.map((row) => [row.feature, row.settled])).toEqual([
+      ["closed", true],
+      ["going", false],
+      ["shipped", true],
+    ]);
+    expect(boardRows(rows, false).map((row) => row.feature)).toEqual(["going"]);
+    expect(boardRows(rows, true).map((row) => row.feature)).toEqual(["closed", "going", "shipped"]);
+    expect(hiddenWorkerCount(cards, boardRows(rows, false))).toBe(2);
+  });
+
+  it("keeps a line the ledger no longer has while its worker runs or asks, or before it is read", () => {
+    const cards = [card("closed", [closed])];
+    const live = new Set<ThreadId>();
+    expect(railRows(cards, facts())[0]?.settled).toBe(false);
+    expect(railRows(cards, { ...facts(), live })[0]?.settled).toBe(true);
+    expect(railRows(cards, { ...facts([], { c: "running" }), live })[0]?.settled).toBe(false);
+    expect(railRows(cards, { ...facts(["c"]), live })[0]?.settled).toBe(false);
+  });
+
+  it("drops a closed worker's line even with its plan unfinished, as the overview does", () => {
+    const stalled = {
+      ...card("release", [closed]),
+      stage: { plan: ["build", "rc", "ship"], current: "rc" },
+    };
+    const [row] = railRows([stalled], { ...facts(), live: new Set<ThreadId>() });
+    expect(row).toMatchObject({ finished: false, settled: true });
+  });
+
+  it("names a line by its first worker's title, its feature only with none", () => {
+    expect(railRows([card("closed", [closed])], facts())[0]?.title).toBe("Release notes");
+    const held = {
+      id: "held-1",
+      title: "Refresh docs",
+      project: "docs",
+      agent: "codex",
+      window: "fiveHour" as const,
+      usedPct: 85,
+      until: 5_000,
+    };
+    const onlyHeld = { ...card("docs", []), held: [held] };
+    expect(railRows([onlyHeld], facts())[0]?.title).toBe("Refresh docs");
   });
 });

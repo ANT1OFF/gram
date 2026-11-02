@@ -152,42 +152,41 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   await expect(other.locator("button[aria-current]")).toHaveCount(0);
   await expect(other.getByTestId("overview-workspace-asks")).toHaveText("1");
   await expect(other.getByTestId("overview-workspace-row")).toHaveAttribute("data-live", "1");
-  await expect(other.getByTestId("overview-feature")).toHaveAttribute(
-    "data-feature",
-    "invoice-export",
-  );
+  // Its worker sits straight under its orchestrator: no feature heading between them.
+  await expect(other.getByRole("heading")).toHaveCount(0);
   await expect(other.getByTestId("overview-worker")).toHaveAttribute(
     "data-thread-id",
     made.asks.other.asking,
   );
 
-  // Its workers are the cards' live workers, feature by feature, with the cards' now lines.
+  // Its workers are the cards' live workers, straight under the orchestrator with no feature
+  // heading between, with the cards' now lines.
   const live = await liveFromCards(page, made.workspaceId);
   expect(live.length).toBeGreaterThan(1);
-  const features = here.locator('[data-testid="overview-feature"]', {
-    has: page.getByTestId("overview-worker"),
-  });
-  await expect(features).toHaveCount(live.length);
-  for (const [index, feature] of live.entries()) {
-    await expect(features.nth(index)).toHaveAttribute("data-feature", feature.feature);
-    // No progress bar on the row: the stage is on its hover and in its name.
-    await expect(features.nth(index)).toHaveAttribute("data-station", feature.station);
-    await expect(features.nth(index).getByRole("heading")).toHaveAttribute("title", /^Stage: /);
-    await expect(features.nth(index).getByTestId("overview-stage")).toHaveCount(0);
-    const workers = features.nth(index).getByTestId("overview-worker");
-    await expect(workers).toHaveCount(feature.workers.length);
-    for (const [at, each] of feature.workers.entries()) {
-      await expect(workers.nth(at)).toHaveAttribute("data-thread-id", each.id);
-      await expect(workers.nth(at).getByTestId("overview-worker-title")).toHaveText(each.title);
-      const asking = (await workers.nth(at).getAttribute("data-asking")) === "true";
-      // The now line is always in the row's name; on the row only if it says more than the dot.
-      const now = asking ? "asks you" : each.now;
-      expect(await workers.nth(at).getAttribute("aria-label")).toContain(`, ${now}`);
-      const line = workers.nth(at).getByTestId("overview-worker-now");
-      if (asking) await expect(line).toHaveText("asks you");
-      else if (["working", "briefed", "in review", "idle"].includes(now)) {
-        await expect(line).toHaveCount(0);
-      }
+  await expect(here.getByTestId("overview-workers")).toBeVisible();
+  await expect(here.getByTestId("overview-workers").getByRole("heading")).toHaveCount(0);
+  await expect(here.getByTestId("overview-stage")).toHaveCount(0);
+  const expected = live.flatMap((feature) => feature.workers);
+  const workers = here.getByTestId("overview-worker");
+  await expect(workers).toHaveCount(expected.length);
+  // Most urgent first: needs you, then working, then waiting, then the rest.
+  const rank: Record<string, number> = { needs: 0, attention: 0, error: 0, working: 1, waiting: 2 };
+  const tones = await here
+    .getByTestId("overview-worker-dot")
+    .evaluateAll((dots) => dots.map((dot) => dot.getAttribute("data-tone") ?? ""));
+  const ranks = tones.map((tone) => rank[tone] ?? 3);
+  expect(ranks).toEqual(ranks.toSorted((a, b) => a - b));
+  for (const each of expected) {
+    const row = here.locator(`[data-testid="overview-worker"][data-thread-id="${each.id}"]`);
+    await expect(row.getByTestId("overview-worker-title")).toHaveText(each.title);
+    const asking = (await row.getAttribute("data-asking")) === "true";
+    // The now line is always in the row's name; on the row only if it says more than the dot.
+    const now = asking ? "asks you" : each.now;
+    expect(await row.getAttribute("aria-label")).toContain(`, ${now}`);
+    const line = row.getByTestId("overview-worker-now");
+    if (asking) await expect(line).toHaveText("asks you");
+    else if (["working", "briefed", "in review", "idle"].includes(now)) {
+      await expect(line).toHaveCount(0);
     }
   }
   // The cards and the overview say the same: one worker's now line on both.
@@ -273,7 +272,7 @@ test("a worker's hover card reads it: title, station, now line, PR and a 24-hour
   await expect(card.getByTestId("overview-worker-card-time")).toHaveText(/^\d{2}:\d{2}$/);
 });
 
-test("a worker closed with its worktree leaves the overview, and so does its feature when it was the last", async ({
+test("a worker closed with its worktree leaves the overview, and the others stay", async ({
   page,
 }) => {
   const made = await start(page);
@@ -287,11 +286,10 @@ test("a worker closed with its worktree leaves the overview, and so does its fea
   for (const threadId of closed) {
     await page.evaluate((id) => window.gramMock!.closeThread(id as never), threadId);
   }
-  await expect(overview(page).locator(`[data-feature="${feature.feature}"]`)).toHaveCount(0);
   for (const threadId of closed) await expect(worker(page, threadId)).toHaveCount(0);
-  // The other features stay, with their workers.
+  // The other features' workers stay.
   for (const other of live.filter((each) => each.feature !== feature.feature)) {
-    await expect(overview(page).locator(`[data-feature="${other.feature}"]`)).toBeVisible();
+    for (const each of other.workers) await expect(worker(page, each.id)).toBeVisible();
   }
 });
 
@@ -914,15 +912,24 @@ test("a tile's flyout lists the current workspace's workers: a click opens one, 
   await tile(page, made.workspaceId).hover();
   await expect(flyout(page)).toBeVisible();
   await expect(flyout(page)).toHaveAttribute("data-for", `workspace:${made.workspaceId}`);
-  // The open overview's rows: the cards' live workers, feature by feature.
+  // The open overview's rows, in its order: the cards' live workers, with no feature heading.
   const rows = flyout(page).getByTestId("overview-worker");
   const expected = live.flatMap((feature) => feature.workers);
   await expect(rows).toHaveCount(expected.length);
-  for (const [at, each] of expected.entries()) {
-    await expect(rows.nth(at)).toHaveAttribute("data-thread-id", each.id);
-    await expect(rows.nth(at).getByTestId("overview-worker-title")).toHaveText(each.title);
+  for (const each of expected) {
+    const row = flyout(page).locator(`[data-thread-id="${each.id}"]`);
+    await expect(row.getByTestId("overview-worker-title")).toHaveText(each.title);
   }
-  await expect(flyout(page).getByTestId("overview-feature")).toHaveCount(live.length);
+  // Most urgent first, as the open overview has them.
+  const rank: Record<string, number> = { needs: 0, attention: 0, error: 0, working: 1, waiting: 2 };
+  const ranks = (
+    await flyout(page)
+      .getByTestId("overview-worker-dot")
+      .evaluateAll((dots) => dots.map((dot) => dot.getAttribute("data-tone") ?? ""))
+  ).map((tone) => rank[tone] ?? 3);
+  expect(ranks).toEqual(ranks.toSorted((a, b) => a - b));
+  // Its one heading is the workspace's: no feature's between it and the rows.
+  await expect(flyout(page).getByRole("heading")).toHaveCount(1);
 
   // A plain click opens its thread, as the open row does; watching holds nothing.
   const before = await workerFacts(page, made, made.live);
@@ -1214,7 +1221,8 @@ test("a worker still running after its feature is delivered shows with its step 
   await expect(row.getByTestId("overview-worker-now")).toHaveCount(0);
   const line = row.getByTestId("overview-worker-step");
   await expect(line).not.toHaveText("");
-  await expect(line).toContainText(/Tagging the release|git tag/);
+  // The step and the kind of thing it runs, never the command.
+  await expect(line).toHaveText("Step 2 of 2 · Running a command");
   await expect(row.getByTestId("overview-ago")).toHaveCount(0);
   await expect(row).toHaveAttribute("aria-label", /, working, .*last active \d{2}:\d{2}$/);
   // Its turn over, it leaves again.

@@ -41,7 +41,11 @@ function useSteadyHeadline(headline: PlanHeadline | undefined): PlanHeadline | u
  * A thread's headline, from the store, and whether it keeps a plan: a thread without one still has
  * a headline for what needs the user, and for its PR, which only some places show.
  */
-export function useThreadHeadline(threadId: ThreadId): {
+export function useThreadHeadline(
+  threadId: ThreadId,
+  /** Words for its activity line in place of the raw one, as the overview's plain lines have it. */
+  wordActivity?: (activity: string) => string,
+): {
   readonly headline: PlanHeadline | undefined;
   readonly planned: boolean;
 } {
@@ -51,8 +55,9 @@ export function useThreadHeadline(threadId: ThreadId): {
   const planned = hasPlan(summary?.plan, turnPlan);
   // Only the idle rule reads the clock, in days, so a slow tick will do.
   const now = useNow(summary !== undefined, undefined, 10 * 60_000);
-  const activity =
+  const raw =
     summary === undefined ? undefined : activityLine(summary.status, detail, summary.activity);
+  const activity = raw === undefined || wordActivity === undefined ? raw : wordActivity(raw);
   const headline = useSteadyHeadline(
     summary === undefined ? undefined : headlineOf(summary, turnPlan, activity, now),
   );
