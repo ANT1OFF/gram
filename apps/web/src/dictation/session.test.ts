@@ -1,7 +1,13 @@
 import type { SpeechClientMessage, SpeechServerMessage } from "@gram/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createPushToTalk, HOLD_MS, releasesChord } from "./push-to-talk";
+import {
+  createModifierHold,
+  createPushToTalk,
+  DOUBLE_TAP_MS,
+  HOLD_MS,
+  releasesChord,
+} from "./push-to-talk";
 import {
   createDictation,
   LEAD_SILENCE_FRAMES,
@@ -561,5 +567,145 @@ describe("push to talk", () => {
     expect(releasesChord(keys, keyUp({ key: "Meta", ctrlKey: true, shiftKey: true }), false)).toBe(
       false,
     );
+  });
+});
+
+/** The modifier-alone machine over a fake clock, with dictation as calls and an on/off state. */
+const modifierHold = () => {
+  vi.useFakeTimers();
+  let on = false;
+  const calls: string[] = [];
+  const hold = createModifierHold({
+    now: () => performance.now(),
+    active: () => on,
+    start: () => {
+      on = true;
+      calls.push("start");
+    },
+    confirm: () => calls.push("confirm"),
+    stop: () => {
+      on = false;
+      calls.push("stop");
+    },
+    cancel: () => {
+      on = false;
+      calls.push("cancel");
+    },
+  });
+  return {
+    hold,
+    calls,
+    wait: (ms: number) => vi.advanceTimersByTime(ms),
+    on: () => on,
+    /** Dictation started elsewhere, by the mic button. */
+    clicked: () => (on = true),
+  };
+};
+
+describe("one modifier held alone", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("starts at the press, confirms once held long enough, and stops on release", () => {
+    const { hold, calls, wait } = modifierHold();
+    hold.down(false);
+    expect(calls).toEqual(["start"]);
+    wait(HOLD_MS - 1);
+    expect(calls).toEqual(["start"]);
+    wait(1);
+    expect(calls).toEqual(["start", "confirm"]);
+    hold.down(true);
+    wait(2_000);
+    hold.up();
+    expect(calls).toEqual(["start", "confirm", "stop"]);
+  });
+
+  it("throws away a tap, silently, and anything held with another key, so shortcuts still work", () => {
+    const tap = modifierHold();
+    tap.hold.down(false);
+    tap.wait(HOLD_MS - 1);
+    tap.hold.up();
+    expect(tap.calls).toEqual(["start", "cancel"]);
+
+    const chord = modifierHold();
+    chord.hold.down(false);
+    chord.wait(50);
+    chord.hold.other();
+    chord.wait(1_000);
+    chord.hold.up();
+    expect(chord.calls).toEqual(["start", "cancel"]);
+    // Another key after the hold has confirmed still makes it a shortcut, thrown away.
+    const long = modifierHold();
+    long.hold.down(false);
+    long.wait(HOLD_MS * 2);
+    long.hold.other();
+    long.hold.up();
+    expect(long.calls).toEqual(["start", "confirm", "cancel"]);
+  });
+
+  it("locks on a double tap, and the next press stops it", () => {
+    const { hold, calls, wait, on } = modifierHold();
+    hold.down(false);
+    wait(80);
+    hold.up();
+    wait(DOUBLE_TAP_MS - 80);
+    hold.down(false);
+    wait(80);
+    hold.up();
+    expect(calls).toEqual(["start", "cancel", "start", "confirm"]);
+    wait(10_000);
+    expect(on()).toBe(true);
+    hold.down(false);
+    expect(calls.at(-1)).toBe("stop");
+    hold.up();
+    expect(calls).toHaveLength(5);
+  });
+
+  it("doesn't lock on taps too far apart, or on a tap after a shortcut", () => {
+    const apart = modifierHold();
+    apart.hold.down(false);
+    apart.hold.up();
+    apart.wait(DOUBLE_TAP_MS + 1);
+    apart.hold.down(false);
+    apart.hold.up();
+    expect(apart.calls).toEqual(["start", "cancel", "start", "cancel"]);
+
+    const shortcut = modifierHold();
+    shortcut.hold.down(false);
+    shortcut.hold.up();
+    shortcut.hold.other();
+    shortcut.hold.down(false);
+    shortcut.hold.up();
+    expect(shortcut.calls).toEqual(["start", "cancel", "start", "cancel"]);
+  });
+
+  it("stops what the mic button started, and a blur keeps a hold but drops a tap", () => {
+    const running = modifierHold();
+    running.hold.down(false);
+    running.wait(HOLD_MS);
+    running.hold.blur();
+    expect(running.calls).toEqual(["start", "confirm", "stop"]);
+
+    const short = modifierHold();
+    short.hold.down(false);
+    short.hold.blur();
+    expect(short.calls).toEqual(["start", "cancel"]);
+
+    const button = modifierHold();
+    button.clicked();
+    button.hold.down(false);
+    button.wait(HOLD_MS * 2);
+    button.hold.up();
+    expect(button.calls).toEqual(["stop"]);
+  });
+
+  it("lets go of a press that Escape discarded: its release does nothing", () => {
+    const { hold, calls, wait } = modifierHold();
+    hold.down(false);
+    wait(HOLD_MS);
+    hold.reset();
+    hold.up();
+    expect(calls).toEqual(["start", "confirm"]);
   });
 });

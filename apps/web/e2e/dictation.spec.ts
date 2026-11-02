@@ -19,12 +19,46 @@ test.use({
 
 const HEARD = "Refactor the model store so it resumes downloads.";
 
-const withVoice = (page: Page, on = true) =>
+/**
+ * Binds dictation to `keys` whatever the platform's default: Right ⌥ on macOS, the chord elsewhere.
+ * The chord unless a test says otherwise, so the same presses work on every runner.
+ */
+const withDictateKeys = (page: Page, keys = "mod+shift+space") =>
   page.addInitScript(
-    ([key, voiceInput]) =>
-      sessionStorage.setItem(key as string, JSON.stringify({ experimental: { voiceInput } })),
-    ["gram.mock.settings", on] as const,
+    ([key, value]) =>
+      sessionStorage.setItem(key as string, JSON.stringify({ "composer.dictate": value })),
+    ["gram.mock.keybindings", keys] as const,
   );
+
+const withVoice = async (page: Page, on = true, voice: Record<string, unknown> = {}) => {
+  await withDictateKeys(page);
+  await page.addInitScript(
+    ([key, voiceInput, settings]) =>
+      sessionStorage.setItem(
+        key as string,
+        JSON.stringify({ experimental: { voiceInput }, voice: settings }),
+      ),
+    ["gram.mock.settings", on, voice] as const,
+  );
+};
+
+/** Records the first note of each tone played, in Hz: 659 for start, 880 for stop. */
+const countTones = (page: Page) =>
+  page.addInitScript(() => {
+    const tones: number[] = [];
+    Object.assign(window, { tones });
+    const start = OscillatorNode.prototype.start;
+    let last = -Infinity;
+    OscillatorNode.prototype.start = function (this: OscillatorNode, when?: number) {
+      // A tone's two notes are made in one call: a gap means the next tone. By the page's clock, not
+      // the context's, which stands still until the audio thread first runs.
+      const now = performance.now();
+      if (now - last > 30) tones.push(Math.round(this.frequency.value));
+      last = now;
+      return start.call(this, when);
+    };
+  });
+const tones = (page: Page) => page.evaluate(() => (window as unknown as { tones: number[] }).tones);
 
 const openThread = async (page: Page, installed = true) => {
   await page.goto("/t/t-deps");
@@ -118,6 +152,7 @@ test("the microphone opens on a press and closes with its stop, never on focus",
 test("Keep microphone ready holds it from focus, hands a press what it heard, and turns off at once", async ({
   page,
 }) => {
+  await withDictateKeys(page);
   await page.addInitScript(
     ([key]) =>
       sessionStorage.setItem(
@@ -156,6 +191,90 @@ test("Keep microphone ready holds it from focus, hands a press what it heard, an
   await expect(keep).toBeChecked();
   await keep.click();
   await expect.poll(() => microphone(page)).toEqual({ opened: 1, running: 0 });
+});
+
+test("holding Right ⌥ talks from anywhere in the window, with a tone at each end", async ({
+  page,
+}) => {
+  await withVoice(page);
+  await withDictateKeys(page, "altright");
+  await countTones(page);
+  const composer = await openThread(page);
+  await composer.fill("Draft");
+  await page.getByRole("button", { name: "Start dictation" }).waitFor();
+  // Away from the composer: nothing in its pane has the focus.
+  await composer.evaluate((field) => (field as HTMLTextAreaElement).blur());
+  await expect(composer).not.toBeFocused();
+
+  await page.keyboard.down("AltRight");
+  await expect(page.getByTestId("dictation-partial")).toContainText("Refactor the model");
+  await expect(composer).toBeFocused();
+  await expect.poll(() => tones(page)).toEqual([659]);
+  await page.keyboard.up("AltRight");
+  await expect(composer).toHaveValue(/^Draft Refactor the model/);
+  await expect(page.getByRole("button", { name: "Start dictation" })).toBeVisible();
+  expect(await tones(page)).toEqual([659, 880]);
+});
+
+test("a tap of Right ⌥, or ⌥ with another key, throws dictation away without a sound", async ({
+  page,
+}) => {
+  // With the microphone ready, capture is live well inside a tap: only the tap rule keeps it quiet.
+  await withVoice(page, true, { keepMicrophoneReady: true });
+  await withDictateKeys(page, "altright");
+  await countTones(page);
+  const composer = await openThread(page);
+  await composer.fill("Draft");
+  await composer.focus();
+  await page.waitForTimeout(500 * slowdown);
+  await page.keyboard.down("AltRight");
+  await expect
+    .poll(() => page.evaluate(() => window.gramMock!.speechBridge.framesHeard))
+    .toBeGreaterThan(0);
+  await page.waitForTimeout(150);
+  await page.keyboard.up("AltRight");
+  await page.waitForTimeout(800 * slowdown);
+  await expect(composer).toHaveValue("Draft");
+  await expect(page.getByRole("button", { name: "Start dictation" })).toBeVisible();
+
+  // ⌥← still moves the caret a word, and dictation doesn't happen.
+  await page.keyboard.down("AltRight");
+  await page.waitForTimeout(100);
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(600 * slowdown);
+  await page.keyboard.up("AltRight");
+  await expect(composer).toHaveValue("Draft");
+  expect(await composer.evaluate((field) => (field as HTMLTextAreaElement).selectionStart)).toBe(0);
+  await expect(page.getByTestId("dictation-partial")).toHaveCount(0);
+  expect(await tones(page)).toEqual([]);
+});
+
+test("a double tap of Right ⌥ keeps listening until the next press; Sounds off stays quiet", async ({
+  page,
+}) => {
+  await withVoice(page, true, { sounds: false });
+  await withDictateKeys(page, "altright");
+  await countTones(page);
+  const composer = await openThread(page);
+  await page.getByRole("button", { name: "Start dictation" }).waitFor();
+  await composer.focus();
+  await page.keyboard.press("AltRight");
+  await page.keyboard.press("AltRight");
+  await expect(page.getByTestId("dictation-partial")).toContainText("Refactor the model");
+  await expect(page.getByTestId("composer-toolbar")).toContainText("Listening");
+  await page.keyboard.press("AltRight");
+  await expect(composer).toHaveValue(/^Refactor the model/);
+  expect(await tones(page)).toEqual([]);
+
+  // The key and the sound settings, where they're changed.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await openAdvancedPage(page, "Voice input");
+  const section = page.getByTestId("voice-input-settings");
+  await expect(section.getByRole("switch", { name: "Sounds" })).not.toBeChecked();
+  await expect(section.getByTestId("dictation-sound-volume")).toHaveCount(0);
+  await section.getByRole("switch", { name: "Sounds" }).click();
+  await expect(section.getByTestId("dictation-sound-volume")).toBeVisible();
+  expect(await tones(page)).toEqual([659]);
 });
 
 test("an empty draft's placeholder gives way to the partial, and comes back after", async ({

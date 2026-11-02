@@ -38,6 +38,8 @@ export interface BindingRow {
   label: string;
   group: ShortcutDefinition["group"];
   defaultKeys: string;
+  /** May be bound to one modifier held alone. */
+  loneModifier?: boolean;
   /** `undefined` when disabled. */
   keys: string | undefined;
   overridden: boolean;
@@ -58,6 +60,7 @@ export function bindingRows(
     label: definition.label,
     group: definition.group,
     defaultKeys: definition.keys,
+    ...(definition.loneModifier === true ? { loneModifier: true } : {}),
     keys: effectiveKeys(definition.id, definition.keys, overrides),
     overridden: Object.hasOwn(overrides, definition.id),
     conflicts: [],

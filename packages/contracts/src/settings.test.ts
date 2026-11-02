@@ -27,6 +27,7 @@ import {
   sendKeyOf,
   speechModelOf,
   speechPerformanceOf,
+  dictationSoundVolumeOf,
   keepMicrophoneReadyOf,
   speechModeOf,
   voiceInputOn,
@@ -343,6 +344,13 @@ describe("voice input", () => {
   it("is off unless turned on, and runs the Balanced stop's model until the slider moves", () => {
     expect(voiceInputOn(DEFAULT_SETTINGS)).toBe(false);
     expect(keepMicrophoneReadyOf(DEFAULT_SETTINGS)).toBe(false);
+    expect(dictationSoundVolumeOf(DEFAULT_SETTINGS)).toBe(0.5);
+    const quiet = applySettingsPatch(DEFAULT_SETTINGS, { voice: { soundVolume: 0.2 } });
+    expect(dictationSoundVolumeOf(quiet)).toBe(0.2);
+    expect(dictationSoundVolumeOf(applySettingsPatch(quiet, { voice: { sounds: false } }))).toBe(0);
+    expect(() =>
+      Schema.decodeUnknownSync(SettingsPatch)({ voice: { soundVolume: 1.5 } }),
+    ).toThrow();
     const ready = applySettingsPatch(DEFAULT_SETTINGS, { voice: { keepMicrophoneReady: true } });
     expect(keepMicrophoneReadyOf(ready)).toBe(true);
     expect(

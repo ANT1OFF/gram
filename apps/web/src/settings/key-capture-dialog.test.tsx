@@ -113,3 +113,46 @@ describe("KeyCaptureDialog", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 });
+
+const openFor = (target: BindingRow, mac = true) => {
+  const onSave = vi.fn();
+  render(
+    <KeyCaptureDialog
+      row={target}
+      rows={[...ROWS, target]}
+      mac={mac}
+      onSave={onSave}
+      onClose={vi.fn()}
+    />,
+  );
+  return onSave;
+};
+
+describe("one modifier alone", () => {
+  const dictate = { ...row("composer.dictate", "Dictate", "mod+shift+space"), loneModifier: true };
+  it("records a modifier tapped alone for a shortcut that takes one, by side", () => {
+    const onSave = openFor(dictate);
+    expect(status()).toContain("tap one modifier such as Right ⌥ alone");
+    press({ key: "Alt", code: "AltRight", altKey: true });
+    fireEvent.keyUp(window, { key: "Alt", code: "AltRight" });
+    expect(status()).toBe("Recorded Right ⌥.");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith({ "composer.dictate": "altright" });
+  });
+
+  it("records the chord, not the modifier, when a key joins it, and says Alt off macOS", () => {
+    openFor(dictate, false);
+    expect(status()).toContain("such as Right Alt alone");
+    press({ key: "Control", code: "ControlLeft", ctrlKey: true });
+    press({ key: " ", code: "Space", ctrlKey: true, shiftKey: true });
+    fireEvent.keyUp(window, { key: "Control", code: "ControlLeft" });
+    expect(status()).toBe("Recorded Ctrl+Shift+Space.");
+  });
+
+  it("records nothing from a modifier alone for any other shortcut", () => {
+    openFor(ROWS[0]!);
+    press({ key: "Alt", code: "AltRight", altKey: true });
+    fireEvent.keyUp(window, { key: "Alt", code: "AltRight" });
+    expect(status()).toContain("Recording");
+  });
+});

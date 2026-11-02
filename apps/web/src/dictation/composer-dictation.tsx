@@ -11,9 +11,11 @@ import {
 import { typeIntoField } from "@/composer/ghost";
 import { GHOST_MIRROR } from "@/composer/styles";
 import { effectiveKeys } from "@/keyboard/bindings-store";
+import { DICTATE_KEYS } from "@/keyboard/catalog";
 import { useShortcut } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
 
+import { promoteHoldTarget, registerHoldTarget, resetHold, type HoldTarget } from "./hold-key";
 import { createPushToTalk, releasesChord, type PushToTalk } from "./push-to-talk";
 import { spacedAfter, type DictationState } from "./session";
 import { useDictation, type DictationControls } from "./use-dictation";
@@ -31,11 +33,10 @@ export interface ComposerDictation extends DictationControls {
   onKeyDownCapture(event: KeyboardEvent): void;
 }
 
-const DICTATE_KEYS = "mod+shift+space";
-
 /**
- * Dictation into the text area at `fieldRef`, whose value is `text`. Never sends. The shortcut
- * toggles on a tap and talks while held (`push-to-talk.ts`).
+ * Dictation into the text area at `fieldRef`, whose value is `text`. Never sends. A chord shortcut
+ * toggles on a tap and talks while held; one modifier held alone talks from anywhere in the window
+ * (`push-to-talk.ts`, `hold-key.ts`).
  */
 export function useComposerDictation({
   fieldRef,
@@ -77,6 +78,29 @@ export function useComposerDictation({
       toggle: () => latest.current.toggle(),
       stop: () => latest.current.stop(),
     }));
+  // The modifier-alone key, which this composer answers while it's the one in use.
+  const enabledNow = useRef(enabled);
+  useEffect(() => {
+    enabledNow.current = enabled;
+  });
+  const target = useRef<HoldTarget | undefined>(undefined);
+  useEffect(() => {
+    const registered: HoldTarget = {
+      focused: () => enabledNow.current,
+      available: () => latest.current.available,
+      active: () => latest.current.active,
+      focus: () => fieldRef.current?.focus(),
+      start: () => latest.current.startProvisionally(),
+      confirm: () => latest.current.confirm(),
+      stop: () => latest.current.stop(),
+      cancel: () => latest.current.cancel(),
+    };
+    target.current = registered;
+    return registerHoldTarget(registered);
+  }, [fieldRef]);
+  useEffect(() => {
+    if (enabled && target.current !== undefined) promoteHoldTarget(target.current);
+  }, [enabled]);
   /** Stops listening for the held chord's release. */
   const unlisten = useRef<(() => void) | undefined>(undefined);
   useEffect(() => () => unlisten.current?.(), []);
@@ -106,8 +130,8 @@ export function useComposerDictation({
   useShortcut(
     {
       id: "composer.dictate",
-      keys: "mod+shift+space",
-      label: "Dictate: tap to start or stop, hold to talk",
+      keys: DICTATE_KEYS,
+      label: "Dictate: hold to talk",
       group: "Composer",
       run: (event) => {
         talk().press(event.repeat);
@@ -119,6 +143,7 @@ export function useComposerDictation({
   /** Discards what was heard; a hold under way ends with it, so letting go stops nothing. */
   const cancel = () => {
     talk().reset();
+    resetHold();
     unlisten.current?.();
     dictation.cancel();
   };

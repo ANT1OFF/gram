@@ -465,6 +465,8 @@ export type WorkspaceSettings = typeof WorkspaceSettings.Type;
 const BudgetUsd = Schema.Finite.check(Schema.isGreaterThan(0));
 const CallCap = Schema.Int.check(Schema.isGreaterThan(0));
 
+const SoundVolume = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
+
 export const VoiceSettings = Schema.Struct({
   /** The performance slider's stop, which picks the model. Read through `speechPerformanceOf`. */
   performance: Schema.optionalKey(SpeechPerformanceStop),
@@ -472,6 +474,10 @@ export const VoiceSettings = Schema.Struct({
   keepMicrophoneReady: Schema.optionalKey(Schema.Boolean),
   /** Live or Accurate. Read through `speechModeOf`. */
   mode: Schema.optionalKey(SpeechMode),
+  /** Start and stop tones. Read through `dictationSoundVolumeOf`; on unless turned off. */
+  sounds: Schema.optionalKey(Schema.Boolean),
+  /** The tones' volume, 0 to 1. Read through `dictationSoundVolumeOf`. */
+  soundVolume: Schema.optionalKey(SoundVolume),
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
 
@@ -666,6 +672,13 @@ export const keepMicrophoneReadyOf = (settings: Settings): boolean =>
 /** How dictation commits text: Accurate unless the user chose Live. */
 export const speechModeOf = (settings: Settings): SpeechMode =>
   settings.voice?.mode ?? DEFAULT_SPEECH_MODE;
+
+/** How loud dictation's start and stop tones play, 0 to 1: 0 when they're off, else half volume. */
+export const DEFAULT_DICTATION_SOUND_VOLUME = 0.5;
+export const dictationSoundVolumeOf = (settings: Settings): number =>
+  settings.voice?.sounds === false
+    ? 0
+    : (settings.voice?.soundVolume ?? DEFAULT_DICTATION_SOUND_VOLUME);
 
 /** The speech model the slider's stop runs. */
 export const speechModelOf = (settings: Settings): SpeechModelId =>
@@ -917,6 +930,8 @@ export const SettingsPatch = Schema.Struct({
       performance: clearable(SpeechPerformanceStop),
       keepMicrophoneReady: clearable(Schema.Boolean),
       mode: clearable(SpeechMode),
+      sounds: clearable(Schema.Boolean),
+      soundVolume: clearable(SoundVolume),
     }),
   ),
   inbox: Schema.optionalKey(

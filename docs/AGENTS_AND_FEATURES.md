@@ -592,6 +592,10 @@ Nemotron through sherpa-onnx, after explicit verified-download/license consent a
 microphone permission, and inserts draft text only. English is supported. The microphone opens on
 a press and closes with its stop, unless the opt-in Keep microphone ready holds it for 2 minutes
 after a composer's focus or the last dictation, with the moments before a press in memory only.
+Its key is Right ⌥ held on macOS and Ctrl+Shift+Space elsewhere, rebindable in Settings → Keyboard
+to a chord or one modifier held alone. Held alone, it works anywhere in the window and dictates into
+the composer in use: a tap or a press with another key discards silently, and a double tap keeps
+listening until the next press. Synthesised tones mark the start and the stop.
 In Accurate mode (the default where the models are downloaded) each pause also runs NVIDIA
 Parakeet TDT over the utterance, its silence trimmed by Silero VAD, and commits that text with
 punctuation in place of the live words; Live commits the streaming text alone.
