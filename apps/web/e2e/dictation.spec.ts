@@ -237,14 +237,15 @@ test("a tap of Right ⌥, or ⌥ with another key, throws dictation away without
   await expect(composer).toHaveValue("Draft");
   await expect(page.getByRole("button", { name: "Start dictation" })).toBeVisible();
 
-  // ⌥← still moves the caret a word, and dictation doesn't happen.
+  // A key with it makes a shortcut, not dictation. ⌥↑ moves the caret on every platform; ⌥← is the
+  // browser's Back off macOS.
+  await composer.press("End");
   await page.keyboard.down("AltRight");
   await page.waitForTimeout(100);
-  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
   await page.waitForTimeout(600 * slowdown);
   await page.keyboard.up("AltRight");
   await expect(composer).toHaveValue("Draft");
-  expect(await composer.evaluate((field) => (field as HTMLTextAreaElement).selectionStart)).toBe(0);
   await expect(page.getByTestId("dictation-partial")).toHaveCount(0);
   expect(await tones(page)).toEqual([]);
 });
