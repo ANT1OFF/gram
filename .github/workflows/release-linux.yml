@@ -101,13 +101,17 @@ jobs:
             [ "$field" = "$VERSION" ] || { echo "version fields say $root/$desktop/$manifest, not $VERSION"; exit 1; }
           done
           echo "version=$VERSION" >>"$GITHUB_OUTPUT"
+      # No Actions cache anywhere in a release build: Node and Bun come from their pinned versions
+      # and packages from the lockfile, so the attested files depend on pinned inputs alone, never
+      # on anything an earlier run left in a cache.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      # No cache: a release build installs from the lockfile alone.
+          no-cache: true
       - run: bun install --frozen-lockfile
       - run: bun run build:bundles
       - name: Compile node-pty against Electron's headers

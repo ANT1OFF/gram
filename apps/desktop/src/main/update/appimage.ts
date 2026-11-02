@@ -6,11 +6,12 @@
 // with one rename only after Gram's stop fence.
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, chmod, lstat, open, rename, rm, type FileHandle } from "node:fs/promises";
+import { access, lstat, open, rename, rm, type FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 
 import type { UpdateChannel } from "@gram/contracts";
 
+import { appImageOrigin, nodeExecFs, type ExecFs } from "../appimage-origin.ts";
 import { offerable } from "./native-candidate.ts";
 import type { CandidateSnapshot } from "./native-snapshot.ts";
 
@@ -22,15 +23,22 @@ export interface AppImageLocation {
 }
 
 /**
- * The running AppImage, from the runtime's `$APPIMAGE`, or undefined when this isn't one (the .deb,
- * an unpacked build) or the variable doesn't name a plain file. A symlink is refused: the rename
- * would replace the link, not the file it opened.
+ * The running AppImage, or undefined when this process isn't running from one. `$APPIMAGE` counts
+ * only when this process's own executable (`execPath`) is inside `$APPDIR`'s mount
+ * (`appImageOrigin`, the rule autostart uses too): every process an AppImage starts inherits both,
+ * so a .deb install opened from another AppImage's terminal would otherwise take that app's file
+ * for its own, and an update would overwrite it with Gram. It must also name a plain `.AppImage`
+ * file; a symlink is refused, since the rename would replace the link, not the file it opened.
  */
 export async function locateAppImage(
-  env: NodeJS.ProcessEnv,
+  env: Readonly<Record<string, string | undefined>>,
+  execPath: string,
   uid: number | undefined = process.getuid?.(),
+  fs: ExecFs = nodeExecFs,
 ): Promise<AppImageLocation | undefined> {
-  const path = env["APPIMAGE"];
+  const origin = appImageOrigin(env, execPath, fs);
+  if (!origin.fromMount) return undefined;
+  const path = origin.appImage;
   if (!path || !isAbsolute(path) || path.includes("\0") || !path.endsWith(".AppImage"))
     return undefined;
   try {
@@ -108,6 +116,8 @@ interface FileIdentity {
   readonly size: bigint;
   readonly mtimeNs: bigint;
   readonly ctimeNs: bigint;
+  /** Its permission bits (no set-id or sticky bits). */
+  readonly mode: number;
 }
 
 /**
@@ -124,6 +134,7 @@ async function identity(path: string): Promise<FileIdentity> {
     size: info.size,
     mtimeNs: info.mtimeNs,
     ctimeNs: info.ctimeNs,
+    mode: Number(info.mode & 0o777n),
   };
 }
 
@@ -134,14 +145,16 @@ const sameFile = (a: FileIdentity, b: FileIdentity) =>
   a.ino === b.ino &&
   a.size === b.size &&
   a.mtimeNs === b.mtimeNs &&
-  a.ctimeNs === b.ctimeNs;
+  a.ctimeNs === b.ctimeNs &&
+  a.mode === b.mode;
 
 /**
  * Writes `snapshot` over the AppImage at `target` in one step: its bytes, streamed from the
  * snapshot's descriptor and digest-checked as they go (the last chunk is withheld unless they
- * match), into a new file beside it, synced and made executable, then renamed over `target`. Until
- * the rename the old AppImage is untouched; after it, the next launch runs the update. The running
- * process keeps the old file it mounted.
+ * match), into a new file beside it, given the old file's permissions through its own descriptor
+ * (a 0700 AppImage stays 0700; only the owner's execute bit is ever added) and synced, then renamed
+ * over `target`. Until the rename the old AppImage is untouched; after it, the next launch runs the
+ * update. The running process keeps the old file it mounted.
  */
 export async function installAppImage(
   snapshot: Pick<CandidateSnapshot, "deliver">,
@@ -166,10 +179,11 @@ export async function installAppImage(
         at += bytesWritten;
       }
     });
+    // By descriptor, never by path: the path could name another file by now.
+    await owned.chmod(before.mode | 0o100);
     await owned.sync();
     await owned.close();
     handle = undefined;
-    await chmod(temp, 0o755);
     if (!sameFile(before, await identity(target)))
       throw new Error("The AppImage was replaced while the update was written.");
     await rename(temp, target);

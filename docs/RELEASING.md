@@ -161,16 +161,17 @@ same way.
 `main` once its preconditions pass, with the version, the source commit and a nonce that names
 the run. The workflow refuses to build unless main's head is that commit, since its attestation
 names the run's commit. On a GitHub-hosted `ubuntu-24.04` runner it installs from the lockfile
-with no cache, packages with the version stamped in, runs `verify:package`, installs the .deb on
-Ubuntu 24.04 and Debian 12, smokes the installed app and the AppImage, and checks the packaged
-version, source commit and .deb fields. Then it writes `LINUX-BUILD.json`.
+with no Actions cache at all (not even setup-bun's or setup-node's), packages with the version
+stamped in, runs `verify:package`, installs the .deb on Ubuntu 24.04 and Debian 12, smokes the
+installed app and the AppImage, and checks the packaged version, source commit and .deb fields. Then it writes `LINUX-BUILD.json`.
 
 - The `build` job has a read-only `contents` token. The `attest` job has `id-token` and
   `attestations` write, checks out nothing and runs no repository code: it compares the artifact
   with the build's digests and runs `actions/attest-build-provenance` on the two packages.
 - Nothing in the workflow writes to a release. `release:rc` waits for the run (the Mac build runs
   meanwhile), downloads the artifact and checks it. It runs `gh attestation verify` with the
-  signer workflow, `refs/heads/main`, the source commit and GitHub-hosted runners enforced, then
+  exact signer identity (`release-linux.yml@refs/heads/main`, not a prefix), `refs/heads/main`,
+  the source commit and GitHub-hosted runners enforced, then
   writes `latest-linux.yml` with the app's renderer. The files go into `SHA256SUMS.txt` and the
   same `gh release create`, with your own login.
 - `release:rc --stable --dry-run` dispatches the workflow with `dry_run`: it builds and checks

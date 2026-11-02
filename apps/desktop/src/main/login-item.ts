@@ -19,9 +19,11 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 
 import type { LaunchAtLogin } from "@gram/contracts";
+
+import { appImageOrigin, nodeExecFs, type ExecFs } from "./appimage-origin.ts";
 
 /** The argument a Windows or Linux login launch carries; macOS reports a login launch itself. */
 export const LOGIN_ARG = "--launched-at-login";
@@ -52,46 +54,22 @@ export interface Autostart {
   exists(path: string): boolean;
 }
 
-/** What `autostartExec` reads from the file system. */
-export interface ExecFs {
-  exists(path: string): boolean;
-  /** The path with every link resolved; throws when it can't be. */
-  realpath(path: string): string;
-}
-
-const nodeExecFs: ExecFs = { exists: existsSync, realpath: (path) => realpathSync(path) };
+export type { ExecFs } from "./appimage-origin.ts";
 
 /**
- * What a login launch starts, or undefined when nothing lasting can be named. `$APPIMAGE` is the
- * AppImage file only when this process runs from that AppImage's mount (`$APPDIR`): an app started
- * from another AppImage's terminal inherits the other app's `$APPIMAGE`, and a .deb install there
- * would point the entry at that app. Both paths are compared resolved, since the runtime builds
- * `$APPDIR` from `$TMPDIR` as given (a trailing `/`, a linked `/home`) while `execPath` is real.
- * Running from a mount without a usable `$APPIMAGE` names nothing: the mount is gone by the next
- * login. Otherwise the binary itself.
+ * What a login launch starts, or undefined when nothing lasting can be named: the AppImage file
+ * when this process runs from that AppImage (`appImageOrigin`, which an inherited `$APPIMAGE`
+ * never satisfies: a .deb install started from another AppImage's terminal would otherwise point
+ * the entry at that app); nothing when it runs from a mount without a usable `$APPIMAGE`, which is
+ * gone by the next login; otherwise the binary itself.
  */
 export const autostartExec = (
   env: Readonly<Record<string, string | undefined>>,
   execPath: string,
   fs: ExecFs = nodeExecFs,
 ): string | undefined => {
-  const real = (path: string) => {
-    try {
-      return fs.realpath(path);
-    } catch {
-      return resolve(path);
-    }
-  };
-  const appImage = env["APPIMAGE"];
-  const appDir = env["APPDIR"];
-  if (!appDir || !isAbsolute(appDir)) return execPath;
-  const mount = real(appDir);
-  // The file system's root is no AppImage mount, though every path is under it.
-  if (mount === dirname(mount)) return execPath;
-  const inside = relative(mount, real(execPath));
-  const fromMount = inside !== "" && !inside.startsWith("..") && !isAbsolute(inside);
-  if (!fromMount) return execPath;
-  return appImage && isAbsolute(appImage) && fs.exists(appImage) ? appImage : undefined;
+  const origin = appImageOrigin(env, execPath, fs);
+  return origin.fromMount ? origin.appImage : execPath;
 };
 
 /**

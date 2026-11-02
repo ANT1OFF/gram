@@ -23,7 +23,7 @@ publishes or activates releases.
 On Linux, download `gram_<version>_x86_64.AppImage` or `gram_<version>_amd64.deb` and
 `SHA256SUMS.txt`, and check them with `sha256sum --ignore-missing -c SHA256SUMS.txt`. Each package
 also has a GitHub build attestation:
-`gh attestation verify <file> --repo ANT1OFF/gram --signer-workflow ANT1OFF/gram/.github/workflows/release-linux.yml`.
+`gh attestation verify <file> --repo ANT1OFF/gram --cert-identity https://github.com/ANT1OFF/gram/.github/workflows/release-linux.yml@refs/heads/main`.
 Then `chmod +x` the AppImage and run it, or `sudo apt install ./gram_<version>_amd64.deb`.
 
 Settings → Updates checks GitHub Releases anonymously; no sign-in or `gh` is needed. Automatic
@@ -220,15 +220,18 @@ Linux packages carry no publisher signature. Each one has a GitHub build attesta
 (see [Linux files](RELEASING.md#linux-files)), which the release tool verifies before upload and
 validation verifies again. The app checks checksums, not the attestation.
 
-- **The AppImage** (`$APPIMAGE` set by its runtime) reads the same public feed anonymously for
+- **The AppImage** (`$APPIMAGE` set by its runtime, and counted only when Gram's own executable is
+  inside that AppImage's mount, `$APPDIR`, the rule autostart uses too; an `$APPIMAGE` inherited
+  from another app's terminal never is) reads the same public feed anonymously for
   `latest-linux.yml` and `gram_<v>_x86_64.AppImage`, by the same rules as macOS: newer only, never
   a downgrade, RCs only on Pre-release (which Settings doesn't offer), drafts and incomplete
   releases passed over, and a manifest naming exactly that AppImage, GitHub's size for it and a
   SHA-512. electron-updater downloads it and checks the SHA-512. Gram copies it into a private
   snapshot and checks the SHA-512 again, then GitHub's SHA-256 and size, the AppImage header and
   that the version is newer. Restarting runs the same stop fence as macOS. Then Gram writes the
-  snapshot (digest-checked as it streams) beside the AppImage, syncs it, makes it executable and
-  renames it over the running file. Electron's relaunch then starts it once this process exits.
+  snapshot (digest-checked as it streams) beside the AppImage, gives it the old file's permissions
+  through its own descriptor (adding only the owner's execute bit), syncs it and renames it over
+  the running file. Electron's relaunch then starts it once this process exits.
   electron-updater never installs or relaunches anything itself, and Squirrel.Mac and ShipIt
   play no part. An AppImage in a folder you can't write, or a file that isn't yours, can check
   and download but not restart into the update.

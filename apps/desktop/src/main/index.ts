@@ -642,8 +642,10 @@ async function runApp() {
     validTeamId(GRAM_MAC_TEAM_ID) &&
     (await macBundleTeam(destination).catch(() => undefined)) === GRAM_MAC_TEAM_ID;
   // The Linux x64 AppImage replaces its own file; the .deb only checks. Neither touches
-  // Squirrel.Mac or ShipIt, which are made for a signed Mac alone.
-  const appImage = process.platform === "linux" ? await locateAppImage(process.env) : undefined;
+  // Squirrel.Mac or ShipIt, which are made for a signed Mac alone. An AppImage counts only when
+  // this process runs from its mount: a .deb never takes an inherited `$APPIMAGE` for its own.
+  const appImage =
+    process.platform === "linux" ? await locateAppImage(process.env, process.execPath) : undefined;
   const linuxTarget = linuxUpdateTarget({
     platform: process.platform,
     arch: process.arch,

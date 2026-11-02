@@ -212,8 +212,17 @@ export function runProblems(view, { sha, workflowId, dryRun = false }) {
 }
 
 /**
- * `gh attestation verify` for one Linux package: a SLSA provenance attestation from this
- * repository's release workflow, on main at the release commit, on a GitHub-hosted runner.
+ * The exact signer an attestation's certificate must name: this repository's release workflow at
+ * main. `--signer-workflow` only matches a prefix of it, which another workflow or ref could share;
+ * `--cert-identity` is the whole SubjectAlternativeName.
+ */
+export const signerIdentity = (repo = LINUX_REPO) =>
+  `https://github.com/${repo}/${LINUX_WORKFLOW}@${LINUX_WORKFLOW_REF}`;
+
+/**
+ * `gh attestation verify` for one Linux package: a SLSA provenance attestation signed by exactly
+ * this repository's release workflow at main (`signerIdentity`), for a run of main at the release
+ * commit, on a GitHub-hosted runner.
  */
 export const attestationArgs = (file, { repo = LINUX_REPO, sourceCommit }) => [
   "attestation",
@@ -221,8 +230,8 @@ export const attestationArgs = (file, { repo = LINUX_REPO, sourceCommit }) => [
   file,
   "--repo",
   repo,
-  "--signer-workflow",
-  `${repo}/${LINUX_WORKFLOW}`,
+  "--cert-identity",
+  signerIdentity(repo),
   "--source-ref",
   LINUX_WORKFLOW_REF,
   "--source-digest",

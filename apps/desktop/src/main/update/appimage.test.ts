@@ -45,36 +45,66 @@ const digests = (bytes: Buffer) => ({
   size: bytes.length,
 });
 
+/** An AppImage file, its runtime's mount with the app's executable in it, and the runtime's env. */
+async function runningAppImage(name = "gram_1.3.1_x86_64.AppImage") {
+  const dir = await scratch();
+  const file = join(dir, name);
+  await writeFile(file, appImageBytes("1.3.1"));
+  const mount = join(dir, ".mount_GramAb");
+  await mkdir(mount);
+  const exec = join(mount, "gram");
+  await writeFile(exec, "");
+  return { dir, file, exec, env: { APPIMAGE: file, APPDIR: mount } };
+}
+
 describe("locateAppImage", () => {
   it("finds the running AppImage and whether this user may replace it", async () => {
-    const dir = await scratch();
-    const file = join(dir, "gram_1.3.1_x86_64.AppImage");
-    await writeFile(file, appImageBytes("1.3.1"));
-    expect(await locateAppImage({ APPIMAGE: file })).toEqual({ path: file, writable: true });
+    const { dir, file, exec, env } = await runningAppImage();
+    expect(await locateAppImage(env, exec)).toEqual({ path: file, writable: true });
     // Someone else's file can't be replaced, even in a writable folder.
-    expect(await locateAppImage({ APPIMAGE: file }, -1)).toEqual({ path: file, writable: false });
+    expect(await locateAppImage(env, exec, -1)).toEqual({ path: file, writable: false });
     await chmod(dir, 0o500);
-    expect(await locateAppImage({ APPIMAGE: file })).toEqual({ path: file, writable: false });
+    expect(await locateAppImage(env, exec)).toEqual({ path: file, writable: false });
+  });
+
+  it("never takes another app's inherited $APPIMAGE: a .deb opened from its terminal", async () => {
+    // The reviewer's probe: Gram's .deb started from a terminal inside another AppImage inherits
+    // that app's $APPIMAGE and $APPDIR. Its executable isn't in that mount, so it isn't that file.
+    const other = await runningAppImage("Other_2.0_x86_64.AppImage");
+    const deb = "/opt/Gram/gram";
+    expect(await locateAppImage(other.env, deb)).toBeUndefined();
+    expect(await locateAppImage({ APPIMAGE: other.file }, deb)).toBeUndefined();
+    // So the .deb gets the .deb's updater, which never writes anything.
+    const target = linuxUpdateTarget({
+      platform: "linux",
+      arch: "x64",
+      packaged: true,
+      smoke: false,
+      repo: "ANT1OFF/gram",
+      appImage: await locateAppImage(other.env, deb),
+    });
+    expect(target).toBe("deb");
+    expect(await readFile(other.file)).toEqual(appImageBytes("1.3.1"));
   });
 
   it("refuses anything but an absolute path to a plain .AppImage file", async () => {
-    const dir = await scratch();
-    const file = join(dir, "gram.AppImage");
-    await writeFile(file, appImageBytes("x"));
+    const { dir, file, exec, env } = await runningAppImage("gram.AppImage");
     const link = join(dir, "link.AppImage");
     await symlink(file, link);
     await mkdir(join(dir, "folder.AppImage"));
-    for (const env of [
-      {},
-      { APPIMAGE: "" },
-      { APPIMAGE: "gram.AppImage" },
-      { APPIMAGE: join(dir, "missing.AppImage") },
-      { APPIMAGE: link },
-      { APPIMAGE: join(dir, "folder.AppImage") },
-      { APPIMAGE: `${file}\0` },
-      { APPIMAGE: join(dir, "gram") },
+    await writeFile(join(dir, "gram"), appImageBytes("x"));
+    for (const appImage of [
+      undefined,
+      "",
+      "gram.AppImage",
+      join(dir, "missing.AppImage"),
+      link,
+      join(dir, "folder.AppImage"),
+      `${file}\0`,
+      join(dir, "gram"),
     ])
-      expect(await locateAppImage(env)).toBeUndefined();
+      expect(await locateAppImage({ ...env, APPIMAGE: appImage }, exec)).toBeUndefined();
+    expect(await locateAppImage({ APPIMAGE: file }, exec)).toBeUndefined();
   });
 });
 
@@ -178,6 +208,29 @@ describe("installAppImage", () => {
     expect((await lstat(target)).mode & 0o777).toBe(0o755);
     // No temporary file is left beside it.
     expect((await readdir(dir)).filter((name) => name.includes("gram-update"))).toEqual([]);
+  });
+
+  it("keeps the old AppImage's permissions: a 0700 file stays 0700", async () => {
+    for (const [old, want] of [
+      [0o700, 0o700],
+      [0o750, 0o750],
+      // Only the owner's execute bit is ever added, so the update can run; nothing is widened.
+      [0o600, 0o700],
+    ] as const) {
+      const dir = await scratch();
+      const target = join(dir, "Gram.AppImage");
+      await writeFile(target, appImageBytes("1.3.1"));
+      await chmod(target, old);
+      const download = join(dir, "download");
+      await writeFile(download, appImageBytes("1.4.0"));
+      const snapshot = await snapshotCandidate(download, dir);
+      try {
+        await installAppImage(snapshot, target);
+      } finally {
+        await snapshot.close();
+      }
+      expect((await lstat(target)).mode & 0o7777).toBe(want);
+    }
   });
 
   it("leaves the old AppImage untouched when the bytes don't verify as they stream", async () => {
