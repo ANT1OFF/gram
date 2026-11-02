@@ -13,12 +13,12 @@ export const KEYRING_BACKENDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Whether gateway keys may be stored under `backend`: wherever `safeStorage` names none (macOS,
- * Windows), and on Linux only with a real keyring. `unknown`, before `ready` or from a backend
- * Electron added since, is refused too: a key is never stored where it isn't known to be encrypted.
+ * Whether Linux's `safeStorage` `backend` is a real keyring. Absent, `unknown` (before `ready`, or
+ * a backend Electron added since) and `unavailable` are not: a key is never stored where it isn't
+ * known to be encrypted. Only Linux asks; callers decide that from the platform, not from this.
  */
 export const keyringBackendOk = (backend: string | undefined): boolean =>
-  backend === undefined || KEYRING_BACKENDS.has(backend);
+  backend !== undefined && KEYRING_BACKENDS.has(backend);
 
 /** Why a key can't be saved on Linux without a keyring, for the vault's error and for Settings. */
 export const NO_KEYRING_MESSAGE =

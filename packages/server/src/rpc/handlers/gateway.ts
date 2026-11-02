@@ -98,7 +98,7 @@ export const vaultInfo = (
     default:
       // With no keyring `safeStorage` falls back to `basic_text`, which doesn't encrypt, so the
       // desktop refuses to store keys there (`keyringBackendOk`) and Settings says why.
-      return backend !== undefined && keyringBackendOk(backend)
+      return keyringBackendOk(backend)
         ? { kind: "libsecret", persisted: true, label: "the system keyring" }
         : {
             kind: "no-keyring",

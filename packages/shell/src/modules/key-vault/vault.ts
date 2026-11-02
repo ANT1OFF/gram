@@ -152,6 +152,38 @@ const serialised = <A>(store: VaultStore, mutate: () => Promise<A>): Promise<A> 
 };
 
 /**
+ * Chromium's prefix for ciphertext under a key from the Linux keyring. `v10` is its hard-coded
+ * fallback key, which is no secret: on Linux a key is written only as `v11`, and anything else in
+ * the store is dropped (`weakEntries`) rather than decrypted.
+ */
+const LINUX_KEYRING_PREFIX = "v11";
+
+const linuxKeyringCiphertext = (encrypted: Buffer): boolean =>
+  encrypted.subarray(0, 3).toString("latin1") === LINUX_KEYRING_PREFIX;
+
+/**
+ * The refs whose ciphertext isn't under the Linux keyring: `v10`, anything else, and any value that
+ * isn't a base64 string at all, which would otherwise make every write fail.
+ */
+const weakEntries = (entries: Record<string, unknown>): string[] =>
+  Object.entries(entries)
+    .filter(
+      ([, encrypted]) =>
+        typeof encrypted !== "string" || !linuxKeyringCiphertext(Buffer.from(encrypted, "base64")),
+    )
+    .map(([ref]) => ref);
+
+const without = (
+  entries: Record<string, unknown>,
+  refs: readonly string[],
+): Record<string, string> =>
+  // What's left after `weakEntries` is only base64 strings.
+  Object.fromEntries(Object.entries(entries).filter(([ref]) => !refs.includes(ref))) as Record<
+    string,
+    string
+  >;
+
+/**
  * Answers the server's key requests (sent over the utilityProcess port), or `undefined` for any
  * other message. Sets and deletes on one `store` run in request order, including asynchronous
  * backend selection and encryption; gets don't wait for them. Error messages never include a key.
@@ -160,7 +192,10 @@ export async function handleVaultRequest(
   message: unknown,
   crypto: VaultCrypto,
   store: VaultStore,
+  /** Which rules apply; Linux's are a real keyring and `v11` ciphertext. */
+  platform: NodeJS.Platform,
 ): Promise<VaultResponse | undefined> {
+  const linux = platform === "linux";
   if (!isVaultRequest(message)) return undefined;
   const { id } = message;
   const fail = (text: string): VaultResponse => ({
@@ -191,8 +226,9 @@ export async function handleVaultRequest(
       return fail("couldn't read the key store's backend");
     }
     // Before availability, so a Linux desktop without a keyring daemon gets the reason. Removing a
-    // key needs no encryption, so there it goes ahead without one.
-    const keyring = keyringBackendOk(backend);
+    // key needs no encryption, so there it goes ahead without one. Elsewhere `safeStorage` names no
+    // backend and the OS store is always the platform's own.
+    const keyring = !linux || keyringBackendOk(backend);
     if (!keyring && message.op !== "delete") return fail(NO_KEYRING_MESSAGE);
     if (keyring) {
       try {
@@ -205,8 +241,14 @@ export async function handleVaultRequest(
     }
     switch (message.op) {
       case "set": {
-        const encrypted = (await crypto.encrypt(message.value)).toString("base64");
-        await store.write({ ...(await store.read()), [message.ref]: encrypted });
+        const encrypted = await crypto.encrypt(message.value);
+        // A keyring that said yes and still encrypted with the fallback key stores nothing.
+        if (linux && !linuxKeyringCiphertext(encrypted)) return fail(NO_KEYRING_MESSAGE);
+        const entries = await store.read();
+        await store.write({
+          ...(linux ? without(entries, weakEntries(entries)) : entries),
+          [message.ref]: encrypted.toString("base64"),
+        });
         return { type: "vault.response", id, ok: true };
       }
       case "get": {
@@ -218,6 +260,19 @@ export async function handleVaultRequest(
           return fail("couldn't read the key store");
         }
         if (encrypted === undefined) return { type: "vault.response", id, ok: true };
+        if (
+          linux &&
+          (typeof encrypted !== "string" ||
+            !linuxKeyringCiphertext(Buffer.from(encrypted, "base64")))
+        ) {
+          // Readable by anyone with the file: dropped unread, with every other such entry, and the
+          // key reads as missing, so Settings asks for it again.
+          await serialised(store, async () => {
+            const entries = await store.read();
+            await store.write(without(entries, weakEntries(entries)));
+          });
+          return { type: "vault.response", id, ok: true };
+        }
         try {
           return {
             type: "vault.response",

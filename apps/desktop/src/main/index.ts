@@ -78,7 +78,7 @@ import { APP_ID } from "./app-id.ts";
 import { devAllowedOrigins, devBootUrl, logLevelFromMessage } from "./boot.ts";
 import { appIconDir, createAppIcon } from "./app-icon.ts";
 import { registerIpc } from "./ipc.ts";
-import { createLoginItem, fileAutostart, startsHidden } from "./login-item.ts";
+import { autostartExec, createLoginItem, fileAutostart, startsHidden } from "./login-item.ts";
 import { installSmokeIpc } from "./smoke-ipc.ts";
 import {
   claimSingleInstance,
@@ -251,7 +251,7 @@ const server = createServerHost({
     if (shutdown) quit.report(shutdown);
     const opened = launchedPidFromMessage(message);
     if (opened !== null) launched.set(opened, processStart(opened, treeCheckDeps));
-    void handleVaultRequest(message, vaultCrypto, vaultStore).then((response) => {
+    void handleVaultRequest(message, vaultCrypto, vaultStore, process.platform).then((response) => {
       if (response) reply(response);
     });
     servePaneMessage(message, agentPanes, reply);
@@ -576,6 +576,9 @@ async function runApp() {
     dir: appIconDir(),
   });
   appIcon.start();
+  // What a login launch would start; none from an AppImage mount without its `$APPIMAGE`.
+  const loginExec =
+    process.platform === "linux" ? autostartExec(process.env, process.execPath) : undefined;
   const loginItem = createLoginItem({
     api: app,
     platform: process.platform,
@@ -583,14 +586,15 @@ async function runApp() {
     argv: process.argv,
     openExternal: (url) => shell.openExternal(url),
     // An AppImage runs from a mount that changes every launch; `$APPIMAGE` is the file itself.
-    ...(process.platform === "linux"
-      ? {
+    // Without anything lasting to start, Linux doesn't offer the setting.
+    ...(loginExec === undefined
+      ? {}
+      : {
           autostart: fileAutostart(
             join(app.getPath("appData"), "autostart", "gram.desktop"),
-            process.env["APPIMAGE"] || process.execPath,
+            loginExec,
           ),
-        }
-      : {}),
+        }),
   });
   if (loginItem.launchedAtLogin) log.info({ source: "login" }, "launched at login");
   const notificationStatus = createNotificationStatus({
