@@ -382,7 +382,11 @@ const profileSkipReason = (profile: string): string | undefined => {
 describe("Windows shell profiles", () => {
   for (const profile of Object.keys(WINDOWS_SHELLS)) {
     const reason = profileSkipReason(profile);
-    if (reason !== undefined) console.warn(`terminal profile ${profile} skipped: ${reason}`);
+    // Off Windows, skipping is expected — the suite title already says why.
+    // Keep console.warn for real host problems (no pty / shell missing).
+    if (reason !== undefined && reason !== "shell profiles only exist on Windows") {
+      console.warn(`terminal profile ${profile} skipped: ${reason}`);
+    }
     describe.skipIf(reason !== undefined)(
       reason === undefined ? profile : `${profile} (skipped: ${reason})`,
       () => {
