@@ -160,6 +160,7 @@ import {
   simulateWorkerWaits,
   simulateReleaseGroup,
   simulateArchivedGroups,
+  simulateLongHistory,
   simulateMissingFolder,
   simulateUnpushed,
   simulateFailures,
@@ -1700,6 +1701,13 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     }
   > {
     return simulateArchivedGroups(this.#scenes);
+  }
+
+  /** `simulateLongHistory` (`mock-scenarios.ts`). */
+  async simulateLongHistory(
+    count?: number,
+  ): Promise<MockFinishedSimulation & { readonly history: readonly ThreadId[] }> {
+    return simulateLongHistory(this.#scenes, count);
   }
 
   /** `seedPrStates` (`mock-seeds.ts`). */

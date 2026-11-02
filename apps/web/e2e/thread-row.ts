@@ -2,14 +2,14 @@ import { expect, type Page } from "@playwright/test";
 
 /**
  * A thread's row in the overview sidebar: a solo thread under Solo threads (a parked one once its
- * Parked line is open), or a live worker of the workspace the window is on. A click opens the
- * thread, a right-click its menu, and it drags onto a grid pane.
+ * Parked line is open, a done one in Done once Done is open), or a live worker of the workspace the
+ * window is on. A click opens the thread, a right-click its menu, and it drags onto a grid pane.
  */
 export const threadRow = (page: Page, threadId: string) =>
   page
     .getByTestId("overview-sidebar")
     .locator(
-      `:is([data-testid="overview-solo"], [data-testid="overview-worker"])[data-thread-id="${threadId}"]`,
+      `:is([data-testid="overview-solo"], [data-testid="overview-worker"], [data-testid="overview-done"][data-kind="solo"])[data-thread-id="${threadId}"]`,
     );
 
 /**

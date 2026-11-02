@@ -14,8 +14,8 @@ import { describe, expect, it } from "vitest";
 
 import type { UsageLimits } from "@/stores/usage-limits";
 
+import { doneWhen, SOLO_OWNER } from "./done-model";
 import {
-  DONE_DAYS,
   doneRows,
   footMeters,
   MAX_SLOT_PIPS,
@@ -23,7 +23,7 @@ import {
   prSubLine,
   workerSlots,
 } from "./overview-extras-model";
-import { daysBefore, workersByTab } from "./workers-model";
+import { DONE_DAYS, daysBefore, doneDay, workersByTab } from "./workers-model";
 
 // Wednesday 15 October 2026, 14:40 local time.
 const NOW = new Date(2026, 9, 15, 14, 40).getTime();
@@ -183,39 +183,45 @@ describe("Done across the workspaces", () => {
       ],
     },
   ];
-  const ids = ["t-merged", "t-closed", "t-done", "t-swept", "t-old", "t-archived", "t-week"];
+  const ids = [
+    "t-merged",
+    "t-closed",
+    "t-done",
+    "t-swept",
+    "t-old",
+    "t-archived",
+    "t-week",
+    "t-gone",
+    "t-swept-old",
+  ];
 
-  it("has the rows of the last seven days ⌘J's Done has for each workspace, latest first", () => {
-    const rows = doneRows(sources, facts);
+  it("has every row ⌘J's Done has for each workspace, latest first, with no time window", () => {
+    const rows = doneRows(sources, [], facts);
     expect(rows.map((row) => row.threadId)).toEqual(ids);
-    const since = daysBefore(NOW, DONE_DAYS - 1);
     for (const source of sources) {
       const listed = workersByTab(source.ledger, facts, source.finished)
         .done.flatMap((f) => f.rows)
-        .filter((row) => (row.finishedAt ?? 0) >= since)
         .map((row) => row.threadId);
       expect(
         rows.filter((row) => row.workspaceId === source.workspaceId).map((row) => row.threadId),
       ).toEqual(listed);
     }
-  });
-
-  it("stops at the week's first midnight: ⌘J keeps what is older", () => {
-    const rows = doneRows(sources, facts).map((row) => row.threadId);
-    expect(rows).toContain("t-week");
-    expect(rows).not.toContain("t-gone");
-    expect(rows).not.toContain("t-swept-old");
-    const all = sources.flatMap((source) =>
-      workersByTab(source.ledger, facts, source.finished).done.flatMap((f) =>
-        f.rows.map((row) => row.threadId),
-      ),
+    // Past the week's first midnight too, and work closed ten days ago.
+    expect(rows.map((row) => row.threadId)).toEqual(
+      expect.arrayContaining(["t-week", "t-gone", "t-swept-old"]),
     );
-    expect(all).toEqual(expect.arrayContaining(["t-gone", "t-swept-old"]));
   });
 
-  it("gives each its day, its time on a 24-hour clock, and its workspace and outcome", () => {
-    const rows = doneRows(sources, facts);
-    expect(rows.map((row) => [row.day.label, row.time, row.merged, row.sub])).toEqual([
+  it("gives each its time, its group by date, and its workspace and outcome", () => {
+    const rows = doneRows(sources, [], facts);
+    expect(
+      rows.map((row) => [
+        doneDay(row.finishedAt, NOW).label,
+        doneWhen(row.finishedAt, "date", NOW),
+        row.merged,
+        row.sub,
+      ]),
+    ).toEqual([
       ["Today", "13:05", true, "agent-platform · merged api#412"],
       ["Today", "11:45", true, "infra · merged infra#88"],
       ["Today", "09:30", false, "agent-platform · done"],
@@ -223,15 +229,64 @@ describe("Done across the workspaces", () => {
       ["Yesterday", "09:00", true, "agent-platform · merged"],
       ["Mon 12 Oct", "16:00", true, "agent-platform · merged api#400"],
       ["Fri 9 Oct", "00:00", false, "agent-platform · done"],
+      // Before the week, by month, each with its date.
+      ["October 2026", "8 Oct", true, "agent-platform · merged"],
+      ["October 2026", "5 Oct", false, "infra · cleaned up"],
     ]);
-    expect(rows[0]!.day.start).toBe(daysBefore(NOW, 0));
+    expect(rows.map((row) => row.owner)).toEqual(
+      rows.map((row) =>
+        row.workspaceId === "w1"
+          ? { key: "w1", label: "agent-platform" }
+          : { key: "w2", label: "infra" },
+      ),
+    );
   });
 
-  it("is empty with nothing finished this week", () => {
-    expect(doneRows([], facts)).toEqual([]);
-    expect(
-      doneRows([{ ...sources[1]!, finished: [closed("x", at(8) - 8 * DAY, true)] }], facts),
-    ).toEqual([]);
+  it("interleaves the solo threads marked done with the workers, by when each finished", () => {
+    const solo = [
+      summary("s-noon", { completedAt: at(12), completedReason: "user" }),
+      summary("s-merged", { completedAt: at(10) - 2 * DAY, completedReason: "prMerged" }),
+      summary("s-ancient", { completedAt: new Date(2026, 6, 3, 9).getTime() }),
+    ];
+    const rows = doneRows(sources, solo, facts);
+    expect(rows.map((row) => row.threadId)).toEqual([
+      "t-merged",
+      "s-noon",
+      "t-closed",
+      "t-done",
+      "t-swept",
+      "t-old",
+      "s-merged",
+      "t-archived",
+      "t-week",
+      "t-gone",
+      "t-swept-old",
+      "s-ancient",
+    ]);
+    const noon = rows.find((row) => row.threadId === "s-noon")!;
+    expect(noon).toMatchObject({
+      kind: "solo",
+      owner: SOLO_OWNER,
+      merged: false,
+      title: "Title of s-noon",
+      sub: "Solo threads · done",
+    });
+    expect(noon.workspaceId).toBeUndefined();
+    expect(rows.find((row) => row.threadId === "s-merged")).toMatchObject({
+      merged: true,
+      sub: "Solo threads · merged",
+    });
+    expect(doneDay(rows.at(-1)!.finishedAt, NOW).label).toBe("July 2026");
+  });
+
+  it("goes by a solo thread's last activity when no completion time is on record", () => {
+    const [row] = doneRows([], [summary("s-bare", { lastActivityAt: at(7) })], facts);
+    expect(row).toMatchObject({ threadId: "s-bare", finishedAt: at(7) });
+  });
+
+  it("is empty with nothing finished", () => {
+    expect(doneRows([], [], facts)).toEqual([]);
+    expect(doneRows([{ ...sources[1]!, finished: [] }], [], facts)).toEqual([]);
   });
 });
 

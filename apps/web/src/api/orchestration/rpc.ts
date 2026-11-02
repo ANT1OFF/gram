@@ -80,5 +80,11 @@ export const orchestrationRpc = ({ client, connection }: RpcContext): Orchestrat
     run(client["orchestrator.releaseHeldBrief"]({ workspaceId, id })),
   takeOverWorker: (threadId) => run(client["orchestrator.takeOverWorker"]({ threadId })),
   finishedWorkers: (workspaceId) => run(client["orchestrator.finishedWorkers"]({ workspaceId })),
+  finishedWorkersPage: (workspaceId, after) =>
+    run(
+      client["orchestrator.finishedWorkersPage"](
+        after === undefined ? { workspaceId } : { workspaceId, after },
+      ),
+    ),
   finishedWorker: (threadId) => run(client["orchestrator.finishedWorker"]({ threadId })),
 });

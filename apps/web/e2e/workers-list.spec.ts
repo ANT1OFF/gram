@@ -66,20 +66,23 @@ test("⌘J lists every worker by section and feature, and opens one in two steps
       .filter({ has: page.locator(`[data-thread-id="${made.doneToday}"]`) }),
   ).toHaveCount(0);
 
-  // Done is a section of the same list, a click away without a tab, by the day each finished:
-  // today's first, and every earlier day ⌘J still has, past the overview's week too.
+  // Done is a section of the same list, a click away without a tab, by when each finished:
+  // today's first, a day each for the week, then by month, as far back as ⌘J has them.
   const done = page.getByTestId("workers-section-done");
   await expect(
     done.locator(`[data-thread-id="${made.doneToday}"]`).getByTestId("worker-now"),
   ).toHaveText(/^merged \d{2}:\d{2}$/);
   for (const id of made.earlier)
     await expect(done.locator(`[data-thread-id="${id}"]`)).toBeAttached();
-  const days = done.getByTestId("workers-day");
-  await expect(days.first()).toHaveText("Today");
-  // Three earlier days at least: 3, 9 and 12 days back.
-  await expect.poll(() => days.count()).toBeGreaterThanOrEqual(4);
-  for (const day of await days.allTextContents())
-    expect(day).toMatch(/^(Today|Yesterday|\w{3} \d{1,2} \w{3})$/);
+  const groups = done.getByTestId("workers-group");
+  await expect(groups.first()).toHaveText("Today");
+  // 3 days back is a day of the week; 9 and 12 days back go by their month.
+  await expect.poll(() => groups.count()).toBeGreaterThanOrEqual(3);
+  for (const group of await groups.allTextContents())
+    expect(group).toMatch(/^(Today|Yesterday|\w{3} \d{1,2} \w{3}|[A-Z][a-z]+ \d{4})$/);
+  // The solo threads marked done are there too, among the features, opened as any row is.
+  const solo = done.getByRole("group", { name: "Solo threads" });
+  await expect(solo.locator('[data-thread-id="t-dark"]')).toBeAttached();
 
   // The search box filters every section.
   const search = page.getByTestId("workers-search");
@@ -260,4 +263,53 @@ test("watching a worker never holds it; a message does, and Hand back returns it
   await page.getByTestId("worker-hand-back").click();
   await expect(page.getByTestId("worker-hold")).toHaveCount(0);
   await expect.poll(() => isHeld(page, made, made.held)).toBe(false);
+});
+
+test("⌘J's Done groups by date or by orchestrator, a choice the overview's Done shares", async ({
+  page,
+}) => {
+  const made = await openScenario(page);
+  await page.keyboard.press("ControlOrMeta+KeyJ");
+  const done = page.getByTestId("workers-section-done");
+  const groups = done.getByTestId("workers-group");
+  const grouping = done.getByTestId("done-grouping");
+  // By date to begin with: the icon says so on its hover.
+  await expect(grouping).toHaveAttribute("title", "Group by date");
+  await expect(groups.first()).toHaveText("Today");
+
+  await grouping.click();
+  const menu = page.getByTestId("done-grouping-menu");
+  await expect(menu.getByRole("menuitemradio", { name: "Group by date" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await menu.getByRole("menuitemradio", { name: "Group by orchestrator" }).click();
+  await expect(menu).toBeHidden();
+  await expect(grouping).toHaveAttribute("title", "Group by orchestrator");
+  // One group for the workspace and one for the solo threads, the one with the latest first; each
+  // row keeps its date in its now line.
+  await expect(groups).toHaveText(["agent-platform", "Solo threads"]);
+  await expect(groups.first()).toHaveAttribute("data-grouping", "orchestrator");
+  const today = done.locator(`[data-thread-id="${made.doneToday}"]`);
+  await expect(today.getByTestId("worker-now")).toHaveText(/^merged \d{2}:\d{2}$/);
+  // The workspace's rows still go by feature; the solo threads' group needs no feature line.
+  await expect(done.getByRole("group", { name: "Solo threads" })).not.toContainText(
+    /^Solo threads/,
+  );
+
+  // Kept: ⌘J opens on it again, and the overview's Done groups the same way.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("ControlOrMeta+KeyJ");
+  await expect(done.getByTestId("done-grouping")).toHaveAttribute("title", "Group by orchestrator");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("ControlOrMeta+KeyB");
+  const overviewDone = page.getByTestId("overview-section-doneToday");
+  await overviewDone.getByRole("heading").getByRole("button", { name: /^Done/ }).click();
+  const overviewGroups = overviewDone.getByTestId("overview-done-group");
+  await expect(overviewGroups.first()).toHaveAttribute("data-grouping", "orchestrator");
+  await expect(overviewGroups).toContainText(["Solo threads"]);
+  await expect(overviewDone.getByTestId("done-grouping")).toHaveAttribute(
+    "title",
+    "Group by orchestrator",
+  );
 });

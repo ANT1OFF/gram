@@ -142,6 +142,8 @@ export const orchestrationHandlers = Effect.gen(function* () {
     "workerQuestion.answer": (input) => orchestration.answerQuestionAsUser(input),
     "workerQuestion.dismiss": (input) => orchestration.dismissQuestionAsUser(input),
     "orchestrator.finishedWorkers": ({ workspaceId }) => finished.list(workspaceId),
+    "orchestrator.finishedWorkersPage": ({ workspaceId, after }) =>
+      finished.page(workspaceId, after),
     "orchestrator.finishedWorker": ({ threadId }) => finished.detail(threadId),
     "thread.detach": ({ threadId }) => orchestration.detach(threadId),
     "thread.joinTargets": ({ threadId }) => orchestration.joinTargets(threadId),

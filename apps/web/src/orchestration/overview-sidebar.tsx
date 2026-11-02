@@ -58,7 +58,7 @@ import {
   OVERVIEW_ROOT,
   toggleOverviewSidebar,
 } from "@/views/shell-layout";
-import { doneSoloThreads, parkedSoloThreads, soloThreads } from "@/views/solo-threads";
+import { parkedSoloThreads, soloThreads } from "@/views/solo-threads";
 import { useViewWorkspace } from "@/views/view-workspace";
 
 import { askKeysByThread } from "./ask-model";
@@ -86,7 +86,7 @@ import {
   type ReportNext,
   type RunningWorker,
 } from "./overview-model";
-import { ROW, Section, SETTLED, STOP } from "./overview-section";
+import { ROW, RowMenu, Section, SETTLED, STOP } from "./overview-section";
 import { WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
 import { TONE_DOT, type RailTone } from "./rail-model";
@@ -810,16 +810,6 @@ function WorkerStep({ row }: { row: OverviewWorkerRow }) {
   );
 }
 
-/** A thread's row with its context menu: a right-click anywhere on it, its PR chips included. */
-function RowMenu({ menu, children }: { menu: ReactNode; children: ReactNode }) {
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger className="flex flex-col">{children}</ContextMenuTrigger>
-      <ContextMenuContent>{menu}</ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
 /** A worker on hover: its feature, agent, title, station and now line, first PR and last activity. */
 function WorkerCard({
   row,
@@ -935,8 +925,8 @@ const SOLO_GAP = 1;
 const soloKey = (summary: ThreadSummary) => summary.thread.id;
 
 /**
- * The threads outside any workspace, latest first, the parked and the done ones folded under them: a
- * click opens one.
+ * The threads outside any workspace, latest first, the parked ones folded under them: a click opens
+ * one. Those marked done are in Done, with the finished workers.
  */
 function SoloThreads() {
   const workspaces = useWorkspaces();
@@ -947,14 +937,12 @@ function SoloThreads() {
   // The solo threads, by identity and order: a worker's update re-renders none of them.
   const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids)));
   const parked = useThreadsStore(useShallow((s) => parkedSoloThreads(Object.values(s.byId), ids)));
-  const done = useThreadsStore(useShallow((s) => doneSoloThreads(Object.values(s.byId), ids)));
   const viewed = useParams({ strict: false }).threadId;
-  if (solo.length + parked.length + done.length === 0) return null;
+  if (solo.length + parked.length === 0) return null;
   return (
     <Section id="solo" title="Solo threads" count={solo.length}>
       {solo.length > 0 && <SoloList threads={solo} viewed={viewed} />}
       {parked.length > 0 && <FoldedThreads kind="parked" threads={parked} viewed={viewed} />}
-      {done.length > 0 && <FoldedThreads kind="done" threads={done} viewed={viewed} />}
     </Section>
   );
 }
@@ -963,12 +951,9 @@ function SoloThreads() {
 function SoloList({
   threads,
   viewed,
-  settled = false,
 }: {
   threads: readonly ThreadSummary[];
   viewed: string | undefined;
-  /** All of them grey until hovered, whatever their age: the Done line's. */
-  settled?: boolean;
 }) {
   return (
     <VirtualRows
@@ -978,19 +963,18 @@ function SoloList({
       gap={SOLO_GAP}
       current={threads.findIndex((summary) => summary.thread.id === viewed)}
     >
-      {(summary) => <SoloRow summary={summary} settled={settled} />}
+      {(summary) => <SoloRow summary={summary} />}
     </VirtualRows>
   );
 }
 
 const FOLDED = {
-  parked: { label: "Parked", hint: undefined },
-  done: { label: "Done", hint: "Threads marked done. Reopen one from its menu." },
+  parked: { label: "Parked", hint: undefined as string | undefined },
 } as const;
 
 /**
- * The parked or done solo threads behind one line, folded until opened: out of the way, still a
- * click away.
+ * The parked solo threads behind one line, folded until opened: out of the way, still a click
+ * away. (The done ones had a line of their own until Done took them in.)
  */
 function FoldedThreads({
   kind,
@@ -1031,7 +1015,7 @@ function FoldedThreads({
         {!open && <span className="tabular-nums">{threads.length}</span>}
       </button>
       <div id={rows} hidden={!open} className="flex flex-col gap-px">
-        <SoloList threads={threads} viewed={viewed} settled={kind === "done"} />
+        <SoloList threads={threads} viewed={viewed} />
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import {
 } from "@gram/contracts";
 
 import { dateTimeFormat } from "@/lib/intl";
+import { threadDisplayTitle } from "@/thread/thread-title";
 
 import { liveWorkerEntry, workerTitle } from "./board-model";
 import { dayLabel } from "./outputs-model";
@@ -68,6 +69,8 @@ export interface WorkerRow {
   readonly held: boolean;
   /** Closed with its worktree: it opens read-only, from what Gram kept of it. */
   readonly cleanedUp?: true | undefined;
+  /** A solo thread marked done, which ⌘J's Done lists with the workers. */
+  readonly solo?: true | undefined;
 }
 
 /** A local day finished work is listed under: its midnight, and its heading. */
@@ -108,14 +111,34 @@ export const daysBefore = (now: number, days: number): number => {
 /** Local midnight of the day `now` falls on. */
 export const startOfDay = (now: number): number => daysBefore(now, 0);
 
-/** Where finished work with no time to go by is listed: after every day. */
+/** The days Done heads one by one, today and the six before it; older work goes by month. */
+export const DONE_DAYS = 7;
+
+/** Where finished work with no time to go by is listed: after every day and month. */
 const UNDATED: DoneDay = { start: 0, label: "Earlier" };
 
-/** The day finished work at `at` is listed under, headed as the outputs' days are. */
+/** Local midnight of the first of the month `at` falls in. */
+export const startOfMonth = (at: number): number => {
+  const day = new Date(at);
+  day.setHours(0, 0, 0, 0);
+  day.setDate(1);
+  return day.getTime();
+};
+
+/**
+ * What finished work at `at` is listed under: its day for the last `DONE_DAYS` days, headed as the
+ * outputs' days are ("Today", "Yesterday", "Fri 30 Oct"), and its month before that
+ * ("October 2026").
+ */
 export const doneDay = (at: number | undefined, now: number): DoneDay => {
   if (at === undefined) return UNDATED;
   const start = startOfDay(at);
-  return { start, label: dayLabel(start, now) };
+  if (start >= daysBefore(now, DONE_DAYS - 1)) return { start, label: dayLabel(start, now) };
+  const month = startOfMonth(at);
+  return {
+    start: month,
+    label: dateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(new Date(month)),
+  };
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -324,7 +347,7 @@ export const workerRow = (
       (live.state === "archived" && live.stateBase?.state === "merged")
     )
       return row("merged", `merged${when}`);
-    if (live.state === "archived") return row("archived", "archived");
+    if (live.state === "archived") return row("archived", `archived${when}`);
     return row(FINISHED_GLYPH[live.state] ?? "delivered", `done${when}`);
   }
   if (running) return row(undefined, activity === undefined ? "working" : activityGist(activity));
@@ -374,6 +397,49 @@ export const finishedRow = (worker: FinishedWorker, now: number): WorkerRow => {
     held: false,
     cleanedUp: true,
   };
+};
+
+/** Where ⌘J's Done lists solo threads among the features: under the overview's name for them. */
+export const SOLO_FEATURE = "Solo threads";
+
+/**
+ * A solo thread marked done (`doneSoloThreads`), as a row of ⌘J's Done: merged when a merge
+ * completed it, else done, at the time it was marked (its last activity, should that be missing).
+ */
+export const soloWorkerRow = (summary: ThreadSummary, now: number): WorkerRow => {
+  const { thread } = summary;
+  const merged = thread.completedReason === "prMerged";
+  const at = thread.completedAt ?? thread.lastActivityAt;
+  return {
+    threadId: thread.id,
+    title: threadDisplayTitle(thread),
+    feature: SOLO_FEATURE,
+    repo: "",
+    tab: "done",
+    state: merged ? "merged" : "done",
+    status: summary.status,
+    glyph: merged ? "merged" : "delivered",
+    activity: "done",
+    tone: "merged",
+    now: capWords(`${merged ? "merged" : "done"} ${finishedWhen(at, now)}`),
+    finishedAt: at,
+    held: false,
+    solo: true,
+  };
+};
+
+/**
+ * One of Done's groups as ⌘J shows it: its rows by feature, the feature with the latest row first,
+ * each feature's rows in the order given (latest first).
+ */
+export const doneFeatures = (rows: readonly WorkerRow[]): WorkerFeature[] => {
+  const features = new Map<string, WorkerRow[]>();
+  for (const row of rows) {
+    const listed = features.get(row.feature);
+    if (listed === undefined) features.set(row.feature, [row]);
+    else listed.push(row);
+  }
+  return [...features].map(([feature, listed]) => ({ feature, rows: listed }));
 };
 
 /**
@@ -450,21 +516,25 @@ export const workerActivities = (
 export const tabCount = (features: readonly WorkerFeature[]): number =>
   features.reduce((sum, feature) => sum + feature.rows.length, 0);
 
-/** The features with only the rows whose name, feature or repo has every word of `query`. */
-export const searchWorkers = (
-  features: readonly WorkerFeature[],
+/** The rows whose name, feature or repo has every word of `query`. */
+export const searchRows = <T extends Pick<WorkerRow, "title" | "feature" | "repo">>(
+  rows: readonly T[],
   query: string,
-): WorkerFeature[] => {
+): T[] => {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [...features];
-  return features.flatMap((feature) => {
-    const rows = feature.rows.filter((row) => {
-      const text = `${row.title} ${row.feature} ${row.repo}`.toLowerCase();
-      return words.every((word) => text.includes(word));
-    });
-    return rows.length === 0 ? [] : [{ ...feature, rows }];
+  if (words.length === 0) return [...rows];
+  return rows.filter((row) => {
+    const text = `${row.title} ${row.feature} ${row.repo}`.toLowerCase();
+    return words.every((word) => text.includes(word));
   });
 };
+
+/** The features with only the rows whose name, feature or repo has every word of `query`. */
+export const searchWorkers = (features: readonly WorkerFeature[], query: string): WorkerFeature[] =>
+  features.flatMap((feature) => {
+    const rows = searchRows(feature.rows, query);
+    return rows.length === 0 ? [] : [{ ...feature, rows }];
+  });
 
 /** The tab the list opens on: Now, unless nothing is going on and something has finished. */
 export const openingTab = (tabs: WorkersByTab): WorkersTab =>

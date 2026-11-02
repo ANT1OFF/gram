@@ -18,6 +18,8 @@ import {
   type FinishedWorker,
   type FinishedWorkerDetail,
   type FinishedWorkerPr,
+  type FinishedWorkersCursor,
+  type FinishedWorkersPage,
   type Thread,
   type ThreadId,
   type WorkerReport,
@@ -46,6 +48,18 @@ export const archivedHeading = (
   if (title === undefined || source === null) return undefined;
   return { title, feature: source[1]!, threadId: source[2]! };
 };
+
+/**
+ * Whether an archived transcript comes after `after` in the archive's own order (latest first, then
+ * by id), so a cursor names one place in it; every one does without a cursor.
+ */
+const pastCursor = (
+  file: { readonly archivedAt: number; readonly threadId: string },
+  after: FinishedWorkersCursor | undefined,
+): boolean =>
+  after === undefined ||
+  file.archivedAt < after.at ||
+  (file.archivedAt === after.at && file.threadId > after.threadId);
 
 // The transcript readers live in contracts, where a live worker's peek reads them too.
 export { briefOf, changedFilesOf };
@@ -116,15 +130,23 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
       return byThread;
     });
 
-  /** The archive's workers no closed record or live thread covers, newest first, headings read. */
-  const archivedOnly = (workspaceId: WorkspaceId, known: ReadonlySet<string>) =>
+  /**
+   * The archive's workers no closed record or live thread covers, newest first, headings read: the
+   * next `FINISHED_ARCHIVE_LIST_MAX` transcripts past `after` (from the newest without it), and
+   * where the page after them starts while the archive has more.
+   */
+  const archivedOnly = (
+    workspaceId: WorkspaceId,
+    known: ReadonlySet<string>,
+    after: FinishedWorkersCursor | undefined,
+  ) =>
     Effect.gen(function* () {
-      if (archive === undefined) return [];
+      if (archive === undefined) return { found: [], next: undefined };
       const listed = yield* archive.list(workspaceId).pipe(Effect.orElseSucceed(() => []));
+      const rest = listed.filter((each) => !known.has(each.threadId) && pastCursor(each, after));
+      const page = rest.slice(0, FINISHED_ARCHIVE_LIST_MAX);
       const found: Array<FinishedWorker> = [];
-      for (const file of listed
-        .filter((each) => !known.has(each.threadId))
-        .slice(0, FINISHED_ARCHIVE_LIST_MAX)) {
+      for (const file of page) {
         const text = yield* archive
           .read(workspaceId, file.threadId)
           .pipe(Effect.orElseSucceed(() => ""));
@@ -140,22 +162,55 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
           kept: "archived",
         });
       }
-      return found;
+      const last = page.at(-1);
+      const next: FinishedWorkersCursor | undefined =
+        rest.length > page.length && last !== undefined
+          ? { at: last.archivedAt, threadId: last.threadId }
+          : undefined;
+      return { found, next };
     });
 
-  const list = (workspaceId: WorkspaceId) =>
+  /**
+   * A page of the workspace's finished workers, newest first. The first (no `after`) has those on
+   * the reopen list and the newest archive-only ones; each later page the archive-only ones past
+   * `after`. Transcripts that aren't a worker's are passed over, and still move the cursor.
+   */
+  const page = (
+    workspaceId: WorkspaceId,
+    after?: FinishedWorkersCursor,
+  ): Effect.Effect<FinishedWorkersPage> =>
     Effect.gen(function* () {
-      const reports = yield* reportsIn(workspaceId);
       const live = new Set<string>((yield* store.listThreads).map((thread) => thread.id));
-      const closed = (yield* store.listClosed).flatMap((entry) => {
-        if (live.has(entry.thread.id)) return [];
-        const worker = closedWorkerOf(entry, workspaceId, reports.get(entry.thread.id)?.at(-1));
-        return worker === undefined ? [] : [worker];
+      const listedClosed = yield* store.listClosed;
+      const reports = after === undefined ? yield* reportsIn(workspaceId) : undefined;
+      const closed =
+        reports === undefined
+          ? []
+          : listedClosed.flatMap((entry) => {
+              if (live.has(entry.thread.id)) return [];
+              const worker = closedWorkerOf(
+                entry,
+                workspaceId,
+                reports.get(entry.thread.id)?.at(-1),
+              );
+              return worker === undefined ? [] : [worker];
+            });
+      // A later page leaves out what the first lists from the reopen list, as the first does.
+      const onList = listedClosed.flatMap((entry) => {
+        const worker = closedWorkerOf(entry, workspaceId, undefined);
+        return worker === undefined ? [] : [worker.threadId];
       });
-      const known = new Set<string>([...live, ...closed.map((worker) => worker.threadId)]);
-      const archived = yield* archivedOnly(workspaceId, known);
-      return [...closed, ...archived].toSorted((a, b) => b.closedAt - a.closedAt);
+      const known = new Set<string>([...live, ...onList]);
+      const archived = yield* archivedOnly(workspaceId, known, after);
+      return {
+        workers: [...closed, ...archived.found].toSorted((a, b) => b.closedAt - a.closedAt),
+        ...(archived.next === undefined ? {} : { next: archived.next }),
+      };
     });
+
+  /** The first page's workers: those on the reopen list and the newest archive-only ones. */
+  const list = (workspaceId: WorkspaceId) =>
+    Effect.map(page(workspaceId), (first) => first.workers);
 
   const detail = (threadId: ThreadId): Effect.Effect<FinishedWorkerDetail, ThreadNotFound> =>
     Effect.gen(function* () {
@@ -217,5 +272,5 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
       return yield* new ThreadNotFound({ threadId });
     });
 
-  return { list, detail };
+  return { list, page, detail };
 };

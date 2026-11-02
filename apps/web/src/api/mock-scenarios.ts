@@ -254,6 +254,19 @@ export async function simulateArchivedGroups(core: MockCoreScenes): Promise<
   return { ...finished, archivedGroups: archived, nightly };
 }
 
+/**
+ * Dev and e2e hook: the finished-work board with a long history behind it, `count` workers only
+ * the transcript archive still has, one every 18 hours back: more than one page of the server's.
+ */
+export async function simulateLongHistory(
+  core: MockCoreScenes,
+  count = 120,
+): Promise<MockFinishedSimulation & { readonly history: readonly ThreadId[] }> {
+  const finished = await core.mock.simulateFinishedWork();
+  const history = core.orchestration.seedFinishedHistory(finished.workspaceId, count);
+  return { ...finished, history };
+}
+
 /** Dev and e2e hook: the thread's folder is deleted outside the app, as the server reports it. */
 export function simulateMissingFolder(
   core: MockCoreScenes,

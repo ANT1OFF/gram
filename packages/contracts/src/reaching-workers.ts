@@ -50,6 +50,28 @@ export const FinishedWorker = Schema.Struct({
 });
 export type FinishedWorker = typeof FinishedWorker.Type;
 
+/**
+ * Where a page of `orchestrator.finishedWorkersPage` goes on from: just past this transcript in the
+ * archive's order (latest first, then by thread id), so a page never repeats or skips one.
+ */
+export const FinishedWorkersCursor = Schema.Struct({
+  /** The transcript's `archivedAt`, epoch ms. */
+  at: Schema.Number,
+  threadId: Schema.String,
+});
+export type FinishedWorkersCursor = typeof FinishedWorkersCursor.Type;
+
+/**
+ * One page of a workspace's finished workers. `next` is where the following page starts, absent
+ * once the archive has nothing older; every archived worker closed after `next.at` is in this page
+ * or an earlier one.
+ */
+export const FinishedWorkersPage = Schema.Struct({
+  workers: Schema.Array(FinishedWorker),
+  next: Schema.optionalKey(FinishedWorkersCursor),
+});
+export type FinishedWorkersPage = typeof FinishedWorkersPage.Type;
+
 /** The most messages `orchestrator.finishedWorker` returns, newest kept. */
 export const FINISHED_WORKER_MESSAGES_MAX = 400;
 /** The most characters of the brief the finished view quotes. */

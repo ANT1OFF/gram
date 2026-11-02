@@ -189,21 +189,23 @@ test("Pull requests stays folded until opened, kept across a reload, and leaves 
   await expect(kinds.and(page.locator('[data-kind="yours"]')).first()).toBeVisible();
 });
 
-test("Done starts folded and has the week of ⌘J's Done rows by day, opening one as ⌘J does", async ({
+test("Done starts folded and has every finished chat ⌘J's Done has, by date, opening one as ⌘J does", async ({
   page,
 }) => {
   const made = await start(page);
   const title = sectionTitle(page, "doneToday");
   await expect(title).toHaveAttribute("aria-expanded", "false");
   await expect(title).toHaveAccessibleName(/^Done, \d+$/);
+  // Folded, its grouping control stays out of the way.
+  await expect(section(page, "doneToday").getByTestId("done-grouping")).toHaveCount(0);
   await title.click();
   const rows = section(page, "doneToday").getByTestId("overview-done");
   await expect(rows.first()).toBeVisible();
-  // Under their days, today's first.
-  const days = section(page, "doneToday").getByTestId("overview-done-day");
-  await expect(days.first()).toHaveText("Today");
-  for (const day of await days.allTextContents())
-    expect(day).toMatch(/^(Today|Yesterday|\w{3} \d{1,2} \w{3})$/);
+  // Under their days this week and their months before, today's first.
+  const groups = section(page, "doneToday").getByTestId("overview-done-group");
+  await expect(groups.first()).toHaveText("Today");
+  for (const group of await groups.allTextContents())
+    expect(group).toMatch(/^(Today|Yesterday|\w{3} \d{1,2} \w{3}|[A-Z][a-z]+ \d{4})$/);
 
   // ⌘J's own list, with the overview hidden so ⌘J opens it.
   await page.keyboard.press("ControlOrMeta+KeyB");
@@ -214,24 +216,25 @@ test("Done starts folded and has the week of ⌘J's Done rows by day, opening on
   const fromList = await list
     .getByTestId("workers-section-done")
     .getByTestId("worker-row")
-    .evaluateAll((els) => els.map((el) => el.getAttribute("data-thread-id")));
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-thread-id")!));
   expect(fromList).toContain(made.doneToday);
   await page.keyboard.press("Escape");
   await expect(list).toBeHidden();
   await page.keyboard.press("ControlOrMeta+KeyB");
   await expect(overview(page)).toBeVisible();
 
-  // The overview keeps the last seven days of them, in ⌘J's order; ⌘J has the older ones too.
+  // No week's window: the overview lists the workspace's finished workers ⌘J lists, older ones too,
+  // and the solo threads marked done beside them, as ⌘J now does.
   const here = rows.and(page.locator(`[data-workspace-id="${made.workspaceId}"]`));
   const fromOverview = await here.evaluateAll((els) =>
-    els.map((el) => el.getAttribute("data-thread-id")),
+    els.map((el) => el.getAttribute("data-thread-id")!),
   );
-  expect(fromOverview).toEqual(fromList.filter((id) => fromOverview.includes(id)));
-  expect(fromOverview).toContain(made.doneToday);
-  expect(fromOverview).toContain(made.earlier[0]);
-  expect(fromList).toEqual(expect.arrayContaining([...made.earlier]));
-  expect(fromOverview).not.toContain(made.earlier[1]);
-  expect(fromOverview).not.toContain(made.earlier[2]);
+  const solo = await rows
+    .and(page.locator('[data-kind="solo"]'))
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-thread-id")!));
+  expect(solo).toContain("t-dark");
+  expect([...fromOverview, ...solo].toSorted()).toEqual(fromList.toSorted());
+  expect(fromOverview).toEqual(expect.arrayContaining([made.doneToday, ...made.earlier]));
 
   const merged = rows.and(page.locator(`[data-thread-id="${made.doneToday}"]`));
   await expect(merged).toHaveAttribute("data-merged", "true");
@@ -244,34 +247,103 @@ test("Done starts folded and has the week of ⌘J's Done rows by day, opening on
   await expect(merged).toHaveCSS("filter", /grayscale\(1\)/);
   await merged.hover();
   await expect(merged).not.toHaveCSS("filter", /grayscale\(1\)/);
+  // Older than the week, a row says its date under its month.
+  const oldest = rows.and(page.locator(`[data-thread-id="${made.earlier.at(-1)!}"]`));
+  await expect(oldest.getByTestId("overview-done-time")).toHaveText(/^\d{1,2} \w{3}( \d{4})?$/);
+  // A solo thread keeps its menu here, as it had under Solo threads.
+  const dark = rows.and(page.locator('[data-thread-id="t-dark"]'));
+  await expect(dark).toHaveAttribute("title", "Solo threads · done");
+  await dark.click({ button: "right" });
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  // Solo threads has no Done line of its own any more.
+  await expect(section(page, "solo").getByTestId("overview-done")).toHaveCount(0);
   await merged.click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.doneToday}$`));
 });
 
-test("Done shows its first ten rows, and Show all opens ⌘J on its Done", async ({ page }) => {
+test("Done shows thirty rows, Show more pages on through every finished worker the server keeps", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/t/t-flaky");
   await page.getByLabel("Message", { exact: true }).waitFor();
-  // Archived groups: more finished this week than the column shows.
-  await page.evaluate(() => window.gramMock!.simulateArchivedGroups());
+  // 120 workers only the archive keeps, 18 hours apart: more than the server's first page of 50.
+  const made = await page.evaluate(() => window.gramMock!.simulateLongHistory(120));
   await pressFirstWorkspaceKey(page);
   const title = sectionTitle(page, "doneToday");
-  await expect(title).toHaveAccessibleName(/^Done, \d+$/);
-  const count = Number((await title.getAttribute("aria-label"))!.split(", ")[1]);
-  expect(count).toBeGreaterThan(10);
-  // Folded, it says how many it holds; open, it shows ten of them and the way to the rest.
-  await expect(title).toContainText(String(count));
   await title.click();
   const done = section(page, "doneToday");
-  await expect(done.getByTestId("overview-done")).toHaveCount(10);
+  const rows = done.getByTestId("overview-done");
   const more = done.getByTestId("overview-done-more");
-  await expect(more).toHaveText(/^Show all in Workers \(.+\)$/);
+  await expect(rows).toHaveCount(30);
+  await expect(more).toHaveText("Show more");
+  // No way off to ⌘J: Done has it all.
+  await expect(done.getByText(/Show all in Workers/)).toHaveCount(0);
   await more.click();
-  const list = page.getByTestId("workers-list");
-  await expect(list).toBeVisible();
-  const listed = list.getByTestId("workers-section-done");
-  await expect(listed.getByTestId("workers-day").first()).toBeInViewport();
-  await expect(listed.getByTestId("worker-row").first()).toHaveAttribute("aria-selected", "true");
+  await expect(rows).toHaveCount(60);
+  // Latest first, past what the server's first page held: the next pages come as they're needed.
+  for (let click = 0; click < 10 && (await more.count()) > 0; click++) {
+    const before = await rows.count();
+    await more.click();
+    await expect.poll(() => rows.count()).toBeGreaterThan(before);
+  }
+  await expect(more).toHaveCount(0);
+  const listed = await rows.evaluateAll((els) =>
+    els.map((el) => el.getAttribute("data-thread-id")!),
+  );
+  expect(listed).toEqual(expect.arrayContaining([...made.history]));
+  expect(new Set(listed).size).toBe(listed.length);
+  const oldest = made.history.at(-1)!;
+  expect(listed.at(-1)).toBe(oldest);
+  // The count says everything loaded.
+  await expect(title).toHaveAccessibleName(`Done, ${listed.length}`);
+  // A few months back, by month.
+  await expect(done.getByTestId("overview-done-group").last()).toHaveText(/^[A-Z][a-z]+ \d{4}$/);
+});
+
+test("Done groups by orchestrator on request: one per workspace, solo threads apart, rows dated", async ({
+  page,
+}) => {
+  const made = await start(page);
+  await sectionTitle(page, "doneToday").click();
+  const done = section(page, "doneToday");
+  const grouping = done.getByTestId("done-grouping");
+  await expect(grouping).toHaveAttribute("title", "Group by date");
+  await grouping.click();
+  await page.getByRole("menuitemradio", { name: "Group by orchestrator" }).click();
+  await expect(grouping).toHaveAttribute("title", "Group by orchestrator");
+  const groups = done.getByTestId("overview-done-group");
+  await expect(groups.first()).toHaveAttribute("data-grouping", "orchestrator");
+  const names = await groups.allTextContents();
+  expect(names).toContain("agent-platform");
+  expect(names).toContain("Solo threads");
+  expect(new Set(names).size).toBe(names.length);
+  // Each group's rows are its own; today's show a time, older ones their date.
+  const workspaceGroup = names.indexOf("agent-platform");
+  const today = done.locator(`[data-thread-id="${made.doneToday}"]`);
+  await expect(today.getByTestId("overview-done-time")).toHaveText(/^\d{2}:\d{2}$/);
+  const older = done.locator(`[data-thread-id="${made.earlier[0]}"]`);
+  await expect(older.getByTestId("overview-done-time")).toHaveText(/^\d{1,2} \w{3}( \d{4})?$/);
+  expect(workspaceGroup).toBeGreaterThanOrEqual(0);
+  // The choice is kept with the window's layout, across a reload: the solo threads marked done
+  // are still in Done after it, grouped as they were left.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(localStorage.getItem("gram.layout") ?? "{}").state?.doneGrouping,
+      ),
+    )
+    .toBe("orchestrator");
+  await page.goto("/t/t-flaky");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await expect(section(page, "doneToday").getByTestId("done-grouping")).toHaveAttribute(
+    "title",
+    "Group by orchestrator",
+  );
+  await expect(section(page, "doneToday").getByTestId("overview-done-group")).toHaveText([
+    "Solo threads",
+  ]);
 });
 
 test("the foot is off by default, and the orchestrator's line keeps the slots on its hover", async ({
