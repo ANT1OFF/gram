@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 import { overviewSectionFolded, useLayoutStore, type OverviewSection } from "@/stores/layout";
@@ -19,17 +20,20 @@ export const SETTLED =
 
 /**
  * A section with a title that folds it, its fold kept in the layout store. Only folded does it say
- * its count; open, its rows do, and the title's name and hover keep the number.
+ * its count; open, its rows do, and the title's name and hover keep the number. `action`, a control
+ * of the section's own, sits at the title's end while it is open.
  */
 export function Section({
   id,
   title,
   count,
+  action,
   children,
 }: {
   id: OverviewSection;
   title: string;
   count: number;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   const folded = useLayoutStore((s) => overviewSectionFolded(s, id));
@@ -37,31 +41,44 @@ export function Section({
   const body = `overview-${id}`;
   return (
     <section aria-label={title} data-testid={`overview-section-${id}`} className="flex flex-col">
-      <h2>
-        <button
-          type="button"
-          {...{ [STOP]: "" }}
-          aria-expanded={!folded}
-          aria-controls={body}
-          aria-label={`${title}, ${count}`}
-          title={`${title}, ${count}`}
-          onClick={() => toggle(id)}
-          className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              "size-3 shrink-0 transition-transform duration-(--dur-fast)",
-              folded && "-rotate-90",
-            )}
-          />
-          <span className="flex-1">{title}</span>
-          {folded && count > 0 && <span className="tracking-normal tabular-nums">{count}</span>}
-        </button>
-      </h2>
+      <div className="flex items-center gap-1">
+        <h2 className="min-w-0 flex-1">
+          <button
+            type="button"
+            {...{ [STOP]: "" }}
+            aria-expanded={!folded}
+            aria-controls={body}
+            aria-label={`${title}, ${count}`}
+            title={`${title}, ${count}`}
+            onClick={() => toggle(id)}
+            className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                "size-3 shrink-0 transition-transform duration-(--dur-fast)",
+                folded && "-rotate-90",
+              )}
+            />
+            <span className="flex-1">{title}</span>
+            {folded && count > 0 && <span className="tracking-normal tabular-nums">{count}</span>}
+          </button>
+        </h2>
+        {!folded && action}
+      </div>
       <div id={body} hidden={folded} className="flex flex-col gap-px">
         {children}
       </div>
     </section>
+  );
+}
+
+/** A thread's row with its context menu: a right-click anywhere on it, its PR chips included. */
+export function RowMenu({ menu, children }: { menu: ReactNode; children: ReactNode }) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger className="flex flex-col">{children}</ContextMenuTrigger>
+      <ContextMenuContent>{menu}</ContextMenuContent>
+    </ContextMenu>
   );
 }

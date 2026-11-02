@@ -6,7 +6,7 @@ import { AgentUnavailable, InvalidState, NotFound, ThreadNotFound } from "../err
 import { ProjectId, ThreadId, WorkspaceId } from "../ids.ts";
 import { FeatureCards } from "../feature-cards.ts";
 import { OrchestratorLedger } from "../orchestration.ts";
-import { FinishedWorker, FinishedWorkerDetail } from "../reaching-workers.ts";
+import { FinishedWorker, FinishedWorkerDetail, FinishedWorkersPage } from "../reaching-workers.ts";
 import { TaskModelSelection } from "../task-preflight.ts";
 import {
   AnswerWorkerQuestionInput,
@@ -50,7 +50,12 @@ export const OrchestrationRpcs = RpcGroup.make(
    * learned is the user's, and removing a workspace is no request to delete it.
    */
   Rpc.make("workspace.remove", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     error: errors(NotFound, InvalidState),
   }),
   /**
@@ -98,7 +103,12 @@ export const OrchestrationRpcs = RpcGroup.make(
     error: errors(NotFound, InvalidState),
   }),
   Rpc.make("orchestrator.ledger", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     success: OrchestratorLedger,
     error: errors(NotFound, InvalidState),
   }),
@@ -108,7 +118,12 @@ export const OrchestrationRpcs = RpcGroup.make(
    * (its `builtAt` aside) is not sent again. Ends when the client unsubscribes.
    */
   Rpc.make("orchestrator.watchLedger", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     success: OrchestratorLedger,
     error: errors(NotFound),
     stream: true,
@@ -119,13 +134,23 @@ export const OrchestrationRpcs = RpcGroup.make(
    * survive a reload.
    */
   Rpc.make("orchestrator.featureCards", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     success: FeatureCards,
     error: errors(NotFound, InvalidState),
   }),
   /** The cards now, then again whenever one changes. Debounced; ends when the client unsubscribes. */
   Rpc.make("orchestrator.watchFeatureCards", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     success: FeatureCards,
     error: errors(NotFound),
     stream: true,
@@ -195,7 +220,12 @@ export const OrchestrationRpcs = RpcGroup.make(
    * an orchestrator, and while another handoff is running.
    */
   Rpc.make("orchestrator.handoff", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     success: Thread,
     error: errors(NotFound, InvalidState),
   }),
@@ -206,13 +236,23 @@ export const OrchestrationRpcs = RpcGroup.make(
     error: errors(NotFound, InvalidState),
   }),
   Rpc.make("orchestrator.retrySwitch", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     success: Thread,
     error: errors(NotFound, InvalidState),
   }),
   /** Cancels a requested switch only before shutdown starts. */
   Rpc.make("orchestrator.cancelSwitch", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     error: errors(NotFound, InvalidState),
   }),
   /**
@@ -265,8 +305,28 @@ export const OrchestrationRpcs = RpcGroup.make(
    * reopen list, then those only its transcript archive keeps. Live workers are the ledger's.
    */
   Rpc.make("orchestrator.finishedWorkers", {
-    payload: { workspaceId: WorkspaceId },
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
     success: Schema.Array(FinishedWorker),
+    error: errors(),
+  }),
+  /**
+   * `orchestrator.finishedWorkers` a page at a time. The first page (no `after`) holds what that
+   * call returns; each later one the archive-only workers past `after`. Done reads it to list every
+   * finished worker, back to the oldest transcript the archive keeps.
+   */
+  Rpc.make("orchestrator.finishedWorkersPage", {
+    payload: {
+      workspaceId: WorkspaceId,
+      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
+      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
+      after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
+    },
+    success: FinishedWorkersPage,
     error: errors(),
   }),
   /**

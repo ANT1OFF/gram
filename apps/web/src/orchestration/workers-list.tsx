@@ -1,6 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
-import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import {
   Archive,
@@ -14,10 +13,17 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { Fragment, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { create } from "zustand";
 
-import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
@@ -26,16 +32,24 @@ import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { GlideText, PresenceItem, PresenceList, Spinner, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
+import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { doneSoloThreads } from "@/views/solo-threads";
 
 import { askKeysByThread } from "./ask-model";
 import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
 import { boardWorkspaceFor } from "./board-model";
+import { DoneGroupingMenu } from "./done-grouping-menu";
+import { DONE_PAGE, doneWindow, latestDoneFirst, SOLO_OWNER } from "./done-model";
+import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useWorkspaceStatuses } from "./use-workspace-statuses";
 import {
+  doneFeatures,
+  searchRows,
   searchWorkers,
+  soloWorkerRow,
   tabCount,
   WORKERS_TABS,
   workersByTab,
@@ -147,18 +161,6 @@ export function WorkersButton({ className }: { className?: string }) {
   );
 }
 
-/** The workers closed with their worktree, which the ledger no longer has. */
-const useFinishedWorkers = (workspaceId: WorkspaceId | undefined) => {
-  const api = useApi();
-  return useQuery({
-    queryKey: ["finishedWorkers", workspaceId ?? ""],
-    queryFn: () => api.finishedWorkers(workspaceId!),
-    enabled: workspaceId !== undefined,
-    retry: false,
-    staleTime: 30_000,
-  }).data;
-};
-
 /**
  * ⌘J: every worker of the workspace in front of you, in Now and Done, grouped by feature, and in
  * Done under the day each finished. One click, or ↑↓ and Return, opens a worker in the focused
@@ -206,7 +208,16 @@ function WorkersBody() {
   // Minute resolution is enough for the days and the times rows show.
   const now = useNow(true, undefined, 60_000);
   // Workers closed with their worktree, which the ledger no longer has; read-only when opened.
-  const finished = useFinishedWorkers(workspaceId);
+  // Read a page at a time, as far back as Done is shown.
+  const workspaces = useWorkspaces();
+  const listed = useMemo(() => (workspaceId === undefined ? [] : [workspaceId]), [workspaceId]);
+  const { finished: finishedOf, horizons, loadMore, busy } = useFinishedWorkerPages(listed);
+  const finished = workspaceId === undefined ? undefined : finishedOf.get(workspaceId);
+  const name = workspaces.find((state) => state.workspace.id === workspaceId)?.workspace.name ?? "";
+  const inWorkspace = useMemo(
+    () => new Set<string>(workspaces.map((state) => state.workspace.id)),
+    [workspaces],
+  );
   // Who an ask in the stack is from, so a row's glyph takes the tone every other view gives it.
   const asks = useWorkspaceAsks();
   const asking = useMemo(
@@ -221,15 +232,51 @@ function WorkersBody() {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const openThread = useOpenThread();
+  const by = useLayoutStore((s) => s.doneGrouping);
+  const [limit, setLimit] = useState(DONE_PAGE);
+
+  // Done, as the overview lists it: the workspace's finished workers and the solo threads marked
+  // done, latest first, grouped by date or by orchestrator, a page at a time.
+  const done = useMemo(() => {
+    const owner = { key: workspaceId ?? "", label: name };
+    return [
+      ...tabs.done
+        .flatMap((feature) => feature.rows)
+        .map((row) => ({ ...row, owner, workspaceId })),
+      ...doneSoloThreads(threads, inWorkspace).map((summary) => ({
+        ...soloWorkerRow(summary, now),
+        owner: SOLO_OWNER,
+      })),
+    ].toSorted(latestDoneFirst);
+  }, [tabs, threads, inWorkspace, workspaceId, name, now]);
+  const found = useMemo(() => searchRows(done, query), [done, query]);
+  const shown = useMemo(
+    () => doneWindow(found, by, now, horizons, limit),
+    [found, by, now, horizons, limit],
+  );
+  const waitsOn = shown.load;
+  useEffect(() => {
+    if (waitsOn !== undefined && !busy) loadMore(waitsOn);
+  }, [waitsOn, busy, loadMore]);
 
   // One list in two sections, so every worker is a click away once it is open; the search
-  // box filters all of them.
+  // box filters all of them. Now is by feature; Done by its groups, then feature within each.
   const sections = WORKERS_TABS.map(({ id, label }) => ({
     id,
     label,
-    features: searchWorkers(tabs[id], query),
-  })).filter((section) => section.features.length > 0);
-  const rows = sections.flatMap((section) => section.features.flatMap((feature) => feature.rows));
+    count: id === "now" ? tabCount(tabs.now) : found.length,
+    groups:
+      id === "now"
+        ? [{ key: "now", label: undefined, features: searchWorkers(tabs.now, query) }]
+        : shown.groups.map((group) => ({
+            key: group.key,
+            label: group.label as string | undefined,
+            features: doneFeatures(group.rows),
+          })),
+  })).filter((section) => section.groups.some((group) => group.features.length > 0));
+  const rows = sections.flatMap((section) =>
+    section.groups.flatMap((group) => group.features.flatMap((feature) => feature.rows)),
+  );
   const activeIndex = Math.min(active, rows.length - 1);
 
   // Opened on a section (the overview's Show all, on Done): its first row active, the section in
@@ -240,7 +287,14 @@ function WorkersBody() {
   const sectionAt = sections.findIndex((each) => each.id === openedOn);
   if (!placed && openedOn !== undefined && sectionAt !== -1) {
     setPlaced(true);
-    setActive(sections.slice(0, sectionAt).reduce((sum, each) => sum + tabCount(each.features), 0));
+    setActive(
+      sections
+        .slice(0, sectionAt)
+        .reduce(
+          (sum, each) => sum + each.groups.reduce((n, group) => n + tabCount(group.features), 0),
+          0,
+        ),
+    );
   }
   useLayoutEffect(() => {
     if (!placed || openedOn === undefined) return;
@@ -256,7 +310,7 @@ function WorkersBody() {
   };
   // ⌘⏎: beside the orchestrator's chat instead, for a worker that is still there to watch.
   const beside = (row: WorkerRow | undefined) => {
-    if (row === undefined || row.cleanedUp === true) return;
+    if (row === undefined || row.cleanedUp === true || row.solo === true) return;
     useWorkersListStore.getState().close();
     keepBeside(row.threadId, openThread);
   };
@@ -321,45 +375,65 @@ function WorkersBody() {
           >
             <h2 className="flex items-center gap-1 px-2 pt-2 pb-0.5 text-xs font-medium text-foreground">
               {section.label}
-              <span className="tabular-nums text-muted-foreground">
-                {tabCount(section.features)}
-              </span>
+              <span className="tabular-nums text-muted-foreground">{section.count}</span>
+              {section.id === "done" && <DoneGroupingMenu className="ml-auto" />}
             </h2>
-            {section.features.map((feature, i) => (
-              <Fragment key={`${feature.day?.start ?? ""}:${feature.feature}`}>
-                {feature.day !== undefined &&
-                  feature.day.start !== section.features[i - 1]?.day?.start && (
-                    <h3
-                      data-testid="workers-day"
-                      className="px-2 pt-1.5 pb-0.5 text-xs text-muted-foreground"
-                    >
-                      {feature.day.label}
-                    </h3>
-                  )}
-                <div role="group" aria-label={feature.feature} className="mb-1">
-                  <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
-                    {feature.feature}
+            {section.groups.map((group) => (
+              <Fragment key={group.key}>
+                {group.label !== undefined && (
+                  <h3
+                    data-testid="workers-group"
+                    data-grouping={by}
+                    className="px-2 pt-1.5 pb-0.5 text-xs text-muted-foreground"
+                  >
+                    {group.label}
+                  </h3>
+                )}
+                {group.features.map((feature) => (
+                  <div
+                    key={feature.feature}
+                    role="group"
+                    aria-label={feature.feature}
+                    className="mb-1"
+                  >
+                    {/* By orchestrator, the solo threads' group is their feature too. */}
+                    {feature.feature !== group.label && (
+                      <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
+                        {feature.feature}
+                      </div>
+                    )}
+                    <PresenceList>
+                      {feature.rows.map((row) => {
+                        index++;
+                        const at = index;
+                        return (
+                          <PresenceItem key={row.threadId}>
+                            <WorkerListRow
+                              row={row}
+                              index={at}
+                              active={at === activeIndex}
+                              onHover={() => setActive(at)}
+                              onOpen={() => pick(row)}
+                            />
+                          </PresenceItem>
+                        );
+                      })}
+                    </PresenceList>
                   </div>
-                  <PresenceList>
-                    {feature.rows.map((row) => {
-                      index++;
-                      const at = index;
-                      return (
-                        <PresenceItem key={row.threadId}>
-                          <WorkerListRow
-                            row={row}
-                            index={at}
-                            active={at === activeIndex}
-                            onHover={() => setActive(at)}
-                            onOpen={() => pick(row)}
-                          />
-                        </PresenceItem>
-                      );
-                    })}
-                  </PresenceList>
-                </div>
+                ))}
               </Fragment>
             ))}
+            {section.id === "done" && shown.more && (
+              <button
+                type="button"
+                data-testid="workers-done-more"
+                aria-busy={busy || undefined}
+                onClick={() => setLimit((current) => current + DONE_PAGE)}
+                className="mx-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Show more
+              </button>
+            )}
           </section>
         ))}
       </div>
@@ -400,6 +474,7 @@ function WorkerListRow({
       data-testid="worker-row"
       data-thread-id={row.threadId}
       data-glyph={row.glyph}
+      data-solo={row.solo}
       onMouseMove={onHover}
       onClick={onOpen}
       className={cn(

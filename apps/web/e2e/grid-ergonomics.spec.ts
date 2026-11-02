@@ -12,8 +12,12 @@ test("grid: cycle panes, double-click to maximize, drag to swap, close focus, re
   const panes = page.getByTestId("pane");
   await expect(panes).toHaveCount(3);
   await dragAndDrop(page, threadRow(page, "t-release"), panes.nth(1));
-  // t-dark is marked done: its row is under the folded Done line.
-  await page.getByTestId("overview-done").getByRole("button", { name: /^Done/ }).click();
+  // t-dark is marked done: its row is in Done, folded until opened.
+  await page
+    .getByTestId("overview-section-doneToday")
+    .getByRole("heading")
+    .getByRole("button", { name: /^Done/ })
+    .click();
   await dragAndDrop(page, threadRow(page, "t-dark"), panes.nth(2));
   await expect(panes.nth(2)).toHaveAttribute("data-focused", "true");
 

@@ -147,6 +147,8 @@ export function createOrchestrationMock(
     releaseHeldBrief: (workspaceId, id) => orchestration.releaseHeldBrief(workspaceId, id),
     takeOverWorker: (threadId) => orchestration.takeOver(threadId),
     finishedWorkers: async (workspaceId) => orchestration.finishedWorkers(workspaceId),
+    finishedWorkersPage: async (workspaceId, after) =>
+      orchestration.finishedWorkersPage(workspaceId, after),
     finishedWorker: async (threadId) => orchestration.finishedWorker(threadId),
   };
 }

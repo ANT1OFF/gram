@@ -5,6 +5,7 @@ import type {
   OrchestratorLedger,
   ReviewRequest,
   ThreadId,
+  ThreadSummary,
   WorkerLedgerEntry,
   WorkspaceId,
 } from "@gram/contracts";
@@ -21,17 +22,11 @@ import {
   type UsageLimit,
   type UsageLimits,
 } from "@/stores/usage-limits";
+import { threadDisplayTitle } from "@/thread/thread-title";
 import { limitPercent, PROVIDER_SHORT, resetText } from "@/usage/limit-format";
 
-import {
-  daysBefore,
-  doneDay,
-  clockTime,
-  workersByTab,
-  type DoneDay,
-  type WorkerLiveFacts,
-  type WorkerRow,
-} from "./workers-model";
+import { latestDoneFirst, SOLO_OWNER, type DoneEntry } from "./done-model";
+import { workersByTab, type WorkerLiveFacts, type WorkerRow } from "./workers-model";
 
 // The overview sidebar's extras: its Pull requests and Done sections and the usage meters and
 // worker slots at its foot. Pure, so the column says what the lists, ⌘J and the title bar's meter
@@ -103,12 +98,6 @@ export const PR_KIND_LABEL: Record<OverviewPrRow["kind"], string> = {
   yours: "Your PRs",
 };
 
-/** The days the overview's Done keeps: today and the six before it. */
-export const DONE_DAYS = 7;
-
-/** The rows Done shows before it hands the rest to ⌘J: a glance, not an archive. */
-export const DONE_SHOWN = 10;
-
 /** One workspace's facts for Done. */
 export interface DoneSource {
   readonly workspaceId: WorkspaceId;
@@ -117,20 +106,15 @@ export interface DoneSource {
   readonly finished: readonly FinishedWorker[] | undefined;
 }
 
-/** A worker that finished in the last `DONE_DAYS` days, as the overview's Done row has it. */
-export interface DoneRow {
+/** A finished chat, a worker or a solo thread, as the overview's Done row has it. */
+export interface DoneRow extends DoneEntry {
   readonly threadId: ThreadId;
-  readonly workspaceId: WorkspaceId;
+  /** A worker of a workspace's orchestrator, or a solo thread. */
+  readonly kind: "worker" | "solo";
   readonly title: string;
-  /** Merged, else done (delivered, archived, or cleaned up). */
+  /** Merged, else done (delivered, archived, cleaned up, or marked done). */
   readonly merged: boolean;
-  /** Epoch ms its work ended. */
-  readonly finishedAt: number;
-  /** The day it is listed under. */
-  readonly day: DoneDay;
-  /** `14:12`, on a 24-hour clock. */
-  readonly time: string;
-  /** `agent-platform · merged api#412`. */
+  /** `agent-platform · merged api#412`, `Solo threads · done`. */
   readonly sub: string;
 }
 
@@ -152,45 +136,65 @@ const outcome = (
   return `${word}${prRef(entry?.pr)}`;
 };
 
-/**
- * Every workspace's Done of the last `DONE_DAYS` days, as ⌘J lists each (`workersByTab`), in one
- * list, latest first: merged, delivered and done workers, archived or closed with their worktree
- * or not. Each row says its day, which workspace it is in and what became of it.
- */
-export const doneRows = (sources: readonly DoneSource[], facts: WorkerLiveFacts): DoneRow[] => {
-  const since = daysBefore(facts.now, DONE_DAYS - 1);
-  return sources
-    .flatMap((source) => {
-      const tabs = workersByTab(source.ledger, facts, source.finished ?? []);
-      const entries = new Map(
-        source.ledger?.features.flatMap((f) => f.workers.map((w) => [w.threadId, w] as const)),
-      );
-      const finished = new Map(source.finished?.map((w) => [w.threadId, w] as const));
-      return tabs.done.flatMap((feature) =>
-        feature.rows.flatMap((row): DoneRow[] => {
-          const at = row.finishedAt;
-          if (at === undefined || at < since) return [];
-          return [
-            {
-              threadId: row.threadId,
-              workspaceId: source.workspaceId,
-              title: row.title,
-              merged: row.glyph === "merged",
-              finishedAt: at,
-              day: feature.day ?? doneDay(at, facts.now),
-              time: clockTime(at),
-              sub: `${source.name} · ${outcome(
-                row,
-                row.cleanedUp === true ? undefined : entries.get(row.threadId),
-                row.cleanedUp === true ? finished.get(row.threadId) : undefined,
-              )}`,
-            },
-          ];
-        }),
-      );
-    })
-    .toSorted((a, b) => b.finishedAt - a.finishedAt);
+/** A workspace's finished workers, as ⌘J lists them (`workersByTab`), as Done rows. */
+export const workerDoneRows = (source: DoneSource, facts: WorkerLiveFacts): DoneRow[] => {
+  const tabs = workersByTab(source.ledger, facts, source.finished ?? []);
+  const entries = new Map(
+    source.ledger?.features.flatMap((f) => f.workers.map((w) => [w.threadId, w] as const)),
+  );
+  const finished = new Map(source.finished?.map((w) => [w.threadId, w] as const));
+  const owner = { key: source.workspaceId, label: source.name };
+  return tabs.done.flatMap((feature) =>
+    feature.rows.map((row): DoneRow => ({
+      threadId: row.threadId,
+      kind: "worker",
+      workspaceId: source.workspaceId,
+      owner,
+      title: row.title,
+      merged: row.glyph === "merged",
+      finishedAt: row.finishedAt,
+      sub: `${source.name} · ${outcome(
+        row,
+        row.cleanedUp === true ? undefined : entries.get(row.threadId),
+        row.cleanedUp === true ? finished.get(row.threadId) : undefined,
+      )}`,
+    })),
+  );
 };
+
+/**
+ * A solo thread marked done (`doneSoloThreads`, the Solo threads' Done line until Done took them
+ * in), at the time it was marked: merged when a merge completed it.
+ */
+export const soloDoneRow = (summary: ThreadSummary): DoneRow => {
+  const { thread } = summary;
+  const merged = thread.completedReason === "prMerged";
+  return {
+    threadId: thread.id,
+    kind: "solo",
+    owner: SOLO_OWNER,
+    title: threadDisplayTitle(thread),
+    merged,
+    // `doneSoloThreads` only lists threads marked completed; the last activity is a fallback.
+    finishedAt: thread.completedAt ?? thread.lastActivityAt,
+    sub: `${SOLO_OWNER.label} · ${merged ? "merged" : "done"}`,
+  };
+};
+
+/**
+ * Every finished chat in one list, latest first: each workspace's merged, delivered and done
+ * workers, archived or closed with their worktree or not, as ⌘J lists them, and the solo threads
+ * marked done. No window: all of it, back to the oldest Gram keeps.
+ */
+export const doneRows = (
+  sources: readonly DoneSource[],
+  solo: readonly ThreadSummary[],
+  facts: WorkerLiveFacts,
+): DoneRow[] =>
+  [
+    ...sources.flatMap((source) => workerDoneRows(source, facts)),
+    ...solo.map(soloDoneRow),
+  ].toSorted(latestDoneFirst);
 
 /** A provider's 5-hour meter at the overview's foot. */
 export interface FootMeter {

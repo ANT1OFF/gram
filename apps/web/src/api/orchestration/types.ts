@@ -4,6 +4,8 @@ import type {
   WorkerQuestion,
   FinishedWorker,
   FinishedWorkerDetail,
+  FinishedWorkersCursor,
+  FinishedWorkersPage,
   JoinTarget,
   ModelRef,
   OrchestratorCharter,
@@ -152,6 +154,14 @@ export interface OrchestrationApi {
   takeOverWorker(threadId: ThreadId): Promise<void>;
   /** The workspace's workers closed with their worktree, newest first; live ones are the ledger's. */
   finishedWorkers(workspaceId: WorkspaceId): Promise<readonly FinishedWorker[]>;
+  /**
+   * The same a page at a time: the first (no `after`) as `finishedWorkers`, then the archive-only
+   * workers past each page's `next`, back to the oldest the archive keeps.
+   */
+  finishedWorkersPage(
+    workspaceId: WorkspaceId,
+    after?: FinishedWorkersCursor,
+  ): Promise<FinishedWorkersPage>;
   /**
    * One closed worker, read-only, from what Gram kept of it. Rejects with `ThreadNotFound` once
    * nothing is kept.

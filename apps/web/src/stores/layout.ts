@@ -433,7 +433,14 @@ export interface OverviewView {
    * `Settings.layout.overviewSections` (`overviewHiddenOf`).
    */
   overviewHidden: readonly OverviewOptionalSection[];
+  /** How Done groups its rows, in the overview and ⌘J alike. */
+  doneGrouping: DoneGrouping;
 }
+
+/** How Done groups its rows: by when they finished, or by the orchestrator they belong to. */
+export type DoneGrouping = "date" | "orchestrator";
+
+const DONE_GROUPINGS: readonly DoneGrouping[] = ["date", "orchestrator"];
 
 const OVERVIEW_SECTIONS: readonly OverviewSection[] = [
   "orchestrators",
@@ -478,7 +485,9 @@ export function sanitizeOverviewView(raw: unknown): Partial<OverviewView> {
   const unfolded = r["overviewUnfolded"];
   const hidden = r["overviewHidden"];
   const before = r["overviewBeforeHide"] as OverviewSidebar;
+  const grouping = r["doneGrouping"] as DoneGrouping;
   return {
+    ...(DONE_GROUPINGS.includes(grouping) ? { doneGrouping: grouping } : {}),
     ...(Array.isArray(folded)
       ? {
           overviewFolded: OVERVIEW_SECTIONS.filter(
@@ -748,6 +757,8 @@ export interface LayoutState
   toggleOverviewSection(section: OverviewSection): void;
   /** Opens one of the overview's sections if it is folded. */
   unfoldOverviewSection(section: OverviewSection): void;
+  /** How Done groups its rows, in the overview and ⌘J. */
+  setDoneGrouping(grouping: DoneGrouping): void;
   /** Which optional sections the overview leaves out (Settings → General). */
   setOverviewHidden(hidden: readonly OverviewOptionalSection[]): void;
   /**
@@ -812,6 +823,7 @@ export const useLayoutStore = create<LayoutState>()(
         overviewFolded: [],
         overviewUnfolded: [],
         overviewHidden: OVERVIEW_HIDDEN_BY_DEFAULT,
+        doneGrouping: "date",
         boardArchivedShown: [],
         diffLayout: "unified",
         diffTreeShown: true,
@@ -1042,6 +1054,7 @@ export const useLayoutStore = create<LayoutState>()(
           set((s) =>
             overviewSectionFolded(s, section) ? overviewFoldPatch(s, section, false) : {},
           ),
+        setDoneGrouping: (doneGrouping) => set({ doneGrouping }),
         setOverviewHidden: (hidden) =>
           set((s) => {
             const next = OVERVIEW_OPTIONAL_SECTIONS.filter((section) => hidden.includes(section));
@@ -1175,6 +1188,7 @@ export const useLayoutStore = create<LayoutState>()(
         overviewFolded,
         overviewUnfolded,
         overviewHidden,
+        doneGrouping,
         reviewRequestsPlacement,
         reviewRequestsCollapsed,
         reviewRequestsGrouped,
@@ -1198,6 +1212,7 @@ export const useLayoutStore = create<LayoutState>()(
         overviewFolded,
         overviewUnfolded,
         overviewHidden,
+        doneGrouping,
         reviewRequestsPlacement,
         reviewRequestsCollapsed,
         reviewRequestsGrouped,

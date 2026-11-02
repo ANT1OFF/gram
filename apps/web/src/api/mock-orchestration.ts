@@ -26,6 +26,8 @@ import {
   type FeatureStage,
   type FinishedWorker,
   type FinishedWorkerDetail,
+  type FinishedWorkersCursor,
+  type FinishedWorkersPage,
   type GitState,
   type OrchestrationDigest,
   type OrchestratorCharter,
@@ -85,6 +87,9 @@ import type {
 // it is. `simulate` scripts one orchestrator with one worker so every card can be seen, and
 // `simulateBoard` a workspace across repos so the tree, the board and the inbox have work to show:
 // two features run as a staged group, a third on its own, and one worker that spans three repos.
+
+/** The archive-only finished workers a page holds past the first, as the server pages them. */
+export const MOCK_FINISHED_PAGE = 50;
 
 export { groupByFeature, mockWorkerState } from "./mock-ledger";
 
@@ -1276,10 +1281,79 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         .toSorted((a, b) => b.closedAt - a.closedAt);
     },
 
+    /**
+     * A page of them, as the server pages its archive: the first has every one on the reopen list
+     * (`kept: closed`) and the newest archive-only ones, each later page the next
+     * `MOCK_FINISHED_PAGE` past `after`, in the archive's order (latest first, then by id).
+     */
+    finishedWorkersPage(
+      workspaceId: WorkspaceId,
+      after?: FinishedWorkersCursor,
+    ): FinishedWorkersPage {
+      const all = [...closedWorkers.values()]
+        .map((detail) => detail.worker)
+        .filter((worker) => worker.workspaceId === workspaceId);
+      const archived = all
+        .filter((worker) => worker.kept === "archived")
+        .toSorted((a, b) => b.closedAt - a.closedAt || a.threadId.localeCompare(b.threadId))
+        .filter(
+          (worker) =>
+            after === undefined ||
+            worker.closedAt < after.at ||
+            (worker.closedAt === after.at && worker.threadId > after.threadId),
+        );
+      const page = archived.slice(0, MOCK_FINISHED_PAGE);
+      const last = page.at(-1);
+      return {
+        workers: [
+          ...(after === undefined ? all.filter((worker) => worker.kept === "closed") : []),
+          ...page,
+        ].toSorted((a, b) => b.closedAt - a.closedAt),
+        ...(archived.length > page.length && last !== undefined
+          ? { next: { at: last.closedAt, threadId: last.threadId } }
+          : {}),
+      };
+    },
+
     finishedWorker(threadId: ThreadId): FinishedWorkerDetail {
       const detail = closedWorkers.get(threadId);
       if (detail === undefined) throw new ThreadNotFound({ threadId });
       return detail;
+    },
+
+    /**
+     * `count` workers only the transcript archive still has, one every `every` ms back from
+     * `from`, as a workspace with a long history has them: what Done pages through.
+     */
+    seedFinishedHistory(
+      workspaceId: WorkspaceId,
+      count: number,
+      { from = Date.now(), every = 18 * 60 * 60_000 } = {},
+    ): readonly ThreadId[] {
+      const features = ["billing", "search", "onboarding", "infra-certs", "docs"];
+      const ids: ThreadId[] = [];
+      for (let i = 0; i < count; i++) {
+        const threadId = host.ids() as ThreadId;
+        ids.push(threadId);
+        closedWorkers.set(threadId, {
+          worker: {
+            threadId,
+            workspaceId,
+            title: `Archived task ${String(i + 1).padStart(3, "0")}`,
+            feature: features[i % features.length]!,
+            closedAt: from - (i + 1) * every,
+            prs: [],
+            kept: "archived",
+          },
+          reports: [],
+          files: [],
+          messages: [],
+          earlierOmitted: 0,
+          archived: `# Archived task ${i + 1}`,
+        });
+      }
+      host.emit({ type: "orchestration.changed", workspaceId });
+      return ids;
     },
 
     /** Keeps a closed worker as the server's closed list would. */

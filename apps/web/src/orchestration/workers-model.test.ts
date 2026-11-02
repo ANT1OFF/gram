@@ -18,18 +18,25 @@ import {
   capWords,
   clockTime,
   daysBefore,
+  doneDay,
+  doneFeatures,
   finishedRow,
   finishedWhen,
   NOW_LINE_WORDS,
   openingTab,
   reportGist,
   requestGist,
+  searchRows,
   searchWorkers,
+  SOLO_FEATURE,
+  soloWorkerRow,
   startOfDay,
+  startOfMonth,
   tabCount,
   workerRow,
   workersByTab,
   type WorkerLiveFacts,
+  type WorkerRow,
 } from "./workers-model";
 
 // Wednesday 15 October 2026, 14:40 local time.
@@ -56,6 +63,10 @@ const worker = (
   messagesFromOrchestrator: 0,
   ...extra,
 });
+
+/** A row as `doneFeatures` reads it: its id and feature. */
+const featureRow = (threadId: string, feature: string) =>
+  ({ threadId, feature }) as unknown as WorkerRow;
 
 const summary = (
   id: string,
@@ -226,27 +237,33 @@ describe("the tabs", () => {
     spike: summary("spike", "idle", { lastActivityAt: NOW - 12 * 24 * HOUR }),
   });
 
-  it("deals workers into Now and Done, Done by the day each finished, then by feature", () => {
+  it("deals workers into Now and Done, Done by the day or month each finished, then by feature", () => {
     const tabs = workersByTab(ledger, live);
     expect(tabs.now.map((f) => [f.feature, f.rows.map((r) => r.threadId)])).toEqual([
       ["mail-trigger", ["queue"]],
     ]);
-    // Most recently finished first, each under its day; Done keeps every day Gram still has.
+    // Most recently finished first, each under its day this week and its month before; Done keeps
+    // all Gram still has.
     expect(tabs.done.map((f) => [f.day?.label, f.feature, f.rows.map((r) => r.threadId)])).toEqual([
       ["Today", "mail-trigger", ["schema"]],
       ["Mon 12 Oct", "tooling", ["uv"]],
-      ["Tue 6 Oct", "tooling", ["py39"]],
-      ["Sat 3 Oct", "spike", ["spike"]],
+      ["October 2026", "tooling", ["py39"]],
+      ["October 2026", "spike", ["spike"]],
     ]);
     expect(tabCount(tabs.done)).toBe(4);
     expect(tabs.done[1]!.rows[0]!.now).toBe("merged 12 Oct");
+    // An archived worker says when too, as Done grouped by orchestrator has no day heading for it.
+    expect(tabs.done[3]!.rows[0]!.now).toBe("archived 3 Oct");
   });
 
   it("searches finished workers by name, feature or repo, keeping their days", () => {
     const tabs = workersByTab(ledger, live);
     expect(
       searchWorkers(tabs.done, "web").map((f) => [f.day?.label, f.rows.map((r) => r.threadId)]),
-    ).toEqual([["Tue 6 Oct", ["py39"]]]);
+    ).toEqual([["October 2026", ["py39"]]]);
+    const rows = tabs.done.flatMap((f) => f.rows);
+    expect(searchRows(rows, "tooling web").map((r) => r.threadId)).toEqual(["py39"]);
+    expect(searchRows(rows, "")).toEqual(rows);
     expect(searchWorkers(tabs.done, "SPIKE")).toHaveLength(1);
     expect(searchWorkers(tabs.done, "nothing like it")).toEqual([]);
     expect(searchWorkers(tabs.done, " ")).toEqual(tabs.done);
@@ -314,6 +331,63 @@ describe("the tabs", () => {
     expect(daysBefore(new Date(2026, 9, 26, 12).getTime(), 1)).toBe(
       new Date(2026, 9, 25).getTime(),
     );
+  });
+
+  it("heads Done by month before the week: this year's and earlier years' alike", () => {
+    expect(doneDay(daysBefore(NOW, 6), NOW)).toEqual({
+      start: daysBefore(NOW, 6),
+      label: "Fri 9 Oct",
+    });
+    // The minute before the week's first midnight is October's.
+    expect(doneDay(daysBefore(NOW, 6) - 60_000, NOW)).toEqual({
+      start: new Date(2026, 9, 1).getTime(),
+      label: "October 2026",
+    });
+    expect(doneDay(new Date(2026, 8, 30, 23, 59).getTime(), NOW)).toEqual({
+      start: new Date(2026, 8, 1).getTime(),
+      label: "September 2026",
+    });
+    expect(doneDay(new Date(2025, 11, 31, 8).getTime(), NOW).label).toBe("December 2025");
+    expect(doneDay(undefined, NOW)).toEqual({ start: 0, label: "Earlier" });
+    expect(startOfMonth(new Date(2026, 1, 28, 18).getTime())).toBe(new Date(2026, 1, 1).getTime());
+  });
+
+  it("lists a solo thread marked done as a row of ⌘J's Done, under Solo threads", () => {
+    const done = summary("s1", "idle", {
+      title: "Fix the flaky login test",
+      completedAt: startOfDay(NOW) + 10 * HOUR,
+      completedReason: "user",
+    });
+    expect(soloWorkerRow(done, NOW)).toMatchObject({
+      threadId: "s1",
+      title: "Fix the flaky login test",
+      feature: SOLO_FEATURE,
+      tab: "done",
+      glyph: "delivered",
+      now: "done 10:00",
+      finishedAt: startOfDay(NOW) + 10 * HOUR,
+      solo: true,
+    });
+    const merged = summary("s2", "idle", {
+      completedAt: NOW - 2 * 24 * HOUR,
+      completedReason: "prMerged",
+    });
+    expect(soloWorkerRow(merged, NOW)).toMatchObject({ glyph: "merged", now: "merged 13 Oct" });
+  });
+
+  it("splits one of Done's groups by feature, the latest feature first", () => {
+    expect(
+      doneFeatures([
+        featureRow("a", "x"),
+        featureRow("b", "y"),
+        featureRow("c", "x"),
+        featureRow("d", SOLO_FEATURE),
+      ]).map((f) => [f.feature, f.rows.map((r) => r.threadId)]),
+    ).toEqual([
+      ["x", ["a", "c"]],
+      ["y", ["b"]],
+      [SOLO_FEATURE, ["d"]],
+    ]);
   });
 
   it("lists a worker closed with its worktree as a done row, beside the ledger's", () => {
