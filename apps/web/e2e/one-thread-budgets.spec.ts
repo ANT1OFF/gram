@@ -165,11 +165,13 @@ for (let group = 0; group < WORKER_GROUPS; group++) {
     }, made.workspaceId);
     expect(ids.length).toBeGreaterThan(3);
     // The popup can mount before its queries have hydrated. Wait for the entire fixture's
-    // inventory, rather than partitioning a transient subset of rows on a loaded renderer.
+    // inventory, rather than partitioning a transient subset of rows on a loaded renderer. Done
+    // also lists the solo threads marked done; they are no worker of this workspace.
     await expect
       .poll(() =>
         list
           .getByRole("option")
+          .and(list.locator(":not([data-solo])"))
           .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-thread-id")).toSorted()),
       )
       .toEqual(ids);

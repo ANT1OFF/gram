@@ -474,6 +474,7 @@ function WorkerListRow({
       data-testid="worker-row"
       data-thread-id={row.threadId}
       data-glyph={row.glyph}
+      data-solo={row.solo}
       onMouseMove={onHover}
       onClick={onOpen}
       className={cn(
