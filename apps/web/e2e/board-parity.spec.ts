@@ -111,7 +111,9 @@ test("the waiting chip unfolds Waiting on you: waits with Done, questions answer
   const chip = bar(page).getByTestId("rail-waiting-chip");
   const waiting = board(page).getByTestId("rail-waiting");
   await expect(chip).toHaveAttribute("aria-expanded", "false");
-  const before = Number((await chip.getAttribute("aria-label"))!.split(" ")[0]);
+  // The chip has no number: the workspace's badge counts it with the asks. `data-count` is its band's.
+  await expect(chip).toHaveAttribute("aria-label", "Waiting on you");
+  const before = Number(await chip.getAttribute("data-count"));
   expect(before).toBeGreaterThan(0);
   await expect(foldAround(waiting)).toHaveCount(1);
 
@@ -131,7 +133,7 @@ test("the waiting chip unfolds Waiting on you: waits with Done, questions answer
   // Done on a worker's item takes it off, and the chip counts one fewer.
   await reviewing.getByTestId("waiting-done").click();
   await expect(reviewing).toHaveCount(0);
-  await expect(chip).toHaveAttribute("aria-label", `${before - 1} waiting on you`);
+  await expect(chip).toHaveAttribute("data-count", String(before - 1));
 
   await chip.click();
   await expect(chip).toHaveAttribute("aria-expanded", "false");

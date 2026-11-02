@@ -24,7 +24,7 @@ import {
   threadNeedsItems,
   type FailureItem,
 } from "./needs-you-model";
-import { needsYouGroups, type NeedsYouThread } from "./needs-you-items";
+import { needsYouCounts, needsYouGroups, type NeedsYouThread } from "./needs-you-items";
 import { workspaceTrees } from "./tree-model";
 import type { NeedsYouList } from "./use-needs-you";
 
@@ -253,7 +253,8 @@ export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
  * The one needs-you count: Needs you's items, which the sidebar's pill shows and the window title
  * and the dock badge follow. Every thread that needs the user has at least one (`threadNeedsItems`).
  */
-export const needsYouCount = (): number => useDerivedAsks.getState().needsYou.items.length;
+export const needsYouCount = (): number =>
+  needsYouCounts(useDerivedAsks.getState().needsYou.groups).total;
 
 /** Back to nothing handed in and nothing derived, as a window starts; for tests. */
 export const resetDerivedAsks = () => {

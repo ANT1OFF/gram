@@ -21,6 +21,7 @@ import { liveWorkerEntry, workerTitle } from "./board-model";
 import { dayLabel } from "./outputs-model";
 import { workerTone, type RailTone } from "./rail-model";
 import { threadWorking } from "./tree-model";
+import { OVER_STATES, workerShown } from "./worker-shown";
 import { workerActivity, workerWait, type WorkerActivity, type WorkerBusy } from "./wait-model";
 
 // The ⌘J Workers list: every worker of a workspace in Now and Done, grouped by feature (and in
@@ -244,8 +245,27 @@ export const liveWorkerTone = (
   });
 };
 
-/** States a worker has left the overview in: finished, or parked. */
-const GONE = new Set<WorkerState>(["merged", "delivered", "done", "archived"]);
+/**
+ * Every worker the ledger has, and whether its work is over: what puts it in Done (`workerRow`'s
+ * tab, by `workerWait`) and takes it out of the sidebar and the Board (`workerShown`). Over is
+ * merged, delivered or reported done with no open PR, request, standing report, wake or monitored
+ * run left, and not at work.
+ */
+export const ledgerWorkersOver = (
+  ledger: Pick<OrchestratorLedger, "features"> | undefined,
+  byId: Readonly<Record<string, ThreadSummary | undefined>>,
+): ReadonlyMap<ThreadId, boolean> => {
+  const entries = (ledger?.features ?? []).flatMap((feature) =>
+    feature.workers.map((entry) => liveWorkerEntry(entry, byId[entry.threadId])),
+  );
+  const ownedCi = ciFixOwnedPrs(entries);
+  return new Map(
+    entries.map((live) => [
+      live.threadId,
+      workerWait(live, live.state, live.status, ownedCi).bucket === "done",
+    ]),
+  );
+};
 
 /** Every live worker's tone by thread, and how many of them there are: what each view counts. */
 export interface WorkerTones {
@@ -257,9 +277,9 @@ export interface WorkerTones {
 }
 
 /**
- * The tones of a workspace's live workers (`liveWorkerTone`): the ledger's workers that haven't
- * finished, plus the threads at work there now (`running`), whatever the ledger says. A finished
- * worker at work again counts as working, as its row has it; one at rest stays out.
+ * The tones of a workspace's live workers (`liveWorkerTone`): the ledger's workers that show
+ * (`workerShown`), plus the threads at work there now (`running`), whatever the ledger says. A
+ * finished worker at work again counts as working, as its row has it; one at rest stays out.
  */
 export const workerTones = (
   ledger: Pick<OrchestratorLedger, "features"> | undefined,
@@ -269,9 +289,13 @@ export const workerTones = (
   const busy = new Set(running);
   const entries = new Map<ThreadId, WorkerLedgerEntry | undefined>();
   const all = (ledger?.features ?? []).flatMap((feature) => feature.workers);
+  const facts = { running: busy, asking, over: ledgerWorkersOver(ledger, byId) };
   for (const entry of all) {
-    if (!GONE.has(entry.state)) entries.set(entry.threadId, entry);
-    else if (busy.has(entry.threadId)) entries.set(entry.threadId, undefined);
+    if (!workerShown(entry, facts)) continue;
+    // One at rest whose state is over (shown for an open PR, say) keeps its ledger facts; one at
+    // work again has only its live ones, as its row is working.
+    const settled = OVER_STATES.has(entry.state) && busy.has(entry.threadId);
+    entries.set(entry.threadId, settled ? undefined : entry);
   }
   for (const threadId of running) if (!entries.has(threadId)) entries.set(threadId, undefined);
   const ownedCi = ciFixOwnedPrs(all.map((entry) => liveWorkerEntry(entry, byId[entry.threadId])));

@@ -882,11 +882,14 @@ test("the Board hides finished work until asked, and remembers that per workspac
   await expect(chip(made.archived)).toHaveCount(0);
   await expect(chip(made.delivered)).toHaveCount(0);
   await expect(cleanup).toHaveCount(0);
-  // A merged worker of a feature still going stays on its line.
-  await expect(chip(made.merged[3]!)).toBeVisible();
+  // A merged worker of a feature still going is in Done too, as the sidebar has it: its line
+  // stays for the work still going.
+  await expect(chip(made.merged[3]!)).toHaveCount(0);
 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  // Shown, it is back on its line.
+  await expect(chip(made.merged[3]!)).toBeVisible();
   // Back on its line, done with.
   await expect(spike.getByTestId("rail-worker")).toHaveAttribute("data-tone", "merged");
   await expect(spike).toHaveAttribute("data-finished", "true");
@@ -1040,6 +1043,9 @@ test("a group's band holds its workers on their stations", async ({ page }) => {
   await expect(chip(waits.ci)).toHaveAttribute("data-station", "checks");
   await expect(chip(waits.owners)).toHaveAttribute("data-station", "review");
   await expect(chip(waits.asking)).toHaveAttribute("data-tone", "needs");
+  // Merged with nothing left, it is in Done, as the sidebar has it, until Show finished.
+  await expect(chip(waits.merged)).toHaveCount(0);
+  await page.getByTestId("shell-titlebar").getByTestId("rail-show-archived").click();
   await expect(chip(waits.merged)).toHaveAttribute("data-station", "merged");
 });
 
@@ -1648,7 +1654,10 @@ test("the palette opens the first workspace's board", async ({ page }) => {
   await palette.getByRole("combobox").fill(">board");
   await palette.getByText("Open board", { exact: true }).click();
   await expect(page.getByTestId("rail-board")).toBeVisible();
-  // Its one worker, on its line.
+  // Its one worker reported done with nothing left: in Done, as the sidebar has it, so nothing is
+  // going; Show finished puts it back on its line.
+  await expect(page.getByTestId("rail-empty")).toContainText("Nothing going now");
+  await page.getByTestId("shell-titlebar").getByTestId("rail-show-archived").click();
   await expect(
     page
       .getByTestId("rail-board")

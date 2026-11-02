@@ -15,6 +15,7 @@ import {
 
 import { leastAdvanced } from "./board-model";
 import type { WorkerActivity } from "./wait-model";
+import { workerShown } from "./worker-shown";
 
 // The Board view's feature lines: one row per feature card, its
 // workers placed on the five stations the card gives them. Stations come from the card
@@ -56,11 +57,14 @@ export interface RailRow {
   /** Every worker merged or delivered: the line is done. */
   readonly finished: boolean;
   /**
-   * Its work is over and it has left the Board for Done: finished, or none of its workers is in
-   * the ledger any more (closed with its worktree) and none runs. Show finished brings it back.
+   * Its work is over and it has left the Board for Done: none of its workers shows by the
+   * sidebar's rule (`workerShown`) and it has no brief held. Show finished brings it back.
    */
   readonly settled: boolean;
-  /** What the line is called: its first worker's title, else its first held brief's, else its feature. */
+  /**
+   * What the line is called: its feature when it draws several workers, else its worker's title,
+   * else its first held brief's, else its feature.
+   */
   readonly title: string;
   readonly cells: Readonly<Record<FeatureStation, readonly RailWorker[]>>;
   /** Its briefs held until a usage limit resets, drawn on Briefed beside its workers. */
@@ -87,10 +91,12 @@ export interface RailFacts {
    */
   readonly tones?: Readonly<Record<string, RailTone>> | undefined;
   /**
-   * The workers the ledger still has, once it is read. A card keeps a worker closed with its
-   * worktree as it last was; one the ledger no longer has, and that doesn't run, is over.
+   * The workers the ledger still has and whether each one's work is over (`ledgerWorkersOver`),
+   * once it is read: which of them show is `workerShown`, the sidebar's rule too.
    */
-  readonly live?: ReadonlySet<ThreadId> | undefined;
+  readonly over?: ReadonlyMap<ThreadId, boolean> | undefined;
+  /** Workers at work now (`workingWorkerThreads`); a line shows them whatever their cards say. */
+  readonly running?: ReadonlySet<ThreadId> | undefined;
 }
 
 /** A card's plan with steps still to come: its line isn't finished, whatever its workers say. */
@@ -167,27 +173,46 @@ const emptyCells = (): Record<FeatureStation, RailWorker[]> => ({
 });
 
 /**
- * The workspace's feature lines, in the cards' order with finished lines last. Archived workers
- * leave the line, and a feature with no other worker leaves the board, unless it has a brief held;
- * with `archived` shown they stay, as finished.
+ * Which of a line's workers it draws: those that show (`workerShown`, the sidebar's rule) on the
+ * Board; every one but the archived in a feature's sheet; every one with Show finished.
+ */
+export type RailDraw = "shown" | "unarchived" | "all";
+
+/**
+ * The workspace's feature lines, in the cards' order with finished lines last, each drawing its
+ * workers by `draw`. A line none of whose workers shows and with no brief held has left the Board
+ * for Done (`settled`); a feature whose workers are all archived has no line unless all are drawn.
+ *
+ * A line is named by its only worker's title, or by its feature when it draws several.
  */
 export const railRows = (
   cards: readonly FeatureCard[],
   facts: RailFacts,
-  archived = false,
+  draw: RailDraw = "shown",
 ): readonly RailRow[] => {
   const titles = new Map(
     cards.flatMap((card) => card.workers.map((worker) => [worker.threadId, worker.title] as const)),
   );
+  // A running thread its status says runs counts as at work, as the sidebar's does.
+  const running = new Set(facts.running);
+  for (const card of cards) {
+    for (const worker of card.workers) {
+      const status = facts.status(worker.threadId);
+      if (status === "running" || status === "starting") running.add(worker.threadId);
+    }
+  }
+  const shownFacts = { running, asking: facts.asking, over: facts.over };
   const rows = cards.flatMap((card): RailRow[] => {
-    const workers = archived
-      ? card.workers
-      : card.workers.filter((worker) => worker.state !== "archived");
+    // Its workers, the archived ones only with all drawn; of them, those it draws.
+    const workers =
+      draw === "all" ? card.workers : card.workers.filter((worker) => worker.state !== "archived");
+    const shown = card.workers.filter((worker) => workerShown(worker, shownFacts));
+    const drawn = draw === "shown" ? shown : workers;
     const held = card.held ?? [];
     if (workers.length === 0 && held.length === 0) return [];
     const cells = emptyCells();
     let reach = 0;
-    for (const worker of workers) {
+    for (const worker of drawn) {
       reach = Math.max(reach, FEATURE_STATIONS.indexOf(worker.station));
       cells[worker.station].push({
         threadId: worker.threadId,
@@ -209,20 +234,8 @@ export const railRows = (
       workers.every(
         (worker) => DONE.has(worker.state) && facts.ongoing?.has(worker.threadId) !== true,
       );
-    // The rule the overview goes by: a card keeps a closed worker as it last was, unfinished plan
-    // included, but with no worker left nothing can carry that plan on.
-    const gone =
-      facts.live !== undefined &&
-      held.length === 0 &&
-      workers.every((worker) => {
-        const status = facts.status(worker.threadId);
-        return (
-          facts.live?.has(worker.threadId) !== true &&
-          status !== "running" &&
-          status !== "starting" &&
-          !facts.asking.has(worker.threadId)
-        );
-      });
+    // A line that has left for Done is named as it last was, by all its workers.
+    const named = drawn.length > 0 ? drawn : workers;
     return [
       {
         feature: card.feature,
@@ -231,13 +244,15 @@ export const railRows = (
         // Only a held brief: it is about to be.
         state: leastAdvanced(workers.map((worker) => worker.state)) ?? "briefed",
         projects: [
-          ...new Set([...workers.map((worker) => worker.project), ...held.map((h) => h.project)]),
+          ...new Set([...named.map((worker) => worker.project), ...held.map((h) => h.project)]),
         ],
         reach,
         needs: tones.includes("needs"),
         finished,
-        settled: finished || gone,
-        title: workers[0]?.title ?? held[0]?.title ?? card.feature,
+        // The sidebar's rule: no worker left to show, and no brief held.
+        settled: shown.length === 0 && held.length === 0,
+        title:
+          named.length > 1 ? card.feature : (named[0]?.title ?? held[0]?.title ?? card.feature),
         cells,
         held,
       },

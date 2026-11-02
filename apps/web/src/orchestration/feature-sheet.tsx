@@ -57,7 +57,7 @@ import { useFeatureCards, useFeatureSummary } from "./use-feature-cards";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { useWorkersListStore } from "./workers-list";
 import { workingWorkerThreads } from "./tree-model";
-import { workerActivities, workerTones } from "./workers-model";
+import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
 
 // A feature you can open and act on:
 // a sheet from the right with its stations, PRs and workers, opened from its Board line or its card
@@ -97,17 +97,22 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
   const activity = useThreadsStore(
     useSame((s) => workerActivities(ledger, s.byId, s.statusDetail)),
   );
-  // Merged or delivered workers the ledger still sees at work, so their line isn't done yet.
-  // The workers the ledger still has: one a card keeps after it closed is over.
-  const live = useMemo(
-    () =>
-      ledger === undefined
-        ? undefined
-        : new Set(
-            ledger.features.flatMap((feature) => feature.workers.map((worker) => worker.threadId)),
-          ),
-    [ledger],
+  // Which workers show is the sidebar's rule (`workerShown`): the ledger's, while their work isn't
+  // over by Done's rule; one a card keeps after it closed is gone. And who is at work now.
+  const over = useThreadsStore(
+    useSame((s) => (ledger === undefined ? undefined : ledgerWorkersOver(ledger, s.byId))),
   );
+  const running = useThreadsStore(
+    useSame(
+      (s) =>
+        new Set(
+          workspaceId === undefined
+            ? []
+            : workingWorkerThreads(s.byId, s.statusDetail, workspaceId).map((t) => t.thread.id),
+        ),
+    ),
+  );
+  // Merged or delivered workers the ledger still sees at work, so their line isn't done yet.
   const ongoing = useMemo(
     () =>
       new Set(
@@ -146,14 +151,15 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
       ongoing,
       activity,
       tones,
-      live,
+      over,
+      running,
       // A thread on no card isn't drawn here; it reads as it stands, as before.
       status: (threadId) =>
         Object.hasOwn(statuses, threadId)
           ? statuses[threadId]
           : useThreadsStore.getState().byId[threadId]?.status,
     }),
-    [asking, ongoing, activity, tones, live, statuses],
+    [asking, ongoing, activity, tones, over, running, statuses],
   );
 }
 

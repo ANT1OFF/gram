@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { flakyAsked, flakyAsks } from "./seed-asks";
+import { flakyAsked } from "./seed-asks";
 import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow } from "./thread-row";
 
@@ -74,7 +74,8 @@ const sentAnswers = (page: Page) =>
 const currentAsk = (page: Page) =>
   page.getByTestId("ask-stack").locator('li:not([inert]) [data-testid="ask-item"][data-current]');
 
-const count = (page: Page) => page.getByTestId("ask-stack").getByTestId("ask-stack-count");
+/** The stack, whose `data-count` is how many asks it holds: it shows no count of its own. */
+const count = (page: Page) => page.getByTestId("ask-stack");
 
 /** Steps with › until the current ask's title holds `text`. */
 const goTo = async (page: Page, text: string) => {
@@ -130,11 +131,11 @@ test("each ask shows once with what its Allow covers, and Enter allows all three
   await expect(page.getByTestId("waiting-questions")).toHaveCount(0);
 
   await blur(page);
-  const before = Number(await count(page).textContent());
+  const before = Number(await count(page).getAttribute("data-count"));
   await page.keyboard.press("Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
   await expect(stack.getByTestId("drawn-check")).toBeVisible();
-  await expect(count(page)).toHaveText(String(before - 1));
+  await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
   // Held for the undo window, then sent to all three at once, as Allow, once.
   expect(await pending(page, made.pushers[0])).toHaveLength(1);
   await page.clock.runFor(SENT_MS);
@@ -149,7 +150,7 @@ test("each ask shows once with what its Allow covers, and Enter allows all three
   );
   // Sent, the undo line goes: there is nothing left to take back.
   await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
-  await expect(count(page)).toHaveText(String(before - 1));
+  await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
 });
 
 test("typing in the composer is never taken: plain keys type, modifiers answer", async ({
@@ -158,7 +159,7 @@ test("typing in the composer is never taken: plain keys type, modifiers answer",
   await start(page);
   const stack = page.getByTestId("ask-stack");
   const composer = page.getByLabel("Message", { exact: true });
-  const before = await count(page).textContent();
+  const before = await count(page).getAttribute("data-count");
   await composer.focus();
   await page.waitForTimeout(SETTLED_MS);
   // The hints say what answers from here.
@@ -172,7 +173,7 @@ test("typing in the composer is never taken: plain keys type, modifiers answer",
   await page.keyboard.press("Enter");
   await page.keyboard.press("ArrowRight");
   await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
-  await expect(count(page)).toHaveText(before!);
+  await expect(count(page)).toHaveAttribute("data-count", before!);
 
   // ⌥2 picks the second option, and ⌘⏎ the first, from the empty composer.
   await goTo(page, "pip and uv");
@@ -194,7 +195,7 @@ test("Enter with only an attachment in the composer sends the draft, not an answ
   await start(page);
   const stack = page.getByTestId("ask-stack");
   const composer = page.getByLabel("Message", { exact: true });
-  const before = await count(page).textContent();
+  const before = await count(page).getAttribute("data-count");
   await composer.evaluate((element, base64) => {
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
     const data = new DataTransfer();
@@ -212,7 +213,7 @@ test("Enter with only an attachment in the composer sends the draft, not an answ
   await page.keyboard.press("Enter");
   await expect(chip).toHaveCount(0);
   await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
-  await expect(count(page)).toHaveText(before!);
+  await expect(count(page)).toHaveAttribute("data-count", before!);
   expect(await sentAnswers(page)).toEqual([]);
 });
 
@@ -252,7 +253,7 @@ test("→ and the arrows step; 1 and 2 pick an option and send exactly it", asyn
   ]);
 
   // All of them at once.
-  const shown = Number(await count(page).textContent());
+  const shown = Number(await count(page).getAttribute("data-count"));
   await stack.getByTestId("ask-expand").click();
   await expect(stack.getByTestId("ask-item")).toHaveCount(shown);
   await stack.getByTestId("ask-expand").click();
@@ -263,12 +264,12 @@ test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async
   const made = await start(page);
   const stack = page.getByTestId("ask-stack");
   await goTo(page, "git push");
-  const before = await count(page).textContent();
+  const before = await count(page).getAttribute("data-count");
   await blur(page);
   await page.keyboard.press("Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(count(page)).toHaveText(before!);
+  await expect(count(page)).toHaveAttribute("data-count", before!);
   await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
   // The ask taken back is the one the keys reach again.
   await expect(currentAsk(page).getByTestId("ask-command")).toHaveText(
@@ -279,7 +280,7 @@ test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async
   await page.keyboard.press("2");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Denied 3");
   await stack.getByTestId("ask-undo").click();
-  await expect(count(page)).toHaveText(before!);
+  await expect(count(page)).toHaveAttribute("data-count", before!);
 
   // Past the window, the pushes still wait on the user, and nothing went out.
   await page.clock.runFor(SENT_MS);
@@ -293,16 +294,16 @@ test("a second key right after an answer, or after the top ask changed by itself
   const made = await start(page);
   const stack = page.getByTestId("ask-stack");
   await goTo(page, "git push");
-  const before = Number(await count(page).textContent());
+  const before = Number(await count(page).getAttribute("data-count"));
   await blur(page);
   // The second Enter would open the next ask's reply field: on the first one's heels, it doesn't.
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
-  await expect(count(page)).toHaveText(String(before - 1));
+  await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
   await expect(currentAsk(page).getByTestId("ask-reply-input")).not.toBeFocused();
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(count(page)).toHaveText(String(before));
+  await expect(count(page)).toHaveAttribute("data-count", String(before));
 
   // Closed somewhere else, the question gives way to the push, and an Enter on its heels doesn't
   // allow the push it never saw.
@@ -394,29 +395,63 @@ test("an ask in another workspace is a link to its orchestrator", async ({ page 
   );
 });
 
-test("Needs you counts the asks the stacks show, and a workspace's count opens its orchestrator", async ({
+test("every needs-you count is the list it opens, and a workspace's count opens its orchestrator", async ({
   page,
 }) => {
   const made = await start(page);
-  const here = Number(await count(page).textContent());
-  const elsewhere = await page.getByTestId("ask-stack").getByTestId("ask-elsewhere").textContent();
-  const there = Number(/\d+/.exec(elsewhere ?? "")?.[0]);
-  // Each workspace's row counts its own asks, and Needs you counts them all.
-  const workspace = (id: string) =>
-    page.locator(`[data-testid="overview-workspace"][data-workspace-id="${id}"]`);
-  await expect(workspace(made.workspaceId).getByTestId("overview-workspace-asks")).toHaveText(
-    String(here),
-  );
-  await expect(workspace(made.other.workspaceId).getByTestId("overview-workspace-asks")).toHaveText(
-    String(there),
-  );
   // With what the threads outside any workspace ask: the seed's question and plan, and t-flaky's
   // approval once its turn raises it.
   await flakyAsked(page);
-  const all = here + there + 2 + (await flakyAsks(page));
+  const workspace = (id: string) =>
+    page.locator(`[data-testid="overview-workspace"][data-workspace-id="${id}"]`);
+  const badge = async (id: string) =>
+    Number((await workspace(id).getByTestId("overview-workspace-asks").textContent()) ?? "0");
+  // The stack shows no count of its own; another workspace's asks are a link, with none either.
+  const here = Number(await count(page).getAttribute("data-count"));
+  await expect(page.getByTestId("ask-stack").getByTestId("ask-elsewhere")).not.toContainText(/\d/);
+  // Each workspace's badge counts at least the asks its stack shows: with its failures and waits.
+  expect(await badge(made.workspaceId)).toBeGreaterThanOrEqual(here);
   const needsYou = page.getByTestId("overview-needs-you");
-  await expect(needsYou).toHaveAttribute("data-count", String(all));
+  const all = Number(await needsYou.getAttribute("data-count"));
   await expect(needsYou).toContainText(`${all} need you`);
+
+  // The list the pill opens has `all` items, each workspace's section as many as its badge, and
+  // the threads outside any workspace the rest.
+  await needsYou.click();
+  await page.getByTestId("needs-you-see-all").click();
+  const panel = page.getByTestId("needs-you-panel");
+  await expect(panel.getByTestId("needs-you-item")).toHaveCount(all);
+  for (const id of [made.workspaceId, made.other.workspaceId]) {
+    await expect(
+      panel
+        .locator(`[data-testid="needs-you-group"][data-workspace="${id}"]`)
+        .getByTestId("needs-you-item"),
+    ).toHaveCount(await badge(id));
+  }
+  const threads = await panel
+    .locator('[data-testid="needs-you-group"]:not([data-workspace])')
+    .getByTestId("needs-you-item")
+    .count();
+  expect(threads).toBeGreaterThanOrEqual(2);
+  expect((await badge(made.workspaceId)) + (await badge(made.other.workspaceId)) + threads).toBe(
+    all,
+  );
+  // The workspace switcher's badges are the same numbers, row for row.
+  await page.getByTestId("workspace-switcher-button").click();
+  for (const id of [made.workspaceId, made.other.workspaceId]) {
+    const name = (await workspace(id)
+      .getByTestId("overview-workspace-row")
+      .getAttribute("aria-label"))!.split(",")[0]!;
+    await expect(
+      page
+        .getByTestId("workspace-switcher")
+        .locator("[data-switcher-item]")
+        .filter({ hasText: name })
+        .getByTestId("workspace-ask-count"),
+    ).toHaveText(String(await badge(id)));
+  }
+  await page.keyboard.press("Escape");
+
   // Away on a solo thread, the workspace's row brings back its orchestrator and its stack.
   await threadRow(page, "t-flaky").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);

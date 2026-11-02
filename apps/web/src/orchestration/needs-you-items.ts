@@ -246,6 +246,29 @@ export const needsYouGroups = ({
   return groups.filter((group) => group.items.length > 0);
 };
 
+/** Every needs-you count the window shows, from the one list (`needsYouCounts`). */
+export interface NeedsYouCounts {
+  /** Everything listed: the pill, the window title and the dock badge. */
+  readonly total: number;
+  /** Each workspace's share: its group's items, which its badges show. */
+  readonly byWorkspace: ReadonlyMap<string, number>;
+}
+
+/**
+ * The one source of every needs-you count: the pill's total and each workspace's badge are the
+ * Needs you list's items and its groups' items, so a count always equals the list it opens and a
+ * workspace's badge is its share of the total. The threads outside any workspace keep the rest.
+ */
+export const needsYouCounts = (groups: readonly NeedsYouGroup[]): NeedsYouCounts => {
+  const byWorkspace = new Map<string, number>();
+  let total = 0;
+  for (const group of groups) {
+    total += group.items.length;
+    if (group.workspaceId !== undefined) byWorkspace.set(group.workspaceId, group.items.length);
+  }
+  return { total, byWorkspace };
+};
+
 /** `groups` with only the items `filter` shows, empty groups left out. */
 export const filterGroups = (
   groups: readonly NeedsYouGroup[],

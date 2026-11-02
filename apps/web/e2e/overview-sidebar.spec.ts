@@ -1221,8 +1221,9 @@ test("a worker still running after its feature is delivered shows with its step 
   await expect(row.getByTestId("overview-worker-now")).toHaveCount(0);
   const line = row.getByTestId("overview-worker-step");
   await expect(line).not.toHaveText("");
-  // The step and the kind of thing it runs, never the command.
-  await expect(line).toHaveText("Step 2 of 2 · Running a command");
+  // The kind of thing it runs, never the command; the plan's step count only on its hover.
+  await expect(line).toHaveText("Running a command");
+  await expect(line).toHaveAttribute("title", "Step 2 of 2 · Running a command");
   await expect(row.getByTestId("overview-ago")).toHaveCount(0);
   await expect(row).toHaveAttribute("aria-label", /, working, .*last active \d{2}:\d{2}$/);
   // Its turn over, it leaves again.

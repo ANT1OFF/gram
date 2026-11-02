@@ -14,6 +14,7 @@ import {
 } from "@gram/contracts";
 
 import { workerTone, type RailTone } from "./rail-model";
+import { OVER_STATES, workerShown } from "./worker-shown";
 import type { WorkspaceStatus } from "./tree-model";
 import type { WorkerActivity } from "./wait-model";
 
@@ -70,12 +71,9 @@ export interface OverviewFeature {
   readonly updatedAt: number;
 }
 
-/** States a worker has left the overview in: finished, or parked. ⌘J's Done lists the finished. */
-const GONE = new Set<FeatureCardWorker["state"]>(["merged", "delivered", "done", "archived"]);
-
-/** Whether a card's worker is live by its own state, and so may be in the overview. */
-const isLiveWorker = (worker: FeatureCardWorker): boolean =>
-  !GONE.has(worker.state) && worker.station !== "merged";
+/** Whether a card's worker has finished by its own state: a running one is then at work again. */
+const finishedByCard = (worker: FeatureCardWorker): boolean =>
+  OVER_STATES.has(worker.state) || worker.station === "merged";
 
 /** A worker whose thread is at work right now, as the threads the window has show it. */
 export interface RunningWorker {
@@ -85,22 +83,24 @@ export interface RunningWorker {
 }
 
 /**
- * The overview's features, in the cards' order: each feature with a live worker or a held brief,
- * its live workers in the card's order. `askKeys` maps a worker to the ask of its in the stack.
+ * The overview's features, in the cards' order: each feature with a worker that shows or a held
+ * brief, the workers that show in the card's order. `askKeys` maps a worker to the ask of its in
+ * the stack.
  *
- * `ledger` is the threads the workspace's ledger still has, once it is read. A worker closed with
- * its worktree leaves the ledger, but its feature's card keeps it as it last was (a card whose
- * feature left the ledger stays as it was), so only a worker the ledger has is live. Its station
- * is then the least advanced of those, so a closed worker's last station doesn't hold the feature.
+ * Which workers show is `workerShown`, the Board's rule too. `over` is the workers the workspace's
+ * ledger still has and whether each one's work is over (`ledgerWorkersOver`), once it is read. A
+ * worker closed with its worktree leaves the ledger, but its feature's card keeps it as it last
+ * was, so only a worker the ledger has shows. The feature's station is the least advanced of those
+ * that show, so a closed worker's last station doesn't hold it.
  *
- * `running` is the workers at work right now. One is live whatever its card says: a worker still
+ * `running` is the workers at work right now. One shows whatever its card says: a worker still
  * running a release step after its feature was delivered, or one its card doesn't have yet. A
  * running worker no card has goes under its feature, after the cards' features.
  */
 export const overviewFeatures = (
   cards: readonly FeatureCard[],
   askKeys: ReadonlyMap<ThreadId, string>,
-  ledger?: ReadonlySet<ThreadId>,
+  over?: ReadonlyMap<ThreadId, boolean>,
   running: readonly RunningWorker[] = [],
   heldIds: ReadonlySet<ThreadId> = new Set(),
   activities: Readonly<Record<string, WorkerActivity>> = {},
@@ -108,6 +108,7 @@ export const overviewFeatures = (
   tones: Readonly<Record<string, RailTone>> = {},
 ): readonly OverviewFeature[] => {
   const runningIds = new Set(running.map((worker) => worker.threadId));
+  const shownFacts = { running: runningIds, asking: new Set(askKeys.keys()), over };
   const row = (
     worker: Pick<
       FeatureCardWorker,
@@ -134,14 +135,10 @@ export const overviewFeatures = (
   };
   const shown = new Set<ThreadId>();
   const features = cards.flatMap((card) => {
-    const live = card.workers.filter(
-      (worker) =>
-        runningIds.has(worker.threadId) ||
-        (isLiveWorker(worker) && (ledger === undefined || ledger.has(worker.threadId))),
-    );
+    const live = card.workers.filter((worker) => workerShown(worker, shownFacts));
     // A running worker its card has as finished is at work again.
     const atWork = live.map((worker) =>
-      runningIds.has(worker.threadId) && !isLiveWorker(worker)
+      runningIds.has(worker.threadId) && finishedByCard(worker)
         ? { ...worker, station: "working" as const, state: "working" as const, now: "working" }
         : worker,
     );
@@ -319,6 +316,20 @@ export const workLineText = (
     return report.nextStep === undefined ? running : `Next: ${planText(report.nextStep)}`;
   }
   return headline.text;
+};
+
+/** A plan headline's step count, "Step 2 of 4", and the " · " after it. */
+const STEP_COUNT = /^Step \d+ of \d+(?: · |$)/;
+
+/**
+ * A sidebar row's step line without the plan's step count: "Step 2 of 4 · Reading code" reads
+ * "Reading code". The whole line stays on the row's hover. A count with nothing after it reads
+ * "Working".
+ */
+export const steplessLine = (text: string): string => {
+  if (!STEP_COUNT.test(text)) return text;
+  const rest = text.replace(STEP_COUNT, "");
+  return rest === "" ? "Working" : rest;
 };
 
 /** What a workspace's orchestrator is doing, in a word or two. */

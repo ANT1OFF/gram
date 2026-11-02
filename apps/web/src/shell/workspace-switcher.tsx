@@ -20,7 +20,7 @@ import { listIndexForKey } from "@/lib/list-keys";
 import { formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
-import { useWorkspaceAsks } from "@/orchestration/ask-stack";
+import { useNeedsYouCounts } from "@/orchestration/use-needs-you";
 import { useOpenWorkspace } from "@/orchestration/home";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useLayoutStore } from "@/stores/layout";
@@ -100,14 +100,14 @@ const moveFocus = (event: KeyboardEvent<HTMLElement>) => {
 
 /**
  * The Orchestrator layout's stand-in for the sidebar: the workspace the window is on, and in its
- * popover every workspace with its asks and key, then the threads outside any workspace.
+ * popover every workspace with its share of Needs you and its key, then the threads outside any
+ * workspace.
  */
 export function WorkspaceSwitcher({ className }: { className?: string }) {
   const api = useApi();
   const navigate = useNavigate();
   const workspaces = useWorkspaces();
   const current = useViewWorkspace();
-  const asks = useWorkspaceAsks();
   const byId = useThreadsStore((s) => s.byId);
   const overrides = useBindingsStore((s) => s.overrides);
   const switchTo = useSwitchWorkspace();
@@ -117,10 +117,8 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     queryFn: () => api.listProjects(),
   });
 
-  const counts = useMemo(
-    () => new Map(asks.map((each) => [each.workspaceId as string, each.asks.length])),
-    [asks],
-  );
+  // Each workspace's share of Needs you, as its line in the overview counts it.
+  const counts = useNeedsYouCounts().byWorkspace;
   const solo = useMemo(
     () =>
       soloThreads(
@@ -191,7 +189,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
               {count > 0 && (
                 <span
                   data-testid="workspace-ask-count"
-                  aria-label={`${count} asks`}
+                  aria-label={`${count} ${count === 1 ? "needs" : "need"} you`}
                   className="min-w-4 rounded-full bg-accent px-1 text-center text-[11px] leading-4 text-accent-foreground tabular-nums"
                 >
                   {count}

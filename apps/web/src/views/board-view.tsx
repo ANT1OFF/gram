@@ -175,10 +175,13 @@ function FeatureLine({
   row,
   stage,
   needsMark,
+  repos,
   onOpen,
   place,
 }: {
   row: RailRow;
+  /** Whether it names its repos: only where the workspace has more than one. */
+  repos: boolean;
   /**
    * Its stage from the workspace, which carries who set it and when: a chip, as the stations already
    * say how far the work has come. Its plan's steps are set in the feature's sheet.
@@ -214,21 +217,16 @@ function FeatureLine({
           <button
             type="button"
             data-testid="rail-feature"
-            title={`${row.title} · ${row.feature}`}
+            title={
+              workerCount(row) > 1
+                ? `${row.feature} · ${workerCount(row)} workers`
+                : `${row.title} · ${row.feature}`
+            }
             onClick={() => openFeatureSheet(row.card.workspaceId, row.feature)}
             className="min-w-0 truncate rounded-sm text-left underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           >
             {row.title}
           </button>
-          {workerCount(row) > 1 && (
-            <span
-              data-testid="rail-more"
-              title={`${workerCount(row)} workers`}
-              className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums"
-            >
-              +{workerCount(row) - 1}
-            </span>
-          )}
           {row.card.paused === true && <PausedBadge testId="rail-paused" />}
           {needsMark && row.needs && (
             <CircleAlert
@@ -255,7 +253,11 @@ function FeatureLine({
             {summary}
           </span>
         )}
-        <span className="truncate text-xs text-muted-foreground">{row.projects.join(" · ")}</span>
+        {repos && (
+          <span data-testid="rail-repos" className="truncate text-xs text-muted-foreground">
+            {row.projects.join(" · ")}
+          </span>
+        )}
       </div>
       <Track reach={row.reach} />
       {FEATURE_STATIONS.map((station, index) => (
@@ -347,7 +349,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   const onOpen = useOpenWorker();
   const setStage = useSetStage(workspaceId);
   const rows = useMemo(
-    () => boardRows(railRows(cards, facts, finishedShown), finishedShown),
+    () => boardRows(railRows(cards, facts, finishedShown ? "all" : "shown"), finishedShown),
     [cards, facts, finishedShown],
   );
   // What Show finished would add: counted against the Board as it shows with them hidden.
@@ -370,6 +372,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
       row={row}
       stage={state.stages?.[row.feature]}
       needsMark={row.group === undefined}
+      repos={state.workspace.projectIds.length > 1}
       onOpen={onOpen}
       place={place}
     />
@@ -432,8 +435,18 @@ function RailBoard({ state }: { state: WorkspaceState }) {
               strokeWidth={1.5}
               className="mb-1 size-6 opacity-70"
             />
-            <p className="text-foreground">No features yet</p>
-            <p className="text-xs">Ask the orchestrator to build one.</p>
+            {hidden > 0 ? (
+              <>
+                {/* Its finished work is in Done, as the sidebar has it; Show finished brings it here. */}
+                <p className="text-foreground">Nothing going now</p>
+                <p className="text-xs">Finished work is in Done.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-foreground">No features yet</p>
+                <p className="text-xs">Ask the orchestrator to build one.</p>
+              </>
+            )}
           </div>
         ) : (
           <GlideList id={`rail-${workspaceId}`}>
