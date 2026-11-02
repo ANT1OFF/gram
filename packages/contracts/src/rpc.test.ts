@@ -928,6 +928,7 @@ describe("GramRpcs", () => {
         "fs.list",
         "fs.search",
         "fs.files",
+        "fs.vocabulary",
         "fs.resolve",
         "terminal.open",
         "terminal.input",

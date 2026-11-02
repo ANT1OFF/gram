@@ -2,6 +2,7 @@ import {
   DEFAULT_DICTATION_SOUND_VOLUME,
   dictationSoundVolumeOf,
   keepMicrophoneReadyOf,
+  projectNamesOn,
   SPEECH_ACCURATE_MODELS,
   SPEECH_MODEL_FOR_STOP,
   speechModelBytes,
@@ -10,6 +11,7 @@ import {
   VOICE_UNSUPPORTED_NOTE,
   voiceInputOn,
   voiceSupported,
+  voiceVocabularyOf,
   type MicrophoneAccess,
   type SpeechMode,
   type SpeechModelId,
@@ -35,9 +37,11 @@ import { DialogShell } from "@/thread/dialog-shell";
 
 import { DictateKeyRow } from "./dictate-key-row";
 import { OptionGroup, SettingRow, Toggle } from "./fields";
-import { SETTINGS_CARD } from "./settings-group";
+import { SETTINGS_CARD, SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 import { VoiceCleanupRows } from "./voice-cleanup-rows";
+import { VoiceVocabularyField } from "./voice-vocabulary-field";
+import { PROJECT_NAMES_HELP, YOUR_WORDS_HELP } from "./voice-vocabulary-model";
 import {
   accurateFits,
   combinedProgress,
@@ -327,6 +331,39 @@ export function VoiceInputSection() {
           />
           {error !== undefined && <p className="text-xs text-destructive">{error}</p>}
         </div>
+      )}
+      {on && (
+        <SettingsGroup
+          label="Vocabulary"
+          description="Names and words dictation spells your way after it hears them. Nothing here leaves this computer."
+          keywords={["vocabulary", "dictionary", "spelling"]}
+          testId="voice-vocabulary"
+        >
+          <Toggle
+            label="Use this project's names"
+            description={PROJECT_NAMES_HELP}
+            keywords={["vocabulary", "names", "symbols", "files", "identifiers", "spelling"]}
+            checked={projectNamesOn(settings)}
+            onChange={(next) => {
+              setError(undefined);
+              save({ voice: { projectNames: next } }).catch(fail);
+            }}
+          />
+          <SettingRow
+            label="Your words"
+            description={YOUR_WORDS_HELP}
+            keywords={["vocabulary", "sounds like", "spelling", "dictionary", "words"]}
+            detail={
+              <VoiceVocabularyField
+                entries={voiceVocabularyOf(settings)}
+                onChange={(next) => {
+                  setError(undefined);
+                  save({ voice: { vocabulary: next } }).catch(fail);
+                }}
+              />
+            }
+          />
+        </SettingsGroup>
       )}
     </div>
   );

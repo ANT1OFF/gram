@@ -1,5 +1,6 @@
 import {
   checkoutRoots,
+  distinctiveTerm,
   effectiveCheckout,
   isCredentialPath,
   previewFileKind,
@@ -201,6 +202,19 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
       return listMockFileNames(
         "threadId" in target ? effectiveCheckout(thread(target.threadId)).path : target.path,
       );
+    },
+    projectVocabulary: async (threadId) => {
+      await world.delay(20);
+      const listed = listMockFileNames(effectiveCheckout(thread(threadId)).path);
+      const names = listed.entries.flatMap((entry) => {
+        const name = entry.path.split("/").at(-1) ?? "";
+        const dot = name.lastIndexOf(".");
+        return entry.kind === "dir" ? [] : dot > 0 ? [name, name.slice(0, dot)] : [name];
+      });
+      const terms = [...new Set(names)]
+        .filter(distinctiveTerm)
+        .map((term) => ({ term, kind: "file" as const }));
+      return { terms, truncated: false };
     },
     previewFile: async (threadId, path): Promise<FsPreview> => {
       await world.delay(20);

@@ -9,6 +9,7 @@ import {
   voiceInputOn,
   type DesktopSpeech,
   type SpeechPerformance,
+  type ThreadId,
 } from "@gram/contracts";
 import { useEffect, useRef, useState } from "react";
 
@@ -19,6 +20,8 @@ import { microphone } from "./capture";
 import { lifecycleMark, lifecyclePending, lifecycleUnchanged } from "./lifecycle";
 import { postprocess, type PostprocessOptions } from "./postprocess";
 import { playTone } from "./sounds";
+import { useVocabularyIndex } from "./use-vocabulary";
+import { applyVocabulary } from "./vocabulary";
 import type { Api } from "@/api/types";
 
 import {
@@ -147,9 +150,13 @@ export const committedText = (text: string, cleanup: PostprocessOptions): string
 };
 
 /**
- * Local dictation into one composer: `onCommit` puts each finished utterance into the draft.
+ * Local dictation into one composer: `onCommit` puts each finished utterance into the draft, with
+ * the names of `threadId`'s project and the user's own words spelled their way.
  */
-export function useDictation(onCommit: (text: string) => void): DictationControls {
+export function useDictation(
+  onCommit: (text: string) => void,
+  threadId?: ThreadId | undefined,
+): DictationControls {
   const api = useApi();
   const settings = useServerSettings((s) => s.settings);
   const on = settings !== undefined && voiceInputOn(settings);
@@ -173,6 +180,13 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
   useEffect(() => {
     if (settings !== undefined) cleanup.current = dictationCleanupOf(settings);
   }, [settings]);
+  /** Set by the first prewarm or start, which is when the project's names are worth reading. */
+  const [vocabularyWanted, setVocabularyWanted] = useState(false);
+  const vocabulary = useVocabularyIndex(threadId, on && vocabularyWanted);
+  const spelling = useRef(vocabulary);
+  useEffect(() => {
+    spelling.current = vocabulary;
+  });
 
   useEffect(() => microphone.keepReady(keepReady), [keepReady]);
 
@@ -219,9 +233,10 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
           setState(next);
         },
         onPartial: setPartial,
+        // Cleaned up first, so a spoken "dot" is already a `.` when names are spelled.
         onCommit: (text) => {
           const cleaned = committedText(text, cleanup.current);
-          if (cleaned !== undefined) commit.current(cleaned);
+          if (cleaned !== undefined) commit.current(applyVocabulary(cleaned, spelling.current));
         },
       },
     );
@@ -238,6 +253,7 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
     // Settings is installing or deleting models; a session now could outlive a turn-off.
     if (lifecyclePending()) return;
     if (performance === undefined) return;
+    setVocabularyWanted(true);
     tones.current = { confirmed, live: false, started: false };
     const wanted: DictationTarget = {
       modelId: SPEECH_MODEL_FOR_STOP[performance],
@@ -266,6 +282,7 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
       // Not while Settings changes what's installed: a prewarm after its `shutdown` would start
       // the speech process again.
       if (bridge === undefined || performance === undefined || active || lifecyclePending()) return;
+      setVocabularyWanted(true);
       const mark = lifecycleMark();
       microphone.warm();
       void target.current

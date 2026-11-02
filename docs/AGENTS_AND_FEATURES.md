@@ -606,6 +606,12 @@ Voice input page, all on by default: filler words such as "um" and "uh" leave, "
 paragraph" become line breaks, and spoken symbols become characters ("foo underscore bar" is
 `foo_bar`, "src slash index dot ts" is `src/index.ts`). After "a" or "the" a symbol's word stays a
 word, and "literal" before one keeps it as spoken.
+Committed text then spells names the way the code does: with Use this project's names on (the
+default), "use dictation dot ts" becomes `use-dictation.ts`, from the thread's tracked file and
+folder names, exported symbols, branches and thread titles, read from git on this computer, capped
+at 3,000 and read again when the commit or index changes. Settings → Voice input → Your words adds
+the user's own terms with "sounds like" spellings. Names made only of everyday words, and single
+common words, are never replaced unless listed as a spelling.
 Native loading does not prove
 microphone or recognition quality; see [verification](VERIFICATION.md#manual-provider-and-dictation-checks).
 

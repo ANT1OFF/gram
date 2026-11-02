@@ -240,6 +240,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     setText,
     insertingRef: inserting,
     enabled: focused,
+    threadId,
   });
   const dictateHint = useShortcutHint("composer.dictate");
   const ghost = ghostOf({

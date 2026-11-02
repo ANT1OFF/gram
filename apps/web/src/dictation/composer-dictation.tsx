@@ -1,3 +1,4 @@
+import type { ThreadId } from "@gram/contracts";
 import {
   useEffect,
   useLayoutEffect,
@@ -44,6 +45,7 @@ export function useComposerDictation({
   setText,
   insertingRef,
   enabled,
+  threadId,
 }: {
   fieldRef: RefObject<HTMLTextAreaElement | null>;
   text: string;
@@ -52,6 +54,8 @@ export function useComposerDictation({
   insertingRef: RefObject<boolean>;
   /** Whether the shortcut answers here: the composer's pane has the focus. */
   enabled: boolean;
+  /** The thread whose project's names dictation spells; a draft without one has only the user's. */
+  threadId?: ThreadId | undefined;
 }): ComposerDictation {
   /** Puts each finished utterance at the caret, as typing would, so ⌘Z takes it back. */
   const dictation = useDictation((spoken) => {
@@ -64,7 +68,7 @@ export function useComposerDictation({
     } finally {
       insertingRef.current = false;
     }
-  });
+  }, threadId);
   const latest = useRef(dictation);
   useEffect(() => {
     latest.current = dictation;

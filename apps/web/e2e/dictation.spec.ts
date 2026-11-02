@@ -106,6 +106,41 @@ test("the mic dictates into the draft at the caret, and Escape throws the partia
   await expect(composer).toHaveValue("Fix the flaky test");
 });
 
+test("a committed utterance spells the project's file names and the user's words their way", async ({
+  page,
+}) => {
+  // Spoken symbols off, so the spelled names are the vocabulary's own doing, "dot" included.
+  await withVoice(page, true, {
+    vocabulary: [{ term: "Parakeet", soundsLike: ["para keet"] }],
+    spokenSymbols: false,
+  });
+  const composer = await openThread(page);
+  await page.evaluate(() => {
+    const bridge = window.gramMock!.speechBridge;
+    bridge.framesPerWord = 1;
+    bridge.script = "Fix retry dot test dot ts, then ask para keet to plan the clip.";
+  });
+  const mic = page.getByRole("button", { name: "Start dictation" });
+  await mic.click();
+  const partial = page.getByTestId("dictation-partial");
+  // The partial is shown as heard; only the committed text is spelled.
+  await expect(partial).toContainText("plan the clip", { timeout: 15_000 * slowdown });
+  await page.getByRole("button", { name: "Stop dictation" }).click();
+  await expect(composer).toHaveValue("Fix retry.test.ts, then ask Parakeet to plan the clip.");
+
+  // With the project's names off, only the user's own words are spelled.
+  await page.evaluate(() =>
+    window.gramMock!.simulateSettingsChange({ voice: { projectNames: false } }),
+  );
+  await composer.fill("");
+  await mic.click();
+  await expect(partial).toContainText("plan the clip", { timeout: 15_000 * slowdown });
+  await page.getByRole("button", { name: "Stop dictation" }).click();
+  await expect(composer).toHaveValue(
+    "Fix retry dot test dot ts, then ask Parakeet to plan the clip.",
+  );
+});
+
 /** Counts each opening of the microphone, and how many of its tracks are still running. */
 const countMicrophone = (page: Page) =>
   page.addInitScript(() => {
@@ -356,7 +391,7 @@ test("what commits is cleaned up, the live partial never, and Settings turns eac
   await expect(composer).toHaveValue("Rename foo_bar\ndone");
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await openAdvancedPage(page, "Voice input");
+  await settingsNav(page).getByRole("link", { name: "Voice", exact: true }).click();
   const section = page.getByTestId("voice-input-settings");
   for (const name of ["Remove filler words", "Spoken formatting", "Spoken symbols"])
     await expect(section.getByRole("switch", { name })).toBeChecked();

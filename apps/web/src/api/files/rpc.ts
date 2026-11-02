@@ -10,6 +10,7 @@ export const filesRpc = ({ client }: RpcContext): FilesApi => ({
   fsSearch: (threadId, query, options = {}) =>
     run(client["fs.search"]({ threadId, query, ...options })),
   fsFiles: (target) => run(client["fs.files"](target)),
+  projectVocabulary: (threadId) => run(client["fs.vocabulary"]({ threadId })),
   fsResolve: (threadId, paths) => run(client["fs.resolve"]({ threadId, paths })),
   previewFile: (threadId, path) => run(client["fs.preview"]({ threadId, path })),
   fsImage: (path, options = {}) => run(client["fs.image"]({ path, ...options })),
