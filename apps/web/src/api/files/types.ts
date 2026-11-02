@@ -9,6 +9,7 @@ import type {
   FsResolveResult,
   FsSearchResult,
   OutputKind,
+  ProjectVocabulary,
   Revealed,
   ThreadId,
   WorkspaceId,
@@ -37,6 +38,8 @@ export interface FilesApi {
   ): Promise<FsSearchResult>;
   /** Every file and folder for `@` mentions: a thread's checkout, or an absolute folder. */
   fsFiles(target: { threadId: ThreadId } | { path: string }): Promise<FsFilesResult>;
+  /** The names in a thread's checkout that dictation spells its way (`fs.vocabulary`). */
+  projectVocabulary(threadId: ThreadId): Promise<ProjectVocabulary>;
   /**
    * Which of `paths` an agent's message names are files in the thread's checkouts, and where.
    * At most `FS_RESOLVE_LIMIT` per call.

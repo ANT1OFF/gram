@@ -15,6 +15,7 @@ import { FolderListing, FsListing, FsTree, FsFile } from "../fs.ts";
 import { ThreadId } from "../ids.ts";
 import { WorkspaceOutputsFields, WorkspaceOutputsPage } from "../outputs.ts";
 import { FileImage } from "../thread-ui.ts";
+import { ProjectVocabulary, ProjectVocabularyFields } from "../vocabulary.ts";
 import { errors, PositiveInt } from "./shared.ts";
 
 /** Files: folder listings and previews, `@` mentions and search, and opening paths elsewhere. */
@@ -67,6 +68,16 @@ export const FileRpcs = RpcGroup.make(
   Rpc.make("fs.files", {
     payload: FsFilesFields,
     success: FsFilesResult,
+    error: errors(NotFound, InvalidState),
+  }),
+  /**
+   * The names in the thread's checkout dictation should spell its way: exported symbols, tracked
+   * file and folder names, branches and thread titles, capped. Read from git and cached until the
+   * commit or index changes; nothing leaves this computer.
+   */
+  Rpc.make("fs.vocabulary", {
+    payload: ProjectVocabularyFields,
+    success: ProjectVocabulary,
     error: errors(NotFound, InvalidState),
   }),
   /**

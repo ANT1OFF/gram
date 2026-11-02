@@ -74,6 +74,7 @@ export * from "./launch-checks.ts";
 export * from "./agent-runtime.ts";
 export * from "./redact.ts";
 export * from "./speech.ts";
+export * from "./vocabulary.ts";
 export * from "./review-monitor.ts";
 export * from "./pr-people.ts";
 export * from "./folder-access.ts";

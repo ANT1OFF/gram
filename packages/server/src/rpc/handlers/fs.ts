@@ -32,6 +32,7 @@ import {
 import { browseFolders, expandHome } from "../../fs/folders.ts";
 import { IMAGE_MAX_BYTES, readImage } from "../../fs/images.ts";
 import { listFileNames } from "../../fs/names.ts";
+import { makeVocabularyCache } from "../../fs/vocabulary.ts";
 import { SEARCH_MAX_PAGE, SEARCH_PAGE, searchFiles } from "../../fs/search.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
@@ -80,6 +81,9 @@ const namedPathKey = (path: string) => {
 const sameNamedPath = (written: string, target: string): boolean =>
   namedPathKey(written) === namedPathKey(target);
 
+/** Thread titles the project vocabulary reads, the most recently updated first. */
+const VOCABULARY_TITLES = 200;
+
 /** Previews name the thread whose transcript or checkouts they come from. */
 const noThread = () => new InvalidState({ message: "Open a file from a thread to preview it" });
 
@@ -100,6 +104,7 @@ export const fsHandlers = Effect.gen(function* () {
           Effect.fail(new InvalidState({ message: "This thread no longer exists", threadId })),
         ),
       );
+  const vocabulary = makeVocabularyCache();
   // Absent in handler-only test layers, where no HTML is previewed.
   const previewFiles = Option.getOrUndefined(yield* Effect.serviceOption(PreviewFiles));
 
@@ -261,6 +266,19 @@ export const fsHandlers = Effect.gen(function* () {
       Effect.gen(function* () {
         const root = yield* resolveScoped(path ?? ".", yield* scopeRoot(threadId));
         return yield* listFileNames(root).pipe(Effect.provideService(Proc, proc));
+      }),
+
+    "fs.vocabulary": ({ threadId }) =>
+      Effect.gen(function* () {
+        const thread = yield* threadOf(threadId);
+        const checkout = effectiveCheckout(thread);
+        // The project's recent threads name what is being worked on; their titles cost no git.
+        const titles = (yield* store.listThreads)
+          .filter((other) => other.projectId === thread.projectId)
+          .toSorted((a, b) => b.lastActivityAt - a.lastActivityAt)
+          .slice(0, VOCABULARY_TITLES)
+          .map((other) => other.title);
+        return yield* vocabulary(checkout.path, titles).pipe(Effect.provideService(Proc, proc));
       }),
 
     "fs.resolve": ({ threadId, paths }) =>

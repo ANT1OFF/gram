@@ -19,6 +19,7 @@ import {
   SpeechPerformanceStop,
   type SpeechModelId,
 } from "./speech.ts";
+import { VocabularyList, type VocabularyEntry } from "./vocabulary.ts";
 import { connectorEntryProblem, WorkerModel } from "./workspaces.ts";
 
 /** Glass is the only look. */
@@ -484,6 +485,10 @@ export const VoiceSettings = Schema.Struct({
   spokenFormatting: Schema.optionalKey(Schema.Boolean),
   /** "Underscore", "dot", "open paren" become characters. Read through `dictationCleanupOf`. */
   spokenSymbols: Schema.optionalKey(Schema.Boolean),
+  /** The user's own words and how they sound. Read through `voiceVocabularyOf`. */
+  vocabulary: Schema.optionalKey(VocabularyList),
+  /** Spell the thread's project's names its way. Read through `projectNamesOn`; on unless off. */
+  projectNames: Schema.optionalKey(Schema.Boolean),
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
 
@@ -699,6 +704,14 @@ export const dictationCleanupOf = (settings: Settings): DictationCleanup => ({
   formatting: settings.voice?.spokenFormatting !== false,
   symbols: settings.voice?.spokenSymbols !== false,
 });
+
+/** The user's dictation word list; empty until they add to it. */
+export const voiceVocabularyOf = (settings: Settings): readonly VocabularyEntry[] =>
+  settings.voice?.vocabulary ?? [];
+
+/** Whether dictation spells the thread's project's names: on unless the user turned it off. */
+export const projectNamesOn = (settings: Settings): boolean =>
+  settings.voice?.projectNames !== false;
 
 /** The speech model the slider's stop runs. */
 export const speechModelOf = (settings: Settings): SpeechModelId =>
@@ -955,6 +968,9 @@ export const SettingsPatch = Schema.Struct({
       removeFillers: clearable(Schema.Boolean),
       spokenFormatting: clearable(Schema.Boolean),
       spokenSymbols: clearable(Schema.Boolean),
+      /** Replaces the whole list. */
+      vocabulary: clearable(VocabularyList),
+      projectNames: clearable(Schema.Boolean),
     }),
   ),
   inbox: Schema.optionalKey(

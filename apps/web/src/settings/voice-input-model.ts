@@ -31,7 +31,7 @@ export const STOP_HELP: Readonly<Record<SpeechPerformance, string>> = {
 };
 
 export const LOCAL_HINTS_HELP =
-  "The local NVIDIA models recognise English. Audio and transcripts stay on this computer; vocabulary hints are not supported.";
+  "The local NVIDIA models recognise English. Audio and transcripts stay on this computer. Names they mishear are spelled by Vocabulary below.";
 
 export const MODE_OPTIONS: readonly { readonly value: SpeechMode; readonly label: string }[] = [
   { value: "accurate", label: "Accurate" },

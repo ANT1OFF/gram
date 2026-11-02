@@ -851,6 +851,25 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("key-capture-dialog"),
   },
   {
+    name: "settings-voice-vocabulary",
+    title: "Settings → Voice input with a word list, the whole page",
+    open: async (page) => {
+      await seedMockSettings(page, {
+        experimental: { voiceInput: true },
+        voice: {
+          vocabulary: [
+            { term: "Parakeet", soundsLike: ["para keet", "parakit"] },
+            { term: "Nemotron" },
+            { term: "createSpeechService", soundsLike: ["create speech service"] },
+          ],
+        },
+      });
+      await page.goto("/settings/voice-input");
+      await expect(page.getByTestId("voice-input-settings")).toContainText("Microphone");
+      await fitSettings(page);
+    },
+  },
+  {
     name: "settings-search",
     title: "Settings search: rows found on every page, under their group",
     modes: ["dark"],
