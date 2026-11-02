@@ -1,14 +1,15 @@
 // What a person's comment on a worker's PR becomes: the rules that pass one over, and the notice
 // that carries it to the worker. Pure, so each rule is tested on its own.
 
-import { isBotLogin, type GramUIMessage, type ReviewBot } from "@gram/contracts";
+import { isBotLogin, type ReviewBot } from "@gram/contracts";
 import type { FetchedComment } from "@gram/git";
 import { fence, FENCE_OPENER } from "../git/untrusted-fence.ts";
+import { sameText, type Posted } from "./posted-comments.ts";
 
 /** The most of one comment a notice carries; the rest is cut and the worker pointed at GitHub. */
 export const COMMENT_NOTICE_CHARS = 4000;
 
-/** How far before a comment was posted a thread's tool calls are searched for its words. */
+/** How far before a comment was posted a thread's tool calls are searched for it. */
 export const OWN_COMMENT_LOOKBACK_MS = 2 * 60 * 60_000;
 
 /** Why a comment wakes nobody. */
@@ -20,6 +21,7 @@ export type PassReason =
   | "botCommand"
   | "own"
   | "untrusted"
+  | "unverified"
   | "closed";
 
 /** Whether `comment` has anything to say: a body or an inline comment that isn't blank. */
@@ -58,64 +60,18 @@ export const passOver = (
 };
 
 /**
- * Text reduced to what survives being quoted in a shell command or a JSON string: escapes like
- * `\n` dropped, then letters and digits only, lower-cased.
+ * Whether a comment posted with the user's `gh` login is a Gram thread's own: GitHub's link to it
+ * (or to one of its inline comments) was printed by one of the thread's tool calls, or every text
+ * it carries is, whole, a body one of them posted. Its words merely turning up in a command or a
+ * file never count, so the user's "Stop." or "rebase" isn't taken for the thread's.
  */
-export const normaliseWords = (text: string): string =>
-  text
-    .replaceAll(/\\[nrt]/g, " ")
-    .toLowerCase()
-    .replaceAll(/[^\p{L}\p{N}]+/gu, "");
-
-/** How much of a comment's start must be found in a tool call for it to count as the thread's own. */
-const PROBE_CHARS = 64;
-
-/**
- * The start of what `comment` says in its author's own words, normalised: quoted lines (`> …`,
- * which a reply to the worker opens with) are left out unless there's nothing else.
- */
-export const commentProbe = (comment: FetchedComment): string => {
-  const text =
-    [comment.body, ...comment.inline.map((each) => each.body)].find((t) => t.trim() !== "") ?? "";
-  const unquoted = text
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*>/.test(line))
-    .join("\n");
-  const words = normaliseWords(unquoted);
-  return (words === "" ? normaliseWords(text) : words).slice(0, PROBE_CHARS);
-};
-
-const strings = (value: unknown, out: Array<string>, depth = 0): void => {
-  if (depth > 6) return;
-  if (typeof value === "string") out.push(value);
-  else if (Array.isArray(value)) for (const each of value) strings(each, out, depth + 1);
-  else if (typeof value === "object" && value !== null)
-    for (const each of Object.values(value)) strings(each, out, depth + 1);
-};
-
-/** Every string in the inputs of the tool calls in `messages`: the commands and texts it sent. */
-export const toolInputs = (messages: ReadonlyArray<GramUIMessage>): Array<string> => {
-  const out: Array<string> = [];
-  for (const message of messages) {
-    if (message.role !== "assistant") continue;
-    for (const part of message.parts) {
-      if (part.type !== "dynamic-tool" && !part.type.startsWith("tool-")) continue;
-      strings((part as { readonly input?: unknown }).input, out);
-    }
-  }
-  return out;
-};
-
-/**
- * Whether a comment posted with the user's `gh` login is the thread's own: its words are in a tool
- * call the thread (or its orchestrator) made, a `gh pr comment`, a review reply or a file written
- * for one. The user's own comment, typed on GitHub, is in none of them. One with no words of its
- * own is nothing to act on, so it counts as its own too.
- */
-export const isOwnComment = (comment: FetchedComment, inputs: ReadonlyArray<string>): boolean => {
-  const probe = commentProbe(comment);
-  if (probe === "") return true;
-  return inputs.some((input) => normaliseWords(input).includes(probe));
+export const isOwnComment = (comment: FetchedComment, posted: Posted): boolean => {
+  const links = [comment.url, ...comment.inline.map((each) => each.url)].filter((u) => u !== "");
+  if (links.some((link) => posted.urls.has(link))) return true;
+  const texts = [comment.body, ...comment.inline.map((each) => each.body)]
+    .map(sameText)
+    .filter((text) => text !== "");
+  return texts.length > 0 && texts.every((text) => posted.bodies.has(text));
 };
 
 const GITHUB_URL = /^https:\/\/github\.com\/[\w./#%-]+$/;
@@ -124,6 +80,13 @@ const cut = (text: string): string =>
   text.length <= COMMENT_NOTICE_CHARS
     ? text
     : `${text.slice(0, COMMENT_NOTICE_CHARS)}\n… [cut: ${text.length - COMMENT_NOTICE_CHARS} more characters; read the rest on GitHub]`;
+
+/**
+ * `text` with each HTML comment (`<!-- … -->`) marked as such. GitHub hides them, so words a
+ * collaborator put there are words the user never saw on the page; the worker is told so.
+ */
+export const markHidden = (text: string): string =>
+  text.replaceAll("<!--", "[hidden on GitHub: ").replaceAll("-->", " :end of hidden]");
 
 /** What `comment` says, as the fence carries it: the body, then each inline comment by place. */
 const commentText = (comment: FetchedComment): string => {
@@ -134,7 +97,7 @@ const commentText = (comment: FetchedComment): string => {
     const where = inline.line === undefined ? inline.path : `${inline.path}:${inline.line}`;
     parts.push(`On ${where}:\n${inline.body.trim()}`);
   }
-  return cut(parts.join("\n\n"));
+  return cut(markHidden(parts.join("\n\n")));
 };
 
 /** A login as GitHub allows one; anything else is shown as `someone`. */

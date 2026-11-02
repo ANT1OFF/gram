@@ -429,6 +429,9 @@ export const MONITOR_MARK_REVIEWS_MAX = 32;
 /** The most people's comments a `MonitorMark` remembers; twice what a badge lists. */
 export const MONITOR_MARK_COMMENTS_MAX = 64;
 
+/** The most comment wakes a `MonitorMark` remembers: a day's worth at the cap. */
+export const MONITOR_MARK_COMMENT_WAKES_MAX = 32;
+
 /**
  * What a PR's monitors last saw of it, kept with the binding so the first look after a restart
  * compares against it: without it, that look is only a baseline, and a CI settle, a bot round or a
@@ -456,6 +459,15 @@ export const MonitorMark = Schema.Struct({
    */
   comments: Schema.optionalKey(
     Schema.Array(Schema.String).check(Schema.isMaxLength(MONITOR_MARK_COMMENTS_MAX)),
+  ),
+  /**
+   * The newest comment handled, by when it was posted and then by id: only a comment after it is
+   * new, so one that slides back into the badge's window after `comments` forgot it stays seen.
+   */
+  commentsUpTo: Schema.optionalKey(Schema.Struct({ at: Schema.String, id: Schema.String })),
+  /** When comments last woke the thread, epoch ms, oldest first: the rate limit survives a restart. */
+  commentWakes: Schema.optionalKey(
+    Schema.Array(Schema.Number).check(Schema.isMaxLength(MONITOR_MARK_COMMENT_WAKES_MAX)),
   ),
 });
 export type MonitorMark = typeof MonitorMark.Type;

@@ -350,7 +350,12 @@ describe("people's comments", () => {
     const node = {
       comments: {
         nodes: [
-          { id: "IC_1", author: { login: "alice", __typename: "User" }, body: "Rename it." },
+          {
+            id: "IC_1",
+            author: { login: "alice", __typename: "User" },
+            createdAt: "2026-09-25T09:00:00Z",
+            body: "Rename it.",
+          },
           { id: "IC_2", author: { login: "example-code-review", __typename: "Bot" }, body: "x" },
           { id: "IC_3", author: { login: "deploy-preview[bot]", __typename: "User" }, body: "x" },
           { id: "IC_4", author: null, body: "from a deleted account" },
@@ -366,8 +371,8 @@ describe("people's comments", () => {
       },
     };
     expect(personCommentsOf(node, bots)).toEqual([
-      { id: "IC_1", author: "alice" },
-      { id: "PRR_1", author: "bob" },
+      { id: "IC_1", author: "alice", at: "2026-09-25T09:00:00Z" },
+      { id: "PRR_1", author: "bob", at: "2026-09-25T10:01:00Z" },
     ]);
   });
 });

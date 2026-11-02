@@ -244,7 +244,11 @@ export const personCommentsOf = (
   const reviews = arr(at(node, ["reviews", "nodes"])).filter((r) => r["state"] === "COMMENTED");
   return [...comments, ...reviews]
     .filter((each) => str(each["id"]) !== "" && byPerson(each, bots))
-    .map((each) => ({ id: str(each["id"]), author: login(each) }))
+    .map((each) => ({
+      id: str(each["id"]),
+      author: login(each),
+      at: str(each["createdAt"]) || str(each["submittedAt"]),
+    }))
     .slice(-MAX_PERSON_COMMENTS);
 };
 

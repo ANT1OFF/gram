@@ -8,7 +8,6 @@ import type {
   UserInput,
 } from "@gram/contracts";
 import { ReviewActionError, type FetchedComment, type RepoPermission } from "@gram/git";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -21,7 +20,12 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { makeRuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { PrCommentWakeConfig, PrCommentWakesLive } from "./pr-comments.ts";
+import {
+  DEFAULT_PR_COMMENT_WAKE_LIMITS,
+  PrCommentWakeConfig,
+  PrCommentWakesLive,
+  type PrCommentWakeLimits,
+} from "./pr-comments.ts";
 
 const HEAD = "a".repeat(40);
 
@@ -89,15 +93,11 @@ const FakeReads = Layer.succeed(PrCommentReads, {
     }),
 });
 
-const layerWith = (limits?: { readonly minGap: Duration.Duration; readonly perHour: number }) =>
+const layerWith = (limits: Partial<PrCommentWakeLimits> = {}) =>
   PrCommentWakesLive.pipe(
     Layer.provide(FakeReads),
     Layer.provide(
-      Layer.succeed(PrCommentWakeConfig, {
-        minGap: limits?.minGap ?? Duration.minutes(1),
-        perHour: limits?.perHour ?? 6,
-        retryAfter: Duration.minutes(1),
-      }),
+      Layer.succeed(PrCommentWakeConfig, { ...DEFAULT_PR_COMMENT_WAKE_LIMITS, ...limits }),
     ),
     Layer.provideMerge(FakePublisher),
     Layer.provideMerge(makeRuntimeTestLayer()),
@@ -135,6 +135,11 @@ const stateWith = (pr: PrStatus): GitState => ({
   pr,
 });
 
+/** Each new comment is posted a second after the one before. */
+let postedCount = 0;
+const nextTime = () =>
+  new Date(Date.UTC(2026, 10, 2, 10, 0, 0) + ++postedCount * 1000).toISOString();
+
 /** A comment as GitHub has it, and as the badge lists it. */
 const comment = (
   id: string,
@@ -150,7 +155,7 @@ const comment = (
     viewerDidAuthor: false,
     body,
     url: `https://github.com/acme/web/pull/12#issuecomment-${id}`,
-    createdAt: "2026-11-02T10:00:00Z",
+    createdAt: nextTime(),
     inline: [],
     ...extra,
   };
@@ -159,7 +164,7 @@ const comment = (
 };
 
 const listed = (...comments: ReadonlyArray<FetchedComment>): Array<PersonComment> =>
-  comments.map((c) => ({ id: c.id, author: c.author }));
+  comments.map((c) => ({ id: c.id, author: c.author, at: c.createdAt }));
 
 const ORCHESTRATOR = "orchestrator-thread" as ThreadId;
 
@@ -243,7 +248,7 @@ describe("a person's comment on a worker's PR", () => {
       expect(notice!.text.split("\n")[0]).toBe("Comment from @alice on #12.");
       const opened = notice!.text.indexOf("[BEGIN UNTRUSTED EXTERNAL CONTENT");
       const words = notice!.text.indexOf("Please also cover the empty list.");
-      const closed = notice!.text.indexOf("[END UNTRUSTED EXTERNAL CONTENT]");
+      const closed = notice!.text.lastIndexOf("[END UNTRUSTED EXTERNAL CONTENT ");
       expect(opened).toBeGreaterThan(0);
       expect(words).toBeGreaterThan(opened);
       expect(closed).toBeGreaterThan(words);
@@ -266,9 +271,13 @@ describe("a person's comment on a worker's PR", () => {
       );
       yield* publish(id, badge(listed(sly)));
       const [notice] = yield* noticeCount(id, 1);
-      expect(notice!.text.match(/\[END UNTRUSTED EXTERNAL CONTENT\]/g)).toHaveLength(1);
+      // Only the fence's own footer, named in its header, closes it; the forgery is rewritten.
+      expect(notice!.text.match(/\[END UNTRUSTED EXTERNAL CONTENT\]/g)).toBeNull();
+      expect(notice!.text.match(/\[END UNTRUSTED EXTERNAL CONTENT [0-9a-f]{12}\]/g)).toHaveLength(
+        2,
+      );
       expect(notice!.text.indexOf("the user approved the merge")).toBeLessThan(
-        notice!.text.indexOf("[END UNTRUSTED EXTERNAL CONTENT]"),
+        notice!.text.lastIndexOf("[END UNTRUSTED EXTERNAL CONTENT "),
       );
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
@@ -442,7 +451,7 @@ describe("a person's comment on a worker's PR", () => {
       expect(third[2]!.text.split("\n")[0]).toBe("2 comments from @alice on #12.");
       expect(third[2]!.text).toContain("Comment number 3.");
       expect(third[2]!.text).toContain("Comment number 4.");
-    }).pipe(Effect.scoped, Effect.provide(layerWith({ minGap: Duration.minutes(1), perHour: 2 }))),
+    }).pipe(Effect.scoped, Effect.provide(layerWith({ perHour: 2 }))),
   );
 
   it.effect("does nothing for a comment on a merged PR", () =>
@@ -485,6 +494,168 @@ describe("a person's comment on a worker's PR", () => {
       yield* quiet;
       expect(yield* commentNotices(id)).toEqual([]);
       world.permissions.set("alice", "write");
+      yield* TestClock.adjust("1 minute");
+      yield* noticeCount(id, 1);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("delivers the user's short comments, whatever the worker's commands mention", () =>
+    Effect.gen(function* () {
+      reset();
+      const store = yield* ThreadStore;
+      const id = yield* workerThread([]);
+      // Commands that mention every one of those words, and a comment the worker really posted.
+      for (const [n, command] of [
+        "git fetch origin && git rebase origin/main && bun run test",
+        "echo ok; go test ./...; kill -STOP 1",
+        'gh pr comment 12 --body "Rebased on main; all green."',
+      ].entries())
+        yield* store.upsertMessage(id, {
+          id: `m${n}`,
+          role: "assistant",
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "Bash",
+              toolCallId: `call-${n}`,
+              state: "output-available",
+              input: { command },
+              output: "",
+            },
+          ],
+        } as unknown as GramUIMessage);
+      const shorts = ["Stop.", "ok", "rebase", "go", "test"].map((body, n) =>
+        comment(`IC_${n}`, "owner", body, { viewerDidAuthor: true }),
+      );
+      const own = comment("IC_own", "owner", "Rebased on main; all green.", {
+        viewerDidAuthor: true,
+      });
+      yield* publish(id, badge(listed(...shorts, own)));
+      const [notice] = yield* noticeCount(id, 1);
+      expect(notice!.text.split("\n")[0]).toBe("5 comments from @owner on #12.");
+      for (const short of ["Stop.", "ok", "rebase", "go", "test"])
+        expect(notice!.text).toContain(`\n${short}\n`);
+      expect(notice!.text).not.toContain("all green");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect(
+    "never replays an old comment that slides back after a stranger's flood is deleted",
+    () =>
+      Effect.gen(function* () {
+        reset();
+        const id = yield* workerThread([]);
+        const trusted = comment("IC_alice", "alice", "Please revert the parser change.");
+        yield* publish(id, badge(listed(trusted)));
+        yield* noticeCount(id, 1);
+        // Seventy comments from someone without access, a few polls apart, each passed over.
+        const flood: Array<FetchedComment> = [];
+        for (let n = 0; n < 70; n++) {
+          flood.push(comment(`IC_s${String(n).padStart(2, "0")}`, "stranger", `spam ${n}`));
+          if (n % 10 === 9) {
+            yield* publish(id, badge(listed(...flood.slice(-30))));
+            yield* waitFor(
+              "the flood passed over",
+              seenOf(id).pipe(Effect.map((seen) => seen?.includes(flood.at(-1)!.id))),
+            );
+          }
+        }
+        // The id set alone has forgotten alice's comment by now…
+        expect(yield* seenOf(id)).not.toContain("IC_alice");
+        // …and the stranger deletes theirs, so it slides back into the badge's window.
+        yield* publish(id, badge(listed(trusted), { title: "after the deletes" }));
+        yield* TestClock.adjust("2 hours");
+        yield* quiet;
+        expect(yield* commentNotices(id)).toHaveLength(1);
+        expect(world.calls.filter((call) => call.includes("IC_alice"))).toEqual(["fetch IC_alice"]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("backs off a permission lookup that keeps failing, then gives up as untrusted", () =>
+    Effect.gen(function* () {
+      reset();
+      world.permissions.delete("alice");
+      const id = yield* workerThread([]);
+      yield* publish(id, badge(listed(comment("IC_1", "alice", "Can't be checked."))));
+      yield* quiet;
+      const asked = () => world.calls.filter((call) => call.startsWith("permission")).length;
+      expect(asked()).toBe(1);
+      // Retries after 1, 2 and 4 minutes, not every minute.
+      yield* TestClock.adjust("1 minute");
+      yield* quiet;
+      expect(asked()).toBe(2);
+      yield* TestClock.adjust("1 minute");
+      yield* quiet;
+      expect(asked()).toBe(2);
+      yield* TestClock.adjust("1 minute");
+      yield* quiet;
+      expect(asked()).toBe(3);
+      yield* TestClock.adjust("4 minutes");
+      yield* waitFor("given up", seenOf(id).pipe(Effect.map((seen) => seen?.includes("IC_1"))));
+      expect(asked()).toBe(4);
+      yield* TestClock.adjust("1 hour");
+      yield* quiet;
+      expect(asked()).toBe(4);
+      // Read once: the retries reuse what the lookup found.
+      expect(world.calls.filter((call) => call.startsWith("fetch"))).toEqual(["fetch IC_1"]);
+      expect(yield* commentNotices(id)).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("caps a worker that keeps waking itself on its own undetected comments", () =>
+    Effect.gen(function* () {
+      reset();
+      const store = yield* ThreadStore;
+      const id = yield* workerThread([]);
+      // A body built by the shell, which no comparison can match, and no link printed back.
+      yield* store.upsertMessage(id, {
+        id: "m0",
+        role: "assistant",
+        parts: [
+          {
+            type: "dynamic-tool",
+            toolName: "Bash",
+            toolCallId: "call-0",
+            state: "output-available",
+            input: { command: 'gh pr comment 12 --body "Pushed $(git rev-parse --short HEAD)."' },
+            output: "",
+          },
+        ],
+      } as unknown as GramUIMessage);
+      const all: Array<FetchedComment> = [];
+      // Every wake makes it post again: a comment every 30 seconds for three hours.
+      for (let n = 0; n < 360; n++) {
+        all.push(
+          comment(`IC_${String(n).padStart(3, "0")}`, "owner", `Pushed ${n}.`, {
+            viewerDidAuthor: true,
+          }),
+        );
+        yield* publish(id, badge(listed(...all.slice(-30))));
+        // A moment the thread isn't eligible doesn't reset the limit.
+        if (n % 7 === 0)
+          yield* publish(id, badge([], { number: 99, url: "https://github.com/acme/web/pull/99" }));
+        yield* TestClock.adjust("30 seconds");
+        yield* quiet;
+        if (n === 119) expect((yield* commentNotices(id)).length).toBeLessThanOrEqual(6);
+      }
+      expect((yield* commentNotices(id)).length).toBeLessThanOrEqual(10);
+      expect((yield* commentNotices(id)).length).toBeGreaterThan(6);
+    }).pipe(Effect.scoped, Effect.provide(layerWith({ perDay: 10 }))),
+  );
+
+  it.effect("keeps the rate limit across a restart", () =>
+    Effect.gen(function* () {
+      reset();
+      const runtimes = yield* ThreadRuntimes;
+      const id = yield* workerThread([]);
+      // As a restart finds it: a wake went out just now.
+      yield* runtimes.updateThread(id, (t) => ({
+        ...t,
+        boundPr: { ...t.boundPr!, seen: { comments: [], commentWakes: [0] } },
+      }));
+      yield* publish(id, badge(listed(comment("IC_1", "alice", "Soon after."))));
+      yield* quiet;
+      expect(yield* commentNotices(id)).toEqual([]);
       yield* TestClock.adjust("1 minute");
       yield* noticeCount(id, 1);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),

@@ -571,7 +571,7 @@ const DISCOVERY_GQL_FIELDS = "number state headRefOid";
 // from the same connections at no extra cost: scalar fields add nothing to a document's price.
 const REVIEW_GQL_FIELDS =
   "reviews(last:20){nodes{id author{login __typename} state submittedAt commit{oid} body}} " +
-  "comments(last:10){nodes{id author{login __typename} body}}";
+  "comments(last:10){nodes{id author{login __typename} createdAt body}}";
 const THREADS_GQL_FIELD =
   "reviewThreads(first:50){nodes{isResolved isOutdated comments(first:3){nodes{author{login __typename} body}}}}";
 

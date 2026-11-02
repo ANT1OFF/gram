@@ -1,14 +1,16 @@
 // A person's comment on a worker's PR wakes the worker. It rides the review monitor's poll: the
-// badge read with the reviews lists people's comments by id, and only a new id costs a lookup of
-// what it says (one `gh api graphql` call for every new comment together) and of its author's
-// permission (one `gh api` call per author, kept ten minutes). The comment reaches the worker
-// fenced as untrusted external content, and grants nothing.
+// badge read with the reviews lists people's comments by id and time, and only a new one costs a
+// lookup of what it says (one `gh api graphql` call for every new comment together) and of its
+// author's permission (one `gh api` call per author, kept ten minutes). The comment reaches the
+// worker fenced as untrusted external content, and grants nothing.
 
 import {
   effectiveCheckout,
+  MONITOR_MARK_COMMENT_WAKES_MAX,
   MONITOR_MARK_COMMENTS_MAX,
   reviewBotsOf,
   type BoundPr,
+  type MonitorMark,
   type PersonComment,
   type PrStatus,
   type Thread,
@@ -29,32 +31,38 @@ import { PrCommentReads } from "../git/pr-comments.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { postedIn, type Posted } from "./posted-comments.ts";
 import {
   commentNoticeText,
   isOwnComment,
   OWN_COMMENT_LOOKBACK_MS,
   passOver,
-  toolInputs,
   type PassReason,
 } from "./pr-comment-rules.ts";
 
-/** How often a PR's comments may wake its worker. */
+/** How often a PR's comments may wake its worker, and how long a failed lookup is retried. */
 export interface PrCommentWakeLimits {
   /** The least time between two wakes. */
   readonly minGap: Duration.Duration;
   /** The most wakes in any hour. */
   readonly perHour: number;
-  /** How long a lookup that failed waits before it is tried again. */
+  /** The most wakes in any day. */
+  readonly perDay: number;
+  /** How long the first retry of a failed lookup waits; each next one waits twice as long. */
   readonly retryAfter: Duration.Duration;
+  /** Failed lookups of one comment before it is given up as not trusted. */
+  readonly attempts: number;
 }
 
 export const DEFAULT_PR_COMMENT_WAKE_LIMITS: PrCommentWakeLimits = {
   minGap: Duration.minutes(1),
   perHour: 6,
+  perDay: 24,
   retryAfter: Duration.minutes(1),
+  attempts: 4,
 };
 
-/** The rate limit and retry delay; tests set their own. */
+/** The rate limit and retries; tests set their own. */
 export const PrCommentWakeConfig = Context.Reference<PrCommentWakeLimits>(
   "@gram/server/PrCommentWakeConfig",
   { defaultValue: () => DEFAULT_PR_COMMENT_WAKE_LIMITS },
@@ -64,19 +72,47 @@ export const PrCommentWakeConfig = Context.Reference<PrCommentWakeLimits>(
 export const PR_COMMENT_KEY = "pr-comment:";
 
 const HOUR_MS = 60 * 60_000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Where a comment sits in a PR's order: when it was posted, then its id. */
+interface Stamp {
+  readonly at: string;
+  readonly id: string;
+}
+
+/** Whether `a` comes after `b`; everything comes after nothing. */
+const isAfter = (a: Stamp, b: Stamp | undefined): boolean =>
+  b === undefined || a.at > b.at || (a.at === b.at && a.id > b.id);
+
+const latest = (stamps: ReadonlyArray<Stamp>): Stamp | undefined =>
+  stamps.reduce<Stamp | undefined>((max, s) => (isAfter(s, max) ? s : max), undefined);
+
+const stampOf = (c: PersonComment): Stamp => ({ at: c.at, id: c.id });
+
+/** A new comment not decided yet. */
+interface Pending {
+  readonly listed: PersonComment;
+  /** What it says, once read. */
+  fetched?: FetchedComment | undefined;
+  /** Lookups of it that failed so far. */
+  attempts: number;
+  /** Not tried again before this, epoch ms, after a failed lookup. */
+  nextAt?: number | undefined;
+}
 
 /** What the watch keeps of one thread's PR. */
 interface Watch {
-  /** `repo#number`, lower-cased: what `seen` is of. */
+  /** `repo#number`, lower-cased: what the rest is of. */
   readonly pr: string;
-  /** Comments delivered or passed over, by id, oldest first. */
+  /** The newest comment handled with nothing older still open: anything not after it is old. */
+  upTo: Stamp | undefined;
+  /** Comments handled after `upTo` while an older one was still open, which `upTo` waits on. */
+  handled: Array<Stamp>;
+  /** Comments delivered or passed over, by id, oldest first: a guard beside `upTo`. */
   seen: Array<string>;
-  /** New comments not yet looked up or decided, by id. */
-  readonly pending: Map<string, PersonComment>;
+  readonly pending: Map<string, Pending>;
   /** Comments that will wake the worker once the rate limit allows. */
-  ready: Array<FetchedComment>;
-  /** When each wake in the past hour went out, epoch ms. */
-  wakes: Array<number>;
+  ready: Array<{ readonly listed: PersonComment; readonly comment: FetchedComment }>;
 }
 
 const prKey = (bound: Pick<BoundPr, "repo" | "number">) =>
@@ -120,10 +156,16 @@ export const PrCommentWakesLive = Layer.effectDiscard(
     const limits = yield* PrCommentWakeConfig;
 
     const watches = new Map<ThreadId, Watch>();
+    /**
+     * When comments woke each PR's worker, by `repo#number`. Apart from the watches, so a moment
+     * the thread isn't eligible doesn't reset the rate limit; kept with the mark for a restart.
+     */
+    const wakes = new Map<string, Array<number>>();
     const due = yield* Queue.unbounded<ThreadId>();
     /** Threads with a look in `due` already. */
     const queued = new Set<ThreadId>();
-    const timers = yield* FiberMap.make<ThreadId>();
+    const wakeTimers = yield* FiberMap.make<ThreadId>();
+    const retryTimers = yield* FiberMap.make<ThreadId>();
 
     const offer = (threadId: ThreadId) =>
       Effect.suspend(() => {
@@ -132,8 +174,12 @@ export const PrCommentWakesLive = Layer.effectDiscard(
         return Queue.offer(due, threadId).pipe(Effect.asVoid);
       });
 
-    /** Looks again after `delay`, unless a look is already waiting to run. */
-    const later = (threadId: ThreadId, delay: Duration.Duration) =>
+    /** Looks again after `delay`, unless a look on the same timer is already waiting. */
+    const later = (
+      timers: FiberMap.FiberMap<ThreadId>,
+      threadId: ThreadId,
+      delay: Duration.Duration,
+    ) =>
       FiberMap.run(timers, threadId, Effect.sleep(delay).pipe(Effect.andThen(offer(threadId))), {
         onlyIfMissing: true,
       }).pipe(Effect.asVoid);
@@ -141,10 +187,35 @@ export const PrCommentWakesLive = Layer.effectDiscard(
     const forget = (threadId: ThreadId) =>
       Effect.gen(function* () {
         watches.delete(threadId);
-        yield* FiberMap.remove(timers, threadId);
+        yield* FiberMap.remove(wakeTimers, threadId);
+        yield* FiberMap.remove(retryTimers, threadId);
       });
 
-    /** Keeps `watch.seen` with the binding, so a restart neither forgets nor repeats a delivery. */
+    /** Moves `upTo` past what was handled, as far as the oldest comment still open allows. */
+    const advance = (watch: Watch) => {
+      const open = [
+        ...[...watch.pending.values()].map((p) => stampOf(p.listed)),
+        ...watch.ready.map((r) => stampOf(r.listed)),
+      ];
+      const oldestOpen = open.reduce<Stamp | undefined>(
+        (min, s) => (min === undefined || isAfter(min, s) ? s : min),
+        undefined,
+      );
+      const folded = watch.handled.filter(
+        (s) => oldestOpen === undefined || isAfter(oldestOpen, s),
+      );
+      const top = latest(folded);
+      if (top !== undefined && isAfter(top, watch.upTo)) watch.upTo = top;
+      watch.handled = watch.handled.filter((s) => isAfter(s, watch.upTo));
+    };
+
+    /** Marks `listed` handled: delivered or passed over. */
+    const handle = (watch: Watch, listed: PersonComment) => {
+      watch.seen.push(listed.id);
+      watch.handled.push(stampOf(listed));
+    };
+
+    /** Keeps what the watch handled with the binding, so a restart neither forgets nor repeats it. */
     const remember = (
       threadId: ThreadId,
       bound: BoundPr,
@@ -152,11 +223,20 @@ export const PrCommentWakesLive = Layer.effectDiscard(
       listed: ReadonlySet<string>,
     ) =>
       Effect.gen(function* () {
+        advance(watch);
         watch.seen = trimmed(watch.seen, listed);
-        const comments = watch.seen;
+        const now = yield* Clock.currentTimeMillis;
+        const woke = (wakes.get(watch.pr) ?? [])
+          .filter((at) => now - at < DAY_MS)
+          .slice(-MONITOR_MARK_COMMENT_WAKES_MAX);
+        const fields: MonitorMark = {
+          comments: watch.seen,
+          ...(watch.upTo === undefined ? {} : { commentsUpTo: watch.upTo }),
+          ...(woke.length === 0 ? {} : { commentWakes: woke }),
+        };
         const thread = yield* store.getThread(threadId).pipe(Effect.option);
         if (Option.isNone(thread)) return;
-        const next = (t: Thread) => withMonitorMark(t, bound, { ...markOf(t, bound), comments });
+        const next = (t: Thread) => withMonitorMark(t, bound, { ...markOf(t, bound), ...fields });
         if (next(thread.value) === thread.value) return;
         yield* runtimes.updateThread(threadId, next).pipe(Effect.ignore);
       });
@@ -176,91 +256,126 @@ export const PrCommentWakesLive = Layer.effectDiscard(
         }
         const listed = badge.personComments ?? [];
         const listedIds = new Set(listed.map((c) => c.id));
-        const kept = bound.seen?.comments;
+        const kept = bound.seen;
+        if (!wakes.has(pr)) wakes.set(pr, [...(kept?.commentWakes ?? [])]);
         if (watch === undefined) {
           // The first look with nothing kept is a baseline: what's there already wakes nobody.
+          const baseline = kept?.comments === undefined;
           watch = {
             pr,
-            seen: kept === undefined ? listed.map((c) => c.id) : [...kept],
+            upTo: baseline ? latest(listed.map(stampOf)) : kept?.commentsUpTo,
+            handled: [],
+            seen: baseline ? listed.map((c) => c.id) : [...(kept?.comments ?? [])],
             pending: new Map(),
             ready: [],
-            wakes: [],
           };
           watches.set(thread.id, watch);
-          if (kept === undefined) return yield* remember(thread.id, bound, watch, listedIds);
+          if (baseline) return yield* remember(thread.id, bound, watch, listedIds);
         }
+        const w = watch;
+        // New means after the newest handled, and not handled by id either: a comment that slides
+        // back into the badge's window when newer ones are deleted is old, whatever `seen` forgot.
         const fresh = listed.filter(
           (c) =>
-            !watch.seen.includes(c.id) &&
-            !watch.pending.has(c.id) &&
-            !watch.ready.some((r) => r.id === c.id),
+            isAfter(stampOf(c), w.upTo) &&
+            !w.seen.includes(c.id) &&
+            !w.pending.has(c.id) &&
+            !w.ready.some((r) => r.listed.id === c.id),
         );
         // A merged or closed PR's comments do nothing: resuming finished work is the user's call.
         if (badge.state !== "OPEN") {
-          if (fresh.length === 0 && watch.pending.size === 0 && watch.ready.length === 0) return;
+          if (fresh.length === 0 && w.pending.size === 0 && w.ready.length === 0) return;
           for (const each of fresh) yield* passed(thread.id, each.id, "closed");
-          for (const id of watch.pending.keys()) yield* passed(thread.id, id, "closed");
-          watch.seen.push(
-            ...fresh.map((c) => c.id),
-            ...watch.pending.keys(),
-            ...watch.ready.map((r) => r.id),
-          );
-          watch.pending.clear();
-          watch.ready = [];
-          yield* FiberMap.remove(timers, thread.id);
-          return yield* remember(thread.id, bound, watch, listedIds);
+          for (const id of w.pending.keys()) yield* passed(thread.id, id, "closed");
+          for (const each of [
+            ...fresh,
+            ...[...w.pending.values()].map((p) => p.listed),
+            ...w.ready.map((r) => r.listed),
+          ])
+            handle(w, each);
+          w.pending.clear();
+          w.ready = [];
+          yield* FiberMap.remove(wakeTimers, thread.id);
+          yield* FiberMap.remove(retryTimers, thread.id);
+          return yield* remember(thread.id, bound, w, listedIds);
         }
         if (fresh.length === 0) return;
-        for (const each of fresh) watch.pending.set(each.id, each);
+        for (const each of fresh) w.pending.set(each.id, { listed: each, attempts: 0 });
         yield* offer(thread.id);
       });
 
-    /** The words of every tool call `threadId` made since `since`. */
-    const inputsSince = (threadId: ThreadId, since: number) =>
+    /** What `threadId` posted in its tool calls since `since`, from the turn already running then. */
+    const postedSince = (threadId: ThreadId, since: number) =>
       Effect.gen(function* () {
         const marks = yield* store.messageMarks(threadId);
-        const from = marks.find((mark) => mark.at === undefined || mark.at >= since);
-        if (from === undefined) return [];
+        if (marks.length === 0) return undefined;
+        const first = marks.findIndex((mark) => mark.at === undefined || mark.at >= since);
+        // The message before the window may be a turn that started earlier and posted inside it.
+        const from = marks[first === -1 ? marks.length - 1 : Math.max(0, first - 1)]!;
         const rows = yield* store.listMessagesFrom(threadId, from.seq);
-        return toolInputs(rows.map((row) => row.message));
+        return postedIn(rows.map((row) => row.message));
       });
 
-    /** Whether `comment`, posted with the user's login, is the worker's own or its orchestrator's. */
+    /**
+     * Whether `comment`, posted with the user's login, is a Gram thread's own: the worker's, its
+     * orchestrator's, or a sibling worker's under the same orchestrator.
+     */
     const ownComment = (thread: Thread, comment: FetchedComment) =>
       Effect.gen(function* () {
-        const posted = Date.parse(comment.createdAt);
-        const since = Number.isNaN(posted) ? 0 : posted - OWN_COMMENT_LOOKBACK_MS;
-        const threads = [thread.id, ...(thread.spawnedBy ? [thread.spawnedBy.threadId] : [])];
+        const postedAt = Date.parse(comment.createdAt);
+        const since = Number.isNaN(postedAt) ? 0 : postedAt - OWN_COMMENT_LOOKBACK_MS;
+        const orchestrator = thread.spawnedBy?.threadId;
+        const siblings =
+          orchestrator === undefined
+            ? []
+            : (yield* store.listThreads)
+                .filter((t) => t.spawnedBy?.threadId === orchestrator && t.id !== thread.id)
+                .map((t) => t.id);
+        const threads = [
+          thread.id,
+          ...(orchestrator === undefined ? [] : [orchestrator]),
+          ...siblings,
+        ];
         for (const id of threads) {
-          const inputs = yield* inputsSince(id, since).pipe(Effect.orElseSucceed(() => []));
-          if (isOwnComment(comment, inputs)) return true;
+          const posted: Posted | undefined = yield* postedSince(id, since).pipe(
+            Effect.orElseSucceed(() => undefined),
+          );
+          if (posted !== undefined && isOwnComment(comment, posted)) return true;
         }
         return false;
       });
+
+    /** How long the rate limit holds the next wake of `pr` from `now`; 0 when it may go. */
+    const holdFor = (pr: string, now: number) => {
+      const woke = (wakes.get(pr) ?? []).filter((at) => now - at < DAY_MS);
+      wakes.set(pr, woke);
+      const hour = woke.filter((at) => now - at < HOUR_MS);
+      const last = woke.at(-1);
+      const waitGap = last === undefined ? 0 : last + Duration.toMillis(limits.minGap) - now;
+      const waitHour = hour.length < limits.perHour ? 0 : hour[0]! + HOUR_MS - now;
+      const waitDay = woke.length < limits.perDay ? 0 : woke[0]! + DAY_MS - now;
+      return Math.max(waitGap, waitHour, waitDay, 0);
+    };
 
     /** Sends what is ready, as one notice, when the rate limit allows; otherwise waits for it. */
     const deliver = (thread: Thread, bound: BoundPr, watch: Watch, listed: ReadonlySet<string>) =>
       Effect.gen(function* () {
         if (watch.ready.length === 0) return;
         const now = yield* Clock.currentTimeMillis;
-        watch.wakes = watch.wakes.filter((at) => now - at < HOUR_MS);
-        const last = watch.wakes.at(-1);
-        const gap = Duration.toMillis(limits.minGap);
-        const waitGap = last === undefined ? 0 : last + gap - now;
-        const waitHour = watch.wakes.length < limits.perHour ? 0 : watch.wakes[0]! + HOUR_MS - now;
-        const wait = Math.max(waitGap, waitHour);
+        const wait = holdFor(watch.pr, now);
         if (wait > 0) {
           yield* Effect.logDebug("pr comment wake held by its rate limit").pipe(
             Effect.annotateLogs({ threadId: thread.id, pr: bound.number, waitMs: wait }),
           );
-          return yield* later(thread.id, Duration.millis(wait));
+          return yield* later(wakeTimers, thread.id, Duration.millis(wait));
         }
         // Merged or closed while it waited: the next state the watch sees passes these over.
         if ((yield* publisher.badgeFor(thread))?.state !== "OPEN") return;
-        const comments = watch.ready;
+        const ready = watch.ready;
+        const comments = ready.map((r) => r.comment);
         const text = commentNoticeText(bound.repo, bound.number, comments);
         const sent = yield* runtimes
-          .sendNotice(thread.id, `${PR_COMMENT_KEY}${prKey(bound)}:${comments[0]!.id}`, { text })
+          .sendNotice(thread.id, `${PR_COMMENT_KEY}${watch.pr}:${comments[0]!.id}`, { text })
           .pipe(
             Effect.as(true),
             Effect.catch((error) =>
@@ -276,10 +391,14 @@ export const PrCommentWakesLive = Layer.effectDiscard(
         );
         // Sent or not, these are done with: a thread that has gone has no one to tell.
         watch.ready = [];
-        watch.seen.push(...comments.map((c) => c.id));
-        if (sent) watch.wakes.push(now);
+        for (const each of ready) handle(watch, each.listed);
+        if (sent) wakes.set(watch.pr, [...(wakes.get(watch.pr) ?? []), now]);
         yield* remember(thread.id, bound, watch, listed);
       });
+
+    /** The wait before the next try of a lookup that has failed `attempts` times. */
+    const backoff = (attempts: number) =>
+      Duration.millis(Duration.toMillis(limits.retryAfter) * 2 ** Math.max(attempts - 1, 0));
 
     const look = (threadId: ThreadId) =>
       Effect.gen(function* () {
@@ -296,50 +415,81 @@ export const PrCommentWakesLive = Layer.effectDiscard(
         if (badge.state !== "OPEN") return;
         const cwd = effectiveCheckout(thread.value).path;
         const bots = reviewBotsOf(yield* store.getSettings);
+        const failed: Array<Pending> = [];
         if (watch.pending.size > 0) {
-          const ids = [...watch.pending.keys()].slice(0, 30);
-          const fetched = yield* asBackground(reads.fetch(cwd, ids)).pipe(Effect.option);
-          if (Option.isNone(fetched)) {
-            yield* deliver(thread.value, bound, watch, listed);
-            return yield* later(threadId, limits.retryAfter);
-          }
-          const byId = new Map(fetched.value.map((c) => [c.id, c]));
-          let retry = false;
-          for (const id of ids) {
-            const comment = byId.get(id);
-            const listedAs = watch.pending.get(id);
-            let why: PassReason | undefined =
-              comment === undefined ? "gone" : passOver(comment, bots);
-            if (
-              why === undefined &&
-              comment!.viewerDidAuthor &&
-              (yield* ownComment(thread.value, comment!))
-            )
-              why = "own";
-            if (why === undefined) {
-              // The author as the badge listed it and as the lookup found it must agree.
-              const author = comment!.author;
-              if (listedAs !== undefined && listedAs.author.toLowerCase() !== author.toLowerCase())
-                why = "untrusted";
-              else {
-                const permission = yield* asBackground(
-                  reads.permission(cwd, bound.repo, author),
-                ).pipe(Effect.option);
-                if (Option.isNone(permission)) {
-                  retry = true;
-                  continue;
-                }
-                if (!canWrite(permission.value)) why = "untrusted";
+          const now = yield* Clock.currentTimeMillis;
+          // One backing off after a failed lookup waits its turn, whatever else wakes the look.
+          const batch = [...watch.pending.values()]
+            .filter((p) => p.nextAt === undefined || p.nextAt <= now)
+            .slice(0, 30);
+          // What was read before isn't read again.
+          const unread = batch.filter((p) => p.fetched === undefined).map((p) => p.listed.id);
+          if (unread.length > 0) {
+            const fetched = yield* asBackground(reads.fetch(cwd, unread)).pipe(Effect.option);
+            if (Option.isNone(fetched)) {
+              for (const p of batch) if (p.fetched === undefined) failed.push(p);
+            } else {
+              const byId = new Map(fetched.value.map((c) => [c.id, c]));
+              for (const p of batch) {
+                if (p.fetched !== undefined) continue;
+                const found = byId.get(p.listed.id);
+                if (found === undefined) {
+                  watch.pending.delete(p.listed.id);
+                  yield* passed(threadId, p.listed.id, "gone");
+                  handle(watch, p.listed);
+                } else p.fetched = found;
               }
             }
-            watch.pending.delete(id);
-            if (why !== undefined) {
-              yield* passed(threadId, id, why);
-              watch.seen.push(id);
-            } else watch.ready.push(comment!);
           }
-          if (watch.pending.size > 0 && !retry) yield* offer(threadId);
-          if (retry) yield* later(threadId, limits.retryAfter);
+          for (const p of batch) {
+            const comment = p.fetched;
+            if (comment === undefined || !watch.pending.has(p.listed.id)) continue;
+            let why: PassReason | undefined = passOver(comment, bots);
+            if (
+              why === undefined &&
+              comment.viewerDidAuthor &&
+              (yield* ownComment(thread.value, comment))
+            )
+              why = "own";
+            // The author as the badge listed it and as the lookup found it must agree.
+            if (why === undefined && p.listed.author.toLowerCase() !== comment.author.toLowerCase())
+              why = "untrusted";
+            if (why === undefined) {
+              const permission = yield* asBackground(
+                reads.permission(cwd, bound.repo, comment.author),
+              ).pipe(Effect.option);
+              if (Option.isNone(permission)) {
+                failed.push(p);
+                continue;
+              }
+              if (!canWrite(permission.value)) why = "untrusted";
+            }
+            watch.pending.delete(p.listed.id);
+            if (why !== undefined) {
+              yield* passed(threadId, p.listed.id, why);
+              handle(watch, p.listed);
+            } else watch.ready.push({ listed: p.listed, comment });
+          }
+          let retryIn: Duration.Duration | undefined;
+          for (const p of failed) {
+            p.attempts++;
+            if (p.attempts >= limits.attempts) {
+              // Given up: never trusted. One line, with no author and nothing the comment says.
+              watch.pending.delete(p.listed.id);
+              handle(watch, p.listed);
+              yield* Effect.logWarning("pr comment not verified; passed over as untrusted").pipe(
+                Effect.annotateLogs({ threadId, id: p.listed.id, attempts: p.attempts }),
+              );
+              continue;
+            }
+            const wait = backoff(p.attempts);
+            p.nextAt = now + Duration.toMillis(wait);
+            if (retryIn === undefined || Duration.toMillis(wait) < Duration.toMillis(retryIn))
+              retryIn = wait;
+          }
+          if (retryIn !== undefined) yield* later(retryTimers, threadId, retryIn);
+          // More than one lookup holds: the rest go next.
+          else if (batch.length === 30) yield* offer(threadId);
           yield* remember(threadId, bound, watch, listed);
         }
         yield* deliver(thread.value, bound, watch, listed);

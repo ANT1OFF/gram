@@ -458,7 +458,12 @@ describe("GraphQL", () => {
           headRefOid: "deadbeef",
           comments: {
             nodes: [
-              { id: "IC_1", author: { login: "alice", __typename: "User" }, body: "Rename it." },
+              {
+                id: "IC_1",
+                author: { login: "alice", __typename: "User" },
+                createdAt: "2026-11-02T10:00:00Z",
+                body: "Rename it.",
+              },
             ],
           },
           reviews: { nodes: [] },
@@ -466,9 +471,11 @@ describe("GraphQL", () => {
         const badge = yield* buildPrStatus([node], anchored).pipe(
           Effect.provideService(Proc, proc),
         );
-        expect(badge?.personComments).toEqual([{ id: "IC_1", author: "alice" }]);
+        expect(badge?.personComments).toEqual([
+          { id: "IC_1", author: "alice", at: "2026-11-02T10:00:00Z" },
+        ]);
         expect(prGraphqlQuery([{ kind: "pr", fields: "review" }])).toContain(
-          "comments(last:10){nodes{id author{login __typename} body}}",
+          "comments(last:10){nodes{id author{login __typename} createdAt body}}",
         );
       }),
   );

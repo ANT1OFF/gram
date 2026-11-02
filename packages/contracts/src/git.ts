@@ -27,6 +27,8 @@ export const MAX_PERSON_COMMENTS = 30;
 export const PersonComment = Schema.Struct({
   id: Schema.String,
   author: Schema.String,
+  /** When it was posted (a review's `submittedAt`), ISO 8601; what orders it after another. */
+  at: Schema.String,
 });
 export type PersonComment = typeof PersonComment.Type;
 
