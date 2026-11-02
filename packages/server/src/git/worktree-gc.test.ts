@@ -9,11 +9,12 @@ import type {
   ThreadStatus,
   WorkspaceId,
 } from "@gram/contracts";
-import { Pr, ProcLive } from "@gram/git";
+import { Pr, PrLookupError, ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
 import {
+  ARCHIVED_GRACE_MS,
   asChecked,
   checkMissingWorktree,
   checkWorktree,
@@ -89,7 +90,12 @@ const withPr = (answer: PrStatus | undefined) =>
     ),
   );
 
-const CLEAN_PUSHED_SETTLED: WorktreeCheck = { clean: true, pushed: true, prSettled: true };
+const CLEAN_PUSHED_SETTLED: WorktreeCheck = {
+  clean: true,
+  pushed: true,
+  prSettled: true,
+  noPrOpen: true,
+};
 
 describe("sweepDue", () => {
   it("frees an archived or merged worker after N days and removes it after M", () => {
@@ -153,12 +159,75 @@ describe("sweepDue", () => {
     expect(sweepDue(elsewhere, SWEEP, NOW)).toBeUndefined();
   });
 
-  it("never removes a worker with no PR to ask about, only frees it", () => {
+  it("removes an archived merged worker after the grace, though its badge was dropped", () => {
+    // Archived, the publisher drops a thread's state once GitHub answers its PR merged.
+    const archived = (finishedAgo: number, overrides: Partial<Thread> = {}) =>
+      facts({
+        thread: thread({
+          completedReason: "prMerged",
+          completedAt: NOW - finishedAgo,
+          lastActivityAt: NOW - finishedAgo,
+          settledMerge: { merged: [{ number: 7, url: "https://github.com/o/r/pull/7" }] },
+          ...overrides,
+        }),
+      });
+    expect(sweepDue(archived(MERGED_GRACE_MS - 1), SWEEP, NOW)).toBeUndefined();
+    expect(sweepDue(archived(MERGED_GRACE_MS), SWEEP, NOW)).toEqual({ free: false, remove: true });
+    // Not merged, or following another PR, or a badge still open: the full M days.
+    const later: ReadonlyArray<[string, SweepFacts]> = [
+      ["completed by hand", archived(DAY, { completedReason: "user" })],
+      ["never completed", facts({ thread: thread({ lastActivityAt: NOW - DAY }) })],
+      [
+        "following another PR",
+        archived(DAY, { extraPrs: [{ repo: "o/lib", number: 9, monitor: false }] }),
+      ],
+      ["not archived", { ...archived(DAY, { parked: false }), status: "idle" }],
+      ["with its PR open again", { ...archived(DAY), badge: badge("OPEN") }],
+    ];
+    for (const [what, input] of later) {
+      expect(sweepDue(input, SWEEP, NOW)?.remove ?? false, what).toBe(false);
+    }
+  });
+
+  it("removes an archived worker with no PR a day after, only once its branch has none open", () => {
     const { boundPr: _, ...unbound } = thread();
-    expect(sweepDue(facts({ thread: unbound }), SWEEP, NOW)).toEqual({
+    const archived = (ago: number) => facts({ thread: { ...unbound, lastActivityAt: NOW - ago } });
+    expect(sweepDue(archived(ARCHIVED_GRACE_MS - 1), SWEEP, NOW)).toBeUndefined();
+    expect(sweepDue(archived(ARCHIVED_GRACE_MS), SWEEP, NOW)).toEqual({
+      free: false,
+      remove: true,
+      withoutPr: true,
+    });
+    expect(sweepDue(archived(5 * DAY), SWEEP, NOW)).toEqual({
+      free: true,
+      remove: true,
+      withoutPr: true,
+    });
+  });
+
+  it("never removes a thread with no PR that isn't an archived worker", () => {
+    const { boundPr: _, ...unbound } = thread();
+    // A worker done with no PR that nobody archived: not the sweep's at all.
+    const done = facts({
+      thread: { ...unbound, parked: false, completedReason: "user", completedAt: NOW - 5 * DAY },
+      status: "idle",
+    });
+    expect(sweepDue(done, SWEEP, NOW)).toBeUndefined();
+    // A plain thread archived in Gram's worktree folder is the user's own: never removed unasked.
+    const { spawnedBy: _s, ...plain } = unbound;
+    expect(sweepDue(facts({ thread: plain }), SWEEP, NOW)).toEqual({
       free: true,
       remove: false,
     });
+    // An archived worker that follows a PR, even without a bound one, waits for it as before.
+    const following = facts({
+      thread: {
+        ...unbound,
+        lastActivityAt: NOW - 5 * DAY,
+        extraPrs: [{ repo: "o/lib", number: 9, monitor: false }],
+      },
+    });
+    expect(sweepDue(following, SWEEP, NOW)).toEqual({ free: true, remove: false });
   });
 
   it("never touches a thread that isn't finished and at rest in a worktree of its own", () => {
@@ -280,6 +349,19 @@ describe("sweepStep", () => {
   it("never acts on uncommitted or unpushed work", () => {
     expect(sweepStep(due, { ...CLEAN_PUSHED_SETTLED, clean: false })).toBeUndefined();
     expect(sweepStep(due, { ...CLEAN_PUSHED_SETTLED, pushed: false })).toBeUndefined();
+    const withoutPr = { ...due, withoutPr: true as const };
+    expect(sweepStep(withoutPr, { ...CLEAN_PUSHED_SETTLED, clean: false })).toBeUndefined();
+    expect(sweepStep(withoutPr, { ...CLEAN_PUSHED_SETTLED, pushed: false })).toBeUndefined();
+  });
+
+  it("removes a worker with no PR only once GitHub answered none is open for it", () => {
+    const withoutPr = { free: false, remove: true, withoutPr: true as const };
+    const none: WorktreeCheck = { clean: true, pushed: true, prSettled: false, noPrOpen: true };
+    expect(sweepStep(withoutPr, none)).toBe("remove");
+    // A PR open for its branch, or a lookup that failed.
+    expect(sweepStep(withoutPr, { ...none, noPrOpen: false })).toBeUndefined();
+    expect(sweepStep(withoutPr, { clean: true, pushed: true, prSettled: false })).toBeUndefined();
+    expect(sweepStep({ ...withoutPr, free: true }, { ...none, noPrOpen: false })).toBe("free");
   });
 });
 
@@ -304,7 +386,7 @@ describe("checkMissingWorktree", () => {
       expect(asked.cwd).toBe("/r");
       expect(
         yield* checkMissingWorktree(thread(), badge("MERGED"), true).pipe(answering(badge("OPEN"))),
-      ).toEqual({ clean: true, pushed: true, prSettled: false });
+      ).toEqual({ clean: true, pushed: true, prSettled: false, noPrOpen: false });
       // Unbound, the branch's PR can't be looked up without the folder: the last badge says.
       const { boundPr: _bound, ...unbound } = thread();
       asked.cwd = "";
@@ -312,10 +394,30 @@ describe("checkMissingWorktree", () => {
         yield* checkMissingWorktree(unbound, badge("CLOSED"), true).pipe(answering(undefined)),
       ).toEqual(CLEAN_PUSHED_SETTLED);
       expect(asked.cwd).toBe("");
+      // Unbound with no badge: no PR to wait for, and none open.
       expect(
-        (yield* checkMissingWorktree(unbound, undefined, true).pipe(answering(undefined)))
-          .prSettled,
+        yield* checkMissingWorktree(unbound, undefined, true).pipe(answering(undefined)),
+      ).toEqual({ clean: true, pushed: true, prSettled: false, noPrOpen: true });
+      expect(
+        (yield* checkMissingWorktree(unbound, badge("OPEN"), true).pipe(answering(undefined)))
+          .noPrOpen,
       ).toBe(false);
+      // A bound PR whose lookup failed says nothing.
+      const failing = Effect.provide(
+        Layer.succeed(Pr, {
+          status: () => Effect.fail(new PrLookupError({ message: "gh down" })),
+          checks: () => Effect.succeed([]),
+          prime: () => Effect.void,
+          seenChecks: () => Effect.succeed(undefined),
+          detail: () => Effect.succeed({ available: false }),
+        }),
+      );
+      expect(yield* checkMissingWorktree(thread(), undefined, true).pipe(failing)).toEqual({
+        clean: true,
+        pushed: true,
+        prSettled: false,
+        noPrOpen: false,
+      });
       expect(
         yield* checkMissingWorktree(thread(), undefined, false).pipe(answering(badge("MERGED"))),
       ).toEqual({ clean: true, pushed: true, prSettled: false });
@@ -355,7 +457,7 @@ describe.skipIf(!hasGit)("the sweep's git", () => {
       run(tree, "add", "-A");
       run(tree, "commit", "-qm", "local only");
       const local = yield* checkWorktree(tree, thread(), true).pipe(withPr(badge("OPEN")));
-      expect(local).toEqual({ clean: true, pushed: false, prSettled: false });
+      expect(local).toEqual({ clean: true, pushed: false, prSettled: false, noPrOpen: false });
       // GitHub deleted the branch after a squash merge; HEAD is still the PR's head.
       const head = run(tree, "rev-parse", "HEAD").trim();
       run(tree, "update-ref", "-d", "refs/remotes/origin/feat/x");
@@ -363,6 +465,36 @@ describe.skipIf(!hasGit)("the sweep's git", () => {
         yield* checkWorktree(tree, thread(), true).pipe(withPr(badge("CLOSED", head))),
       ).toEqual(CLEAN_PUSHED_SETTLED);
     }),
+  );
+
+  it.effect(
+    "reads no PR open for a branch GitHub has none for, and not when the lookup fails",
+    () =>
+      Effect.gen(function* () {
+        const { tree } = setup();
+        const { boundPr: _, ...unbound } = thread();
+        expect(yield* checkWorktree(tree, unbound, true).pipe(withPr(undefined))).toEqual({
+          clean: true,
+          pushed: true,
+          prSettled: false,
+          noPrOpen: true,
+        });
+        const failed = yield* checkWorktree(tree, unbound, true).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              ProcLive,
+              Layer.succeed(Pr, {
+                status: () => Effect.fail(new PrLookupError({ message: "gh down" })),
+                checks: () => Effect.succeed([]),
+                prime: () => Effect.void,
+                seenChecks: () => Effect.succeed(undefined),
+                detail: () => Effect.succeed({ available: false }),
+              }),
+            ),
+          ),
+        );
+        expect(failed.noPrOpen).toBe(false);
+      }),
   );
 
   it.effect("frees untracked node_modules at the top and in packages, never tracked ones", () =>

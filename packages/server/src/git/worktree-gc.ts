@@ -2,15 +2,17 @@
 // they have sat for `freeAfterDays`, and closes the thread with its worktree after `removeAfterDays`,
 // or `MERGED_GRACE_MS` after its PR merged. Every thread kind but an orchestrator: a worker once the
 // ledger reads it finished, any other thread once it is archived or its PRs are all merged or closed.
+// An archived worker with no PR of its own (a reviewer, a research or release worker) goes
+// `ARCHIVED_GRACE_MS` after its last activity, once clean, pushed and with no PR open for its branch.
 //
 // Invariants. It only ever looks at a finished thread at rest with nothing waiting on the user, in a
 // linked worktree no other thread holds, and never at a main checkout or at a worker spanning
 // repos. Before either step, git is asked afresh: a worktree with uncommitted changes, or whose HEAD
 // no remote has, is left alone; one whose folder was deleted outside Gram has nothing left to lose,
 // and is removed (its registration pruned) once due.
-// Removal also needs the PR merged or closed, goes through `closeAtRest` (the app's own close, which refuses a dirty tree, a
-// thread that got busy or a terminal running a command, and removes on the `slow` tier), and never
-// deletes a branch. It logs counts, never paths, and tells each workspace one digest line.
+// Removal also needs the PR merged or closed (for an archived worker with none, no PR open), goes
+// through `closeAtRest` (the app's own close, which refuses a dirty tree, a thread that got busy or a
+// terminal running a command, and removes on the `slow` tier), and never deletes a branch. It logs counts, never paths, and tells each workspace one digest line.
 //
 // Known and accepted gap. Whether another thread holds or follows the worktree is read last right
 // before the deletion, not held across it: an agent elsewhere that moves into this worktree while
@@ -128,15 +130,36 @@ const isFinishedThread = (facts: SweepFacts): boolean => {
   );
 };
 
-/** Whether the thread is done because its PRs merged: its worktree goes without the long wait. */
-const mergedDone = (facts: SweepFacts): boolean =>
-  mergedAndDone(facts.thread, workerPrBadges({ ...facts, extraBadges: facts.extraBadges ?? [] }));
+/**
+ * Whether the thread is done because its PRs merged: its worktree goes without the long wait. An
+ * archived thread's badge is dropped once GitHub answers that its PR merged, so there its own record
+ * stands in: completed on a merge, no other PR followed, and no badge it still has open.
+ * `checkWorktree` asks GitHub afresh before anything goes.
+ */
+const mergedDone = (facts: SweepFacts): boolean => {
+  const { thread } = facts;
+  const badges = workerPrBadges({ ...facts, extraBadges: facts.extraBadges ?? [] });
+  if (mergedAndDone(thread, badges)) return true;
+  return (
+    thread.parked &&
+    thread.completedReason === "prMerged" &&
+    thread.completedAt !== undefined &&
+    (thread.extraPrs?.length ?? 0) === 0 &&
+    badges.every((badge) => badge === undefined || badge.state !== "OPEN")
+  );
+};
 
 /**
  * How long after a merge its worktree is removed: long enough for a look at the result, short
  * enough that the next sweep takes it.
  */
 export const MERGED_GRACE_MS = 10 * 60_000;
+
+/**
+ * How long after its last activity an archived worker with no PR of its own has its worktree
+ * removed: a day to unarchive it, after which `restore_worktree` can still bring its branch back.
+ */
+export const ARCHIVED_GRACE_MS = DAY_MS;
 
 /** Epoch ms from which a finished thread's age is counted: its last activity or completion. */
 const finishedSince = (thread: Thread): number =>
@@ -145,8 +168,10 @@ const finishedSince = (thread: Thread): number =>
 /** Which steps are due for a thread, before git has been asked. */
 export interface SweepDue {
   readonly free: boolean;
-  /** Old enough to remove, and with a PR whose state can be asked. */
+  /** Old enough to remove, and with a PR whose state can be asked or an archived worker with none. */
   readonly remove: boolean;
+  /** Removal needs no settled PR: an archived worker that never had one (`ARCHIVED_GRACE_MS`). */
+  readonly withoutPr?: true;
 }
 
 /**
@@ -190,11 +215,15 @@ export const sweepDue = (
   if (!(worker ? isFinishedWorker(facts) : isFinishedThread(facts))) return undefined;
   const age = now - finishedSince(thread);
   const hasPr = thread.boundPr !== undefined || facts.badge !== undefined;
+  const free = age >= sweep.freeAfterDays * DAY_MS;
+  // An archived worker following no PR at all: archiving is what says its work is over.
+  if (!hasPr && (thread.extraPrs?.length ?? 0) === 0 && worker && thread.parked) {
+    const remove = age >= ARCHIVED_GRACE_MS;
+    if (remove) return { free, remove, withoutPr: true };
+    return free ? { free, remove } : undefined;
+  }
   const removeAfter = mergedDone(facts) ? MERGED_GRACE_MS : sweep.removeAfterDays * DAY_MS;
-  const due = {
-    free: age >= sweep.freeAfterDays * DAY_MS,
-    remove: hasPr && age >= removeAfter,
-  };
+  const due = { free, remove: hasPr && age >= removeAfter };
   return due.free || due.remove ? due : undefined;
 };
 
@@ -206,12 +235,15 @@ export interface WorktreeCheck {
   readonly pushed: boolean;
   /** The PR is merged or closed. */
   readonly prSettled: boolean;
+  /** GitHub answered: no PR is open for it (none at all, or a settled one). A failed lookup is no. */
+  readonly noPrOpen?: boolean;
 }
 
 /** The step to take, from what is due and what git said; `undefined` leaves the worktree be. */
 export const sweepStep = (due: SweepDue, check: WorktreeCheck): "free" | "remove" | undefined => {
   if (!check.clean || !check.pushed) return undefined;
-  if (due.remove && check.prSettled) return "remove";
+  const settled = due.withoutPr === true ? check.noPrOpen === true : check.prSettled;
+  if (due.remove && settled) return "remove";
   return due.free ? "free" : undefined;
 };
 
@@ -248,6 +280,7 @@ export const checkWorktree = (
       clean,
       pushed: headPushed({ head, headOnRemote: onRemote, prHeadRefOid: settled?.headRefOid }),
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
+      noPrOpen: Option.isSome(badge) && settled?.state !== "OPEN",
     };
   });
 
@@ -255,7 +288,7 @@ export const checkWorktree = (
  * `checkWorktree` for a worktree whose folder was deleted outside Gram: nothing is left in it
  * to lose, so it reads clean and pushed, and only the PR has to have settled. That is asked of gh
  * from the repo's main checkout for a bound PR, and otherwise read off the last badge, since a
- * branch lookup needs the folder.
+ * branch lookup needs the folder; with nothing bound, no open badge is no PR open.
  */
 export const checkMissingWorktree = (
   thread: Thread,
@@ -266,16 +299,16 @@ export const checkMissingWorktree = (
     if (!wantPr) return { clean: true, pushed: true, prSettled: false };
     const root = thread.checkout.repoRoot;
     const pr = yield* Pr;
-    const settled =
+    const asked =
       thread.boundPr !== undefined && root !== undefined
-        ? Option.getOrUndefined(
-            yield* asBackground(pr.status(root, thread.boundPr)).pipe(Effect.option),
-          )
-        : badge;
+        ? yield* asBackground(pr.status(root, thread.boundPr)).pipe(Effect.option)
+        : Option.some(badge);
+    const settled = Option.getOrUndefined(asked);
     return {
       clean: true,
       pushed: true,
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
+      noPrOpen: Option.isSome(asked) && settled?.state !== "OPEN",
     };
   });
 
