@@ -1,4 +1,5 @@
 import {
+  keepMicrophoneReadyOf,
   SPEECH_MODEL_FOR_STOP,
   speechModelBytes,
   speechPerformanceOf,
@@ -15,10 +16,12 @@ import { Navigate } from "@tanstack/react-router";
 import { useEffect, useId, useState } from "react";
 
 import { useApi } from "@/api/context";
+import { isMac } from "@/keyboard/registry";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { errorMessage } from "@/api/errors";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { microphone } from "@/dictation/capture";
 import { inOrder, useLifecyclePending } from "@/dictation/lifecycle";
 import { speechBridge, stopSpeechProcess } from "@/dictation/use-dictation";
 import { cn } from "@/lib/utils";
@@ -231,7 +234,28 @@ export function VoiceInputSection() {
             disabled={pending}
           />
         )}
-        {on && <MicrophoneRow />}
+        {on && <MicrophoneRow held={keepMicrophoneReadyOf(settings)} />}
+        {on && (
+          <Toggle
+            label="Keep microphone ready"
+            description="Catches the half second before you press. Audio stays in memory on this computer."
+            // In the open, not in the hover: it's what turning this on consents to.
+            detail={
+              <p className="text-xs text-muted-foreground">
+                The microphone stays open for 2 minutes after you focus a composer or dictate, so{" "}
+                {isMac() ? "the macOS" : "your system's"} microphone indicator stays lit.
+              </p>
+            }
+            keywords={["microphone", "instant", "pre-roll", "indicator"]}
+            checked={keepMicrophoneReadyOf(settings)}
+            onChange={(next) => {
+              setError(undefined);
+              // Now, not when a composer next renders: there may be none behind Settings.
+              if (!next) microphone.keepReady(false);
+              save({ voice: { keepMicrophoneReady: next } }).catch(fail);
+            }}
+          />
+        )}
         {error !== undefined && <p className="text-xs text-destructive">{error}</p>}
       </div>
       {on && (
@@ -445,8 +469,11 @@ function ProgressBar({ value, max }: { value: number | undefined; max: number | 
   );
 }
 
-/** Whether the system lets Gram use the microphone, with the way to change it. */
-function MicrophoneRow() {
+/**
+ * Whether the system lets Gram use the microphone, with the way to change it. `held` is "Keep
+ * microphone ready", which makes "only while you dictate" untrue.
+ */
+function MicrophoneRow({ held }: { held: boolean }) {
   const access = useMicrophoneAccess();
   if (access === undefined || access === "unknown") return null;
   const denied = access === "denied" || access === "restricted";
@@ -455,7 +482,9 @@ function MicrophoneRow() {
       label="Microphone"
       description={
         access === "granted"
-          ? "Allowed. Gram listens only while you dictate."
+          ? held
+            ? "Allowed. Gram keeps it open while it's ready, and uses what it hears only when you dictate."
+            : "Allowed. Gram listens only while you dictate."
           : access === "not-determined"
             ? "Asked the first time you dictate."
             : access === "restricted"

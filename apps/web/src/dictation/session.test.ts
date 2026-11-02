@@ -377,6 +377,72 @@ describe("dictation", () => {
     expect(slow.dictation.state()).toEqual({ phase: "idle" });
   });
 
+  it("runs the microphone while the session opens, keeping what it hears until the port is there", async () => {
+    const { promise, resolve } = Promise.withResolvers<{ ok: true; port: DictationPort }>();
+    const session = fakePort();
+    let frame: ((samples: Float32Array) => void) | undefined;
+    const t = setup({
+      open: () => promise,
+      startCapture: async (onFrame) => {
+        frame = onFrame;
+        onFrame(new Float32Array(1600).fill(0.1));
+        return { flush: async () => {}, stop: () => {} };
+      },
+    });
+    const starting = t.dictation.start({ modelId: "m" });
+    await vi.waitFor(() => expect(frame).toBeDefined());
+    frame!(new Float32Array(1600).fill(0.2));
+    expect(t.dictation.state().phase).toBe("starting");
+    expect(t.dictation.level()).toBe(0);
+
+    resolve({ ok: true, port: session.port });
+    await starting;
+    const levels = session.sent.flatMap((m) => (m.type === "audio" ? [m.samples[0]] : []));
+    expect(levels).toEqual([
+      ...Array.from({ length: LEAD_SILENCE_FRAMES }, () => 0),
+      expect.closeTo(0.1),
+      expect.closeTo(0.2),
+    ]);
+    expect(t.dictation.state().phase).toBe("listening");
+  });
+
+  it("lets go of the microphone at once when a cancel overtakes a session still opening", async () => {
+    const { promise, resolve } = Promise.withResolvers<{ ok: true; port: DictationPort }>();
+    const late = fakePort();
+    let asked = false;
+    const t = setup({
+      open: () => {
+        asked = true;
+        return promise;
+      },
+    });
+    const starting = t.dictation.start({ modelId: "m" });
+    await vi.waitFor(() => expect(asked).toBe(true));
+    t.dictation.cancel();
+    await vi.waitFor(() => expect(t.capture.stop).toHaveBeenCalledOnce());
+    resolve({ ok: true, port: late.port });
+    await starting;
+    expect(late.closed()).toBe(true);
+    expect(t.dictation.state()).toEqual({ phase: "idle" });
+  });
+
+  it("releases each side when the other fails: the microphone on a refused open, the port on a dead mic", async () => {
+    const refused = setup({
+      open: async () => ({ ok: false, code: "model-missing", message: "Not installed." }),
+    });
+    await refused.dictation.start({ modelId: "m" });
+    expect(refused.capture.stop).toHaveBeenCalledOnce();
+    expect(refused.dictation.state()).toMatchObject({ phase: "error", code: "model-missing" });
+
+    const dead = setup({
+      startCapture: () =>
+        Promise.reject(Object.assign(new Error("no"), { name: "NotAllowedError" })),
+    });
+    await dead.dictation.start({ modelId: "m" });
+    expect(dead.session.closed()).toBe(true);
+    expect(dead.dictation.state()).toMatchObject({ phase: "error", code: "microphone-denied" });
+  });
+
   it("spaces dictated text after a word but not after a space or newline", () => {
     expect(spacedAfter("", "Hi.")).toBe("Hi.");
     expect(spacedAfter("Fix", "the bug.")).toBe(" the bug.");

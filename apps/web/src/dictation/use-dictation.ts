@@ -1,4 +1,5 @@
 import {
+  keepMicrophoneReadyOf,
   openSpeechSession,
   SPEECH_MODEL_FOR_STOP,
   speechPerformanceOf,
@@ -11,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useApi } from "@/api/context";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { startCapture } from "./capture";
+import { microphone } from "./capture";
 import { lifecycleMark, lifecyclePending, lifecycleUnchanged } from "./lifecycle";
 import type { Api } from "@/api/types";
 
@@ -32,6 +33,7 @@ export const speechBridge = (): DesktopSpeech | undefined =>
  * input is turned off. An older shell without `shutdown` lets its idle timeout do it.
  */
 export const stopSpeechProcess = async (): Promise<void> => {
+  microphone.keepReady(false);
   await speechBridge()?.shutdown?.();
 };
 
@@ -46,7 +48,7 @@ export interface DictationControls {
   /** How loud the microphone is now, from 0 to 1; read by the listening bars on each clock step. */
   level(): number;
   toggle(): void;
-  /** Loads the model ahead of a start, hiding the second or so it takes; for the field's focus. */
+  /** Gets everything ready ahead of a start, the model above all; for the field's focus. */
   prewarm(): void;
   stop(): void;
   cancel(): void;
@@ -81,6 +83,30 @@ export const installedTarget = async (
 };
 
 /**
+ * `installedTarget` that remembers a yes, so a press doesn't wait on the lookups. Only for the
+ * slider's own model, and only until Settings changes what's installed: a fallback has to give way
+ * as soon as the slider's model lands. `forget` is for when the speech process says it's gone.
+ */
+export const rememberedTarget = (api: Pick<Api, "speechStatus">) => {
+  let known:
+    | { readonly mark: number; readonly stop: SpeechPerformance; ready: Preflight }
+    | undefined;
+  return {
+    check: async (performance: SpeechPerformance): Promise<Preflight> => {
+      const mark = lifecycleMark();
+      if (known?.mark === mark && known.stop === performance) return known.ready;
+      const ready = await installedTarget(api, performance);
+      if (ready.ok && ready.target?.performance === performance && lifecycleUnchanged(mark))
+        known = { mark, stop: performance, ready };
+      return ready;
+    },
+    forget: () => {
+      known = undefined;
+    },
+  };
+};
+
+/**
  * Local dictation into one composer: `onCommit` puts each finished utterance into the draft.
  */
 export function useDictation(onCommit: (text: string) => void): DictationControls {
@@ -88,6 +114,7 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
   const settings = useServerSettings((s) => s.settings);
   const on = settings !== undefined && voiceInputOn(settings);
   const performance = settings === undefined ? undefined : speechPerformanceOf(settings);
+  const keepReady = settings !== undefined && on && keepMicrophoneReadyOf(settings);
   const bridge = on ? speechBridge() : undefined;
   const [state, setState] = useState<DictationState>({ phase: "idle" });
   const [partial, setPartial] = useState("");
@@ -96,26 +123,36 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
     commit.current = onCommit;
   });
 
+  useEffect(() => microphone.keepReady(keepReady), [keepReady]);
+
+  const target = useRef(rememberedTarget(api));
   const dictation = useRef<Dictation | undefined>(undefined);
   useEffect(() => {
     if (bridge === undefined) return;
+    target.current = rememberedTarget(api);
+    /** Once the system says yes it stays yes for a press; `getUserMedia` reports a later no. */
+    let allowed = false;
     const created = createDictation(
       {
-        preflight: (target) => installedTarget(api, target.performance ?? "balanced"),
+        preflight: (wanted) => target.current.check(wanted.performance ?? "balanced"),
         // A start begun before Settings queued a change goes no further than its lookups.
         open: (request) =>
           lifecyclePending()
             ? Promise.resolve(STOPPED)
             : openSpeechSession(bridge, request, window),
-        requestMicrophone: () =>
-          lifecyclePending()
-            ? Promise.resolve("unknown" as const)
-            : bridge.requestMicrophoneAccess(),
-        startCapture,
+        requestMicrophone: async () => {
+          if (allowed) return "granted";
+          if (lifecyclePending()) return "unknown";
+          const access = await bridge.requestMicrophoneAccess();
+          allowed = access === "granted";
+          return access;
+        },
+        startCapture: microphone.start,
         newSessionId: () => crypto.randomUUID(),
       },
       {
         onState: (next) => {
+          if (next.phase === "error" && next.code === "model-missing") target.current.forget();
           setState(next);
         },
         onPartial: setPartial,
@@ -141,21 +178,31 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
       // Settings is installing or deleting models; a session now could outlive a turn-off.
       if (lifecyclePending()) return;
       if (performance === undefined) return;
-      const target: DictationTarget = { modelId: SPEECH_MODEL_FOR_STOP[performance], performance };
-      void dictation.current?.start(target);
+      const wanted: DictationTarget = { modelId: SPEECH_MODEL_FOR_STOP[performance], performance };
+      void dictation.current?.start(wanted);
     },
     prewarm: () => {
       // Not while Settings changes what's installed: a prewarm after its `shutdown` would start
       // the speech process again.
       if (bridge === undefined || performance === undefined || active || lifecyclePending()) return;
       const mark = lifecycleMark();
-      void installedTarget(api, performance)
+      microphone.warm();
+      void target.current
+        .check(performance)
         .then((ready) =>
           ready.ok && ready.target !== undefined && lifecycleUnchanged(mark)
             ? bridge.prewarm(ready.target.modelId, ready.target.performance)
             : undefined,
         )
         .catch((error: unknown) => console.warn("dictation", error));
+      // Never the first ask for the microphone: that belongs to a press.
+      if (keepReady)
+        void bridge
+          .microphoneAccess()
+          .then((access) => {
+            if (access === "granted" && lifecycleUnchanged(mark)) microphone.ready();
+          })
+          .catch((error: unknown) => console.warn("dictation", error));
     },
     level: () => dictation.current?.level() ?? 0,
     stop: () => dictation.current?.stop(),

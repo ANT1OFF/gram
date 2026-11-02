@@ -589,7 +589,10 @@ on a card first, takes the next free port, and stops with its thread.
 Notifications retain sanitized history and quiet startup diagnostics; saved
 notifications omit sensitive runtime details. Dictation runs locally with NVIDIA
 Nemotron through sherpa-onnx, after explicit verified-download/license consent and
-microphone permission, and inserts draft text only. English is supported. Native loading does not prove
+microphone permission, and inserts draft text only. English is supported. The microphone opens on
+a press and closes with its stop, unless the opt-in Keep microphone ready holds it for 2 minutes
+after a composer's focus or the last dictation, with the moments before a press in memory only.
+Native loading does not prove
 microphone or recognition quality; see [verification](VERIFICATION.md#manual-provider-and-dictation-checks).
 
 Source: [browser bridge](../packages/server/src/browser),

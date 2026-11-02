@@ -27,6 +27,7 @@ import {
   sendKeyOf,
   speechModelOf,
   speechPerformanceOf,
+  keepMicrophoneReadyOf,
   voiceInputOn,
   restartOnMcpChangeOn,
   reviewRequestHolds,
@@ -340,6 +341,12 @@ describe("workspaces.orchestratorConnectors", () => {
 describe("voice input", () => {
   it("is off unless turned on, and runs the Balanced stop's model until the slider moves", () => {
     expect(voiceInputOn(DEFAULT_SETTINGS)).toBe(false);
+    expect(keepMicrophoneReadyOf(DEFAULT_SETTINGS)).toBe(false);
+    const ready = applySettingsPatch(DEFAULT_SETTINGS, { voice: { keepMicrophoneReady: true } });
+    expect(keepMicrophoneReadyOf(ready)).toBe(true);
+    expect(
+      keepMicrophoneReadyOf(applySettingsPatch(ready, { voice: { keepMicrophoneReady: null } })),
+    ).toBe(false);
     expect(speechPerformanceOf(DEFAULT_SETTINGS)).toBe("balanced");
     expect(speechModelOf(DEFAULT_SETTINGS)).toBe("nemotron-speech-en-0.6b-560ms-int8");
     const patch = Schema.decodeUnknownSync(SettingsPatch)({
