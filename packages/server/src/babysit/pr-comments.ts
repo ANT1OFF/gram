@@ -325,36 +325,9 @@ export const PrCommentWakesLive = Layer.effectDiscard(
           if (baseline) return yield* remember(thread.id, bound, watch);
         }
         const w = watch;
-        // A full listing whose oldest is after the floor may have pushed comments out between them
-        // (a flood): those are skipped, never delivered later, and the floor moves up to the
-        // listing so none of them can slide back in.
-        let floorRaised = false;
-        const from = badge.personCommentsFrom;
-        if (from !== undefined && w.floor !== undefined && isAfter({ at: from, id: "" }, w.floor)) {
-          let raised = before({ at: from, id: "" }, 1);
-          const firstOpen = oldest(
-            [...[...w.pending.values()].map((p) => p.listed), ...w.ready.map((r) => r.listed)]
-              .map(stampOf)
-              .filter(timed),
-          );
-          if (raised !== undefined && firstOpen !== undefined && !isAfter(firstOpen, raised))
-            raised = before(firstOpen, 1);
-          if (raised !== undefined && isAfter(raised, w.floor)) {
-            // Times only: who wrote what stays out of the log.
-            yield* Effect.logInfo("pr comments older than the listing may have been skipped").pipe(
-              Effect.annotateLogs({
-                threadId: thread.id,
-                pr: bound.number,
-                from: w.floor.at,
-                to: raised.at,
-              }),
-            );
-            w.floor = raised;
-            floorRaised = true;
-          }
-        }
-        // New means after the floor and not handled: a comment that slides back into the badge's
-        // window when newer ones are deleted is at or before the floor, whatever `seen` forgot.
+        // New means after the floor as it stood and not handled: a comment that slides back into
+        // the badge's window when newer ones are deleted is at or before the floor, whatever
+        // `seen` forgot. Worked out before the floor moves, so nothing listed is passed over.
         const fresh = listed.filter(
           (c) =>
             isAfter(stampOf(c), w.floor) &&
@@ -380,10 +353,38 @@ export const PrCommentWakesLive = Layer.effectDiscard(
           retryAt.delete(thread.id);
           return yield* remember(thread.id, bound, w);
         }
-        if (fresh.length === 0)
-          return floorRaised ? yield* remember(thread.id, bound, w) : undefined;
         for (const each of fresh) w.pending.set(each.id, { listed: each, attempts: 0 });
-        yield* offer(thread.id);
+        // A full listing that starts after the floor may have pushed comments out of view (a
+        // flood). Those are skipped, never delivered later: the floor moves up to the listing, but
+        // stays below every comment listed and not handled yet, the new ones above included, so
+        // only what is truly out of every window is passed by.
+        let floorRaised = false;
+        const from = badge.personCommentsFrom;
+        if (from !== undefined && w.floor !== undefined && isAfter({ at: from, id: "" }, w.floor)) {
+          let raised = before({ at: from, id: "" }, 1);
+          const firstOpen = oldest(
+            [...[...w.pending.values()].map((p) => p.listed), ...w.ready.map((r) => r.listed)]
+              .map(stampOf)
+              .filter(timed),
+          );
+          if (raised !== undefined && firstOpen !== undefined && !isAfter(firstOpen, raised))
+            raised = before(firstOpen, 1);
+          if (raised !== undefined && isAfter(raised, w.floor)) {
+            // Times only: who wrote what stays out of the log.
+            yield* Effect.logInfo("pr comments older than the listing may have been skipped").pipe(
+              Effect.annotateLogs({
+                threadId: thread.id,
+                pr: bound.number,
+                from: w.floor.at,
+                to: raised.at,
+              }),
+            );
+            w.floor = raised;
+            floorRaised = true;
+          }
+        }
+        if (floorRaised) yield* remember(thread.id, bound, w);
+        if (fresh.length > 0) yield* offer(thread.id);
       });
 
     /** What `threadId` posted in its tool calls since `since`, from the turn already running then. */

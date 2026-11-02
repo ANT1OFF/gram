@@ -123,6 +123,13 @@ describe("postsIn", () => {
         `${own}\n{"comments":[{"url":"${users}"}]}`,
       ),
     ).toEqual([]);
+    // A post beside a read that isn't gh: curl printed the user's link.
+    expect(
+      urls(
+        'gh pr review 12 --comment --body "Reviewed." && curl -s https://api.github.com/repos/acme/web/issues/12/comments',
+        users,
+      ),
+    ).toEqual([]);
     // One post, two comment links: which is its own can't be told.
     expect(urls('gh pr comment 12 -b "x" && cat notes.md', `${own}\n${users}`)).toEqual([]);
     // One post, its own link, and a link that names no comment.

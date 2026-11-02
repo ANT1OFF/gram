@@ -896,6 +896,39 @@ describe("a person's comment on a worker's PR", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
+  it.effect("delivers a listed comment older than where the other full window starts", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* workerThread([]);
+      const first = comment("IC_first", "alice", "Delivered first.", {
+        createdAt: "2026-11-02T10:50:00Z",
+      });
+      yield* publish(id, badge(listed(first)));
+      yield* noticeCount(id, 1);
+      // The reviewer's probe: alice's issue comment at 11:00:00 is listed, but twenty reviews
+      // (bot rounds, the worker's own replies) filled that window from 11:00:30 on.
+      const wait = comment("IC_wait", "alice", "Wait, don't merge yet.", {
+        createdAt: "2026-11-02T11:00:00Z",
+      });
+      const review = comment("PRR_late", "alice", "And a review comment.", {
+        kind: "review",
+        state: "COMMENTED",
+        createdAt: "2026-11-02T11:00:40Z",
+      });
+      yield* publish(
+        id,
+        badge(listed(first, wait, review), { personCommentsFrom: "2026-11-02T11:00:30Z" }),
+      );
+      yield* TestClock.adjust("1 minute");
+      const [, second] = yield* noticeCount(id, 2);
+      expect(second!.text).toContain("Wait, don't merge yet.");
+      expect(second!.text).toContain("And a review comment.");
+      // The floor still moved up past what no window shows, but not past what was listed.
+      const floor = (yield* (yield* ThreadStore).getThread(id)).boundPr?.seen?.commentsFloor;
+      expect(floor?.at).toBe("2026-11-02T10:59:59.999Z");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
   it.effect("keeps delivering when a listed comment has no time", () =>
     Effect.gen(function* () {
       reset();

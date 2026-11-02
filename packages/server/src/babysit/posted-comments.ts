@@ -197,11 +197,10 @@ interface Posting {
   readonly sent: ReadonlyArray<Sent>;
   /** How many comments or reviews it posts, whatever their bodies were built from. */
   readonly posts: number;
-  /** It also runs a `gh` command that posts nothing: a read, whose output prints others' links. */
+  /** It also runs a command that posts nothing, `gh` or not, whose output may print others' links. */
   readonly reads: boolean;
 }
 
-const NONE: Posting = { sent: [], posts: 0, reads: false };
 /** A `gh` command that posts nothing. */
 const READ: Posting = { sent: [], posts: 0, reads: true };
 
@@ -254,7 +253,8 @@ const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): P
     };
   }
   const gh = words.indexOf("gh");
-  if (gh === -1) return NONE;
+  // Not `gh` at all: anything it prints (a `curl` of the comments) may name others' comments.
+  if (gh === -1) return READ;
   const args = words.slice(gh + 1);
   const sub = args.slice(0, 2).join(" ");
   const fromFile = (path: string) => {
@@ -438,9 +438,9 @@ export const postsIn = (messages: ReadonlyArray<GramUIMessage>): Array<Post> => 
     const printed: Array<string> = [];
     strings(call.output, printed);
     const links = [...new Set(printed.flatMap((text) => text.match(COMMENT_LINK) ?? []))];
-    // The links name the posts' own comments only when nothing else in the call could have printed
-    // one: no `gh` read beside the post, and no more links than posts. Otherwise the text match
-    // still covers the posts, and a person's comment the read printed stays theirs.
+    // The links name the posts' own comments only when nothing else in the call could have
+    // printed one: every command in it posts, and it printed no more links than posts. Otherwise
+    // the text match still covers the posts, and a person's comment a read printed stays theirs.
     const urls = !reads && links.length <= posting ? links : [];
     const at = call.at;
     if (sent.length === 0) posts.push({ key: call.key, urls, ...(at === undefined ? {} : { at }) });
