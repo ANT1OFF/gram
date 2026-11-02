@@ -4,7 +4,18 @@
 
 Gram is built for individual developers using their own tools and accounts. Read
 [AGENTS.md](AGENTS.md) for the standing rules, [development](docs/DEVELOPMENT.md) for setup and
-[architecture](docs/ARCHITECTURE.md) for package boundaries.
+[architecture](docs/ARCHITECTURE.md) for package boundaries. Everyone taking part follows the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Issues and questions
+
+Report bugs and request features with the
+[issue forms](https://github.com/ANT1OFF/gram/issues/new/choose), or from inside Gram with
+**Report an issue…** in the command palette. Ask questions and talk ideas through in
+[Discussions](https://github.com/ANT1OFF/gram/discussions). Report vulnerabilities privately, as
+the [security policy](SECURITY.md) describes. Issues labelled
+[`good first issue`](https://github.com/ANT1OFF/gram/labels/good%20first%20issue) are small and
+self-contained, with pointers to the code and how to verify the change.
 
 ## Changes
 
@@ -28,11 +39,15 @@ complete application check; browser and native checks have their own setup.
 - UI changes include before and after screenshots, inspected, not just generated.
 - A PR merges when its required checks pass on the exact head being merged. A pass on an older
   head does not count for a changed one.
+- A PR from an outside contributor also gets an independent review of its current head before it
+  merges. Changes to the merge gate, credentials, the updater, signing or release tooling get
+  extra scrutiny, as [security-sensitive changes](#security-sensitive-changes) describes.
 
 ## Security-sensitive changes
 
-Changes to the updater, release tooling, credentials, consent, approvals, the loopback server or
-anything that writes to an external service get an independent review of the current head before
+Changes to the merge gate, the updater, signing, release tooling, credentials, consent,
+approvals, the loopback server or anything that writes to an external service get an independent
+review of the current head before
 they merge. Re-review fixes that change the result. While reviewing, check at least:
 
 - **Secrets.** Trace each secret from intake to its one consumer. Use invented values and an

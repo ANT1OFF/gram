@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/ANT1OFF/gram/security/advisories/new
+    about: Report it privately through GitHub, not in a public issue. See SECURITY.md.
+  - name: Ask a question
+    url: https://github.com/ANT1OFF/gram/discussions/categories/q-a
+    about: Questions about setting up or using Gram go to Discussions.
+  - name: Share an idea
+    url: https://github.com/ANT1OFF/gram/discussions/categories/ideas
+    about: Talk an idea through in Discussions before it becomes a feature request.
