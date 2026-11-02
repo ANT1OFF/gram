@@ -611,6 +611,25 @@ describe("project local check planning", () => {
       ).toBe(true);
     }
   });
+  it("binds an approved source-selection manifest and rejects malformed pins", () => {
+    const preparation = { manifest: "/tmp/selection.json", sha256: "a".repeat(64) };
+    const accepted = plan(
+      [{ op: "set", key: "project.localCheck.preparation", value: preparation }],
+      { ...world, project },
+    );
+    expect(accepted.ok).toBe(true);
+    for (const value of [
+      { ...preparation, sha256: "bad" },
+      { ...preparation, inputConfigSha256: "bad" },
+      { sha256: preparation.sha256 },
+      "selection",
+    ]) {
+      expect(
+        plan([{ op: "set", key: "project.localCheck.preparation", value }], { ...world, project })
+          .ok,
+      ).toBe(false);
+    }
+  });
   it("has no project command default and validates the timeout", () => {
     expect(readSettingsRows({ ...world, project }, "project")).toContainEqual(
       expect.objectContaining({
