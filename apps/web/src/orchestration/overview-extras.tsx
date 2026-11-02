@@ -5,6 +5,7 @@ import { Fragment, useMemo } from "react";
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
 import { PrMarkIcon } from "@/components/pr-marks";
+import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { prMarksOf, prTooltipOf, worstPrMark } from "@/components/pr-marks-model";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -19,22 +20,23 @@ import { useUsageLimits } from "@/stores/usage-limits";
 import { useViewWorkspace } from "@/views/view-workspace";
 
 import {
-  doneTodayRows,
+  DONE_SHOWN,
+  doneRows,
   footMeters,
   overviewPrRows,
   PR_KIND_LABEL,
   prSubLine,
   workerSlots,
-  type DoneTodayRow,
+  type DoneRow,
   type OverviewPrRow,
 } from "./overview-extras-model";
 import { ROW, Section, SETTLED, STOP } from "./overview-section";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
+import { useWorkersListStore } from "./workers-list";
 
-// The overview sidebar's extras: Pull requests and Done
-// today, folded until opened and gone with nothing in them, and the usage meters and worker slots
-// at its foot, off by default. Each reads what ⌘J and the title bar's meter read, so they all say
-// the same.
+// The overview sidebar's extras: Pull requests and Done, folded until opened and gone with nothing
+// in them, and the usage meters and worker slots at its foot, off by default. Each reads what ⌘J
+// and the title bar's meter read, so they all say the same.
 
 /**
  * The review requests and the user's open PRs in one-line rows, under a sub-heading each when both
@@ -129,15 +131,16 @@ function useFinishedWorkersOf(ids: readonly WorkspaceId[]) {
 }
 
 /**
- * The workers that finished today in every workspace, as ⌘J's Done today lists each, latest first,
- * one line each; a click opens one as ⌘J does. With none, the section stays away.
+ * The workers that finished in the last week in every workspace, as ⌘J's Done lists each, latest
+ * first under their day, one line each; a click opens one as ⌘J does. The first `DONE_SHOWN`
+ * show, and ⌘J has the rest. With none, the section stays away.
  */
-export function OverviewDoneToday() {
+export function OverviewDone() {
   const workspaces = useWorkspaces();
   const ids = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
   const ledgers = useOrchestratorLedgers(ids);
   const finished = useFinishedWorkersOf(ids);
-  // Minute resolution is enough for "today" and the times rows show.
+  // Minute resolution is enough for the days and the times rows show.
   const now = useNow(true, undefined, 60_000);
   const sources = useMemo(
     () =>
@@ -151,20 +154,48 @@ export function OverviewDoneToday() {
   );
   // Only the rows: a thread's change that leaves them reading the same leaves the section still.
   const rows = useThreadsStore(
-    useSame((s) => doneTodayRows(sources, { byId: s.byId, statusDetail: s.statusDetail, now })),
+    useSame((s) => doneRows(sources, { byId: s.byId, statusDetail: s.statusDetail, now })),
   );
   if (rows.length === 0) return null;
+  const shown = rows.slice(0, DONE_SHOWN);
   return (
-    <Section id="doneToday" title="Done today" count={rows.length}>
-      {rows.map((row) => (
-        <DoneRow key={row.threadId} row={row} />
+    <Section id="doneToday" title="Done" count={rows.length}>
+      {shown.map((row, i) => (
+        <Fragment key={row.threadId}>
+          {shown[i - 1]?.day.start !== row.day.start && (
+            <h3
+              data-testid="overview-done-day"
+              className="px-1.5 pt-1 pb-0.5 text-xs font-medium text-muted-foreground"
+            >
+              {row.day.label}
+            </h3>
+          )}
+          <OverviewDoneRow row={row} />
+        </Fragment>
       ))}
+      {rows.length > shown.length && <ShowAllDone />}
     </Section>
   );
 }
 
+/** The quiet way to the rest: ⌘J, opened on its Done. */
+function ShowAllDone() {
+  const hint = useShortcutHint("workers.open");
+  return (
+    <button
+      type="button"
+      {...{ [STOP]: "" }}
+      data-testid="overview-done-more"
+      onClick={() => useWorkersListStore.getState().show("done")}
+      className="rounded-(--radius-sm) px-1.5 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {withHint("Show all in Workers", hint)}
+    </button>
+  );
+}
+
 /** A finished worker: grey until hovered, which says its workspace and what became of it. */
-function DoneRow({ row }: { row: DoneTodayRow }) {
+function OverviewDoneRow({ row }: { row: DoneRow }) {
   const openThread = useOpenThread();
   return (
     <button
@@ -174,7 +205,7 @@ function DoneRow({ row }: { row: DoneTodayRow }) {
       data-thread-id={row.threadId}
       data-workspace-id={row.workspaceId}
       data-merged={row.merged || undefined}
-      aria-label={`${row.title}, ${row.sub}, ${row.time}`}
+      aria-label={`${row.title}, ${row.sub}, ${row.day.label} ${row.time}`}
       title={row.sub}
       onClick={() => openThread(row.threadId)}
       className={cn(ROW, SETTLED)}

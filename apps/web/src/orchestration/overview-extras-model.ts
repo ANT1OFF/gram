@@ -23,11 +23,19 @@ import {
 } from "@/stores/usage-limits";
 import { limitPercent, PROVIDER_SHORT, resetText } from "@/usage/limit-format";
 
-import { finishedWhen, workersByTab, type WorkerLiveFacts, type WorkerRow } from "./workers-model";
+import {
+  daysBefore,
+  doneDay,
+  clockTime,
+  workersByTab,
+  type DoneDay,
+  type WorkerLiveFacts,
+  type WorkerRow,
+} from "./workers-model";
 
-// The overview sidebar's extras: its Pull requests and
-// Done today sections and the usage meters and worker slots at its foot. Pure, so the column says
-// what the lists, ⌘J and the title bar's meter say, and is tested without a browser.
+// The overview sidebar's extras: its Pull requests and Done sections and the usage meters and
+// worker slots at its foot. Pure, so the column says what the lists, ⌘J and the title bar's meter
+// say, and is tested without a browser.
 
 /** A pull request as the overview's compact row has it. */
 export interface OverviewPrRow {
@@ -95,16 +103,22 @@ export const PR_KIND_LABEL: Record<OverviewPrRow["kind"], string> = {
   yours: "Your PRs",
 };
 
-/** One workspace's facts for Done today. */
-export interface DoneTodaySource {
+/** The days the overview's Done keeps: today and the six before it. */
+export const DONE_DAYS = 7;
+
+/** The rows Done shows before it hands the rest to ⌘J: a glance, not an archive. */
+export const DONE_SHOWN = 10;
+
+/** One workspace's facts for Done. */
+export interface DoneSource {
   readonly workspaceId: WorkspaceId;
   readonly name: string;
   readonly ledger: Pick<OrchestratorLedger, "features"> | undefined;
   readonly finished: readonly FinishedWorker[] | undefined;
 }
 
-/** A worker that finished today, as the overview's Done today row has it. */
-export interface DoneTodayRow {
+/** A worker that finished in the last `DONE_DAYS` days, as the overview's Done row has it. */
+export interface DoneRow {
   readonly threadId: ThreadId;
   readonly workspaceId: WorkspaceId;
   readonly title: string;
@@ -112,6 +126,8 @@ export interface DoneTodayRow {
   readonly merged: boolean;
   /** Epoch ms its work ended. */
   readonly finishedAt: number;
+  /** The day it is listed under. */
+  readonly day: DoneDay;
   /** `14:12`, on a 24-hour clock. */
   readonly time: string;
   /** `agent-platform · merged api#412`. */
@@ -137,40 +153,44 @@ const outcome = (
 };
 
 /**
- * Every workspace's Done today, as ⌘J lists each (`workersByTab`), in one list, latest first; each
- * row says which workspace it is in and what became of it.
+ * Every workspace's Done of the last `DONE_DAYS` days, as ⌘J lists each (`workersByTab`), in one
+ * list, latest first: merged, delivered and done workers, archived or closed with their worktree
+ * or not. Each row says its day, which workspace it is in and what became of it.
  */
-export const doneTodayRows = (
-  sources: readonly DoneTodaySource[],
-  facts: WorkerLiveFacts,
-): DoneTodayRow[] =>
-  sources
+export const doneRows = (sources: readonly DoneSource[], facts: WorkerLiveFacts): DoneRow[] => {
+  const since = daysBefore(facts.now, DONE_DAYS - 1);
+  return sources
     .flatMap((source) => {
       const tabs = workersByTab(source.ledger, facts, source.finished ?? []);
       const entries = new Map(
         source.ledger?.features.flatMap((f) => f.workers.map((w) => [w.threadId, w] as const)),
       );
       const finished = new Map(source.finished?.map((w) => [w.threadId, w] as const));
-      return tabs.doneToday.flatMap((feature) =>
-        feature.rows.map((row): DoneTodayRow => {
-          const at = row.finishedAt ?? facts.now;
-          return {
-            threadId: row.threadId,
-            workspaceId: source.workspaceId,
-            title: row.title,
-            merged: row.glyph === "merged",
-            finishedAt: at,
-            time: finishedWhen(at, facts.now),
-            sub: `${source.name} · ${outcome(
-              row,
-              row.cleanedUp === true ? undefined : entries.get(row.threadId),
-              row.cleanedUp === true ? finished.get(row.threadId) : undefined,
-            )}`,
-          };
+      return tabs.done.flatMap((feature) =>
+        feature.rows.flatMap((row): DoneRow[] => {
+          const at = row.finishedAt;
+          if (at === undefined || at < since) return [];
+          return [
+            {
+              threadId: row.threadId,
+              workspaceId: source.workspaceId,
+              title: row.title,
+              merged: row.glyph === "merged",
+              finishedAt: at,
+              day: feature.day ?? doneDay(at, facts.now),
+              time: clockTime(at),
+              sub: `${source.name} · ${outcome(
+                row,
+                row.cleanedUp === true ? undefined : entries.get(row.threadId),
+                row.cleanedUp === true ? finished.get(row.threadId) : undefined,
+              )}`,
+            },
+          ];
         }),
       );
     })
     .toSorted((a, b) => b.finishedAt - a.finishedAt);
+};
 
 /** A provider's 5-hour meter at the overview's foot. */
 export interface FootMeter {

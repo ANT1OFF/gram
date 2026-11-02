@@ -435,9 +435,9 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
     overview(page).getByTestId(`overview-section-${id}`).getByRole("button", { name });
   const orchestrators = head("orchestrators", /Orchestrators/);
   const soloHead = head("solo", /Solo threads/);
-  // Pull requests and Done today come after Solo threads, folded by default.
+  // Pull requests and Done come after Solo threads, folded by default.
   const prsHead = head("pullRequests", /Pull requests/);
-  const doneHead = head("doneToday", /Done today/);
+  const doneHead = head("doneToday", /^Done, /);
   await expect(doneHead).toHaveAttribute("aria-expanded", "false");
   await orchestrators.click();
   await expect(orchestrators).toHaveAttribute("aria-expanded", "false");

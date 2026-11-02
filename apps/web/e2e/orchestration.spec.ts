@@ -59,7 +59,7 @@ const pickChat = (page: Page) =>
 const workspaceRow = (page: Page, workspaceId: string) =>
   page.locator(`[data-testid="overview-workspace"][data-workspace-id="${workspaceId}"]`);
 
-/** A finished worker's row under the overview's Done today. */
+/** A finished worker's row under the overview's Done. */
 const doneRow = (page: Page, threadId: string) =>
   page.locator(`[data-testid="overview-done"][data-thread-id="${threadId}"]`);
 
@@ -67,8 +67,8 @@ const doneRow = (page: Page, threadId: string) =>
 const soloRow = (page: Page, threadId: string) =>
   page.locator(`[data-testid="overview-solo"][data-thread-id="${threadId}"]`);
 
-/** Done today, which starts folded, opened. */
-const unfoldDoneToday = async (page: Page) => {
+/** Done, which starts folded, opened. */
+const unfoldDone = async (page: Page) => {
   const toggle = page.getByTestId("overview-section-doneToday").getByRole("button").first();
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await toggle.click();
@@ -96,11 +96,11 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   const made = await simulate(page);
 
   // Their home is the workspace's line under Orchestrators, by its name; the worker, reported
-  // done, is under Done today, which names its workspace. Solo threads lists neither.
+  // done, is under Done, which names its workspace. Solo threads lists neither.
   const workspace = workspaceRow(page, made.workspaceId);
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAccessibleName(/^api, /);
   await expect(workspace).toContainText("No workers now.");
-  await unfoldDoneToday(page);
+  await unfoldDone(page);
   await expect(doneRow(page, made.workerThreadId)).toHaveAccessibleName(
     /^Return rate-limit headers, api · done, /,
   );
@@ -230,9 +230,9 @@ test("a worker's menu goes to its orchestrator, removing makes it a plain thread
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await simulate(page);
-  // The worker reported done, so its row is under Done today, and its menu is its thread's More….
+  // The worker reported done, so its row is under Done, and its menu is its thread's More….
   const workerRow = doneRow(page, made.workerThreadId);
-  await unfoldDoneToday(page);
+  await unfoldDone(page);
   await workerRow.click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.workerThreadId}$`));
 
@@ -762,10 +762,10 @@ test("an orchestrator shows no PR of its own, and its PR tab points at the Board
   await expect(page.getByTestId("pr-row")).toBeVisible();
 });
 
-test("finished work is under a folded Done today, and a merged worker offers its cleanup", async ({
+test("finished work is under a folded Done, and a merged worker offers its cleanup", async ({
   page,
 }) => {
-  // Midday, so the work the mock finished hours ago is still today's whatever the hour it runs.
+  // Midday, so the work the mock finished hours ago is in the week whatever the hour it runs.
   await page.clock.install({ time: new Date("2026-10-21T12:00:00") });
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
@@ -776,9 +776,9 @@ test("finished work is under a folded Done today, and a merged worker offers its
   });
 
   const [merged, , , shipped] = made.merged;
-  // Finished work is under Done today, which starts folded: the delivered worker, and the merged
+  // Finished work is under Done, which starts folded: the delivered worker, and the merged
   // one of `mail-trigger`, a feature still going.
-  await unfoldDoneToday(page);
+  await unfoldDone(page);
   await expect(doneRow(page, made.delivered)).toHaveAccessibleName(
     /^Changelog lint script, agent-platform · done, /,
   );

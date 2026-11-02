@@ -16,6 +16,8 @@ import { describe, expect, it } from "vitest";
 import {
   activityGist,
   capWords,
+  clockTime,
+  daysBefore,
   finishedRow,
   finishedWhen,
   NOW_LINE_WORDS,
@@ -224,57 +226,108 @@ describe("the tabs", () => {
     spike: summary("spike", "idle", { lastActivityAt: NOW - 12 * 24 * HOUR }),
   });
 
-  it("deals workers into Now, Done today and Earlier, grouped by feature", () => {
+  it("deals workers into Now and Done, Done by the day each finished, then by feature", () => {
     const tabs = workersByTab(ledger, live);
     expect(tabs.now.map((f) => [f.feature, f.rows.map((r) => r.threadId)])).toEqual([
       ["mail-trigger", ["queue"]],
     ]);
-    expect(tabs.doneToday.map((f) => [f.feature, f.rows.map((r) => r.threadId)])).toEqual([
-      ["mail-trigger", ["schema"]],
+    // Most recently finished first, each under its day; Done keeps every day Gram still has.
+    expect(tabs.done.map((f) => [f.day?.label, f.feature, f.rows.map((r) => r.threadId)])).toEqual([
+      ["Today", "mail-trigger", ["schema"]],
+      ["Mon 12 Oct", "tooling", ["uv"]],
+      ["Tue 6 Oct", "tooling", ["py39"]],
+      ["Sat 3 Oct", "spike", ["spike"]],
     ]);
-    // Most recently finished first.
-    expect(tabs.earlier.map((f) => [f.feature, f.rows.map((r) => r.threadId)])).toEqual([
-      ["tooling", ["uv", "py39"]],
-      ["spike", ["spike"]],
-    ]);
-    expect(tabCount(tabs.earlier)).toBe(3);
-    expect(tabs.earlier[0]!.rows[0]!.now).toBe("merged 12 Oct");
+    expect(tabCount(tabs.done)).toBe(4);
+    expect(tabs.done[1]!.rows[0]!.now).toBe("merged 12 Oct");
   });
 
-  it("searches finished workers by name, feature or repo", () => {
+  it("searches finished workers by name, feature or repo, keeping their days", () => {
     const tabs = workersByTab(ledger, live);
-    expect(searchWorkers(tabs.earlier, "web").map((f) => f.rows.map((r) => r.threadId))).toEqual([
-      ["py39"],
-    ]);
-    expect(searchWorkers(tabs.earlier, "SPIKE")).toHaveLength(1);
-    expect(searchWorkers(tabs.earlier, "nothing like it")).toEqual([]);
-    expect(searchWorkers(tabs.earlier, " ")).toEqual(tabs.earlier);
+    expect(
+      searchWorkers(tabs.done, "web").map((f) => [f.day?.label, f.rows.map((r) => r.threadId)]),
+    ).toEqual([["Tue 6 Oct", ["py39"]]]);
+    expect(searchWorkers(tabs.done, "SPIKE")).toHaveLength(1);
+    expect(searchWorkers(tabs.done, "nothing like it")).toEqual([]);
+    expect(searchWorkers(tabs.done, " ")).toEqual(tabs.done);
   });
 
-  it("opens on Done today only when nothing is going on", () => {
+  it("opens on Done only when nothing is going on", () => {
     const tabs = workersByTab(ledger, live);
     expect(openingTab(tabs)).toBe("now");
-    expect(openingTab({ ...tabs, now: [] })).toBe("doneToday");
+    expect(openingTab({ ...tabs, now: [] })).toBe("done");
     expect(openingTab(workersByTab(undefined, live))).toBe("now");
   });
 
   it("says when a finished worker finished in 24-hour time, or its day", () => {
     expect(finishedWhen(startOfDay(NOW) + 9 * HOUR + 5 * 60_000, NOW)).toBe("09:05");
     expect(finishedWhen(NOW - 2 * 24 * HOUR, NOW)).toBe("13 Oct");
+    expect(clockTime(NOW - 2 * 24 * HOUR)).toBe("14:40");
+  });
+
+  it("heads Done's days at local midnight: Today, Yesterday, then the weekday and date", () => {
+    const midnight = startOfDay(NOW);
+    const days = {
+      features: [
+        {
+          feature: "f",
+          workers: [
+            worker("first", "f", "delivered"),
+            worker("midnight", "f", "done"),
+            worker("late", "f", "merged"),
+            worker("parked", "f", "archived", { stateBase: { state: "merged", parked: true } }),
+            worker("week", "f", "delivered"),
+          ],
+        } as unknown as FeatureLedgerEntry,
+      ],
+    };
+    const tabs = workersByTab(
+      days,
+      facts({
+        first: summary("first", "idle", { completedAt: midnight + 60_000 }),
+        midnight: summary("midnight", "idle", { completedAt: midnight }),
+        late: summary("late", "idle", { completedAt: midnight - 60_000 }),
+        parked: summary("parked", "idle", { completedAt: daysBefore(NOW, 2) + 10 * HOUR }),
+        week: summary("week", "idle", { completedAt: daysBefore(NOW, 6) + HOUR }),
+      }),
+    );
+    expect(tabs.done.map((f) => [f.day?.label, f.rows.map((r) => r.threadId)])).toEqual([
+      ["Today", ["first", "midnight"]],
+      ["Yesterday", ["late"]],
+      ["Tue 13 Oct", ["parked"]],
+      ["Fri 9 Oct", ["week"]],
+    ]);
+    expect(tabs.done[0]!.day?.start).toBe(midnight);
+    expect(tabs.done[1]!.day?.start).toBe(daysBefore(NOW, 1));
+    // Archived by the orchestrator once its PR merged, it is still in Done, and still merged.
+    expect(tabs.done[2]!.rows[0]).toMatchObject({
+      state: "archived",
+      glyph: "merged",
+      now: "merged 13 Oct",
+    });
+  });
+
+  it("counts days by the calendar, so the week before starts at a midnight", () => {
+    expect(daysBefore(NOW, 0)).toBe(startOfDay(NOW));
+    expect(daysBefore(NOW, 6)).toBe(new Date(2026, 9, 9).getTime());
+    // Across the end of summer time in Europe (25 October 2026), a day is 25 hours long.
+    expect(daysBefore(new Date(2026, 9, 26, 12).getTime(), 1)).toBe(
+      new Date(2026, 9, 25).getTime(),
+    );
   });
 
   it("lists a worker closed with its worktree as a done row, beside the ledger's", () => {
     const today = closed("c1", startOfDay(NOW) + 11 * HOUR + 40 * 60_000, true);
     const old = closed("c2", NOW - 3 * 24 * HOUR, false);
     expect(finishedRow(today, NOW)).toMatchObject({
-      tab: "doneToday",
+      tab: "done",
       glyph: "merged",
       now: "merged 11:40",
       repo: "api",
       cleanedUp: true,
       held: false,
     });
-    expect(finishedRow(old, NOW)).toMatchObject({ tab: "earlier", glyph: "archived" });
+    expect(finishedRow(old, NOW)).toMatchObject({ tab: "done", glyph: "archived" });
     expect(finishedRow(old, NOW).now.split(" ").length).toBeLessThanOrEqual(NOW_LINE_WORDS);
 
     const withLive = {
@@ -286,11 +339,15 @@ describe("the tabs", () => {
       ],
     };
     const tabs = workersByTab(withLive, facts(), [today, old, closed("live", NOW, true)]);
-    // The reopened worker's ledger row wins; the closed ones join its feature's group.
-    const all = [...tabs.doneToday, ...tabs.earlier].flatMap((f) => f.rows);
+    // The reopened worker's ledger row wins; the closed ones join its feature on their days. With
+    // no thread to say when it finished, it goes last, under Earlier.
+    const all = tabs.done.flatMap((f) => f.rows);
     expect(all.filter((row) => row.threadId === "live")).toHaveLength(1);
     expect(all.find((row) => row.threadId === "live")?.cleanedUp).toBeUndefined();
-    expect(tabs.earlier.flatMap((f) => f.rows).map((row) => row.threadId)).toContain("c2");
-    expect(tabs.doneToday.filter((f) => f.feature === "mail-retry")).toHaveLength(1);
+    expect(tabs.done.map((f) => [f.day?.label, f.rows.map((r) => r.threadId)])).toEqual([
+      ["Today", ["c1"]],
+      ["Mon 12 Oct", ["c2"]],
+      ["Earlier", ["live"]],
+    ]);
   });
 });

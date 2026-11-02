@@ -56,7 +56,7 @@ const OPEN_AT_LAUNCH = [
 const OVERVIEW_SECTION_LABELS: Readonly<Record<OverviewOptionalSection, string>> = {
   solo: "Solo threads",
   pullRequests: "Pull requests",
-  doneToday: "Done today",
+  doneToday: "Done",
   usage: "Usage and slots",
 };
 
@@ -148,7 +148,7 @@ export function GeneralSection() {
         </SettingRow>
         <SettingRow
           label="Sidebar sections"
-          description="Which of the overview sidebar's optional sections show: solo threads, pull requests, Done today, and usage with worker slots at its foot, off by default as the title bar's meter has them."
+          description="Which of the overview sidebar's optional sections show: solo threads, pull requests, Done, and usage with worker slots at its foot, off by default as the title bar's meter has them."
           keywords={[
             "overview",
             "sections",

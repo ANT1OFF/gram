@@ -12,7 +12,7 @@ import {
 
 import type { MockFinishedSimulation, MockOrchestrationHost } from "./mock-orchestration";
 
-// The ⌘J Workers list scenario: the finished-work board with workers in every tab the list shows.
+// The ⌘J Workers list scenario: the finished-work board with workers in both of the list's sections.
 // A worker running live with a long transcript to scroll, one that asked a question, one merged
 // today, and three finished on earlier days. Two of them carry reports the user hasn't seen, one
 // with the helper's catch-up armed and one without, which falls back to its report's summary.
@@ -34,7 +34,7 @@ export interface MockWorkersSimulation extends MockFinishedSimulation {
   readonly live: ThreadId;
   /** Asked the orchestrator a question it is waiting on; its unseen report has no catch-up. */
   readonly asking: ThreadId;
-  /** Merged within the last hour, so in Done today whatever the time. */
+  /** Merged within the last hour, so under Done's Today whatever the time. */
   readonly doneToday: ThreadId;
   /** Merged or archived days ago. */
   readonly earlier: readonly ThreadId[];
@@ -210,7 +210,7 @@ export async function simulateWorkersList(
     at: now - 20 * MINUTE,
   });
 
-  // Done today: merged within the hour, or just after midnight when it is earlier than that.
+  // Today: merged within the hour, or just after midnight when it is earlier than that.
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
   const todayAt = Math.max(now - 40 * MINUTE, midnight.getTime() + MINUTE);
@@ -223,7 +223,7 @@ export async function simulateWorkersList(
     at: Math.min(todayAt, now) - 5 * MINUTE,
   });
 
-  // Earlier: finished on other days.
+  // Earlier days: one in the overview's week, two before it that only ⌘J lists.
   const uv = await spawn("tooling", "Migrate to uv", "migrate-uv");
   merged(uv, 377, now - 3 * DAY);
   const py39 = await spawn("tooling", "Drop Python 3.9", "drop-py39");

@@ -69,7 +69,7 @@ export interface OverviewFeature {
   readonly updatedAt: number;
 }
 
-/** States a worker has left the overview in: finished, or parked. ⌘J's Done today lists the finished. */
+/** States a worker has left the overview in: finished, or parked. ⌘J's Done lists the finished. */
 const GONE = new Set<FeatureCardWorker["state"]>(["merged", "delivered", "done", "archived"]);
 
 /** Whether a card's worker is live by its own state, and so may be in the overview. */
