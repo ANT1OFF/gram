@@ -10,7 +10,6 @@ import { HelpTip } from "@/settings/help-tip";
 import { useSettingsKeyboard } from "@/settings/leave-settings";
 import {
   isSubpage,
-  listedSettingsPages,
   rememberSettingsPage,
   SETTINGS_GROUPS,
   SETTINGS_PAGES,
@@ -28,7 +27,6 @@ import {
 } from "@/settings/search-scope";
 import { SettingsNav } from "@/settings/settings-nav";
 import { useSettingsScroll } from "@/settings/use-settings-scroll";
-import { useServerSettings } from "@/settings-sync/store";
 
 /** `?highlight=<words>` marks and scrolls to the settings on the page that those words find. */
 export interface SettingsSearch {
@@ -49,7 +47,7 @@ export const Route = createFileRoute("/settings")({
 });
 
 /**
- * Settings: the six groups beside the open page. A search shows every page's matches instead, the
+ * Settings: the groups beside the open page. A search shows every page's matches instead, the
  * open page's among them without remounting it, so a draft on it survives the search; Enter opens
  * the first match's page with it marked.
  */
@@ -69,15 +67,11 @@ function SettingsLayout() {
     },
   });
   const pathname = useLocation({ select: (location) => location.pathname });
-  const settings = useServerSettings((s) => s.settings);
-  const pages = listedSettingsPages(SETTINGS_PAGES, settings);
   // A page's own sub-pages, such as one workspace's settings, keep its tab selected.
   const current = SETTINGS_PAGES.find(
     (page) => pathname === page.path || pathname.startsWith(`${page.path}/`),
   );
   const subpage = current !== undefined && pathname !== current.path;
-  // A page just switched off stays open until left, rather than vanishing under the pointer.
-  const shown = current === undefined || pages.includes(current) ? pages : [...pages, current];
   // From the location rather than `Route.useSearch()`, which lags a commit behind the path when a
   // link moves between two pages under this layout, so the page would arrive without its highlight.
   const highlight = useLocation({ select: (location) => highlightOf(location.search) });
@@ -136,7 +130,7 @@ function SettingsLayout() {
               current?.wide && !searching ? "max-w-5xl" : "max-w-(--thread-max-width)",
             )}
           >
-            {shown.map((page) => {
+            {SETTINGS_PAGES.map((page) => {
               if (page.id === current?.id) {
                 return (
                   <PageSection

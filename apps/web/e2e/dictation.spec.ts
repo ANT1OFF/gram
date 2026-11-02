@@ -183,7 +183,7 @@ test("Keep microphone ready holds it from focus, hands a press what it heard, an
 
   // Inside the app: a reload would drop the microphone by itself.
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await openAdvancedPage(page, "Voice input");
+  await settingsNav(page).getByRole("link", { name: "Voice", exact: true }).click();
   await expect(page.getByTestId("voice-input-settings")).toContainText(
     "microphone indicator stays lit",
   );
@@ -275,8 +275,9 @@ test("a double tap of Right ⌥ keeps listening until the next press; Sounds off
 
   // The key and the sound settings, where they're changed.
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await openAdvancedPage(page, "Voice input");
+  await settingsNav(page).getByRole("link", { name: "Voice", exact: true }).click();
   const section = page.getByTestId("voice-input-settings");
+  await expect(section.getByTestId("dictate-key")).toHaveText(/^Right (⌥|Alt)$/);
   await expect(section.getByRole("switch", { name: "Sounds" })).not.toBeChecked();
   await expect(section.getByTestId("dictation-sound-volume")).toHaveCount(0);
   await section.getByRole("switch", { name: "Sounds" }).click();
@@ -494,21 +495,19 @@ test("holding the shortcut talks until it's let go; key repeat, Escape and a blu
 const MODEL = "nemotron-speech-en-0.6b-560ms-int8";
 const EFFICIENT = "nemotron-speech-en-0.6b-1120ms-int8";
 
-test("Settings: experimental until on, then the size and licence before the download", async ({
+test("Settings: Voice is a page of its own, off until on, with the size and licence before the download", async ({
   page,
 }) => {
   await withVoice(page, false);
-  // Off, the page isn't listed and a link to it opens Diagnostics, whose Experimental group has
-  // the switch.
-  await page.goto("/settings/voice-input");
-  await expect(page).toHaveURL(/\/settings\/diagnostics$/);
-  await settingsNav(page).getByRole("link", { name: "Advanced", exact: true }).click();
-  const rows = page.getByTestId("settings-subpages");
-  await expect(rows.getByRole("link", { name: "Diagnostics" })).toBeVisible();
-  await expect(rows.getByRole("link", { name: "Voice input" })).toHaveCount(0);
-  await rows.getByRole("link", { name: "Diagnostics" }).click();
-  const toggle = page.getByTestId("diagnostics").getByRole("switch", { name: "Voice input" });
+  // Off, the page is listed all the same, with the switch at the top and nothing else.
+  await page.goto("/settings/general");
+  await settingsNav(page).getByRole("link", { name: "Voice", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/voice-input$/);
+  const section = page.getByTestId("voice-input-settings");
+  const toggle = section.getByRole("switch", { name: "Voice input" });
   await expect(toggle).not.toBeChecked();
+  await expect(section).not.toContainText("Experimental");
+  await expect(section.getByTestId("dictate-key")).toHaveCount(0);
 
   await toggle.click();
   const notice = page.getByTestId("voice-input-notice");
@@ -525,8 +524,7 @@ test("Settings: experimental until on, then the size and licence before the down
   await toggle.click();
   await page.getByRole("button", { name: "Download 1.3 GB" }).click();
   await expect(toggle).toBeChecked();
-  await openAdvancedPage(page, "Voice input");
-  const section = page.getByTestId("voice-input-settings");
+  await expect(section.getByTestId("dictate-key")).toBeVisible();
   await expect(section.getByTestId("voice-model-ready")).toBeVisible();
 
   // A failed download says why, and resumes from what it kept.
@@ -670,4 +668,47 @@ test("Settings: microphone access that's off says where to turn it on", async ({
   });
   await expect(section).toContainText("Not allowed");
   await expect(section.getByRole("button", { name: "Open System Settings" })).toBeVisible();
+});
+
+test("Settings: the push-to-talk key takes a modifier held alone or a chord, as Keyboard's binding", async ({
+  page,
+}) => {
+  await withVoice(page);
+  await page.goto("/settings/voice-input");
+  const section = page.getByTestId("voice-input-settings");
+  const key = section.getByTestId("dictate-key");
+  await expect(key).toHaveText(/^(⌘⇧Space|Ctrl\+Shift\+Space)$/);
+  await expect(section).toContainText("Push-to-talk key");
+
+  // A modifier held alone, recorded as it comes up.
+  await section.getByRole("button", { name: "Change…" }).click();
+  const dialog = page.getByTestId("key-capture-dialog");
+  await page.keyboard.press("ControlRight");
+  await expect(dialog.getByTestId("key-capture-status")).toHaveText(/^Recorded Right (⌃|Ctrl)\.$/);
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(key).toHaveText(/^Right (⌃|Ctrl)$/);
+
+  // The one binding: Settings → Keyboard shows what the Voice page set.
+  await openAdvancedPage(page, "Keyboard");
+  await expect(page.getByTestId("binding-composer.dictate").locator("kbd")).toHaveText(
+    /^Right (⌃|Ctrl)$/,
+  );
+
+  // A chord another shortcut has is named, and Replace takes it.
+  await settingsNav(page).getByRole("link", { name: "Voice", exact: true }).click();
+  await section.getByRole("button", { name: "Change…" }).click();
+  await page.keyboard.press("ControlOrMeta+l");
+  await expect(dialog.getByTestId("key-capture-clash")).toContainText(
+    "Same keys as Focus composer",
+  );
+  await dialog.getByRole("button", { name: "Replace" }).click();
+  await expect(key).toHaveText(/^(⌘L|Ctrl\+L)$/);
+
+  // Escape leaves it as it was; the reset puts the platform's default back.
+  await section.getByRole("button", { name: "Change…" }).click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(key).toHaveText(/^(⌘L|Ctrl\+L)$/);
+  await section.getByRole("button", { name: "Reset Push-to-talk key to default" }).click();
+  await expect(key).toHaveText(/^(Right ⌥|Ctrl\+Shift\+Space)$/);
 });

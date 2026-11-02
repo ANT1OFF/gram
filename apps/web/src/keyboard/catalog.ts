@@ -1,4 +1,4 @@
-import type { ExperimentalSettings, Settings } from "@gram/contracts";
+import { voiceInputOn, type Settings } from "@gram/contracts";
 
 import { isMac, type ShortcutGroup } from "./registry";
 
@@ -8,8 +8,8 @@ export interface ShortcutDefinition {
   keys: string;
   label: string;
   group: ShortcutGroup;
-  /** The experimental switch its feature is still behind: listed only while that is on. */
-  experimental?: keyof ExperimentalSettings;
+  /** Listed only while this holds, for a shortcut of a feature that can be switched off. */
+  listed?: (settings: Settings) => boolean;
   /** May be bound to one modifier held alone (`altright`), for push-to-talk. */
   loneModifier?: boolean;
 }
@@ -212,7 +212,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
     keys: DICTATE_KEYS,
     label: "Dictate: hold to talk",
     group: "Composer",
-    experimental: "voiceInput",
+    listed: voiceInputOn,
     loneModifier: true,
   },
   // Answered in the composer's text area through `shortcutPressed`, and only while a suggested
@@ -270,6 +270,5 @@ export const listedShortcuts = (
 ): readonly ShortcutDefinition[] =>
   catalog.filter(
     (definition) =>
-      definition.experimental === undefined ||
-      settings?.experimental?.[definition.experimental] === true,
+      definition.listed === undefined || (settings !== undefined && definition.listed(settings)),
   );

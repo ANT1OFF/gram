@@ -32,6 +32,19 @@ function unusableReason(event: KeyboardEvent, mac: boolean): string | undefined 
   return "That key can't be part of a shortcut.";
 }
 
+/**
+ * What may get in the way of a modifier held alone: off macOS, Right Alt is AltGr on many layouts;
+ * on macOS, the system may answer Fn (the 🌐 key) itself.
+ */
+export function loneModifierCaveat(keys: string, mac = isMac()): string | undefined {
+  const key = keys.toLowerCase();
+  if (!mac && key === "altright")
+    return "Right Alt is AltGr on many keyboard layouts, where holding it types characters.";
+  if (mac && key === "fn")
+    return "macOS may answer Fn itself: set “Press 🌐 key to” to Do Nothing in System Settings → Keyboard.";
+  return undefined;
+}
+
 type Capture =
   | { readonly state: "recording" }
   | { readonly state: "recorded"; readonly keys: string }
@@ -108,6 +121,7 @@ export function KeyCaptureDialog({
             normaliseKeys(other.keys) === normaliseKeys(keys),
         );
   const systemUse = keys !== undefined && mac ? MAC_SYSTEM_KEYS[normaliseKeys(keys)] : undefined;
+  const caveat = keys === undefined ? undefined : loneModifierCaveat(keys, mac);
   const shown = keys === undefined ? undefined : formatKeys(keys, mac);
 
   const save = (replace: boolean) => {
@@ -159,6 +173,15 @@ export function KeyCaptureDialog({
         >
           <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           macOS uses {shown} for itself ({systemUse}), so Gram may never see it.
+        </p>
+      )}
+      {caveat && (
+        <p
+          data-testid="key-capture-caveat"
+          className="flex items-start gap-1.5 text-xs text-status-needs"
+        >
+          <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          {caveat}
         </p>
       )}
       <div className="flex flex-wrap justify-end gap-2">

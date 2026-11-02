@@ -149,7 +149,7 @@ describe("settings copy", () => {
     "%s keeps each description to one short line",
     async (_path, Page) => {
       const api = mockApi();
-      // Every experimental page on, so a switched-off feature's settings are read too.
+      // Voice input on, so the rows it shows only while on are read too.
       await api.updateSettings({ experimental: { voiceInput: true } });
       await renderPage(Page, api);
       expect(longCopy()).toEqual([]);

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-/** The Settings nav: the six groups. */
+/** The Settings nav: the groups. */
 export const settingsNav = (page: Page) =>
   page.getByRole("navigation", { name: "Settings sections" });
 

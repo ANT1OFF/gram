@@ -13,7 +13,6 @@ import { OptionGroup, SettingRow } from "./fields";
 import { SettingsGroup } from "./settings-group";
 import { useDiagnostics, useFeature } from "./use-diagnostics";
 import { useSaveSettings } from "./use-save-settings";
-import { VoiceInputSwitch } from "./voice-input-section";
 
 const LOG_LEVELS: readonly { value: LogLevel; label: string }[] = [
   { value: "error", label: "error" },
@@ -116,15 +115,6 @@ export function DiagnosticsSection() {
             </Button>
           )}
         </SettingRow>
-      </SettingsGroup>
-      <SettingsGroup
-        label="Experimental"
-        description="Features still being tried out. Each may change or go away."
-      >
-        <VoiceInputSwitch
-          label="Voice input"
-          description="Dictate into the composer, recognised on this computer by a 662 MB speech model."
-        />
       </SettingsGroup>
     </div>
   );

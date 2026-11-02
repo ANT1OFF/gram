@@ -1,8 +1,8 @@
-import { voiceSupported, type ExperimentalSettings, type Settings } from "@gram/contracts";
 import {
   Bell,
   Bot,
   Ellipsis,
+  Mic,
   Network,
   SlidersHorizontal,
   Sun,
@@ -58,7 +58,7 @@ export interface SettingsPage {
   readonly label: string;
   readonly path: SettingsPath;
   /**
-   * Which of the six groups the page belongs to. The page whose id is the group's is the group
+   * Which of the groups the page belongs to. The page whose id is the group's is the group
    * itself; the rest open from it, such as Advanced → Gateways.
    */
   readonly group: SettingsGroupId;
@@ -82,20 +82,16 @@ export interface SettingsPage {
   readonly wide?: boolean;
   /** Only on Windows, where the page has a setting; elsewhere its route opens General. */
   readonly windowsOnly?: boolean;
-  /**
-   * The experimental switch the page's feature is behind: listed, and searched, only while it is
-   * on. Settings → Diagnostics holds the switch meanwhile.
-   */
-  readonly experimental?: keyof ExperimentalSettings;
 }
 
-/** The six groups the nav lists; each is a page of its own, and Advanced opens the rest. */
+/** The groups the nav lists; each is a page of its own, and Advanced opens the rest. */
 export type SettingsGroupId =
   | "general"
   | "agents"
   | "workspaces"
   | "appearance"
   | "notifications"
+  | "voice-input"
   | "advanced";
 
 export interface SettingsNavGroup {
@@ -112,6 +108,7 @@ export const SETTINGS_GROUPS: readonly SettingsNavGroup[] = [
   { id: "workspaces", label: "Workspaces", path: "/settings/workspaces", icon: Network },
   { id: "appearance", label: "Appearance", path: "/settings/appearance", icon: Sun },
   { id: "notifications", label: "Notifications", path: "/settings/notifications", icon: Bell },
+  { id: "voice-input", label: "Voice", path: "/settings/voice-input", icon: Mic },
   { id: "advanced", label: "Advanced", path: "/settings/advanced", icon: Ellipsis },
 ];
 
@@ -234,16 +231,10 @@ export function AgentsPage() {
   );
 }
 
-/**
- * Settings → Advanced: a row for each page that opens from it, and Experimental, whose switches
- * sit on Diagnostics.
- */
+/** Settings → Advanced: a row for each page that opens from it. */
 export function AdvancedPage() {
-  const settings = useServerSettings((s) => s.settings);
   const updateAvailable = useUpdateAvailable();
-  const pages = listedSettingsPages(SETTINGS_PAGES, settings).filter(
-    (page) => page.group === "advanced" && isSubpage(page),
-  );
+  const pages = SETTINGS_PAGES.filter((page) => page.group === "advanced" && isSubpage(page));
   return (
     <SubpageList>
       {pages.map((page) => {
@@ -258,11 +249,6 @@ export function AdvancedPage() {
           />
         );
       })}
-      <SubpageRow
-        label="Experimental"
-        to="/settings/diagnostics"
-        search={{ highlight: "experimental" }}
-      />
     </SubpageList>
   );
 }
@@ -340,12 +326,35 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     defaults: Object.values(NOTIFICATIONS_DEFAULTS),
   },
   {
+    id: "voice-input",
+    label: "Voice",
+    path: "/settings/voice-input",
+    group: "voice-input",
+    description: "Dictate into the composer, recognised on this computer, with a key to talk.",
+    keywords: [
+      "voice input",
+      "dictation",
+      "dictate",
+      "speech",
+      "microphone",
+      "mic",
+      "transcribe",
+      "push to talk",
+      "hotkey",
+      "nemotron",
+      "parakeet",
+      // Where its switch lived until 1.5, so the old way there still finds it.
+      "experimental",
+    ],
+    search: VoiceInputSection,
+  },
+  {
     id: "advanced",
     label: "Advanced",
     path: "/settings/advanced",
     group: "advanced",
     description: "Gateways, helpers, connectors, storage, keys and the rest.",
-    keywords: ["experimental", "more"],
+    keywords: ["more"],
     search: null,
   },
   {
@@ -421,26 +430,6 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     windowsOnly: true,
   },
   {
-    id: "voice-input",
-    label: "Voice input",
-    path: "/settings/voice-input",
-    group: "advanced",
-    description:
-      "Dictate into the composer, recognised on this computer or by an optional gateway.",
-    keywords: [
-      "dictation",
-      "speech",
-      "microphone",
-      "mic",
-      "transcribe",
-      "voice",
-      "nemotron",
-      "whisper",
-    ],
-    search: VoiceInputSection,
-    experimental: "voiceInput",
-  },
-  {
     id: "updates",
     label: "Updates",
     path: "/settings/updates",
@@ -484,25 +473,13 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
  */
 export function settingsPagesFor(platform: string | undefined): readonly SettingsPage[] {
   return ALL_SETTINGS_PAGES.filter(
-    (page) =>
-      (platform === undefined || platform === "win32" || page.windowsOnly !== true) &&
-      (page.id !== "voice-input" || voiceSupported(platform)),
+    (page) => platform === undefined || platform === "win32" || page.windowsOnly !== true,
   );
 }
 
 export const SETTINGS_PAGES = settingsPagesFor(
   typeof window === "undefined" ? undefined : window.gram?.platform,
 );
-
-/** Settings pages whose experimental switch is on, plus the always-offered pages. */
-export const listedSettingsPages = (
-  pages: readonly SettingsPage[],
-  settings: Settings | undefined,
-): readonly SettingsPage[] =>
-  pages.filter(
-    (page) =>
-      page.experimental === undefined || settings?.experimental?.[page.experimental] === true,
-  );
 
 const LAST_PAGE_KEY = "gram.settings.page";
 

@@ -149,6 +149,25 @@ describe("one modifier alone", () => {
     expect(status()).toBe("Recorded Ctrl+Shift+Space.");
   });
 
+  it("warns that Right Alt is AltGr off macOS, and that macOS may answer Fn", () => {
+    openFor(dictate, false);
+    press({ key: "AltGraph", code: "AltRight" });
+    fireEvent.keyUp(window, { key: "AltGraph", code: "AltRight" });
+    expect(status()).toBe("Recorded Right Alt.");
+    expect(screen.getByTestId("key-capture-caveat").textContent).toContain("AltGr");
+    cleanup();
+
+    openFor(dictate, true);
+    press({ key: "Alt", code: "AltRight", altKey: true });
+    fireEvent.keyUp(window, { key: "Alt", code: "AltRight" });
+    expect(screen.queryByTestId("key-capture-caveat")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Record again" }));
+    press({ key: "Fn", code: "Fn" });
+    fireEvent.keyUp(window, { key: "Fn", code: "Fn" });
+    expect(status()).toBe("Recorded Fn.");
+    expect(screen.getByTestId("key-capture-caveat").textContent).toContain("Do Nothing");
+  });
+
   it("records nothing from a modifier alone for any other shortcut", () => {
     openFor(ROWS[0]!);
     press({ key: "Alt", code: "AltRight", altKey: true });

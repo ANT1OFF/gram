@@ -24,7 +24,7 @@ vi.mock("@tanstack/react-router", () => ({
 afterEach(cleanup);
 
 describe("SettingsNav", () => {
-  it("links the six groups in order and marks the open one", () => {
+  it("links the groups in order and marks the open one", () => {
     const onNavigate = vi.fn();
     render(<SettingsNav groups={SETTINGS_GROUPS} current="advanced" onNavigate={onNavigate} />);
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
@@ -32,7 +32,15 @@ describe("SettingsNav", () => {
       within(nav)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["General", "Agents", "Workspaces", "Appearance", "Notifications", "Advanced"]);
+    ).toEqual([
+      "General",
+      "Agents",
+      "Workspaces",
+      "Appearance",
+      "Notifications",
+      "Voice",
+      "Advanced",
+    ]);
     expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("Advanced");
     expect(screen.getByRole("link", { name: "Appearance" }).getAttribute("href")).toBe(
       "/settings/appearance",
@@ -43,7 +51,7 @@ describe("SettingsNav", () => {
     expect(onNavigate).toHaveBeenCalledOnce();
   });
 
-  it("files every page under one of the six, and each group has a page of its own", () => {
+  it("files every page under a group, and each group has a page of its own", () => {
     for (const group of SETTINGS_GROUPS) {
       const own = ALL_SETTINGS_PAGES.find((page) => page.id === group.id);
       expect(own?.path).toBe(group.path);
@@ -51,7 +59,7 @@ describe("SettingsNav", () => {
     }
     const ids = new Set(SETTINGS_GROUPS.map((group) => group.id));
     for (const page of ALL_SETTINGS_PAGES) expect(ids.has(page.group)).toBe(true);
-    // Everything that isn't one of the six opens from Advanced.
+    // Everything that isn't a group of its own opens from Advanced.
     expect(ALL_SETTINGS_PAGES.filter(isSubpage).every((page) => page.group === "advanced")).toBe(
       true,
     );
