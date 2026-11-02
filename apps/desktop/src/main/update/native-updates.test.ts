@@ -38,6 +38,7 @@ function harness(
     path: "/private/gram-native-candidate-x/candidate.zip",
     size: 1,
     sha256: "verified-sha",
+    sha512: "verified-sha512",
     deliver: async () => {},
     intact: async () => {
       steps.push("intact");
@@ -418,6 +419,29 @@ describe("install", () => {
     expect(moved.steps).toEqual(["snapshot closed", "record removed"]);
     const elsewhere = await readyHarness({ canInstall: false });
     expect((await elsewhere.updates.install("0.1.0-rc.18")).message).toMatch(/from Applications/);
+    expect(elsewhere.steps).toEqual(["record removed"]);
+  });
+
+  it("runs the AppImage's update through the same fence, and words its refusals for Linux", async () => {
+    const h = await readyHarness({ target: "appimage" });
+    expect(h.updates.state().target).toBe("appimage");
+    expect((await h.updates.install("0.1.0-rc.18")).status).toBe("installing");
+    expect(h.steps).toEqual([
+      "intact",
+      "pending?",
+      "transaction",
+      "hide",
+      "stop",
+      "record 0.1.0-rc.17→0.1.0-rc.18",
+      "stage",
+      "snapshot closed",
+      "armQuit",
+      "quitAndInstall",
+    ]);
+    const elsewhere = await readyHarness({ target: "appimage", canInstall: false });
+    const refused = await elsewhere.updates.install("0.1.0-rc.18");
+    expect(refused.message).toMatch(/AppImage it can replace/);
+    expect(refused.message).not.toMatch(/Applications|macOS/);
     expect(elsewhere.steps).toEqual(["record removed"]);
   });
 

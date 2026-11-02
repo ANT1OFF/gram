@@ -13,6 +13,13 @@ import { Toggle } from "./fields";
 function nextStep(state: AppUpdateState): { label: string; run: () => void } | undefined {
   const available = state.availableVersion;
   const downloaded = state.downloadedVersion;
+  // A .deb never downloads or installs: apt does, from the release page.
+  if (state.target === "deb") {
+    const page = state.releaseUrl;
+    return state.status === "available" && page
+      ? { label: "Open the release page", run: () => void window.gram?.openExternal(page) }
+      : undefined;
+  }
   if (state.status === "available" && available)
     return { label: `Download ${available}`, run: () => void nativeUpdates.download() };
   if (state.status === "ready" && downloaded)
@@ -24,10 +31,22 @@ function nextStep(state: AppUpdateState): { label: string; run: () => void } | u
   return undefined;
 }
 
+/** What Settings → Updates says about how this install updates, below the buttons. */
+function trustNote(state: AppUpdateState): string {
+  switch (state.target) {
+    case "deb":
+      return "Gram installed from the .deb doesn't update itself. Download the new gram_<version>_amd64.deb from the release page and install it with sudo apt install, then restart Gram.";
+    case "appimage":
+      return "An update replaces this AppImage file only once its SHA-512 and GitHub's SHA-256 match the release. Restarting saves sessions and stops running agents first; if one can't stop cleanly, nothing restarts.";
+    default:
+      return "macOS installs an update only when it's signed by the same Developer ID team as this app. Restarting saves sessions and stops running agents first; if one can't stop cleanly, nothing restarts.";
+  }
+}
+
 /**
- * Settings → Updates on a Developer ID signed install: the same states as the update pill, from
- * Electron's updater in main. Checking, downloading and restarting are each asked for; nothing
- * restarts on its own.
+ * Settings → Updates on a Developer ID signed Mac, the Linux AppImage or the .deb: the same states
+ * as the update pill, from the updater in main. Checking, downloading and restarting are each
+ * asked for; nothing restarts on its own. A .deb only checks and links to the release.
  */
 export function NativeUpdatesSection({
   state,
@@ -107,7 +126,11 @@ export function NativeUpdatesSection({
           {state.status === "checking" ? "Checking…" : "Check for updates"}
         </Button>
         {step && (
-          <Button size="sm" disabled={busy || !state.canInstall} onClick={step.run}>
+          <Button
+            size="sm"
+            disabled={busy || (state.target !== "deb" && !state.canInstall)}
+            onClick={step.run}
+          >
             {step.label}
           </Button>
         )}
@@ -140,13 +163,13 @@ export function NativeUpdatesSection({
       )}
 
       <p className="text-muted-foreground">
-        {nativeSourceNote(source?.repo)} macOS installs an update only when it's signed by the same
-        Developer ID team as this app. Restarting saves sessions and stops running agents first; if
-        one can't stop cleanly, nothing restarts.
+        {nativeSourceNote(source?.repo)} {trustNote(state)}
       </p>
-      {!state.canInstall && (
+      {!state.canInstall && state.target !== "deb" && (
         <p className="text-muted-foreground">
-          Gram updates itself only from Applications. Move it there to restart into updates.
+          {state.target === "appimage"
+            ? "Gram updates itself only when it can replace its AppImage file. Move the AppImage to a folder you own to restart into updates."
+            : "Gram updates itself only from Applications. Move it there to restart into updates."}
         </p>
       )}
     </div>

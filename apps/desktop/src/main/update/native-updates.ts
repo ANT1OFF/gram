@@ -1,4 +1,5 @@
-// A signed install's updates through Electron's updater (electron-updater on Squirrel.Mac): checks
+// An install's updates through Electron's updater (electron-updater on Squirrel.Mac for a signed
+// Mac, electron-updater's download and Gram's own file replacement for the Linux AppImage): checks
 // on a timer once automatic checks are on, downloads when the user asks, and restarts into the
 // update only after Gram's stop fence has attested sessions, the database and owned agents. A
 // refused fence quits nothing. Electron itself stays behind `NativeUpdaterPort`, so every step and
@@ -60,7 +61,15 @@ export interface NativeUpdaterPort {
 export interface NativeUpdatesOptions {
   readonly port: NativeUpdaterPort;
   readonly currentVersion: string;
-  /** Packaged, in Applications and writable: Squirrel.Mac can replace it. */
+  /**
+   * Whose port this is, for what Gram says: `mac` (Squirrel.Mac, the default) or `appimage`
+   * (Gram replaces the AppImage file; nothing is ever pending outside Gram).
+   */
+  readonly target?: "mac" | "appimage";
+  /**
+   * Packaged, in Applications and writable: Squirrel.Mac can replace it. For an AppImage: its file
+   * and folder are this user's to replace.
+   */
   readonly canInstall: boolean;
   readonly readPrefs: () => Promise<{
     readonly channel: UpdateChannel;
@@ -191,8 +200,23 @@ export function plainNotes(notes: unknown): string | null {
   return plain ? plain.slice(0, 8_000) : null;
 }
 
+/** What a refusal or a wait says, by target. */
+const COPY = {
+  mac: {
+    notInstallable: "Gram can only update itself from Applications. Move it there, then try again.",
+    slowStage: "macOS is still preparing the update. Gram waits for it; quitting now is safe.",
+  },
+  appimage: {
+    notInstallable:
+      "Gram can only update an AppImage it can replace. Move the AppImage to a folder you own, then try again.",
+    slowStage: "Gram is still writing the update. It waits for it; quitting now is safe.",
+  },
+} as const;
+
 export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdates {
   const { port, log } = options;
+  const target = options.target ?? "mac";
+  const copy = COPY[target];
   const now = options.now ?? Date.now;
   const later = options.setTimeout ?? ((callback, ms) => setTimeout(callback, ms));
   const every = options.setInterval ?? ((callback, ms) => setInterval(callback, ms));
@@ -255,6 +279,7 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
     currentVersion: options.currentVersion,
     channel: "stable",
     canInstall: options.canInstall,
+    target,
   });
   // Closed only by this controller's one launch operation, never by an unresolved native probe.
   let launchSettled = false;
@@ -478,10 +503,7 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
         ...(step ? { step } : {}),
       });
     };
-    if (!state.canInstall)
-      return refuse(
-        "Gram can only update itself from Applications. Move it there, then try again.",
-      );
+    if (!state.canInstall) return refuse(copy.notInstallable);
     const prefs = await options.readPrefs().catch(() => undefined);
     if (!prefs) return refuse("Gram couldn't read its update settings. Try again.");
     if (prefs.channel !== state.channel)
@@ -548,11 +570,7 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
         if (first === "slow") {
           // The fence has stopped everything, so quitting is safe; bringing it back isn't yet.
           options.armQuit();
-          apply({
-            type: "installHeld",
-            message:
-              "macOS is still preparing the update. Gram waits for it; quitting now is safe.",
-          });
+          apply({ type: "installHeld", message: copy.slowStage });
           show();
           await stage;
         }

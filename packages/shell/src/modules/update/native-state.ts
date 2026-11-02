@@ -1,7 +1,8 @@
-// The signed-install updater's state machine (Electron's updater on Squirrel.Mac): one pure
-// reducer, so main, the pill and Settings → Updates move through the same states. Main owns the
-// timing and the side effects (`apps/desktop/src/main/update/native-updates.ts`).
-import type { AppUpdateState, UpdateChannel } from "@gram/contracts";
+// The Electron updater's state machine (Squirrel.Mac on a signed Mac, the AppImage's own file
+// replacement on Linux, and the .deb's check-only notice): one pure reducer, so main, the pill and
+// Settings → Updates move through the same states. Main owns the timing and the side effects
+// (`apps/desktop/src/main/update/native-updates.ts`, `package-updates.ts`).
+import type { AppUpdateState, AppUpdateTarget, UpdateChannel } from "@gram/contracts";
 
 export type NativeUpdateEvent =
   | { readonly type: "checkStarted"; readonly channel: UpdateChannel; readonly manual: boolean }
@@ -11,6 +12,8 @@ export type NativeUpdateEvent =
       readonly notes: string | null;
       readonly date: string | null;
       readonly at: number;
+      /** The release's page, for a `deb` install, which downloads nothing itself. */
+      readonly releaseUrl?: string;
     }
   | { readonly type: "upToDate"; readonly at: number }
   | { readonly type: "checkFailed"; readonly message: string; readonly at: number }
@@ -41,9 +44,14 @@ export function initialNativeUpdateState(options: {
   readonly currentVersion: string;
   readonly channel: UpdateChannel;
   readonly canInstall: boolean;
+  /** `mac` by default. A `deb` never installs, whatever `canInstall` says. */
+  readonly target?: AppUpdateTarget;
 }): AppUpdateState {
+  const target = options.target ?? "mac";
   return {
     status: "idle",
+    target,
+    releaseUrl: null,
     channel: options.channel,
     currentVersion: options.currentVersion,
     availableVersion: null,
@@ -56,7 +64,7 @@ export function initialNativeUpdateState(options: {
     message: null,
     errorStep: null,
     notApplied: null,
-    canInstall: options.canInstall,
+    canInstall: target !== "deb" && options.canInstall,
   };
 }
 
@@ -102,6 +110,7 @@ export function reduceNativeUpdate(
               downloadedVersion: null,
               releaseNotes: null,
               releaseDate: null,
+              releaseUrl: null,
             }
           : {}),
       };
@@ -116,6 +125,7 @@ export function reduceNativeUpdate(
         downloadedVersion: downloaded ? event.version : null,
         releaseNotes: event.notes,
         releaseDate: event.date,
+        releaseUrl: event.releaseUrl ?? null,
         percent: downloaded ? 100 : null,
         checkedAt: event.at,
         message: null,
@@ -132,6 +142,7 @@ export function reduceNativeUpdate(
         downloadedVersion: null,
         releaseNotes: null,
         releaseDate: null,
+        releaseUrl: null,
         percent: null,
         checkedAt: event.at,
         message: null,
@@ -147,13 +158,16 @@ export function reduceNativeUpdate(
         availableVersion: null,
         releaseNotes: null,
         releaseDate: null,
+        releaseUrl: null,
         percent: null,
         checkedAt: event.at,
         message: event.message,
         errorStep: "check",
       };
     case "downloadStarted":
+      // A .deb downloads nothing: apt installs the release, never Gram.
       if (
+        state.target === "deb" ||
         state.availableVersion === null ||
         !(
           state.status === "available" ||
@@ -186,6 +200,7 @@ export function reduceNativeUpdate(
       };
     case "installStarted":
       if (
+        state.target === "deb" ||
         state.downloadedVersion === null ||
         !(state.status === "ready" || (state.status === "error" && state.errorStep === "install"))
       )

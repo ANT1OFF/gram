@@ -59,6 +59,8 @@ export interface CandidateSnapshot {
   readonly size: number;
   /** The SHA-256 of the bytes the descriptor held when the snapshot was taken. */
   readonly sha256: string;
+  /** Their SHA-512, base64, as electron-updater's manifest gives it. */
+  readonly sha512: string;
   /**
    * Streams the descriptor's bytes to `write`, hashing them as they go, and withholds the last
    * chunk unless the whole stream's SHA-256 is `sha256` and its length `size`: a stream that
@@ -70,16 +72,21 @@ export interface CandidateSnapshot {
   close(): Promise<void>;
 }
 
-async function digestOf(handle: FileHandle, size: number): Promise<string> {
+async function digestOf(
+  handle: FileHandle,
+  size: number,
+): Promise<{ readonly sha256: string; readonly sha512: string }> {
   const hash = createHash("sha256");
+  const long = createHash("sha512");
   const buffer = Buffer.alloc(CHUNK);
   for (let at = 0; at < size;) {
     const { bytesRead } = await handle.read(buffer, 0, Math.min(CHUNK, size - at), at);
     if (bytesRead === 0) throw new Error("The update snapshot ended early.");
     hash.update(buffer.subarray(0, bytesRead));
+    long.update(buffer.subarray(0, bytesRead));
     at += bytesRead;
   }
-  return hash.digest("hex");
+  return { sha256: hash.digest("hex"), sha512: long.digest("base64") };
 }
 
 /** Copies `source` into a fresh private directory under `tempDir` and holds the copy open. */
@@ -98,7 +105,7 @@ export async function snapshotCandidate(
     const info = await handle.stat();
     if (!info.isFile() || info.size < 1) throw new Error("The update snapshot isn't a file.");
     const { size, ino, dev } = info;
-    const sha256 = await digestOf(handle, size);
+    const { sha256, sha512 } = await digestOf(handle, size);
     const owned = handle;
     let closed = false;
     let closing: Promise<void> | undefined;
@@ -106,6 +113,7 @@ export async function snapshotCandidate(
       path,
       size,
       sha256,
+      sha512,
       async deliver(write) {
         if (closed) throw new Error("The update snapshot is closed.");
         const hash = createHash("sha256");

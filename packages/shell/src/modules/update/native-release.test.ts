@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   nativeChannelName,
   nativeManifestName,
+  nativePayloadName,
+  nativeReleasePage,
   nativeZipName,
   pickNativeRelease,
   renderNativeManifest,
@@ -118,7 +120,12 @@ describe("pickNativeRelease", () => {
     expect(pickNativeRelease(list, "prerelease", "0.1.0-rc.17")).toEqual({
       tag: "v0.1.0-rc.19",
       version: "0.1.0-rc.19",
-      zip: { id: 11, name: "gram_0.1.0-rc.19_darwin-arm64_signed.zip", size: 150_000_000, digest },
+      payload: {
+        id: 11,
+        name: "gram_0.1.0-rc.19_darwin-arm64_signed.zip",
+        size: 150_000_000,
+        digest,
+      },
       manifest: { id: 12, name: "rc-mac.yml", size: 400, digest },
       notes: "Notes for 0.1.0-rc.19",
       publishedAt: "2026-10-16T10:00:00Z",
@@ -169,5 +176,143 @@ describe("pickNativeRelease", () => {
     const list = [release("0.1.0-rc.17"), release("0.1.0-rc.16")];
     expect(pickNativeRelease(list, "prerelease", "0.1.0-rc.17")).toBeUndefined();
     expect(pickNativeRelease(list, "prerelease", "not a version")).toBeUndefined();
+  });
+});
+
+/** A release that carries the macOS and the Linux files, as one stable release does. */
+const both = (version: string, extra: Record<string, unknown> = {}) => {
+  const base = release(version);
+  return {
+    ...base,
+    assets: [
+      ...base.assets,
+      {
+        id: 21,
+        name: nativePayloadName(version, "appimage"),
+        size: 160_000_000,
+        digest,
+        state: "uploaded",
+      },
+      {
+        id: 22,
+        name: nativePayloadName(version, "deb"),
+        size: 110_000_000,
+        digest,
+        state: "uploaded",
+      },
+      {
+        id: 23,
+        name: nativeManifestName(version, "appimage"),
+        size: 400,
+        digest,
+        state: "uploaded",
+      },
+    ],
+    ...extra,
+  };
+};
+
+describe("Linux targets", () => {
+  it("names the AppImage, the .deb and electron-updater's linux channel files", () => {
+    expect(nativePayloadName("1.4.0", "appimage")).toBe("gram_1.4.0_x86_64.AppImage");
+    expect(nativePayloadName("1.4.0", "deb")).toBe("gram_1.4.0_amd64.deb");
+    expect(nativePayloadName("1.4.0")).toBe("gram_1.4.0_darwin-arm64_signed.zip");
+    expect(nativeManifestName("1.4.0", "appimage")).toBe("latest-linux.yml");
+    expect(nativeManifestName("1.4.0", "deb")).toBe("latest-linux.yml");
+    expect(nativeManifestName("1.4.0-rc.1", "appimage")).toBe("rc-linux.yml");
+    expect(nativeReleasePage("ANT1OFF/gram", "v1.4.0")).toBe(
+      "https://github.com/ANT1OFF/gram/releases/tag/v1.4.0",
+    );
+    expect(() => nativePayloadName("../x", "appimage")).toThrow();
+  });
+
+  it("renders and validates the AppImage's manifest, and never the ZIP's in its place", () => {
+    const input = {
+      version: "1.4.0",
+      target: "appimage" as const,
+      zip: "gram_1.4.0_x86_64.AppImage",
+      sha512,
+      size: 160_000_000,
+      releaseDate: "2026-11-02T10:00:00.000Z",
+    };
+    expect(renderNativeManifest(input)).toContain("  - url: gram_1.4.0_x86_64.AppImage\n");
+    const value = {
+      version: "1.4.0",
+      files: [{ url: input.zip, sha512, size: input.size }],
+      path: input.zip,
+      sha512,
+      releaseDate: input.releaseDate,
+    };
+    expect(
+      validateNativeManifest(value, { version: "1.4.0", size: input.size, target: "appimage" })
+        .path,
+    ).toBe(input.zip);
+    // The AppImage's manifest isn't the Mac's, nor the Mac's the AppImage's.
+    expect(() => validateNativeManifest(value, { version: "1.4.0", size: input.size })).toThrow();
+    expect(() =>
+      renderNativeManifest({ ...input, zip: "gram_1.4.0_darwin-arm64_signed.zip" }),
+    ).toThrow();
+    expect(() => renderNativeManifest({ ...input, zip: "gram_1.4.0_amd64.deb" })).toThrow();
+    expect(() =>
+      validateNativeManifest(value, {
+        version: "1.4.0",
+        size: input.size,
+        target: "deb" as "appimage",
+      }),
+    ).toThrow();
+  });
+
+  it("picks each target's own files from a release that carries both platforms", () => {
+    const list = [both("1.4.0")];
+    const appImage = pickNativeRelease(list, "stable", "1.3.1", "appimage");
+    expect(appImage?.payload).toEqual({
+      id: 21,
+      name: "gram_1.4.0_x86_64.AppImage",
+      size: 160_000_000,
+      digest,
+    });
+    expect(appImage?.manifest.name).toBe("latest-linux.yml");
+    expect(pickNativeRelease(list, "stable", "1.3.1", "deb")?.payload.name).toBe(
+      "gram_1.4.0_amd64.deb",
+    );
+    expect(pickNativeRelease(list, "stable", "1.3.1")?.payload.name).toBe(
+      "gram_1.4.0_darwin-arm64_signed.zip",
+    );
+  });
+
+  it("passes over a release without the Linux files, and never offers a downgrade", () => {
+    const list = [release("1.5.0"), both("1.4.0"), both("1.3.0")];
+    expect(pickNativeRelease(list, "stable", "1.3.1", "appimage")?.tag).toBe("v1.4.0");
+    expect(pickNativeRelease(list, "stable", "1.4.0", "appimage")).toBeUndefined();
+    expect(pickNativeRelease(list, "stable", "1.5.0", "deb")).toBeUndefined();
+    const noManifest = both("1.4.0");
+    const without = {
+      ...noManifest,
+      assets: noManifest.assets.filter((a) => a.name !== "latest-linux.yml"),
+    };
+    expect(pickNativeRelease([without], "stable", "1.3.1", "deb")).toBeUndefined();
+    const uploading = {
+      ...noManifest,
+      assets: noManifest.assets.map((a) =>
+        a.name.endsWith(".AppImage") ? { ...a, state: "starter" } : a,
+      ),
+    };
+    expect(pickNativeRelease([uploading], "stable", "1.3.1", "appimage")).toBeUndefined();
+  });
+
+  it("keeps RCs off Stable on Linux too", () => {
+    const rc = both("1.5.0-rc.1", { prerelease: true });
+    const rcAssets = {
+      ...rc,
+      assets: rc.assets.map((a) =>
+        a.name === "latest-linux.yml" ? { ...a, name: "rc-linux.yml" } : a,
+      ),
+    };
+    expect(pickNativeRelease([rcAssets, both("1.4.0")], "stable", "1.3.1", "appimage")?.tag).toBe(
+      "v1.4.0",
+    );
+    expect(
+      pickNativeRelease([rcAssets, both("1.4.0")], "prerelease", "1.3.1", "appimage")?.tag,
+    ).toBe("v1.5.0-rc.1");
   });
 });

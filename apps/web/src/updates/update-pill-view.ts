@@ -2,8 +2,8 @@ import type { AppUpdateState } from "@gram/contracts";
 
 import { formatClockTime, notificationTime } from "@/lib/time";
 
-/** What clicking the pill does. */
-type PillAction = "check" | "download" | "install" | "settings" | "none";
+/** What clicking the pill does; `release` opens the release page, for a .deb install. */
+type PillAction = "check" | "download" | "install" | "settings" | "release" | "none";
 
 type PillKind =
   | "checking"
@@ -29,7 +29,18 @@ export interface PillView {
 }
 
 const RESTART_NOTE = "Gram saves sessions and stops running agents first.";
-const ELSEWHERE = "Gram updates itself only from Applications. Click for Settings → Updates.";
+
+/** Why this install can't replace itself, and what a click does then. */
+const elsewhere = (state: AppUpdateState) =>
+  state.target === "appimage"
+    ? "Gram updates only an AppImage file it can replace. Click for Settings → Updates."
+    : "Gram updates itself only from Applications. Click for Settings → Updates.";
+
+/** What the last step of a download checks, as the pill says it. */
+const verifying = (state: AppUpdateState, version: string | undefined) =>
+  state.target === "appimage"
+    ? `Verifying Gram ${version}: its checksums and version.`
+    : `Verifying Gram ${version}: its signature, notarization and version.`;
 
 /** `Published 16 Oct, 10:00`, on a 24-hour clock; undefined for no or a malformed date. */
 function published(date: string | null, intl?: { timeZone?: string; locale?: string }) {
@@ -89,7 +100,7 @@ export function pillView(
         hint: lines(
           `Gram ${downloaded} is ready.`,
           published(state.releaseDate, intl),
-          state.canInstall ? `Restart to update. ${RESTART_NOTE}` : ELSEWHERE,
+          state.canInstall ? `Restart to update. ${RESTART_NOTE}` : elsewhere(state),
         ),
         action: state.canInstall ? "install" : "settings",
         ...(downloaded ? { version: downloaded } : {}),
@@ -102,7 +113,7 @@ export function pillView(
         label: percent >= 100 ? "Verifying…" : `${percent}%`,
         hint:
           percent >= 100
-            ? `Verifying Gram ${available}: its signature, notarization and version.`
+            ? verifying(state, available)
             : `Downloading Gram ${available} · ${percent}%`,
         action: "none",
         percent,
@@ -110,13 +121,27 @@ export function pillView(
       });
     }
     case "available":
+      // A .deb downloads nothing itself: the click opens the release, for apt to install.
+      if (state.target === "deb")
+        return withNotes({
+          kind: "available",
+          hint: lines(
+            `Gram ${available} is available.`,
+            published(state.releaseDate, intl),
+            state.releaseUrl
+              ? "Click to open the release page; install the new .deb with apt."
+              : "Install the new .deb from the release page with apt.",
+          ),
+          action: state.releaseUrl ? "release" : "settings",
+          ...(available ? { version: available } : {}),
+        });
       return withNotes({
         kind: "available",
         hint: lines(
           notApplied?.version === available && `Gram ${available} didn't apply last time.`,
           `Gram ${available} is available.`,
           published(state.releaseDate, intl),
-          state.canInstall ? "Click to download." : ELSEWHERE,
+          state.canInstall ? "Click to download." : elsewhere(state),
         ),
         action: state.canInstall ? "download" : "settings",
         ...(available ? { version: available } : {}),

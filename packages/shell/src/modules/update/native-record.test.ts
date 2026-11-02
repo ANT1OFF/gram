@@ -50,3 +50,15 @@ describe("install record", () => {
     });
   });
 });
+
+describe("judgeInstallRecord on the AppImage", () => {
+  it("says this copy is still the old version, not that macOS kept it", () => {
+    const restart = { schema: 1 as const, from: "1.3.1", to: "1.4.0", at: 1_000_000 };
+    const verdict = judgeInstallRecord(restart, "1.3.1", restart.at + 5_000, "Hint.", "appimage");
+    expect(verdict).toEqual({
+      kind: "notApplied",
+      version: "1.4.0",
+      reason: "Gram restarted but this copy is still 1.3.1. Hint.",
+    });
+  });
+});

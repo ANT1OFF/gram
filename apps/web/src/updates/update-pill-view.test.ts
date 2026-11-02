@@ -193,3 +193,37 @@ describe("statusLine", () => {
     ).toBe("Gram 0.1.0-rc.18 is downloaded · the restart didn't go ahead");
   });
 });
+
+describe("pillView on Linux", () => {
+  it("sends a .deb to the release page, never to a download", () => {
+    expect(
+      at({
+        target: "deb",
+        canInstall: false,
+        status: "available",
+        availableVersion: "1.4.0",
+        releaseUrl: "https://github.com/ANT1OFF/gram/releases/tag/v1.4.0",
+      }),
+    ).toMatchObject({
+      kind: "available",
+      action: "release",
+      hint: "Gram 1.4.0 is available.\nClick to open the release page; install the new .deb with apt.",
+    });
+  });
+
+  it("words an AppImage's refusal and verification for Linux", () => {
+    const view = at({
+      target: "appimage",
+      canInstall: false,
+      status: "available",
+      availableVersion: "1.4.0",
+    });
+    expect(view?.action).toBe("settings");
+    expect(view?.hint).toMatch(/AppImage file it can replace/);
+    expect(view?.hint).not.toMatch(/Applications/);
+    expect(
+      at({ target: "appimage", status: "downloading", availableVersion: "1.4.0", percent: 100 })
+        ?.hint,
+    ).toBe("Verifying Gram 1.4.0: its checksums and version.");
+  });
+});
