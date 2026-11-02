@@ -296,12 +296,7 @@ const workerCount = (row: RailRow): number =>
 /** The first line in no group under the bands, headed, so it doesn't read as the band's above it. */
 function OtherLine({ place, children }: { place: RowPlace; children: ReactNode }) {
   return (
-    <li
-      ref={place.ref}
-      data-index={place["data-index"]}
-      style={place.style}
-      className={place.className}
-    >
+    <li {...place}>
       <p
         data-testid="rail-other"
         className="bg-card/40 px-4 py-2 text-sm font-medium text-muted-foreground"
