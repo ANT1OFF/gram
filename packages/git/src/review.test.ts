@@ -13,6 +13,7 @@ import {
   matchesBotLogin,
   parseMeta,
   parseSeverity,
+  personCommentsOf,
   stripMeta,
 } from "./review.ts";
 
@@ -341,5 +342,32 @@ describe("configured bot approval eligibility", () => {
       verdictOnHeadBy: "example-code-review",
       latestVerdict: "commented",
     });
+  });
+});
+
+describe("people's comments", () => {
+  it("lists people's issue comments and comment-only reviews, never a bot's or a verdict", () => {
+    const node = {
+      comments: {
+        nodes: [
+          { id: "IC_1", author: { login: "alice", __typename: "User" }, body: "Rename it." },
+          { id: "IC_2", author: { login: "example-code-review", __typename: "Bot" }, body: "x" },
+          { id: "IC_3", author: { login: "deploy-preview[bot]", __typename: "User" }, body: "x" },
+          { id: "IC_4", author: null, body: "from a deleted account" },
+        ],
+      },
+      reviews: {
+        nodes: [
+          review("PRR_1", "bob", "COMMENTED"),
+          review("PRR_2", "bob", "APPROVED", "ok"),
+          review("PRR_3", "example-code-review", "COMMENTED", "[suggestion] x", "User"),
+          review("PRR_4", "ci-helper", "COMMENTED", "x", "Bot"),
+        ],
+      },
+    };
+    expect(personCommentsOf(node, bots)).toEqual([
+      { id: "IC_1", author: "alice" },
+      { id: "PRR_1", author: "bob" },
+    ]);
   });
 });

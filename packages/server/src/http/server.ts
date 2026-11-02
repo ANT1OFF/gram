@@ -25,6 +25,8 @@ import { ReviewAppToolsLive } from "../babysit/review-tools.ts";
 import { PanePort } from "../browser/pane-port.ts";
 import { BrowserAppToolsLive } from "../browser/tools.ts";
 import { DevServerAppToolsLive } from "../browser/dev-server-tools.ts";
+import { PrCommentWakesLive } from "../babysit/pr-comments.ts";
+import { PrCommentReads } from "../git/pr-comments.ts";
 import { BabysitLive } from "../babysit/service.ts";
 import { HiddenPrsLive } from "../git/hidden-prs.ts";
 import { WorktreeSweepLive } from "../git/worktree-gc.ts";
@@ -353,7 +355,14 @@ export const ServerCore = Layer.unwrap(
             ),
           ),
           Layer.provideMerge(OrchestrationMemory.layer),
-          Layer.provideMerge(Layer.mergeAll(BabysitLive, RunMonitorLive, ThreadWakesLive)),
+          Layer.provideMerge(
+            Layer.mergeAll(
+              BabysitLive,
+              PrCommentWakesLive.pipe(Layer.provide(PrCommentReads.layer)),
+              RunMonitorLive,
+              ThreadWakesLive,
+            ),
+          ),
           Layer.provideMerge(PlanKeeperLive),
           Layer.provideMerge(GitStatePublisherLive),
           Layer.provideMerge(ReviewRequestsLive),

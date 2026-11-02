@@ -445,6 +445,34 @@ describe("GraphQL", () => {
     }),
   );
 
+  it.effect(
+    "lists people's comments by id on a badge that read the reviews, and asks for them",
+    () =>
+      Effect.gen(function* () {
+        const { proc } = mockProc(() => ({ status: 1, stdout: "" }));
+        const anchored = { ...inputs("feature"), localTip: "deadbeef" };
+        const node = reshapePrNode({
+          number: 9,
+          state: "OPEN",
+          url: "u",
+          headRefOid: "deadbeef",
+          comments: {
+            nodes: [
+              { id: "IC_1", author: { login: "alice", __typename: "User" }, body: "Rename it." },
+            ],
+          },
+          reviews: { nodes: [] },
+        });
+        const badge = yield* buildPrStatus([node], anchored).pipe(
+          Effect.provideService(Proc, proc),
+        );
+        expect(badge?.personComments).toEqual([{ id: "IC_1", author: "alice" }]);
+        expect(prGraphqlQuery([{ kind: "pr", fields: "review" }])).toContain(
+          "comments(last:10){nodes{id author{login __typename} body}}",
+        );
+      }),
+  );
+
   it.effect("builds identical badges from REST and reshaped GraphQL lists", () =>
     Effect.gen(function* () {
       const { proc } = mockProc(() => ({ status: 1, stdout: "" }));

@@ -33,7 +33,7 @@ import { Proc } from "./proc.ts";
 import { detectRateLimit, type RateLimitSignal } from "./rate-limit.ts";
 import { originTips } from "./refs.ts";
 import { cachedOriginUrl } from "./repo-facts.ts";
-import { buildReviewState } from "./review.ts";
+import { buildReviewState, personCommentsOf } from "./review.ts";
 import { ReviewBots } from "./review-bots.ts";
 import { mergeCiForLaunch } from "./merge-ci.ts";
 import { Tools } from "./tools.ts";
@@ -433,6 +433,7 @@ const toPrStatus = (
   const requested = reviewRequests(p);
   const read = p["review"];
   const review = isJson(read) ? buildReviewState(read, bots, login(p)) : undefined;
+  const personComments = isJson(read) ? personCommentsOf(read, bots) : [];
   const checks = rollupStatus(p["statusCheckRollup"]);
   const requiredChecks = requiredRollupStatus(p["statusCheckRollup"]);
   return {
@@ -449,6 +450,7 @@ const toPrStatus = (
     ...(requested.length === 0 ? {} : { reviewRequests: requested }),
     ...(review === undefined ? {} : { review }),
     ...(isJson(read) ? {} : { reviewUnread: true }),
+    ...(personComments.length === 0 ? {} : { personComments }),
   };
 };
 
@@ -565,10 +567,11 @@ const badgeGqlFields = (number: string) =>
 const DISCOVERY_GQL_FIELDS = "number state headRefOid";
 
 // Review-bot state: summary reviews and progress comments, and bot-started threads.
-// The reviews are everyone's, so people's verdicts come from the same connection at no extra cost.
+// The reviews and comments are everyone's, so people's verdicts and the ids of their comments come
+// from the same connections at no extra cost: scalar fields add nothing to a document's price.
 const REVIEW_GQL_FIELDS =
   "reviews(last:20){nodes{id author{login __typename} state submittedAt commit{oid} body}} " +
-  "comments(last:10){nodes{author{login} body}}";
+  "comments(last:10){nodes{id author{login __typename} body}}";
 const THREADS_GQL_FIELD =
   "reviewThreads(first:50){nodes{isResolved isOutdated comments(first:3){nodes{author{login __typename} body}}}}";
 

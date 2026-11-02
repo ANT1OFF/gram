@@ -426,6 +426,9 @@ export type MergeWaiting = typeof MergeWaiting.Type;
 /** The most people's reviews a `MonitorMark` remembers; older ones fall off the front. */
 export const MONITOR_MARK_REVIEWS_MAX = 32;
 
+/** The most people's comments a `MonitorMark` remembers; twice what a badge lists. */
+export const MONITOR_MARK_COMMENTS_MAX = 64;
+
 /**
  * What a PR's monitors last saw of it, kept with the binding so the first look after a restart
  * compares against it: without it, that look is only a baseline, and a CI settle, a bot round or a
@@ -446,6 +449,13 @@ export const MonitorMark = Schema.Struct({
   /** People's reviews already seen, by id, newest last. */
   humanReviews: Schema.optionalKey(
     Schema.Array(Schema.String).check(Schema.isMaxLength(MONITOR_MARK_REVIEWS_MAX)),
+  ),
+  /**
+   * People's comments already seen, by id, newest last: delivered to the thread, or passed over as
+   * a bot's, the thread's own, an untrusted author's or from before the monitor looked.
+   */
+  comments: Schema.optionalKey(
+    Schema.Array(Schema.String).check(Schema.isMaxLength(MONITOR_MARK_COMMENTS_MAX)),
   ),
 });
 export type MonitorMark = typeof MonitorMark.Type;

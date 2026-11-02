@@ -2,10 +2,16 @@
 // here and degrades to "unknown" instead of failing: untagged findings, missing meta, unfamiliar
 // progress comments.
 
-import { HUMAN_REVIEW_BODY_CHARS, isBotLogin, matchesBotLogin } from "@gram/contracts";
+import {
+  HUMAN_REVIEW_BODY_CHARS,
+  isBotLogin,
+  matchesBotLogin,
+  MAX_PERSON_COMMENTS,
+} from "@gram/contracts";
 import type {
   BotReview,
   HumanReview,
+  PersonComment,
   PrReviewState,
   ReviewBot,
   ReviewComment,
@@ -211,6 +217,35 @@ export const humanReviewsOf = (
       },
     ];
   });
+};
+
+/** Whether `node`'s author is a person: not a configured bot, not a GitHub App, not deleted. */
+const byPerson = (node: Json, bots: ReadonlyArray<ReviewBot>): boolean => {
+  const who = login(node);
+  return (
+    who !== "" &&
+    at(node, ["author", "__typename"]) !== "Bot" &&
+    !/\[bot\]$/i.test(who) &&
+    !isBotLogin(bots, who)
+  );
+};
+
+/**
+ * People's issue comments and comment-only reviews on a PullRequest node carrying `comments` and
+ * `reviews`, by id, oldest first within each. A review that approved or requested changes is a
+ * person's verdict (`humanReviewsOf`), told on its own; a comment-only review includes GitHub's
+ * empty wrapper around an inline comment or a reply in a thread.
+ */
+export const personCommentsOf = (
+  node: Json,
+  bots: ReadonlyArray<ReviewBot>,
+): Array<PersonComment> => {
+  const comments = arr(at(node, ["comments", "nodes"]));
+  const reviews = arr(at(node, ["reviews", "nodes"])).filter((r) => r["state"] === "COMMENTED");
+  return [...comments, ...reviews]
+    .filter((each) => str(each["id"]) !== "" && byPerson(each, bots))
+    .map((each) => ({ id: str(each["id"]), author: login(each) }))
+    .slice(-MAX_PERSON_COMMENTS);
 };
 
 /**
