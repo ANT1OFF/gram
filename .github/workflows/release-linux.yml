@@ -64,7 +64,6 @@ jobs:
     steps:
       # Inputs reach the shell only as environment variables, never spliced into a script.
       - name: Check the request
-        id: request
         env:
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
@@ -82,11 +81,11 @@ jobs:
             # The attestation names the run's commit, so the run must be the release commit.
             [ "$SHA" = "$SOURCE_SHA" ] || { echo "main moved: the run is at $SHA, the release at $SOURCE_SHA"; exit 1; }
           fi
-          echo "sha=$SHA" >>"$GITHUB_OUTPUT"
+      # The event's own commit, never a ref taken from an input: on a dispatch the step above has
+      # shown it is the release commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ steps.request.outputs.sha }}
       - name: Check the version
         id: version
         env:
@@ -167,7 +166,7 @@ jobs:
         id: record
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          SOURCE: ${{ steps.request.outputs.sha }}
+          SOURCE: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
