@@ -4,16 +4,25 @@
 // without the GPL espeak-ng), the bundled web app, the third-party notices, and node-pty's
 // spawn-helper exec bit (macOS).
 //
+// Linux ships without local dictation, so there it checks that no sherpa-onnx is packaged or
+// noticed, that node-pty's compiled addon stays within Debian 12's glibc, and, on a Linux host of
+// the package's arch, loads node-pty through the packaged app (tools/release-rc/native-probe.cjs).
+// It then checks the AppImage and .deb electron-builder made beside the unpacked app: their
+// metadata, desktop entry, icons, and that each carries the same app.asar and pty.node.
+//
 // The shipped bundles are minified with their comments stripped (shipped-code.ts), so what each
 // one carries comes from the lists its build recorded (tools/notices/bundled-packages.mjs), matched
 // to the packaged files by SHA-256. Run it after the build that made the package.
 //
 //   node scripts/verify-package.mjs [--release <dir>] [--platform darwin|win32|linux] [--arch arm64|x64]
-//                                   [--lists <dir>]
-import { createHash } from "node:crypto";
+//                                   [--lists <dir>] [--dir-only]
+//
+// `--dir-only` skips the Linux AppImage and .deb, for a `--dir` package.
+import { createHash, randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
@@ -57,6 +66,8 @@ const { findBinaries, findForeignBinaries, listFiles } = require("../build/nativ
 
 const APP_ID = "io.github.ant1off.gram";
 const PRODUCT = "Gram";
+/** The @parcel/watcher addon package the Linux package carries (electron-builder.yml). */
+const WATCHER_LINUX = "@parcel/watcher-linux-x64-glibc";
 const ASAR_ENTRIES = [
   "package.json",
   "out/main/index.js",
@@ -77,9 +88,12 @@ const { values } = parseArgs({
       type: "string",
       default: path.resolve(import.meta.dirname, "../../../out/notices/lists"),
     },
+    "dir-only": { type: "boolean", default: false },
   },
 });
 const { release, platform, arch, lists } = values;
+/** Linux packages leave local dictation out: no sherpa-onnx ships (electron-builder.yml). */
+const speech = platform !== "linux";
 
 let failures = 0;
 function check(label, ok, detail) {
@@ -194,6 +208,10 @@ if (platform === "darwin") {
     .filter(([fuse, on]) => wire[FuseV1Options[fuse]] !== (on ? FUSE_ON : FUSE_OFF))
     .map(([fuse, on]) => `${fuse} should be ${on ? "on" : "off"}`);
   check("Electron fuses", wrong.length === 0, wrong.join(", ") || "as electron-builder.yml sets");
+  if (platform === "linux") {
+    // Electron 45 validates ASAR integrity on macOS and Windows only; the fuse is set but inert.
+    console.log("note  ASAR integrity: fuse on, not enforced by Electron on Linux");
+  }
 }
 
 const asar = path.join(resources, "app.asar");
@@ -215,6 +233,10 @@ if (fs.existsSync(asar)) {
   );
   const tests = entries.map((e) => e.path).filter((p) => /\.(test|spec)\.[cm]?[jt]sx?\b/.test(p));
   check("no test files in the asar", tests.length === 0, tests.join(", "));
+  if (!speech) {
+    const sherpaEntries = entries.map((e) => e.path).filter((p) => /(^|\/)sherpa-onnx/.test(p));
+    check("no sherpa-onnx in the asar", sherpaEntries.length === 0, sherpaEntries.join(", "));
+  }
   const packedNatives = [...packed].filter((p) => p.endsWith(".node"));
   check("no native modules inside the asar", packedNatives.length === 0, packedNatives.join(", "));
   // Main must only fork the server. A bundle that requires it runs the server in the main
@@ -270,7 +292,7 @@ if (fs.existsSync(asar)) {
 
   // The server and its command worker must carry their dependencies: only Node built-ins and the
   // externalized natives may be required at runtime, because the asar holds no other node_modules.
-  // `@parcel/watcher` is imported lazily by Linux dev only and never packaged (checked below).
+  // `@parcel/watcher` is imported lazily on Linux, whose package alone carries it (checked below).
   const builtins = new Set(require("node:module").builtinModules);
   const externals = new Set(["node-pty", "@parcel/watcher"]);
   const runtimeRequires = [...externalsOf("server", "proc-worker")].filter((name) => {
@@ -315,8 +337,8 @@ check(
     : `${natives.length} binaries`,
 );
 
-// No shipped target uses @parcel/watcher: macOS and Windows watch with fs.watch, and only Linux dev
-// imports it.
+// macOS and Windows watch with fs.watch, so @parcel/watcher isn't in the asar's unpacked modules on
+// any target; the Linux package carries it in resources/node_modules (checked below).
 const parcelPackages = new Set(
   listFiles(path.join(unpacked, "node_modules", "@parcel"))
     .map((f) => path.relative(path.join(unpacked, "node_modules"), f).split(/[\\/]/))
@@ -357,13 +379,26 @@ const onnxRuntime =
     : platform === "linux"
       ? "libonnxruntime.so"
       : "libonnxruntime.dylib";
-check(
-  `sherpa-onnx ${platform}-${arch} addon bundled`,
-  ["sherpa-onnx.node", onnxRuntime].every((file) =>
-    fs.existsSync(path.join(unpacked, sherpaPackage, file)),
-  ) && fs.existsSync(path.join(unpacked, "node_modules", "sherpa-onnx-node", "addon.js")),
-  sherpaPackage,
-);
+if (speech) {
+  check(
+    `sherpa-onnx ${platform}-${arch} addon bundled`,
+    ["sherpa-onnx.node", onnxRuntime].every((file) =>
+      fs.existsSync(path.join(unpacked, sherpaPackage, file)),
+    ) && fs.existsSync(path.join(unpacked, "node_modules", "sherpa-onnx-node", "addon.js")),
+    sherpaPackage,
+  );
+} else {
+  // Its Linux builds carry text-to-speech, which links GPL code (espeak-ng, piper-phonemize).
+  const sherpa = fs.existsSync(path.join(unpacked, "node_modules"))
+    ? fs.readdirSync(path.join(unpacked, "node_modules")).filter((n) => n.startsWith("sherpa-onnx"))
+    : [];
+  const onnx = listFiles(unpacked).filter((f) => /onnx|espeak|piper/i.test(path.basename(f)));
+  check(
+    "no sherpa-onnx or ONNX Runtime packaged (Linux ships without dictation)",
+    sherpa.length === 0 && onnx.length === 0,
+    [...sherpa, ...onnx.map((f) => path.relative(unpacked, f))].join(", "),
+  );
+}
 
 // The npm darwin-arm64 build carries text-to-speech, and up to 1.13.8 statically linked espeak-ng
 // (GPL-3.0-or-later) through piper-phonemize for it; Gram ships the speech-recognition-only build
@@ -402,8 +437,19 @@ if (notices && fs.existsSync(asar)) {
   for (const bundle of readBundleLists(lists).values())
     for (const name of bundle.packages.map(packageName))
       if (!noticed.has(name)) uncovered.add(name);
-  for (const name of ["electron", "node-pty", "sherpa-onnx-node", path.basename(sherpaPackage)])
-    if (!noticed.has(name)) uncovered.add(name);
+  const nativePackages = ["electron", "node-pty"];
+  if (platform === "linux") nativePackages.push("@parcel/watcher", WATCHER_LINUX);
+  if (speech) nativePackages.push("sherpa-onnx-node", path.basename(sherpaPackage));
+  for (const name of nativePackages) if (!noticed.has(name)) uncovered.add(name);
+  if (!speech) {
+    // Notices for what doesn't ship would claim it does.
+    const sherpaNotices = [...noticed].filter((name) => name.startsWith("sherpa-onnx"));
+    check(
+      "notices name no sherpa-onnx package or library",
+      sherpaNotices.length === 0 && !notices.includes("Libraries compiled into sherpa-onnx"),
+      sherpaNotices.join(", "),
+    );
+  }
   check(
     "notices cover every bundled and native package",
     noticed.size > 0 && uncovered.size === 0,
@@ -423,6 +469,271 @@ if (platform === "darwin") {
   for (const helper of helpers) {
     const mode = fs.statSync(helper).mode;
     check("spawn-helper executable", (mode & 0o111) === 0o111, path.relative(unpacked, helper));
+  }
+}
+
+const sha = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const mib = (file) => `${(fs.statSync(file).size / 1024 / 1024).toFixed(1)} MiB`;
+
+/** A .desktop file's [Desktop Entry] keys. */
+const desktopEntry = (file) =>
+  Object.fromEntries(
+    fs
+      .readFileSync(file, "utf8")
+      .split("\n")
+      .filter((line) => /^[A-Za-z]+=/.test(line))
+      .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+  );
+
+/** Checks the keys a Linux artifact's desktop entry must carry. */
+const checkEntry = (label, file, exec) => {
+  if (!fs.existsSync(file)) return check(`${label} desktop entry`, false, file);
+  const entry = desktopEntry(file);
+  const wrong = Object.entries({
+    Name: "Gram",
+    Exec: exec,
+    Icon: "gram",
+    Type: "Application",
+    Categories: "Development;",
+    StartupWMClass: "gram",
+  })
+    .filter(([key, want]) => entry[key] !== want)
+    .map(([key, want]) => `${key}=${entry[key] ?? ""} (want ${want})`);
+  check(`${label} desktop entry`, wrong.length === 0, wrong.join(", ") || "gram.desktop");
+};
+
+if (platform === "linux") {
+  const ptyDir = path.join(unpacked, "node_modules", "node-pty");
+  const ptyAddon = path.join(ptyDir, "build", "Release", "pty.node");
+  // Only the addon: the gyp Makefiles, objects and config.gypi name the build machine's paths.
+  const ptyExtra = listFiles(path.join(ptyDir, "build"))
+    .concat(listFiles(path.join(ptyDir, "prebuilds")))
+    .filter((f) => f !== ptyAddon)
+    .map((f) => path.relative(ptyDir, f));
+  check("node-pty ships only build/Release/pty.node", ptyExtra.length === 0, ptyExtra.join(", "));
+
+  const watcherAddon = path.join(
+    resources,
+    "node_modules",
+    ...WATCHER_LINUX.split("/"),
+    "watcher.node",
+  );
+  const watcherForeign = findForeignBinaries(path.join(resources, "node_modules"), platform, arch);
+  check(
+    `@parcel/watcher ${arch} addon bundled for git watching`,
+    fs.existsSync(watcherAddon) &&
+      fs.existsSync(path.join(resources, "node_modules", "@parcel", "watcher", "index.js")) &&
+      watcherForeign.length === 0,
+    watcherForeign.map((b) => b.file).join(", ") || WATCHER_LINUX,
+  );
+
+  // Built on Ubuntu 24.04 (glibc 2.39), node-pty has to load on Debian 12 (glibc 2.36).
+  for (const [label, addon] of [
+    ["node-pty", ptyAddon],
+    ["@parcel/watcher", watcherAddon],
+  ]) {
+    if (!fs.existsSync(addon)) continue;
+    let symbols;
+    try {
+      symbols = execFileSync("objdump", ["-T", addon], { encoding: "utf8" });
+    } catch {
+      console.log(`skip  ${label}'s glibc floor: no objdump`);
+    }
+    if (symbols !== undefined) {
+      const versions = [...symbols.matchAll(/GLIBC_(\d+)\.(\d+)/g)].map(([, a, b]) => [+a, +b]);
+      const [major, minor] = versions.reduce(
+        (max, v) => (v[0] > max[0] || (v[0] === max[0] && v[1] > max[1]) ? v : max),
+        [0, 0],
+      );
+      check(
+        `${label} needs glibc 2.36 or older (Debian 12)`,
+        major === 2 && minor <= 36,
+        `GLIBC_${major}.${minor}`,
+      );
+    }
+  }
+
+  // node-pty and @parcel/watcher loading in the packaged Electron, as Node, resolved as the server
+  // resolves them from inside the asar: a shell through a pty, a file change through a watch; and
+  // sherpa-onnx-node failing to resolve. Only a host that can run the package can do this.
+  if (process.platform === "linux" && process.arch === arch) {
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "gram-native-probe-"));
+    try {
+      const marker = `GRAM_NATIVE_${randomBytes(4).toString("hex")}`;
+      const probe = path.resolve(import.meta.dirname, "../../../tools/release-rc/native-probe.cjs");
+      let output = "";
+      try {
+        output = execFileSync(
+          path.join(appDir, "gram"),
+          [probe, path.join(resources, "app.asar"), scratch, marker, "no-speech"],
+          {
+            encoding: "utf8",
+            env: { PATH: "/usr/bin:/bin", HOME: scratch, ELECTRON_RUN_AS_NODE: "1" },
+            timeout: 60_000,
+          },
+        );
+      } catch (error) {
+        output = `${error.stdout ?? ""}${error.stderr ?? ""}` || String(error);
+      }
+      const runtime = JSON.parse(output.split("\n").find((line) => line.startsWith("{")) ?? "{}");
+      const electron = JSON.parse(
+        fs.readFileSync(require.resolve("electron/package.json"), "utf8"),
+      ).version;
+      check(
+        "packaged app runs a pty and a file watch; sherpa-onnx doesn't resolve",
+        output.includes("NATIVE OK") && runtime.electron === electron && runtime.arch === arch,
+        output.includes("NATIVE OK")
+          ? `Electron ${runtime.electron} ${runtime.arch}`
+          : output.trim(),
+      );
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  } else {
+    console.log(`skip  native probe: needs a linux-${arch} host`);
+  }
+
+  if (!values["dir-only"]) verifyLinuxArtifacts();
+}
+
+/** The AppImage and .deb electron-builder made from the unpacked app checked above. */
+function verifyLinuxArtifacts() {
+  const { version } = JSON.parse(
+    fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8"),
+  );
+  // electron-builder's ${arch}, which is each format's own name for the arch.
+  const debArch = { x64: "amd64", arm64: "arm64" }[arch] ?? arch;
+  const appImageArch = { x64: "x86_64", arm64: "arm64" }[arch] ?? arch;
+  const reference = {
+    "resources/app.asar": sha(path.join(resources, "app.asar")),
+    "resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node": sha(
+      path.join(unpacked, "node_modules", "node-pty", "build", "Release", "pty.node"),
+    ),
+    [`resources/node_modules/${WATCHER_LINUX}/watcher.node`]: sha(
+      path.join(resources, "node_modules", ...WATCHER_LINUX.split("/"), "watcher.node"),
+    ),
+    gram: sha(path.join(appDir, "gram")),
+  };
+  const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
+
+  /** The packaged app inside an extracted artifact matches the unpacked one, without sherpa. */
+  const checkPayload = (label, root) => {
+    const differ = Object.entries(reference)
+      .filter(
+        ([rel, hash]) => !fs.existsSync(path.join(root, rel)) || sha(path.join(root, rel)) !== hash,
+      )
+      .map(([rel]) => rel);
+    check(
+      `${label} carries the verified app.asar, addons and executable`,
+      differ.length === 0,
+      differ.join(", "),
+    );
+    const web = path.join(root, "resources", "web", "index.html");
+    check(
+      `${label} carries the web app and notices`,
+      fs.existsSync(web) && fs.existsSync(path.join(root, "resources", "THIRD-PARTY-NOTICES.txt")),
+    );
+    const sherpa = listFiles(root).filter((f) =>
+      /sherpa-onnx|onnxruntime/i.test(path.relative(root, f)),
+    );
+    check(
+      `${label} holds no sherpa-onnx`,
+      sherpa.length === 0,
+      sherpa.map((f) => path.relative(root, f)).join(", "),
+    );
+  };
+
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "gram-linux-artifacts-"));
+  try {
+    // The .deb, read with dpkg-deb.
+    const deb = path.join(release, `gram_${version}_${debArch}.deb`);
+    if (!fs.existsSync(deb)) {
+      check(".deb present", false, deb);
+    } else {
+      check(".deb present", true, `${path.basename(deb)} (${mib(deb)})`);
+      const field = (name) =>
+        execFileSync("dpkg-deb", ["-f", deb, name], { encoding: "utf8" }).trim();
+      check("deb Package is gram", field("Package") === "gram", field("Package"));
+      check("deb Version", field("Version") === version, field("Version"));
+      check(
+        `deb Architecture ${debArch}`,
+        field("Architecture") === debArch,
+        field("Architecture"),
+      );
+      check(
+        "deb Maintainer set",
+        /^.+ <[^>]+@[^>]+>$/.test(field("Maintainer")),
+        field("Maintainer"),
+      );
+      const depends = field("Depends").split(/,\s*/);
+      check(
+        "deb Depends on GTK, NSS and libsecret, not on an agent CLI",
+        ["libgtk-3-0", "libnss3", "libsecret-1-0", "libgbm1", "libasound2"].every((d) =>
+          depends.includes(d),
+        ) && !depends.some((d) => /claude|codex|nodejs|^git\b/.test(d)),
+        field("Depends"),
+      );
+      check(
+        "deb Recommends git",
+        field("Recommends").split(/,\s*/).includes("git"),
+        field("Recommends"),
+      );
+      const root = path.join(scratch, "deb");
+      execFileSync("dpkg-deb", ["-x", deb, root]);
+      checkPayload("deb", path.join(root, "opt", "Gram"));
+      checkEntry(
+        "deb",
+        path.join(root, "usr", "share", "applications", "gram.desktop"),
+        "/opt/Gram/gram %U",
+      );
+      const icons = ICON_SIZES.filter(
+        (n) =>
+          !fs.existsSync(
+            path.join(root, "usr", "share", "icons", "hicolor", `${n}x${n}`, "apps", "gram.png"),
+          ),
+      );
+      check(
+        "deb installs the hicolor icons",
+        icons.length === 0,
+        icons.map((n) => `${n}x${n}`).join(", ") || `${ICON_SIZES.length} sizes`,
+      );
+    }
+
+    // The AppImage, extracted by its own runtime (no FUSE needed).
+    const appImage = path.join(release, `gram_${version}_${appImageArch}.AppImage`);
+    if (!fs.existsSync(appImage)) {
+      check("AppImage present", false, appImage);
+    } else {
+      check(
+        "AppImage present and executable",
+        (fs.statSync(appImage).mode & 0o111) === 0o111,
+        `${path.basename(appImage)} (${mib(appImage)})`,
+      );
+      if (process.platform === "linux" && process.arch === arch) {
+        const cwd = path.join(scratch, "appimage");
+        fs.mkdirSync(cwd);
+        execFileSync(appImage, ["--appimage-extract"], { cwd, stdio: "ignore" });
+        const root = path.join(cwd, "squashfs-root");
+        checkPayload("AppImage", root);
+        // No `--no-sandbox`: AppRun adds it only where user namespaces are refused.
+        checkEntry("AppImage", path.join(root, "gram.desktop"), "AppRun %U");
+        const icons = ICON_SIZES.filter(
+          (n) =>
+            !fs.existsSync(
+              path.join(root, "usr", "share", "icons", "hicolor", `${n}x${n}`, "apps", "gram.png"),
+            ),
+        );
+        check(
+          "AppImage carries the hicolor icons",
+          icons.length === 0,
+          icons.map((n) => `${n}x${n}`).join(", ") || `${ICON_SIZES.length} sizes`,
+        );
+      } else {
+        console.log(`skip  AppImage contents: extracting needs a linux-${arch} host`);
+      }
+    }
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
 }
 

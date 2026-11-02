@@ -1,13 +1,44 @@
 // Run by the packaged Gram in Node mode (ELECTRON_RUN_AS_NODE=1) from tools/release-rc/rc.mjs:
 // loads the speech and PTY natives through the production app.asar and has the PTY run a shell
-// that prints a marker. Arguments: <app.asar> <scratch dir> <marker>.
+// that prints a marker. Arguments: <app.asar> <scratch dir> <marker> [no-speech]. With
+// `no-speech`, a package without local dictation (Linux), it instead proves sherpa-onnx can't load,
+// and that @parcel/watcher, which only that package carries, reports a file change.
 const { createRequire } = require("node:module");
 const path = require("node:path");
 
-const [asar, scratch, marker] = process.argv.slice(2);
+const [asar, scratch, marker, voice = "speech"] = process.argv.slice(2);
 const load = createRequire(path.join(asar, "package.json"));
-const speech = load("sherpa-onnx-node");
+let speech;
+if (voice === "no-speech") {
+  try {
+    load("sherpa-onnx-node");
+    console.error("Native probe: sherpa-onnx-node loads in a package without local dictation");
+    process.exit(1);
+  } catch (error) {
+    if (error?.code !== "MODULE_NOT_FOUND") throw error;
+  }
+} else {
+  speech = load("sherpa-onnx-node");
+}
 const pty = load("node-pty");
+
+/** Watches `scratch` through the packaged @parcel/watcher until it sees a file appear. */
+const watchedAFile = async () => {
+  let subscription;
+  const seen = new Promise((resolve) => {
+    load("@parcel/watcher")
+      .subscribe(scratch, (error, events) => {
+        if (error) throw error;
+        if (events.some((event) => event.path.endsWith("watched"))) resolve(subscription);
+      })
+      .then((value) => {
+        subscription = value;
+        require("node:fs").writeFileSync(path.join(scratch, "watched"), "");
+      });
+  });
+  await (await seen).unsubscribe();
+};
+const watching = voice === "no-speech" ? watchedAFile() : Promise.resolve();
 
 const child = pty.spawn("/bin/sh", ["-c", `printf ${marker}`], {
   name: "xterm",
@@ -23,19 +54,21 @@ const timer = setTimeout(() => {
   process.exit(1);
 }, 10_000);
 child.onExit(({ exitCode }) => {
-  clearTimeout(timer);
   if (exitCode !== 0 || !output.includes(marker)) {
     console.error(JSON.stringify({ exitCode, output }));
     process.exit(1);
   }
-  console.log(
-    JSON.stringify({
-      electron: process.versions.electron,
-      node: process.versions.node,
-      arch: process.arch,
-      speechExports: Object.keys(speech).length,
-      markerSeen: true,
-    }),
-  );
-  console.log("NATIVE OK");
+  void watching.then(() => {
+    clearTimeout(timer);
+    console.log(
+      JSON.stringify({
+        electron: process.versions.electron,
+        node: process.versions.node,
+        arch: process.arch,
+        speechExports: speech === undefined ? null : Object.keys(speech).length,
+        markerSeen: true,
+      }),
+    );
+    console.log("NATIVE OK");
+  });
 });

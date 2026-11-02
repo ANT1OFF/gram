@@ -118,9 +118,41 @@ fuses (`electronFuses` in `electron-builder.yml`): NODE_OPTIONS and inspect flag
 ASAR integrity and only-ASAR on, `RunAsNode` on for the release tool's native probe.
 
 Local `dist:dir` packaging is unsigned; signing is part of [releasing](RELEASING.md).
-Linux smoke may need Xvfb. Native loading is
-separate from real accounts, microphone capture and recognition quality. Releases
-follow [releasing](RELEASING.md).
+Native loading is separate from real accounts, microphone capture and recognition
+quality. Releases follow [releasing](RELEASING.md).
+
+### Linux packages
+
+Gram builds as an x64 AppImage and .deb, without local dictation: no sherpa-onnx ships on
+Linux, because its Linux builds link GPL text-to-speech code. Build them on x64 Linux
+with Python 3, make and a C++ compiler:
+
+```sh
+bun run --filter @gram/desktop dist:linux
+bun run --filter @gram/desktop verify:package
+```
+
+`dist:linux` compiles node-pty against Electron's headers (`rebuild:node-pty`; node-pty ships
+no Linux prebuilds) and writes `apps/desktop/release/gram_<version>_x86_64.AppImage` and
+`gram_<version>_amd64.deb`, beside the unpacked `linux-unpacked/` it makes them from. `dist:dir`
+makes only the unpacked app; check that one with `verify:package --dir-only`.
+`verify:package` checks the unpacked app, loads node-pty in the packaged Electron, and reads
+both artifacts: their metadata, desktop entry, icons and payload. It needs `dpkg-deb`.
+
+Git watching on Linux uses `@parcel/watcher`, so only the Linux package carries it, with its
+glibc addon, in `resources/node_modules`.
+
+The .deb installs to `/opt/Gram` and depends on what Electron links on Debian 12 and
+Ubuntu 24.04, plus `libsecret-1-0` for the keyring; it recommends git and never depends on an
+agent CLI. The AppImage needs FUSE 2 (`libfuse2t64` on Ubuntu 24.04) or
+`--appimage-extract-and-run`. ASAR integrity is on as a fuse but Electron 45 enforces it only on
+macOS and Windows, so a Linux install's `app.asar` isn't validated at launch; the other fuses
+apply as on macOS.
+
+CI's `linux package` job builds both on the `package` lane and keeps them as workflow artifacts
+for 7 days, after installing the .deb on Ubuntu 24.04 and Debian 12 and running `--smoke` under
+Xvfb. Nothing publishes them yet: there is no Linux update feed, and the release tools build
+macOS only.
 
 ### Isolated packaged GUI
 

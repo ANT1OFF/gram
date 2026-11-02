@@ -7,6 +7,7 @@ const JOB_LANES = {
   "check-tests": "tests",
   "macos-tests": "tests",
   "macos-package": "package",
+  "linux-package": "package",
   ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((shard) => [`e2e-${shard}`, "e2e"])),
 };
 

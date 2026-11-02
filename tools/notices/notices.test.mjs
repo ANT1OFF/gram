@@ -10,6 +10,7 @@ import { bundleChunks, packageDirOf, packageDirs, writePackageList } from "./bun
 import {
   collectPackages,
   declaredLicense,
+  packagedDependencies,
   readComponents,
   readLists,
   renderNotices,
@@ -116,6 +117,44 @@ describe("declaredLicense", () => {
 });
 
 describe("the notices", () => {
+  it("swaps sherpa-onnx for @parcel/watcher in a Linux package's native modules only", () => {
+    const root = fixture();
+    const desktop = join(root, "apps", "desktop");
+    mkdirSync(desktop, { recursive: true });
+    writeFileSync(
+      join(desktop, "package.json"),
+      JSON.stringify({ dependencies: { "node-pty": "1.1.0", "sherpa-onnx-node": "2.0.0" } }),
+    );
+    addPackage(root, {
+      name: "node-pty",
+      version: "1.1.0",
+      dependencies: { "node-addon-api": "7.1.0" },
+    });
+    addPackage(root, { name: "node-addon-api", version: "7.1.0" });
+    addPackage(root, {
+      name: "sherpa-onnx-node",
+      version: "2.0.0",
+      optionalDependencies: { "sherpa-onnx-linux-x64": "2.0.0", "sherpa-onnx-win-x64": "2.0.0" },
+    });
+    addPackage(root, { name: "sherpa-onnx-linux-x64", version: "2.0.0" });
+    addPackage(root, {
+      name: "@parcel/watcher",
+      version: "2.6.0",
+      dependencies: { "node-addon-api": "7.1.0", "is-glob": "4.0.3" },
+      optionalDependencies: {
+        "@parcel/watcher-linux-x64-glibc": "2.6.0",
+        "@parcel/watcher-linux-x64-musl": "2.6.0",
+      },
+    });
+    addPackage(root, { name: "is-glob", version: "4.0.3" });
+    addPackage(root, { name: "@parcel/watcher-linux-x64-glibc", version: "2.6.0" });
+    addPackage(root, { name: "@parcel/watcher-linux-x64-musl", version: "2.6.0" });
+    const names = (platform) =>
+      packagedDependencies(desktop, platform).map((dir) => dir.slice(dir.lastIndexOf("/") + 1));
+    expect(names("linux")).toEqual(["node-pty", "watcher", "is-glob", "watcher-linux-x64-glibc"]);
+    expect(names("darwin")).toEqual(["node-pty", "sherpa-onnx-node", "sherpa-onnx-linux-x64"]);
+  });
+
   it("fails when a bundle hasn't recorded its packages", () => {
     const lists = fixture();
     writePackageList("main", ["/r/node_modules/pino/a.js"], lists);

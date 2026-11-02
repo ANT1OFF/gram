@@ -36,8 +36,8 @@ export default defineConfig({
       ...shippedBuild,
       outDir: "out/server",
       // Native addons load from node_modules at runtime, next to their platform binaries.
-      // `@parcel/watcher` isn't packaged: only Linux dev imports it lazily, so it must stay external
-      // rather than be bundled from `@gram/git`'s node_modules.
+      // `@parcel/watcher` is imported lazily on Linux only, and only the Linux package carries it,
+      // so it must stay external rather than be bundled from `@gram/git`'s node_modules.
       externalizeDeps: { include: ["@parcel/watcher", "node-pty"] },
       rolldownOptions: {
         output: shippedOutput,

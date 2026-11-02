@@ -153,7 +153,7 @@ const lane = (id: string) =>
     ? "docs"
     : id.startsWith("e2e-")
       ? "e2e"
-      : id === "macos-package"
+      : id === "macos-package" || id === "linux-package"
         ? "package"
         : id === "check-static"
           ? "static"
@@ -166,6 +166,7 @@ it("the qualification entrypoint passes only the lanes classify selected, every 
     "check-tests",
     "macos-tests",
     "macos-package",
+    "linux-package",
     ...[1, 2, 3, 4, 5, 6, 7, 8].map((shard) => `e2e-${shard}`),
   ];
   const needs = (kind: string, lanes: string[], override: Record<string, unknown> = {}) => ({
