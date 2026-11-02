@@ -29,6 +29,7 @@ import {
   localBaseRef,
   porcelainChanges,
   samePath,
+  STRICT_STATUS_ARGS,
   type Proc,
   type WorktreeError,
 } from "@gram/git";
@@ -149,7 +150,7 @@ const probeWorktree = (
     };
     if (!(yield* folderExists(path))) return { ...none, missing: true, unreadable: false };
     const unreadable = { ...none, missing: false, unreadable: true, locked: isLocked(path) };
-    const status = yield* git(path, ["status", "--porcelain"]).pipe(Effect.option);
+    const status = yield* git(path, STRICT_STATUS_ARGS).pipe(Effect.option);
     if (Option.isNone(status) || status.value.status !== 0 || status.value.truncated) {
       return unreadable;
     }

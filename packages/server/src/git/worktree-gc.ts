@@ -43,7 +43,16 @@ import {
   type WorkspaceId,
   type WorktreeSweep,
 } from "@gram/contracts";
-import { git, isInside, Pr, Proc, realPathOrOwned, samePath } from "@gram/git";
+import {
+  gh,
+  git,
+  isInside,
+  Pr,
+  Proc,
+  realPathOrOwned,
+  samePath,
+  STRICT_STATUS_ARGS,
+} from "@gram/git";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -193,12 +202,9 @@ export const sweepDue = (
   const { checkout } = thread;
   if (thread.role !== undefined) return undefined;
   const worker = thread.spawnedBy !== undefined;
-  // A plain thread may have been opened in a worktree some other tool or the user made: only one
-  // in Gram's own `.worktrees/` folder is the sweep's to take.
-  if (
-    !worker &&
-    (checkout.repoRoot === undefined || !underWorktreesFolder(checkout.repoRoot, checkout.path))
-  ) {
+  // A thread of any kind, a worker adopting one included, may work in a worktree some other tool
+  // or the user made: only one in Gram's own `.worktrees/` folder is the sweep's to take.
+  if (checkout.repoRoot === undefined || !underWorktreesFolder(checkout.repoRoot, checkout.path)) {
     return undefined;
   }
   if (checkout.kind !== "worktree") return undefined;
@@ -238,7 +244,10 @@ export interface WorktreeCheck {
   readonly pushed: boolean;
   /** The PR is merged or closed. */
   readonly prSettled: boolean;
-  /** GitHub answered: no PR is open for it (none at all, or a settled one). A failed lookup is no. */
+  /**
+   * GitHub answered a lookup of its own (`openPrLookup`), asked only for a worker with no PR: none
+   * is open for its branch or HEAD. Absent when not asked; a failed or unready lookup is `false`.
+   */
   readonly noPrOpen?: boolean;
 }
 
@@ -250,15 +259,57 @@ export const sweepStep = (due: SweepDue, check: WorktreeCheck): "free" | "remove
   return due.free ? "free" : undefined;
 };
 
-/** Asks git, and gh when a PR is wanted, what `sweepStep` needs. Any failure reads as "no". */
+/** The `gh pr list` arguments that find an open PR for `target`: a branch, or a detached HEAD. */
+export const openPrArgs = (
+  target: { readonly branch: string } | { readonly head: string },
+): ReadonlyArray<string> => [
+  "pr",
+  "list",
+  "--state",
+  "open",
+  ...("branch" in target ? ["--head", target.branch] : ["--search", target.head]),
+  "--limit",
+  "1",
+  "--json",
+  "number",
+];
+
+/**
+ * Whether GitHub says no PR is open for `target`, asked of `gh` in `cwd`: `true` only on an answer
+ * that lists none. `gh` missing, signed out, offline or answering anything else is `false`. Not
+ * `Pr.status`, whose `undefined` is also what an unready `gh` reads as.
+ */
+export const openPrLookup = (
+  cwd: string,
+  target: { readonly branch: string } | { readonly head: string },
+): Effect.Effect<boolean, never, Proc> =>
+  gh(cwd, openPrArgs(target)).pipe(
+    Effect.map((out) => {
+      if (out.status !== 0 || out.truncated) return false;
+      try {
+        const listed: unknown = JSON.parse(out.stdout);
+        return Array.isArray(listed) && listed.length === 0;
+      } catch {
+        return false;
+      }
+    }),
+    Effect.orElseSucceed(() => false),
+  );
+
+/**
+ * Asks git, and gh when a PR is wanted, what `sweepStep` needs. Any failure reads as "no".
+ * `askOpen`, for a worker with no PR, asks `openPrLookup` instead of the PR's state.
+ */
 export const checkWorktree = (
   path: string,
   thread: Thread,
   wantPr: boolean,
+  askOpen = false,
 ): Effect.Effect<WorktreeCheck, never, Proc | Pr> =>
   Effect.gen(function* () {
     const no: WorktreeCheck = { clean: false, pushed: false, prSettled: false };
-    const status = yield* git(path, ["status", "--porcelain"]).pipe(Effect.option);
+    // Strict whatever the user's config: a hidden untracked file is still work to lose.
+    const status = yield* git(path, STRICT_STATUS_ARGS).pipe(Effect.option);
     if (Option.isNone(status) || status.value.status !== 0 || status.value.truncated) return no;
     const clean = status.value.stdout.trim() === "";
     const rev = yield* git(path, ["rev-parse", "--verify", "HEAD"]).pipe(Effect.option);
@@ -274,8 +325,19 @@ export const checkWorktree = (
     ]).pipe(Effect.option);
     const onRemote =
       Option.isSome(remote) && remote.value.status === 0 && remote.value.stdout.trim() !== "";
-    if (!wantPr)
-      return { clean, pushed: headPushed({ head, headOnRemote: onRemote }), prSettled: false };
+    const pushed = headPushed({ head, headOnRemote: onRemote });
+    if (askOpen) {
+      const branch = yield* git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]).pipe(
+        Effect.option,
+      );
+      if (Option.isNone(branch) || branch.value.status > 1) {
+        return { clean, pushed, prSettled: false, noPrOpen: false };
+      }
+      const name = branch.value.status === 0 ? branch.value.stdout.trim() : "";
+      const target = name === "" ? { head } : { branch: name };
+      return { clean, pushed, prSettled: false, noPrOpen: yield* openPrLookup(path, target) };
+    }
+    if (!wantPr) return { clean, pushed, prSettled: false };
     const pr = yield* Pr;
     const badge = yield* asBackground(pr.status(path, thread.boundPr)).pipe(Effect.option);
     const settled = Option.isSome(badge) ? badge.value : undefined;
@@ -283,7 +345,6 @@ export const checkWorktree = (
       clean,
       pushed: headPushed({ head, headOnRemote: onRemote, prHeadRefOid: settled?.headRefOid }),
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
-      noPrOpen: Option.isSome(badge) && settled?.state !== "OPEN",
     };
   });
 
@@ -291,27 +352,37 @@ export const checkWorktree = (
  * `checkWorktree` for a worktree whose folder was deleted outside Gram: nothing is left in it
  * to lose, so it reads clean and pushed, and only the PR has to have settled. That is asked of gh
  * from the repo's main checkout for a bound PR, and otherwise read off the last badge, since a
- * branch lookup needs the folder; with nothing bound, no open badge is no PR open.
+ * branch lookup needs the folder. `askOpen` asks `openPrLookup` from the main checkout for the
+ * branch the thread recorded; with none recorded, nothing can be asked and it reads as no.
  */
 export const checkMissingWorktree = (
   thread: Thread,
   badge: PrStatus | undefined,
   wantPr: boolean,
-): Effect.Effect<WorktreeCheck, never, Pr> =>
+  askOpen = false,
+): Effect.Effect<WorktreeCheck, never, Pr | Proc> =>
   Effect.gen(function* () {
+    if (askOpen) {
+      const { repoRoot, branch } = thread.checkout;
+      const noPrOpen =
+        repoRoot !== undefined && branch !== undefined && branch !== ""
+          ? yield* openPrLookup(repoRoot, { branch })
+          : false;
+      return { clean: true, pushed: true, prSettled: false, noPrOpen };
+    }
     if (!wantPr) return { clean: true, pushed: true, prSettled: false };
     const root = thread.checkout.repoRoot;
     const pr = yield* Pr;
-    const asked =
+    const settled =
       thread.boundPr !== undefined && root !== undefined
-        ? yield* asBackground(pr.status(root, thread.boundPr)).pipe(Effect.option)
-        : Option.some(badge);
-    const settled = Option.getOrUndefined(asked);
+        ? Option.getOrUndefined(
+            yield* asBackground(pr.status(root, thread.boundPr)).pipe(Effect.option),
+          )
+        : badge;
     return {
       clean: true,
       pushed: true,
       prSettled: settled?.state === "MERGED" || settled?.state === "CLOSED",
-      noPrOpen: Option.isSome(asked) && settled?.state !== "OPEN",
     };
   });
 
@@ -532,9 +603,15 @@ const sweepOnce = (
       if (due === undefined) continue;
       const path = thread.checkout.path;
       const gone = !(yield* folderExists(path));
+      const askOpen = due.remove && due.withoutPr === true;
       const check = gone
-        ? yield* checkMissingWorktree(thread, yield* publisher.badgeFor(thread), due.remove)
-        : yield* checkWorktree(path, thread, due.remove);
+        ? yield* checkMissingWorktree(
+            thread,
+            yield* publisher.badgeFor(thread),
+            due.remove,
+            askOpen,
+          )
+        : yield* checkWorktree(path, thread, due.remove, askOpen);
       const step = sweepStep(due, check);
       // A folder that is gone holds no `node_modules`; it waits to be removed with its thread.
       if (step === undefined || (gone && step === "free")) {
