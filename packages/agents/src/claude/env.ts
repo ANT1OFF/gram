@@ -8,6 +8,7 @@ const STRIP_EXACT = new Set([
   "CLAUDE_PID",
   "CLAUDE_EFFORT",
   "CLAUDE_CODE_CHILD_SESSION",
+  // Set below: a parent's own entrypoint, such as `claude-desktop`, mustn't name Gram's children.
   "CLAUDE_CODE_ENTRYPOINT",
   "CLAUDE_CODE_EXECPATH",
   // Set below: a user's own value mustn't turn peer messaging back on for every Gram session.
@@ -56,9 +57,17 @@ export const PEER_MESSAGING_SWITCH = "CLAUDE_CODE_HARBOR_KITE";
 export const REFUSE_PEER_MESSAGES = { crossSessionInbound: "refuse" } as const;
 
 /**
+ * What Gram's `claude` children report as `CLAUDE_CODE_ENTRYPOINT`, in place of the Agent SDK's
+ * `sdk-ts`. Claude Code 2.1.316 sends it in its `User-Agent` (`claude-cli/<ver> (external, gram)`)
+ * and reads it only from the process env, not from its settings `env`. Gram has no per-profile env
+ * of its own, so nothing overrides it; a `claude` run in Gram's terminal keeps its own.
+ */
+export const GRAM_ENTRYPOINT = "gram";
+
+/**
  * The `claude` child environment: the probed login-shell env minus API-key auth and parent-session
- * leakage, with session-state events and the Artifact tool switched on and cross-session messaging
- * off (`PEER_MESSAGING_SWITCH`). A user's own `CLAUDE_CODE_ARTIFACT` wins, so `0` keeps artifacts
+ * leakage, named as Gram's (`GRAM_ENTRYPOINT`), with session-state events and the Artifact tool
+ * switched on and cross-session messaging off (`PEER_MESSAGING_SWITCH`). A user's own `CLAUDE_CODE_ARTIFACT` wins, so `0` keeps artifacts
  * off. The SDK's `env` replaces the environment entirely, so this must be complete.
  */
 export const buildChildEnv = (
@@ -69,6 +78,7 @@ export const buildChildEnv = (
     if (value === undefined || isStrippedEnvVar(name)) continue;
     env[name] = value;
   }
+  env["CLAUDE_CODE_ENTRYPOINT"] = GRAM_ENTRYPOINT;
   env["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1";
   env[PEER_MESSAGING_SWITCH] = "0";
   // Windows env names are case-insensitive, and the inherited name keeps its own spelling.

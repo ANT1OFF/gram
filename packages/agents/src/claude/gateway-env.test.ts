@@ -45,6 +45,7 @@ describe("gatewayChildEnv", () => {
     });
     expect(gatewayChildEnv(stripped, "http://litellm:4000/v1", Redacted.make(KEY))).toEqual({
       PATH: "/usr/bin",
+      CLAUDE_CODE_ENTRYPOINT: "gram",
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
       CLAUDE_CODE_HARBOR_KITE: "0",
       CLAUDE_CODE_ARTIFACT: "1",

@@ -144,6 +144,16 @@ describe("terminalEnv", () => {
     expect("UNSET" in env).toBe(false);
     expect(terminalEnv({ Path: "C:\\bin" }, "/ignored", "win32")["PATH"]).toBeUndefined();
   });
+
+  it("leaves Claude Code's entrypoint alone, so a `claude` run in it names itself", () => {
+    // Gram's own Claude children are `gram` (`buildChildEnv`); the terminal is the user's shell.
+    expect(terminalEnv({}, "", "darwin")["CLAUDE_CODE_ENTRYPOINT"]).toBeUndefined();
+    expect(
+      terminalEnv({ CLAUDE_CODE_ENTRYPOINT: "claude-desktop" }, "", "darwin")[
+        "CLAUDE_CODE_ENTRYPOINT"
+      ],
+    ).toBe("claude-desktop");
+  });
 });
 
 describe("signalName", () => {

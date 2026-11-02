@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildChildEnv, isStrippedEnvVar, toolSearchOn, withPeerMessaging } from "./env.ts";
+import {
+  buildChildEnv,
+  GRAM_ENTRYPOINT,
+  isStrippedEnvVar,
+  toolSearchOn,
+  withPeerMessaging,
+} from "./env.ts";
 
 describe("buildChildEnv", () => {
   it("strips API-key auth and parent-session leakage, keeps the rest", () => {
@@ -34,6 +40,7 @@ describe("buildChildEnv", () => {
       HOME: "/Users/me",
       ANTHROPIC_MODEL: "opus",
       CLAUDE_CODE_MAX_OUTPUT_TOKENS: "8000",
+      CLAUDE_CODE_ENTRYPOINT: "gram",
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
       CLAUDE_CODE_HARBOR_KITE: "0",
       CLAUDE_CODE_ARTIFACT: "1",
@@ -55,10 +62,22 @@ describe("buildChildEnv", () => {
 
   it("overrides an inherited session-state setting", () => {
     expect(buildChildEnv({ CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "0" })).toEqual({
+      CLAUDE_CODE_ENTRYPOINT: "gram",
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1",
       CLAUDE_CODE_HARBOR_KITE: "0",
       CLAUDE_CODE_ARTIFACT: "1",
     });
+  });
+
+  it("names the child Gram's in place of an inherited entrypoint, whatever its spelling", () => {
+    // Started from inside Claude Desktop, Gram inherits that app's own entrypoint.
+    expect(
+      buildChildEnv({ CLAUDE_CODE_ENTRYPOINT: "claude-desktop" })["CLAUDE_CODE_ENTRYPOINT"],
+    ).toBe(GRAM_ENTRYPOINT);
+    expect(buildChildEnv({})["CLAUDE_CODE_ENTRYPOINT"]).toBe("gram");
+    const windows = buildChildEnv({ Claude_Code_Entrypoint: "cli" });
+    expect(windows["Claude_Code_Entrypoint"]).toBeUndefined();
+    expect(windows["CLAUDE_CODE_ENTRYPOINT"]).toBe("gram");
   });
 
   it("turns cross-session messaging off whatever the user's environment says", () => {
