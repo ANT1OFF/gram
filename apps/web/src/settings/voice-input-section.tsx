@@ -238,13 +238,12 @@ export function VoiceInputSection() {
         {on && (
           <Toggle
             label="Keep microphone ready"
-            description="Catches the half second before you press."
+            description="Catches the half second before you press. Audio stays in memory on this computer."
             // In the open, not in the hover: it's what turning this on consents to.
             detail={
               <p className="text-xs text-muted-foreground">
-                The microphone stays open for 2 minutes after you focus a composer or finish
-                dictating, and {isMac() ? "the macOS" : "your system's"} microphone indicator stays
-                lit. Audio stays in memory on this computer.
+                The microphone stays open for 2 minutes after you focus a composer or dictate, so{" "}
+                {isMac() ? "the macOS" : "your system's"} microphone indicator stays lit.
               </p>
             }
             keywords={["microphone", "instant", "pre-roll", "indicator"]}
