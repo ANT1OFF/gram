@@ -85,8 +85,9 @@ mac:
   # ("This app needs access to the microphone") otherwise.
   extendInfo:
     NSMicrophoneUsageDescription: >-
-      Gram uses the microphone only while you dictate into the composer. Speech is
-      transcribed on this Mac and never leaves it.
+      Gram uses the microphone while you dictate into the composer, and between
+      dictations only if you turn on Keep microphone ready. Speech is transcribed on
+      this Mac and never leaves it.
   # electron-builder matches the app's own files against a platform's `files` first, and gives a list
   # of only exclusions a `**/*` include, which packed src/, the tests and the configs. So each
   # platform repeats the includes; verify-package.mjs fails the build if they go.

@@ -752,6 +752,16 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByRole("region", { name: "Desktop" }),
   },
   {
+    name: "settings-voice-input",
+    title: "Settings → Advanced → Voice input, with voice input on",
+    open: async (page) => {
+      await seedMockSettings(page, { experimental: { voiceInput: true } });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("/settings/voice-input");
+      await expect(page.getByTestId("voice-input-settings")).toContainText("Microphone");
+    },
+  },
+  {
     name: "settings-search",
     title: "Settings search: rows found on every page, under their group",
     modes: ["dark"],

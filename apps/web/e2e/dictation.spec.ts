@@ -72,6 +72,92 @@ test("the mic dictates into the draft at the caret, and Escape throws the partia
   await expect(composer).toHaveValue("Fix the flaky test");
 });
 
+/** Counts each opening of the microphone, and how many of its tracks are still running. */
+const countMicrophone = (page: Page) =>
+  page.addInitScript(() => {
+    const mic = { opened: 0, tracks: [] as MediaStreamTrack[] };
+    Object.assign(window, { mic });
+    const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      mic.opened += 1;
+      const stream = await open(constraints);
+      mic.tracks.push(...stream.getTracks());
+      return stream;
+    };
+  });
+const microphone = (page: Page) =>
+  page.evaluate(() => {
+    const { mic } = window as unknown as {
+      mic: { opened: number; tracks: MediaStreamTrack[] };
+    };
+    return {
+      opened: mic.opened,
+      running: mic.tracks.filter((track) => track.readyState === "live").length,
+    };
+  });
+
+test("the microphone opens on a press and closes with its stop, never on focus", async ({
+  page,
+}) => {
+  await withVoice(page);
+  await countMicrophone(page);
+  const composer = await openThread(page);
+  await page.getByRole("button", { name: "Start dictation" }).waitFor();
+  await composer.focus();
+  await page.waitForTimeout(500 * slowdown);
+  expect(await microphone(page)).toEqual({ opened: 0, running: 0 });
+
+  await composer.press("ControlOrMeta+Shift+Space");
+  await expect(page.getByTestId("dictation-partial")).toContainText("Refactor");
+  expect(await microphone(page)).toEqual({ opened: 1, running: 1 });
+  await composer.press("ControlOrMeta+Shift+Space");
+  await expect(page.getByRole("button", { name: "Start dictation" })).toBeVisible();
+  await expect.poll(() => microphone(page)).toEqual({ opened: 1, running: 0 });
+});
+
+test("Keep microphone ready holds it from focus, hands a press what it heard, and turns off at once", async ({
+  page,
+}) => {
+  await page.addInitScript(
+    ([key]) =>
+      sessionStorage.setItem(
+        key as string,
+        JSON.stringify({
+          experimental: { voiceInput: true },
+          voice: { keepMicrophoneReady: true },
+        }),
+      ),
+    ["gram.mock.settings"] as const,
+  );
+  await countMicrophone(page);
+  const composer = await openThread(page);
+  await page.getByRole("button", { name: "Start dictation" }).waitFor();
+  await composer.focus();
+  await expect.poll(() => microphone(page)).toEqual({ opened: 1, running: 1 });
+  await page.waitForTimeout(700 * slowdown);
+
+  await composer.press("ControlOrMeta+Shift+Space");
+  // The lead silence and at least the pre-roll, there before any frame could have been captured.
+  await expect
+    .poll(() => page.evaluate(() => window.gramMock!.speechBridge.framesHeard))
+    .toBeGreaterThanOrEqual(3 + 4);
+  await composer.press("ControlOrMeta+Shift+Space");
+  await expect(page.getByRole("button", { name: "Start dictation" })).toBeVisible();
+  // Still the one stream, held for the next press.
+  expect(await microphone(page)).toEqual({ opened: 1, running: 1 });
+
+  // Inside the app: a reload would drop the microphone by itself.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await openAdvancedPage(page, "Voice input");
+  await expect(page.getByTestId("voice-input-settings")).toContainText(
+    "microphone indicator stays lit",
+  );
+  const keep = page.getByRole("switch", { name: "Keep microphone ready" });
+  await expect(keep).toBeChecked();
+  await keep.click();
+  await expect.poll(() => microphone(page)).toEqual({ opened: 1, running: 0 });
+});
+
 test("an empty draft's placeholder gives way to the partial, and comes back after", async ({
   page,
 }) => {

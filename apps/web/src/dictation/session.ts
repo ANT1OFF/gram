@@ -52,6 +52,10 @@ type OpenResult =
   | { readonly ok: true; readonly port: DictationPort }
   | { readonly ok: false; readonly code: DictationErrorCode; readonly message: string };
 
+type CaptureResult =
+  | { readonly ok: true; readonly started: Capture }
+  | { readonly ok: false; readonly error: unknown };
+
 /** A running microphone capture. */
 export interface Capture {
   /** Hands `onFrame` everything captured so far, a last short frame included, then resolves. */
@@ -82,7 +86,10 @@ export interface DictationDeps {
   readonly open: (request: DictationOpenRequest) => Promise<OpenResult>;
   /** Asks for the microphone where the OS needs asking first; absent where the browser asks. */
   readonly requestMicrophone?: (() => Promise<MicrophoneAccess>) | undefined;
-  /** Starts the microphone; rejects with the `getUserMedia` error. */
+  /**
+   * Starts the microphone, at the same time as the session opens; rejects with the `getUserMedia`
+   * error. Frames can come before it resolves: they wait for the session.
+   */
   readonly startCapture: (onFrame: (samples: Float32Array) => void) => Promise<Capture>;
   readonly newSessionId: () => string;
   /** How long a stop waits for its last `final`. */
@@ -240,36 +247,51 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
       modelId: target.modelId,
       ...(target.performance === undefined ? {} : { performance: target.performance }),
     };
-    const opened = await deps.open(request).catch((): OpenResult => ({
-      ok: false,
-      code: "unavailable",
-      message: "Couldn't start dictation. Try again; if it keeps failing, send a support bundle.",
-    }));
-    if (mine !== generation) {
-      if (opened.ok) opened.port.close();
-      return;
-    }
-    if (!opened.ok) return end({ phase: "error", code: opened.code, message: opened.message });
-    port = opened.port;
-    port.addEventListener("message", listener);
-    port.start();
+    /** What the microphone heard before the session could take it. */
+    let early: Float32Array[] | undefined = [];
+    const onFrame = (samples: Float32Array) => {
+      if (mine !== generation) return;
+      if (early !== undefined) return void early.push(samples);
+      if (state.phase === "listening") level = loudness(samples);
+      // Copied, never transferred: a transferred buffer reaches the speech process as `null`.
+      port?.postMessage({ type: "audio", samples });
+    };
 
-    let started: Capture;
-    try {
-      started = await deps.startCapture((samples) => {
-        // Copied, never transferred: a transferred buffer reaches the speech process as `null`.
-        if (state.phase === "listening") level = loudness(samples);
-        else if (state.phase !== "stopping") return;
-        port?.postMessage({ type: "audio", samples });
-      });
-    } catch (error) {
-      if (mine === generation) end({ phase: "error", ...captureError(error) });
-      return;
-    }
-    if (mine !== generation) return started.stop();
-    capture = started;
+    // Together: words spoken from the press on are kept however long the session takes to open.
+    // Each side is `end`'s to release as soon as it's here, so a cancel or the other side's failure
+    // lets go of it at once; one that comes after a cancel lets go of itself.
+    const capturing = deps.startCapture(onFrame).then(
+      (started): CaptureResult => {
+        if (mine === generation) capture = started;
+        else started.stop();
+        return { ok: true, started };
+      },
+      (error: unknown): CaptureResult => ({ ok: false, error }),
+    );
+    const opening = deps.open(request).then(
+      (opened) => {
+        if (opened.ok && mine !== generation) opened.port.close();
+        else if (opened.ok) {
+          port = opened.port;
+          port.addEventListener("message", listener);
+          port.start();
+        }
+        return opened;
+      },
+      (): OpenResult => ({
+        ok: false,
+        code: "unavailable",
+        message: "Couldn't start dictation. Try again; if it keeps failing, send a support bundle.",
+      }),
+    );
+    const [opened, captured] = await Promise.all([opening, capturing]);
+    if (mine !== generation) return;
+    if (!opened.ok) return end({ phase: "error", code: opened.code, message: opened.message });
+    if (!captured.ok) return end({ phase: "error", ...captureError(captured.error) });
     for (let i = 0; i < LEAD_SILENCE_FRAMES; i++)
-      port.postMessage({ type: "audio", samples: new Float32Array(SPEECH_FRAME_SAMPLES) });
+      port?.postMessage({ type: "audio", samples: new Float32Array(SPEECH_FRAME_SAMPLES) });
+    for (const samples of early) port?.postMessage({ type: "audio", samples });
+    early = undefined;
     set({ phase: "listening" });
   };
 

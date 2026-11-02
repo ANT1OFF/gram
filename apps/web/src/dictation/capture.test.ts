@@ -1,7 +1,7 @@
 import { SPEECH_SAMPLE_RATE, type SpeechClientMessage } from "@gram/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { FLUSH_TIMEOUT_MS, startCapture } from "./capture";
+import { createMicrophone, FLUSH_TIMEOUT_MS, KEEP_READY_MS, PRE_ROLL_FRAMES } from "./capture";
 import { createDictation, LEAD_SILENCE_FRAMES, STOP_TAIL_MS, type DictationPort } from "./session";
 
 vi.mock("./capture-worklet?worker&url", () => ({ default: "capture-worklet.js" }));
@@ -91,14 +91,26 @@ const fakeWebAudio = async () => {
   const graph: { processor?: Processor; port?: ThreadPort; connected: boolean } = {
     connected: false,
   };
-  const track = { stop: vi.fn() };
-  vi.stubGlobal("navigator", {
-    mediaDevices: { getUserMedia: async () => ({ getTracks: () => [track] }) },
-  });
+  const track = { stop: vi.fn(), readyState: "live" };
+  const getUserMedia = vi.fn(async () => ({
+    getTracks: () => [track],
+    getAudioTracks: () => [track],
+  }));
+  const context = { made: 0, running: true };
+  vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
   vi.stubGlobal(
     "AudioContext",
     class {
       readonly audioWorklet = { addModule: async () => {} };
+      constructor() {
+        context.made += 1;
+      }
+      suspend = async () => {
+        context.running = false;
+      };
+      resume = async () => {
+        context.running = true;
+      };
       createMediaStreamSource = () => ({
         connect: () => {
           graph.connected = true;
@@ -124,7 +136,7 @@ const fakeWebAudio = async () => {
       }
     },
   );
-  return { graph, track };
+  return { graph, track, getUserMedia, context };
 };
 
 /** The speech process's end of a session, which keeps the audio it's sent. */
@@ -159,13 +171,14 @@ const replay = async (audio: Float32Array, releaseMs: number, stopTailMs?: numbe
   const dictation = createDictation(
     {
       open: async () => ({ ok: true, port: session.port }),
-      startCapture,
+      startCapture: createMicrophone().start,
       newSessionId: () => "s1",
       ...(stopTailMs === undefined ? {} : { stopTailMs }),
     },
     { onState: () => {}, onPartial: () => {}, onCommit: () => {} },
   );
   await dictation.start({ modelId: "m" });
+  await vi.advanceTimersByTimeAsync(HOP_MS);
   let released = false;
   for (let at = 0; at + QUANTUM <= audio.length && graph.connected; at += QUANTUM) {
     if (!released && (at / SPEECH_SAMPLE_RATE) * 1000 >= releaseMs) {
@@ -236,7 +249,7 @@ describe("the last word", () => {
 
   it("stops waiting for an audio thread that stopped answering", async () => {
     const { graph, track } = await fakeWebAudio();
-    const capture = await startCapture(() => {});
+    const capture = await createMicrophone().start(() => {});
     graph.port!.peer = undefined;
     let done = false;
     void capture.flush().then(() => (done = true));
@@ -245,6 +258,170 @@ describe("the last word", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(done).toBe(true);
     capture.stop();
+    await vi.advanceTimersByTimeAsync(0);
     expect(track.stop).toHaveBeenCalled();
+  });
+});
+
+/** Runs the audio thread for `frames` 100 ms frames, each sample `value`. */
+const render = async (processor: Processor, frames: number, value: number) => {
+  for (let i = 0; i < Math.ceil((frames * 1600) / QUANTUM); i++) {
+    processor.process([[new Float32Array(QUANTUM).fill(value)]]);
+    await vi.advanceTimersByTimeAsync(QUANTUM_MS);
+  }
+  await vi.advanceTimersByTimeAsync(2 * HOP_MS);
+};
+
+describe("the microphone", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("warms the graph without opening the microphone, and keeps it suspended between dictations", async () => {
+    const { getUserMedia, context, track } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    microphone.warm();
+    microphone.warm();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(context).toEqual({ made: 1, running: false });
+
+    for (let i = 1; i <= 2; i++) {
+      const capture = await microphone.start(() => {});
+      expect(context.running).toBe(true);
+      capture.stop();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(context.running).toBe(false);
+      expect(track.stop).toHaveBeenCalledTimes(i);
+    }
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(context.made).toBe(1);
+  });
+
+  it("never carries a discarded part-frame into the next dictation", async () => {
+    const { graph } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    const discarded = await microphone.start(() => {});
+    await vi.advanceTimersByTimeAsync(HOP_MS);
+    await render(graph.processor!, 0.5, 0.9);
+    discarded.stop();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const frames: Float32Array[] = [];
+    const next = await microphone.start((samples) => frames.push(samples));
+    await vi.advanceTimersByTimeAsync(2 * HOP_MS);
+    await render(graph.processor!, 1, 0.1);
+    next.stop();
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames.every((frame) => frame.every((v) => Math.abs(v - 0.1) < 1e-6))).toBe(true);
+  });
+
+  it("fails a start on the getUserMedia error, and the next start tries afresh", async () => {
+    const { getUserMedia } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    getUserMedia.mockRejectedValueOnce(Object.assign(new Error("no"), { name: "NotFoundError" }));
+    await expect(microphone.start(() => {})).rejects.toMatchObject({ name: "NotFoundError" });
+    await expect(microphone.start(() => {})).resolves.toBeDefined();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens nothing to keep ready unless the setting is on", async () => {
+    const { getUserMedia } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    microphone.ready();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it("hands a press the newest frames it held, in order, then the live ones", async () => {
+    const { graph, getUserMedia } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    microphone.keepReady(true);
+    microphone.ready();
+    await vi.advanceTimersByTimeAsync(2 * HOP_MS);
+    for (let frame = 1; frame <= PRE_ROLL_FRAMES + 3; frame++)
+      await render(graph.processor!, 1, frame / 100);
+
+    const heard: number[] = [];
+    const capture = await microphone.start((samples) => heard.push(samples[0]!));
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    expect(heard).toHaveLength(PRE_ROLL_FRAMES);
+    expect(heard.toSorted((a, b) => a - b)).toEqual(heard);
+    expect(heard.at(-1)).toBeGreaterThan(0.05);
+    const before = heard.length;
+    await render(graph.processor!, 2, 0.5);
+    expect(heard.length).toBeGreaterThan(before);
+    capture.stop();
+  });
+
+  it("holds on after a dictation for the bound and no longer, with nothing of it kept", async () => {
+    const { graph, track, getUserMedia, context } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    microphone.keepReady(true);
+    const dictated = await microphone.start(() => {});
+    await vi.advanceTimersByTimeAsync(2 * HOP_MS);
+    await render(graph.processor!, 2, 0.9);
+    dictated.stop();
+    expect(track.stop).not.toHaveBeenCalled();
+
+    const again: Float32Array[] = [];
+    (await microphone.start((samples) => again.push(samples))).stop();
+    expect(again).toEqual([]);
+    expect(getUserMedia).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(KEEP_READY_MS - 1);
+    expect(track.stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(context.running).toBe(false);
+  });
+
+  it("a focus extends the hold, and turning the setting off lets go at once", async () => {
+    const { track, getUserMedia } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    microphone.keepReady(true);
+    microphone.ready();
+    await vi.advanceTimersByTimeAsync(KEEP_READY_MS - 1);
+    microphone.ready();
+    await vi.advanceTimersByTimeAsync(KEEP_READY_MS - 1);
+    expect(track.stop).not.toHaveBeenCalled();
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    microphone.keepReady(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(track.stop).toHaveBeenCalledOnce();
+  });
+
+  it("doesn't time out under a dictation, and reopens a stream that ended while held", async () => {
+    const { track, getUserMedia } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    microphone.keepReady(true);
+    microphone.ready();
+    await vi.advanceTimersByTimeAsync(0);
+    const capture = await microphone.start(() => {});
+    await vi.advanceTimersByTimeAsync(KEEP_READY_MS * 2);
+    expect(track.stop).not.toHaveBeenCalled();
+    capture.stop();
+
+    track.readyState = "ended";
+    (await microphone.start(() => {})).stop();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves the microphone with the composer that took it over", async () => {
+    const { track } = await fakeWebAudio();
+    const microphone = createMicrophone();
+    const first = await microphone.start(() => {});
+    const second = await microphone.start(() => {});
+    await first.flush();
+    first.stop();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(track.stop).not.toHaveBeenCalled();
+    second.stop();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(track.stop).toHaveBeenCalledOnce();
   });
 });

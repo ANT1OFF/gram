@@ -462,6 +462,8 @@ const CallCap = Schema.Int.check(Schema.isGreaterThan(0));
 export const VoiceSettings = Schema.Struct({
   /** The performance slider's stop, which picks the model. Read through `speechPerformanceOf`. */
   performance: Schema.optionalKey(SpeechPerformanceStop),
+  /** Holds the microphone open between dictations. Read through `keepMicrophoneReadyOf`. */
+  keepMicrophoneReady: Schema.optionalKey(Schema.Boolean),
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
 
@@ -648,6 +650,10 @@ export const voiceInputOn = (settings: Settings): boolean =>
 /** The performance slider's stop: Balanced unless the user moved it. */
 export const speechPerformanceOf = (settings: Settings): SpeechPerformanceStop =>
   settings.voice?.performance ?? "balanced";
+
+/** Whether the microphone stays open between dictations: off unless the user turned it on. */
+export const keepMicrophoneReadyOf = (settings: Settings): boolean =>
+  settings.voice?.keepMicrophoneReady === true;
 
 /** The speech model the slider's stop runs. */
 export const speechModelOf = (settings: Settings): SpeechModelId =>
@@ -897,6 +903,7 @@ export const SettingsPatch = Schema.Struct({
   voice: Schema.optionalKey(
     Schema.Struct({
       performance: clearable(SpeechPerformanceStop),
+      keepMicrophoneReady: clearable(Schema.Boolean),
     }),
   ),
   inbox: Schema.optionalKey(
