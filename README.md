@@ -7,7 +7,7 @@
 A macOS app where an orchestrator agent runs a team of Claude Code and Codex workers for you, each
 in its own git worktree, from task to merged pull request.
 
-![Gram's Orchestrator layout. On the left, the overview lists two workspaces with their workers and each one's state, such as "asks you" or a pull request with passing checks, then solo threads. In the middle, the orchestrator's thread shows three features with their workers, open pull requests and a warning that two workers touch the same files. Below that, a worker's question waits with three options, one recommended, above the message box.](docs/assets/gram-orchestrator.png)
+![Gram on a workspace's orchestrator. The sidebar lists its workers and their state: one asks you, one is editing code, one has a pull request in review and one is waiting on checks, then a few solo threads. In the middle, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged. At the bottom, the one question waiting on you, with the orchestrator's note and a recommended answer.](docs/assets/gram-orchestrator.png)
 
 - **An orchestrator per workspace.** You give it tasks; it writes a brief for each, starts a
   worker on it and answers what it can, passing the rest to you.
@@ -71,11 +71,21 @@ standing rulings, and the digests it gets from workers, carry it across sessions
   specialised work on a model you pick for it.
 - **The Board.** Each feature's workers and pull requests on one line, from briefed to merged.
 
-![Gram's Board view: three features as rows across the columns Briefed, Working, Checks, Review and Merged. Each worker is a card in its column; five wait on you, one is working and one is in review with pull request #212.](docs/assets/gram-board.png)
+![Gram's Board view: three features as rows across the columns Briefed, Working, Checks, Review and Merged. Each worker is a card in its column: one asks you, one is working, one waits on checks, one is in review and two have merged. The one question waiting on you is docked below.](docs/assets/gram-board.png)
 
 Gram doesn't prescribe a way of working. The same pieces run as a swarm of workers in parallel
 that message each other, or with the orchestrator calling on one worker for one job.
 [Agents and features](docs/AGENTS_AND_FEATURES.md) covers it in depth.
+
+## Quiet
+
+Watching a wall of agents work is a constant dopamine drip: something is always moving, and it
+pulls your attention all day. Quiet hides all of that and shows only what needs you, one card at a
+time, with a dot per worker along the bottom. Get on with your own work and come back when you're
+asked. Open it with the moon in the title bar or ⌘⌥4 (Ctrl+Alt+4 on Linux), and leave with Esc;
+**Quiet when idle** in Settings → General turns it on after five idle minutes with nothing asked.
+
+![Gram's Quiet view: an otherwise empty window with one card in the middle, a worker's question with two answers, one of them recommended. Along the bottom, the workspace's name with a dot per worker, the number of asks and the time.](docs/assets/gram-quiet.png)
 
 ## Docs
 

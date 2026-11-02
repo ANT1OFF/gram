@@ -70,6 +70,7 @@ import { createConnectionMonitor, resubscribing } from "./connection";
 import { isThreadNotFound } from "./errors";
 import { MOCK_DEPS_RECAP } from "./mock-assist";
 import { createMockBabysit } from "./mock-babysit";
+import type { MockReadmeSimulation } from "./mock-readme";
 import {
   createMockOrchestration,
   type MockBoardSimulation,
@@ -157,6 +158,7 @@ import {
   simulateReachingWorkers,
   simulateWorkerQuestions,
   simulateQuietBusy,
+  simulateReadme,
   simulateWorkerWaits,
   simulateReleaseGroup,
   simulateArchivedGroups,
@@ -1677,6 +1679,11 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /** `simulateQuietBusy` (`mock-scenarios.ts`). */
   simulateQuietBusy(): Promise<MockQuietBusySimulation> {
     return simulateQuietBusy(this.#scenes);
+  }
+
+  /** `simulateReadme` (`mock-scenarios.ts`). */
+  simulateReadme(): Promise<MockReadmeSimulation> {
+    return simulateReadme(this.#scenes);
   }
 
   /** `simulateWorkerWaits` (`mock-scenarios.ts`). */
