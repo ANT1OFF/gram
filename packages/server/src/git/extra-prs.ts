@@ -95,6 +95,9 @@ const MARK_KEYS = [
   "reviewId",
   "reviewsRead",
   "humanReviews",
+  "comments",
+  "commentsFloor",
+  "commentWakes",
 ] as const satisfies ReadonlyArray<keyof MonitorMark>;
 
 /** Whether two monitor marks say the same. */

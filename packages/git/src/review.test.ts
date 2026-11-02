@@ -13,6 +13,8 @@ import {
   matchesBotLogin,
   parseMeta,
   parseSeverity,
+  personCommentsFromOf,
+  personCommentsOf,
   stripMeta,
 } from "./review.ts";
 
@@ -341,5 +343,73 @@ describe("configured bot approval eligibility", () => {
       verdictOnHeadBy: "example-code-review",
       latestVerdict: "commented",
     });
+  });
+});
+
+const issueComment = (n: number) => ({
+  id: `IC_${n}`,
+  author: { login: "ci-helper", __typename: "Bot" },
+  createdAt: `2026-09-25T10:${String(n).padStart(2, "0")}:00Z`,
+  body: "x",
+});
+
+describe("people's comments", () => {
+  it("leaves out a comment with no time it can be ordered by", () => {
+    const node = {
+      comments: {
+        nodes: [
+          { id: "IC_1", author: { login: "alice", __typename: "User" }, createdAt: "", body: "x" },
+          {
+            id: "IC_2",
+            author: { login: "alice", __typename: "User" },
+            createdAt: "2026-09-25T09:00:00Z",
+            body: "y",
+          },
+        ],
+      },
+      reviews: { nodes: [] },
+    };
+    expect(personCommentsOf(node, bots).map((c) => c.id)).toEqual(["IC_2"]);
+  });
+
+  it("says from when a full listing is whole, and nothing when none came back full", () => {
+    const full = {
+      comments: { nodes: Array.from({ length: 10 }, (_, n) => issueComment(n + 5)) },
+      reviews: { nodes: [review("PRR_1", "bob", "COMMENTED")] },
+    };
+    expect(personCommentsFromOf(full)).toBe("2026-09-25T10:05:00.000Z");
+    expect(
+      personCommentsFromOf({ comments: { nodes: [issueComment(1)] }, reviews: { nodes: [] } }),
+    ).toBeUndefined();
+  });
+
+  it("lists people's issue comments and comment-only reviews, never a bot's or a verdict", () => {
+    const node = {
+      comments: {
+        nodes: [
+          {
+            id: "IC_1",
+            author: { login: "alice", __typename: "User" },
+            createdAt: "2026-09-25T09:00:00Z",
+            body: "Rename it.",
+          },
+          { id: "IC_2", author: { login: "example-code-review", __typename: "Bot" }, body: "x" },
+          { id: "IC_3", author: { login: "deploy-preview[bot]", __typename: "User" }, body: "x" },
+          { id: "IC_4", author: null, body: "from a deleted account" },
+        ],
+      },
+      reviews: {
+        nodes: [
+          review("PRR_1", "bob", "COMMENTED"),
+          review("PRR_2", "bob", "APPROVED", "ok"),
+          review("PRR_3", "example-code-review", "COMMENTED", "[suggestion] x", "User"),
+          review("PRR_4", "ci-helper", "COMMENTED", "x", "Bot"),
+        ],
+      },
+    };
+    expect(personCommentsOf(node, bots)).toEqual([
+      { id: "IC_1", author: "alice", at: "2026-09-25T09:00:00Z" },
+      { id: "PRR_1", author: "bob", at: "2026-09-25T10:01:00Z" },
+    ]);
   });
 });

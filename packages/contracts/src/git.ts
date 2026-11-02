@@ -17,6 +17,21 @@ export type PrState = typeof PrState.Type;
 /** The most failing check names a badge carries. */
 export const MAX_FAILING_CHECK_NAMES = 5;
 
+/** The most people's comments a badge lists: the last ten issue comments and twenty reviews read. */
+export const MAX_PERSON_COMMENTS = 30;
+
+/**
+ * A comment a person (no configured review bot, no GitHub App account) left on a PR: an issue
+ * comment, or a review that only commented. By id alone; what it says is read when it is new.
+ */
+export const PersonComment = Schema.Struct({
+  id: Schema.String,
+  author: Schema.String,
+  /** When it was posted (a review's `submittedAt`), ISO 8601; what orders it after another. */
+  at: Schema.String,
+});
+export type PersonComment = typeof PersonComment.Type;
+
 /** The PR badge payload (mirrors Rust `PrStatus`). */
 /**
  * The `PrStale.reason` for a lookup `gh` refused because nobody is signed in. Named here so the UI
@@ -101,6 +116,18 @@ export const PrStatus = Schema.Struct({
    * elsewhere with no review monitor on it, or a badge from the REST fallback.
    */
   reviewUnread: Schema.optionalKey(Schema.Literal(true)),
+  /**
+   * People's comments and comment-only reviews among those read with the reviews, oldest first;
+   * absent when there are none or the reviews weren't read.
+   */
+  personComments: Schema.optionalKey(
+    Schema.Array(PersonComment).check(Schema.isMaxLength(MAX_PERSON_COMMENTS)),
+  ),
+  /**
+   * From when `personComments` is whole, ISO 8601: a listing that came back full may have left
+   * older comments out. Absent when nothing was cut.
+   */
+  personCommentsFrom: Schema.optionalKey(Schema.String),
   /** Set while the badge is carried over failed refreshes; cleared by the next successful one. */
   stale: Schema.optionalKey(PrStale),
 });

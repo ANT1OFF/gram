@@ -453,7 +453,7 @@ export const ReviewAppToolsLive = Layer.effectDiscard(
         name: "pr_review_monitor",
         class: "self",
         description:
-          "Watch the review bot and reviewers on this thread's pull request. After each bot round, verdict or merge-state change, Gram sends one review update into this thread with the open findings and failing checks, and when a person approves or requests changes, a separate update with their review: mid-turn while you work where the agent supports it, otherwise once you're idle, a newer one replacing any still waiting. Binds the branch's PR if none is bound.",
+          "Watch the review bot and reviewers on this thread's pull request. After each bot round, verdict or merge-state change, Gram sends one review update into this thread with the open findings and failing checks, and when a person approves or requests changes, a separate update with their review; on a worker's PR, a comment or comment-only review from someone with write access also wakes the worker, fenced as untrusted: mid-turn while you work where the agent supports it, otherwise once you're idle, a newer one replacing any still waiting. Binds the branch's PR if none is bound.",
       },
       input: Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) }),
       audience: OWN_PR_AUDIENCE,

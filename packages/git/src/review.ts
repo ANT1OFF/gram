@@ -2,10 +2,16 @@
 // here and degrades to "unknown" instead of failing: untagged findings, missing meta, unfamiliar
 // progress comments.
 
-import { HUMAN_REVIEW_BODY_CHARS, isBotLogin, matchesBotLogin } from "@gram/contracts";
+import {
+  HUMAN_REVIEW_BODY_CHARS,
+  isBotLogin,
+  matchesBotLogin,
+  MAX_PERSON_COMMENTS,
+} from "@gram/contracts";
 import type {
   BotReview,
   HumanReview,
+  PersonComment,
   PrReviewState,
   ReviewBot,
   ReviewComment,
@@ -211,6 +217,67 @@ export const humanReviewsOf = (
       },
     ];
   });
+};
+
+/** Whether `node`'s author is a person: not a configured bot, not a GitHub App, not deleted. */
+const byPerson = (node: Json, bots: ReadonlyArray<ReviewBot>): boolean => {
+  const who = login(node);
+  return (
+    who !== "" &&
+    at(node, ["author", "__typename"]) !== "Bot" &&
+    !/\[bot\]$/i.test(who) &&
+    !isBotLogin(bots, who)
+  );
+};
+
+/**
+ * People's issue comments and comment-only reviews on a PullRequest node carrying `comments` and
+ * `reviews`, by id, oldest first within each. A review that approved or requested changes is a
+ * person's verdict (`humanReviewsOf`), told on its own; a comment-only review includes GitHub's
+ * empty wrapper around an inline comment or a reply in a thread.
+ */
+export const personCommentsOf = (
+  node: Json,
+  bots: ReadonlyArray<ReviewBot>,
+): Array<PersonComment> => {
+  const comments = arr(at(node, ["comments", "nodes"]));
+  const reviews = arr(at(node, ["reviews", "nodes"])).filter((r) => r["state"] === "COMMENTED");
+  return (
+    [...comments, ...reviews]
+      .filter((each) => str(each["id"]) !== "" && byPerson(each, bots))
+      .map((each) => ({
+        id: str(each["id"]),
+        author: login(each),
+        at: postedAt(each),
+      }))
+      // One without a time can't be put in order, so it can't be told new from old.
+      .filter((each) => !Number.isNaN(Date.parse(each.at)))
+      .slice(-MAX_PERSON_COMMENTS)
+  );
+};
+
+/** How many of each the badge reads: `comments(last:…)` and `reviews(last:…)`. */
+export const BADGE_COMMENTS_READ = 10;
+export const BADGE_REVIEWS_READ = 20;
+
+const postedAt = (node: Json): string => str(node["createdAt"]) || str(node["submittedAt"]);
+
+/**
+ * From when the badge's listing of comments and reviews is whole: the oldest of each connection
+ * that came back full, the later of the two. Anything posted before it may have been pushed out of
+ * the window, by anyone's comments, bots' included. `undefined` when neither came back full.
+ */
+export const personCommentsFromOf = (node: Json): string | undefined => {
+  const oldestOf = (nodes: ReadonlyArray<Json>, read: number) => {
+    if (nodes.length < read) return undefined;
+    const times = nodes.map((each) => Date.parse(postedAt(each))).filter((t) => !Number.isNaN(t));
+    return times.length === 0 ? undefined : Math.min(...times);
+  };
+  const froms = [
+    oldestOf(arr(at(node, ["comments", "nodes"])), BADGE_COMMENTS_READ),
+    oldestOf(arr(at(node, ["reviews", "nodes"])), BADGE_REVIEWS_READ),
+  ].filter((t): t is number => t !== undefined);
+  return froms.length === 0 ? undefined : new Date(Math.max(...froms)).toISOString();
 };
 
 /**

@@ -21,6 +21,7 @@ export * from "./pr.ts";
 export * from "./pr-actions.ts";
 export * from "./pr-cache.ts";
 export * from "./pr-checkout.ts";
+export * from "./pr-comments.ts";
 export * from "./pr-people.ts";
 export * from "./proc.ts";
 export * from "./pr-create.ts";

@@ -426,6 +426,12 @@ export type MergeWaiting = typeof MergeWaiting.Type;
 /** The most people's reviews a `MonitorMark` remembers; older ones fall off the front. */
 export const MONITOR_MARK_REVIEWS_MAX = 32;
 
+/** The most people's comments a `MonitorMark` remembers; twice what a badge lists. */
+export const MONITOR_MARK_COMMENTS_MAX = 64;
+
+/** The most comment wakes a `MonitorMark` remembers: a day's worth at the cap. */
+export const MONITOR_MARK_COMMENT_WAKES_MAX = 32;
+
 /**
  * What a PR's monitors last saw of it, kept with the binding so the first look after a restart
  * compares against it: without it, that look is only a baseline, and a CI settle, a bot round or a
@@ -446,6 +452,26 @@ export const MonitorMark = Schema.Struct({
   /** People's reviews already seen, by id, newest last. */
   humanReviews: Schema.optionalKey(
     Schema.Array(Schema.String).check(Schema.isMaxLength(MONITOR_MARK_REVIEWS_MAX)),
+  ),
+  /**
+   * People's comments handled after `commentsFloor`, by id and when each was posted: delivered to
+   * the thread, or passed over as a bot's, a Gram thread's own or an untrusted author's.
+   */
+  comments: Schema.optionalKey(
+    // A plain id is how an earlier build kept one; it has no time, so it reads as old.
+    Schema.Array(
+      Schema.Union([Schema.String, Schema.Struct({ id: Schema.String, at: Schema.String })]),
+    ).check(Schema.isMaxLength(MONITOR_MARK_COMMENTS_MAX)),
+  ),
+  /**
+   * What is old: a comment at or before it never wakes the thread, whatever `comments` forgot. It
+   * stays a little behind the newest handled, so one GitHub lists late with an earlier time still
+   * counts, and every comment handled after it is in `comments`.
+   */
+  commentsFloor: Schema.optionalKey(Schema.Struct({ at: Schema.String, id: Schema.String })),
+  /** When comments last woke the thread, epoch ms, oldest first: the rate limit survives a restart. */
+  commentWakes: Schema.optionalKey(
+    Schema.Array(Schema.Number).check(Schema.isMaxLength(MONITOR_MARK_COMMENT_WAKES_MAX)),
   ),
 });
 export type MonitorMark = typeof MonitorMark.Type;
