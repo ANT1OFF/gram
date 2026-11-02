@@ -2,6 +2,9 @@ import { SPEECH_SAMPLE_RATE } from "@gram/contracts";
 
 import type { Capture } from "./session";
 
+/** How long a flush waits for the audio thread, which a lost device can stop answering. */
+export const FLUSH_TIMEOUT_MS = 100;
+
 /**
  * Opens the microphone and calls `onFrame` with each 100 ms of mono audio at 16 kHz. Echo
  * cancellation and noise suppression stay on: dictation happens beside speakers and keyboards.
@@ -28,12 +31,26 @@ export async function startCapture(onFrame: (samples: Float32Array) => void): Pr
       numberOfInputs: 1,
       numberOfOutputs: 0,
     });
-    const onMessage = (event: MessageEvent<Float32Array>) => onFrame(event.data);
+    let flushed: (() => void) | undefined;
+    const onMessage = (event: MessageEvent<Float32Array | "flushed">) => {
+      if (event.data === "flushed") flushed?.();
+      else onFrame(event.data);
+    };
     node.port.addEventListener("message", onMessage);
     node.port.start();
     source.connect(node);
     const opened = context;
     return {
+      flush: () =>
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, FLUSH_TIMEOUT_MS);
+          flushed = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          // oxlint-disable-next-line unicorn/require-post-message-target-origin -- a MessagePort has no origin
+          node.port.postMessage("flush");
+        }),
       stop: () => {
         node.port.removeEventListener("message", onMessage);
         node.port.close();
