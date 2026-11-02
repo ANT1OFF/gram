@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { flakyAsked, flakyAsks } from "./seed-asks";
+import { flakyAsked } from "./seed-asks";
 import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow } from "./thread-row";
 
