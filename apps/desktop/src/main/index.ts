@@ -24,6 +24,7 @@ import {
   utilityProcess,
 } from "electron";
 
+import { voiceSupported } from "@gram/contracts/desktop-bridge";
 import { Channels } from "@gram/shell/channels";
 import {
   createShellWindows,
@@ -665,13 +666,15 @@ async function runApp() {
   };
   // Its calls fail with this too; caught here so it isn't an unhandled rejection, which is fatal.
   speechModels.catch((error: unknown) => log.error({ err: error }, "speech models didn't open"));
-  installSpeech(ipc, {
-    host: speech,
-    models: modelScope.current,
-    media: systemPreferences,
-    platform: process.platform,
-    openExternal: (url) => shell.openExternal(url),
-  });
+  if (voiceSupported(process.platform)) {
+    installSpeech(ipc, {
+      host: speech,
+      models: modelScope.current,
+      media: systemPreferences,
+      platform: process.platform,
+      openExternal: (url) => shell.openExternal(url),
+    });
+  }
   const windows = createShellWindows({
     url: windowUrl,
     storePath: join(app.getPath("userData"), "windows.json"),
@@ -1024,6 +1027,7 @@ async function runSmoke() {
       .then(async (problem: unknown) => {
         if (problem !== "") return finish(1, `SMOKE FAIL: ${String(problem)}`);
         // Local dictation's native addon has to load in the speech process, unpacked and signed.
+        if (!voiceSupported(process.platform)) return finish(0, "SMOKE OK");
         const speechRuntime = await speech.probe();
         return speechRuntime.ok
           ? finish(0, "SMOKE OK")

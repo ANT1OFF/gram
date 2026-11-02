@@ -10,6 +10,16 @@ export * from "./tray-menu.ts";
  * The app icons Settings offers, in its order. The first is the one the app ships with; the others
  * replace it in the Dock or taskbar while Gram runs.
  */
+/**
+ * Whether this platform has voice input: every one but Linux, whose packages ship no sherpa-onnx
+ * yet. The one check for it, in the speech host's start-up, the preload's `speech`, the smoke probe
+ * and Settings. `undefined` is a browser in dev, which keeps showing everything.
+ */
+export const voiceSupported = (platform: string | undefined): boolean => platform !== "linux";
+
+/** What the voice switch says where `voiceSupported` is false. */
+export const VOICE_UNSUPPORTED_NOTE = "Not available on Linux yet.";
+
 export const APP_ICONS = ["gift", "fanout", "blade", "glass"] as const;
 
 export type AppIconId = (typeof APP_ICONS)[number];

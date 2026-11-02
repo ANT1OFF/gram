@@ -1,4 +1,4 @@
-import type { ExperimentalSettings, Settings } from "@gram/contracts";
+import { voiceSupported, type ExperimentalSettings, type Settings } from "@gram/contracts";
 import {
   Bell,
   Bot,
@@ -483,9 +483,11 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
  * ones can be tried on a Mac.
  */
 export function settingsPagesFor(platform: string | undefined): readonly SettingsPage[] {
-  return platform === undefined || platform === "win32"
-    ? ALL_SETTINGS_PAGES
-    : ALL_SETTINGS_PAGES.filter((page) => page.windowsOnly !== true);
+  return ALL_SETTINGS_PAGES.filter(
+    (page) =>
+      (platform === undefined || platform === "win32" || page.windowsOnly !== true) &&
+      (page.id !== "voice-input" || voiceSupported(platform)),
+  );
 }
 
 export const SETTINGS_PAGES = settingsPagesFor(

@@ -2,7 +2,9 @@ import {
   SPEECH_MODEL_FOR_STOP,
   speechModelBytes,
   speechPerformanceOf,
+  VOICE_UNSUPPORTED_NOTE,
   voiceInputOn,
+  voiceSupported,
   type MicrophoneAccess,
   type SpeechModelId,
   type SpeechPerformance,
@@ -91,6 +93,7 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
   const [error, setError] = useState<string>();
   const pending = useLifecyclePending();
   const desktop = speechBridge() !== undefined;
+  const supported = voiceSupported(window.gram?.platform);
 
   const on = settings !== undefined && voiceInputOn(settings);
   const stop = settings === undefined ? "balanced" : speechPerformanceOf(settings);
@@ -121,7 +124,7 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
     <>
       <Toggle
         label={label}
-        description={description}
+        description={supported ? description : `${description} ${VOICE_UNSUPPORTED_NOTE}`}
         keywords={[
           "dictation",
           "speech",
@@ -138,7 +141,9 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
             ? on
               ? "Turning voice input off…"
               : "Turning voice input on…"
-            : "Voice input needs the Gram app; a browser has no speech process."
+            : supported
+              ? "Voice input needs the Gram app; a browser has no speech process."
+              : VOICE_UNSUPPORTED_NOTE
         }
         error={error}
         onChange={(next) => setAsking(next ? "on" : "off")}
