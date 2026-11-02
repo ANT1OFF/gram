@@ -51,6 +51,12 @@ export function createTrayMode(options: {
   /** Brings a window forward, or opens one. */
   readonly show: () => void;
   readonly quit: () => void;
+  /**
+   * The tray icon off macOS, when the app has one to give; else the executable's own. Linux needs
+   * it: there the executable carries no icon, and the StatusNotifierItem host (KDE, or GNOME's
+   * AppIndicator extension) shows the image it's given.
+   */
+  readonly icon?: () => NativeImage | undefined;
 }) {
   let prefs = DEFAULT_PREFS;
   let tray: Tray | undefined;
@@ -133,13 +139,14 @@ export function createTrayMode(options: {
 
   const showTray = async () => {
     if (tray !== undefined || !prefs.keepInTray) return;
-    // On macOS a template glyph for the menu bar; elsewhere the executable's own icon, which
-    // carries `icon.ico` on Windows.
+    // On macOS a template glyph for the menu bar; elsewhere the app's icon, or the executable's
+    // own, which carries `icon.ico` on Windows.
     icon ??= isMac
       ? menuBarIcon()
-      : await app
+      : (options.icon?.() ??
+        (await app
           .getFileIcon(process.execPath, { size: "small" })
-          .catch(() => nativeImage.createEmpty());
+          .catch(() => nativeImage.createEmpty())));
     if (tray !== undefined || !prefs.keepInTray) return;
     tray = new Tray(icon);
     // macOS opens a menu bar item's menu on click; elsewhere a click brings the window back.

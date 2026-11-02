@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { InvalidState } from "@gram/contracts";
+import { isWatchLimitError } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
@@ -22,20 +23,33 @@ export const keybindingsHandlers = Effect.gen(function* () {
     const run = yield* FiberSet.makeRuntime();
     yield* Effect.acquireRelease(
       Effect.sync(() =>
-        watchKeybindings(dataDir, () => {
-          run(
-            read.pipe(
-              Effect.flatMap((keybindings) =>
-                hub.publish({ type: "keybindings.changed", keybindings }),
+        watchKeybindings(
+          dataDir,
+          () => {
+            run(
+              read.pipe(
+                Effect.flatMap((keybindings) =>
+                  hub.publish({ type: "keybindings.changed", keybindings }),
+                ),
+                Effect.onError((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.void
+                    : Effect.logError("keybindings watcher failed", cause),
+                ),
               ),
-              Effect.onError((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.void
-                  : Effect.logError("keybindings watcher failed", cause),
+            );
+          },
+          {
+            onWatchFailed: (error) =>
+              run(
+                Effect.logWarning(
+                  isWatchLimitError(error)
+                    ? "keybindings.json is polled: the system's inotify limit is reached"
+                    : "keybindings.json is polled: its folder couldn't be watched",
+                ),
               ),
-            ),
-          );
-        }),
+          },
+        ),
       ),
       (stop) => Effect.sync(stop),
     );

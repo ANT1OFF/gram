@@ -205,8 +205,10 @@ const APP_ICON_NAMES: Record<AppIconId, string> = {
   glass: "Runes on glass",
 };
 
-const APP_ICON_HINT =
-  "Shows in the Dock or taskbar while Gram runs. Finder and the Start menu keep the Gift rune.";
+const appIconHint = (platform: string | undefined) =>
+  platform === "linux"
+    ? "Shows in the taskbar while Gram runs. The app launcher keeps the Gift rune."
+    : "Shows in the Dock or taskbar while Gram runs. Finder and the Start menu keep the Gift rune.";
 
 /** The desktop app's Dock or taskbar icon; absent in a browser or a shell older than it. */
 export function AppIconControl() {
@@ -223,7 +225,11 @@ export function AppIconControl() {
   });
   if (bridge === undefined) return null;
   return (
-    <Control label="App icon" keywords={["dock", "taskbar", "logo", "icon"]} hint={APP_ICON_HINT}>
+    <Control
+      label="App icon"
+      keywords={["dock", "taskbar", "logo", "icon"]}
+      hint={appIconHint(window.gram?.platform)}
+    >
       <div role="group" aria-label="App icon" className="grid grid-cols-4 gap-1.5">
         {APP_ICONS.map((icon) => (
           <button

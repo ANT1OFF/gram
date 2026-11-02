@@ -162,6 +162,27 @@ const GLYPHS: Record<string, string> = {
   tab: "⇥",
 };
 
+/**
+ * A key written the macOS way in a sentence, for this platform: unchanged on macOS, and elsewhere
+ * spelled out as `formatKeys` does, so `⌘⇧T` reads `Ctrl+Shift+T` and `⌥-click` reads `Alt-click`.
+ * For hints with a fixed key; a rebindable shortcut's hint comes from `useShortcutHint`.
+ */
+export function keyLabel(text: string, mac = isMac()): string {
+  if (mac) return text;
+  return text
+    .replace(/([⌃⌘⌥⇧]+)([A-Za-z0-9\\/⏎↵]?)/g, (_match, mods: string, key: string) =>
+      [
+        /[⌘⌃]/.test(mods) && "Ctrl",
+        mods.includes("⌥") && "Alt",
+        mods.includes("⇧") && "Shift",
+        key === "" ? false : /[⏎↵]/.test(key) ? "Enter" : key.toUpperCase(),
+      ]
+        .filter(Boolean)
+        .join("+"),
+    )
+    .replace(/[⏎↵]/g, "Enter");
+}
+
 /** Off macOS, keys are spelled out as Windows labels them. */
 const WORDS: Record<string, string> = {
   enter: "Enter",

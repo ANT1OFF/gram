@@ -3,9 +3,12 @@ import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { keyringBackendOk, NO_KEYRING_MESSAGE } from "@gram/contracts";
+
 /**
  * Encryption as Electron's `safeStorage` offers it: the macOS Keychain, Windows DPAPI for the user's
- * account, or a Linux keyring, which falls back to the unencrypted `basic_text` backend without one.
+ * account, or a Linux keyring, which falls back to the unencrypted `basic_text` backend without one;
+ * `handleVaultRequest` refuses to store or read keys there (`keyringBackendOk`).
  */
 export interface VaultCrypto {
   available(): boolean | Promise<boolean>;
@@ -181,12 +184,24 @@ export async function handleVaultRequest(
     };
   }
   const run = async (): Promise<VaultResponse> => {
+    let backend: string | undefined;
     try {
-      if (!(await crypto.available()))
-        return fail("OS encryption isn't available, so keys can't be stored");
+      backend = crypto.backend?.();
     } catch {
-      // Backend selection can fail before a read; report its stage without the OS exception.
-      return fail("couldn't access OS encryption for the key store");
+      return fail("couldn't read the key store's backend");
+    }
+    // Before availability, so a Linux desktop without a keyring daemon gets the reason. Removing a
+    // key needs no encryption, so there it goes ahead without one.
+    const keyring = keyringBackendOk(backend);
+    if (!keyring && message.op !== "delete") return fail(NO_KEYRING_MESSAGE);
+    if (keyring) {
+      try {
+        if (!(await crypto.available()))
+          return fail("OS encryption isn't available, so keys can't be stored");
+      } catch {
+        // Backend selection can fail before a read; report its stage without the OS exception.
+        return fail("couldn't access OS encryption for the key store");
+      }
     }
     switch (message.op) {
       case "set": {

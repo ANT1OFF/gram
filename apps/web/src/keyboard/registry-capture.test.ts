@@ -1,7 +1,35 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { formatKeys, keysFromEvent, matches } from "./registry";
+import { paneMoveKeys } from "./catalog";
+import { formatKeys, keyLabel, keysFromEvent, matches } from "./registry";
+
+describe("keyLabel", () => {
+  it("leaves macOS's glyphs as they are", () => {
+    expect(keyLabel("Close (⌘\\)", true)).toBe("Close (⌘\\)");
+    expect(keyLabel("⌘⇧T brings it back", true)).toBe("⌘⇧T brings it back");
+  });
+
+  it("spells keys out elsewhere, in the order formatKeys uses", () => {
+    expect(keyLabel("⌘⇧T brings it back", false)).toBe("Ctrl+Shift+T brings it back");
+    expect(keyLabel("⌥⌘N", false)).toBe(formatKeys("mod+alt+n", false));
+    expect(keyLabel("Close (⌘\\)", false)).toBe("Close (Ctrl+\\)");
+    expect(keyLabel("⌘⏎", false)).toBe("Ctrl+Enter");
+    expect(keyLabel("Favourite (⇧↵)", false)).toBe("Favourite (Shift+Enter)");
+    expect(keyLabel("⌥-click", false)).toBe("Alt-click");
+    expect(keyLabel("⌘-click", false)).toBe("Ctrl-click");
+    expect(keyLabel("⏎ open", false)).toBe("Enter open");
+  });
+});
+
+describe("paneMoveKeys", () => {
+  it("avoids GNOME's Ctrl+Alt+arrows on Linux only", () => {
+    expect(paneMoveKeys("arrowleft", "linux")).toBe("alt+shift+arrowleft");
+    expect(paneMoveKeys("arrowleft", "darwin")).toBe("mod+alt+arrowleft");
+    expect(paneMoveKeys("arrowleft", "win32")).toBe("mod+alt+arrowleft");
+    expect(paneMoveKeys("arrowleft", undefined)).toBe("mod+alt+arrowleft");
+  });
+});
 
 const press = (init: KeyboardEventInit & { key: string; code: string }) =>
   new KeyboardEvent("keydown", init);

@@ -5,7 +5,7 @@ import { ChevronRight, Hand, PanelRight } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { focusOtherWindow } from "@/desktop/open-thread";
-import { useShortcut } from "@/keyboard/registry";
+import { keyLabel, useShortcut } from "@/keyboard/registry";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { GlideText, Swap } from "@/motion";
@@ -290,7 +290,7 @@ export function WorkerActions({
     <>
       {actions.keepBeside !== undefined && (
         <Hint
-          label="Keep beside the chat (⌘\\)"
+          label={keyLabel("Keep beside the chat (⌘\\)")}
           side="bottom"
           render={
             <button

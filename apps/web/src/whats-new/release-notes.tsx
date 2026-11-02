@@ -1,9 +1,11 @@
+import { keyLabel } from "@/keyboard/registry";
+
 import { highlightsFor, type WhatsNewAudience, type WhatsNewRelease } from "./index";
 
 const KBD = /^<kbd>([^<]*)<\/kbd>$/;
 
 /** A highlight body: `<kbd>…</kbd>` spans become key caps; everything else stays text, never HTML. */
-export function HighlightBody({ text }: { text: string }) {
+export function HighlightBody({ text, mac }: { text: string; mac?: boolean }) {
   return (
     <>
       {text.split(/(<kbd>[^<]*<\/kbd>)/).map((part, i) => {
@@ -13,7 +15,7 @@ export function HighlightBody({ text }: { text: string }) {
             key={i}
             className="rounded-sm border border-border bg-muted px-1 font-mono text-[0.85em] text-foreground"
           >
-            {key[1]}
+            {keyLabel(key[1] ?? "", mac)}
           </kbd>
         ) : (
           part

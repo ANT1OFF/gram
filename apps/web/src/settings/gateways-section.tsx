@@ -1,6 +1,7 @@
 import {
   gatewayModelUsable,
   helperChoice,
+  NO_KEYRING_MESSAGE,
   type GatewayProfile,
   type ProfileId,
   type SetKeyResult,
@@ -115,6 +116,7 @@ export function GatewaysSettings() {
       {adding ? (
         <ProfileForm
           taken={taken}
+          noKeyring={vault?.kind === "no-keyring"}
           onDone={(outcome) => {
             setAdding(false);
             setAdded(outcome);
@@ -184,10 +186,13 @@ function ShowCostToggle() {
 function ProfileForm({
   existing,
   taken,
+  noKeyring = false,
   onDone,
 }: {
   existing?: GatewayProfile;
   taken: ReadonlySet<string>;
+  /** Linux without a keyring: no key field, since none could be stored. */
+  noKeyring?: boolean;
   onDone: (outcome?: AddOutcome) => void;
 }) {
   const api = useApi();
@@ -223,7 +228,7 @@ function ProfileForm({
             },
       );
       setSavedId(saved.id);
-      if (existing || key === "") return { profileId: saved.id };
+      if (existing || key === "" || noKeyring) return { profileId: saved.id };
       return { profileId: saved.id, result: await api.setProfileKey(saved.id, key) };
     },
     onSuccess: async (outcome) => {
@@ -274,7 +279,13 @@ function ProfileForm({
           Only if your gateway documents a public metadata endpoint. Gram sends no key to this URL.
         </span>
       </label>
-      {!existing && (
+      {!existing && noKeyring && (
+        <p role="status" className={noteCls}>
+          <TriangleAlert aria-hidden className={noteIconCls} />
+          {NO_KEYRING_MESSAGE}
+        </p>
+      )}
+      {!existing && !noKeyring && (
         <div className="flex flex-col gap-1">
           <label htmlFor={keyId} className={labelCls}>
             API key (optional)
@@ -394,13 +405,21 @@ const SAVED_IN: Record<VaultInfo["kind"], string> = {
   keychain: "Saved securely in the macOS Keychain",
   dpapi: "Encrypted with Windows data protection for your account",
   libsecret: "Saved securely in the system keyring",
-  unencrypted:
-    "Stored unencrypted: no system keyring is available, so anyone who can read your files can read the key",
+  "no-keyring": NO_KEYRING_MESSAGE,
   memory: "Not saved: the key is kept only while the server runs",
 };
 
 /** Whether the profile has a key, and where it's kept; never by colour alone. */
 function KeyStatus({ profile, vault }: { profile: GatewayProfile; vault: VaultInfo | undefined }) {
+  // Linux without a keyring: keys aren't stored at all, rather than in a file anyone can read.
+  if (vault?.kind === "no-keyring") {
+    return (
+      <p role="status" className={noteCls}>
+        <TriangleAlert aria-hidden className={noteIconCls} />
+        {NO_KEYRING_MESSAGE}
+      </p>
+    );
+  }
   if (profile.keyRef === "") {
     return (
       <p className={noteCls}>
@@ -409,8 +428,7 @@ function KeyStatus({ profile, vault }: { profile: GatewayProfile; vault: VaultIn
       </p>
     );
   }
-  const Icon =
-    vault && (!vault.persisted || vault.kind === "unencrypted") ? TriangleAlert : ShieldCheck;
+  const Icon = vault && !vault.persisted ? TriangleAlert : ShieldCheck;
   return (
     <p className={noteCls}>
       <Icon aria-hidden className={noteIconCls} />
@@ -457,6 +475,7 @@ function KeyField({
   const keyId = useId();
   const [key, setKey] = useState("");
   const keySet = profile.keyRef !== "";
+  const noKeyring = vault?.kind === "no-keyring";
   // The mutation's variable is only "clear or not", so the key never lands in the query cache.
   const save = useMutation({
     mutationFn: (clear: boolean) => api.setProfileKey(profile.id, clear ? "" : key),
@@ -473,7 +492,7 @@ function KeyField({
       className="flex flex-col gap-2"
       onSubmit={(event) => {
         event.preventDefault();
-        if (key !== "") save.mutate(false);
+        if (key !== "" && !noKeyring) save.mutate(false);
       }}
     >
       <KeyStatus profile={profile} vault={vault} />
@@ -490,8 +509,15 @@ function KeyField({
           value={key}
           onChange={(event) => setKey(event.target.value)}
         />
-        <WhyDisabled reason={key === "" ? "Paste a key first." : undefined}>
-          <Button type="submit" size="sm" variant="outline" disabled={key === "" || save.isPending}>
+        <WhyDisabled
+          reason={noKeyring ? NO_KEYRING_MESSAGE : key === "" ? "Paste a key first." : undefined}
+        >
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            disabled={noKeyring || key === "" || save.isPending}
+          >
             {keySet ? "Replace key" : "Save key"}
           </Button>
         </WhyDisabled>
@@ -554,16 +580,19 @@ function ImportKey({ profile, vault }: { profile: GatewayProfile; vault: VaultIn
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              importKey.reset();
-              setConsenting(true);
-            }}
-          >
-            Import key from {OPENCODE}…
-          </Button>
+          <WhyDisabled reason={vault?.kind === "no-keyring" ? NO_KEYRING_MESSAGE : undefined}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={vault?.kind === "no-keyring"}
+              onClick={() => {
+                importKey.reset();
+                setConsenting(true);
+              }}
+            >
+              Import key from {OPENCODE}…
+            </Button>
+          </WhyDisabled>
           {importKey.data?.imported === false && (
             <span className="text-xs text-muted-foreground">
               {OPENCODE} has no key for this gateway.

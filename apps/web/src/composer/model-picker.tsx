@@ -2,6 +2,7 @@ import { Combobox } from "@base-ui/react/combobox";
 import { CheckIcon, ChevronDownIcon, Search, Star } from "lucide-react";
 import { useRef, type ReactNode } from "react";
 
+import { keyLabel } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
 
 import { matchesModel, modelGroups, type ModelGroup } from "./models";
@@ -172,7 +173,9 @@ export function ModelCombobox({
                                   : `Add ${option.label} to favourites`
                               }
                               aria-pressed={starred}
-                              title={starred ? "Remove from favourites (⇧↵)" : "Favourite (⇧↵)"}
+                              title={keyLabel(
+                                starred ? "Remove from favourites (⇧↵)" : "Favourite (⇧↵)",
+                              )}
                               className={cn(
                                 "grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:text-foreground",
                                 !starred &&

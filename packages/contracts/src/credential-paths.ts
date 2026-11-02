@@ -56,6 +56,11 @@ const CREDENTIAL_FOLDERS = [
   [".config", "gcloud"],
   [".config", "gh"],
   ["Library", "Keychains"],
+  // Linux's keychains: GNOME Keyring's files, KWallet's, and the NSS database Chromium-based apps
+  // keep certificates and client keys in.
+  [".local", "share", "keyrings"],
+  [".local", "share", "kwalletd"],
+  [".pki", "nssdb"],
 ] as const;
 
 /** Files that hold an agent's login only in their own folder: Codex's and OpenCode's. */

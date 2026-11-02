@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 
-import type { DesktopBridge, MenuShortcuts, UpdateProgress } from "@gram/contracts";
+import {
+  APP_ICONS,
+  type DesktopBridge,
+  type MenuShortcuts,
+  type UpdateProgress,
+} from "@gram/contracts";
 import { createLogger, defaultDataDir, logDirFor } from "@gram/server/logging";
 import { readUpdatePrefs } from "@gram/server/updates";
 import {
@@ -14,6 +19,7 @@ import {
   ipcMain,
   Menu,
   MessageChannelMain,
+  nativeImage,
   net,
   Notification,
   powerMonitor,
@@ -71,7 +77,7 @@ import { APP_ID } from "./app-id.ts";
 import { devAllowedOrigins, devBootUrl, logLevelFromMessage } from "./boot.ts";
 import { appIconDir, createAppIcon } from "./app-icon.ts";
 import { registerIpc } from "./ipc.ts";
-import { createLoginItem, startsHidden } from "./login-item.ts";
+import { createLoginItem, fileAutostart, startsHidden } from "./login-item.ts";
 import { installSmokeIpc } from "./smoke-ipc.ts";
 import {
   claimSingleInstance,
@@ -171,8 +177,15 @@ const vaultStore = fileVaultStore(join(app.getPath("userData"), "gateway-keys.js
 const vaultCrypto = makeMacVaultCrypto(
   {
     available: () => safeStorage.isEncryptionAvailable(),
+    // Electron 45 no longer falls back to `basic_text` without a keyring daemon: it still names the
+    // desktop's keyring and only reports encryption unavailable, which the vault and Settings read
+    // as `unavailable` rather than as a keyring.
     backend: () =>
-      process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : undefined,
+      process.platform !== "linux"
+        ? undefined
+        : safeStorage.isEncryptionAvailable()
+          ? safeStorage.getSelectedStorageBackend()
+          : "unavailable",
     encrypt: (plainText: string) => safeStorage.encryptString(plainText),
     decrypt: (encrypted: Buffer) => safeStorage.decryptString(encrypted),
   },
@@ -376,6 +389,16 @@ const trayMode = createTrayMode({
   path: join(app.getPath("userData"), "tray.json"),
   show: () => showWindow(),
   quit: () => app.quit(),
+  // Linux executables carry no icon for the tray to borrow; the bundled PNG, at a size every
+  // StatusNotifierItem host scales cleanly.
+  ...(process.platform === "linux"
+    ? {
+        icon: () => {
+          const image = nativeImage.createFromPath(join(appIconDir(), `${APP_ICONS[0]}.png`));
+          return image.isEmpty() ? undefined : image.resize({ width: 64, height: 64 });
+        },
+      }
+    : {}),
 });
 
 /** The quit, from the first ⌘Q to `app.exit`; see `quit.ts`. */
@@ -557,6 +580,15 @@ async function runApp() {
     packaged: app.isPackaged,
     argv: process.argv,
     openExternal: (url) => shell.openExternal(url),
+    // An AppImage runs from a mount that changes every launch; `$APPIMAGE` is the file itself.
+    ...(process.platform === "linux"
+      ? {
+          autostart: fileAutostart(
+            join(app.getPath("appData"), "autostart", "gram.desktop"),
+            process.env["APPIMAGE"] || process.execPath,
+          ),
+        }
+      : {}),
   });
   if (loginItem.launchedAtLogin) log.info({ source: "login" }, "launched at login");
   const notificationStatus = createNotificationStatus({

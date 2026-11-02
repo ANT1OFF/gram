@@ -50,6 +50,19 @@ describe("parseKeybindings", () => {
 });
 
 describe("keybindings file", () => {
+  it("polls the file when its folder can't be watched, and says so", async () => {
+    const dir = await tempDir();
+    const failed = vi.fn();
+    const stop = watchKeybindings(join(dir, "gone"), () => {}, {
+      platform: "linux",
+      pollMs: 10,
+      onWatchFailed: failed,
+    });
+    expect(failed).toHaveBeenCalledOnce();
+    stop();
+    stop();
+  });
+
   it("reads a missing file as empty, writes the schema beside it and round-trips", async () => {
     const dir = await tempDir();
     expect(await readKeybindings(dir)).toEqual({

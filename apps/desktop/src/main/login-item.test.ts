@@ -13,10 +13,14 @@ vi.mock("electron", () => ({
 vi.mock("@gram/shell/electron", () => ({}));
 import { registerIpc, type IpcOptions } from "./ipc.ts";
 import {
+  autostartEnabled,
+  autostartEntry,
   createLoginItem,
+  desktopExecArg,
   LOGIN_ARG,
   LOGIN_ITEMS_SETTINGS_URL,
   startsHidden,
+  type Autostart,
   type LoginItemApi,
 } from "./login-item.ts";
 
@@ -57,6 +61,30 @@ const mac = (api: LoginItemApi, more: { packaged?: boolean; argv?: string[] } = 
     argv: more.argv ?? [],
     openExternal: async () => {},
   });
+
+const linux = (autostart: Autostart | undefined, packaged = true, argv: string[] = []) =>
+  createLoginItem({
+    api: fakeApi({}).api,
+    platform: "linux",
+    packaged,
+    argv,
+    openExternal: async () => {},
+    ...(autostart === undefined ? {} : { autostart }),
+  });
+const memoryAutostart = (text?: string) => {
+  const box = { text };
+  const autostart: Autostart = {
+    exec: "/opt/Gram/gram",
+    read: () => box.text,
+    write: (next) => {
+      box.text = next;
+    },
+    remove: () => {
+      box.text = undefined;
+    },
+  };
+  return { box, autostart };
+};
 
 describe("createLoginItem", () => {
   it("is off by default and touches nothing until the user turns it on", () => {
@@ -128,16 +156,41 @@ describe("createLoginItem", () => {
     expect(create(["Gram.exe", LOGIN_ARG]).launchedAtLogin).toBe(true);
   });
 
-  it("isn't offered on Linux or in a development run, which would register bare Electron", () => {
+  it("keeps Linux's item in an XDG autostart entry that marks a login launch", () => {
+    const { box, autostart } = memoryAutostart();
+    const item = linux(autostart);
+    expect(item.state()).toEqual({ enabled: false, needsApproval: false });
+    expect(item.set(true)).toEqual({ enabled: true, needsApproval: false });
+    expect(box.text).toContain(`Exec=/opt/Gram/gram ${LOGIN_ARG}\n`);
+    expect(item.set(false)).toEqual({ enabled: false, needsApproval: false });
+    expect(box.text).toBeUndefined();
+    expect(linux(autostart, true, ["gram", LOGIN_ARG]).launchedAtLogin).toBe(true);
+    expect(linux(autostart, true, ["gram"]).launchedAtLogin).toBe(false);
+  });
+
+  it("follows an entry the desktop's own settings switched off", () => {
+    const on = autostartEntry("/opt/Gram/gram");
+    expect(autostartEnabled(on)).toBe(true);
+    expect(autostartEnabled(undefined)).toBe(false);
+    expect(autostartEnabled(`${on}Hidden=true\n`)).toBe(false);
+    expect(autostartEnabled(on.replace("enabled=true", "enabled=false"))).toBe(false);
+  });
+
+  it("quotes the executable as a desktop entry's Exec key reads it back", () => {
+    expect(desktopExecArg("/opt/Gram/gram")).toBe("/opt/Gram/gram");
+    expect(desktopExecArg("/home/me/My Apps/Gram.AppImage")).toBe(
+      '"/home/me/My Apps/Gram.AppImage"',
+    );
+    expect(desktopExecArg("/home/me/100%/Gram")).toBe("/home/me/100%%/Gram");
+    expect(desktopExecArg('/a b/$c"d`e')).toBe('"/a b/\\\\$c\\\\"d\\\\`e"');
+    expect(() => desktopExecArg("/a\nHidden=true")).toThrow();
+  });
+
+  it("isn't offered in a development run, which would register bare Electron", () => {
     for (const item of [
       mac(fakeApi({ wasOpenedAtLogin: true }).api, { packaged: false }),
-      createLoginItem({
-        api: fakeApi({}).api,
-        platform: "linux",
-        packaged: true,
-        argv: [LOGIN_ARG],
-        openExternal: async () => {},
-      }),
+      linux(memoryAutostart().autostart, false, [LOGIN_ARG]),
+      linux(undefined, true, [LOGIN_ARG]),
     ]) {
       expect(item.state()).toBeNull();
       expect(item.set(true)).toBeNull();
@@ -176,6 +229,8 @@ describe("startsHidden", () => {
     // No tray icon, and a hidden window has no taskbar button: it would be unreachable.
     expect(startsHidden("win32", true, false)).toBe(false);
     expect(startsHidden("darwin", false, true)).toBe(false);
+    expect(startsHidden("linux", true, true)).toBe(true);
+    expect(startsHidden("linux", true, false)).toBe(false);
   });
 });
 

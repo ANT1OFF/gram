@@ -24,6 +24,7 @@ import { useShallow } from "zustand/react/shallow";
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { keyLabel } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { formatClockTime, formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -876,8 +877,8 @@ function WorkerCard({
       )}
       <p className="mt-0.5 flex gap-3 border-t border-border pt-1.5 text-[11px] text-muted-foreground">
         <span>Click · open</span>
-        <span>⌥-click · peek</span>
-        <span>⌘-click · beside</span>
+        <span>{keyLabel("⌥-click")} · peek</span>
+        <span>{keyLabel("⌘-click")} · beside</span>
       </p>
     </>
   );

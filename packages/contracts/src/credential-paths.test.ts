@@ -53,6 +53,11 @@ describe("isCredentialPath", () => {
       "/Users/me/.config/gh/hosts.yml",
       "/Users/me/.config/gcloud/application_default_credentials.json",
       "C:\\Users\\me\\.azure\\msal_token_cache.json",
+      "/home/me/.local/share/keyrings/login.keyring",
+      "/home/me/.local/share/kwalletd/kdewallet.kwl",
+      "/home/me/.pki/nssdb/cert9.db",
+      "/home/me/.claude/.credentials.json",
+      "/home/me/.codex/auth.json",
     ]) {
       expect(isCredentialPath(path), path).toBe(true);
     }

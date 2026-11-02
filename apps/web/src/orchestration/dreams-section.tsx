@@ -16,6 +16,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Check, Download, GitMerge, MoonStar, RotateCcw, TriangleAlert, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { keyLabel } from "@/keyboard/registry";
 import { agentLabel } from "@/agents/agent-display";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
 import { useApi } from "@/api/context";
@@ -82,8 +83,10 @@ const DATE = new Intl.DateTimeFormat(undefined, {
  * a discard closes it before deleting that folder, and a closed thread whose folder is gone can't be
  * brought back with "Reopen closed thread".
  */
-const DISCARD_WARNING =
-  "Discard this dream? What it wrote and its report are deleted, and memory stays as it is. Its thread is closed too, with the folder it ran in, so ⌘⇧T brings back only its conversation to read.";
+const discardWarning = () =>
+  keyLabel(
+    "Discard this dream? What it wrote and its report are deleted, and memory stays as it is. Its thread is closed too, with the folder it ran in, so ⌘⇧T brings back only its conversation to read.",
+  );
 
 const dateRange = (oldest: number | undefined, newest: number | undefined): string =>
   oldest === undefined || newest === undefined
@@ -1065,7 +1068,7 @@ function Review({
             });
         }}
       >
-        {DISCARD_WARNING}
+        {discardWarning()}
       </InlineConfirm>
     </section>
   );
@@ -1204,7 +1207,7 @@ function DreamRow({
         onCancel={() => setDiscarding(false)}
         onConfirm={() => run(() => api.discardDream(dream.id))}
       >
-        {DISCARD_WARNING}
+        {discardWarning()}
       </InlineConfirm>
       {error !== undefined && (
         <p role="alert" className="text-xs text-destructive">

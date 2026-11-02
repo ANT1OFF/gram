@@ -5,6 +5,7 @@ import * as m from "motion/react-m";
 import { Maximize2, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { keyLabel } from "@/keyboard/registry";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { SegmentSlab, Swap, useMotionLevel, usePresetTransition } from "@/motion";
@@ -128,7 +129,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
           <Maximize2 aria-hidden className="size-3.5" />
         </Hint>
         <Hint
-          label="Close (⌘\)"
+          label={keyLabel("Close (⌘\\)")}
           side="bottom"
           render={
             <button

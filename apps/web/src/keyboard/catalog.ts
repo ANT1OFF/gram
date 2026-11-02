@@ -12,6 +12,15 @@ export interface ShortcutDefinition {
   experimental?: keyof ExperimentalSettings;
 }
 
+/**
+ * The chord that moves pane focus towards `key`. GNOME keeps Ctrl+Alt+arrows for switching
+ * workspaces, so the window never sees them; the Linux app uses Alt+Shift+arrows.
+ */
+export const paneMoveKeys = (
+  key: string,
+  platform: string | undefined = typeof window === "undefined" ? undefined : window.gram?.platform,
+): string => (platform === "linux" ? `alt+shift+${key}` : `mod+alt+${key}`);
+
 const paneMove = (
   [
     ["left", "arrowleft"],
@@ -21,7 +30,7 @@ const paneMove = (
   ] as const
 ).map(([direction, key]): ShortcutDefinition => ({
   id: `pane.move-${direction}`,
-  keys: `mod+alt+${key}`,
+  keys: paneMoveKeys(key),
   label: `Move focus ${direction}`,
   group: "Navigation",
 }));

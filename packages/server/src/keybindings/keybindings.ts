@@ -120,6 +120,8 @@ export interface WatchKeybindingsOptions {
   /** The stat interval when polling. */
   readonly pollMs?: number;
   readonly platform?: NodeJS.Platform;
+  /** Told when the folder can't be watched and the file is polled instead. */
+  readonly onWatchFailed?: (error: unknown) => void;
 }
 
 /**
@@ -149,13 +151,24 @@ export function watchKeybindings(
     watchFile(path, { interval: options.pollMs ?? 1000, persistent: false }, listener);
     close = () => unwatchFile(path, listener);
   } else {
-    const watcher = watch(dataDir, (_event, filename) => {
-      if (filename !== null && filename.toString() !== KEYBINDINGS_FILE) return;
-      changed();
-    });
-    // A watch that dies (e.g. the folder is removed) just stops hot-reloading.
-    watcher.on("error", () => watcher.close());
-    close = () => watcher.close();
+    try {
+      const watcher = watch(dataDir, (_event, filename) => {
+        if (filename !== null && filename.toString() !== KEYBINDINGS_FILE) return;
+        changed();
+      });
+      // A watch that dies (e.g. the folder is removed) just stops hot-reloading.
+      watcher.on("error", () => watcher.close());
+      close = () => watcher.close();
+    } catch (error) {
+      // Linux's inotify limit (ENOSPC/EMFILE) throws here; polling the file needs no watch.
+      options.onWatchFailed?.(error);
+      const path = join(dataDir, KEYBINDINGS_FILE);
+      const listener = (current: Stats, previous: Stats) => {
+        if (current.mtimeMs !== previous.mtimeMs || current.size !== previous.size) changed();
+      };
+      watchFile(path, { interval: options.pollMs ?? 1000, persistent: false }, listener);
+      close = () => unwatchFile(path, listener);
+    }
   }
 
   return () => {

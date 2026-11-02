@@ -348,7 +348,9 @@ export const CodexServersLive = (
             process.platform === "win32"
               ? { env: inherited }
               : yield* runCommand(
-                  config.shell ?? process.env["SHELL"] ?? "/bin/zsh",
+                  config.shell ??
+                    process.env["SHELL"] ??
+                    (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash"),
                   ["-ilc", probeScript("codex")],
                   { timeoutMs: 5_000, isolateSession: true },
                 ).pipe(

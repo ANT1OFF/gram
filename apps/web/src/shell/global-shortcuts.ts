@@ -2,7 +2,8 @@ import type { ThreadId } from "@gram/contracts";
 import { useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-import { registerShortcut, useShortcut } from "@/keyboard/registry";
+import { paneMoveKeys } from "@/keyboard/catalog";
+import { keyLabel, registerShortcut, useShortcut } from "@/keyboard/registry";
 import { besideToggle, closeBeside, keepBeside } from "@/orchestration/beside-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
 import { newEntryRoute } from "@/orchestration/new-entry";
@@ -272,8 +273,8 @@ export function useGlobalShortcuts() {
     const moveFocus = FOCUS_KEYS.map(([direction, key]) =>
       registerShortcut({
         id: `pane.move-${direction}`,
-        keys: `mod+alt+${key}`,
-        label: "Move focus between panes (⌥ arrows)",
+        keys: paneMoveKeys(key),
+        label: `Move focus between panes (${window.gram?.platform === "linux" ? "Alt+Shift" : keyLabel("⌥")} arrows)`,
         group: "Navigation",
         hidden: direction !== "left",
         when: gridShown,
