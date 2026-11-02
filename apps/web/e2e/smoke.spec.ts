@@ -4,10 +4,17 @@ import { threadRow } from "./thread-row";
 test("streams a scripted thread, approves a request and sends a queued message", async ({
   page,
 }) => {
+  // The script holds its turn just after the opening line. Unheld, the line folds into the running
+  // turn's row as soon as the next words start, about half a second later at the mock's speed: a
+  // cold browser often missed it between polls.
+  await page.addInitScript(() => {
+    window.gramMockHoldGates = true;
+  });
   await page.goto("/t/t-flaky");
 
   const transcript = page.getByTestId("transcript");
   await expect(transcript.getByText("I'll start by reading the test")).toBeVisible();
+  await page.evaluate(() => window.gramMock?.release("flaky-read"));
 
   const composer = page.getByLabel("Message", { exact: true });
   await composer.fill("also update the changelog");
