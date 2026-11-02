@@ -271,8 +271,8 @@ const README_PARKED = ["t-flaky", "t-question", "t-plan", "t-background", "t-edi
 /**
  * The README's scene (`simulateReadme`): `storefront`'s orchestrator in the default look, the right
  * panel closed and no usage limits reported, at `width` × `height`. The README's images in
- * `docs/assets/` are `readme-hero`, `readme-board` and `readme-quiet`, resized to 1600 px wide and
- * palette-quantised.
+ * `docs/assets/` are `readme-hero`, `readme-board` and `readme-quiet` (`openReadmeQuiet`), resized
+ * to 1600 px wide and palette-quantised.
  */
 const openReadme = async (page: Page, width: number, height: number) => {
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.limits", "none"));
@@ -297,6 +297,34 @@ const openReadme = async (page: Page, width: number, height: number) => {
   await page.getByLabel("Message", { exact: true }).waitFor();
   await page.getByText("Started six workers", { exact: false }).waitFor();
   await page.setViewportSize({ width, height });
+  await page.mouse.move(width - 4, height - 4);
+  await page.waitForTimeout(800);
+};
+
+/**
+ * Quiet at rest for the README (`simulateQuietBusy`): `casefiles`'s five busy workers and nothing
+ * asked, its one worker stopped on a conflict parked, in the README's look (no usage limits, the right panel closed, the seeded solo
+ * threads that ask parked), at `width` × `height`.
+ */
+const openReadmeQuiet = async (page: Page, width: number, height: number) => {
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.limits", "none"));
+  await seedMockSettings(page, { panel: { open: false } });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/t/t-deps");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  const made = await page.evaluate(async (parked) => {
+    const mock = window.gramMock!;
+    for (const id of parked) await mock.park(id as never, true);
+    const scene = await mock.simulateQuietBusy();
+    // The worker stopped on a conflict is the one thing to attend to; at rest, nothing is.
+    await mock.park(scene.conflicts, true);
+    return scene;
+  }, README_PARKED);
+  await openOrchestrator(page, made.orchestratorThreadId);
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await page.setViewportSize({ width, height });
+  await page.getByTestId("quiet-toggle").click();
+  await page.getByTestId("quiet-empty").waitFor();
   await page.mouse.move(width - 4, height - 4);
   await page.waitForTimeout(800);
 };
@@ -961,14 +989,9 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "readme-quiet",
-    title: "README: Quiet over `storefront`, its one question as the card",
+    title: "README: Quiet at rest over `casefiles`, its workers busy and nothing asked",
     modes: ["dark"],
-    open: async (page) => {
-      await openReadme(page, 1024, 640);
-      await page.getByTestId("quiet-toggle").click();
-      await page.getByTestId("quiet-card").waitFor();
-      await page.waitForTimeout(800);
-    },
+    open: (page) => openReadmeQuiet(page, 1024, 640),
   },
   {
     name: "quiet-busy-board",

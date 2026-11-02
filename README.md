@@ -94,7 +94,7 @@ time, with a dot per worker along the bottom. Get on with your own work and come
 asked. Open it with the moon in the title bar or ⌘⌥4 (Ctrl+Alt+4 on Linux), and leave with Esc;
 **Quiet when idle** in Settings → General turns it on after five idle minutes with nothing asked.
 
-![Gram's Quiet view: an otherwise empty window with one card in the middle, a worker's question with two answers, one of them recommended. Along the bottom, the workspace's name with a dot per worker, the number of asks and the time.](docs/assets/gram-quiet.png)
+![Gram's Quiet view at rest: an otherwise empty window that reads "Nothing needs you. 5 workers are busy: 2 working, 3 waiting on checks." Along the bottom, the workspace's name with a dot per worker, filled for the two working and hollow for the three waiting, and the time; Leave quiet sits in the top corner.](docs/assets/gram-quiet.png)
 
 ## Docs
 
