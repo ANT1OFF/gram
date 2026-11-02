@@ -1,14 +1,13 @@
 import { AlertTriangle, FileJson, RotateCcw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { useApi } from "@/api/context";
-import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
 import { useOpenInEditor, useOpensLocally } from "@/editor/use-open-in-editor";
 import { applyOverrideChanges, bindingRows, unknownOverrides } from "@/keyboard/bindings";
-import { useBindingsStore, type BindingOverrides } from "@/keyboard/bindings-store";
+import { useBindingsStore } from "@/keyboard/bindings-store";
 import { listedShortcuts, SHORTCUT_CATALOG } from "@/keyboard/catalog";
 import { formatKeys, type ShortcutGroup } from "@/keyboard/registry";
+import { useSaveBindings } from "@/keyboard/use-save-bindings";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { KeyCaptureDialog } from "./key-capture-dialog";
@@ -18,28 +17,18 @@ const GROUPS: ShortcutGroup[] = ["App", "Navigation", "Thread", "Composer", "Ter
 
 /** Settings → Keyboard: effective bindings, custom ones and clashes marked, record new keys or reset. */
 export function KeyboardSection() {
-  const api = useApi();
   const openInEditor = useOpenInEditor();
   const local = useOpensLocally();
   const path = useBindingsStore((s) => s.path);
   const overrides = useBindingsStore((s) => s.overrides);
   const problems = useBindingsStore((s) => s.problems);
   const settings = useServerSettings((s) => s.settings);
-  const [error, setError] = useState<string>();
+  const { save, error } = useSaveBindings();
   const [changing, setChanging] = useState<string>();
 
   const rows = bindingRows(listedShortcuts(SHORTCUT_CATALOG, settings), overrides);
   const unknown = unknownOverrides(SHORTCUT_CATALOG, overrides);
   const changingRow = rows.find((row) => row.id === changing);
-
-  const save = async (next: BindingOverrides) => {
-    setError(undefined);
-    try {
-      useBindingsStore.getState().apply(await api.setKeybindings(next));
-    } catch (e) {
-      setError(`Couldn't save keybindings.json: ${errorMessage(e)}`);
-    }
-  };
 
   const reset = (id: string) => {
     const { [id]: _removed, ...rest } = overrides;

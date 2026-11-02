@@ -42,13 +42,14 @@ test("each tab is a page, with history, and Settings reopens on the last one", a
   await expect(general).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { level: 2, name: "General" })).toBeVisible();
 
-  // Six groups, one link each; the rest open from Advanced.
+  // The groups, one link each; the rest open from Advanced.
   await expect(nav(page).getByRole("link")).toHaveText([
     "General",
     "Agents",
     "Workspaces",
     "Appearance",
     "Notifications",
+    "Voice",
     "Advanced",
   ]);
   await expect(nav(page).getByRole("link", { name: "Workspaces" })).toHaveAttribute(
@@ -64,11 +65,8 @@ test("each tab is a page, with history, and Settings reopens on the last one", a
     "href",
     "/settings/help",
   );
-  // Experimental is a row too, landing on its switches in Diagnostics.
-  await expect(rows.getByRole("link", { name: "Experimental" })).toHaveAttribute(
-    "href",
-    /\/settings\/diagnostics\?highlight=experimental/,
-  );
+  // Nothing is experimental now, so there's no row for it.
+  await expect(rows.getByRole("link", { name: "Experimental" })).toHaveCount(0);
 
   await rows.getByRole("link", { name: "Keyboard" }).click();
   await expect(page).toHaveURL(/\/settings\/keyboard$/);

@@ -817,13 +817,38 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "settings-voice-input",
-    title: "Settings → Advanced → Voice input, with voice input on",
+    title: "Settings → Voice, with voice input on",
     open: async (page) => {
       await seedMockSettings(page, { experimental: { voiceInput: true } });
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.goto("/settings/voice-input");
       await expect(page.getByTestId("voice-input-settings")).toContainText("Microphone");
     },
+  },
+  {
+    name: "settings-voice-input-off",
+    title: "Settings → Voice, off: listed as a page of its own, with only the switch",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("/settings/voice-input");
+      await page.locator("[data-settings-results] h2").first().waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    name: "dictate-key-recorder",
+    title: "The dictation key's recorder, Right ⌘ held alone just recorded",
+    modes: ["dark"],
+    open: async (page) => {
+      await seedMockSettings(page, { experimental: { voiceInput: true } });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("/settings/keyboard");
+      await page.getByRole("button", { name: "Change Dictate: hold to talk" }).click();
+      await page.keyboard.press("MetaRight");
+      await expect(page.getByTestId("key-capture-status")).toContainText("Recorded");
+    },
+    element: (page) => page.getByTestId("key-capture-dialog"),
   },
   {
     name: "settings-search",

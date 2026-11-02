@@ -587,13 +587,15 @@ the Preview header and transcript show. `preview_start`, `preview_list`,
 on a card first, takes the next free port, and stops with its thread.
 
 Notifications retain sanitized history and quiet startup diagnostics; saved
-notifications omit sensitive runtime details. Dictation runs locally with NVIDIA
+notifications omit sensitive runtime details. Dictation is off until turned on in Settings → Voice
+(stored as `experimental.voiceInput`, its name before it graduated). It runs locally with NVIDIA
 Nemotron through sherpa-onnx, after explicit verified-download/license consent and
 microphone permission, and inserts draft text only. English is supported. The microphone opens on
 a press and closes with its stop, unless the opt-in Keep microphone ready holds it for 2 minutes
 after a composer's focus or the last dictation, with the moments before a press in memory only.
-Its key is Right ⌥ held on macOS and Ctrl+Shift+Space elsewhere, rebindable in Settings → Keyboard
-to a chord or one modifier held alone. Held alone, it works anywhere in the window and dictates into
+Its key is Right ⌥ held on macOS and Ctrl+Shift+Space elsewhere, rebindable on the Voice page or in
+Settings → Keyboard (one binding in `keybindings.json`) to a chord or one modifier held alone, Fn
+included where the app sees it. Held alone, it works anywhere in the window and dictates into
 the composer in use: a tap or a press with another key discards silently, and a double tap keeps
 listening until the next press. Synthesised tones mark the start and the stop.
 In Accurate mode (the default where the models are downloaded) each pause also runs NVIDIA

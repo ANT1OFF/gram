@@ -7,7 +7,7 @@ import { renderWithApi } from "@/panels/test-utils";
 
 import { Field, Toggle } from "./fields";
 import { KeyboardSection } from "./keyboard-section";
-import { listedSettingsPages, settingsPagesFor } from "./pages";
+import { settingsPagesFor } from "./pages";
 import { matchesSearch, searchWords } from "./search";
 import {
   firstMatchedPage,
@@ -290,20 +290,12 @@ describe("settingsPagesFor", () => {
 });
 
 describe("settingsPagesFor and voice input", () => {
-  it("has no Voice input page where voice isn't supported", () => {
-    expect(settingsPagesFor("linux").map((entry) => entry.id)).not.toContain("voice-input");
-    expect(settingsPagesFor("darwin").map((entry) => entry.id)).toContain("voice-input");
-    expect(settingsPagesFor("win32").map((entry) => entry.id)).toContain("voice-input");
-    expect(settingsPagesFor(undefined).map((entry) => entry.id)).toContain("voice-input");
-  });
-});
-
-describe("listedSettingsPages", () => {
-  it("lists the local settings pages", () => {
-    const ids = listedSettingsPages(settingsPagesFor(undefined), undefined).map(
-      (settingsPage) => settingsPage.id,
-    );
-    expect(ids).toContain("agents");
-    expect(ids).toContain("updates");
+  it("lists Voice as a page of its own everywhere, with no experimental switch to turn on", () => {
+    for (const platform of ["darwin", "win32", "linux", undefined]) {
+      const voice = settingsPagesFor(platform).find((entry) => entry.id === "voice-input");
+      expect(voice?.label, String(platform)).toBe("Voice");
+      expect(voice?.group).toBe("voice-input");
+      expect(voice).not.toHaveProperty("experimental");
+    }
   });
 });

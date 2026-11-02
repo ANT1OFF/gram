@@ -112,6 +112,8 @@ const LONE_MODIFIERS: Readonly<Record<string, { readonly mac: string; readonly o
   controlleft: { mac: "Left ⌃", other: "Left Ctrl" },
   shiftright: { mac: "Right ⇧", other: "Right Shift" },
   shiftleft: { mac: "Left ⇧", other: "Left Shift" },
+  // Where the app sees it at all: a keyboard may keep Fn to itself.
+  fn: { mac: "Fn", other: "Fn" },
 };
 
 const loneModifier = (keys: string) =>

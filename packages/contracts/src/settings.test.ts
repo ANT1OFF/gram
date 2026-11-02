@@ -341,6 +341,12 @@ describe("workspaces.orchestratorConnectors", () => {
 });
 
 describe("voice input", () => {
+  it("stays on for whoever turned it on while it was experimental", () => {
+    // The switch keeps its stored name after graduating: no migration, nothing to lose.
+    const stored = Schema.decodeUnknownSync(SettingsPatch)({ experimental: { voiceInput: true } });
+    expect(voiceInputOn(applySettingsPatch(DEFAULT_SETTINGS, stored))).toBe(true);
+  });
+
   it("is off unless turned on, and runs the Balanced stop's model until the slider moves", () => {
     expect(voiceInputOn(DEFAULT_SETTINGS)).toBe(false);
     expect(keepMicrophoneReadyOf(DEFAULT_SETTINGS)).toBe(false);

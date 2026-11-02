@@ -1,6 +1,7 @@
+import { applySettingsPatch, DEFAULT_SETTINGS } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { SHORTCUT_CATALOG } from "./catalog";
+import { listedShortcuts, SHORTCUT_CATALOG } from "./catalog";
 
 const sources = import.meta.glob<string>(["../**/*.ts", "../**/*.tsx", "!../**/*.test.*"], {
   query: "?raw",
@@ -24,6 +25,9 @@ function registeredLiterals(): { file: string; id: string; keys: string }[] {
   return found;
 }
 
+const listedIds = (settings: typeof DEFAULT_SETTINGS | undefined) =>
+  listedShortcuts(SHORTCUT_CATALOG, settings).map((d) => d.id);
+
 describe("SHORTCUT_CATALOG", () => {
   it("lists every literal shortcut registration with its default keys", () => {
     const literals = registeredLiterals();
@@ -33,6 +37,16 @@ describe("SHORTCUT_CATALOG", () => {
       expect(definition, `${id} in ${file}`).toBeDefined();
       expect(definition?.keys, `${id} in ${file}`).toBe(keys);
     }
+  });
+
+  it("lists dictation's key while voice input is on, as stored before it graduated", () => {
+    expect(listedIds(DEFAULT_SETTINGS)).not.toContain("composer.dictate");
+    expect(listedIds(undefined)).not.toContain("composer.dictate");
+    const on = applySettingsPatch(DEFAULT_SETTINGS, { experimental: { voiceInput: true } });
+    expect(listedIds(on)).toContain("composer.dictate");
+    expect(SHORTCUT_CATALOG.find((d) => d.id === "composer.dictate")).not.toHaveProperty(
+      "experimental",
+    );
   });
 
   it("has unique ids", () => {

@@ -12,7 +12,7 @@ import {
 import type { SettingsGroupId, SettingsNavGroup } from "./pages";
 
 /**
- * Settings → the six groups, one link each; the open one, or the one the open page opens from, is
+ * Settings → the groups, one link each; the open one, or the one the open page opens from, is
  * `aria-current="page"`. In a narrow `@container/settings` it is a bar over the page instead, the
  * list folded into a picker, so the page keeps the width.
  */

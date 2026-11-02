@@ -17,16 +17,12 @@ import {
   type SpeechStatus,
 } from "@gram/contracts";
 import { CircleCheck, TriangleAlert } from "lucide-react";
-import { Navigate } from "@tanstack/react-router";
 import { useEffect, useId, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { Switch } from "@/components/ui/switch";
 import { playTone } from "@/dictation/sounds";
-import { effectiveKeys } from "@/keyboard/bindings-store";
-import { DICTATE_KEYS } from "@/keyboard/catalog";
-import { isLoneModifier, isMac } from "@/keyboard/registry";
-import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
+import { isMac } from "@/keyboard/registry";
 import { errorMessage } from "@/api/errors";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -37,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { DialogShell } from "@/thread/dialog-shell";
 
+import { DictateKeyRow } from "./dictate-key-row";
 import { OptionGroup, SettingRow, Toggle } from "./fields";
 import { SETTINGS_CARD } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
@@ -107,9 +104,8 @@ function useMicrophoneAccess(): MicrophoneAccess | undefined {
 
 /**
  * The voice input switch, which is the whole lifecycle: on shows the model's size and licence, then
- * downloads it; off deletes every variant from disk and stops the speech process. Settings →
- * Diagnostics holds one while the feature is experimental, since Voice input's own page is listed
- * only once it is on.
+ * downloads it; off deletes every variant from disk and stops the speech process. It is stored as
+ * `experimental.voiceInput`, the name it had before it graduated, so a choice made then carries on.
  */
 export function VoiceInputSwitch({ label, description }: { label: string; description: string }) {
   const api = useApi();
@@ -155,15 +151,7 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
       <Toggle
         label={label}
         description={supported ? description : `${description} ${VOICE_UNSUPPORTED_NOTE}`}
-        keywords={[
-          "dictation",
-          "speech",
-          "microphone",
-          "mic",
-          "transcribe",
-          "voice",
-          "experimental",
-        ]}
+        keywords={["dictation", "speech", "microphone", "mic", "transcribe", "voice", "enable"]}
         checked={on}
         disabled={pending || (!desktop && !on)}
         disabledReason={
@@ -211,7 +199,7 @@ export function VoiceInputSwitch({ label, description }: { label: string; descri
   );
 }
 
-/** Settings → Voice input: the switch, the model's download, the microphone and the slider. */
+/** Settings → Voice: the switch, the key, the model's download, the microphone and the slider. */
 export function VoiceInputSection() {
   const api = useApi();
   const settings = useServerSettings((s) => s.settings);
@@ -220,16 +208,8 @@ export function VoiceInputSection() {
   const [error, setError] = useState<string>();
   const pending = useLifecyclePending();
   const on = settings !== undefined && voiceInputOn(settings);
-  /** On at some point while the page was open, so turning it off here doesn't navigate away. */
-  const [seenOn, setSeenOn] = useState(false);
-  if (on && !seenOn) setSeenOn(true);
-  const dictateKeys = useShortcutHint("composer.dictate");
-  // Read again whenever the hint changes, which follows the bindings.
-  const heldAlone = isLoneModifier(effectiveKeys("composer.dictate", DICTATE_KEYS) ?? "");
 
   if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
-  // Experimental until 0.9: off, the page opens Diagnostics, unless it was turned off right here.
-  if (!on && !seenOn) return <Navigate to="/settings/diagnostics" replace />;
   const stop = speechPerformanceOf(settings);
   const mode = speechModeOf(settings);
   const current = statuses[SPEECH_MODEL_FOR_STOP[stop]];
@@ -249,8 +229,9 @@ export function VoiceInputSection() {
       <div className={SETTINGS_CARD}>
         <VoiceInputSwitch
           label="Voice input"
-          description={`Dictate into the composer with its mic button${dictateKeys === "" ? "" : ` or ${dictateKeys}: ${heldAlone ? "hold it anywhere in Gram while you talk, or double-tap it to keep listening" : "tap it to start and stop, or hold it while you talk"}`}. Experimental.`}
+          description="Dictate into the composer with its mic button or a key, recognised on this computer."
         />
+        {on && <DictateKeyRow />}
         {on && (
           <SettingRow
             label="Vocabulary hints"
