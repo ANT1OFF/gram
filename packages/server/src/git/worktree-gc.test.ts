@@ -292,7 +292,7 @@ describe("sweepDue", () => {
         "a live worker with no PR, cold between turns",
         facts({
           thread: (() => {
-            const { boundPr: _, ...live } = thread({ parked: false });
+            const { boundPr: _bound, ...live } = thread({ parked: false });
             return live;
           })(),
         }),
