@@ -226,8 +226,19 @@ export interface UpdateSource {
   readonly visibility: "private" | "public";
 }
 
+/**
+ * What an install updates from: `mac` a Developer ID signed app (Squirrel.Mac), `appimage` the
+ * Linux AppImage, which replaces its own file, and `deb` the Linux .deb, which never installs
+ * anything itself: it links to the release for apt to install.
+ */
+export type AppUpdateTarget = "mac" | "appimage" | "deb";
+
 export interface AppUpdateState {
   readonly status: AppUpdateStatus;
+  /** Absent in older shells, which only ever had `mac`. */
+  readonly target?: AppUpdateTarget;
+  /** The available release's GitHub page, for a `deb` install to download from. */
+  readonly releaseUrl?: string | null;
   readonly channel: UpdateChannel;
   readonly currentVersion: string;
   /** The newer release found, from `available` on. */
@@ -248,14 +259,17 @@ export interface AppUpdateState {
   readonly message: string | null;
   readonly errorStep: AppUpdateErrorStep | null;
   readonly notApplied: AppUpdateNotApplied | null;
-  /** This installation can replace itself (packaged, in Applications, writable). */
+  /**
+   * This installation can replace itself: packaged, in Applications and writable on macOS; an
+   * AppImage whose file and folder this user can write on Linux. Always false for a `deb`.
+   */
   readonly canInstall: boolean;
 }
 
 /**
- * Electron's updater on Developer ID signed macOS installs. Absent in older shells; `state`
- * resolves null everywhere else: Windows' `gh` updater, and unsigned macOS builds, which have no
- * in-app updater.
+ * Electron's updater on Developer ID signed macOS installs and the Linux AppImage, and the
+ * check-only updater of the Linux .deb. Absent in older shells; `state` resolves null everywhere
+ * else: Windows' `gh` updater, and unsigned macOS builds, which have no in-app updater.
  */
 export interface DesktopNativeUpdates {
   state(): Promise<AppUpdateState | null>;

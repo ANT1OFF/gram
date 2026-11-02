@@ -85,6 +85,7 @@ else if(!["status --porcelain --untracked-files=normal","fetch --quiet --tags or
 if(a.startsWith("repo view ")) console.log(JSON.stringify(${JSON.stringify(repo)}));
 else if(a.includes("releases/latest")) { if (${JSON.stringify(latest)}) console.log(${JSON.stringify(latest)}); else { console.error("HTTP 404"); process.exit(1); } }
 else if(a.includes("releases?")) console.log(${JSON.stringify(releases.join("\n"))});
+else if(a.startsWith("workflow run release-linux.yml ")) require("node:fs").appendFileSync(${JSON.stringify(join(root, "dispatched.log"))}, a + "\\n");
 else if(a!=="auth status --hostname github.com") process.exit(99);`,
   );
   const marker = join(root, "entered.json");
@@ -181,6 +182,16 @@ it.each([false, true])(
     expect(run.output).toContain("install failed");
     expect(JSON.parse(readFileSync(marker, "utf8")).cwd).toBe(source);
     expect(holders(dir)).toEqual([]);
+    // A stable run dispatches the Linux build for the same commit, here a dry run (--no-publish);
+    // an RC never does.
+    const dispatched = join(fixture.root, "dispatched.log");
+    if (!stable) expect(existsSync(dispatched)).toBe(false);
+    else
+      expect(readFileSync(dispatched, "utf8")).toMatch(
+        new RegExp(
+          `^workflow run release-linux\\.yml --repo ANT1OFF/gram --ref main -f version=0\\.4\\.0 -f source_sha=${"a".repeat(40)} -f nonce=[0-9a-f]{16} -f dry_run=true\n$`,
+        ),
+      );
   },
   10_000,
 );

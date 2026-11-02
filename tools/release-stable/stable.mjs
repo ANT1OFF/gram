@@ -19,8 +19,10 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  copyFileSync,
   createReadStream,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
@@ -34,6 +36,12 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { REPO } from "../release-rc/rc-lib.mjs";
+import {
+  LINUX_BUILD_INFO,
+  checkLinuxBuild,
+  linuxAssetNames,
+  verifyAttestations,
+} from "../release-linux/linux-lib.mjs";
 import {
   STATE_FILE,
   parseStableArgs,
@@ -173,21 +181,67 @@ async function checkSums(dir, covers) {
   return [...listed.keys()].toSorted();
 }
 
-/** electron-updater's manifest, read with its own parser and the app's validation. */
-async function checkManifest(dir, { source, version, zipName }) {
+/**
+ * electron-updater's manifest, read with its own parser and the app's validation: `latest-mac.yml`
+ * for the signed ZIP, or `latest-linux.yml` for the AppImage (`target: "appimage"`).
+ */
+async function checkManifest(dir, { source, version, zipName, target = "mac" }) {
   const { validateNativeManifest } = await import(
     pathToFileURL(join(source, "packages/shell/src/modules/update/native-release.ts")).href
   );
   const { parseUpdateInfo } = createRequire(join(source, "apps/desktop/package.json"))(
     "electron-updater/out/providers/Provider",
   );
-  const text = readFileSync(join(dir, "latest-mac.yml"), "utf8");
-  const parsed = parseUpdateInfo(text, "latest-mac.yml", new URL("https://github.com/"));
-  validateNativeManifest(parsed, { version, size: statSync(join(dir, zipName)).size });
+  const name = target === "mac" ? "latest-mac.yml" : "latest-linux.yml";
+  const text = readFileSync(join(dir, name), "utf8");
+  const parsed = parseUpdateInfo(text, name, new URL("https://github.com/"));
+  validateNativeManifest(parsed, { version, size: statSync(join(dir, zipName)).size, target });
   if (parsed.path !== zipName && parsed.files?.[0]?.url !== zipName)
-    stop(`latest-mac.yml doesn't name ${zipName}.`);
+    stop(`${name} doesn't name ${zipName}.`);
   if (parsed.sha512 !== sha512Base64(join(dir, zipName)))
-    stop("latest-mac.yml doesn't carry the downloaded ZIP's SHA-512.");
+    stop(`${name} doesn't carry the downloaded ${zipName}'s SHA-512.`);
+}
+
+/**
+ * The Linux files in a downloaded `dir`, when the release carries them: the build record names this
+ * version, source and run and lists the packages as downloaded, latest-linux.yml names the
+ * AppImage by its size and SHA-512, and each package's GitHub build attestation verifies (from
+ * the release workflow, on main at the release commit, on a GitHub-hosted runner).
+ */
+async function checkLinux(dir, { state, source, verifyAttestation }) {
+  const linux = state.linux;
+  if (!linux) return undefined;
+  const { covered } = linuxAssetNames(state.version);
+  const only = join(dir, "linux");
+  mkdirSync(only);
+  for (const name of covered) {
+    if (!existsSync(join(dir, name))) stop(`${name} wasn't downloaded.`);
+    copyFileSync(join(dir, name), join(only, name));
+  }
+  const checked = await checkLinuxBuild(only, {
+    version: state.version,
+    sourceCommit: state.sourceCommit,
+    runId: linux.runId,
+  });
+  if (checked.problems.length) stop(`the Linux files: ${checked.problems.join("; ")}.`);
+  await checkManifest(dir, {
+    source,
+    version: state.version,
+    zipName: linux.appImage,
+    target: "appimage",
+  });
+  if (linux.attested !== true) stop("the Linux files were built without an attestation.");
+  const attested = verifyAttestation(checked.files, {
+    dir: only,
+    repo: REPO,
+    sourceCommit: state.sourceCommit,
+  });
+  if (attested.problems.length) stop(attested.problems.join("; "));
+  return {
+    build: `${LINUX_BUILD_INFO} names run ${linux.runId} at ${state.sourceCommit}`,
+    manifest: "latest-linux.yml parsed and matched the AppImage",
+    attestations: attested.verified,
+  };
 }
 
 /**
@@ -195,7 +249,10 @@ async function checkManifest(dir, { source, version, zipName }) {
  * SHA256SUMS.txt holds, the manifest parses and matches the ZIP, BUILD-INFO (when present) names
  * the version, source and signing, and the app in the ZIP passes `verifyApp`.
  */
-export async function verifyDownloads(dir, { expected, remote, covers, state, source, verifyApp }) {
+export async function verifyDownloads(
+  dir,
+  { expected, remote, covers, state, source, verifyApp, verifyAttestation },
+) {
   for (const { name, bytes, sha256 } of expected) {
     const file = join(dir, name);
     if (!existsSync(file)) stop(`${name} wasn't downloaded.`);
@@ -221,7 +278,14 @@ export async function verifyDownloads(dir, { expected, remote, covers, state, so
       stop("BUILD-INFO.json doesn't name this version, source and Developer ID signing.");
   }
   const app = await verifyApp(join(dir, state.zipName), state);
-  return { files: expected.length, sha256sums: sums, manifest: "parsed and matched", app };
+  const linux = await checkLinux(dir, { state, source, verifyAttestation });
+  return {
+    files: expected.length,
+    sha256sums: sums,
+    manifest: "parsed and matched",
+    app,
+    ...(linux ? { linux } : {}),
+  };
 }
 
 /** macOS's own verdicts on the app in a downloaded ZIP; see verifyDownloads. */
@@ -326,11 +390,24 @@ export function bunUpdateCheck({ bun, harnessSource, gh = "gh", env = process.en
   };
 }
 
+/** The payload and manifest each target's update check must pick. */
+const targetAssets = (state, target) =>
+  target === "mac"
+    ? { payload: state.zipName, manifest: "latest-mac.yml" }
+    : {
+        payload: target === "appimage" ? state.linux.appImage : state.linux.deb,
+        manifest: state.linux.manifest,
+      };
+
+/** The targets this release is checked for: the Mac's, and the Linux ones when it carries them. */
+const targetsOf = (state) => (state.linux ? ["mac", "appimage", "deb"] : ["mac"]);
+
 /**
  * Fails unless every channel reads as `want`: "available" (this release, by its assets),
- * "upToDate", or "notThis" (anything but this release, as for a draft).
+ * "upToDate", or "notThis" (anything but this release, as for a draft). `target` names whose
+ * files the check picked.
  */
-function expectChecks(results, want, state, assets) {
+function expectChecks(results, want, state, assets, target = "mac") {
   if (results.length !== 2) stop(`the update check answered ${results.length} channels, not 2.`);
   for (const result of results) {
     if (want === "notThis") {
@@ -343,16 +420,20 @@ function expectChecks(results, want, state, assets) {
         `${result.channel}: ${result.status}${result.version ? ` ${result.version}` : ""}, expected ${want}.`,
       );
     if (want !== "available") continue;
-    const zip = assets.find((a) => a.name === state.zipName);
-    const manifest = assets.find((a) => a.name === "latest-mac.yml");
+    const names = targetAssets(state, target);
+    const payload = assets.find((a) => a.name === names.payload);
+    const manifest = assets.find((a) => a.name === names.manifest);
     if (
+      result.target !== target ||
       result.version !== state.version ||
       result.tag !== state.tag ||
-      result.zip.id !== zip?.id ||
-      result.zip.digest !== zip?.digest ||
-      result.manifest.id !== manifest?.id
+      result.payload?.id !== payload?.id ||
+      result.payload?.digest !== payload?.digest ||
+      result.manifest?.id !== manifest?.id
     )
-      stop(`${result.channel} offers ${JSON.stringify(result)}, not ${state.tag}'s assets.`);
+      stop(
+        `${result.channel} (${target}) offers ${JSON.stringify(result)}, not ${state.tag}'s assets.`,
+      );
   }
   return results;
 }
@@ -427,13 +508,16 @@ export async function validate(ctx) {
     remote: release.assets,
     covers: state.assets
       .map((a) => a.name)
-      .filter((n) => !["SHA256SUMS.txt", "latest-mac.yml"].includes(n)),
+      .filter((n) => !["SHA256SUMS.txt", "latest-mac.yml", "latest-linux.yml"].includes(n)),
     state,
     source: ctx.source,
     verifyApp: ctx.verifyApp,
+    verifyAttestation: ctx.verifyAttestation,
   });
   ctx.say(
-    `  every asset matches; ${checks.app ? "the app passed codesign, Gatekeeper and stapler" : ""}`,
+    `  every asset matches; ${checks.app ? "the app passed codesign, Gatekeeper and stapler" : ""}${
+      checks.linux ? "; the Linux packages' attestations verified" : ""
+    }`,
   );
   return record(ctx.work, "validate", {
     releaseId: state.releaseId,
@@ -458,31 +542,58 @@ export async function updateCheck(ctx) {
   );
   // The first release has nothing to update from: it is checked as an install older than any.
   const as = state.previousStable ?? FIRST_RELEASE_CURRENT;
-  const base = ["--feed", "private", "--repo", REPO, "--current", as];
+  const base = (target) => [
+    "--feed",
+    "private",
+    "--repo",
+    REPO,
+    "--current",
+    as,
+    "--target",
+    target,
+  ];
+  const [, ...linuxTargets] = targetsOf(state);
   if (ctx.live) {
     if (release.draft) stop("the release is still a draft; --live is for after publish.");
-    const live = expectChecks(ctx.updateCheck(base), "available", state, release.assets);
+    const live = expectChecks(ctx.updateCheck(base("mac")), "available", state, release.assets);
+    const linux = Object.fromEntries(
+      linuxTargets.map((target) => [
+        target,
+        expectChecks(ctx.updateCheck(base(target)), "available", state, release.assets, target),
+      ]),
+    );
     return record(ctx.work, "update-check-live", {
       releaseId: state.releaseId,
       assets: state.assets,
       live,
+      ...(linuxTargets.length ? { linux } : {}),
     });
   }
   privateDraft(ctx, state);
-  const asServed = expectChecks(ctx.updateCheck(base), "notThis", state, release.assets);
-  const simulated = expectChecks(
-    ctx.updateCheck([...base, "--simulate-publish", state.tag]),
-    "available",
-    state,
-    release.assets,
+  const both = (target) => ({
+    asServed: expectChecks(ctx.updateCheck(base(target)), "notThis", state, release.assets, target),
+    simulated: expectChecks(
+      ctx.updateCheck([...base(target), "--simulate-publish", state.tag]),
+      "available",
+      state,
+      release.assets,
+      target,
+    ),
+  });
+  const { asServed, simulated } = both("mac");
+  const linux = Object.fromEntries(linuxTargets.map((target) => [target, both(target)]));
+  ctx.say(
+    `  as ${as}: the draft isn't offered; once published, both channels offer ${state.tag}${
+      linuxTargets.length ? " to the Mac, the AppImage and the .deb" : ""
+    }`,
   );
-  ctx.say(`  as ${as}: the draft isn't offered; once published, both channels offer ${state.tag}`);
   return record(ctx.work, "update-check", {
     releaseId: state.releaseId,
     assets: state.assets,
     as,
     asServed,
     simulated,
+    ...(linuxTargets.length ? { linux } : {}),
   });
 }
 
@@ -550,6 +661,7 @@ export async function publish(ctx) {
     notesFile: ctx.notes,
     version: state.version,
     minimumMacOS: state.minimumMacOS,
+    linux: state.linux !== undefined,
     scratch: ctx.work,
   });
   const notesPath = join(ctx.work, "public-notes.md");
@@ -630,16 +742,28 @@ async function anonymousReadBack(ctx, state) {
     problems.push(
       `anonymously, latest is ${shown?.tag_name ?? `HTTP ${latest.status}`}, not ${state.tag}`,
     );
-  const manifest = state.assets.find((asset) => asset.name === "latest-mac.yml");
-  const download = await ctx.anonymous(
-    `${ctx.web}/${REPO}/releases/download/${state.tag}/latest-mac.yml`,
-    "application/octet-stream",
-  );
-  const sha256 = createHash("sha256").update(download.body).digest("hex");
-  if (download.status !== 200) problems.push(`anonymous latest-mac.yml: HTTP ${download.status}`);
-  else if (!manifest || sha256 !== manifest.sha256)
-    problems.push("anonymous latest-mac.yml differs from the validated one");
-  return { problems, checked: { latest: shown?.tag_name ?? null, manifestSha256: sha256 } };
+  const readManifest = async (name) => {
+    const manifest = state.assets.find((asset) => asset.name === name);
+    const download = await ctx.anonymous(
+      `${ctx.web}/${REPO}/releases/download/${state.tag}/${name}`,
+      "application/octet-stream",
+    );
+    const sha256 = createHash("sha256").update(download.body).digest("hex");
+    if (download.status !== 200) problems.push(`anonymous ${name}: HTTP ${download.status}`);
+    else if (!manifest || sha256 !== manifest.sha256)
+      problems.push(`anonymous ${name} differs from the validated one`);
+    return sha256;
+  };
+  const manifestSha256 = await readManifest("latest-mac.yml");
+  const linuxManifestSha256 = state.linux ? await readManifest(state.linux.manifest) : undefined;
+  return {
+    problems,
+    checked: {
+      latest: shown?.tag_name ?? null,
+      manifestSha256,
+      ...(linuxManifestSha256 ? { linuxManifestSha256 } : {}),
+    },
+  };
 }
 
 /** git in the release's source checkout. */
@@ -733,6 +857,7 @@ export async function readPublicNotes({
   notesFile,
   version,
   minimumMacOS,
+  linux = false,
   scratch,
 }) {
   let text;
@@ -766,7 +891,7 @@ export async function readPublicNotes({
       writeFileSync(join(copy, name), card);
       cards.push((await import(pathToFileURL(join(copy, name)).href)).default);
     }
-    text = renderPublicNotes({ version, cards, minimumMacOS });
+    text = renderPublicNotes({ version, cards, minimumMacOS, linux });
   }
   const problems = publicNotesProblems(text, { versions: [version, minimumMacOS] });
   if (problems.length)
@@ -839,6 +964,8 @@ export async function runPhase(options, seams = {}) {
     say: seams.say ?? ((line) => process.stdout.write(`${line}\n`)),
     gh: ghRunners({ gh, env: seams.env ?? process.env }),
     verifyApp: seams.verifyApp ?? macVerifyApp({ source }),
+    // `gh attestation verify` with your login; a test gives a stand-in for Sigstore's verdict.
+    verifyAttestation: null,
     updateCheck:
       seams.updateCheck ??
       bunUpdateCheck({
@@ -848,6 +975,8 @@ export async function runPhase(options, seams = {}) {
         env: seams.env ?? process.env,
       }),
   };
+  ctx.verifyAttestation =
+    seams.verifyAttestation ?? ((files, how) => verifyAttestations(ctx.gh.own, files, how));
   return await PHASE_RUNNERS[options.phase](ctx);
 }
 

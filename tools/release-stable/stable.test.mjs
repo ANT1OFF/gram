@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { checksumLines } from "../release-rc/rc-lib.mjs";
+import { writeLinuxBuild } from "../release-linux/testing/linux-build.mjs";
 import { parseStableArgs } from "./stable-lib.mjs";
 import { committedSource, readPublicNotes, runPhase } from "./stable.mjs";
 import { spawnFakeGitHub } from "./testing/fake-github.mjs";
@@ -47,8 +48,15 @@ let ghLog;
 let said;
 let appChecks;
 
-/** The assets `release:rc --stable` would leave, with a real manifest for the fake ZIP. */
-async function makeAssets(dir) {
+const APPIMAGE = `gram_${VERSION}_x86_64.AppImage`;
+const DEB = `gram_${VERSION}_amd64.deb`;
+const LINUX_RUN = 77;
+
+/**
+ * The assets `release:rc --stable` would leave, with a real manifest for the fake ZIP; with
+ * `linux`, also the Linux build's files and a real latest-linux.yml for its AppImage.
+ */
+async function makeAssets(dir, { linux = false } = {}) {
   mkdirSync(dir, { recursive: true });
   const zip = Buffer.from(`not really a zip ${Math.random()}`);
   writeFileSync(join(dir, ZIP), zip);
@@ -85,11 +93,29 @@ async function makeAssets(dir) {
     "BUNDLE-SHA256SUMS.txt",
     "WEB-SHA256SUMS.txt",
   ];
+  const manifests = ["latest-mac.yml"];
+  if (linux) {
+    writeLinuxBuild(dir, { version: VERSION, sourceCommit: SHA, runId: LINUX_RUN });
+    const appImage = readFileSync(join(dir, APPIMAGE));
+    writeFileSync(
+      join(dir, "latest-linux.yml"),
+      renderNativeManifest({
+        version: VERSION,
+        target: "appimage",
+        zip: APPIMAGE,
+        sha512: createHash("sha512").update(appImage).digest("base64"),
+        size: appImage.length,
+        releaseDate: new Date().toISOString(),
+      }),
+    );
+    covered.push(APPIMAGE, DEB, "LINUX-BUILD.json");
+    manifests.push("latest-linux.yml");
+  }
   writeFileSync(
     join(dir, "SHA256SUMS.txt"),
     checksumLines(covered.map((name) => ({ name, sha256: sha256(readFileSync(join(dir, name))) }))),
   );
-  return [...covered, "SHA256SUMS.txt", "latest-mac.yml"].map((name) => {
+  return [...covered, "SHA256SUMS.txt", ...manifests].map((name) => {
     const bytes = readFileSync(join(dir, name));
     return { name, bytes: bytes.length, sha256: sha256(bytes) };
   });
@@ -145,7 +171,7 @@ const seams = (overrides = {}) => ({
  * A synthetic GitHub holding `previous` (a published stable release, or none for a first release)
  * and this release's draft, and the work dir `release:rc --stable` would leave for it.
  */
-async function setUp({ previous = "0.3.1", repo = {} } = {}) {
+async function setUp({ previous = "0.3.1", repo = {}, linux = false } = {}) {
   github = await spawnFakeGitHub({
     [REPO]: { private: false, tokens: [LOGIN], head: SHA, ...repo },
   });
@@ -173,7 +199,7 @@ async function setUp({ previous = "0.3.1", repo = {} } = {}) {
   };
   said = [];
   appChecks = [];
-  const assets = await makeAssets(join(work, "assets"));
+  const assets = await makeAssets(join(work, "assets"), { linux });
   if (previous) await seedPrevious(REPO, previous);
   const draft = await github.seed({
     repo: REPO,
@@ -200,6 +226,19 @@ async function setUp({ previous = "0.3.1", repo = {} } = {}) {
       teamId: TEAM,
       minimumMacOS: "13.0",
       assets,
+      ...(linux
+        ? {
+            linux: {
+              runId: LINUX_RUN,
+              runUrl: `https://github.com/${REPO}/actions/runs/${LINUX_RUN}`,
+              appImage: APPIMAGE,
+              deb: DEB,
+              manifest: "latest-linux.yml",
+              attested: true,
+              attestations: [],
+            },
+          }
+        : {}),
     }),
   );
 }
@@ -283,6 +322,91 @@ describe.skipIf(!hasBun)("release:stable against a synthetic GitHub", () => {
     // Every call used your own login; the ambient GH_TOKEN never reached GitHub.
     expect(state.log.every((e) => e.token === LOGIN || e.token === null)).toBe(true);
     expect(state.log.some((e) => e.token === AMBIENT)).toBe(false);
+  }, 120_000);
+
+  it("validates, checks and publishes the Linux files in the same release", async () => {
+    await again({ linux: true });
+    const attested = [];
+    const linuxSeams = seams({
+      // Sigstore's verdict needs a real attestation: a stand-in that names each file's digest.
+      verifyAttestation: (files, how) => {
+        attested.push({ names: files.map((file) => file.name), ...how });
+        return {
+          problems: [],
+          verified: files.map(({ name, sha256: digest }) => ({
+            name,
+            sha256: digest,
+            attestations: 1,
+          })),
+        };
+      },
+    });
+    await runPhase(options("validate"), linuxSeams);
+    const validated = JSON.parse(readFileSync(join(work, "validate.json"), "utf8"));
+    expect(validated.checks.sha256sums).toEqual(expect.arrayContaining([APPIMAGE, DEB]));
+    expect(validated.checks.linux.manifest).toMatch(/latest-linux\.yml/);
+    expect(attested).toEqual([
+      expect.objectContaining({ names: [APPIMAGE, DEB], repo: REPO, sourceCommit: SHA }),
+    ]);
+
+    const checked = await runPhase(options("update-check"), linuxSeams);
+    for (const target of ["appimage", "deb"]) {
+      expect(checked.linux[target].asServed.map((r) => r.status)).toEqual(["upToDate", "upToDate"]);
+      expect(
+        checked.linux[target].simulated.map((r) => [r.target, r.status, r.payload.name]),
+      ).toEqual([
+        [target, "available", target === "appimage" ? APPIMAGE : DEB],
+        [target, "available", target === "appimage" ? APPIMAGE : DEB],
+      ]);
+    }
+
+    await runPhase(options("publish"), linuxSeams);
+    const notes = readFileSync(join(work, "public-notes.md"), "utf8");
+    expect(notes).toContain(`- Linux AppImage: download \`${APPIMAGE}\``);
+    const record = JSON.parse(readFileSync(join(work, "publish.json"), "utf8"));
+    expect(record.anonymous.linuxManifestSha256).toBe(
+      sha256(readFileSync(join(work, "assets", "latest-linux.yml"))),
+    );
+    const live = await runPhase(options("update-check", ["--live"]), linuxSeams);
+    expect(live.linux.appimage.map((r) => r.status)).toEqual(["available", "available"]);
+  }, 120_000);
+
+  it("refuses Linux files whose attestation, build record or manifest doesn't hold", async () => {
+    await again({ linux: true });
+    const refusing = seams({
+      verifyAttestation: () => ({
+        problems: [`${DEB}'s attestation didn't verify: no attestations found`],
+        verified: [],
+      }),
+    });
+    await expect(runPhase(options("validate"), refusing)).rejects.toThrow(
+      /attestation didn't verify/,
+    );
+
+    // A build record for another run than the one release:rc collected.
+    const state = JSON.parse(readFileSync(join(work, "release.json"), "utf8"));
+    writeFileSync(
+      join(work, "release.json"),
+      JSON.stringify({ ...state, linux: { ...state.linux, runId: 78 } }),
+    );
+    await expect(
+      runPhase(
+        options("validate"),
+        seams({ verifyAttestation: () => ({ problems: [], verified: [] }) }),
+      ),
+    ).rejects.toThrow(/names run 77, not 78/);
+
+    // Built without an attestation (a dry run's files) never validates.
+    writeFileSync(
+      join(work, "release.json"),
+      JSON.stringify({ ...state, linux: { ...state.linux, attested: false } }),
+    );
+    await expect(
+      runPhase(
+        options("validate"),
+        seams({ verifyAttestation: () => ({ problems: [], verified: [] }) }),
+      ),
+    ).rejects.toThrow(/without an attestation/);
   }, 120_000);
 
   it("publishes a first release into an empty repository, checked as an install older than any", async () => {

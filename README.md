@@ -22,7 +22,9 @@ in its own git worktree, from task to merged pull request.
 
 ## Requirements
 
-- macOS on Apple silicon.
+- macOS on Apple silicon, or Linux on x64 (the AppImage, or the .deb for Debian 12, Ubuntu 24.04
+  and later). On Linux, gateway keys need a desktop keyring (GNOME Keyring or another Secret
+  Service, or KWallet), and voice dictation isn't available yet.
 - [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) and/or the
   [Codex CLI](https://github.com/openai/codex), installed and signed in (`claude /login`,
   `codex login`). Gram runs them on your own subscriptions; no API key is needed.
@@ -31,11 +33,18 @@ in its own git worktree, from task to merged pull request.
 
 ## Install
 
-Download `gram_<version>_darwin-arm64_signed.zip` from the
-[latest release](https://github.com/ANT1OFF/gram/releases/latest), unzip it and move `Gram.app`
-to Applications. Releases are Developer ID signed and notarized.
+Download from the [latest release](https://github.com/ANT1OFF/gram/releases/latest):
+
+- **macOS:** `gram_<version>_darwin-arm64_signed.zip`. Unzip it and move `Gram.app` to
+  Applications. It is Developer ID signed and notarized.
+- **Linux AppImage:** `gram_<version>_x86_64.AppImage`. Make it executable and run it:
+  `chmod +x gram_<version>_x86_64.AppImage && ./gram_<version>_x86_64.AppImage`. It needs FUSE 2
+  (`libfuse2t64` on Ubuntu 24.04) and updates itself from Settings → Updates.
+- **Linux .deb:** `sudo apt install ./gram_<version>_amd64.deb`. Settings → Updates says when a
+  new release is out; install it the same way.
+
 [Updates](docs/UPDATES.md#installing-a-release) covers checking the download against
-`SHA256SUMS.txt` and how Gram updates itself.
+`SHA256SUMS.txt` and its build attestation, and how Gram updates itself.
 
 ## Build from source
 

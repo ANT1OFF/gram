@@ -8,6 +8,7 @@ export default defineProject({
       "oxlint/*.test.mjs",
       "release-rc/*.test.mjs",
       "release-stable/*.test.mjs",
+      "release-linux/*.test.mjs",
       "mock-kit/*.test.mjs",
       "check/*.test.mjs",
       "notices/*.test.mjs",

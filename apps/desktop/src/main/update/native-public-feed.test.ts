@@ -7,6 +7,7 @@ import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { UpdateChannel } from "@gram/contracts";
 import {
   nativeManifestName,
+  nativePayloadName,
   nativeZipName,
   renderNativeManifest,
 } from "@gram/shell/modules/update";
@@ -27,6 +28,8 @@ interface FakeRelease {
   readonly zip: Buffer;
   readonly manifest: string;
   readonly sha512: string;
+  /** Any other asset's bytes, by name. */
+  readonly bytes?: Readonly<Record<string, Buffer | string>>;
 }
 
 let nextId = 1;
@@ -95,7 +98,9 @@ async function fakeGitHub(
       assets.set(asset.id, {
         tag: release.raw["tag_name"] as string,
         name: asset.name,
-        bytes: asset.name.endsWith(".zip") ? release.zip : release.manifest,
+        bytes:
+          release.bytes?.[asset.name] ??
+          (asset.name.endsWith(".zip") ? release.zip : release.manifest),
       });
     }
   }
@@ -260,7 +265,138 @@ describe("public feed against a synthetic public GitHub", () => {
     expect(() => feed.assetUrl({ id: 1, name: "x.zip", size: 1, digest: "" })).toThrow();
     const info = await provider.getLatestVersion();
     expect(() => provider.resolveFiles({ ...info, version: "0.4.2" })).toThrow();
-    expect(() => feed.assetUrl({ ...feed.picked()!.zip, id: 999_999 })).toThrow();
-    expect(feed.picked()?.zip.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(() => feed.assetUrl({ ...feed.picked()!.payload, id: 999_999 })).toThrow();
+    expect(feed.picked()?.payload.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+});
+
+/** An uploaded asset as GitHub's API lists it. */
+const uploaded = (name: string, bytes: Buffer | string) => ({
+  id: nextId++,
+  name,
+  size: Buffer.byteLength(bytes),
+  digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+  state: "uploaded",
+});
+
+/** A stable release carrying the Mac's files and the Linux AppImage, .deb and latest-linux.yml. */
+function bothPlatforms(version: string, options: { manifestFor?: string } = {}): FakeRelease {
+  const mac = releaseOf(version);
+  // An AppImage's header: ELF, then the type 2 magic at offset 8.
+  const appImage = Buffer.concat([
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0, 0x41, 0x49, 0x02, 0, 0, 0, 0, 0]),
+    Buffer.from(`Gram ${version} AppImage, as far as this test knows`),
+  ]);
+  const deb = Buffer.from(`!<arch>\ndebian-binary Gram ${version}`);
+  const manifestVersion = options.manifestFor ?? version;
+  const linuxManifest = renderNativeManifest({
+    version: manifestVersion,
+    target: "appimage",
+    zip: nativePayloadName(manifestVersion, "appimage"),
+    sha512: createHash("sha512").update(appImage).digest("base64"),
+    size: appImage.length,
+    releaseDate: "2026-11-02T10:00:00.000Z",
+  });
+  const linux = {
+    [nativePayloadName(version, "appimage")]: appImage,
+    [nativePayloadName(version, "deb")]: deb,
+    [nativeManifestName(version, "appimage")]: linuxManifest,
+  };
+  return {
+    ...mac,
+    raw: {
+      ...mac.raw,
+      assets: [
+        ...(mac.raw["assets"] as unknown[]),
+        ...Object.entries(linux).map(([name, bytes]) => uploaded(name, bytes)),
+      ],
+    },
+    bytes: linux,
+  };
+}
+
+const linuxRuntime = { ...runtime, platform: "linux" } as const;
+
+describe("public feed for the Linux AppImage and .deb", () => {
+  it("offers the AppImage by latest-linux.yml, and electron-updater's SHA-512 holds", async () => {
+    const github = await fakeGitHub([bothPlatforms("1.4.0"), bothPlatforms("1.3.1")]);
+    const feed = createPublicFeed({
+      fetch: anonymousFetch,
+      repo: REPO,
+      currentVersion: "1.3.1",
+      target: "appimage",
+      api: github.origin,
+      web: github.origin,
+    });
+    const provider = createClient(feedOptions(feed, "stable"), {} as never, linuxRuntime);
+    const info = await provider.getLatestVersion();
+    expect(info.version).toBe("1.4.0");
+    const [file] = provider.resolveFiles(info);
+    expect(file!.url.pathname).toBe(`/${REPO}/releases/download/v1.4.0/gram_1.4.0_x86_64.AppImage`);
+    const bytes = Buffer.from(await (await fetch(file!.url)).arrayBuffer());
+    expect(createHash("sha512").update(bytes).digest("base64")).toBe(file!.info.sha512);
+    expect(feed.pickedSha512()).toBe(file!.info.sha512);
+    expect(feed.picked()?.manifest.name).toBe("latest-linux.yml");
+    // Never the Mac's manifest or ZIP.
+    expect(github.requests.some((request) => request.path.includes(".zip"))).toBe(false);
+  });
+
+  it("refuses a latest-linux.yml for another version, and never downgrades", async () => {
+    const forged = await fakeGitHub([bothPlatforms("1.4.0", { manifestFor: "1.4.1" })]);
+    const feed = createPublicFeed({
+      fetch: anonymousFetch,
+      repo: REPO,
+      currentVersion: "1.3.1",
+      target: "appimage",
+      api: forged.origin,
+      web: forged.origin,
+    });
+    await expect(feed.latest("stable")).rejects.toThrow(/manifest/);
+
+    const older = await fakeGitHub([bothPlatforms("1.3.0")]);
+    const current = createPublicFeed({
+      fetch: anonymousFetch,
+      repo: REPO,
+      currentVersion: "1.3.1",
+      target: "appimage",
+      api: older.origin,
+      web: older.origin,
+    });
+    expect((await current.latest("stable")).version).toBe("1.3.1");
+    expect(current.picked()).toBeUndefined();
+  });
+
+  it("passes over a release without the Linux files", async () => {
+    const github = await fakeGitHub([releaseOf("1.5.0"), bothPlatforms("1.4.0")]);
+    const feed = createPublicFeed({
+      fetch: anonymousFetch,
+      repo: REPO,
+      currentVersion: "1.3.1",
+      target: "appimage",
+      api: github.origin,
+      web: github.origin,
+    });
+    expect((await feed.latest("stable")).version).toBe("1.4.0");
+  });
+
+  it("tells a .deb the release without reading a manifest or resolving a download", async () => {
+    const github = await fakeGitHub([bothPlatforms("1.4.0")]);
+    const feed = createPublicFeed({
+      fetch: anonymousFetch,
+      repo: REPO,
+      currentVersion: "1.3.1",
+      target: "deb",
+      api: github.origin,
+      web: github.origin,
+    });
+    const info = await feed.latest("stable");
+    expect(info.version).toBe("1.4.0");
+    expect(info.files).toEqual([]);
+    expect(feed.picked()?.payload.name).toBe("gram_1.4.0_amd64.deb");
+    expect(feed.pickedSha512()).toBeUndefined();
+    expect(() => feed.assetUrl(feed.picked()!.payload)).toThrow();
+    expect(github.requests.map((request) => request.path)).toEqual([
+      `/repos/${REPO}/releases?per_page=30`,
+    ]);
   });
 });

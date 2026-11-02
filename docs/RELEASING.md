@@ -3,7 +3,8 @@
 [Up: docs map](README.md) · [Updates](UPDATES.md)
 
 Releases, the update feed and issues all live in `ANT1OFF/gram`. A release is built and signed
-once on an Apple silicon Mac, then goes through separate runs, each checked before the next:
+once on an Apple silicon Mac, with its Linux x64 files built on GitHub from the same commit, then
+goes through separate runs, each checked before the next:
 
 1. a draft;
 2. its fresh-download validation;
@@ -13,9 +14,8 @@ once on an Apple silicon Mac, then goes through separate runs, each checked befo
 Merging code changes no installed app. An install changes only when its user updates it from a
 published release.
 
-Linux has no release yet. CI builds the x64 AppImage and .deb as workflow artifacts (see
-[Linux packages](DEVELOPMENT.md#linux-packages)); publishing them, and an update feed for them,
-are still to come.
+One release carries both platforms; [Linux files](#linux-files) covers how its AppImage and
+.deb are built and checked.
 
 ## Versions
 
@@ -99,9 +99,10 @@ speech and PTY natives and runs the packaged `--smoke` with fake agents. Check, 
 run with a temporary HOME, temporary stores and stub `claude`, `codex` and `gh`.
 
 It leaves a draft on `ANT1OFF/gram` (not a prerelease, not latest, with build notes that
-publication replaces) with seven assets: the signed
+publication replaces) with eleven assets: the signed
 ZIP, `BUILD-INFO.json`, `BUNDLE-INVENTORY.json`, the bundle and web manifests, `SHA256SUMS.txt`
-and electron-updater's `latest-mac.yml`. `release.json` in the work dir carries the version,
+and electron-updater's `latest-mac.yml`, then the Linux AppImage, .deb, `LINUX-BUILD.json` and
+`latest-linux.yml` (see [Linux files](#linux-files)). `release.json` in the work dir carries the version,
 source, draft ID, asset table and minimum macOS for the next phases. Without `--stable`,
 `release:rc` cuts a prerelease, which it publishes straight through and only from a private
 repository.
@@ -114,7 +115,10 @@ bun run release:stable validate --work /tmp/rel-1.0.0
 
 It downloads every draft asset into a new directory, compares GitHub's digests, sizes and
 `SHA256SUMS.txt` with the local build, reads `latest-mac.yml` with electron-updater's own parser
-and runs `codesign`, Gatekeeper and `stapler` on the extracted app.
+and runs `codesign`, Gatekeeper and `stapler` on the extracted app. For the Linux files it checks
+`LINUX-BUILD.json` (version, source commit, run, each package's size and SHA-256), reads
+`latest-linux.yml` against the AppImage, and runs `gh attestation verify` on the AppImage and the
+.deb.
 
 ## 3. Read-only update check: `release:stable update-check`
 
@@ -124,7 +128,8 @@ bun run release:stable update-check --work /tmp/rel-1.0.0
 
 As the previous stable version, through the app's own feed under Bun, it checks the draft as
 GitHub serves it (never offered) and then with its publication simulated (offered on both
-channels). It writes nothing to GitHub.
+channels), for the signed Mac, the AppImage and the .deb, each picking its own files. It writes
+nothing to GitHub.
 
 ## 4. Publication: `release:stable publish`
 
@@ -150,14 +155,42 @@ repository it then reads `releases/latest` and `latest-mac.yml` back with no cre
 install would. If the answer to the `PATCH` is lost, it reads the release back and checks it the
 same way.
 
+## Linux files
+
+`release:rc --stable` dispatches [release-linux.yml](../.github/workflows/release-linux.yml) on
+`main` once its preconditions pass, with the version, the source commit and a nonce that names
+the run. The workflow refuses to build unless main's head is that commit, since its attestation
+names the run's commit. On a GitHub-hosted `ubuntu-24.04` runner it installs from the lockfile
+with no Actions cache at all (not even setup-bun's or setup-node's), packages with the version
+stamped in, runs `verify:package`, installs the .deb on Ubuntu 24.04 and Debian 12, smokes the
+installed app and the AppImage, and checks the packaged version, source commit and .deb fields. Then it writes `LINUX-BUILD.json`.
+
+- The `build` job has a read-only `contents` token. The `attest` job has `id-token` and
+  `attestations` write, checks out nothing and runs no repository code: it compares the artifact
+  with the build's digests and runs `actions/attest-build-provenance` on the two packages.
+- Nothing in the workflow writes to a release. `release:rc` waits for the run (the Mac build runs
+  meanwhile), downloads the artifact and checks it. It runs `gh attestation verify` with the
+  exact signer identity (`release-linux.yml@refs/heads/main`, not a prefix), `refs/heads/main`,
+  the source commit and GitHub-hosted runners enforced, then
+  writes `latest-linux.yml` with the app's renderer. The files go into `SHA256SUMS.txt` and the
+  same `gh release create`, with your own login.
+- `release:rc --stable --dry-run` dispatches the workflow with `dry_run`: it builds and checks
+  everything but signs no attestation, and nothing is uploaded. A pull request that changes the
+  workflow or `tools/release-linux/` runs the same dry build.
+- No GPG key or other secret is involved. The packages carry no publisher signature: their
+  integrity rests on HTTPS to GitHub, the checksums and the attestation.
+
 ## Record and limits
 
 Keep the work dir: its `release.json`, `validate.json`, `update-check.json` and `publish.json`
 hold the source, the release ID and URL, the asset tables, the checks and the publication time.
 
 The update checks run in Bun, not Electron, so Squirrel.Mac's own signature check, staging and
-relaunch are not exercised; neither are live providers or microphones. Prove an installed update
-by hand on a real install.
+relaunch are not exercised, and neither is the AppImage's download, replacement and relaunch.
+Live providers and microphones aren't either. Prove an installed update by hand on a real
+install of each.
 
 `tools/release-stable/*.test.mjs` run the phases against a synthetic GitHub and a fake `gh`
-(`tools/release-stable/testing/`), with a stub standing in for macOS's verdicts on a signed app.
+(`tools/release-stable/testing/`), with stubs standing in for macOS's verdicts on a signed app
+and Sigstore's on an attestation. `tools/release-linux/*.test.mjs` cover the dispatch, the run
+checks, the artifact checks and the attestation results against a synthetic `gh`.

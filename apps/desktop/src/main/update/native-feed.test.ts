@@ -138,7 +138,7 @@ describe("gh feed", () => {
     const { gh } = fakeGh();
     const feed = feedWith(gh);
     await feed.latest("prerelease");
-    expect(() => feed.assetUrl(feed.picked()!.zip)).toThrow(/only reads/);
+    expect(() => feed.assetUrl(feed.picked()!.payload)).toThrow(/only reads/);
   });
 });
 

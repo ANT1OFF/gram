@@ -159,12 +159,14 @@ export function assetNames(version, signed = false) {
 
 /**
  * electron-updater's manifest for a signed release, as its GitHub provider names channel files:
- * `rc-mac.yml` for an RC, `latest-mac.yml` for a stable release.
+ * `rc-mac.yml` for an RC, `latest-mac.yml` for a stable release; `-linux` for the AppImage's
+ * (`target` "appimage").
  */
-export function updaterManifestName(version) {
+export function updaterManifestName(version, target = "mac") {
   const parsed = parseVersion(version);
   if (!parsed) throw new Error(`Not a version: ${version}`);
-  return parsed.pre.length ? "rc-mac.yml" : "latest-mac.yml";
+  const platform = target === "mac" ? "mac" : "linux";
+  return `${parsed.pre.length ? "rc" : "latest"}-${platform}.yml`;
 }
 
 /**

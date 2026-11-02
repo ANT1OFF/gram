@@ -406,6 +406,90 @@ describe("Settings → Updates on a signed install", () => {
   });
 });
 
+describe("Settings → Updates on Linux", () => {
+  const linux: AppUpdateState = {
+    status: "idle",
+    channel: "stable",
+    currentVersion: "1.3.1",
+    availableVersion: null,
+    downloadedVersion: null,
+    releaseNotes: null,
+    releaseDate: null,
+    percent: null,
+    checkedAt: null,
+    manual: false,
+    message: null,
+    errorStep: null,
+    notApplied: null,
+    canInstall: true,
+    target: "appimage",
+    releaseUrl: null,
+  };
+  const linuxBridge = () => {
+    const native = {
+      state: vi.fn(async () => linux),
+      onState: vi.fn(() => () => {}),
+      check: vi.fn(async () => linux),
+      download: vi.fn(async () => linux),
+      install: vi.fn(async () => linux),
+      dismiss: vi.fn(async () => linux),
+    };
+    const { updates } = fakeBridge();
+    Object.assign(updates, { native });
+    return { native };
+  };
+  const show = (patch: Partial<AppUpdateState>) =>
+    act(() => useUpdateStore.setState({ native: { ...linux, ...patch } }));
+  afterEach(() => useUpdateStore.setState({ native: undefined }));
+
+  it("downloads and restarts an AppImage, saying how it checks the file", async () => {
+    const { native } = linuxBridge();
+    show({ status: "available", availableVersion: "1.4.0" });
+    render(<UpdatesSection channel="stable" />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Download 1.4.0" }));
+    });
+    expect(native.download).toHaveBeenCalledOnce();
+    const text = screen.getByTestId("updates").textContent ?? "";
+    expect(text).toMatch(/replaces this AppImage file only once its SHA-512/);
+    expect(text).not.toMatch(/Applications|macOS|Developer ID/);
+  });
+
+  it("tells an AppImage it can't replace why", () => {
+    linuxBridge();
+    show({ status: "available", availableVersion: "1.4.0", canInstall: false });
+    render(<UpdatesSection channel="stable" />);
+    expect(screen.getByRole("button", { name: "Download 1.4.0" })).toHaveProperty("disabled", true);
+    expect(screen.getByTestId("updates").textContent).toMatch(
+      /Move the AppImage to a folder you own/,
+    );
+  });
+
+  it("links a .deb to the release page, and offers no download or restart", async () => {
+    const { native } = linuxBridge();
+    const openExternal = vi.fn(async () => true);
+    Object.assign(window.gram!, { openExternal });
+    show({
+      target: "deb",
+      canInstall: false,
+      status: "available",
+      availableVersion: "1.4.0",
+      releaseUrl: "https://github.com/ANT1OFF/gram/releases/tag/v1.4.0",
+    });
+    render(<UpdatesSection channel="stable" />);
+    expect(screen.queryByRole("button", { name: /Download|Restart/ })).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open the release page" }));
+    });
+    expect(openExternal).toHaveBeenCalledWith(
+      "https://github.com/ANT1OFF/gram/releases/tag/v1.4.0",
+    );
+    expect(native.download).not.toHaveBeenCalled();
+    expect(native.install).not.toHaveBeenCalled();
+    expect(screen.getByTestId("updates").textContent).toMatch(/doesn't update itself/);
+  });
+});
+
 describe("the gh updater's copy", () => {
   it("names the repository it reads with gh", async () => {
     const { updates } = fakeBridge();

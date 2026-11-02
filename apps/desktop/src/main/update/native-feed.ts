@@ -1,9 +1,11 @@
-// Where a signed install's Electron updater reads releases: `ANT1OFF/gram`'s public releases,
-// read anonymously through one custom electron-updater provider that picks the release with
+// Where an install's Electron updater reads releases: `ANT1OFF/gram`'s public releases, read
+// anonymously through one custom electron-updater provider that picks the release with
 // `pickNativeRelease`, so Stable and Pre-release follow Gram's own rules. (Electron's standard
 // GitHub provider follows only one channel's tags: on Pre-release it never offered a newer stable
-// release, and with no RC published it failed.) electron-updater downloads the ZIP from GitHub's
-// release download URL and checks its SHA-512.
+// release, and with no RC published it failed.) electron-updater downloads the payload (the signed
+// ZIP on macOS, the AppImage on Linux) from GitHub's release download URL and checks its SHA-512.
+// A .deb install reads the same feed for its target and never downloads: it is told where the
+// release is.
 //
 // The `gh` feed reads the same list through the user's own `gh` login, which also sees drafts. The
 // release tool's update check (`tools/release-stable/update-check.mjs`) uses it on a draft before
@@ -19,6 +21,7 @@ import {
   validateNativeManifest,
   type NativeAsset,
   type NativeRelease,
+  type NativeTarget,
   type RunGh,
 } from "@gram/shell/modules/update";
 import type { AppUpdater, ResolvedUpdateFileInfo, UpdateInfo } from "electron-updater";
@@ -31,7 +34,7 @@ import {
   type ProviderRuntimeOptions,
 } from "electron-updater/out/providers/Provider";
 
-/** What electron-updater's provider reads: the release a check picks, and where its ZIP is. */
+/** What electron-updater's provider reads: the release a check picks, and where its payload is. */
 export interface ReleaseFeed {
   /** The release a check would offer on `channel`, as electron-updater's update info. */
   latest(channel: UpdateChannel): Promise<UpdateInfo>;
@@ -39,32 +42,49 @@ export interface ReleaseFeed {
   assetUrl(asset: NativeAsset): URL;
   /** The release the last `latest` picked, if any. */
   picked(): NativeRelease | undefined;
+  /** The SHA-512 (base64) the picked release's manifest gives its payload; none for a .deb. */
+  pickedSha512(): string | undefined;
 }
 
 /**
- * The update info for the release `pickNativeRelease` finds in `list`, with its manifest read by
- * `readManifest` and checked against the release's ZIP; the running version when nothing newer is
- * complete, which electron-updater then reports as current.
+ * The update info for the release `pickNativeRelease` finds in `list` for `target`, with its
+ * manifest read by `readManifest` and checked against the release's payload; the running version
+ * when nothing newer is complete, which electron-updater then reports as current. A .deb reads no
+ * manifest (it names the AppImage): its info carries only the version, since nothing downloads.
  */
 async function pickUpdate(
   list: unknown,
   channel: UpdateChannel,
   currentVersion: string,
   repo: string,
+  target: NativeTarget,
   readManifest: (asset: NativeAsset) => Promise<string>,
 ): Promise<{ readonly info: UpdateInfo; readonly picked?: NativeRelease }> {
   if (!Array.isArray(list)) throw new Error("GitHub returned an invalid release list.");
-  const picked = pickNativeRelease(list, channel, currentVersion);
+  const picked = pickNativeRelease(list, channel, currentVersion, target);
   if (!picked)
     return {
       info: { version: currentVersion, files: [], path: "", sha512: "", releaseDate: "" },
+    };
+  if (target === "deb")
+    return {
+      info: {
+        version: picked.version,
+        files: [],
+        path: "",
+        sha512: "",
+        releaseDate: picked.publishedAt ?? "",
+        releaseName: picked.tag,
+        releaseNotes: picked.notes,
+      },
+      picked,
     };
   const text = await readManifest(picked.manifest);
   if (Buffer.byteLength(text) > NATIVE_MANIFEST_MAX_BYTES || text.length === 0)
     throw new Error(`${picked.manifest.name} of ${picked.tag} is not a manifest.`);
   const manifest = validateNativeManifest(
     parseUpdateInfo(text, picked.manifest.name, new URL(`https://github.com/${repo}`)),
-    { version: picked.version, size: picked.zip.size },
+    { version: picked.version, size: picked.payload.size, target },
   );
   return {
     info: {
@@ -94,9 +114,13 @@ export function createGhFeed(options: {
   readonly repo: string;
   readonly tempDir: string;
   readonly currentVersion: string;
+  /** Which install's assets to pick; the signed macOS app's by default. */
+  readonly target?: NativeTarget;
 }): ReleaseFeed {
   const { gh, repo, tempDir } = options;
+  const target = options.target ?? "mac";
   let last: NativeRelease | undefined;
+  let lastSha512: string | undefined;
 
   const api = async (path: string, accept?: string): Promise<string> => {
     const out = await gh(
@@ -116,14 +140,17 @@ export function createGhFeed(options: {
   return {
     async latest(channel) {
       last = undefined;
+      lastSha512 = undefined;
       const { picked, info } = await pickUpdate(
         parseList(await api("releases?per_page=30")),
         channel,
         options.currentVersion,
         repo,
+        target,
         (manifest) => api(`releases/assets/${manifest.id}`, "application/octet-stream"),
       );
       last = picked;
+      lastSha512 = picked && info.sha512 ? info.sha512 : undefined;
       return info;
     },
 
@@ -132,6 +159,7 @@ export function createGhFeed(options: {
     },
 
     picked: () => last,
+    pickedSha512: () => lastSha512,
   };
 }
 
@@ -186,10 +214,10 @@ export class GramReleaseProvider extends Provider<UpdateInfo> {
       !release ||
       !file ||
       release.version !== updateInfo.version ||
-      file.url !== release.zip.name
+      file.url !== release.payload.name
     )
       throw new Error("The update no longer matches the release it was checked against.");
-    return [{ url: this.gram.feed.assetUrl(release.zip), info: file }];
+    return [{ url: this.gram.feed.assetUrl(release.payload), info: file }];
   }
 }
 
@@ -219,20 +247,24 @@ const RELEASE_LIST_MAX_BYTES = 8 * 1024 ** 2;
 
 /**
  * The public feed: the release list and manifest from GitHub's API without credentials, and the
- * ZIP from the release's download URL. `api` and `web` are GitHub's
+ * payload from the release's download URL. `api` and `web` are GitHub's
  * origins; tests point them at a synthetic GitHub.
  */
 export function createPublicFeed(options: {
   readonly fetch: AnonymousFetch;
   readonly repo: string;
   readonly currentVersion: string;
+  /** Which install's assets to pick; the signed macOS app's by default. */
+  readonly target?: NativeTarget;
   readonly api?: string;
   readonly web?: string;
 }): ReleaseFeed {
   const { repo } = options;
+  const target = options.target ?? "mac";
   const api = options.api ?? "https://api.github.com";
   const web = options.web ?? "https://github.com";
   let last: NativeRelease | undefined;
+  let lastSha512: string | undefined;
 
   const read = async (
     path: string,
@@ -253,6 +285,7 @@ export function createPublicFeed(options: {
   return {
     async latest(channel) {
       last = undefined;
+      lastSha512 = undefined;
       const { info, picked } = await pickUpdate(
         parseList(
           await read("releases?per_page=30", "release list", {
@@ -264,6 +297,7 @@ export function createPublicFeed(options: {
         channel,
         options.currentVersion,
         repo,
+        target,
         (manifest) =>
           read(`releases/assets/${manifest.id}`, manifest.name, {
             accept: "application/octet-stream",
@@ -272,11 +306,12 @@ export function createPublicFeed(options: {
           }),
       );
       last = picked;
+      lastSha512 = picked && info.sha512 ? info.sha512 : undefined;
       return info;
     },
 
     assetUrl(asset) {
-      if (!last || asset.id !== last.zip.id)
+      if (!last || target === "deb" || asset.id !== last.payload.id)
         throw new Error("The update no longer matches the release it was checked against.");
       return new URL(
         `${web}/${repo}/releases/download/${encodeURIComponent(last.tag)}/${encodeURIComponent(asset.name)}`,
@@ -284,5 +319,6 @@ export function createPublicFeed(options: {
     },
 
     picked: () => last,
+    pickedSha512: () => lastSha512,
   };
 }

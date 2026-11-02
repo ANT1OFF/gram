@@ -270,3 +270,49 @@ describe("backgroundCheckAllowed", () => {
     ).toBe(false);
   });
 });
+
+describe("a .deb install's state", () => {
+  const deb = initialNativeUpdateState({
+    currentVersion: "1.3.1",
+    channel: "stable",
+    canInstall: true,
+    target: "deb",
+  });
+
+  it("can never install, whatever it was told", () => {
+    expect(deb).toMatchObject({ target: "deb", canInstall: false, releaseUrl: null });
+  });
+
+  it("carries the release page, and ignores a download or an install", () => {
+    const url = "https://github.com/ANT1OFF/gram/releases/tag/v1.4.0";
+    const offered = run(
+      deb,
+      { type: "checkStarted", channel: "stable", manual: true },
+      { ...found("1.4.0"), releaseUrl: url },
+    );
+    expect(offered).toMatchObject({ status: "available", releaseUrl: url });
+    expect(run(offered, { type: "downloadStarted" })).toBe(offered);
+    expect(run(offered, { type: "downloaded", version: "1.4.0" })).toBe(offered);
+    expect(run(offered, { type: "installStarted" })).toBe(offered);
+    // A later check that finds nothing drops the link.
+    expect(
+      run(
+        offered,
+        { type: "checkStarted", channel: "stable", manual: true },
+        { type: "upToDate", at: 2 },
+      ).releaseUrl,
+    ).toBeNull();
+  });
+
+  it("starts a Mac or AppImage install as the Mac's always did", () => {
+    expect(start).toMatchObject({ target: "mac", releaseUrl: null, canInstall: true });
+    expect(
+      initialNativeUpdateState({
+        currentVersion: "1.3.1",
+        channel: "stable",
+        canInstall: true,
+        target: "appimage",
+      }),
+    ).toMatchObject({ target: "appimage", canInstall: true });
+  });
+});

@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 
 import {
   APP_ICONS,
+  type AppUpdateState,
   type DesktopBridge,
   type MenuShortcuts,
   type UpdateProgress,
@@ -121,13 +122,25 @@ import {
   UPDATE_REPO,
   updateSource,
 } from "@gram/shell/modules/update";
+import {
+  locateAppImage,
+  verifyAppImageCandidate,
+  type AppImageLocation,
+} from "./update/appimage.ts";
+import { createAppImageUpdaterPort } from "./update/appimage-port.ts";
+import { linuxUpdateTarget } from "./update/linux-target.ts";
 import { verifyNativeCandidate } from "./update/native-candidate.ts";
 import { createPublicFeed, type AnonymousFetch } from "./update/native-feed.ts";
 import { createElectronUpdaterPort } from "./update/native-port.ts";
 import { nativeRecordStore } from "./update/native-record-store.ts";
 import { createShipIt } from "./update/native-shipit.ts";
 import { snapshotCandidate, sweepStaleCandidateDirs } from "./update/native-snapshot.ts";
-import { createNativeUpdates, type NativeUpdates } from "./update/native-updates.ts";
+import {
+  createNativeUpdates,
+  type NativeUpdates,
+  type NativeUpdatesOptions,
+} from "./update/native-updates.ts";
+import { createPackageUpdates } from "./update/package-updates.ts";
 import { stopForUpdate } from "./update/shutdown.ts";
 import { processStart, sparedNow, watchTree, type TreeCheckDeps } from "./update/tree-check.ts";
 import { probeSignature, runGh } from "./update/process.ts";
@@ -366,11 +379,14 @@ const updateFinalizer = createUpdateFinalizer();
  * is the update's, so it exits at once and Squirrel.Mac's installer runs.
  */
 let nativeUpdateQuit = false;
-/** A signed install's updater, once `runApp` has made it; the quit handlers ask it. */
+/**
+ * A signed Mac's updater, or the Linux AppImage's or .deb's, once `runApp` has made it; the quit
+ * handlers ask it.
+ */
 let nativeUpdates: NativeUpdates | undefined;
 let signedUpdateStarting =
-  process.platform === "darwin" &&
-  process.arch === "arm64" &&
+  ((process.platform === "darwin" && process.arch === "arm64") ||
+    (process.platform === "linux" && process.arch === "x64")) &&
   app.isPackaged &&
   !SMOKE &&
   UPDATE_REPO !== null;
@@ -625,6 +641,19 @@ async function runApp() {
     UPDATE_REPO !== null &&
     validTeamId(GRAM_MAC_TEAM_ID) &&
     (await macBundleTeam(destination).catch(() => undefined)) === GRAM_MAC_TEAM_ID;
+  // The Linux x64 AppImage replaces its own file; the .deb only checks. Neither touches
+  // Squirrel.Mac or ShipIt, which are made for a signed Mac alone. An AppImage counts only when
+  // this process runs from its mount: a .deb never takes an inherited `$APPIMAGE` for its own.
+  const appImage =
+    process.platform === "linux" ? await locateAppImage(process.env, process.execPath) : undefined;
+  const linuxTarget = linuxUpdateTarget({
+    platform: process.platform,
+    arch: process.arch,
+    packaged: app.isPackaged,
+    smoke: SMOKE,
+    repo: UPDATE_REPO,
+    appImage,
+  });
   const updater =
     process.platform === "darwin"
       ? unavailableUpdater(
@@ -732,15 +761,17 @@ async function runApp() {
       });
     },
   });
+  const fenced = { restoreNative, windows, modelScope };
   const native =
-    signedByPublisher && UPDATE_REPO !== null
-      ? createSignedUpdates(UPDATE_REPO, {
-          canInstall: macSupported,
-          restoreNative,
-          windows,
-          modelScope,
-        })
-      : undefined;
+    UPDATE_REPO === null
+      ? undefined
+      : signedByPublisher
+        ? createSignedUpdates(UPDATE_REPO, { ...fenced, canInstall: macSupported })
+        : linuxTarget === "appimage" && appImage
+          ? createAppImageUpdates(UPDATE_REPO, appImage, fenced)
+          : linuxTarget === "deb"
+            ? createDebUpdates(UPDATE_REPO)
+            : undefined;
   nativeUpdates = native;
   let menuShortcuts: MenuShortcuts = {};
   registerIpc({
@@ -851,36 +882,25 @@ async function runApp() {
   if (process.platform === "win32") void sweepStaleUpdateDirs(tmpdir(), SWEEP_MIN_AGE_MS);
 }
 
+/** What the stop fence, recovery and quits need of the app, for every self-replacing install. */
+interface FencedDeps {
+  readonly restoreNative: () => Promise<void>;
+  readonly windows: { flushForUpdate(): void };
+  readonly modelScope: { close(): Promise<void> };
+}
+
 /**
- * Electron's updater for a signed install: the repo's public feed, read anonymously, the stop
- * fence before Squirrel.Mac's restart, and the install record that tells the next launch whether
- * the update applied.
+ * The parts of an updater that are the app's, whatever replaces it: preferences, timers, Gram's
+ * stop fence (the server's attested teardown, speech, voice models and window state), recovery
+ * after a refused stop, the update quit, the install record and the broadcast to every window.
  */
-function createSignedUpdates(
-  repo: string,
-  deps: {
-    readonly canInstall: boolean;
-    readonly restoreNative: () => Promise<void>;
-    readonly windows: { flushForUpdate(): void };
-    readonly modelScope: { close(): Promise<void> };
-  },
-): NativeUpdates {
-  void sweepStaleCandidateDirs(tmpdir());
-  const feed = createPublicFeed({
-    fetch: anonymousFetch,
-    repo,
-    currentVersion: app.getVersion(),
-  });
-  const shipIt = createShipIt({ bundleId: APP_ID, home: app.getPath("home") });
-  const logHint = `Squirrel.Mac's log is ~/Library/Caches/${APP_ID}.ShipIt/ShipIt_stderr.log.`;
-  const updates: NativeUpdates = createNativeUpdates({
-    port: createElectronUpdaterPort({
-      feed,
-      shipIt,
-      log: (level, line) => log[level]({ source: "update" }, line),
-    }),
-    currentVersion: app.getVersion(),
-    canInstall: deps.canInstall,
+function fencedUpdateOptions(
+  deps: FencedDeps,
+): Omit<
+  NativeUpdatesOptions,
+  "port" | "target" | "currentVersion" | "canInstall" | "verifyDownload" | "logHint" | "judge"
+> {
+  return {
     readPrefs: () => readUpdatePrefs(dataDir),
     timersAllowed: autoUpdateCheckEnabled({
       packaged: app.isPackaged,
@@ -888,36 +908,6 @@ function createSignedUpdates(
       repoConfigured: true,
       env: process.env,
     }),
-    verifyDownload: async (file, version, channel) => {
-      // From here on only this private, descriptor-held copy counts: electron-updater's cache is
-      // a shared path, and Squirrel.Mac is served the snapshot, never that path.
-      const snapshot = await snapshotCandidate(file, tmpdir());
-      try {
-        // The feed picked the release from GitHub's API, which gives each asset's digest.
-        const picked = feed.picked();
-        if (picked?.version !== version)
-          throw new Error("The download no longer matches the release it was checked against.");
-        if (`sha256:${snapshot.sha256}` !== picked.zip.digest)
-          throw new Error(
-            `The downloaded ${picked.zip.name} doesn't match GitHub's SHA-256 for it.`,
-          );
-        // Squirrel.Mac checks only the signature against this app's requirement: notarization,
-        // the staple and the version the feed offered are checked here, on the snapshot.
-        if (!validTeamId(GRAM_MAC_TEAM_ID)) throw new Error("This build names no publisher team.");
-        await verifyNativeCandidate({
-          snapshot,
-          version,
-          currentVersion: app.getVersion(),
-          channel,
-          teamId: GRAM_MAC_TEAM_ID,
-          tempDir: tmpdir(),
-        });
-        return snapshot;
-      } catch (error) {
-        await snapshot.close();
-        throw error;
-      }
-    },
     stopForUpdate: async (signal) => {
       await updateFinalizer.own(() =>
         stopForUpdate(server, (teardown) =>
@@ -968,17 +958,166 @@ function createSignedUpdates(
     exit: exitSignedUpdate,
     hideWindows,
     record: nativeRecordStore(app.getPath("userData")),
-    logHint,
-    judge: (record) => judgeInstallRecord(record, app.getVersion(), Date.now(), logHint),
-    broadcast: (state) => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.webContents.isDestroyed())
-          win.webContents.send(Channels.updatesNativeChanged, state);
+    broadcast: broadcastNativeUpdate,
+    log: (level, line) => log[level]({ source: "update" }, line),
+  };
+}
+
+const broadcastNativeUpdate = (state: AppUpdateState) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send(Channels.updatesNativeChanged, state);
+  }
+};
+
+/**
+ * Electron's updater for a signed install: the repo's public feed, read anonymously, the stop
+ * fence before Squirrel.Mac's restart, and the install record that tells the next launch whether
+ * the update applied.
+ */
+function createSignedUpdates(
+  repo: string,
+  deps: FencedDeps & { readonly canInstall: boolean },
+): NativeUpdates {
+  void sweepStaleCandidateDirs(tmpdir());
+  const feed = createPublicFeed({
+    fetch: anonymousFetch,
+    repo,
+    currentVersion: app.getVersion(),
+  });
+  const shipIt = createShipIt({ bundleId: APP_ID, home: app.getPath("home") });
+  const logHint = `Squirrel.Mac's log is ~/Library/Caches/${APP_ID}.ShipIt/ShipIt_stderr.log.`;
+  return createNativeUpdates({
+    ...fencedUpdateOptions(deps),
+    port: createElectronUpdaterPort({
+      feed,
+      shipIt,
+      log: (level, line) => log[level]({ source: "update" }, line),
+    }),
+    target: "mac",
+    currentVersion: app.getVersion(),
+    canInstall: deps.canInstall,
+    verifyDownload: async (file, version, channel) => {
+      // From here on only this private, descriptor-held copy counts: electron-updater's cache is
+      // a shared path, and Squirrel.Mac is served the snapshot, never that path.
+      const snapshot = await snapshotCandidate(file, tmpdir());
+      try {
+        // The feed picked the release from GitHub's API, which gives each asset's digest.
+        const picked = feed.picked();
+        if (picked?.version !== version)
+          throw new Error("The download no longer matches the release it was checked against.");
+        if (`sha256:${snapshot.sha256}` !== picked.payload.digest)
+          throw new Error(
+            `The downloaded ${picked.payload.name} doesn't match GitHub's SHA-256 for it.`,
+          );
+        // Squirrel.Mac checks only the signature against this app's requirement: notarization,
+        // the staple and the version the feed offered are checked here, on the snapshot.
+        if (!validTeamId(GRAM_MAC_TEAM_ID)) throw new Error("This build names no publisher team.");
+        await verifyNativeCandidate({
+          snapshot,
+          version,
+          currentVersion: app.getVersion(),
+          channel,
+          teamId: GRAM_MAC_TEAM_ID,
+          tempDir: tmpdir(),
+        });
+        return snapshot;
+      } catch (error) {
+        await snapshot.close();
+        throw error;
       }
     },
+    logHint,
+    judge: (record) => judgeInstallRecord(record, app.getVersion(), Date.now(), logHint),
+  });
+}
+
+/**
+ * The Linux AppImage's updater: the same public feed for `latest-linux.yml` and the AppImage,
+ * electron-updater's download and SHA-512 check, Gram's own checks on a private copy, and after the
+ * stop fence one rename over the running AppImage, then Electron's relaunch into it.
+ */
+function createAppImageUpdates(
+  repo: string,
+  appImage: AppImageLocation,
+  deps: FencedDeps,
+): NativeUpdates {
+  void sweepStaleCandidateDirs(tmpdir());
+  const feed = createPublicFeed({
+    fetch: anonymousFetch,
+    repo,
+    currentVersion: app.getVersion(),
+    target: "appimage",
+  });
+  const logHint = `The update replaced ${appImage.path}; open that file to run it.`;
+  return createNativeUpdates({
+    ...fencedUpdateOptions(deps),
+    port: createAppImageUpdaterPort({
+      feed,
+      appImage: appImage.path,
+      relaunch: (path) => {
+        // Electron starts it once this process has exited, so the single-instance lock is free.
+        app.relaunch({ execPath: path });
+        app.quit();
+      },
+      log: (level, line) => log[level]({ source: "update" }, line),
+    }),
+    target: "appimage",
+    currentVersion: app.getVersion(),
+    canInstall: appImage.writable,
+    verifyDownload: async (file, version, channel) => {
+      // As on macOS, only this private, descriptor-held copy counts from here on; it is what gets
+      // written over the AppImage, digest-checked as it streams.
+      const snapshot = await snapshotCandidate(file, tmpdir());
+      try {
+        const picked = feed.picked();
+        if (picked?.version !== version)
+          throw new Error("The download no longer matches the release it was checked against.");
+        await verifyAppImageCandidate({
+          snapshot,
+          version,
+          currentVersion: app.getVersion(),
+          channel,
+          expected: {
+            sha512: feed.pickedSha512(),
+            digest: picked.payload.digest,
+            size: picked.payload.size,
+          },
+        });
+        return snapshot;
+      } catch (error) {
+        await snapshot.close();
+        throw error;
+      }
+    },
+    logHint,
+    judge: (record) =>
+      judgeInstallRecord(record, app.getVersion(), Date.now(), logHint, "appimage"),
+  });
+}
+
+/** The Linux .deb's updater: checks only, linking to the release; apt installs it. */
+function createDebUpdates(repo: string): NativeUpdates {
+  const feed = createPublicFeed({
+    fetch: anonymousFetch,
+    repo,
+    currentVersion: app.getVersion(),
+    target: "deb",
+  });
+  return createPackageUpdates({
+    feed,
+    repo,
+    currentVersion: app.getVersion(),
+    readPrefs: () => readUpdatePrefs(dataDir),
+    timersAllowed: autoUpdateCheckEnabled({
+      packaged: app.isPackaged,
+      smoke: SMOKE,
+      repoConfigured: true,
+      env: process.env,
+    }),
+    ordinaryQuit: () => app.quit(),
+    broadcast: broadcastNativeUpdate,
     log: (level, line) => log[level]({ source: "update" }, line),
   });
-  return updates;
 }
 
 /** The Terminal tab's emulator as the packaged web app ships it, under its hashed name. */
