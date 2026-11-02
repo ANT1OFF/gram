@@ -30,6 +30,32 @@ After the release below is published, the publisher swaps the merged metadata PR
 `autorelease: pending` label for `autorelease: tagged`, so the next run proposes the following
 version. Never clear the label for a version that did not ship.
 
+### Release app
+
+GitHub holds `pull_request` runs for approval on a PR that `GITHUB_TOKEN` opened or pushed. So
+release-please writes with a token from a GitHub App that only this repository installs, minted
+for the one run and revoked after it. Without the app's variable it falls back to
+`GITHUB_TOKEN`, and each push to the metadata PR then waits for **Approve workflows to run**.
+
+To set it up once, as the repository owner:
+
+1. Under **Settings → Developer settings → GitHub Apps → New GitHub App**, give it a unique
+   name and the repository's URL as its homepage, and clear **Webhook → Active**. Set
+   **Repository permissions** to **Contents: Read and write** and **Pull requests: Read and
+   write**, leave everything else at **No access**, and choose **Only on this account**.
+2. Copy the **Client ID** from the app's page, then **Generate a private key**.
+3. Choose **Install App** and install it with **Only select repositories** set to
+   `ANT1OFF/gram`.
+4. Store the key, then the ID, and delete the downloaded key file:
+
+   ```sh
+   gh secret set RELEASE_PLEASE_APP_PRIVATE_KEY --repo ANT1OFF/gram < <downloaded-key>.pem
+   gh variable set RELEASE_PLEASE_APP_CLIENT_ID --repo ANT1OFF/gram --body <client-id>
+   ```
+
+5. Run `gh workflow run release-please.yml --repo ANT1OFF/gram`. The run's log shows the
+   `app-token` step, and the metadata PR's checks start on its next push without approval.
+
 `node tools/check-release-please.mjs` checks the configuration offline. The upstream dry-run
 harness, `node tools/test-release-please.mjs <action-source>`, needs the pinned action's source
 installed in a temporary directory with `npm ci --ignore-scripts --omit=dev`.
