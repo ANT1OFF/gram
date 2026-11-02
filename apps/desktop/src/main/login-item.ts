@@ -19,7 +19,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import type { LaunchAtLogin } from "@gram/contracts";
 
@@ -52,22 +52,46 @@ export interface Autostart {
   exists(path: string): boolean;
 }
 
+/** What `autostartExec` reads from the file system. */
+export interface ExecFs {
+  exists(path: string): boolean;
+  /** The path with every link resolved; throws when it can't be. */
+  realpath(path: string): string;
+}
+
+const nodeExecFs: ExecFs = { exists: existsSync, realpath: (path) => realpathSync(path) };
+
 /**
- * What a login launch starts. `$APPIMAGE` is the AppImage file only when this process runs from
- * that AppImage's mount (`$APPDIR`): an app started from another AppImage's terminal inherits the
- * other app's `$APPIMAGE`, and a .deb install there would point the entry at that app. Otherwise
- * the binary itself.
+ * What a login launch starts, or undefined when nothing lasting can be named. `$APPIMAGE` is the
+ * AppImage file only when this process runs from that AppImage's mount (`$APPDIR`): an app started
+ * from another AppImage's terminal inherits the other app's `$APPIMAGE`, and a .deb install there
+ * would point the entry at that app. Both paths are compared resolved, since the runtime builds
+ * `$APPDIR` from `$TMPDIR` as given (a trailing `/`, a linked `/home`) while `execPath` is real.
+ * Running from a mount without a usable `$APPIMAGE` names nothing: the mount is gone by the next
+ * login. Otherwise the binary itself.
  */
 export const autostartExec = (
   env: Readonly<Record<string, string | undefined>>,
   execPath: string,
-  exists: (path: string) => boolean = existsSync,
-): string => {
+  fs: ExecFs = nodeExecFs,
+): string | undefined => {
+  const real = (path: string) => {
+    try {
+      return fs.realpath(path);
+    } catch {
+      return resolve(path);
+    }
+  };
   const appImage = env["APPIMAGE"];
-  const appDir = env["APPDIR"]?.replace(/\/+$/, "");
-  return appImage && appDir && execPath.startsWith(`${appDir}/`) && exists(appImage)
-    ? appImage
-    : execPath;
+  const appDir = env["APPDIR"];
+  if (!appDir || !isAbsolute(appDir)) return execPath;
+  const mount = real(appDir);
+  // The file system's root is no AppImage mount, though every path is under it.
+  if (mount === dirname(mount)) return execPath;
+  const inside = relative(mount, real(execPath));
+  const fromMount = inside !== "" && !inside.startsWith("..") && !isAbsolute(inside);
+  if (!fromMount) return execPath;
+  return appImage && isAbsolute(appImage) && fs.exists(appImage) ? appImage : undefined;
 };
 
 /**
@@ -230,6 +254,8 @@ export function createLoginItem(deps: {
         isGramEntry(text) &&
         autostartEnabled(text) &&
         stale !== undefined &&
+        // Gram writes only absolute paths; a bare name is someone's command on their PATH.
+        isAbsolute(stale) &&
         stale !== autostart.exec &&
         !autostart.exists(stale)
       ) {

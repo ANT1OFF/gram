@@ -31,6 +31,7 @@ import {
   createLoginItem,
   desktopExecArg,
   autostartExec,
+  type ExecFs,
   fileAutostart,
   FOREIGN_ENTRY_MESSAGE,
   gramExecTarget,
@@ -109,6 +110,17 @@ const memoryAutostart = (
   };
   return { box, autostart };
 };
+
+/** A file system where `links` maps a path prefix to where it really is. */
+const execFs = (present: readonly string[], links: Record<string, string> = {}): ExecFs => ({
+  exists: (path) => present.includes(path),
+  realpath: (path) => {
+    let out = path.replace(/\/+/g, "/").replace(/(.)\/$/, "$1");
+    for (const [from, to] of Object.entries(links))
+      if (out === from || out.startsWith(`${from}/`)) out = to + out.slice(from.length);
+    return out;
+  },
+});
 
 describe("createLoginItem", () => {
   it("is off by default and touches nothing until the user turns it on", () => {
@@ -221,23 +233,53 @@ describe("createLoginItem", () => {
 
   it("ignores an $APPIMAGE inherited from another app, as a .deb launched from its terminal", () => {
     const cursor = { APPIMAGE: "/home/me/Apps/Cursor.AppImage", APPDIR: "/tmp/.mount_CursorX1" };
+    const fs = execFs([cursor.APPIMAGE]);
     // The exact case: a .deb install started from inside another AppImage's terminal.
-    expect(autostartExec(cursor, "/opt/Gram/gram", () => true)).toBe("/opt/Gram/gram");
-    expect(autostartExec({ APPIMAGE: cursor.APPIMAGE }, "/opt/Gram/gram", () => true)).toBe(
+    expect(autostartExec(cursor, "/opt/Gram/gram", fs)).toBe("/opt/Gram/gram");
+    expect(autostartExec({ APPIMAGE: cursor.APPIMAGE }, "/opt/Gram/gram", fs)).toBe(
       "/opt/Gram/gram",
-    );
-    // Gram's own AppImage: the binary runs from its mount, and the file is there.
-    const gram = { APPIMAGE: "/home/me/Apps/Gram-1.4.0.AppImage", APPDIR: "/tmp/.mount_GramAb/" };
-    expect(autostartExec(gram, "/tmp/.mount_GramAb/gram", () => true)).toBe(gram.APPIMAGE);
-    expect(autostartExec(gram, "/tmp/.mount_GramAb/gram", () => false)).toBe(
-      "/tmp/.mount_GramAb/gram",
     );
     // And the deb's entry is left pointing at the deb.
     const entry = autostartEntry("/opt/Gram/gram");
-    const exec = autostartExec(cursor, "/opt/Gram/gram", () => true);
+    const exec = autostartExec(cursor, "/opt/Gram/gram", fs)!;
     const { box, autostart } = memoryAutostart(entry, exec, [exec, cursor.APPIMAGE]);
     linux(autostart);
     expect(box.text).toBe(entry);
+  });
+
+  it("uses Gram's own $APPIMAGE from its mount, however $TMPDIR spelled the mount", () => {
+    const file = "/home/me/Apps/Gram-1.4.0.AppImage";
+    const exec = "/tmp/.mount_GramAb/gram";
+    const fs = execFs([file]);
+    for (const appDir of ["/tmp/.mount_GramAb", "/tmp/.mount_GramAb/", "/tmp//.mount_GramAb"]) {
+      expect(autostartExec({ APPIMAGE: file, APPDIR: appDir }, exec, fs)).toBe(file);
+    }
+    // A linked /home (Fedora Silverblue): $APPDIR through the link, execPath already resolved.
+    const linked = execFs([file], { "/home": "/var/home" });
+    expect(
+      autostartExec(
+        { APPIMAGE: file, APPDIR: "/home/me/tmp/.mount_GramAb" },
+        "/var/home/me/tmp/.mount_GramAb/gram",
+        linked,
+      ),
+    ).toBe(file);
+  });
+
+  it("names nothing from an AppImage mount without a usable $APPIMAGE, never the mount", () => {
+    const exec = "/tmp/.mount_GramAb/gram";
+    expect(autostartExec({ APPDIR: "/tmp/.mount_GramAb" }, exec, execFs([]))).toBeUndefined();
+    expect(
+      autostartExec(
+        { APPIMAGE: "/home/me/Apps/Gone.AppImage", APPDIR: "/tmp/.mount_GramAb" },
+        exec,
+        execFs([]),
+      ),
+    ).toBeUndefined();
+    // A relative or root $APPDIR is no mount of Gram's.
+    expect(autostartExec({ APPDIR: "tmp/.mount_X" }, "/opt/Gram/gram", execFs([]))).toBe(
+      "/opt/Gram/gram",
+    );
+    expect(autostartExec({ APPDIR: "/" }, "/opt/Gram/gram", execFs([]))).toBe("/opt/Gram/gram");
   });
 
   it("repoints only a stale Exec and keeps the rest of a user's edits", () => {
@@ -245,6 +287,15 @@ describe("createLoginItem", () => {
     const { box, autostart } = memoryAutostart(old, "/home/me/Apps/Gram-1.4.0.AppImage");
     linux(autostart);
     expect(box.text).toBe(old.replace("Gram-1.3.1.AppImage", "Gram-1.4.0.AppImage"));
+  });
+
+  it("leaves a bare command name, which Gram never writes, at every launch", () => {
+    const bare = autostartEntry("/opt/Gram/gram").replace("Exec=/opt/Gram/gram", "Exec=gram");
+    const { box, autostart } = memoryAutostart(bare, "/home/me/Apps/Gram-1.4.0.AppImage", [
+      "/home/me/Apps/Gram-1.4.0.AppImage",
+    ]);
+    linux(autostart);
+    expect(box.text).toBe(bare);
   });
 
   it("leaves an Exec a person wrote, or one whose target is still there", () => {
