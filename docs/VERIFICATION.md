@@ -227,7 +227,8 @@ repository, with authorization for each live service or device action:
   endpoint. Remove its key and verify launch refuses; switching to a local subscription
   must use the CLI's own login.
 - Enable local dictation through download/license consent. Check macOS microphone
-  permission, English transcription, cancellation and draft-only insertion. With Keep
+  permission (on Linux, capture from the sound server's default input, with no permission
+  prompt), English transcription, cancellation and draft-only insertion. With Keep
   microphone ready on, check the indicator stays lit, then goes out 2 minutes after the last
   focus or dictation, and at once when it's turned off. Record any
   human action still needed. A synthetic 16 kHz mono PCM WAV with recorded source and

@@ -1,4 +1,5 @@
 "use strict";
+const { createHash } = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
@@ -12,7 +13,8 @@ const ARCH = ["ia32", "x64", "armv7l", "arm64", "universal"];
  * Fails the build when the web app or the third-party notices are missing (electron-builder only
  * warns about a missing extraResources source) or app.asar.unpacked holds a native binary for another platform or arch,
  * strips node-pty's linker debug paths and makes its spawn-helper executable on macOS, and fails a
- * Linux package that carries any sherpa-onnx (Linux ships without local dictation).
+ * Linux package whose sherpa-onnx isn't the TTS-free build in tools/sherpa-onnx (the npm package's
+ * carries text-to-speech).
  *
  * @param {import("app-builder-lib").AfterPackContext} context
  */
@@ -55,16 +57,31 @@ exports.default = async function afterPack(context) {
   }
 
   if (platform === "linux") {
-    // sherpa-onnx's Linux builds carry text-to-speech, which links GPL code; none of it may ship.
     const modules = path.join(unpacked, "node_modules");
-    const sherpa = fs.existsSync(modules)
-      ? fs
-          .readdirSync(modules)
-          .filter((name) => name.startsWith("sherpa-onnx"))
-          .toSorted()
-      : [];
-    if (sherpa.length > 0) {
-      throw new Error(`sherpa-onnx in the Linux package: ${sherpa.join(", ")}`);
+    // The npm sherpa-onnx-linux-x64 carries text-to-speech; the root postinstall
+    // (tools/sherpa-onnx/install.mjs) replaces its addon and C APIs with the TTS-free build.
+    const build = path.join(__dirname, "..", "..", "..", "tools", "sherpa-onnx", `linux-${arch}`);
+    const sums = path.join(build, "SHA256SUMS");
+    if (!fs.existsSync(sums))
+      throw new Error(`no TTS-free sherpa-onnx build for linux-${arch}: ${build}`);
+    const sherpa = path.join(modules, `sherpa-onnx-linux-${arch}`);
+    const differ = fs
+      .readFileSync(sums, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => line.split(/\s+\*?/))
+      .filter(([hash, name]) => {
+        const file = path.join(sherpa, name);
+        return (
+          !fs.existsSync(file) ||
+          createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== hash
+        );
+      })
+      .map(([, name]) => name);
+    if (differ.length > 0) {
+      throw new Error(
+        `sherpa-onnx-linux-${arch} isn't the TTS-free build in tools/sherpa-onnx/linux-${arch} (${differ.join(", ")}): run bun install, whose postinstall puts it in place`,
+      );
     }
     // The addon scripts/rebuild-node-pty.mjs compiled here; drop its debug sections, which name the
     // build machine's paths.

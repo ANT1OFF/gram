@@ -79,16 +79,30 @@ it("never invokes a strip tool for Windows", async () => {
   expect(strip).not.toHaveBeenCalled();
 });
 
-/** A Linux package's unpacked node_modules, with node-pty's compiled addon. */
+/** The committed TTS-free linux-x64 build, which a Linux package's sherpa-onnx must match. */
+const TTS_FREE = path.resolve(import.meta.dirname, "../../../tools/sherpa-onnx/linux-x64");
+const ttsFreeFiles = () =>
+  fs
+    .readFileSync(path.join(TTS_FREE, "SHA256SUMS"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => line.split(/\s+/)[1]);
+
+/** A Linux x64 package's unpacked node_modules, with node-pty's compiled addon and the TTS-free sherpa-onnx. */
 function linuxFixture() {
   const { context } = fixture("linux");
+  context.arch = 1;
   const modules = path.join(dir, "resources/app.asar.unpacked/node_modules");
   fs.rmSync(path.join(modules, "node-pty/prebuilds"), { recursive: true });
   fs.rmSync(path.join(modules, "sherpa-onnx-darwin-arm64"), { recursive: true });
   const addon = path.join(modules, "node-pty/build/Release/pty.node");
   fs.mkdirSync(path.dirname(addon), { recursive: true });
   fs.writeFileSync(addon, "test addon");
-  return { context, modules, addon };
+  const sherpa = path.join(modules, "sherpa-onnx-linux-x64");
+  fs.mkdirSync(sherpa);
+  for (const name of ttsFreeFiles())
+    fs.copyFileSync(path.join(TTS_FREE, name), path.join(sherpa, name));
+  return { context, modules, addon, sherpa };
 }
 
 it("strips the debug sections of Linux's compiled node-pty addon", async () => {
@@ -98,13 +112,21 @@ it("strips the debug sections of Linux's compiled node-pty addon", async () => {
   expect(strip.mock.calls).toEqual([["strip", ["--strip-debug", addon], { stdio: "inherit" }]]);
 });
 
-it("fails a Linux package that carries any sherpa-onnx package", async () => {
-  const { context, modules } = linuxFixture();
-  for (const name of ["sherpa-onnx-node", "sherpa-onnx-linux-x64"])
-    fs.mkdirSync(path.join(modules, name), { recursive: true });
+it("fails a Linux package whose sherpa-onnx is the npm build, with text-to-speech", async () => {
+  const { context, sherpa } = linuxFixture();
+  fs.writeFileSync(path.join(sherpa, "libsherpa-onnx-c-api.so"), "npm c api with tts");
   const strip = vi.spyOn(childProcess, "execFileSync").mockReturnValue(Buffer.alloc(0));
   await expect(require("./afterPack.cjs").default(context)).rejects.toThrow(
-    "sherpa-onnx in the Linux package: sherpa-onnx-linux-x64, sherpa-onnx-node",
+    "sherpa-onnx-linux-x64 isn't the TTS-free build in tools/sherpa-onnx/linux-x64 (libsherpa-onnx-c-api.so)",
   );
   expect(strip).not.toHaveBeenCalled();
+});
+
+it("fails a Linux package without sherpa-onnx", async () => {
+  const { context, sherpa } = linuxFixture();
+  fs.rmSync(sherpa, { recursive: true });
+  vi.spyOn(childProcess, "execFileSync").mockReturnValue(Buffer.alloc(0));
+  await expect(require("./afterPack.cjs").default(context)).rejects.toThrow(
+    "(sherpa-onnx.node, libsherpa-onnx-c-api.so, libsherpa-onnx-cxx-api.so)",
+  );
 });

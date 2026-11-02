@@ -34,8 +34,9 @@ On a Linux desktop the app keeps the desktop's window frame, and the menu bar sh
 Gateway keys need a system keyring: GNOME Keyring or another Secret Service, or KWallet. Without
 one Gram refuses to store them and Settings says why; it never falls back to `basic_text`. File
 watching uses inotify. If `fs.inotify.max_user_watches` is reached, git state for the affected
-checkouts stops updating live and the server log says which limit to raise. Voice input isn't
-available on Linux yet.
+checkouts stops updating live and the server log says which limit to raise. Voice input records
+the sound server's default input (PipeWire or PulseAudio) through Chromium; Linux has no per-app
+microphone permission, so Settings shows none.
 
 Run from the checkout's physical directory (`pwd -P`). In particular, macOS
 `/tmp` resolves to `/private/tmp`; passing another checkout's absolute tsconfig
@@ -132,9 +133,8 @@ quality. Releases follow [releasing](RELEASING.md).
 
 ### Linux packages
 
-Gram builds as an x64 AppImage and .deb, without local dictation: no sherpa-onnx ships on
-Linux, because its Linux builds link GPL text-to-speech code. Build them on x64 Linux
-with Python 3, make and a C++ compiler:
+Gram builds as an x64 AppImage and .deb. Build them on x64 Linux with Python 3, make and a C++
+compiler:
 
 ```sh
 bun run --filter @gram/desktop dist:linux
@@ -150,6 +150,17 @@ both artifacts: their metadata, desktop entry, icons and payload. It needs `dpkg
 
 Git watching on Linux uses `@parcel/watcher`, so only the Linux package carries it, with its
 glibc addon, in `resources/node_modules`.
+
+Local dictation ships sherpa-onnx as on macOS: the npm `sherpa-onnx-linux-x64` package with its
+addon and C APIs replaced by the text-to-speech-free build in `tools/sherpa-onnx/linux-x64`, which
+the root postinstall copies over it after checking `SHA256SUMS`. The npm build carries TTS, and up
+to 1.13.8 linked GPL espeak-ng for it. `tools/sherpa-onnx/build-linux-x64.sh` makes the files from
+upstream's tag in a manylinux_2_28 container pinned by digest (Docker; about two minutes on x64,
+much longer emulated), so they need glibc 2.28 at most; two builds are byte-identical, and the
+[sherpa-onnx linux-x64](../.github/workflows/sherpa-onnx-linux.yml) workflow rebuilds them and
+requires the committed bytes, then runs `apps/desktop/src/speech.live.test.ts` on x64 Linux.
+afterPack and `verify:package` fail a package whose sherpa-onnx files differ from the committed
+ones or hold TTS, espeak-ng or piper-phonemize symbols.
 
 The .deb installs to `/opt/Gram` and depends on what Electron links on Debian 12 and
 Ubuntu 24.04, plus `libsecret-1-0` for the keyring; it recommends git and never depends on an

@@ -49,12 +49,18 @@ assert.match(
 );
 assert.match(read("apps/desktop/build/afterPack.cjs"), /THIRD-PARTY-NOTICES\.txt/);
 assert.match(read("apps/desktop/scripts/verify-package.mjs"), /THIRD-PARTY-NOTICES\.txt present/);
-// No GPL code ships: the install puts the speech-recognition-only sherpa-onnx build (tools/sherpa-onnx)
-// over the npm one, and verify-package fails a package with espeak-ng or piper-phonemize symbols.
+// No GPL code ships: the install puts the speech-recognition-only sherpa-onnx builds (tools/sherpa-onnx)
+// over the npm ones, verify-package fails a package with TTS, espeak-ng or piper-phonemize symbols,
+// and afterPack fails a Linux package whose sherpa-onnx isn't the committed build.
 assert.match(read("package.json"), /"postinstall": "node tools\/sherpa-onnx\/install\.mjs"/);
+assert.match(read("tools/sherpa-onnx/install.mjs"), /PLATFORMS = \["darwin-arm64", "linux-x64"\]/);
 assert.match(
   read("apps/desktop/scripts/verify-package.mjs"),
-  /sherpa-onnx without espeak-ng or piper-phonemize/,
+  /sherpa-onnx without text-to-speech, espeak-ng or piper-phonemize/,
+);
+assert.match(
+  read("apps/desktop/build/afterPack.cjs"),
+  /isn't the TTS-free build in tools\/sherpa-onnx/,
 );
 assert.doesNotMatch(read("tools/notices/native-components.json"), /GPL/);
 const appId = /APP_ID = "([^"]+)"/.exec(read("apps/desktop/src/main/app-id.ts"))?.[1];

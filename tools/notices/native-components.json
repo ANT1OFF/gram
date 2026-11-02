@@ -1,5 +1,5 @@
 {
-  "$comment": "Libraries compiled into the sherpa-onnx darwin-arm64 build Gram ships: tools/sherpa-onnx/darwin-arm64, built from sherpa-onnx 2.0.0 with text-to-speech off (tools/sherpa-onnx/build-darwin-arm64.sh), so no espeak-ng or piper-phonemize. Versions are the ones sherpa-onnx 2.0.0's cmake/ pins; each was confirmed by its symbols in that build's libsherpa-onnx-c-api.dylib. Recheck when the sherpa-onnx-node catalog pin changes: generate.mjs fails if it does.",
+  "$comment": "Libraries compiled into the sherpa-onnx builds Gram ships: tools/sherpa-onnx/darwin-arm64 and tools/sherpa-onnx/linux-x64, built from sherpa-onnx 2.0.0 with text-to-speech off (tools/sherpa-onnx/build-darwin-arm64.sh, build-linux-x64.sh), so no espeak-ng or piper-phonemize. Versions are the ones sherpa-onnx 2.0.0's cmake/ pins; each was confirmed by its symbols in both builds' libsherpa-onnx-c-api. Recheck when the sherpa-onnx-node catalog pin changes: generate.mjs fails if it does.",
   "sherpaOnnx": "2.0.0",
   "components": [
     {

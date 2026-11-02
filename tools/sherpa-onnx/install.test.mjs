@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { install, readSums } from "./install.mjs";
+import { install, PLATFORMS, readSums } from "./install.mjs";
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
@@ -86,25 +86,43 @@ describe("install", () => {
   });
 });
 
-describe("the committed build", () => {
+describe.each([
+  {
+    platform: "darwin-arm64",
+    lib: "dylib",
+    compiler: /^compiler: .+clang/m,
+    host: /^macOS: .+ SDK /m,
+  },
+  {
+    platform: "linux-x64",
+    lib: "so",
+    compiler: /^compiler: gcc .+GCC/m,
+    host: /^image: quay\.io\/pypa\/manylinux_2_28_x86_64@sha256:[0-9a-f]{64}$/m,
+  },
+])("the committed $platform build", ({ platform, lib, compiler, host }) => {
+  const file = (name) => new URL(`./${platform}/${name}`, import.meta.url);
+
   it("lists the addon and both C APIs, and matches the catalog's sherpa-onnx", () => {
-    const build = fileURLToPath(new URL("./darwin-arm64/", import.meta.url));
-    expect(readSums(build).map((entry) => entry.name)).toEqual([
+    expect(readSums(fileURLToPath(file(""))).map((entry) => entry.name)).toEqual([
       "sherpa-onnx.node",
-      "libsherpa-onnx-c-api.dylib",
-      "libsherpa-onnx-cxx-api.dylib",
+      `libsherpa-onnx-c-api.${lib}`,
+      `libsherpa-onnx-cxx-api.${lib}`,
     ]);
     const catalog = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"))
       .workspaces.catalog;
-    expect(readFileSync(join(build, "VERSION"), "utf8").trim()).toBe(catalog["sherpa-onnx-node"]);
+    expect(readFileSync(file("VERSION"), "utf8").trim()).toBe(catalog["sherpa-onnx-node"]);
   });
 
   it("records the upstream tag, the TTS-off flags and the toolchain it was built with", () => {
-    const info = readFileSync(new URL("./darwin-arm64/BUILD-INFO", import.meta.url), "utf8");
-    const version = readFileSync(new URL("./darwin-arm64/VERSION", import.meta.url), "utf8").trim();
+    const info = readFileSync(file("BUILD-INFO"), "utf8");
+    const version = readFileSync(file("VERSION"), "utf8").trim();
     expect(info).toContain(`k2-fsa/sherpa-onnx v${version} (`);
     expect(info).toContain("-DSHERPA_ONNX_ENABLE_TTS=OFF");
-    expect(info).toMatch(/^compiler: .+clang/m);
-    expect(info).toMatch(/^macOS: .+ SDK /m);
+    expect(info).toMatch(compiler);
+    expect(info).toMatch(host);
+  });
+
+  it("is installed by the postinstall", () => {
+    expect(PLATFORMS).toContain(platform);
   });
 });
