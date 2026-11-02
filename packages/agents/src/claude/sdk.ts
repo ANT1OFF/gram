@@ -12,7 +12,7 @@ import type { McpServerFactory } from "./apptools.ts";
  * The pinned Agent SDK version, for the CLI/SDK skew check. A constant rather than a package.json
  * lookup, which the desktop's CommonJS bundle can't resolve; `sdk.test.ts` keeps it in sync.
  */
-export const CLAUDE_AGENT_SDK_VERSION = "0.3.310";
+export const CLAUDE_AGENT_SDK_VERSION = "0.3.311";
 
 export interface ClaudeSdkShape extends McpServerFactory {
   readonly query: typeof query;
