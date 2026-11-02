@@ -228,10 +228,16 @@ test("a tap of Right ⌥, or ⌥ with another key, throws dictation away without
   await composer.focus();
   await page.waitForTimeout(500 * slowdown);
   await page.keyboard.down("AltRight");
-  await expect
-    .poll(() => page.evaluate(() => window.gramMock!.speechBridge.framesHeard))
-    .toBeGreaterThan(0);
-  await page.waitForTimeout(150);
+  // Up as soon as a word is heard, which a hold would commit. Checked each frame: `expect.poll`'s
+  // 100 ms steps plus a fixed wait made the press about 300 ms on CI, a hold as often as a tap.
+  await page.waitForFunction(
+    () => {
+      const bridge = window.gramMock!.speechBridge;
+      return bridge.framesHeard >= bridge.framesPerWord;
+    },
+    undefined,
+    { polling: "raf" },
+  );
   await page.keyboard.up("AltRight");
   await page.waitForTimeout(800 * slowdown);
   await expect(composer).toHaveValue("Draft");
