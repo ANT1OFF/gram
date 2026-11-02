@@ -8,8 +8,9 @@
 // that Gram writes and removes itself, which GNOME, KDE and the other XDG desktops run at login and
 // list in their own autostart settings.
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 import type { LaunchAtLogin } from "@gram/contracts";
 
@@ -56,6 +57,9 @@ export const desktopExecArg = (arg: string): string => {
   return `"${percent.replace(/(["`$\\])/g, "\\$1")}"`.replaceAll("\\", "\\\\");
 };
 
+/** What marks an autostart entry as Gram's own, so Gram never rewrites or removes anyone else's. */
+const GRAM_ENTRY_MARK = "X-Gram-Autostart=true";
+
 /** The autostart entry that starts `exec` at login, marked as a login launch. */
 export const autostartEntry = (exec: string): string =>
   [
@@ -67,8 +71,20 @@ export const autostartEntry = (exec: string): string =>
     "Icon=gram",
     "Terminal=false",
     "X-GNOME-Autostart-enabled=true",
+    GRAM_ENTRY_MARK,
     "",
   ].join("\n");
+
+/** Whether `text` is an entry Gram wrote: marked, or (before the mark) Gram's name and argument. */
+export const isGramEntry = (text: string): boolean =>
+  text.split(/\r?\n/).includes(GRAM_ENTRY_MARK) ||
+  (/^Name=Gram\s*$/m.test(text) && new RegExp(`^Exec=.* ${LOGIN_ARG}\\s*$`, "m").test(text));
+
+const execLine = (text: string): string | undefined => /^Exec=.*$/m.exec(text)?.[0];
+
+/** Why turning the setting on or off leaves a `gram.desktop` that isn't Gram's alone. */
+export const FOREIGN_ENTRY_MESSAGE =
+  "~/.config/autostart/gram.desktop isn't one Gram wrote, so Gram leaves it alone. Change or remove it in your desktop's autostart settings.";
 
 /** Whether an autostart entry runs at login: there, and not hidden or switched off by the desktop. */
 export const autostartEnabled = (text: string | undefined): boolean =>
@@ -77,7 +93,11 @@ export const autostartEnabled = (text: string | undefined): boolean =>
   !/^Hidden\s*=\s*true\s*$/im.test(text) &&
   !/^X-GNOME-Autostart-enabled\s*=\s*false\s*$/im.test(text);
 
-/** The autostart entry at `path`, read and written synchronously in main. */
+/**
+ * The autostart entry at `path`, read and written synchronously in main. A write goes to a temp
+ * file beside it, renamed over it, so a crash leaves the old entry or the new one, never half of
+ * one; the temp name doesn't end in `.desktop`, so no desktop runs it.
+ */
 export const fileAutostart = (path: string, exec: string): Autostart => ({
   exec,
   read: () => {
@@ -89,7 +109,14 @@ export const fileAutostart = (path: string, exec: string): Autostart => ({
   },
   write: (text) => {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, text);
+    const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+    try {
+      writeFileSync(temp, text, { flag: "wx", mode: 0o644 });
+      renameSync(temp, path);
+    } catch (error) {
+      rmSync(temp, { force: true });
+      throw error;
+    }
   },
   remove: () => rmSync(path, { force: true }),
 });
@@ -124,6 +151,26 @@ export function createLoginItem(deps: {
     deps.packaged && (platform === "darwin" || platform === "win32" || autostart !== undefined);
   const args = platform === "win32" ? { args: [LOGIN_ARG] } : {};
 
+  // An entry Gram wrote for another executable (a versioned AppImage since replaced, or one moved)
+  // would start nothing at login while Settings said on: at launch it is pointed at this one. Only
+  // an entry that is on and Gram's own; failing that, the next set() writes it.
+  if (supported && autostart !== undefined) {
+    try {
+      const text = autostart.read();
+      const fresh = autostartEntry(autostart.exec);
+      if (
+        text !== undefined &&
+        isGramEntry(text) &&
+        autostartEnabled(text) &&
+        execLine(text) !== execLine(fresh)
+      ) {
+        autostart.write(fresh);
+      }
+    } catch {
+      // A path that can't go in an entry, or a folder that can't be written: left as it is.
+    }
+  }
+
   const state = (): LaunchAtLogin | null => {
     if (!supported) return null;
     if (autostart !== undefined) {
@@ -148,8 +195,10 @@ export function createLoginItem(deps: {
     set(enabled) {
       if (!supported) return null;
       if (autostart !== undefined) {
+        const text = autostart.read();
+        if (text !== undefined && !isGramEntry(text)) throw new Error(FOREIGN_ENTRY_MESSAGE);
         if (enabled) autostart.write(autostartEntry(autostart.exec));
-        else autostart.remove();
+        else if (text !== undefined) autostart.remove();
       } else {
         api.setLoginItemSettings({ openAtLogin: enabled, ...args });
       }

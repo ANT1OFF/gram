@@ -251,7 +251,7 @@ const server = createServerHost({
     if (shutdown) quit.report(shutdown);
     const opened = launchedPidFromMessage(message);
     if (opened !== null) launched.set(opened, processStart(opened, treeCheckDeps));
-    void handleVaultRequest(message, vaultCrypto, vaultStore).then((response) => {
+    void handleVaultRequest(message, vaultCrypto, vaultStore, process.platform).then((response) => {
       if (response) reply(response);
     });
     servePaneMessage(message, agentPanes, reply);

@@ -1,4 +1,7 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Channels } from "@gram/shell/channels";
 import { createShellIpc } from "@gram/shell/modules/ipc";
@@ -17,6 +20,9 @@ import {
   autostartEntry,
   createLoginItem,
   desktopExecArg,
+  fileAutostart,
+  FOREIGN_ENTRY_MESSAGE,
+  isGramEntry,
   LOGIN_ARG,
   LOGIN_ITEMS_SETTINGS_URL,
   startsHidden,
@@ -71,10 +77,10 @@ const linux = (autostart: Autostart | undefined, packaged = true, argv: string[]
     openExternal: async () => {},
     ...(autostart === undefined ? {} : { autostart }),
   });
-const memoryAutostart = (text?: string) => {
+const memoryAutostart = (text?: string, exec = "/opt/Gram/gram") => {
   const box = { text };
   const autostart: Autostart = {
-    exec: "/opt/Gram/gram",
+    exec,
     read: () => box.text,
     write: (next) => {
       box.text = next;
@@ -154,6 +160,69 @@ describe("createLoginItem", () => {
     expect(fake.api.getLoginItemSettings).toHaveBeenLastCalledWith({ args: [LOGIN_ARG] });
     expect(item.launchedAtLogin).toBe(false);
     expect(create(["Gram.exe", LOGIN_ARG]).launchedAtLogin).toBe(true);
+  });
+
+  it("points Gram's own entry at this executable at launch when it went stale", () => {
+    const old = autostartEntry("/home/me/Apps/Gram-1.3.1.AppImage");
+    const { box, autostart } = memoryAutostart(old, "/home/me/Apps/Gram-1.4.0.AppImage");
+    const item = linux(autostart);
+    expect(box.text).toContain("Exec=/home/me/Apps/Gram-1.4.0.AppImage --launched-at-login");
+    expect(item.state()).toEqual({ enabled: true, needsApproval: false });
+  });
+
+  it("leaves a stale entry alone when it is off, someone else's, or the run is unpackaged", () => {
+    const old = autostartEntry("/home/me/Apps/Gram-1.3.1.AppImage");
+    const cases = [
+      { text: `${old}Hidden=true\n`, packaged: true },
+      {
+        text: "[Desktop Entry]\nName=Mine\nExec=/usr/bin/mine --launched-at-login\n",
+        packaged: true,
+      },
+      { text: old, packaged: false },
+    ];
+    for (const { text, packaged } of cases) {
+      const { box, autostart } = memoryAutostart(text, "/home/me/Apps/Gram-1.4.0.AppImage");
+      linux(autostart, packaged);
+      expect(box.text).toBe(text);
+    }
+  });
+
+  it("never rewrites or removes a gram.desktop that Gram didn't write", () => {
+    const mine =
+      "[Desktop Entry]\nType=Application\nName=My Gram wrapper\nExec=/usr/local/bin/gram-wrapper\n";
+    const { box, autostart } = memoryAutostart(mine);
+    const remove = vi.spyOn(autostart, "remove");
+    const write = vi.spyOn(autostart, "write");
+    const item = linux(autostart);
+    expect(() => item.set(false)).toThrow(FOREIGN_ENTRY_MESSAGE);
+    expect(() => item.set(true)).toThrow(FOREIGN_ENTRY_MESSAGE);
+    expect(remove).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(box.text).toBe(mine);
+  });
+
+  it("knows its own entry, marked or written before the mark", () => {
+    expect(isGramEntry(autostartEntry("/opt/Gram/gram"))).toBe(true);
+    const unmarked = autostartEntry("/opt/Gram/gram").replace("X-Gram-Autostart=true\n", "");
+    expect(isGramEntry(unmarked)).toBe(true);
+    expect(isGramEntry("[Desktop Entry]\nName=Gram\nExec=/opt/Gram/gram\n")).toBe(false);
+  });
+
+  it("writes the entry atomically, leaving no temp file behind", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gram-autostart-"));
+    try {
+      const path = join(dir, "autostart", "gram.desktop");
+      const autostart = fileAutostart(path, "/opt/Gram/gram");
+      autostart.write("first\n");
+      autostart.write(autostartEntry("/opt/Gram/gram"));
+      expect(readFileSync(path, "utf8")).toBe(autostartEntry("/opt/Gram/gram"));
+      expect(readdirSync(join(dir, "autostart"))).toEqual(["gram.desktop"]);
+      expect(statSync(path).mode & 0o777).toBe(0o644 & ~process.umask());
+      autostart.remove();
+      expect(autostart.read()).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("keeps Linux's item in an XDG autostart entry that marks a login launch", () => {

@@ -40,6 +40,25 @@ const fakeCrypto = (available = true): VaultCrypto => ({
   decrypt: (encrypted) => Buffer.from([...encrypted].map((b) => b ^ 0x5a)).toString(),
 });
 
+/** `handleVaultRequest` on macOS's rules unless a test names another platform. */
+const handle = (
+  message: unknown,
+  crypto: VaultCrypto,
+  store: VaultStore,
+  platform: NodeJS.Platform = "darwin",
+) => handleVaultRequest(message, crypto, store, platform);
+
+/** A Linux keyring's crypto: Chromium's `v11` prefix before the ciphertext. */
+const linuxKeyringCrypto = (backend = "kwallet6"): VaultCrypto => {
+  const inner = fakeCrypto();
+  return {
+    available: () => true,
+    backend: () => backend,
+    encrypt: async (plain) => Buffer.concat([Buffer.from("v11"), await inner.encrypt(plain)]),
+    decrypt: (encrypted) => inner.decrypt(encrypted.subarray(3)),
+  };
+};
+
 const memoryStore = (): VaultStore & { entries: Record<string, string> } => {
   const store = {
     entries: {} as Record<string, string>,
@@ -160,15 +179,16 @@ describe("macOS keychain compatibility", () => {
 
 describe("handleVaultRequest", () => {
   it("refuses to store or read a key on a Linux backend that doesn't encrypt", async () => {
-    for (const backend of ["basic_text", "unknown", "unavailable"]) {
+    for (const backend of ["basic_text", "unknown", "unavailable", undefined]) {
       const store = memoryStore();
       const write = vi.spyOn(store, "write");
       const crypto = { ...fakeCrypto(), backend: () => backend };
       const encrypt = vi.spyOn(crypto, "encrypt");
-      const set = await handleVaultRequest(
+      const set = await handle(
         { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
         crypto,
         store,
+        "linux",
       );
       expect(set).toEqual({
         type: "vault.response",
@@ -178,52 +198,143 @@ describe("handleVaultRequest", () => {
       });
       expect(encrypt).not.toHaveBeenCalled();
       expect(write).not.toHaveBeenCalled();
-      const get = await handleVaultRequest(
+      const get = await handle(
         { type: "vault.request", id: "g", op: "get", ref: "r" },
         crypto,
         store,
+        "linux",
       );
       expect(get).toMatchObject({ ok: false, message: NO_KEYRING_MESSAGE });
     }
+  });
+
+  it("decides the Linux rules from the platform, not from whether a backend is named", async () => {
+    // A Linux crypto that names no backend is still Linux: refused.
+    const unnamed = { ...fakeCrypto() };
+    const refused = await handle(
+      { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
+      unnamed,
+      memoryStore(),
+      "linux",
+    );
+    expect(refused).toMatchObject({ ok: false, message: NO_KEYRING_MESSAGE });
+    // And macOS keeps its own rules even if something names a Linux backend.
+    const named = { ...fakeCrypto(), backend: () => "basic_text" };
+    const stored = await handle(
+      { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
+      named,
+      memoryStore(),
+      "darwin",
+    );
+    expect(stored).toEqual({ type: "vault.response", id: "s", ok: true });
   });
 
   it("still removes a key without a keyring", async () => {
     const store = memoryStore();
     await store.write({ r: "c2VjcmV0" });
     const crypto = { ...fakeCrypto(), available: () => false, backend: () => "unavailable" };
-    await handleVaultRequest(
+    await handle(
       { type: "vault.request", id: "d", op: "delete", ref: "r" },
       crypto,
       store,
+      "linux",
     );
     expect(await store.read()).toEqual({});
   });
 
-  it("stores a key with a real keyring backend", async () => {
+  it("stores and reads a key with a real keyring backend, as v11 ciphertext", async () => {
     for (const backend of ["gnome_libsecret", "kwallet", "kwallet5", "kwallet6"]) {
       const store = memoryStore();
-      const crypto = { ...fakeCrypto(), backend: () => backend };
-      const set = await handleVaultRequest(
+      const crypto = linuxKeyringCrypto(backend);
+      const set = await handle(
         { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
         crypto,
         store,
+        "linux",
       );
       expect(set).toEqual({ type: "vault.response", id: "s", ok: true });
+      expect(Buffer.from(store.entries["r"]!, "base64").subarray(0, 3).toString()).toBe("v11");
+      const get = await handle(
+        { type: "vault.request", id: "g", op: "get", ref: "r" },
+        crypto,
+        store,
+        "linux",
+      );
+      expect(get).toEqual({ type: "vault.response", id: "g", ok: true, value: "sk-secret" });
     }
+  });
+
+  it("refuses ciphertext a Linux keyring encrypted with the fallback key", async () => {
+    const store = memoryStore();
+    const write = vi.spyOn(store, "write");
+    const inner = fakeCrypto();
+    const fallback: VaultCrypto = {
+      ...linuxKeyringCrypto(),
+      encrypt: async (plain) => Buffer.concat([Buffer.from("v10"), await inner.encrypt(plain)]),
+    };
+    const set = await handle(
+      { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
+      fallback,
+      store,
+      "linux",
+    );
+    expect(set).toMatchObject({ ok: false, message: NO_KEYRING_MESSAGE });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("purges v10 and unprefixed entries on Linux, unread, and keeps v11 ones", async () => {
+    const store = memoryStore();
+    const crypto = linuxKeyringCrypto();
+    const decrypt = vi.spyOn(crypto, "decrypt");
+    const v10 = Buffer.concat([Buffer.from("v10"), Buffer.from("weak")]).toString("base64");
+    const bare = Buffer.from("plain").toString("base64");
+    await store.write({ old: v10, other: bare });
+    const get = await handle(
+      { type: "vault.request", id: "g", op: "get", ref: "old" },
+      crypto,
+      store,
+      "linux",
+    );
+    expect(get).toEqual({ type: "vault.response", id: "g", ok: true });
+    expect(decrypt).not.toHaveBeenCalled();
+    expect(await store.read()).toEqual({});
+    // A set drops any left too, keeping the new v11 entry.
+    await store.write({ old: v10 });
+    await handle(
+      { type: "vault.request", id: "s", op: "set", ref: "r", value: "sk-secret" },
+      crypto,
+      store,
+      "linux",
+    );
+    expect(Object.keys(await store.read())).toEqual(["r"]);
+  });
+
+  it("leaves macOS's v10 ciphertext alone", async () => {
+    const store = memoryStore();
+    const v10 = Buffer.concat([Buffer.from("v10"), Buffer.from("mac")]).toString("base64");
+    await store.write({ r: v10 });
+    const crypto = { ...fakeCrypto(), decrypt: () => "sk-mac" };
+    const get = await handle(
+      { type: "vault.request", id: "g", op: "get", ref: "r" },
+      crypto,
+      store,
+      "darwin",
+    );
+    expect(get).toEqual({ type: "vault.response", id: "g", ok: true, value: "sk-mac" });
+    expect(await store.read()).toEqual({ r: v10 });
   });
 
   it("reports the Linux storage backend, and nothing where there is none to report", async () => {
     const store = memoryStore();
     const linux = { ...fakeCrypto(), backend: () => "basic_text" };
+    expect(await handle({ type: "vault.request", id: "i1", op: "info" }, linux, store)).toEqual({
+      type: "vault.response",
+      id: "i1",
+      ok: true,
+      value: "basic_text",
+    });
     expect(
-      await handleVaultRequest({ type: "vault.request", id: "i1", op: "info" }, linux, store),
-    ).toEqual({ type: "vault.response", id: "i1", ok: true, value: "basic_text" });
-    expect(
-      await handleVaultRequest(
-        { type: "vault.request", id: "i2", op: "info" },
-        fakeCrypto(),
-        store,
-      ),
+      await handle({ type: "vault.request", id: "i2", op: "info" }, fakeCrypto(), store),
     ).toEqual({ type: "vault.response", id: "i2", ok: true });
   });
 
@@ -231,7 +342,7 @@ describe("handleVaultRequest", () => {
     const store = memoryStore();
     const crypto = fakeCrypto();
     expect(
-      await handleVaultRequest(
+      await handle(
         { type: "vault.request", id: "1", op: "set", ref: "profile:a", value: SECRET },
         crypto,
         store,
@@ -240,28 +351,16 @@ describe("handleVaultRequest", () => {
     expect(JSON.stringify(store.entries)).not.toContain(SECRET);
 
     expect(
-      await handleVaultRequest(
-        { type: "vault.request", id: "2", op: "get", ref: "profile:a" },
-        crypto,
-        store,
-      ),
+      await handle({ type: "vault.request", id: "2", op: "get", ref: "profile:a" }, crypto, store),
     ).toEqual({
       type: "vault.response",
       id: "2",
       ok: true,
       value: SECRET,
     });
-    await handleVaultRequest(
-      { type: "vault.request", id: "3", op: "delete", ref: "profile:a" },
-      crypto,
-      store,
-    );
+    await handle({ type: "vault.request", id: "3", op: "delete", ref: "profile:a" }, crypto, store);
     expect(
-      await handleVaultRequest(
-        { type: "vault.request", id: "4", op: "get", ref: "profile:a" },
-        crypto,
-        store,
-      ),
+      await handle({ type: "vault.request", id: "4", op: "get", ref: "profile:a" }, crypto, store),
     ).toEqual({
       type: "vault.response",
       id: "4",
@@ -270,7 +369,7 @@ describe("handleVaultRequest", () => {
   });
 
   it("refuses without OS encryption and ignores other messages", async () => {
-    const response = await handleVaultRequest(
+    const response = await handle(
       { type: "vault.request", id: "1", op: "set", ref: "profile:a", value: SECRET },
       fakeCrypto(false),
       memoryStore(),
@@ -282,7 +381,7 @@ describe("handleVaultRequest", () => {
       null,
       { type: "vault.request", id: "x", op: "set", ref: "r" },
     ]) {
-      expect(await handleVaultRequest(other, fakeCrypto(), memoryStore())).toBeUndefined();
+      expect(await handle(other, fakeCrypto(), memoryStore())).toBeUndefined();
     }
   });
 
@@ -290,20 +389,12 @@ describe("handleVaultRequest", () => {
     const store = memoryStore();
     const crypto = fakeCrypto();
     const set = (ref: string) =>
-      handleVaultRequest(
-        { type: "vault.request", id: ref, op: "set", ref, value: SECRET },
-        crypto,
-        store,
-      );
+      handle({ type: "vault.request", id: ref, op: "set", ref, value: SECRET }, crypto, store);
     await set("profile:gone");
     await Promise.all([
       set("profile:a"),
       set("profile:b"),
-      handleVaultRequest(
-        { type: "vault.request", id: "d", op: "delete", ref: "profile:gone" },
-        crypto,
-        store,
-      ),
+      handle({ type: "vault.request", id: "d", op: "delete", ref: "profile:gone" }, crypto, store),
       set("profile:c"),
     ]);
     expect(Object.keys(store.entries).toSorted()).toEqual(["profile:a", "profile:b", "profile:c"]);
@@ -337,13 +428,13 @@ describe("handleVaultRequest", () => {
             }
           : {}),
       };
-      const set = handleVaultRequest(
+      const set = handle(
         { type: "vault.request", id: "s", op: "set", ref: "profile:a", value: SECRET },
         crypto,
         store,
       );
       if (stage !== "synchronous") await entered.promise;
-      const remove = handleVaultRequest(
+      const remove = handle(
         { type: "vault.request", id: "d", op: "delete", ref: "profile:a" },
         crypto,
         store,
@@ -367,16 +458,12 @@ describe("handleVaultRequest", () => {
       },
     };
     const responses = await Promise.all([
-      handleVaultRequest(
+      handle(
         { type: "vault.request", id: "s", op: "set", ref: "profile:a", value: SECRET },
         crypto,
         store,
       ),
-      handleVaultRequest(
-        { type: "vault.request", id: "d", op: "delete", ref: "profile:a" },
-        crypto,
-        store,
-      ),
+      handle({ type: "vault.request", id: "d", op: "delete", ref: "profile:a" }, crypto, store),
     ]);
     expect(responses).toEqual([
       {
@@ -395,7 +482,7 @@ describe("handleVaultRequest", () => {
       read: async () => Promise.reject(new Error(`disk full ${SECRET}`)),
       write: async () => undefined,
     };
-    const response = await handleVaultRequest(
+    const response = await handle(
       { type: "vault.request", id: "1", op: "set", ref: "profile:a", value: SECRET },
       fakeCrypto(),
       broken,
@@ -412,7 +499,7 @@ describe("handleVaultRequest", () => {
     const store = memoryStore();
     const request = { type: "vault.request", id: "read", op: "get", ref: "gateway" };
     const crypto = fakeCrypto();
-    expect(await handleVaultRequest(request, crypto, store)).toMatchObject({ ok: true });
+    expect(await handle(request, crypto, store)).toMatchObject({ ok: true });
     const broken = async () => {
       throw new Error(`failed with ${SECRET} during ${request.id}`);
     };
@@ -430,7 +517,7 @@ describe("handleVaultRequest", () => {
       ],
       [{ ...crypto, available: broken }, store, "couldn't access OS encryption for the key store"],
     ] as const) {
-      const response = await handleVaultRequest(request, backend, entries);
+      const response = await handle(request, backend, entries);
       expect(response).toMatchObject({ ok: false, message });
       expect(JSON.stringify(response)).not.toContain(SECRET);
     }
@@ -450,7 +537,7 @@ describe("fileVaultStore", () => {
     const file = join(dir, "nested", "gateway-keys.json");
     const store = fileVaultStore(file);
     expect(await store.read()).toEqual({});
-    await handleVaultRequest(
+    await handle(
       { type: "vault.request", id: "1", op: "set", ref: "profile:a", value: SECRET },
       fakeCrypto(),
       store,
@@ -467,12 +554,12 @@ describe("fileVaultStore", () => {
       password: async () => Buffer.from(sentinel),
     });
     const store = fileVaultStore(join(dir, "gateway-keys.json"));
-    const set = await handleVaultRequest(
+    const set = await handle(
       { type: "vault.request", id: "s", op: "set", ref: "a", value: SECRET },
       crypto,
       store,
     );
-    const get = await handleVaultRequest(
+    const get = await handle(
       { type: "vault.request", id: "g", op: "get", ref: "a" },
       crypto,
       store,
@@ -492,7 +579,7 @@ describe("fileVaultStore", () => {
     const crypto = fakeCrypto();
     await Promise.all(
       ["profile:a", "profile:b", "profile:c"].map((ref) =>
-        handleVaultRequest(
+        handle(
           { type: "vault.request", id: ref, op: "set", ref, value: SECRET },
           crypto,
           fileVaultStore(file),
