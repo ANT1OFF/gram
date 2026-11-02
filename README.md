@@ -1,62 +1,81 @@
 # Gram
 
-A desktop app where an orchestrator agent runs a team of coding agents for you. You give it
-tasks; it hands them to Claude Code and Codex workers, each in its own git worktree, and follows
-them through to merged pull requests.
+[![Latest release](https://img.shields.io/github/v/release/ANT1OFF/gram)](https://github.com/ANT1OFF/gram/releases/latest)
+[![CI](https://github.com/ANT1OFF/gram/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/ANT1OFF/gram/actions/workflows/check.yml)
+[![License: MIT](https://img.shields.io/github/license/ANT1OFF/gram)](LICENSE)
 
-## Why?
+A macOS app where an orchestrator agent runs a team of Claude Code and Codex workers for you, each
+in its own git worktree, from task to merged pull request.
 
-I kept ending up with five to ten Claude Code sessions open at once, and keeping track of what each was
-doing, what it was waiting on and what came next was the hard part. That kind of bookkeeping is not
-something my brain is good at and is not fun, but an agent is good at tracking these things. So Gram gives the tracking to an orchestrator
-agent, in a setup similar in spirit to Claude Tag.
+![Gram's Orchestrator layout. On the left, the overview lists two workspaces with their workers and each one's state, such as "asks you" or a pull request with passing checks, then solo threads. In the middle, the orchestrator's thread shows three features with their workers, open pull requests and a warning that two workers touch the same files. Below that, a worker's question waits with three options, one recommended, above the message box.](docs/assets/gram-orchestrator.png)
 
-It is deliberately unopinionated about how you work. The same pieces run as a swarm, with many
-workers in parallel messaging each other, or as agents-as-tools, with the orchestrator calling on
-a worker for one specific job.
+- **An orchestrator per workspace.** You give it tasks; it writes a brief for each, starts a
+  worker on it and answers what it can, passing the rest to you.
+- **Isolated workers.** Each worker is a normal Claude Code or Codex thread in its own worktree
+  and branch, so your checkout stays as it was. Open any of them to read, steer or answer it.
+- **Woken by events, not polling.** The thread that cares wakes when CI settles, a review lands,
+  a pull request merges or a time it set comes round.
+- **Autonomy you choose.** Supervised asks before anything leaves your machine, Publish pushes
+  and opens pull requests, and Full also merges on its own.
+- **One place for what needs you.** Questions, approvals and plans from every workspace collect
+  in one list.
+
+## Requirements
+
+- macOS on Apple silicon.
+- [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) and/or the
+  [Codex CLI](https://github.com/openai/codex), installed and signed in (`claude /login`,
+  `codex login`). Gram runs them on your own subscriptions; no API key is needed.
+- Optional: the [GitHub CLI](https://cli.github.com) (`gh auth login`) for pull requests, checks
+  and merges.
+
+## Install
+
+Download `gram_<version>_darwin-arm64_signed.zip` from the
+[latest release](https://github.com/ANT1OFF/gram/releases/latest), unzip it and move `Gram.app`
+to Applications. Releases are Developer ID signed and notarized.
+[Updates](docs/UPDATES.md#installing-a-release) covers checking the download against
+`SHA256SUMS.txt` and how Gram updates itself.
+
+## Build from source
+
+```sh
+bun install --frozen-lockfile
+bun run dev:desktop
+```
+
+[Development](docs/DEVELOPMENT.md) has the toolchain versions, every run and check command, and
+packaging.
+
+## Why
+
+I kept ending up with five to ten Claude Code sessions open at once, and the hard part was keeping
+track of what each was doing, what it was waiting on and what came next. That bookkeeping is
+something an agent is good at, so Gram hands it to an orchestrator agent.
 
 ## How it works
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/how-it-works-dark.svg">
-  <img src="docs/images/how-it-works-light.svg" alt="How Gram works: you give the orchestrator tasks, answers and approvals. In the workspace, the orchestrator keeps a memory of goals, decisions and rulings, sends briefs to workers and gets reports and questions back. Each worker runs Claude or Codex in its own worktree, and workers message each other. Workers open pull requests, which go through checks, merge and release. CI, review and merge events wake the worker that owns the pull request, and the orchestrator gets a digest.">
+  <img src="docs/images/how-it-works-light.svg" alt="How Gram works: you give the orchestrator goals, answers and approvals. In the workspace, the orchestrator keeps a memory of goals, decisions and rulings, sends briefs to workers and gets reports and questions back. Each worker runs Claude or Codex in its own worktree, and workers message each other. Workers open pull requests, which go through checks, merge and release. CI, review and merge events wake the worker that owns the pull request, and the orchestrator gets a digest.">
 </picture>
 
-The orchestrator writes a brief for each piece of work and spawns a worker on it. Workers report
-back, ask questions and open pull requests; the orchestrator answers what it can and passes the
-rest to you. Between turns, every agent sleeps until an event wakes it.
+A workspace is one or more repositories with one long-lived orchestrator thread. You keep coming
+back to it rather than starting a fresh chat per task: it is where you talk through priorities,
+and where results, blockers and questions come back to you. Its memory of your decisions and
+standing rulings, and the digests it gets from workers, carry it across sessions.
 
-The orchestrator is meant to be a long-lived thread: you keep one per workspace and come back to it, rather than starting a fresh chat for each task. It is where you talk through priorities and plans, and where results, blockers and decisions come back to you. Its memory and the digests it gets from workers carry it across sessions, so it picks up where it left off.
-
-- **Woken by events, not polling.** The thread that cares wakes when CI checks settle, a review
-  lands, a pull request merges, a dependency's pull request moves, or a time it set comes round.
-- **Hands-off or hands-on.** Let it plan and merge on its own, or open any worker's thread to
-  read, steer or answer it.
-- **Memory.** The orchestrator remembers your goals, decisions and standing rulings across
-  sessions.
 - **Messaging.** Orchestrator and workers talk both ways, and workers can message each other.
-- **Workers for different jobs.** Mix harnesses and models by assignment: send reviews to Codex,
-  keep implementation on Claude, and give specialised work such as reverse engineering to mythos.
+- **Models by assignment.** Each workspace lists the models its workers may use, with a note on
+  what each is for: for example, implementation on Claude, independent reviews on Codex, and
+  specialised work on a model you pick for it.
+- **The Board.** Each feature's workers and pull requests on one line, from briefed to merged.
 
-## Install
+![Gram's Board view: three features as rows across the columns Briefed, Working, Checks, Review and Merged. Each worker is a card in its column; five wait on you, one is working and one is in review with pull request #212.](docs/assets/gram-board.png)
 
-Download the latest build from [GitHub Releases](https://github.com/ANT1OFF/gram/releases),
-unzip it and move `Gram.app` to Applications
-([checksum and update steps](docs/UPDATES.md#installing-a-release)).
-
-You need macOS on Apple silicon, plus Claude Code and/or the Codex CLI installed and signed in
-(`claude /login`, `codex login`), and a signed-in GitHub CLI (`gh`) for pull requests. Gram runs
-on your own subscriptions; no API key is needed.
-
-## Develop
-
-```sh
-bun install --frozen-lockfile
-bun run check:scaffold
-bun run dev:desktop
-```
-
-See [development](docs/DEVELOPMENT.md) for prerequisites and every run and check command.
+Gram doesn't prescribe a way of working. The same pieces run as a swarm of workers in parallel
+that message each other, or with the orchestrator calling on one worker for one job.
+[Agents and features](docs/AGENTS_AND_FEATURES.md) covers it in depth.
 
 ## Docs
 
@@ -64,10 +83,14 @@ See [development](docs/DEVELOPMENT.md) for prerequisites and every run and check
 - [Architecture](docs/ARCHITECTURE.md)
 - [Development](docs/DEVELOPMENT.md) and [testing](docs/VERIFICATION.md)
 - [Updates](docs/UPDATES.md) and [releasing](docs/RELEASING.md)
-- [Contributing](CONTRIBUTING.md)
 - [Design notes](DESIGN.md)
 
 The [docs map](docs/README.md) lists every page and what it covers.
+
+## Contributing and security
+
+[Contributing](CONTRIBUTING.md) covers branches, checks and pull requests. Report vulnerabilities
+privately as described in the [security policy](SECURITY.md).
 
 ## License
 
