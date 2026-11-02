@@ -284,7 +284,10 @@ finishes. [cancel-closed-pr.yml](../.github/workflows/cancel-closed-pr.yml) canc
 request's remaining runs.
 
 The `macos` jobs run on GitHub-hosted `macos-15`; every other job runs on `ubuntu-24.04-arm`.
-No signing or notarization secret reaches CI: releases are signed on the publisher's Mac. Workflows keep same-repository
+No signing or notarization secret reaches CI: releases are signed on the publisher's Mac.
+[release-linux.yml](../.github/workflows/release-linux.yml) builds a stable release's Linux files
+on `ubuntu-24.04` with a read-only token; only its `attest` job, which runs no repository code,
+holds `id-token` and `attestations` write, and nothing in it writes to a release. Workflows keep same-repository
 guards, read-only token permissions, SHA-pinned actions, download-only caches and pinned frozen
 installs. They use synthetic agents; CI does not qualify x64 Linux, signed or notarized Mac
 builds, Windows behaviour or paid providers. `bun install` refuses to resolve a release younger than

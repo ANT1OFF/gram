@@ -158,8 +158,9 @@ apply as on macOS.
 
 CI's `linux package` job builds both on the `package` lane and keeps them as workflow artifacts
 for 7 days, after installing the .deb on Ubuntu 24.04 and Debian 12 and running `--smoke` under
-Xvfb. Nothing publishes them yet: there is no Linux update feed, and the release tools build
-macOS only.
+Xvfb. Stable releases build them again from the release commit in
+[release-linux.yml](../.github/workflows/release-linux.yml); see
+[Linux files](RELEASING.md#linux-files).
 
 ### Isolated packaged GUI
 
