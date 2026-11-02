@@ -309,7 +309,7 @@ test("metadata preflight refuses desynchronized, malformed or widened updates", 
   }
 });
 
-test("workflow grants write scopes only to pinned API action on trusted main", () => {
+test("workflow grants write scopes only to pinned API actions on trusted main", () => {
   const workflow = load(read(".github/workflows/release-please.yml"));
   assert.deepEqual(workflow.on, { push: { branches: ["main"] }, workflow_dispatch: null });
   assert.deepEqual(workflow.permissions, { contents: "read" });
@@ -326,17 +326,31 @@ test("workflow grants write scopes only to pinned API action on trusted main", (
   assert.equal(validate.steps[0].with.ref, "${{ github.sha }}");
   const propose = workflow.jobs.propose;
   assert.equal(propose.needs, "validate");
+  assert.equal(propose.environment, "release-please");
   assert.deepEqual(propose.permissions, {
     contents: "write",
     "pull-requests": "write",
     issues: "write",
   });
-  assert.equal(propose.steps.length, 1);
+  assert.equal(propose.steps.length, 2);
+  const [appToken, release] = propose.steps;
+  assert.equal(appToken.id, "app-token");
+  assert.equal(appToken.if, "vars.RELEASE_PLEASE_APP_CLIENT_ID != ''");
   assert.equal(
-    propose.steps[0].uses,
+    appToken.uses,
+    "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+  );
+  assert.deepEqual(appToken.with, {
+    "client-id": "${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}",
+    "private-key": "${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}",
+    "permission-contents": "write",
+    "permission-pull-requests": "write",
+  });
+  assert.equal(
+    release.uses,
     "googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7",
   );
-  assert.equal(propose.steps[0].with["skip-github-release"], true);
-  assert.equal(propose.steps[0].with.token, "${{ github.token }}");
-  assert.equal(propose.steps[0].with["target-branch"], "main");
+  assert.equal(release.with["skip-github-release"], true);
+  assert.equal(release.with.token, "${{ steps.app-token.outputs.token || github.token }}");
+  assert.equal(release.with["target-branch"], "main");
 });
