@@ -64,8 +64,9 @@ const visibleWords = (page: Page, selector: string, except?: string) =>
     [selector, except] as const,
   );
 
+/** How many asks the stack holds: it shows no count of its own, only its stepper. */
 const askCount = async (page: Page) =>
-  Number((await page.getByTestId("ask-stack").textContent())?.match(/(\d+)\s*asks?/)?.[1]);
+  Number(await page.getByTestId("ask-stack").getAttribute("data-count"));
 
 test("the orchestrator's home stays under 150 words", async ({ page }) => {
   await start(page);
