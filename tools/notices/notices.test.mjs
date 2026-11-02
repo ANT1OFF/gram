@@ -117,7 +117,7 @@ describe("declaredLicense", () => {
 });
 
 describe("the notices", () => {
-  it("leaves sherpa-onnx out of a Linux package's native modules, and only there", () => {
+  it("swaps sherpa-onnx for @parcel/watcher in a Linux package's native modules only", () => {
     const root = fixture();
     const desktop = join(root, "apps", "desktop");
     mkdirSync(desktop, { recursive: true });
@@ -137,9 +137,21 @@ describe("the notices", () => {
       optionalDependencies: { "sherpa-onnx-linux-x64": "2.0.0", "sherpa-onnx-win-x64": "2.0.0" },
     });
     addPackage(root, { name: "sherpa-onnx-linux-x64", version: "2.0.0" });
+    addPackage(root, {
+      name: "@parcel/watcher",
+      version: "2.6.0",
+      dependencies: { "node-addon-api": "7.1.0", "is-glob": "4.0.3" },
+      optionalDependencies: {
+        "@parcel/watcher-linux-x64-glibc": "2.6.0",
+        "@parcel/watcher-linux-x64-musl": "2.6.0",
+      },
+    });
+    addPackage(root, { name: "is-glob", version: "4.0.3" });
+    addPackage(root, { name: "@parcel/watcher-linux-x64-glibc", version: "2.6.0" });
+    addPackage(root, { name: "@parcel/watcher-linux-x64-musl", version: "2.6.0" });
     const names = (platform) =>
       packagedDependencies(desktop, platform).map((dir) => dir.slice(dir.lastIndexOf("/") + 1));
-    expect(names("linux")).toEqual(["node-pty"]);
+    expect(names("linux")).toEqual(["node-pty", "watcher", "is-glob", "watcher-linux-x64-glibc"]);
     expect(names("darwin")).toEqual(["node-pty", "sherpa-onnx-node", "sherpa-onnx-linux-x64"]);
   });
 

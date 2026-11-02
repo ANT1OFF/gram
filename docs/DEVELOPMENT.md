@@ -139,6 +139,9 @@ makes only the unpacked app; check that one with `verify:package --dir-only`.
 `verify:package` checks the unpacked app, loads node-pty in the packaged Electron, and reads
 both artifacts: their metadata, desktop entry, icons and payload. It needs `dpkg-deb`.
 
+Git watching on Linux uses `@parcel/watcher`, so only the Linux package carries it, with its
+glibc addon, in `resources/node_modules`.
+
 The .deb installs to `/opt/Gram` and depends on what Electron links on Debian 12 and
 Ubuntu 24.04, plus `libsecret-1-0` for the keyring; it recommends git and never depends on an
 agent CLI. The AppImage needs FUSE 2 (`libfuse2t64` on Ubuntu 24.04) or

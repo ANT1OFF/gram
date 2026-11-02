@@ -5,7 +5,8 @@
 //   bundle builds (main, preload, the update helper, the server, its command worker, speech, web);
 // - the packages electron-builder copies into app.asar.unpacked: the desktop app's production
 //   dependencies (node-pty, sherpa-onnx and its platform addon) and Electron itself; a Linux
-//   package leaves sherpa-onnx out (electron-builder.yml), and so do its notices;
+//   package leaves sherpa-onnx out and carries @parcel/watcher (electron-builder.yml), and its
+//   notices follow;
 // - the libraries compiled into sherpa-onnx's addon, from native-components.json, which ship with
 //   no notices of their own;
 // - the notices already kept beside the motion kit's drawings and the terminal's symbol font.
@@ -36,7 +37,8 @@ const NOT_PACKAGED = new Set(["node-addon-api"]);
  * without local dictation, so with no sherpa-onnx (its Linux builds link GPL text-to-speech code).
  */
 export const notPackagedOn = (platform, name) =>
-  NOT_PACKAGED.has(name) || (platform === "linux" && name.startsWith("sherpa-onnx"));
+  NOT_PACKAGED.has(name) ||
+  (platform === "linux" && (name.startsWith("sherpa-onnx") || name.endsWith("-musl")));
 
 /** Files kept beside source Gram ships, copied in as they are. */
 const KEPT_NOTICES = [
@@ -154,6 +156,8 @@ export function packagedDependencies(from = DESKTOP, platform = process.platform
   };
   const manifest = JSON.parse(readFileSync(join(from, "package.json"), "utf8"));
   visit(from, Object.keys(manifest.dependencies ?? {}));
+  // Git watching on Linux, copied in beside app.asar rather than a dependency of the app.
+  if (platform === "linux") visit(join(from, "..", "..", "packages", "git"), ["@parcel/watcher"]);
   return [...found.values()];
 }
 

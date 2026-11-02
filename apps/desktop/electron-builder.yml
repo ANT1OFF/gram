@@ -154,6 +154,24 @@ linux:
       Keywords: claude;codex;agent;terminal;git;
   # ${arch} is each format's own name for x64: gram_<version>_amd64.deb, _x86_64.AppImage.
   artifactName: gram_${version}_${arch}.${ext}
+  # Git watching on Linux: Node's recursive fs.watch is too slow there (packages/git/src/watch.ts),
+  # and the server imports this at runtime. In resources/node_modules, which Node reaches after
+  # app.asar/node_modules, so it stays out of package.json and out of the macOS and Windows
+  # packages. These are @parcel/watcher's runtime packages; verify-package.mjs loads them.
+  extraResources:
+    - from: ../../node_modules/@parcel/watcher
+      to: node_modules/@parcel/watcher
+      filter: ["**/*", "!src/**", "!scripts/**"]
+    - from: ../../node_modules/@parcel/watcher-linux-x64-glibc
+      to: node_modules/@parcel/watcher-linux-x64-glibc
+    - from: ../../node_modules/detect-libc
+      to: node_modules/detect-libc
+    - from: ../../node_modules/is-extglob
+      to: node_modules/is-extglob
+    - from: ../../node_modules/is-glob
+      to: node_modules/is-glob
+    - from: ../../node_modules/picomatch
+      to: node_modules/picomatch
   # Repeats the includes, as `mac.files` does. node-pty keeps only build/Release/pty.node (the gyp
   # Makefiles and config.gypi name the build machine's paths).
   files:

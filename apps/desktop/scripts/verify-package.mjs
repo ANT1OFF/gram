@@ -66,6 +66,8 @@ const { findBinaries, findForeignBinaries, listFiles } = require("../build/nativ
 
 const APP_ID = "io.github.ant1off.gram";
 const PRODUCT = "Gram";
+/** The @parcel/watcher addon package the Linux package carries (electron-builder.yml). */
+const WATCHER_LINUX = "@parcel/watcher-linux-x64-glibc";
 const ASAR_ENTRIES = [
   "package.json",
   "out/main/index.js",
@@ -290,7 +292,7 @@ if (fs.existsSync(asar)) {
 
   // The server and its command worker must carry their dependencies: only Node built-ins and the
   // externalized natives may be required at runtime, because the asar holds no other node_modules.
-  // `@parcel/watcher` is imported lazily by Linux dev only and never packaged (checked below).
+  // `@parcel/watcher` is imported lazily on Linux, whose package alone carries it (checked below).
   const builtins = new Set(require("node:module").builtinModules);
   const externals = new Set(["node-pty", "@parcel/watcher"]);
   const runtimeRequires = [...externalsOf("server", "proc-worker")].filter((name) => {
@@ -335,8 +337,8 @@ check(
     : `${natives.length} binaries`,
 );
 
-// No shipped target uses @parcel/watcher: macOS and Windows watch with fs.watch, and only Linux dev
-// imports it.
+// macOS and Windows watch with fs.watch, so @parcel/watcher isn't in the asar's unpacked modules on
+// any target; the Linux package carries it in resources/node_modules (checked below).
 const parcelPackages = new Set(
   listFiles(path.join(unpacked, "node_modules", "@parcel"))
     .map((f) => path.relative(path.join(unpacked, "node_modules"), f).split(/[\\/]/))
@@ -436,6 +438,7 @@ if (notices && fs.existsSync(asar)) {
     for (const name of bundle.packages.map(packageName))
       if (!noticed.has(name)) uncovered.add(name);
   const nativePackages = ["electron", "node-pty"];
+  if (platform === "linux") nativePackages.push("@parcel/watcher", WATCHER_LINUX);
   if (speech) nativePackages.push("sherpa-onnx-node", path.basename(sherpaPackage));
   for (const name of nativePackages) if (!noticed.has(name)) uncovered.add(name);
   if (!speech) {
@@ -509,13 +512,32 @@ if (platform === "linux") {
     .map((f) => path.relative(ptyDir, f));
   check("node-pty ships only build/Release/pty.node", ptyExtra.length === 0, ptyExtra.join(", "));
 
-  // Built on Ubuntu 24.04 (glibc 2.39), it has to load on Debian 12 (glibc 2.36).
-  if (fs.existsSync(ptyAddon)) {
+  const watcherAddon = path.join(
+    resources,
+    "node_modules",
+    ...WATCHER_LINUX.split("/"),
+    "watcher.node",
+  );
+  const watcherForeign = findForeignBinaries(path.join(resources, "node_modules"), platform, arch);
+  check(
+    `@parcel/watcher ${arch} addon bundled for git watching`,
+    fs.existsSync(watcherAddon) &&
+      fs.existsSync(path.join(resources, "node_modules", "@parcel", "watcher", "index.js")) &&
+      watcherForeign.length === 0,
+    watcherForeign.map((b) => b.file).join(", ") || WATCHER_LINUX,
+  );
+
+  // Built on Ubuntu 24.04 (glibc 2.39), node-pty has to load on Debian 12 (glibc 2.36).
+  for (const [label, addon] of [
+    ["node-pty", ptyAddon],
+    ["@parcel/watcher", watcherAddon],
+  ]) {
+    if (!fs.existsSync(addon)) continue;
     let symbols;
     try {
-      symbols = execFileSync("objdump", ["-T", ptyAddon], { encoding: "utf8" });
+      symbols = execFileSync("objdump", ["-T", addon], { encoding: "utf8" });
     } catch {
-      console.log("skip  node-pty's glibc floor: no objdump");
+      console.log(`skip  ${label}'s glibc floor: no objdump`);
     }
     if (symbols !== undefined) {
       const versions = [...symbols.matchAll(/GLIBC_(\d+)\.(\d+)/g)].map(([, a, b]) => [+a, +b]);
@@ -524,14 +546,15 @@ if (platform === "linux") {
         [0, 0],
       );
       check(
-        "node-pty needs glibc 2.36 or older (Debian 12)",
+        `${label} needs glibc 2.36 or older (Debian 12)`,
         major === 2 && minor <= 36,
         `GLIBC_${major}.${minor}`,
       );
     }
   }
 
-  // node-pty loading in the packaged Electron, as Node, and running a shell through a pty; and
+  // node-pty and @parcel/watcher loading in the packaged Electron, as Node, resolved as the server
+  // resolves them from inside the asar: a shell through a pty, a file change through a watch; and
   // sherpa-onnx-node failing to resolve. Only a host that can run the package can do this.
   if (process.platform === "linux" && process.arch === arch) {
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "gram-native-probe-"));
@@ -557,7 +580,7 @@ if (platform === "linux") {
         fs.readFileSync(require.resolve("electron/package.json"), "utf8"),
       ).version;
       check(
-        "packaged app loads node-pty and runs a pty; sherpa-onnx doesn't resolve",
+        "packaged app runs a pty and a file watch; sherpa-onnx doesn't resolve",
         output.includes("NATIVE OK") && runtime.electron === electron && runtime.arch === arch,
         output.includes("NATIVE OK")
           ? `Electron ${runtime.electron} ${runtime.arch}`
@@ -586,6 +609,9 @@ function verifyLinuxArtifacts() {
     "resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node": sha(
       path.join(unpacked, "node_modules", "node-pty", "build", "Release", "pty.node"),
     ),
+    [`resources/node_modules/${WATCHER_LINUX}/watcher.node`]: sha(
+      path.join(resources, "node_modules", ...WATCHER_LINUX.split("/"), "watcher.node"),
+    ),
     gram: sha(path.join(appDir, "gram")),
   };
   const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
@@ -598,7 +624,7 @@ function verifyLinuxArtifacts() {
       )
       .map(([rel]) => rel);
     check(
-      `${label} carries the verified app.asar, pty.node and executable`,
+      `${label} carries the verified app.asar, addons and executable`,
       differ.length === 0,
       differ.join(", "),
     );
