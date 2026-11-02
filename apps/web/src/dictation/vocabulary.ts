@@ -222,8 +222,8 @@ const spanOf = (units: readonly Unit[], text: string, start: number, end: number
     const unit = units[i]!;
     if (i > start) {
       const gap = text.slice(units[i - 1]!.end, unit.start);
-      // Words run on across spaces or a glued separator, never across punctuation.
-      if (gap !== "" && !/^\s+$/.test(gap)) return undefined;
+      // Words run on across spaces or a glued separator, never across punctuation or a line.
+      if (gap !== "" && !/^[ \t]+$/.test(gap)) return undefined;
     }
     if (unit.word !== undefined) {
       key += unit.word.toLowerCase();

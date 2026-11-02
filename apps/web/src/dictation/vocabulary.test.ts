@@ -121,6 +121,8 @@ describe("applyVocabulary", () => {
   it("does not run a name across punctuation", () => {
     expect(spell("use, dictation")).toBe("use, dictation");
     expect(spell("dictation. TS is next")).toBe("dictation. TS is next");
+    expect(spell("use\ndictation")).toBe("use\ndictation");
+    expect(spell("\n")).toBe("\n");
   });
 
   it("drops two names of the same kind that sound alike", () => {
