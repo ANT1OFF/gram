@@ -285,6 +285,6 @@ test("one Waiting on you across threads: Needs you counts it, the Board groups a
 
   await reviewing.getByTestId("waiting-done").click();
   await expect(groups).toHaveCount(2);
-  await expect(chip).toHaveAttribute("aria-label", "4 waiting on you");
+  await expect(chip).toHaveAttribute("data-count", "4");
   await expect(needsYou).toHaveAttribute("data-count", String(before + 3));
 });

@@ -435,8 +435,18 @@ function RailBoard({ state }: { state: WorkspaceState }) {
               strokeWidth={1.5}
               className="mb-1 size-6 opacity-70"
             />
-            <p className="text-foreground">No features yet</p>
-            <p className="text-xs">Ask the orchestrator to build one.</p>
+            {hidden > 0 ? (
+              <>
+                {/* Its finished work is in Done, as the sidebar has it; Show finished brings it here. */}
+                <p className="text-foreground">Nothing going now</p>
+                <p className="text-xs">Finished work is in Done.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-foreground">No features yet</p>
+                <p className="text-xs">Ask the orchestrator to build one.</p>
+              </>
+            )}
           </div>
         ) : (
           <GlideList id={`rail-${workspaceId}`}>
