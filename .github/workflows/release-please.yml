@@ -32,6 +32,8 @@ jobs:
     if: github.repository == 'ANT1OFF/gram' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
+    # Holds the release app's key and ID; its deployment branches are limited to main.
+    environment: release-please
     permissions:
       contents: write
       pull-requests: write

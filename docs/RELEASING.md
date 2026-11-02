@@ -34,27 +34,31 @@ version. Never clear the label for a version that did not ship.
 
 GitHub holds `pull_request` runs for approval on a PR that `GITHUB_TOKEN` opened or pushed. So
 release-please writes with a token from a GitHub App that only this repository installs, minted
-for the one run and revoked after it. Without the app's variable it falls back to
-`GITHUB_TOKEN`, and each push to the metadata PR then waits for **Approve workflows to run**.
+for the one run and revoked after it. The app's key and ID live in the `release-please`
+environment, whose deployment branches are limited to `main`, so no other branch's workflow can
+read them. Without the app's variable it falls back to `GITHUB_TOKEN`, and each push to the
+metadata PR then waits for **Approve workflows to run**.
 
 To set it up once, as the repository owner:
 
-1. Under **Settings → Developer settings → GitHub Apps → New GitHub App**, give it a unique
-   name and the repository's URL as its homepage, and clear **Webhook → Active**. Set
-   **Repository permissions** to **Contents: Read and write** and **Pull requests: Read and
+1. Under your account's **Settings → Developer settings → GitHub Apps → New GitHub App**, give
+   it a unique name and the repository's URL as its homepage, and clear **Webhook → Active**.
+   Set **Repository permissions** to **Contents: Read and write** and **Pull requests: Read and
    write**, leave everything else at **No access**, and choose **Only on this account**.
 2. Copy the **Client ID** from the app's page, then **Generate a private key**.
 3. Choose **Install App** and install it with **Only select repositories** set to
    `ANT1OFF/gram`.
-4. Store the key, then the ID, and delete the downloaded key file:
+4. Store the key, then the ID, in the environment, and delete the downloaded key file:
 
    ```sh
-   gh secret set RELEASE_PLEASE_APP_PRIVATE_KEY --repo ANT1OFF/gram < <downloaded-key>.pem
-   gh variable set RELEASE_PLEASE_APP_CLIENT_ID --repo ANT1OFF/gram --body <client-id>
+   gh secret set RELEASE_PLEASE_APP_PRIVATE_KEY --repo ANT1OFF/gram --env release-please < <downloaded-key>.pem
+   gh variable set RELEASE_PLEASE_APP_CLIENT_ID --repo ANT1OFF/gram --env release-please --body <client-id>
    ```
 
-5. Run `gh workflow run release-please.yml --repo ANT1OFF/gram`. The run's log shows the
-   `app-token` step, and the metadata PR's checks start on its next push without approval.
+5. Run `gh workflow run release-please.yml --repo ANT1OFF/gram` and check that its `app-token`
+   step ran. Release-please pushes only when the proposal changes, so runs already held on the
+   open metadata PR still need one approval; from the next `feat:` or `fix:` on, its checks
+   start on their own.
 
 `node tools/check-release-please.mjs` checks the configuration offline. The upstream dry-run
 harness, `node tools/test-release-please.mjs <action-source>`, needs the pinned action's source

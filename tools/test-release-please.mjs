@@ -326,6 +326,7 @@ test("workflow grants write scopes only to pinned API actions on trusted main", 
   assert.equal(validate.steps[0].with.ref, "${{ github.sha }}");
   const propose = workflow.jobs.propose;
   assert.equal(propose.needs, "validate");
+  assert.equal(propose.environment, "release-please");
   assert.deepEqual(propose.permissions, {
     contents: "write",
     "pull-requests": "write",
