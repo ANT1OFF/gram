@@ -377,7 +377,7 @@ export const downloadModel = async (options: DownloadOptions): Promise<DownloadO
     await rm(join(staging, REVISION_FILE), { force: true });
     await writeFile(
       join(staging, "NOTICE"),
-      `${manifest.name}\n${manifest.license.attribution}.\n${manifest.license.url}\n\nSource: https://huggingface.co/${manifest.source.repo} at ${manifest.source.revision}\n`,
+      `${manifest.name}\n${manifest.license.attribution}.\n${manifest.license.url}\n\nSource: ${manifest.source.url ?? `https://huggingface.co/${manifest.source.repo}`} at ${manifest.source.revision}\n`,
     );
     // Written last: the speech process treats a directory with it as complete.
     await writeFile(join(staging, SPEECH_MODEL_VERIFIED_FILE), JSON.stringify(verified, null, 2));

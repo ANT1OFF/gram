@@ -10,6 +10,16 @@ export interface SpeechModelPaths {
   readonly chunkMs: number;
 }
 
+/** What a session in `accurate` mode needs beyond its streaming model. */
+export interface SpeechAccuratePaths {
+  readonly encoder: string;
+  readonly decoder: string;
+  readonly joiner: string;
+  readonly tokens: string;
+  /** The voice activity detector's model. */
+  readonly vad: string;
+}
+
 /** Which engine a session on the speech process runs: the local recogniser. */
 export type SpeechSessionKind = "local";
 
@@ -31,6 +41,8 @@ export type SpeechHostMessage =
       readonly requestId: number;
       readonly model: SpeechModelPaths;
       readonly threads: number;
+      /** Starts loading `accurate` mode's models as well, without waiting for them. */
+      readonly accurate?: SpeechAccuratePaths | undefined;
     }
   | {
       readonly type: "open";
@@ -38,6 +50,8 @@ export type SpeechHostMessage =
       readonly model: SpeechModelPaths;
       readonly threads: number;
       readonly language?: string | undefined;
+      /** Present in `accurate` mode: commit the offline model's text instead of the stream's. */
+      readonly accurate?: SpeechAccuratePaths | undefined;
     };
 
 /** Speech process → main. */

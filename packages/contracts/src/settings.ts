@@ -12,7 +12,13 @@ import {
 import { PaletteId, ThreadId } from "./ids.ts";
 import type { ReviewRequestHolds } from "./review-requests.ts";
 import { DEFAULT_REVIEW_BOTS, ReviewBot } from "./review.ts";
-import { SPEECH_MODEL_FOR_STOP, SpeechPerformanceStop, type SpeechModelId } from "./speech.ts";
+import {
+  DEFAULT_SPEECH_MODE,
+  SPEECH_MODEL_FOR_STOP,
+  SpeechMode,
+  SpeechPerformanceStop,
+  type SpeechModelId,
+} from "./speech.ts";
 import { connectorEntryProblem, WorkerModel } from "./workspaces.ts";
 
 /** Glass is the only look. */
@@ -464,6 +470,8 @@ export const VoiceSettings = Schema.Struct({
   performance: Schema.optionalKey(SpeechPerformanceStop),
   /** Holds the microphone open between dictations. Read through `keepMicrophoneReadyOf`. */
   keepMicrophoneReady: Schema.optionalKey(Schema.Boolean),
+  /** Live or Accurate. Read through `speechModeOf`. */
+  mode: Schema.optionalKey(SpeechMode),
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
 
@@ -654,6 +662,10 @@ export const speechPerformanceOf = (settings: Settings): SpeechPerformanceStop =
 /** Whether the microphone stays open between dictations: off unless the user turned it on. */
 export const keepMicrophoneReadyOf = (settings: Settings): boolean =>
   settings.voice?.keepMicrophoneReady === true;
+
+/** How dictation commits text: Accurate unless the user chose Live. */
+export const speechModeOf = (settings: Settings): SpeechMode =>
+  settings.voice?.mode ?? DEFAULT_SPEECH_MODE;
 
 /** The speech model the slider's stop runs. */
 export const speechModelOf = (settings: Settings): SpeechModelId =>
@@ -904,6 +916,7 @@ export const SettingsPatch = Schema.Struct({
     Schema.Struct({
       performance: clearable(SpeechPerformanceStop),
       keepMicrophoneReady: clearable(Schema.Boolean),
+      mode: clearable(SpeechMode),
     }),
   ),
   inbox: Schema.optionalKey(

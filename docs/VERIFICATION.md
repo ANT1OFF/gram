@@ -232,7 +232,10 @@ repository, with authorization for each live service or device action:
   focus or dictation, and at once when it's turned off. Record any
   human action still needed. A synthetic 16 kHz mono PCM WAV with recorded source and
   transcript can check the packaged recognizer, but proves neither microphone capture
-  nor general recognition accuracy. Never upload test audio.
+  nor general recognition accuracy. Never upload test audio. For Accurate mode, check that
+  each pause replaces the live words with punctuated text and that a pause with no speech
+  adds nothing; `apps/desktop/src/speech.live.test.ts` runs the same pass on a WAV with
+  `GRAM_LIVE_SPEECH_ACCURATE` (an unpacked Parakeet export) and `GRAM_LIVE_SPEECH_VAD`.
 
 Record commands, CLI versions, results and untested limits in the PR. These checks do not
 prove future CLI compatibility, native writer closure across independent processes or

@@ -2,7 +2,7 @@
 // a MessagePort and gets text back on it. Desktop-only, like the rest of `DesktopBridge`, and so is
 // the model, which the shell's speech module downloads into `<dataDir>/speech`.
 
-import type { SpeechRefusal, SpeechStatus } from "./speech.ts";
+import type { SpeechMode, SpeechRefusal, SpeechStatus } from "./speech.ts";
 
 /** Samples per second of every audio frame on a session's port. */
 export const SPEECH_SAMPLE_RATE = 16_000;
@@ -72,6 +72,11 @@ export interface SpeechOpenRequest {
    * with its `chunkMs`. A change takes effect at the next session; one never changes mid-session.
    */
   readonly performance?: SpeechPerformance | undefined;
+  /**
+   * `live` when absent. `accurate` falls back to `live` for the session when its models aren't
+   * installed; the page learns nothing of it, and `final` means the same either way.
+   */
+  readonly mode?: SpeechMode | undefined;
 }
 
 /** Why a session couldn't open, ended early, or why the speech process can't run here. */
@@ -116,7 +121,9 @@ export type SpeechServerMessage =
   | { readonly type: "partial"; readonly text: string }
   /**
    * The utterance is committed and the next partial starts a new one: the speaker paused
-   * (`endpoint`), or the page sent `stop`, in which case this is the last message. `text` can be empty.
+   * (`endpoint`), or the page sent `stop`, in which case this is the last message. `text` can be
+   * empty, and needn't be the last partial's words: it replaces them, and in `accurate` mode comes
+   * from another model some hundreds of milliseconds later.
    */
   | { readonly type: "final"; readonly text: string; readonly reason: "endpoint" | "stop" }
   /** The session is over and the port closes. */
@@ -177,7 +184,12 @@ export interface DesktopSpeech {
    * Starts the speech process and loads `modelId` without opening a session, to hide the second or
    * so a load takes; for when the composer gains focus with voice on. Never rejects.
    */
-  prewarm(modelId: string, performance?: SpeechPerformance): Promise<SpeechOpenResult>;
+  prewarm(
+    modelId: string,
+    performance?: SpeechPerformance,
+    /** `accurate` starts loading its models too, where they are installed. */
+    mode?: SpeechMode,
+  ): Promise<SpeechOpenResult>;
   /** The microphone permission now, without asking. */
   microphoneAccess(): Promise<MicrophoneAccess>;
   /** Asks macOS for the microphone once (later calls just report); elsewhere reports. */

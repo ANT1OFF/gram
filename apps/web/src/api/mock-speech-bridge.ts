@@ -29,6 +29,7 @@ export class MockSpeechBridge implements DesktopSpeech {
 
   async open(request: SpeechOpenRequest): Promise<SpeechOpenResult> {
     this.loads.push([request.modelId, request.performance]);
+    this.modes.push(request.mode);
     const failure = this.failOpen;
     if (failure !== undefined) {
       this.failOpen = undefined;
@@ -79,6 +80,8 @@ export class MockSpeechBridge implements DesktopSpeech {
 
   /** Each prewarm, and each session opened, as `[modelId, performance]`. */
   readonly loads: [string, string | undefined][] = [];
+  /** Each session's `mode`, as the page asked for it. */
+  readonly modes: (string | undefined)[] = [];
   /** How often the speech process was stopped from Settings. */
   shutdowns = 0;
 

@@ -5,7 +5,9 @@
 // `.nemo` and is to fail unless every file's sha256 equals the one pinned here.
 
 import {
+  SPEECH_ACCURATE_MODEL,
   SPEECH_MODEL_FOR_STOP,
+  SPEECH_VAD_MODEL,
   type SpeechModelLicense,
   type SpeechModelManifest,
 } from "@gram/contracts";
@@ -19,6 +21,28 @@ const NVIDIA_OPEN_MODEL_LICENSE: SpeechModelLicense = {
   url: "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/",
   attribution: "Licensed by NVIDIA Corporation under the NVIDIA Open Model License",
 };
+
+/** Attribution as CC BY 4.0 asks: who made it, its licence, and that this copy is changed. */
+const PARAKEET_LICENSE: SpeechModelLicense = {
+  id: "cc-by-4.0",
+  name: "Creative Commons Attribution 4.0",
+  url: "https://creativecommons.org/licenses/by/4.0/",
+  attribution:
+    "Parakeet TDT 0.6B v2 by NVIDIA, licensed under CC BY 4.0; converted to int8 ONNX by the sherpa-onnx project",
+};
+
+const SILERO_LICENSE: SpeechModelLicense = {
+  id: "mit",
+  name: "MIT License",
+  url: "https://github.com/snakers4/silero-vad/blob/v5.0/LICENSE",
+  attribution: "Silero VAD, copyright (c) 2020-present Silero Team, licensed under the MIT License",
+};
+
+const LFS_VERIFIED = {
+  kind: "hf-lfs-sha256",
+  status: "verified",
+  detail: "Each file's sha256 equals the LFS digest Hugging Face serves at the revision.",
+} as const;
 
 /** The decoder, joiner and tokens every chunk size shares, byte for byte. */
 const SHARED_FILES = [
@@ -71,16 +95,89 @@ const nemotronEnglish = (
     chunkMs,
   },
   memoryBytes: 1_300_000_000,
-  evidence: [
-    {
-      kind: "hf-lfs-sha256",
-      status: "verified",
-      detail: "Each file's sha256 equals the LFS digest Hugging Face serves at the revision.",
-    },
-  ],
+  evidence: [LFS_VERIFIED],
 });
 
-/** One per performance stop, Balanced first. */
+/** What `accurate` mode commits text from. Measured beside Nemotron, about 3.0 GB in all. */
+const PARAKEET_ENGLISH: SpeechModelManifest = {
+  id: SPEECH_ACCURATE_MODEL,
+  name: "Parakeet TDT 0.6B v2",
+  languages: ["en"],
+  license: PARAKEET_LICENSE,
+  source: {
+    repo: "nvidia/parakeet-tdt-0.6b-v2",
+    revision: "ae9ad07059c7c739ffaf932226a8fe64ae2620b0",
+    sha256: "d99e39955c9d3d0350d8fb7c75e40c64a2b2eaeb003883d7c941fd2e8747b28c",
+  },
+  repo: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+  revision: "1ab9323565ddb038682214b292f588070a538ce2",
+  files: [
+    {
+      path: "encoder.int8.onnx",
+      size: 652_184_296,
+      sha256: "a32b12d17bbbc309d0686fbbcc2987b5e9b8333a7da83fa6b089f0a2acd651ab",
+    },
+    {
+      path: "decoder.int8.onnx",
+      size: 7_257_753,
+      sha256: "b6bb64963457237b900e496ee9994b59294526439fbcc1fecf705b31a15c6b4e",
+    },
+    {
+      path: "joiner.int8.onnx",
+      size: 1_739_080,
+      sha256: "7946164367946e7f9f29a122407c3252b680dbae9a51343eb2488d057c3c43d2",
+    },
+    {
+      path: "tokens.txt",
+      size: 9_384,
+      sha256: "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d",
+    },
+  ],
+  recognizer: {
+    kind: "sherpa-onnx-offline-transducer",
+    encoder: "encoder.int8.onnx",
+    decoder: "decoder.int8.onnx",
+    joiner: "joiner.int8.onnx",
+    tokens: "tokens.txt",
+  },
+  memoryBytes: 1_700_000_000,
+  evidence: [LFS_VERIFIED],
+};
+
+/** Finds the speech in an utterance. The same file Silero publishes at its v5.0 tag. */
+const SILERO_VAD: SpeechModelManifest = {
+  id: SPEECH_VAD_MODEL,
+  name: "Silero VAD v5",
+  languages: [],
+  license: SILERO_LICENSE,
+  source: {
+    repo: "snakers4/silero-vad",
+    url: "https://github.com/snakers4/silero-vad",
+    revision: "5cd2ba54db059f961e7545d4f211b44f005a6dfb",
+    sha256: "6b99cbfd39246b6706f98ec13c7c50c6b299181f2474fa05cbc8046acc274396",
+  },
+  repo: "csukuangfj/vad",
+  revision: "fba88cd2e921609e7675c3aaf51e0b9b295da4bc",
+  files: [
+    {
+      path: "silero_vad_v5.onnx",
+      size: 2_313_101,
+      sha256: "6b99cbfd39246b6706f98ec13c7c50c6b299181f2474fa05cbc8046acc274396",
+    },
+  ],
+  recognizer: { kind: "sherpa-onnx-silero-vad", model: "silero_vad_v5.onnx" },
+  memoryBytes: 10_000_000,
+  evidence: [
+    LFS_VERIFIED,
+    {
+      kind: "upstream-sha256",
+      status: "verified",
+      detail: "The file's sha256 equals files/silero_vad.onnx at the upstream tag v5.0.",
+    },
+  ],
+};
+
+/** One per performance stop, Balanced first, then what `accurate` mode adds. */
 export const SPEECH_MODELS: ReadonlyArray<SpeechModelManifest> = [
   nemotronEnglish(560, "52056fdc070914a48dcd68b31b44d6a6f5b85902", {
     size: 652_916_849,
@@ -94,6 +191,8 @@ export const SPEECH_MODELS: ReadonlyArray<SpeechModelManifest> = [
     size: 652_916_852,
     sha256: "7d2246da3c077e8b57698d398e09d8ca67f50de73b3468af397b22213ce72117",
   }),
+  PARAKEET_ENGLISH,
+  SILERO_VAD,
 ];
 
 export const speechManifest = (id: string): SpeechModelManifest | undefined =>

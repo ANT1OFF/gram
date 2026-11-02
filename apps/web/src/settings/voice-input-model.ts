@@ -1,8 +1,10 @@
 import {
   SpeechRefused,
+  SPEECH_ACCURATE_MIN_MEMORY_BYTES,
   SPEECH_MODEL_FOR_STOP,
   speechModelBytes,
   type SpeechInstallFailure,
+  type SpeechMode,
   type SpeechModelId,
   type SpeechPerformance,
   type SpeechStatus,
@@ -29,7 +31,52 @@ export const STOP_HELP: Readonly<Record<SpeechPerformance, string>> = {
 };
 
 export const LOCAL_HINTS_HELP =
-  "The local NVIDIA Nemotron model recognises English. Audio and transcripts stay on this computer; vocabulary hints are not supported.";
+  "The local NVIDIA models recognise English. Audio and transcripts stay on this computer; vocabulary hints are not supported.";
+
+export const MODE_OPTIONS: readonly { readonly value: SpeechMode; readonly label: string }[] = [
+  { value: "accurate", label: "Accurate" },
+  { value: "live", label: "Live" },
+];
+
+/**
+ * What each mode does and costs. Parakeet halved Nemotron's word errors on recorded speech, and
+ * took about a quarter of a second over a 5 s utterance on an M5 Pro.
+ */
+export const MODE_HELP: Readonly<Record<SpeechMode, string>> = {
+  accurate:
+    "Words appear as you speak. Each pause then replaces them with a second pass that makes about half the mistakes and adds punctuation.",
+  live: "Text comes from the streaming model alone, with no second pass and no punctuation.",
+};
+
+/** Whether this computer has the memory `accurate` wants; unknown counts as yes. */
+export const accurateFits = (status: SpeechStatus | undefined): boolean =>
+  (status?.totalMemoryBytes ?? Number.POSITIVE_INFINITY) >= SPEECH_ACCURATE_MIN_MEMORY_BYTES;
+
+/** All of several models' downloads as one row: failed first, then under way, then what's left. */
+export const combinedProgress = (statuses: readonly SpeechStatus[]): ModelProgress => {
+  const each = statuses.map(progressOf);
+  const failed = each.find((progress) => progress.kind === "failed");
+  if (failed !== undefined) return failed;
+  if (each.every((progress) => progress.kind === "ready"))
+    return {
+      kind: "ready",
+      sizeBytes: each.reduce((sum, p) => sum + (p.kind === "ready" ? p.sizeBytes : 0), 0),
+    };
+  const totalBytes = statuses.reduce((sum, status) => sum + speechModelBytes(status.model), 0);
+  const receivedBytes = each.reduce((sum, progress, index) => {
+    const whole = speechModelBytes(statuses[index]!.model);
+    if (progress.kind === "ready" || progress.kind === "verifying") return sum + whole;
+    if (progress.kind === "downloading" || progress.kind === "paused")
+      return sum + progress.receivedBytes;
+    return sum;
+  }, 0);
+  if (each.some((progress) => progress.kind === "downloading"))
+    return { kind: "downloading", receivedBytes, totalBytes };
+  if (each.some((progress) => progress.kind === "verifying")) return { kind: "verifying" };
+  return receivedBytes > 0
+    ? { kind: "paused", receivedBytes, totalBytes }
+    : { kind: "absent", totalBytes };
+};
 
 /** `bytes` the way Finder rounds them: decimal units, one decimal place from a gigabyte up. */
 export const formatSize = (bytes: number): string => {

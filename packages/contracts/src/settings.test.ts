@@ -28,6 +28,7 @@ import {
   speechModelOf,
   speechPerformanceOf,
   keepMicrophoneReadyOf,
+  speechModeOf,
   voiceInputOn,
   restartOnMcpChangeOn,
   reviewRequestHolds,
@@ -363,6 +364,20 @@ describe("voice input", () => {
     expect(() =>
       Schema.decodeUnknownSync(SettingsPatch)({ voice: { performance: "quality" } }),
     ).toThrow();
+  });
+});
+
+describe("voice input mode", () => {
+  it("is Accurate until the user picks Live, and refuses anything else", () => {
+    expect(speechModeOf(DEFAULT_SETTINGS)).toBe("accurate");
+    const patch = Schema.decodeUnknownSync(SettingsPatch)({ voice: { mode: "live" } });
+    expectRoundTrip(SettingsPatch, patch);
+    const live = applySettingsPatch(DEFAULT_SETTINGS, patch);
+    expectRoundTrip(Settings, live);
+    expect(speechModeOf(live)).toBe("live");
+    expect(speechPerformanceOf(live)).toBe("balanced");
+    expect(speechModeOf(applySettingsPatch(live, { voice: { mode: null } }))).toBe("accurate");
+    expect(() => Schema.decodeUnknownSync(SettingsPatch)({ voice: { mode: "fast" } })).toThrow();
   });
 });
 

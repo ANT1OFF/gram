@@ -15,7 +15,12 @@ import {
   PRIVACY_MICROPHONE_URL_WIN,
   requestMicrophoneAccess,
 } from "./microphone.ts";
-import { resolveSpeechModel, type ModelFs, type SpeechModelResolution } from "./model.ts";
+import {
+  resolveAccurateModels,
+  resolveSpeechModel,
+  type ModelFs,
+  type SpeechModelResolution,
+} from "./model.ts";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -68,7 +73,15 @@ const fakeSender = () => {
   return { sender, ports, crashes };
 };
 
-const setup = (resolved: "ok" | "missing" = "ok") => {
+const ACCURATE_PATHS = {
+  encoder: "/pe",
+  decoder: "/pd",
+  joiner: "/pj",
+  tokens: "/pt",
+  vad: "/v",
+};
+
+const setup = (resolved: "ok" | "missing" = "ok", accurate: boolean = true) => {
   const children: ReturnType<typeof fakeChild>[] = [];
   const timers: { callback: () => void; ms: number; cleared: boolean }[] = [];
   let channels = 0;
@@ -86,6 +99,7 @@ const setup = (resolved: "ok" | "missing" = "ok") => {
       resolved === "ok"
         ? { ok: true, paths: PATHS }
         : { ok: false, code: "model-missing", message: "not installed" },
+    resolveAccurate: async () => (accurate ? ACCURATE_PATHS : undefined),
     setTimeout: (callback, ms) => {
       const timer = { callback, ms, cleared: false };
       timers.push(timer);
@@ -286,6 +300,28 @@ describe("speech host", () => {
     expect(page.ports).toHaveLength(0);
   });
 
+  it("hands the process the accurate pass only for an accurate session it can run", async () => {
+    const { host, children } = setup();
+    const page = fakeSender();
+    await host.open({ sessionId: "a", modelId: "m", mode: "accurate" }, page.sender);
+    await host.open({ sessionId: "b", modelId: "m", mode: "live" }, page.sender);
+    await host.open({ sessionId: "c", modelId: "m", mode: "fastest" }, page.sender);
+    void host.prewarm("m", "balanced", "accurate");
+    await flush();
+    const posted = children[0]!.posted.map(({ message }) => message);
+    expect(posted[0]).toMatchObject({ type: "open", sessionId: "a", accurate: ACCURATE_PATHS });
+    expect(posted[1]).not.toHaveProperty("accurate");
+    expect(posted[2]).not.toHaveProperty("accurate");
+    expect(posted[3]).toMatchObject({ type: "prewarm", accurate: ACCURATE_PATHS });
+
+    // Without its models installed an accurate session still opens, and runs live.
+    const none = setup("ok", false);
+    expect(
+      await none.host.open({ sessionId: "d", modelId: "m", mode: "accurate" }, page.sender),
+    ).toEqual({ ok: true });
+    expect(none.children[0]!.posted[0]!.message).not.toHaveProperty("accurate");
+  });
+
   it("reports a fork that throws as unavailable", async () => {
     const host = createSpeechHost({
       fork: () => {
@@ -401,6 +437,81 @@ describe("speech model resolution", () => {
         code: "model-missing",
       });
     }
+  });
+});
+
+describe("accurate model resolution", () => {
+  const data = resolvePath("/data");
+  const models = join(data, "speech", "models");
+  const parakeet = join(models, "parakeet-tdt-0.6b-v2-en-int8");
+  const silero = join(models, "silero-vad-v5");
+  const offline = {
+    recognizer: {
+      kind: "sherpa-onnx-offline-transducer",
+      encoder: "encoder.int8.onnx",
+      decoder: "decoder.int8.onnx",
+      joiner: "joiner.int8.onnx",
+      tokens: "tokens.txt",
+    },
+    files: [
+      { path: "encoder.int8.onnx", size: 100 },
+      { path: "decoder.int8.onnx", size: 10 },
+      { path: "joiner.int8.onnx", size: 5 },
+      { path: "tokens.txt", size: 1 },
+    ],
+  };
+  const vad = {
+    recognizer: { kind: "sherpa-onnx-silero-vad", model: "silero_vad_v5.onnx" },
+    files: [{ path: "silero_vad_v5.onnx", size: 2 }],
+  };
+  const fsWith = (manifests: Record<string, unknown>, sizes: Record<string, number> = {}) => {
+    const files = new Map<string, number>();
+    for (const [dir, manifest] of Object.entries(manifests)) {
+      files.set(join(dir, "verified.json"), 0);
+      for (const file of (manifest as typeof offline).files)
+        files.set(join(dir, file.path), sizes[file.path] ?? file.size);
+    }
+    const directories = new Set([models, ...Object.keys(manifests)]);
+    const fs: ModelFs = {
+      realpath: async (path) => {
+        if (!files.has(path) && !directories.has(path)) throw new Error("ENOENT");
+        return path;
+      },
+      readFile: async (path) => {
+        const manifest = manifests[join(path, "..")];
+        if (manifest === undefined) throw new Error("ENOENT");
+        return JSON.stringify(manifest);
+      },
+      size: async (path) => {
+        const size = files.get(path);
+        if (size === undefined) throw new Error("ENOENT");
+        return size;
+      },
+    };
+    return fs;
+  };
+
+  it("resolves the offline model and the detector when both are verified", async () => {
+    expect(
+      await resolveAccurateModels(data, fsWith({ [parakeet]: offline, [silero]: vad })),
+    ).toEqual({
+      encoder: join(parakeet, "encoder.int8.onnx"),
+      decoder: join(parakeet, "decoder.int8.onnx"),
+      joiner: join(parakeet, "joiner.int8.onnx"),
+      tokens: join(parakeet, "tokens.txt"),
+      vad: join(silero, "silero_vad_v5.onnx"),
+    });
+  });
+
+  it("is nothing unless all of it is installed and verified", async () => {
+    for (const fs of [
+      fsWith({ [parakeet]: offline }),
+      fsWith({ [silero]: vad }),
+      fsWith({ [parakeet]: offline, [silero]: vad }, { "joiner.int8.onnx": 4 }),
+      fsWith({ [parakeet]: offline, [silero]: vad }, { "silero_vad_v5.onnx": 3 }),
+      fsWith({ [parakeet]: vad, [silero]: offline }),
+    ])
+      expect(await resolveAccurateModels(data, fs)).toBeUndefined();
   });
 });
 

@@ -1,6 +1,8 @@
 import {
   DEFAULT_SPEECH_MODEL,
+  SPEECH_ACCURATE_MODEL,
   SPEECH_MODEL_FOR_STOP,
+  SPEECH_VAD_MODEL,
   SpeechRefused,
   speechModelBytes,
   type SpeechInstallFailure,
@@ -54,6 +56,55 @@ export const MOCK_SPEECH_MODELS: readonly SpeechModelManifest[] = [
   variant(SPEECH_MODEL_FOR_STOP.balanced, 560),
   variant(SPEECH_MODEL_FOR_STOP.responsive, 160),
   variant(SPEECH_MODEL_FOR_STOP.efficient, 1120),
+  {
+    id: SPEECH_ACCURATE_MODEL,
+    name: "Parakeet TDT 0.6B v2",
+    languages: ["en"],
+    license: {
+      id: "cc-by-4.0",
+      name: "Creative Commons Attribution 4.0",
+      url: "https://creativecommons.org/licenses/by/4.0/",
+      attribution:
+        "Parakeet TDT 0.6B v2 by NVIDIA, licensed under CC BY 4.0; converted to int8 ONNX by the sherpa-onnx project",
+    },
+    source: { repo: "nvidia/parakeet-tdt-0.6b-v2", revision: "0".repeat(40) },
+    repo: "csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+    revision: "1ab9323565ddb038682214b292f588070a538ce2",
+    files: [
+      { path: "encoder.int8.onnx", size: 652_184_296, sha256: SHA },
+      { path: "decoder.int8.onnx", size: 7_257_753, sha256: SHA },
+      { path: "joiner.int8.onnx", size: 1_739_080, sha256: SHA },
+      { path: "tokens.txt", size: 9_384, sha256: SHA },
+    ],
+    recognizer: {
+      kind: "sherpa-onnx-offline-transducer",
+      encoder: "encoder.int8.onnx",
+      decoder: "decoder.int8.onnx",
+      joiner: "joiner.int8.onnx",
+      tokens: "tokens.txt",
+    },
+    memoryBytes: 1_700_000_000,
+    evidence: [],
+  },
+  {
+    id: SPEECH_VAD_MODEL,
+    name: "Silero VAD v5",
+    languages: [],
+    license: {
+      id: "mit",
+      name: "MIT License",
+      url: "https://github.com/snakers4/silero-vad/blob/v5.0/LICENSE",
+      attribution:
+        "Silero VAD, copyright (c) 2020-present Silero Team, licensed under the MIT License",
+    },
+    source: { repo: "snakers4/silero-vad", revision: "0".repeat(40) },
+    repo: "csukuangfj/vad",
+    revision: "fba88cd2e921609e7675c3aaf51e0b9b295da4bc",
+    files: [{ path: "silero_vad_v5.onnx", size: 2_313_101, sha256: SHA }],
+    recognizer: { kind: "sherpa-onnx-silero-vad", model: "silero_vad_v5.onnx" },
+    memoryBytes: 10_000_000,
+    evidence: [],
+  },
 ];
 
 /** The default model's manifest. */
@@ -185,9 +236,15 @@ export class MockSpeechStore {
         state.timer = undefined;
         state.installed = { id: model, sizeBytes: total, installedAt: Date.now() };
         this.#set(model, { state: "idle" });
-        // As the real store does: every pinned model is a variant of one, and one stays on disk.
+        // As the real store does: one variant of a checkpoint (the same source repo) stays on disk.
+        const source = this.#manifest(model).source.repo;
         for (const [other, each] of this.#models)
-          if (other !== model && each.installed !== undefined && each.timer === undefined) {
+          if (
+            other !== model &&
+            this.#manifest(other).source.repo === source &&
+            each.installed !== undefined &&
+            each.timer === undefined
+          ) {
             each.installed = undefined;
             this.#emit(other);
           }

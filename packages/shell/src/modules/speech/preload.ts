@@ -27,8 +27,8 @@ export function speechPreload(ipc: PreloadIpc, window: RelayWindow): Pick<Deskto
   return {
     speech: {
       open: (request) => ipc.invoke(Channels.speechOpen, request),
-      prewarm: (modelId, performance) =>
-        ipc.invoke(Channels.speechPrewarm, { modelId, performance }),
+      prewarm: (modelId, performance, mode) =>
+        ipc.invoke(Channels.speechPrewarm, { modelId, performance, mode }),
       microphoneAccess: () => ipc.invoke(Channels.microphoneAccess),
       requestMicrophoneAccess: () => ipc.invoke(Channels.microphoneRequest),
       openMicrophoneSettings: () => ipc.invoke(Channels.microphoneSettings),

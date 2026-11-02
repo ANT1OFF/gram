@@ -137,8 +137,8 @@ export function installSpeech(
   installModels(ipc, options.models);
   ipc.handle(Channels.speechOpen, (input, event) => host.open(input, speechSender(event.sender)));
   ipc.handle(Channels.speechPrewarm, (input) => {
-    const { modelId, performance } = (input ?? {}) as Record<string, unknown>;
-    return host.prewarm(modelId, performance);
+    const { modelId, performance, mode } = (input ?? {}) as Record<string, unknown>;
+    return host.prewarm(modelId, performance, mode);
   });
   ipc.handle(Channels.speechShutdown, () => host.shutdown());
   ipc.handle(Channels.microphoneAccess, () => microphoneAccess(media, platform));

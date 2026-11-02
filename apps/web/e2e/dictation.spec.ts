@@ -389,12 +389,15 @@ test("Settings: experimental until on, then the size and licence before the down
   await expect(notice).toContainText("662 MB");
   await expect(notice).toContainText("NVIDIA Open Model License");
   await expect(notice).toContainText("Licensed by NVIDIA Corporation");
+  await expect(notice).toContainText("Creative Commons Attribution 4.0");
+  await expect(notice).toContainText("Parakeet TDT 0.6B v2 by NVIDIA, licensed under CC BY 4.0");
+  await expect(notice).toContainText("Silero VAD, copyright (c) 2020-present Silero Team");
   // Not now leaves it off, with nothing fetched.
   await notice.getByRole("button", { name: "Not now" }).click();
   await expect(toggle).not.toBeChecked();
 
   await toggle.click();
-  await page.getByRole("button", { name: "Download 662 MB" }).click();
+  await page.getByRole("button", { name: "Download 1.3 GB" }).click();
   await expect(toggle).toBeChecked();
   await openAdvancedPage(page, "Voice input");
   const section = page.getByTestId("voice-input-settings");
@@ -454,6 +457,50 @@ test("Settings: the slider's stops say what they cost, and a new stop's model re
   await expect
     .poll(() => page.evaluate(() => window.gramMock?.speechBridge.loads.at(-1)))
     .toEqual([EFFICIENT, "efficient"]);
+});
+
+test("Settings: Accurate asks before downloading its models, and Live needs none of them", async ({
+  page,
+}) => {
+  await withVoice(page);
+  await page.goto("/settings/voice-input");
+  const section = page.getByTestId("voice-input-settings");
+  await expect(section).toBeVisible();
+  await page.evaluate(() => window.gramMock!.speech.preinstall());
+  const mode = section.getByRole("radiogroup", { name: "Transcription" });
+  await expect(mode.getByRole("radio", { name: "Accurate" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(section).toContainText("Dictation stays Live until then.");
+
+  // Nothing downloads before the licences are on screen; Not now fetches nothing.
+  await section.getByTestId("voice-accurate-download").click();
+  const notice = page.getByTestId("voice-accurate-notice");
+  await expect(notice).toContainText("Creative Commons Attribution 4.0");
+  await expect(notice).toContainText("Parakeet TDT 0.6B v2 by NVIDIA, licensed under CC BY 4.0");
+  await expect(notice).toContainText("MIT License");
+  await notice.getByRole("button", { name: "Not now" }).click();
+  await expect(section).toContainText("aren't downloaded");
+
+  await section.getByTestId("voice-accurate-download").click();
+  await page
+    .getByTestId("voice-accurate-notice")
+    .getByRole("button", { name: /Download/ })
+    .click();
+  await expect(section.getByTestId("voice-accurate-ready")).toBeVisible();
+  await expect(section).toContainText("CC BY 4.0");
+
+  await mode.getByRole("radio", { name: "Live" }).click();
+  await expect(section.getByTestId("voice-accurate-ready")).toHaveCount(0);
+  await mode.getByRole("radio", { name: "Accurate" }).click();
+
+  // Sessions ask for the mode; the shell decides whether it can run it.
+  await threadRow(page, "t-deps").click();
+  await page.getByRole("button", { name: "Start dictation" }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.gramMock?.speechBridge.modes.at(-1)))
+    .toBe("accurate");
 });
 
 test("Settings: turning voice input off says what it frees, deletes the model and stops the process", async ({
