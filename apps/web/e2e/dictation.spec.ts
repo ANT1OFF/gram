@@ -338,6 +338,40 @@ test("a partial too long for its line keeps the words just said in view", async 
   expect(inView).toBe(true);
 });
 
+test("what commits is cleaned up, the live partial never, and Settings turns each rule off", async ({
+  page,
+}) => {
+  await withVoice(page);
+  const composer = await openThread(page);
+  await page.evaluate(() => {
+    window.gramMock!.speechBridge.script = "Um, rename foo underscore bar new line done";
+  });
+  await composer.fill("");
+  await composer.focus();
+  await composer.press("ControlOrMeta+Shift+Space");
+  const partial = page.getByTestId("dictation-partial");
+  // The words at the caret are as heard; only what commits is tidied.
+  await expect(partial).toHaveText("Um, rename foo underscore bar new line done");
+  await composer.press("ControlOrMeta+Shift+Space");
+  await expect(composer).toHaveValue("Rename foo_bar\ndone");
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await openAdvancedPage(page, "Voice input");
+  const section = page.getByTestId("voice-input-settings");
+  for (const name of ["Remove filler words", "Spoken formatting", "Spoken symbols"])
+    await expect(section.getByRole("switch", { name })).toBeChecked();
+  await section.getByRole("switch", { name: "Spoken symbols" }).click();
+  await expect(section.getByRole("switch", { name: "Spoken symbols" })).not.toBeChecked();
+
+  await threadRow(page, "t-deps").click();
+  await composer.fill("");
+  await composer.focus();
+  await composer.press("ControlOrMeta+Shift+Space");
+  await expect(partial).toHaveText("Um, rename foo underscore bar new line done");
+  await composer.press("ControlOrMeta+Shift+Space");
+  await expect(composer).toHaveValue("Rename foo underscore bar\ndone");
+});
+
 test("the /new and /new-task drafts dictate the same way, with no thread yet", async ({ page }) => {
   await withVoice(page);
   await page.goto("/new");

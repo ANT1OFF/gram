@@ -478,6 +478,12 @@ export const VoiceSettings = Schema.Struct({
   sounds: Schema.optionalKey(Schema.Boolean),
   /** The tones' volume, 0 to 1. Read through `dictationSoundVolumeOf`. */
   soundVolume: Schema.optionalKey(SoundVolume),
+  /** Drops "um", "uh" and the like from committed text. Read through `dictationCleanupOf`. */
+  removeFillers: Schema.optionalKey(Schema.Boolean),
+  /** "New line" and "new paragraph" become line breaks. Read through `dictationCleanupOf`. */
+  spokenFormatting: Schema.optionalKey(Schema.Boolean),
+  /** "Underscore", "dot", "open paren" become characters. Read through `dictationCleanupOf`. */
+  spokenSymbols: Schema.optionalKey(Schema.Boolean),
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
 
@@ -679,6 +685,20 @@ export const dictationSoundVolumeOf = (settings: Settings): number =>
   settings.voice?.sounds === false
     ? 0
     : (settings.voice?.soundVolume ?? DEFAULT_DICTATION_SOUND_VOLUME);
+
+/** Which clean-up rules run on each committed utterance. */
+export interface DictationCleanup {
+  readonly fillers: boolean;
+  readonly formatting: boolean;
+  readonly symbols: boolean;
+}
+
+/** The clean-up dictation applies to committed text: each rule on unless turned off. */
+export const dictationCleanupOf = (settings: Settings): DictationCleanup => ({
+  fillers: settings.voice?.removeFillers !== false,
+  formatting: settings.voice?.spokenFormatting !== false,
+  symbols: settings.voice?.spokenSymbols !== false,
+});
 
 /** The speech model the slider's stop runs. */
 export const speechModelOf = (settings: Settings): SpeechModelId =>
@@ -932,6 +952,9 @@ export const SettingsPatch = Schema.Struct({
       mode: clearable(SpeechMode),
       sounds: clearable(Schema.Boolean),
       soundVolume: clearable(SoundVolume),
+      removeFillers: clearable(Schema.Boolean),
+      spokenFormatting: clearable(Schema.Boolean),
+      spokenSymbols: clearable(Schema.Boolean),
     }),
   ),
   inbox: Schema.optionalKey(

@@ -601,6 +601,11 @@ listening until the next press. Synthesised tones mark the start and the stop.
 In Accurate mode (the default where the models are downloaded) each pause also runs NVIDIA
 Parakeet TDT over the utterance, its silence trimmed by Silero VAD, and commits that text with
 punctuation in place of the live words; Live commits the streaming text alone.
+Each committed utterance, never the live words, is then cleaned up, with a switch per rule on the
+Voice input page, all on by default: filler words such as "um" and "uh" leave, "new line" and "new
+paragraph" become line breaks, and spoken symbols become characters ("foo underscore bar" is
+`foo_bar`, "src slash index dot ts" is `src/index.ts`). After "a" or "the" a symbol's word stays a
+word, and "literal" before one keeps it as spoken.
 Native loading does not prove
 microphone or recognition quality; see [verification](VERIFICATION.md#manual-provider-and-dictation-checks).
 

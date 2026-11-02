@@ -37,6 +37,7 @@ import { DictateKeyRow } from "./dictate-key-row";
 import { OptionGroup, SettingRow, Toggle } from "./fields";
 import { SETTINGS_CARD } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
+import { VoiceCleanupRows } from "./voice-cleanup-rows";
 import {
   accurateFits,
   combinedProgress,
@@ -292,6 +293,15 @@ export function VoiceInputSection() {
           <SoundsRow
             on={dictationSoundVolumeOf(settings) > 0}
             stored={settings.voice?.soundVolume ?? DEFAULT_DICTATION_SOUND_VOLUME}
+            onChange={(patch) => {
+              setError(undefined);
+              save({ voice: patch }).catch(fail);
+            }}
+          />
+        )}
+        {on && (
+          <VoiceCleanupRows
+            settings={settings}
             onChange={(patch) => {
               setError(undefined);
               save({ voice: patch }).catch(fail);

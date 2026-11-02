@@ -334,6 +334,9 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
   return { state: () => state, level: () => level, start, stop, cancel };
 }
 
-/** `text` as it should follow `before` in the draft: a space between words, none after a newline. */
+/**
+ * `text` as it should follow `before` in the draft: a space between words, none after a newline,
+ * nor before a line break or punctuation that closes what came before, such as a spoken "comma".
+ */
 export const spacedAfter = (before: string, text: string): string =>
-  before === "" || /\s$/.test(before) ? text : ` ${text}`;
+  before === "" || /\s$/.test(before) || /^[\n,;:!?)\]}]/.test(text) ? text : ` ${text}`;

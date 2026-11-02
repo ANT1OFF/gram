@@ -1,4 +1,5 @@
 import {
+  dictationCleanupOf,
   dictationSoundVolumeOf,
   keepMicrophoneReadyOf,
   openSpeechSession,
@@ -16,6 +17,7 @@ import { useServerSettings } from "@/settings-sync/store";
 
 import { microphone } from "./capture";
 import { lifecycleMark, lifecyclePending, lifecycleUnchanged } from "./lifecycle";
+import { postprocess, type PostprocessOptions } from "./postprocess";
 import { playTone } from "./sounds";
 import type { Api } from "@/api/types";
 
@@ -136,6 +138,15 @@ export const rememberedTarget = (api: Pick<Api, "speechStatus">) => {
 };
 
 /**
+ * Each finished utterance as it goes into the draft: cleaned up as Settings says, after the shell's
+ * Accurate pass and never the live partial. `undefined` when nothing is left, such as a lone "um".
+ */
+export const committedText = (text: string, cleanup: PostprocessOptions): string | undefined => {
+  const cleaned = postprocess(text, cleanup);
+  return cleaned.trim() === "" && !cleaned.includes("\n") ? undefined : cleaned;
+};
+
+/**
  * Local dictation into one composer: `onCommit` puts each finished utterance into the draft.
  */
 export function useDictation(onCommit: (text: string) => void): DictationControls {
@@ -158,6 +169,10 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
   useEffect(() => {
     commit.current = onCommit;
   });
+  const cleanup = useRef<PostprocessOptions>({ fillers: true, formatting: true, symbols: true });
+  useEffect(() => {
+    if (settings !== undefined) cleanup.current = dictationCleanupOf(settings);
+  }, [settings]);
 
   useEffect(() => microphone.keepReady(keepReady), [keepReady]);
 
@@ -204,7 +219,10 @@ export function useDictation(onCommit: (text: string) => void): DictationControl
           setState(next);
         },
         onPartial: setPartial,
-        onCommit: (text) => commit.current(text),
+        onCommit: (text) => {
+          const cleaned = committedText(text, cleanup.current);
+          if (cleaned !== undefined) commit.current(cleaned);
+        },
       },
     );
     dictation.current = created;

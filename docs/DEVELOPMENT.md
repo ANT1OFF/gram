@@ -105,8 +105,10 @@ Windows. See [testing](VERIFICATION.md#browser-checks) before reusing a build.
 
 MIT covers Gram's own code. Dependencies keep their own licenses: packaged builds carry a
 generated `THIRD-PARTY-NOTICES.txt` ([generator](../tools/notices/generate.mjs)), including the
-[motion kit notices](../apps/web/src/motion/THIRD-PARTY-NOTICES.md) and
-[terminal symbol font notices](../apps/web/src/panels/terminal/fonts/THIRD-PARTY-NOTICES.txt).
+[motion kit notices](../apps/web/src/motion/THIRD-PARTY-NOTICES.md), the
+[terminal symbol font notices](../apps/web/src/panels/terminal/fonts/THIRD-PARTY-NOTICES.txt) and
+the [dictation clean-up notices](../apps/web/src/dictation/THIRD-PARTY-NOTICES.md) for the rules
+ported from Hex.
 The workspace packages stay `"private": true`; nothing is published to npm.
 
 Local directory packaging never publishes:
