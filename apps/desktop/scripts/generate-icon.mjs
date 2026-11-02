@@ -16,6 +16,8 @@ const WEB = path.resolve(import.meta.dirname, "../../web/public");
 const SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
 /** Every icon Settings offers, in its order; the first is the bundled default. Keep in sync with APP_ICONS. */
 const ICONS = ["gift", "fanout", "blade", "glass"];
+/** The hicolor theme sizes the Linux AppImage and .deb install, as `build/icons/<n>x<n>.png`. */
+const LINUX_SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
 /** The PNG each alternate ships at for the Dock and taskbar: the Dock's largest tile at 2×. */
 const ALTERNATE_SIZE = 512;
 
@@ -240,6 +242,11 @@ async function generate(BrowserWindow, nativeImage) {
   fs.writeFileSync(path.join(BUILD, "icon.png"), images.get(1024).toPNG());
   fs.writeFileSync(path.join(BUILD, "icon.ico"), ico(images));
   fs.writeFileSync(path.join(BUILD, "icon.icns"), icns(images.get(1024)));
+  // electron-builder installs a directory of `<n>x<n>.png` into the hicolor theme as they are.
+  fs.rmSync(path.join(BUILD, "icons"), { recursive: true, force: true });
+  fs.mkdirSync(path.join(BUILD, "icons"));
+  for (const size of LINUX_SIZES)
+    fs.writeFileSync(path.join(BUILD, "icons", `${size}x${size}.png`), images.get(size).toPNG());
   fs.writeFileSync(path.join(WEB, "favicon.ico"), ico(images));
   fs.writeFileSync(path.join(WEB, "gram-icon.png"), images.get(256).toPNG());
   // Every icon, for Settings to show and for the shell to put in the Dock or taskbar.

@@ -127,13 +127,91 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: false
 
-# Linux unpacked development smoke builds use the locally compiled node-pty addon.
+# x64 only, and without local dictation: sherpa-onnx's Linux packages carry text-to-speech, which
+# links GPL code, so none of it ships (afterPack and verify-package.mjs fail a package that holds
+# any). node-pty has no Linux prebuilds: the packaging job compiles build/Release/pty.node against
+# Electron's headers first (scripts/rebuild-node-pty.mjs), and npmRebuild stays off.
 linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
   executableName: gram
-  target: dir
-  icon: build/icon.png
+  # The Gift rune at the hicolor sizes, as `bun run generate:icon` writes them.
+  icon: build/icons
+  category: Development
+  synopsis: Desktop workspace for your own Claude Code and Codex CLIs
+  # Also the desktop entry's Comment, which `desktop.entry` can't override.
+  description: Run the Claude Code and Codex CLIs you installed, on your own subscriptions.
+  maintainer: Gram contributors <32440065+ANT1OFF@users.noreply.github.com>
+  vendor: Gram contributors
+  # Electron 45 takes both the X11 WM_CLASS and the Wayland app_id from package.json's desktopName
+  # (gram.desktop); this names the installed entry after it, so StartupWMClass is `gram` too.
+  syncDesktopName: true
+  desktop:
+    entry:
+      Keywords: claude;codex;agent;terminal;git;
+  artifactName: gram_${version}_${arch}.${ext}
+  # Repeats the includes, as `mac.files` does. node-pty keeps only build/Release/pty.node (the gyp
+  # Makefiles and config.gypi name the build machine's paths).
   files:
     - out/**
     - package.json
-    - "!**/node_modules/node-pty/prebuilds/{darwin-*,win32-*}/**"
-    - "!**/node_modules/sherpa-onnx-{darwin-*,win-*}/**"
+    - "!**/node_modules/node-pty/prebuilds/**"
+    - "!**/node_modules/node-pty/build/{Makefile,config.gypi,*.mk,node_gyp_bins}"
+    - "!**/node_modules/node-pty/build/node_gyp_bins/**"
+    - "!**/node_modules/node-pty/build/Release/{.deps,obj.target,obj,test}/**"
+    - "!**/node_modules/node-pty/build/Release/*.{a,o,d}"
+    - "!**/node_modules/sherpa-onnx-*/**"
+    - "!**/node_modules/sherpa-onnx-*"
+
+appImage:
+  # The AppImage carries its libraries but uses the host's FUSE 2 to mount itself (libfuse2, or
+  # libfuse2t64 on Ubuntu 24.04+); `--appimage-extract-and-run` works without it.
+  artifactName: gram_${version}_${arch}.${ext}
+  # electron-builder's legacy AppImage writes `Exec=AppRun --no-sandbox`, turning Chromium's sandbox
+  # off on every launch. Without it, its AppRun adds the flag only where the kernel refuses
+  # unprivileged user namespaces (`unshare -Ur true` fails), which a squashfs mount can't replace
+  # with a setuid chrome-sandbox. verify-package.mjs checks the entry.
+  executableArgs: []
+
+deb:
+  # Debian package names are lowercase; electron-builder would take the scoped name's productName.
+  packageName: gram
+  # What Electron 45's binary links (`objdump -p`: GTK 3, NSS, ATK/AT-SPI, CUPS, D-Bus, X11/XCB,
+  # GBM, ALSA, udev) plus what Chromium opens at runtime: libsecret for the keyring safeStorage
+  # uses, libnotify for notifications, xdg-utils to open links. The names are Debian 12's; Ubuntu
+  # 24.04's t64 libraries provide them. CI installs the .deb on both.
+  depends:
+    - libasound2
+    - libatk-bridge2.0-0
+    - libatk1.0-0
+    - libatspi2.0-0
+    - libc6
+    - libcairo2
+    - libcups2
+    - libdbus-1-3
+    - libexpat1
+    - libgbm1
+    - libgcc-s1
+    - libglib2.0-0
+    - libgtk-3-0
+    - libnotify4
+    - libnspr4
+    - libnss3
+    - libpango-1.0-0
+    - libsecret-1-0
+    - libudev1
+    - libx11-6
+    - libxcb1
+    - libxcomposite1
+    - libxdamage1
+    - libxext6
+    - libxfixes3
+    - libxkbcommon0
+    - libxrandr2
+    - xdg-utils
+  # Worktrees and diffs need git; the agent CLIs are the user's own installs, never a dependency.
+  recommends:
+    - git

@@ -29,6 +29,8 @@ Outputs:
 
 - `../build/icon.png`, `../build/icon.ico`, `../build/icon.icns`: the Gift rune, for Linux,
   Windows and macOS packaging.
+- `../build/icons/<n>x<n>.png`: the Gift rune at the hicolor sizes the Linux AppImage and .deb
+  install (16–512px).
 - `../../web/public/favicon.ico`, `../../web/public/gram-icon.png`: the Gift rune for the browser.
 - `../../web/public/app-icons/<id>.png`: every icon at 512px. Settings shows them, and the shell
   loads the chosen one from the packaged web root into the Dock (macOS) or every window's taskbar

@@ -13,6 +13,10 @@ once on an Apple silicon Mac, then goes through separate runs, each checked befo
 Merging code changes no installed app. An install changes only when its user updates it from a
 published release.
 
+Linux has no release yet. CI builds the x64 AppImage and .deb as workflow artifacts (see
+[Linux packages](DEVELOPMENT.md#linux-packages)); publishing them, and an update feed for them,
+are still to come.
+
 ## Versions
 
 [Release-please](https://github.com/googleapis/release-please)

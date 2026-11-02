@@ -11,7 +11,8 @@ const ARCH = ["ia32", "x64", "armv7l", "arm64", "universal"];
 /**
  * Fails the build when the web app or the third-party notices are missing (electron-builder only
  * warns about a missing extraResources source) or app.asar.unpacked holds a native binary for another platform or arch,
- * strips node-pty's linker debug paths and makes its spawn-helper executable on macOS.
+ * strips node-pty's linker debug paths and makes its spawn-helper executable on macOS, and fails a
+ * Linux package that carries any sherpa-onnx (Linux ships without local dictation).
  *
  * @param {import("app-builder-lib").AfterPackContext} context
  */
@@ -53,6 +54,29 @@ exports.default = async function afterPack(context) {
     );
   }
 
+  if (platform === "linux") {
+    // sherpa-onnx's Linux builds carry text-to-speech, which links GPL code; none of it may ship.
+    const modules = path.join(unpacked, "node_modules");
+    const sherpa = fs.existsSync(modules)
+      ? fs
+          .readdirSync(modules)
+          .filter((name) => name.startsWith("sherpa-onnx"))
+          .toSorted()
+      : [];
+    if (sherpa.length > 0) {
+      throw new Error(`sherpa-onnx in the Linux package: ${sherpa.join(", ")}`);
+    }
+    // The addon scripts/rebuild-node-pty.mjs compiled here; drop its debug sections, which name the
+    // build machine's paths.
+    execFileSync(
+      "strip",
+      ["--strip-debug", path.join(modules, "node-pty", "build", "Release", "pty.node")],
+      {
+        stdio: "inherit",
+      },
+    );
+    return;
+  }
   if (platform !== "darwin") return;
   // Only node-pty's two prebuilds: -S removes the SO/OSO debug map containing upstream build
   // paths, while retaining exports and runtime strings. ONNX's paths are runtime diagnostics,

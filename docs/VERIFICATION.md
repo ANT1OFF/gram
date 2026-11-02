@@ -256,11 +256,11 @@ install, `bun run check:docs` and `bun run fmt:check`. Everything else runs `che
 bounded typecheck, the check's static stages via `node tools/check/run.mjs --only static`, and the
 bundle build) and whichever of these lanes its paths reach:
 
-| Lane      | Jobs                                                                  | Skipped when the change only touches                       |
-| --------- | --------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `tests`   | `check tests 1/2`–`2/2`, `macos tests 1/3`–`3/3` (Vitest)             | prose: tests read sources as text, e2e specs included      |
-| `package` | `macos package` (bundles, `electron-builder --dir`, `verify:package`) | test files, release and repository tools, e2e specs, mocks |
-| `e2e`     | `e2e 1/8`–`8/8` (mock-API Playwright, Linux only)                     | test files, `apps/desktop`, release and repository tools   |
+| Lane      | Jobs                                                                                                                         | Skipped when the change only touches                       |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `tests`   | `check tests 1/2`–`2/2`, `macos tests 1/3`–`3/3` (Vitest)                                                                    | prose: tests read sources as text, e2e specs included      |
+| `package` | `macos package` (bundles, `electron-builder --dir`, `verify:package`), `linux package` (AppImage, .deb, installs, `--smoke`) | test files, release and repository tools, e2e specs, mocks |
+| `e2e`     | `e2e 1/8`–`8/8` (mock-API Playwright, Linux only)                                                                            | test files, `apps/desktop`, release and repository tools   |
 
 Every other path, including workflows, `.gram/`, root configuration, the lockfile and any shared
 package source, runs every lane. The e2e suite reaches every workspace but `apps/desktop`, and

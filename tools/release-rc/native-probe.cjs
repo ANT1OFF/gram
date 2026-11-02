@@ -1,12 +1,24 @@
 // Run by the packaged Gram in Node mode (ELECTRON_RUN_AS_NODE=1) from tools/release-rc/rc.mjs:
 // loads the speech and PTY natives through the production app.asar and has the PTY run a shell
-// that prints a marker. Arguments: <app.asar> <scratch dir> <marker>.
+// that prints a marker. Arguments: <app.asar> <scratch dir> <marker> [no-speech]. With
+// `no-speech`, a package without local dictation (Linux), it instead proves sherpa-onnx can't load.
 const { createRequire } = require("node:module");
 const path = require("node:path");
 
-const [asar, scratch, marker] = process.argv.slice(2);
+const [asar, scratch, marker, voice = "speech"] = process.argv.slice(2);
 const load = createRequire(path.join(asar, "package.json"));
-const speech = load("sherpa-onnx-node");
+let speech;
+if (voice === "no-speech") {
+  try {
+    load("sherpa-onnx-node");
+    console.error("Native probe: sherpa-onnx-node loads in a package without local dictation");
+    process.exit(1);
+  } catch (error) {
+    if (error?.code !== "MODULE_NOT_FOUND") throw error;
+  }
+} else {
+  speech = load("sherpa-onnx-node");
+}
 const pty = load("node-pty");
 
 const child = pty.spawn("/bin/sh", ["-c", `printf ${marker}`], {
@@ -33,7 +45,7 @@ child.onExit(({ exitCode }) => {
       electron: process.versions.electron,
       node: process.versions.node,
       arch: process.arch,
-      speechExports: Object.keys(speech).length,
+      speechExports: speech === undefined ? null : Object.keys(speech).length,
       markerSeen: true,
     }),
   );

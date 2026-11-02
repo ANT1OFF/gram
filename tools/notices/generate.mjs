@@ -4,7 +4,8 @@
 // - every npm package a bundle carries, from the lists `bundled-packages.mjs` records as each
 //   bundle builds (main, preload, the update helper, the server, its command worker, speech, web);
 // - the packages electron-builder copies into app.asar.unpacked: the desktop app's production
-//   dependencies (node-pty, sherpa-onnx and its platform addon) and Electron itself;
+//   dependencies (node-pty, sherpa-onnx and its platform addon) and Electron itself; a Linux
+//   package leaves sherpa-onnx out (electron-builder.yml), and so do its notices;
 // - the libraries compiled into sherpa-onnx's addon, from native-components.json, which ship with
 //   no notices of their own;
 // - the notices already kept beside the motion kit's drawings and the terminal's symbol font.
@@ -12,7 +13,10 @@
 // electron-builder ships the file in Resources/ (electron-builder.yml), afterPack fails a package
 // without it and verify-package.mjs checks it covers every bundled package.
 //
-//   node tools/notices/generate.mjs [--out <file>]
+// The package is built on the platform it targets, so the notices follow this one unless
+// `--platform` says otherwise.
+//
+//   node tools/notices/generate.mjs [--out <file>] [--platform darwin|win32|linux]
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
@@ -26,6 +30,13 @@ const DESKTOP = join(ROOT, "apps", "desktop");
 
 /** Header files node-pty compiles against; electron-builder.yml leaves them out of the package. */
 const NOT_PACKAGED = new Set(["node-addon-api"]);
+
+/**
+ * Whether `platform`'s package leaves out a production dependency it has installed: Linux ships
+ * without local dictation, so with no sherpa-onnx (its Linux builds link GPL text-to-speech code).
+ */
+export const notPackagedOn = (platform, name) =>
+  NOT_PACKAGED.has(name) || (platform === "linux" && name.startsWith("sherpa-onnx"));
 
 /** Files kept beside source Gram ships, copied in as they are. */
 const KEPT_NOTICES = [
@@ -119,12 +130,12 @@ export function readLists(lists = LISTS, expected = BUNDLES) {
  * The folders of the packages electron-builder copies into the app beside the bundles: `from`'s
  * production dependencies with theirs, and the optional ones installed for this platform.
  */
-export function packagedDependencies(from = DESKTOP) {
+export function packagedDependencies(from = DESKTOP, platform = process.platform) {
   const found = new Map();
   const visit = (dir, names) => {
     const require = createRequire(join(dir, "package.json"));
     for (const name of names) {
-      if (NOT_PACKAGED.has(name) || found.has(name)) continue;
+      if (notPackagedOn(platform, name) || found.has(name)) continue;
       let manifestPath;
       try {
         manifestPath = require.resolve(`${name}/package.json`);
@@ -290,10 +301,10 @@ export function renderNotices({ packages, components, kept }) {
 }
 
 /** Collects everything that ships and writes the notices to `out`; returns what it wrote. */
-export function generate({ out = OUT, lists = LISTS } = {}) {
+export function generate({ out = OUT, lists = LISTS, platform = process.platform } = {}) {
   const packages = collectPackages({
     lists: readLists(lists),
-    packaged: packagedDependencies(),
+    packaged: packagedDependencies(DESKTOP, platform),
     electron: electronDir(),
   });
   const components = readComponents(packages);
@@ -308,9 +319,14 @@ export function generate({ out = OUT, lists = LISTS } = {}) {
 }
 
 if (import.meta.main) {
-  const { values } = parseArgs({ options: { out: { type: "string", default: OUT } } });
-  const result = generate({ out: values.out });
+  const { values } = parseArgs({
+    options: {
+      out: { type: "string", default: OUT },
+      platform: { type: "string", default: process.platform },
+    },
+  });
+  const result = generate({ out: values.out, platform: values.platform });
   console.log(
-    `${toPosix(relative(process.cwd(), result.out))}: ${result.packages} packages, ${result.components} native libraries, ${(result.bytes / 1024).toFixed(0)} KiB`,
+    `${toPosix(relative(process.cwd(), result.out))} (${values.platform}): ${result.packages} packages, ${result.components} native libraries, ${(result.bytes / 1024).toFixed(0)} KiB`,
   );
 }

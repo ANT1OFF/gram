@@ -72,9 +72,39 @@ it("fails packaging when debug stripping fails", async () => {
   await expect(require("./afterPack.cjs").default(context)).rejects.toThrow("strip failed");
 });
 
-it("never invokes the macOS tool for another target", async () => {
-  const { context } = fixture("linux");
+it("never invokes a strip tool for Windows", async () => {
+  const { context } = fixture("win32");
   const strip = vi.spyOn(childProcess, "execFileSync").mockReturnValue(Buffer.alloc(0));
   await require("./afterPack.cjs").default(context);
+  expect(strip).not.toHaveBeenCalled();
+});
+
+/** A Linux package's unpacked node_modules, with node-pty's compiled addon. */
+function linuxFixture() {
+  const { context } = fixture("linux");
+  const modules = path.join(dir, "resources/app.asar.unpacked/node_modules");
+  fs.rmSync(path.join(modules, "node-pty/prebuilds"), { recursive: true });
+  fs.rmSync(path.join(modules, "sherpa-onnx-darwin-arm64"), { recursive: true });
+  const addon = path.join(modules, "node-pty/build/Release/pty.node");
+  fs.mkdirSync(path.dirname(addon), { recursive: true });
+  fs.writeFileSync(addon, "test addon");
+  return { context, modules, addon };
+}
+
+it("strips the debug sections of Linux's compiled node-pty addon", async () => {
+  const { context, addon } = linuxFixture();
+  const strip = vi.spyOn(childProcess, "execFileSync").mockReturnValue(Buffer.alloc(0));
+  await require("./afterPack.cjs").default(context);
+  expect(strip.mock.calls).toEqual([["strip", ["--strip-debug", addon], { stdio: "inherit" }]]);
+});
+
+it("fails a Linux package that carries any sherpa-onnx package", async () => {
+  const { context, modules } = linuxFixture();
+  for (const name of ["sherpa-onnx-node", "sherpa-onnx-linux-x64"])
+    fs.mkdirSync(path.join(modules, name), { recursive: true });
+  const strip = vi.spyOn(childProcess, "execFileSync").mockReturnValue(Buffer.alloc(0));
+  await expect(require("./afterPack.cjs").default(context)).rejects.toThrow(
+    "sherpa-onnx in the Linux package: sherpa-onnx-linux-x64, sherpa-onnx-node",
+  );
   expect(strip).not.toHaveBeenCalled();
 });

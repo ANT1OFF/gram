@@ -393,6 +393,98 @@ jobs:
       - run: bun run verify:package
         working-directory: apps/desktop
 
+  # The Linux x64 AppImage and .deb, on the `package` lane beside `macos package`. node-pty has no
+  # Linux prebuilds, so the job compiles it against Electron's headers before packaging. The verifier
+  # checks the unpacked app, both artifacts and node-pty loading in the packaged Electron; the .deb
+  # is then installed here (Ubuntu 24.04) and in a Debian 12 container, and the installed app and
+  # the AppImage each run `--smoke` under Xvfb with fake agents and temporary stores. Nothing is
+  # published or signed: the artifacts are uploaded to this run only, with no write token.
+  linux-package:
+    needs: classify
+    name: linux package
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON(needs.classify.outputs.lanes), 'package')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # Cache downloads only, never source or build results.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: gram-bun-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', '.bun-version', '.node-version') }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build:bundles
+      - name: Compile node-pty against Electron's headers
+        run: bun run rebuild:node-pty
+        working-directory: apps/desktop
+      - name: Package the AppImage and .deb
+        run: bun run electron-builder --linux --x64 --publish never
+        working-directory: apps/desktop
+      - run: bun run verify:package
+        working-directory: apps/desktop
+      - name: Install the .deb on Ubuntu 24.04
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends xvfb xauth ./apps/desktop/release/gram_*_x64.deb
+          missing=$(ldd /opt/Gram/gram | grep "not found" || true)
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+      - name: Install the .deb on Debian 12 and load node-pty there
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src \
+            debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 \
+            bash -euo pipefail -c '
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends ./apps/desktop/release/gram_*_x64.deb >/dev/null
+              pty=/opt/Gram/resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node
+              missing=$(ldd /opt/Gram/gram "$pty" | grep "not found" || true)
+              if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+              scratch=$(mktemp -d)
+              ELECTRON_RUN_AS_NODE=1 /opt/Gram/gram tools/release-rc/native-probe.cjs \
+                /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 no-speech'
+      - name: Smoke the installed app and the AppImage under Xvfb
+        run: |
+          for app in /opt/Gram/gram "$PWD/apps/desktop/release/gram_"*"_x64.AppImage"; do
+            work=$(mktemp -d)
+            mkdir -p "$work/stubs" "$work/home" "$work/tmp"
+            # No agent CLI or GitHub login reaches the smoke: these stand in for them.
+            for cli in claude codex gh; do
+              printf '#!/bin/sh\nexit 127\n' >"$work/stubs/$cli"
+              chmod +x "$work/stubs/$cli"
+            done
+            args=(--smoke --password-store=basic "--user-data-dir=$work/electron")
+            # The AppImage runs from its own extraction: the runner has no FUSE 2.
+            case "$app" in *.AppImage) args=(--appimage-extract-and-run "${args[@]}") ;; esac
+            echo "::group::$app --smoke"
+            env -i PATH="$work/stubs:/usr/bin:/bin" HOME="$work/home" TMPDIR="$work/tmp" \
+              XDG_CONFIG_HOME="$work/xdg-config" XDG_DATA_HOME="$work/xdg-data" \
+              XDG_CACHE_HOME="$work/xdg-cache" CODEX_HOME="$work/codex" \
+              CLAUDE_CONFIG_DIR="$work/claude" GH_CONFIG_DIR="$work/gh" GRAM_DATA_DIR="$work/gram" \
+              GRAM_FAKE_AGENT=1 GRAM_FAKE_AGENT_REPLY=echo CI=1 LANG=C.UTF-8 \
+              timeout 150 xvfb-run -a "$app" "${args[@]}" 2>&1 | tee "$work/smoke.log" || true
+            echo "::endgroup::"
+            grep -q "SMOKE OK" "$work/smoke.log" || { echo "$app: no SMOKE OK"; exit 1; }
+          done
+      - name: Upload the AppImage and .deb
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gram-linux-x64-${{ github.run_attempt }}
+          path: |
+            apps/desktop/release/gram_*_x64.AppImage
+            apps/desktop/release/gram_*_x64.deb
+          retention-days: 7
+          if-no-files-found: error
+
   qualification:
     needs:
       [
@@ -402,6 +494,7 @@ jobs:
         check-tests,
         macos-tests,
         macos-package,
+        linux-package,
         e2e-1,
         e2e-2,
         e2e-3,
