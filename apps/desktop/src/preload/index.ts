@@ -7,6 +7,7 @@ import type {
   NotificationStatus,
   UpdateProgress,
 } from "@gram/contracts";
+import { voiceSupported } from "@gram/contracts/desktop-bridge";
 import { contextBridge, ipcRenderer, webFrame, webUtils, type IpcRendererEvent } from "electron";
 
 import { Channels } from "@gram/shell/channels";
@@ -129,7 +130,7 @@ const bridge: DesktopBridge = composeBridge(
   previewPreload(ipc),
   connectionPreload(ipc),
   trayPreload(ipc),
-  speechPreload(ipc, window),
+  voiceSupported(process.platform) ? speechPreload(ipc, window) : {},
   agentBrowsePreload(ipc),
 );
 

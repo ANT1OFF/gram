@@ -289,6 +289,15 @@ describe("settingsPagesFor", () => {
   });
 });
 
+describe("settingsPagesFor and voice input", () => {
+  it("has no Voice input page where voice isn't supported", () => {
+    expect(settingsPagesFor("linux").map((entry) => entry.id)).not.toContain("voice-input");
+    expect(settingsPagesFor("darwin").map((entry) => entry.id)).toContain("voice-input");
+    expect(settingsPagesFor("win32").map((entry) => entry.id)).toContain("voice-input");
+    expect(settingsPagesFor(undefined).map((entry) => entry.id)).toContain("voice-input");
+  });
+});
+
 describe("listedSettingsPages", () => {
   it("lists the local settings pages", () => {
     const ids = listedSettingsPages(settingsPagesFor(undefined), undefined).map(
