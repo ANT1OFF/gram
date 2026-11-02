@@ -3,7 +3,7 @@
   "private": true,
   "description": "What build-darwin-arm64.sh and build-linux-x64.sh compile sherpa-onnx's Node addon with, installed with npm ci from package-lock.json.",
   "dependencies": {
-    "cmake-js": "7.4.0",
+    "cmake-js": "8.0.0",
     "node-addon-api": "8.9.2"
   }
 }

@@ -1,8 +1,8 @@
 Built by tools/sherpa-onnx/build-darwin-arm64.sh; SHA256SUMS lists the files.
 sherpa-onnx: https://github.com/k2-fsa/sherpa-onnx v2.0.0 (8abb7c8f87eae85b2e75f9a4115236c978980add) + node-addon.patch
 cmake flags: -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON -DBUILD_SHARED_LIBS=ON -DSHERPA_ONNX_ENABLE_TTS=OFF -DSHERPA_ONNX_ENABLE_WEBSOCKET=OFF -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF -DSHERPA_ONNX_ENABLE_BINARY=OFF -DCMAKE_C_FLAGS=-ffile-prefix-map=<src>=/sherpa-onnx -DCMAKE_CXX_FLAGS=-ffile-prefix-map=<src>=/sherpa-onnx
-addon: cmake-js 7.4.0, node-addon-api 8.9.2, --runtime node --runtime-version 26.12.0 --arch arm64 --CDCMAKE_OSX_DEPLOYMENT_TARGET=13.0
-addon tooling: addon-tooling/package-lock.json ce19886457ad46931a38da2f338c93a5c0492a2cce3ef9a70d39f78624d3b9b1, npm ci
+addon: cmake-js 8.0.0, node-addon-api 8.9.2, --runtime node --runtime-version 26.12.0 --arch arm64 --CDCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+addon tooling: addon-tooling/package-lock.json c5b237618f2015ff6ec57129407f31376534b2b8102da9c15fcc569c8ef0e8c5, npm ci
 node headers: node-v26.12.0-headers.tar.gz 6abd0ddeccf3ebec9abe99582710c594669ee9510a40a1d1d990133dec36a1fc
 macOS: 27.0.1 (26A434) arm64, SDK 27.0
 compiler: Apple clang version 21.0.0 (clang-2100.3.34.2)
