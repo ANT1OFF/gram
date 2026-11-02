@@ -578,7 +578,9 @@ function verifyLinuxArtifacts() {
   const { version } = JSON.parse(
     fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf8"),
   );
+  // electron-builder's ${arch}, which is each format's own name for the arch.
   const debArch = { x64: "amd64", arm64: "arm64" }[arch] ?? arch;
+  const appImageArch = { x64: "x86_64", arm64: "arm64" }[arch] ?? arch;
   const reference = {
     "resources/app.asar": sha(path.join(resources, "app.asar")),
     "resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node": sha(
@@ -618,7 +620,7 @@ function verifyLinuxArtifacts() {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "gram-linux-artifacts-"));
   try {
     // The .deb, read with dpkg-deb.
-    const deb = path.join(release, `gram_${version}_${arch}.deb`);
+    const deb = path.join(release, `gram_${version}_${debArch}.deb`);
     if (!fs.existsSync(deb)) {
       check(".deb present", false, deb);
     } else {
@@ -672,7 +674,7 @@ function verifyLinuxArtifacts() {
     }
 
     // The AppImage, extracted by its own runtime (no FUSE needed).
-    const appImage = path.join(release, `gram_${version}_${arch}.AppImage`);
+    const appImage = path.join(release, `gram_${version}_${appImageArch}.AppImage`);
     if (!fs.existsSync(appImage)) {
       check("AppImage present", false, appImage);
     } else {

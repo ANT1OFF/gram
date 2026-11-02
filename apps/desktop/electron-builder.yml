@@ -152,6 +152,7 @@ linux:
   desktop:
     entry:
       Keywords: claude;codex;agent;terminal;git;
+  # ${arch} is each format's own name for x64: gram_<version>_amd64.deb, _x86_64.AppImage.
   artifactName: gram_${version}_${arch}.${ext}
   # Repeats the includes, as `mac.files` does. node-pty keeps only build/Release/pty.node (the gyp
   # Makefiles and config.gypi name the build machine's paths).
@@ -161,7 +162,7 @@ linux:
     - "!**/node_modules/node-pty/prebuilds/**"
     - "!**/node_modules/node-pty/build/{Makefile,config.gypi,*.mk,node_gyp_bins}"
     - "!**/node_modules/node-pty/build/node_gyp_bins/**"
-    - "!**/node_modules/node-pty/build/Release/{.deps,obj.target,obj,test}/**"
+    - "!**/node_modules/node-pty/build/Release/{.deps,node-addon-api,obj.target,obj,test}/**"
     - "!**/node_modules/node-pty/build/Release/*.{a,o,d}"
     - "!**/node_modules/sherpa-onnx-*/**"
     - "!**/node_modules/sherpa-onnx-*"

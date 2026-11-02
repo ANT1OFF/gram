@@ -436,7 +436,7 @@ jobs:
       - name: Install the .deb on Ubuntu 24.04
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends xvfb xauth ./apps/desktop/release/gram_*_x64.deb
+          sudo apt-get install -y -qq --no-install-recommends xvfb xauth ./apps/desktop/release/gram_*_amd64.deb
           missing=$(ldd /opt/Gram/gram | grep "not found" || true)
           if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
       - name: Install the .deb on Debian 12 and load node-pty there
@@ -445,7 +445,7 @@ jobs:
             debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 \
             bash -euo pipefail -c '
               apt-get update -qq
-              apt-get install -y -qq --no-install-recommends ./apps/desktop/release/gram_*_x64.deb >/dev/null
+              apt-get install -y -qq --no-install-recommends ./apps/desktop/release/gram_*_amd64.deb >/dev/null
               pty=/opt/Gram/resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node
               missing=$(ldd /opt/Gram/gram "$pty" | grep "not found" || true)
               if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
@@ -454,7 +454,7 @@ jobs:
                 /opt/Gram/resources/app.asar "$scratch" GRAM_DEBIAN_12 no-speech'
       - name: Smoke the installed app and the AppImage under Xvfb
         run: |
-          for app in /opt/Gram/gram "$PWD/apps/desktop/release/gram_"*"_x64.AppImage"; do
+          for app in /opt/Gram/gram "$PWD/apps/desktop/release/gram_"*"_x86_64.AppImage"; do
             work=$(mktemp -d)
             mkdir -p "$work/stubs" "$work/home" "$work/tmp"
             # No agent CLI or GitHub login reaches the smoke: these stand in for them.
@@ -480,8 +480,8 @@ jobs:
         with:
           name: gram-linux-x64-${{ github.run_attempt }}
           path: |
-            apps/desktop/release/gram_*_x64.AppImage
-            apps/desktop/release/gram_*_x64.deb
+            apps/desktop/release/gram_*_x86_64.AppImage
+            apps/desktop/release/gram_*_amd64.deb
           retention-days: 7
           if-no-files-found: error
 

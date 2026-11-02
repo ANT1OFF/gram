@@ -133,8 +133,8 @@ bun run --filter @gram/desktop verify:package
 ```
 
 `dist:linux` compiles node-pty against Electron's headers (`rebuild:node-pty`; node-pty ships
-no Linux prebuilds) and writes `apps/desktop/release/gram_<version>_x64.AppImage` and
-`gram_<version>_x64.deb`, beside the unpacked `linux-unpacked/` it makes them from. `dist:dir`
+no Linux prebuilds) and writes `apps/desktop/release/gram_<version>_x86_64.AppImage` and
+`gram_<version>_amd64.deb`, beside the unpacked `linux-unpacked/` it makes them from. `dist:dir`
 makes only the unpacked app; check that one with `verify:package --dir-only`.
 `verify:package` checks the unpacked app, loads node-pty in the packaged Electron, and reads
 both artifacts: their metadata, desktop entry, icons and payload. It needs `dpkg-deb`.
