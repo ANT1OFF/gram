@@ -211,13 +211,44 @@ describe("what a worker waits on", () => {
 
   it("reads a condition kind it has no words for as its chip does", () => {
     // A kind contracts add later: the selector takes `wakeConditionLabel`'s words for it.
-    const later = { kind: "releasePublished", repo: "acme/app" } as unknown as WakeCondition;
-    const label = wakeConditionLabel(later) ?? "releasePublished";
+    const later = { kind: "someLaterKind", repo: "acme/app" } as unknown as WakeCondition;
+    const label = wakeConditionLabel(later) ?? "someLaterKind";
     expect(conditionShort(later)).toBe(label);
     const waiting = waitingOn(
       worker("working", { wakes: [{ ...timed(NOW + 30 * MIN), condition: later }] }),
     );
     expect(waiting).toMatchObject({ kind: "condition", label: `Waiting · ${label}` });
+  });
+
+  it("reads a release wait and a version wait in a few words", () => {
+    const release = waitingOn(
+      worker("working", {
+        wakes: [
+          {
+            ...timed(NOW + 30 * MIN),
+            condition: {
+              kind: "releasePublished",
+              source: "npm",
+              name: "@openai/codex",
+              after: "0.166.0",
+              minAgeDays: 7,
+            },
+          },
+        ],
+      }),
+    );
+    expect(release).toMatchObject({ kind: "condition", label: "Waiting · codex release" });
+    const update = waitingOn(
+      worker("working", {
+        wakes: [
+          {
+            ...timed(NOW + 30 * MIN),
+            condition: { kind: "versionChanged", target: "gram", from: "1.5.0" },
+          },
+        ],
+      }),
+    );
+    expect(update).toMatchObject({ kind: "condition", label: "Waiting · Gram update" });
   });
 
   it("keeps every label to four words, the separator aside", () => {

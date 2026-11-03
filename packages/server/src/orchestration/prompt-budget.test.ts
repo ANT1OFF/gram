@@ -21,12 +21,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * and plain raised by 1,000 on 2026-11-03 for the `ciStuck` and `machine` wake conditions, which
  * every role's `schedule_wake` lists (measured then at 61,307, 35,201 and 24,370). Orchestrator and
  * worker raised again the same day for `merge_freeze` and the `freezeLifted` condition (measured
- * then at 62,424 and 36,318).
+ * then at 62,424 and 36,318). Worker and plain raised by 500 the same day for the
+ * `releasePublished` and `versionChanged` conditions, whose fields every role's `schedule_wake`
+ * lists (measured then at 36,747 and 25,071).
  */
 const BUDGET: Readonly<Record<Role, number>> = {
   orchestrator: 63_000,
-  worker: 36_600,
-  plain: 24_900,
+  worker: 37_100,
+  plain: 25_400,
 };
 
 const AUTONOMIES: ReadonlyArray<Autonomy> = ["supervised", "publish", "full"];

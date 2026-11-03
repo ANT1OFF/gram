@@ -53,6 +53,8 @@ import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
 import { BranchHeadsLive } from "../wakes/branch-heads.ts";
 import { CiJobsLive } from "../wakes/ci-stuck.ts";
 import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
+import { InstalledVersionsLive } from "../wakes/installed-versions.ts";
+import { UpstreamReleasesLive } from "../wakes/upstream-releases.ts";
 import { MachineStateLive } from "../wakes/machine.ts";
 import { AutoMergesLive } from "../git/auto-merges.ts";
 import { AppActivityLive } from "../git/activity.ts";
@@ -353,12 +355,7 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(OrchestrationLive),
           // Gram's own full checks, which the solo merge policy accepts in place of CI, under the
           // orchestration whose ledger shows them.
-          Layer.provideMerge(
-            Layer.mergeAll(
-              LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer)),
-              LaunchChecksCache.layer,
-            ),
-          ),
+          Layer.provideMerge(LocalChecksLive.pipe(Layer.provide(LocalCheckRunner.layer))),
           Layer.provideMerge(OrchestrationMemory.layer),
           Layer.provideMerge(
             Layer.mergeAll(
@@ -374,11 +371,19 @@ export const ServerCore = Layer.unwrap(
             Layer.mergeAll(
               PlanKeeperLive,
               wakeConditionsLayer(
-                Layer.mergeAll(BranchHeadsLive, CiJobsLive, MachineStateLive, AutoMergesLive),
+                Layer.mergeAll(
+                  BranchHeadsLive,
+                  CiJobsLive,
+                  MachineStateLive,
+                  AutoMergesLive,
+                  UpstreamReleasesLive,
+                  InstalledVersionsLive,
+                ),
               ),
             ),
           ),
-          Layer.provideMerge(GitStatePublisherLive),
+          // Below the condition wakes, whose `versionChanged` reads a CLI's version off its runs.
+          Layer.provideMerge(Layer.mergeAll(GitStatePublisherLive, LaunchChecksCache.layer)),
           Layer.provideMerge(ReviewRequestsLive),
           Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
           Layer.provideMerge(ThreadVisibility.layer),

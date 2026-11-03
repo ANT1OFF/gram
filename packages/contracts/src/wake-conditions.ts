@@ -99,6 +99,53 @@ export const FreezeLiftedCondition = Schema.Struct({
 });
 export type FreezeLiftedCondition = typeof FreezeLiftedCondition.Type;
 
+/** `1.2.3`, `v1.2.3` or `1.2.3-beta.1`: a release's version, as `after` and `from` name one. */
+export const ReleaseVersion = Schema.String.check(
+  Schema.isPattern(/^v?\d+\.\d+\.\d+(-[\w.-]{1,40})?$/),
+);
+
+/** An npm package (`@scope/name`) or a GitHub repo (`owner/repo`), never starting with a dash. */
+export const ReleaseName = Schema.String.check(Schema.isPattern(/^@?[\w.~][\w.~-]*(\/[\w.~-]+)?$/));
+
+/** How old a release must be before it wakes anyone, by default: Gram's own Dependabot cooldown. */
+export const RELEASE_MIN_AGE_DAYS = 7;
+
+/**
+ * A package or tool publishes a version newer than `after`, at least `minAgeDays` old, from the npm
+ * registry or a GitHub repo's releases. Prereleases (and GitHub's drafts) don't count unless
+ * `includePrerelease`.
+ */
+export const ReleasePublishedCondition = Schema.Struct({
+  kind: Schema.Literal("releasePublished"),
+  source: Schema.Literals(["npm", "github"]),
+  name: ReleaseName,
+  /** Filled in with the latest release when the wake is set without one. */
+  after: Schema.optionalKey(ReleaseVersion),
+  /**
+   * Filled in with `RELEASE_MIN_AGE_DAYS` when the wake is set without one; 0 for none. Finite, as
+   * `ciStuck`'s numbers are, to keep the tool's schema short; the source refuses one outside 0..90.
+   */
+  minAgeDays: Schema.optionalKey(Schema.Finite),
+  includePrerelease: Schema.optionalKey(Schema.Boolean),
+});
+export type ReleasePublishedCondition = typeof ReleasePublishedCondition.Type;
+
+/** What `versionChanged` can watch: Gram itself, or a CLI the launch checks probe. */
+export const VersionTarget = Schema.Literals(["gram", "claude", "codex", "gh"]);
+export type VersionTarget = typeof VersionTarget.Type;
+
+/**
+ * The installed version of Gram or a CLI changes from `from`: Gram's is seen at the start after an
+ * update, a CLI's whenever Gram's launch checks run again.
+ */
+export const VersionChangedCondition = Schema.Struct({
+  kind: Schema.Literal("versionChanged"),
+  target: VersionTarget,
+  /** Filled in with the installed version when the wake is set without one. */
+  from: Schema.optionalKey(ReleaseVersion),
+});
+export type VersionChangedCondition = typeof VersionChangedCondition.Type;
+
 /** Everything a wake can wait on beside its time. Closed: an unknown kind doesn't decode. */
 export const WakeCondition = Schema.Union([
   BranchMovedCondition,
@@ -107,6 +154,8 @@ export const WakeCondition = Schema.Union([
   MachineLoadCondition,
   DiskFreeCondition,
   FreezeLiftedCondition,
+  ReleasePublishedCondition,
+  VersionChangedCondition,
 ]);
 export type WakeCondition = typeof WakeCondition.Type;
 export type WakeConditionKind = WakeCondition["kind"];
@@ -140,6 +189,22 @@ export const StoredWakeCondition = Schema.Struct({
 });
 export type StoredWakeCondition = typeof StoredWakeCondition.Type;
 
+export const VERSION_TARGET_NAMES: Readonly<Record<VersionTarget, string>> = {
+  gram: "Gram",
+  claude: "Claude Code",
+  codex: "Codex",
+  gh: "gh",
+};
+
+/** `codex` for `@openai/codex` or `openai/codex`: a release's name, short. */
+export const releaseShortName = (name: string): string => name.slice(name.lastIndexOf("/") + 1);
+
+/** How old a release must be, in words: ", at least 7 days old"; nothing for no age. */
+const ageWords = (condition: ReleasePublishedCondition, least = "at least "): string => {
+  const days = condition.minAgeDays ?? RELEASE_MIN_AGE_DAYS;
+  return days === 0 ? "" : `, ${least}${days} ${days === 1 ? "day" : "days"} old`;
+};
+
 /**
  * "acme/web main moves": what a condition waits for, in words, for the ledger, the chips and the
  * notices. `name` is how the waiting side names another thread, when it knows its title.
@@ -158,6 +223,20 @@ export const wakeConditionWhen = (condition: WakeCondition, name?: string): stri
         : `free disk space${condition.path === undefined ? "" : ` at ${condition.path}`} drops below ${condition.belowGB} GB`;
     case "freezeLifted":
       return `${condition.repo} ${condition.branch ?? "default branch"} is no longer frozen`;
+    case "releasePublished": {
+      const what = condition.includePrerelease === true ? "release or prerelease" : "release";
+      const newer =
+        condition.after === undefined ? `a new ${what}` : `a ${what} newer than ${condition.after}`;
+      const where = condition.source === "npm" ? "npm" : "GitHub";
+      return `${condition.name} on ${where} has ${newer}${ageWords(condition)}`;
+    }
+    case "versionChanged": {
+      const target = VERSION_TARGET_NAMES[condition.target];
+      const from = condition.from === undefined ? "" : ` from ${condition.from}`;
+      return condition.target === "gram"
+        ? `Gram is updated${from}`
+        : `the installed ${target} changes${from}`;
+    }
   }
 };
 
@@ -184,6 +263,10 @@ export const wakeConditionLabel = (condition: WakeCondition): string => {
         : `disk < ${condition.belowGB} GB`;
     case "freezeLifted":
       return `${condition.branch ?? condition.repo} thaw`;
+    case "releasePublished":
+      return `${releaseShortName(condition.name)} ${condition.after === undefined ? "release" : `newer than ${condition.after}`}${ageWords(condition, "")}`;
+    case "versionChanged":
+      return `${VERSION_TARGET_NAMES[condition.target]} update`;
   }
 };
 

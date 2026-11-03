@@ -39,4 +39,46 @@ describe("wake condition words", () => {
       decode({ kind: "machine", metric: "load", below: Number.POSITIVE_INFINITY }),
     ).toThrow();
   });
+
+  it("names a release wait and its age", () => {
+    const codex = decode({
+      kind: "releasePublished",
+      source: "npm",
+      name: "@openai/codex",
+      after: "0.166.0",
+      minAgeDays: 7,
+    });
+    expect(wakeConditionLabel(codex)).toBe("codex newer than 0.166.0, 7 days old");
+    expect(wakeConditionWhen(codex)).toBe(
+      "@openai/codex on npm has a release newer than 0.166.0, at least 7 days old",
+    );
+    const gh = decode({
+      kind: "releasePublished",
+      source: "github",
+      name: "cli/cli",
+      minAgeDays: 0,
+      includePrerelease: true,
+    });
+    expect(wakeConditionLabel(gh)).toBe("cli release");
+    expect(wakeConditionWhen(gh)).toBe("cli/cli on GitHub has a new release or prerelease");
+  });
+
+  it("names an installed version's change", () => {
+    const gram = decode({ kind: "versionChanged", target: "gram", from: "1.5.0" });
+    expect(wakeConditionLabel(gram)).toBe("Gram update");
+    expect(wakeConditionWhen(gram)).toBe("Gram is updated from 1.5.0");
+    const codex = decode({ kind: "versionChanged", target: "codex" });
+    expect(wakeConditionLabel(codex)).toBe("Codex update");
+    expect(wakeConditionWhen(codex)).toBe("the installed Codex changes");
+  });
+
+  it("refuses names and versions that could be read as flags", () => {
+    expect(() =>
+      decode({ kind: "releasePublished", source: "npm", name: "--registry=evil" }),
+    ).toThrow();
+    expect(() => decode({ kind: "releasePublished", source: "npm", name: "--registry" })).toThrow();
+    expect(() => decode({ kind: "releasePublished", source: "github", name: "-x/y" })).toThrow();
+    expect(() => decode({ kind: "versionChanged", target: "gh", from: "latest" })).toThrow();
+    expect(() => decode({ kind: "versionChanged", target: "node" })).toThrow();
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { AppToolError, AppToolDescriptor, LaunchChecks, ThreadId } from "@gram/contracts";
 import { Proc, type ProcOutput } from "@gram/git";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -61,7 +62,13 @@ const checks: LaunchChecks = {
 const TestLayer = IssueAppToolsLive.pipe(
   Layer.provideMerge(IssueReporter.layer),
   Layer.provide(FakeGh),
-  Layer.provide(Layer.succeed(LaunchChecksCache, { get: () => Effect.succeed(checks) })),
+  Layer.provide(
+    Layer.succeed(LaunchChecksCache, {
+      get: () => Effect.succeed(checks),
+      latest: Effect.succeed(checks),
+      changes: Stream.empty,
+    }),
+  ),
   Layer.provideMerge(RuntimeTestLayer),
 );
 

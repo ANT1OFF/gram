@@ -74,11 +74,13 @@ changes into events that wake the thread that cares:
 
 `schedule_wake` takes a `condition` from a closed union of kinds, instead of `onPr`:
 
-| Kind             | Input                        | Fires when                                                                                                                |
-| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `branchMoved`    | `repo`, optional `branch`    | the branch (the repo's default branch when none is named) gets a new head, or is deleted                                  |
-| `threadFinished` | `threadId` of another thread | it reports done, is marked completed, or is at rest after a report; or it is archived or closed, which also ends the wait |
-| `freezeLifted`   | `repo`, optional `branch`    | a [merge freeze](#merge-freezes) on it is lifted or expires                                                               |
+| Kind               | Input                                                                                     | Fires when                                                                                                                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `branchMoved`      | `repo`, optional `branch`                                                                 | the branch (the repo's default branch when none is named) gets a new head, or is deleted                                                                                                                                                                         |
+| `threadFinished`   | `threadId` of another thread                                                              | it reports done, is marked completed, or is at rest after a report; or it is archived or closed, which also ends the wait                                                                                                                                        |
+| `freezeLifted`     | `repo`, optional `branch`                                                                 | a [merge freeze](#merge-freezes) on it is lifted or expires                                                                                                                                                                                                      |
+| `releasePublished` | `source` (`npm` or `github`), `name`, optional `after`, `minAgeDays`, `includePrerelease` | the package or repo publishes a version newer than `after` (the latest when the wake is set, by default) that is at least `minAgeDays` old (7 by default, as Gram's Dependabot waits; 0 for none); prereleases and drafts don't count unless `includePrerelease` |
+| `versionChanged`   | `target` (`gram`, `claude`, `codex` or `gh`), optional `from`                             | the installed version changes from `from` (the installed one when the wake is set, by default): Gram's at the start after an update, a CLI's when Gram's launch checks next run                                                                                  |
 
 A condition wake is a wake like any other. It counts toward the thread's cap of five, the user sees
 it on the thread's chip and in the ledger (`wakes when acme/app main gets a new head, else …`),
@@ -96,6 +98,15 @@ look, the kind's debounce later, still finds it met; the second look's facts are
 `branchMoved` polls GitHub every two minutes, once per branch however many wakes wait on it, paced
 to the background share of the API allowance, with a 30-second debounce. `threadFinished` looks
 when the thread changes or a worker reports, and every two minutes, with a 20-second debounce.
+`releasePublished` reads a package's releases through the user's own tools: `npm view <name> time
+versions --json` with the user's npm (its registry, proxy and cache; Gram never reads `.npmrc`), or
+`gh api repos/<owner>/<repo>/releases` on github.com with the user's gh, paced to the background
+share. A read answers for every wake on that package for six hours; a failed one is never met and
+is tried again after twelve hours, then once a day. Looks run hourly over what was read, so a
+release passes its age within the hour without another read. `versionChanged` starts no probe: it
+reads Gram's own version, and each CLI's off the launch checks' runs (at start, on Re-check, after
+an update from Settings), looking as each finishes, ten seconds after the start, and every ten
+minutes. Neither has a debounce.
 
 To add a kind:
 
