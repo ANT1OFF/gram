@@ -255,6 +255,8 @@ export interface MockWaitingOnSimulation extends MockQuietBusySimulation {
   readonly limited: ThreadId;
   readonly merging: ThreadId;
   readonly rebase: ThreadId;
+  /** Waits on main to move. */
+  readonly exportPresets: ThreadId;
 }
 
 export interface MockFinishedSimulation extends MockBoardSimulation {

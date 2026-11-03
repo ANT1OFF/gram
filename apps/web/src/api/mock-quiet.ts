@@ -127,7 +127,8 @@ export async function simulateQuietBusy(
 /**
  * `casefiles` as `simulateQuietBusy` leaves it, with a worker more for each other kind of wait the
  * sidebar names: a timed wake, a release run it watches, a usage limit it waits out, a merge Gram
- * makes once ready, and a wake on another PR; and the orchestrator resting on a wake of its own.
+ * makes once ready, a wake on another PR and one on main moving; and the orchestrator resting on
+ * wakes of its own, one for the release worker to finish.
  * Times sit on the half hour after now, so a shot's labels move only with the clock's half hour.
  */
 export async function simulateWaitingOn(
@@ -224,7 +225,14 @@ export async function simulateWaitingOn(
     onPr: { repo: origin, number: 341 },
     on: ["merged"],
   });
+  const presets = await spawn("casefile-export", "Export presets", "export-presets");
+  wake(presets.id, base + 180 * minute, "Rebase onto main once the export command lands", {
+    condition: { kind: "branchMoved", repo: origin, branch: "main" },
+  });
   wake(busy.orchestratorThreadId, base + 10 * minute, "Check #341 and #343, then merge the index");
+  wake(busy.orchestratorThreadId, base + 240 * minute, "Announce 2.4.0", {
+    condition: { kind: "threadFinished", threadId: release.id },
+  });
   host.emit({ type: "orchestration.changed", workspaceId: busy.workspaceId });
   return {
     ...busy,
@@ -233,6 +241,7 @@ export async function simulateWaitingOn(
     limited: limited.id,
     merging: merging.id,
     rebase: rebase.id,
+    exportPresets: presets.id,
   };
 }
 

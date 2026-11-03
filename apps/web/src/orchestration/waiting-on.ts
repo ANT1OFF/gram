@@ -1,11 +1,14 @@
 import {
   DEFAULT_PR_WAKE_EVENTS,
   checksOf,
+  wakeConditionLabel,
+  wakeConditionWhen,
   type PendingWake,
   type PrRef,
   type PrWakeEvent,
   type RunWatch,
   type ThreadStatus,
+  type WakeCondition,
   type WorkerLedgerEntry,
   type WorkerPr,
   type WorkerState,
@@ -129,12 +132,47 @@ const PR_EVENT_SHORT: Readonly<Record<PrWakeEvent, (name: string) => string>> = 
   verdict: (name) => `review on ${name}`,
 };
 
-/** A pending wake as a wait: on a time, or on another PR's events with its time as a fallback. */
+/** How a wait names another thread: its title where the window has it. */
+export type ThreadName = (threadId: string) => string | undefined;
+
+/**
+ * What a condition wake waits for, for a row: "main to move", "thread to finish" (the hover names
+ * the thread). Any other kind reads as its chip does (`wakeConditionLabel`), so a kind added to
+ * `WakeCondition` shows here without a change; give it a case only for words of its own.
+ */
+export const conditionShort = (condition: WakeCondition): string => {
+  switch (condition.kind) {
+    case "branchMoved":
+      return `${condition.branch ?? condition.repo} to move`;
+    case "threadFinished":
+      return "thread to finish";
+    default:
+      // A kind this build's contracts don't know yet still says something.
+      return wakeConditionLabel(condition) ?? (condition as { kind: string }).kind;
+  }
+};
+
+/**
+ * A pending wake as a wait: on a time, on a condition (a branch moving, a thread finishing), or on
+ * another PR's events, the last two with its time as a fallback.
+ */
 export const wakeReason = (
-  wake: Pick<PendingWake, "at" | "note" | "onPr" | "on">,
+  wake: Pick<PendingWake, "at" | "note" | "onPr" | "on" | "condition">,
   clock: WaitClock,
+  name: ThreadName = () => undefined,
 ): WaitReason => {
-  const detail = `${wakeWhenText(wake, clock)}${wake.note === "" ? "" : `: ${wake.note}`}`;
+  const note = wake.note === "" ? "" : `: ${wake.note}`;
+  if (wake.condition !== undefined) {
+    const named =
+      wake.condition.kind === "threadFinished" ? name(wake.condition.threadId) : undefined;
+    return {
+      kind: "condition",
+      short: conditionShort(wake.condition),
+      detail: `Wakes when ${wakeConditionWhen(wake.condition, named)}, else at ${clock(wake.at)}${note}`,
+      at: wake.at,
+    };
+  }
+  const detail = `${wakeWhenText(wake, clock)}${note}`;
   if (wake.onPr !== undefined) {
     const [event = "merged"] = wake.on ?? DEFAULT_PR_WAKE_EVENTS;
     return {
@@ -164,12 +202,19 @@ export interface LimitWaitFacts {
 /** A provider limit waited out, which resumes the thread on its own. */
 export const limitReason = (wait: LimitWaitFacts, now: number, clock: WaitClock): WaitReason => {
   const what = wait.kind === "limit" ? "usage limit" : "rate limit";
-  // "limit until 08:10": short enough that a narrow row keeps the time.
-  const word = wait.kind === "limit" ? "limit" : "rate limit";
+  // "limit until 08:10", "retry at 07:05": short enough that a narrow row keeps the time.
   const due = now < wait.resumeAt;
+  const short =
+    wait.kind === "limit"
+      ? due
+        ? `limit until ${clock(wait.resumeAt)}`
+        : "limit, resuming"
+      : due
+        ? `retry at ${clock(wait.resumeAt)}`
+        : "retry, resuming";
   return {
     kind: "limit",
-    short: due ? `${word} until ${clock(wait.resumeAt)}` : `${word}, resuming`,
+    short,
     detail: due
       ? `Waits out a ${what}; resumes on its own at ${clock(wait.resumeAt)}.`
       : `The ${what} has reset; it resumes once its turn can start.`,
@@ -198,7 +243,7 @@ const prReasons = (pr: WorkerPr): WaitReason[] => {
   if (pr.localCheck?.status === "running") {
     reasons.push({
       kind: "checks",
-      short: `local check on ${name}`,
+      short: `local check ${name}`,
       detail: `Gram's local check runs on ${where}.`,
     });
   }
@@ -266,7 +311,8 @@ export const workerWaitingOn = (
     state = worker.state,
     status = worker.status,
     clock = waitClock(now),
-  }: { state?: WorkerState; status?: ThreadStatus; clock?: WaitClock } = {},
+    name = () => undefined,
+  }: { state?: WorkerState; status?: ThreadStatus; clock?: WaitClock; name?: ThreadName } = {},
 ): WaitingOn | undefined => {
   if (status === "running" || status === "starting") return undefined;
   if (busy.activity === "idle" && busy.reason === "you hold it") {
@@ -283,7 +329,7 @@ export const workerWaitingOn = (
     ...(worker.limitWait === undefined ? [] : [limitReason(worker.limitWait, now, clock)]),
     ...openPrs(worker, state).flatMap(prReasons),
     ...(worker.runWatches ?? []).map(runReason),
-    ...(worker.wakes ?? []).map((wake) => wakeReason(wake, clock)),
+    ...(worker.wakes ?? []).map((wake) => wakeReason(wake, clock, name)),
   ]);
 };
 
@@ -302,10 +348,11 @@ export const orchestratorWaitingOn = (
   { status, wakes = [], limitWait }: OrchestratorWaitingInput,
   now: number,
   clock: WaitClock = waitClock(now),
+  name: ThreadName = () => undefined,
 ): WaitingOn | undefined => {
   if (status !== "idle" && status !== "cold" && status !== undefined) return undefined;
   return waitingOf([
     ...(limitWait === undefined ? [] : [limitReason(limitWait, now, clock)]),
-    ...wakes.map((wake) => wakeReason(wake, clock)),
+    ...wakes.map((wake) => wakeReason(wake, clock, name)),
   ]);
 };

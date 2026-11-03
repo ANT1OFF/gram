@@ -180,8 +180,11 @@ test("lists the workspaces in the switcher's order, the current one opened into 
     const row = here.locator(`[data-testid="overview-worker"][data-thread-id="${each.id}"]`);
     await expect(row.getByTestId("overview-worker-title")).toHaveText(each.title);
     const asking = (await row.getAttribute("data-asking")) === "true";
-    // The now line is always in the row's name; on the row only if it says more than the dot.
-    const now = asking ? "asks you" : each.now;
+    // The now line is always in the row's name, or what it waits on in its place (`rowWaiting`);
+    // on the row only if it says more than the dot.
+    const waits = row.getByTestId("overview-worker-waiting");
+    const waiting = (await waits.count()) === 0 ? undefined : await waits.textContent();
+    const now = asking ? "asks you" : (waiting ?? each.now);
     expect(await row.getAttribute("aria-label")).toContain(`, ${now}`);
     const line = row.getByTestId("overview-worker-now");
     if (asking) await expect(line).toHaveText("asks you");
@@ -217,7 +220,8 @@ test("a worker's agent shows only when it isn't its orchestrator's, and always i
   page,
 }) => {
   const made = await start(page);
-  const glyph = worker(page, made.inReview).locator("svg");
+  // The agent's glyph, not the hourglass of what the row waits on.
+  const glyph = worker(page, made.inReview).locator("svg:not(.lucide-hourglass)");
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
   await expect(glyph).toHaveCount(0);
   await worker(page, made.inReview).hover();
@@ -1533,6 +1537,8 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
   await expect(waits(made.rebase)).toHaveText("Waiting · #341 to merge");
   await expect(waits(made.timed)).toHaveText(/^Waiting · until \d{2}:\d{2}$/);
   await expect(waits(made.limited)).toHaveText(/^Paused · limit until (\w{3} )?\d{2}:\d{2}$/);
+  await expect(waits(made.exportPresets)).toHaveText("Waiting · main to move");
+  await expect(waits(made.exportPresets)).toHaveAttribute("data-kind", "condition");
   // Calm: the hollow waiting dot, never the needs-you one, and nothing added to Needs you.
   for (const id of [made.ci, made.timed, made.limited, made.release]) {
     await expect(row(id).getByTestId("overview-worker-dot")).not.toHaveAttribute(
@@ -1552,7 +1558,7 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
   await expect(own).toHaveText(/^Waiting · until \d{2}:\d{2}$/);
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAttribute(
     "title",
-    /Orchestrator: Waiting · until \d{2}:\d{2}\nWakes at \d{2}:\d{2}: Check #341 and #343/,
+    /Orchestrator: Waiting · until \d{2}:\d{2} · \+1\nWakes at \d{2}:\d{2}: Check #341 and #343, then merge the index\nWakes when "Cut 2\.4\.0" finishes, else at (\w{3} )?\d{2}:\d{2}: Announce 2\.4\.0/,
   );
 
   // Hover lists every wait, the one its row names first.

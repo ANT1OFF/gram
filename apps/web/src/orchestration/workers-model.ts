@@ -23,7 +23,7 @@ import { calmTone, workerTone, type RailTone } from "./rail-model";
 import { threadWorking } from "./tree-model";
 import { OVER_STATES, workerShown } from "./worker-shown";
 import { workerActivity, workerWait, type WorkerActivity, type WorkerBusy } from "./wait-model";
-import { workerWaitingOn, type WaitClock, type WaitingOn } from "./waiting-on";
+import { workerWaitingOn, type ThreadName, type WaitClock, type WaitingOn } from "./waiting-on";
 
 // The ⌘J Workers list: every worker of a workspace in Now and Done, grouped by feature (and in
 // Done, by the day it finished), each with a "now" line of four words or fewer. Pure and
@@ -225,10 +225,11 @@ const liveWaiting = (
   busy: WorkerBusy,
   tone: RailTone,
   now: number,
-  clock?: WaitClock,
+  clock: WaitClock | undefined,
+  name: ThreadName,
 ): WaitingOn | undefined =>
   calmTone(tone)
-    ? workerWaitingOn(live, busy, now, clock === undefined ? {} : { clock })
+    ? workerWaitingOn(live, busy, now, { ...(clock === undefined ? {} : { clock }), name })
     : undefined;
 
 /** What one worker's tone reads beside its ledger entry. */
@@ -356,7 +357,12 @@ export const workerRow = (
     asking: asking?.has(worker.threadId) === true,
     ownedCi,
   });
-  const waiting = done ? undefined : liveWaiting(live, busy, tone, now, clock);
+  // Another thread a condition wake waits on is named by its title, as its row names it.
+  const name: ThreadName = (id) => {
+    const other = byId[id];
+    return other === undefined ? undefined : threadDisplayTitle(other.thread);
+  };
+  const waiting = done ? undefined : liveWaiting(live, busy, tone, now, clock, name);
   const running = live.status === "running" || live.status === "starting";
   const activity = running ? (statusDetail[worker.threadId] ?? live.activity) : undefined;
   const report = live.lastReport;

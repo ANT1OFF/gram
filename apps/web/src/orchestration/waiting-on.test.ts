@@ -1,19 +1,22 @@
-import type {
-  PendingWake,
-  ProjectId,
-  RequestId,
-  ThreadId,
-  ThreadStatus,
-  WorkerLedgerEntry,
-  WorkerLimitWait,
-  WorkerPr,
-  WorkerState,
+import {
+  wakeConditionLabel,
+  type PendingWake,
+  type ProjectId,
+  type RequestId,
+  type ThreadId,
+  type ThreadStatus,
+  type WakeCondition,
+  type WorkerLedgerEntry,
+  type WorkerLimitWait,
+  type WorkerPr,
+  type WorkerState,
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import { railRows, type RailFacts } from "./rail-model";
 import { workerActivity } from "./wait-model";
 import {
+  conditionShort,
   orchestratorWaitingOn,
   waitClock,
   waitingOf,
@@ -100,7 +103,7 @@ describe("what a worker waits on", () => {
         pr: pr({ mergeState: "CLEAN", localCheck: { status: "running" }, mergeWhenReady: {} }),
       }),
     );
-    expect(waiting?.label).toBe("Waiting · local check on #69");
+    expect(waiting?.label).toBe("Waiting · local check #69");
   });
 
   it("names the review bot at work on its head", () => {
@@ -177,6 +180,66 @@ describe("what a worker waits on", () => {
     });
   });
 
+  it("names a condition wake by what it waits for, the thread by its title on hover", () => {
+    const moved: PendingWake = {
+      ...timed(NOW + 6 * 60 * MIN, "rebase onto main"),
+      condition: { kind: "branchMoved", repo: "acme/app", branch: "main" },
+    };
+    const branch = waitingOn(worker("working", { wakes: [moved] }));
+    expect(branch).toMatchObject({ kind: "condition", label: "Waiting · main to move" });
+    expect(branch?.reasons[0]?.detail).toBe(
+      "Wakes when acme/app main gets a new head, else at 13:00: rebase onto main",
+    );
+    const finished: PendingWake = {
+      ...timed(NOW + 6 * 60 * MIN, "read its findings"),
+      condition: { kind: "threadFinished", threadId: "t-research" as ThreadId },
+    };
+    const named = workerWaitingOn(
+      worker("working", { wakes: [finished] }),
+      workerActivity(worker("working", { wakes: [finished] })),
+      NOW,
+      { clock, name: (id) => (id === "t-research" ? "Research the paging API" : undefined) },
+    );
+    expect(named?.label).toBe("Waiting · thread to finish");
+    expect(named?.reasons[0]?.detail).toBe(
+      'Wakes when "Research the paging API" finishes, else at 13:00: read its findings',
+    );
+    expect(waitingOn(worker("working", { wakes: [finished] }))?.reasons[0]?.detail).toBe(
+      "Wakes when thread t-research finishes, else at 13:00: read its findings",
+    );
+  });
+
+  it("reads a condition kind it has no words for as its chip does", () => {
+    // A kind contracts add later: the selector takes `wakeConditionLabel`'s words for it.
+    const later = { kind: "releasePublished", repo: "acme/app" } as unknown as WakeCondition;
+    const label = wakeConditionLabel(later) ?? "releasePublished";
+    expect(conditionShort(later)).toBe(label);
+    const waiting = waitingOn(
+      worker("working", { wakes: [{ ...timed(NOW + 30 * MIN), condition: later }] }),
+    );
+    expect(waiting).toMatchObject({ kind: "condition", label: `Waiting · ${label}` });
+  });
+
+  it("keeps every label to four words, the separator aside", () => {
+    const labels = [
+      waitingOn(worker("inReview", { pr: pr({ checks: "pending" }) })),
+      waitingOn(
+        worker("readyToMerge", {
+          pr: pr({ mergeState: "CLEAN", localCheck: { status: "running" }, mergeWhenReady: {} }),
+        }),
+      ),
+      waitingOn(worker("working", { wakes: [timed(NOW + 26 * 60 * MIN)] })),
+      waitingOn(worker("working", { limitWait: limit(NOW + MIN, "backoff") })),
+      waitingOn(worker("working", { limitWait: limit(NOW - MIN) })),
+      waitingOn(worker("working", { userIntervened: true })),
+    ].map((waiting) => waiting!.label);
+    for (const label of labels) {
+      expect(label.split(/\s+/).filter((word) => word !== "·").length, label).toBeLessThanOrEqual(
+        4,
+      );
+    }
+  });
+
   it("names a watched workflow run", () => {
     const waiting = waitingOn(
       worker("delivered", {
@@ -211,7 +274,7 @@ describe("what a worker waits on", () => {
     );
     expect(
       waitingOn(worker("working", { limitWait: limit(NOW + 5 * MIN, "backoff") }))?.label,
-    ).toBe("Paused · rate limit until 07:05");
+    ).toBe("Paused · retry at 07:05");
     expect(waitingOn(worker("working", { limitWait: limit(NOW - MIN) }))?.label).toBe(
       "Paused · limit, resuming",
     );
@@ -387,6 +450,28 @@ describe("what an orchestrator waits on", () => {
       "Waiting · until 08:10 · +1",
       "Wakes at 08:10: check #102",
       "Wakes at 10:00: check the deploy",
+    ]);
+  });
+
+  it("names a condition wake of its own", () => {
+    expect(
+      orchestratorWaitingOn(
+        {
+          status: "idle",
+          wakes: [
+            {
+              ...timed(NOW + 30 * MIN, "merge the stack"),
+              condition: { kind: "threadFinished", threadId: "t-9" as ThreadId },
+            },
+          ],
+        },
+        NOW,
+        clock,
+        () => "Cut 2.4.0",
+      )?.hint.split("\n"),
+    ).toEqual([
+      "Waiting · thread to finish",
+      'Wakes when "Cut 2.4.0" finishes, else at 07:30: merge the stack',
     ]);
   });
 

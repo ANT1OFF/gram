@@ -1,8 +1,10 @@
 import type { OrchestratorLedger, ThreadId } from "@gram/contracts";
+import { useShallow } from "zustand/react/shallow";
 
 import { useNow } from "@/lib/use-now";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
+import { threadDisplayTitle } from "@/thread/thread-title";
 
 import { orchestratorWaitingOn, type WaitingOn } from "./waiting-on";
 import { workerWaitings } from "./workers-model";
@@ -41,7 +43,19 @@ export function useOrchestratorWaiting(
   );
   const waits = (ledger?.wakes?.length ?? 0) > 0 || limitWait !== undefined;
   const now = useNow(waits, undefined, 60_000);
+  // The titles of the threads its condition wakes wait to finish, flat for a shallow compare.
+  const named = useThreadsStore(
+    useShallow((s) =>
+      (ledger?.wakes ?? []).flatMap((wake) =>
+        wake.condition?.kind === "threadFinished" && s.byId[wake.condition.threadId] !== undefined
+          ? [wake.condition.threadId, threadDisplayTitle(s.byId[wake.condition.threadId]!.thread)]
+          : [],
+      ),
+    ),
+  );
   if (threadId === undefined || !waits) return undefined;
+  const titles = new Map<string, string>();
+  for (let i = 0; i + 1 < named.length; i += 2) titles.set(named[i]!, named[i + 1]!);
   return orchestratorWaitingOn(
     {
       status,
@@ -49,5 +63,7 @@ export function useOrchestratorWaiting(
       limitWait: limitWait?.cancelled === true ? undefined : limitWait,
     },
     now,
+    undefined,
+    (id) => titles.get(id),
   );
 }
