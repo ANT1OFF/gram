@@ -47,6 +47,7 @@ import { type Coalescing, makeCoalescingQueue } from "../../events/backlog.ts";
 import { EventHub } from "../../events/event-hub.ts";
 import { AppActivity } from "../../git/activity.ts";
 import { LocalChecks } from "../../git/local-checks.ts";
+import { WakeConditions } from "../../wakes/conditions.ts";
 import { GitStatePublisher } from "../../git/publisher.ts";
 import { describePath } from "../../persistence/stored.ts";
 import { withOwnedBranch } from "../../git/worker-pr.ts";
@@ -510,6 +511,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const hub = yield* EventHub;
   const runtimes = yield* ThreadRuntimes;
   const publisher = yield* GitStatePublisher;
+  const conditions = yield* WakeConditions;
   const memory = yield* OrchestrationMemory;
   const checkouts = yield* CheckoutService;
   const hosts = yield* AgentHosts;
@@ -1166,6 +1168,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     hub,
     runtimes,
     publisher,
+    conditions,
     memory,
     checkouts,
     hosts,

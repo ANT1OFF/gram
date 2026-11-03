@@ -1,6 +1,7 @@
 // Scheduled wakes: `schedule_wake` and `cancel_wake`, the timers
 // that fire them and the pull requests a wake watches.
 import {
+  type StoredWakeCondition,
   WAKES_PER_THREAD_MAX,
   WAKE_NOTE_MAX,
   type PrStatus,
@@ -16,9 +17,12 @@ import * as FiberMap from "effect/FiberMap";
 import { randomUUID } from "node:crypto";
 import { isBadgeOf } from "../../git/extra-prs.ts";
 import { redactText } from "../../logging/redact.ts";
+import { conditionWakeOf, type WakeConditionHost } from "../../wakes/conditions.ts";
 import { prWakeFields, prWakeWatches } from "../../wakes/thread-wakes.ts";
 import { withoutWakes, type StoredWake } from "../outbox.ts";
 import {
+  conditionWakeReason,
+  conditionWakeText,
   refusal,
   nextPrWatchSeen,
   prWakeDueAt,
@@ -193,6 +197,10 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
           yield* armAlarm(workspaceId, alarm, Duration.zero, alarm.fired);
           continue;
         }
+        if (alarm.conditionState?.fired !== undefined) {
+          yield* armAlarm(workspaceId, alarm, Duration.zero);
+          continue;
+        }
         yield* armAlarm(workspaceId, alarm);
         const badge =
           alarm.onPr === undefined ? undefined : yield* publisher.watchedBadge(alarm.onPr);
@@ -251,6 +259,9 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       yield* armAlarm(workspaceId, alarm);
       yield* syncPrWatches(workspaceId);
       yield* orchestrationChanged(workspaceId);
+      if (alarm.conditionState !== undefined) {
+        yield* kit.conditions.nudge(alarm.conditionState.spec.kind);
+      }
       // Another watch of the PR may have seen it move since the tool looked it up.
       const badge =
         alarm.onPr === undefined ? undefined : yield* publisher.watchedBadge(alarm.onPr);
@@ -311,8 +322,10 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
         // The event kept on the wake is the first one; a later one a concurrent look armed with
         // gives way to it.
         const fired = alarm.fired ?? firedNow;
+        const condition = alarm.conditionState;
         const now = yield* Clock.currentTimeMillis;
-        if (fired === undefined && now < alarm.at) return yield* armAlarm(workspaceId, alarm);
+        if (fired === undefined && condition?.fired === undefined && now < alarm.at)
+          return yield* armAlarm(workspaceId, alarm);
         const state = yield* findWorkspace(workspaceId);
         const thread = yield* findThread(alarm.threadId);
         if (state !== undefined && state.workspace.orchestratorThreadId === alarm.threadId) {
@@ -334,11 +347,13 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
           yield* orchestrationChanged(workspaceId);
           return yield* wake(
             workspaceId,
-            alarm.onPr === undefined
-              ? "a wake you scheduled is due"
-              : fired === undefined
-                ? `the wake you set on ${prRefText(alarm.onPr)} timed out`
-                : `a wake you set on ${prRefText(alarm.onPr)} fired (${fired.event})`,
+            condition !== undefined
+              ? conditionWakeReason(condition)
+              : alarm.onPr === undefined
+                ? "a wake you scheduled is due"
+                : fired === undefined
+                  ? `the wake you set on ${prRefText(alarm.onPr)} timed out`
+                  : `a wake you set on ${prRefText(alarm.onPr)} fired (${fired.event})`,
             true,
           );
         }
@@ -348,9 +363,11 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
           // the user's pause of the worker's feature as well as of the workspace.
           if (listening.paused !== undefined || pausedFeatureOf(listening, thread)) return;
           const text =
-            alarm.onPr === undefined
-              ? wakeDueText(alarm)
-              : prWakeText({ ...alarm, onPr: alarm.onPr }, fired);
+            condition !== undefined
+              ? conditionWakeText({ ...alarm, conditionState: condition })
+              : alarm.onPr === undefined
+                ? wakeDueText(alarm)
+                : prWakeText({ ...alarm, onPr: alarm.onPr }, fired);
           const delivered = yield* runtimes
             .sendNotice(thread.id, `wake:${alarm.id}`, { text })
             .pipe(
@@ -373,7 +390,66 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       }),
     );
 
+  /** Every workspace's pending wakes on a condition, with the workspace that keeps each. */
+  const conditionWakes = Effect.gen(function* () {
+    const found: Array<{ readonly workspaceId: WorkspaceId; readonly alarm: StoredWake }> = [];
+    for (const state of yield* store.listWorkspaces) {
+      for (const alarm of (yield* readOutbox(state.workspace.id)).wakes ?? []) {
+        if (alarm.conditionState !== undefined) {
+          found.push({ workspaceId: state.workspace.id, alarm });
+        }
+      }
+    }
+    return found;
+  });
+
+  /** Changes one stored wake's condition, unless it was found met already; answers the wake. */
+  const updateCondition = (
+    id: string,
+    change: (state: StoredWakeCondition) => StoredWakeCondition,
+  ): Effect.Effect<{ readonly workspaceId: WorkspaceId; readonly alarm: StoredWake } | undefined> =>
+    Effect.gen(function* () {
+      const owner = (yield* conditionWakes).find(({ alarm }) => alarm.id === id);
+      if (owner === undefined) return undefined;
+      const workspaceId = owner.workspaceId;
+      return yield* updateOutbox<
+        { readonly workspaceId: WorkspaceId; readonly alarm: StoredWake } | undefined
+      >(workspaceId, (outbox) => {
+        const found = (outbox.wakes ?? []).find((each) => each.id === id);
+        const state = found?.conditionState;
+        if (found === undefined || state === undefined || state.fired !== undefined) {
+          return [outbox, undefined];
+        }
+        const alarm: StoredWake = { ...found, conditionState: change(state) };
+        const wakes = (outbox.wakes ?? []).map((each) => (each.id === id ? alarm : each));
+        return [
+          { ...outbox, wakes },
+          { workspaceId, alarm },
+        ];
+      });
+    });
+
+  /** The workspaces' outboxes as a store the condition sources look at (`WakeConditions`). */
+  const conditionHost: WakeConditionHost = {
+    name: "workspace outboxes",
+    pending: conditionWakes.pipe(
+      Effect.map((found) => found.flatMap(({ alarm }) => conditionWakeOf(alarm) ?? [])),
+    ),
+    saveSeen: (id, seen) =>
+      updateCondition(id, (state) => ({ ...state, seen })).pipe(Effect.asVoid),
+    // Kept on the wake first, so a pause or a restart still delivers it as found; then fired as a
+    // due wake is, through `onWakeAlarm`.
+    fire: (id, fired) =>
+      Effect.gen(function* () {
+        const updated = yield* updateCondition(id, (state) => ({ ...state, fired }));
+        if (updated === undefined) return;
+        yield* orchestrationChanged(updated.workspaceId);
+        yield* armAlarm(updated.workspaceId, updated.alarm, Duration.zero);
+      }),
+  };
+
   return {
+    conditionHost,
     keepsWakesOf,
     armAlarm,
     syncPrWatches,

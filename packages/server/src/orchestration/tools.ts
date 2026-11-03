@@ -32,6 +32,8 @@ import {
   WAKE_MAX_MINUTES,
   WAKE_NOTE_MAX,
   WAKES_PER_THREAD_MAX,
+  WakeCondition,
+  wakeConditionWhen,
   WorkerReportState,
   WorkerReportEvidence,
   WorkerState,
@@ -59,6 +61,7 @@ import { confineQuestionVisuals } from "../preview/mocks.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { PrDependencies } from "../wakes/pr-dependencies.ts";
+import { WakeConditions } from "../wakes/conditions.ts";
 import { ThreadWakes, type WakeInput } from "../wakes/thread-wakes.ts";
 import { compactWorkerRow } from "./ledger.ts";
 import { appendEntry, editPassage, OrchestrationMemory } from "./memory.ts";
@@ -110,6 +113,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const orchestration = yield* Orchestration;
     const memory = yield* OrchestrationMemory;
     const threadWakes = yield* ThreadWakes;
+    const conditions = yield* WakeConditions;
     const hub = yield* EventHub;
     const dependencies = yield* PrDependencies;
     const publisher = yield* GitStatePublisher;
@@ -407,7 +411,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       descriptor: {
         name: "schedule_wake",
         class: "self",
-        description: `Have Gram wake you later, then end your turn: for waiting out a time (a release-age window, a rollout, a deploy that takes an hour, "check the canary in 45 minutes") where nothing else would tell you it is over, or for something to happen to a pull request that isn't yours. Give \`inMinutes\`, or \`at\` as an ISO 8601 time with its zone, at most ${WAKE_MAX_MINUTES / 1440} days ahead, and a \`note\` telling yourself what to do then; it is read back to you when the wake is due. With \`onPr\` (owner/repo#N or its URL) it fires on the first of \`on\` to happen to that PR: \`merged\`, \`closed\`, \`headChanged\` (a new push), \`checksSettled\`, \`verdict\` (the review bot's on its head); \`on\` defaults to ${DEFAULT_PR_WAKE_EVENTS.join(", ")}. The message names the event and the PR's head. Its \`at\` or \`inMinutes\` is then the fallback, when it fires anyway; without one, ${WAKE_MAX_MINUTES / 1440} days on. A PR already merged or closed is refused. A thread is sent a message; an orchestrator gets it in its next digest. It survives a restart, one that fell due while the app was down fires at start, and a parked thread or a paused workspace holds it until it is back. Closing the thread drops it. Up to ${WAKES_PER_THREAD_MAX} can be pending, and the user sees them; \`cancel_wake\` drops one. Don't use it to wait for CI, a review or a workflow run of your own PR: their monitors wake you when they settle. To wait for a PR your own PR depends on, declare it with depends_on instead, which wakes you on each of its events.`,
+        description: `Have Gram wake you later, then end your turn: for waiting out a time (a release-age window, a rollout, a deploy that takes an hour, "check the canary in 45 minutes") where nothing else would tell you it is over, or for something to happen to a pull request that isn't yours. Give \`inMinutes\`, or \`at\` as an ISO 8601 time with its zone, at most ${WAKE_MAX_MINUTES / 1440} days ahead, and a \`note\` telling yourself what to do then; it is read back to you when the wake is due. With \`onPr\` (owner/repo#N or its URL) it fires on the first of \`on\` to happen to that PR: \`merged\`, \`closed\`, \`headChanged\` (a new push), \`checksSettled\`, \`verdict\` (the review bot's on its head); \`on\` defaults to ${DEFAULT_PR_WAKE_EVENTS.join(", ")}. The message names the event and the PR's head. With \`condition\` instead it fires when that happens: \`{kind: "branchMoved", repo, branch?}\` (a new head; the default branch if none is named) or \`{kind: "threadFinished", threadId}\` (it reports done, is marked completed or rests after reporting; or is archived or closed). With \`onPr\` or \`condition\`, its \`at\` or \`inMinutes\` is the fallback, when it fires anyway; without one, ${WAKE_MAX_MINUTES / 1440} days on. A PR already merged or closed, or a condition already met, is refused. A thread is sent a message; an orchestrator gets it in its next digest. It survives a restart, one that fell due while the app was down fires at start, and a parked thread or a paused workspace holds it until it is back. Closing the thread drops it. Up to ${WAKES_PER_THREAD_MAX} can be pending, and the user sees them; \`cancel_wake\` drops one. Don't use it to wait for CI, a review or a workflow run of your own PR: their monitors wake you when they settle. To wait for a PR your own PR depends on, declare it with depends_on instead, which wakes you on each of its events.`,
       },
       input: Schema.Struct({
         at: Schema.optionalKey(Schema.String),
@@ -415,13 +419,33 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         note: Schema.NonEmptyString.check(Schema.isMaxLength(WAKE_NOTE_MAX)),
         onPr: Schema.optionalKey(Schema.NonEmptyString),
         on: Schema.optionalKey(Schema.Array(PrWakeEvent).check(Schema.isMinLength(1))),
+        condition: Schema.optionalKey(WakeCondition),
       }),
       // One cap over both stores: a thread whose role changed keeps the wakes it set before. Each
       // store checks only its own count in its write, so the count read from the other store and
       // the write it guards happen under one lock; transports run tool calls concurrently.
-      handle: (caller, { onPr, on, ...rest }) =>
+      handle: (caller, { onPr, on, condition, ...rest }) =>
         Effect.gen(function* () {
-          const wake: WakeInput = { ...rest, ...(yield* wakeOnPr(caller, { onPr, on })) };
+          if (condition !== undefined && (onPr !== undefined || on !== undefined)) {
+            return yield* new AppToolError({
+              tool: "schedule_wake",
+              message: "Give one of `onPr` and `condition`, not both.",
+            });
+          }
+          const conditionState =
+            condition === undefined
+              ? undefined
+              : yield* store.getThread(caller).pipe(
+                  Effect.mapError(
+                    () => new AppToolError({ tool: "schedule_wake", message: "No such thread." }),
+                  ),
+                  Effect.flatMap((thread) => conditions.arm(thread, condition)),
+                );
+          const wake: WakeInput = {
+            ...rest,
+            ...(yield* wakeOnPr(caller, { onPr, on })),
+            ...(conditionState === undefined ? {} : { conditionState }),
+          };
           const set = yield* wakeScheduleLock.withPermits(1)(
             Effect.gen(function* () {
               if (yield* orchestration.keepsWakesOf(caller)) {
@@ -438,6 +462,14 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
               );
             }),
           );
+          if (wake.conditionState !== undefined) {
+            return {
+              ...set,
+              condition: wake.conditionState.spec,
+              when: wakeConditionWhen(wake.conditionState.spec),
+              fallbackAt: set.at,
+            };
+          }
           return wake.onPr === undefined
             ? set
             : { ...set, onPr: prRefText(wake.onPr), on: wake.on, fallbackAt: set.at };

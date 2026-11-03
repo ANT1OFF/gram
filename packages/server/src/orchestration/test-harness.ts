@@ -56,6 +56,9 @@ import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
+import { BranchHeads } from "../wakes/branch-heads.ts";
+import { WakeConditionsLive } from "../wakes/conditions.ts";
+import { WakeConditionSourcesLive } from "../wakes/condition-sources.ts";
 
 /** What outlives a layer: the temp dir with the repo, the database and the memory, and the fake git states. */
 export interface World {
@@ -105,6 +108,12 @@ export interface World {
    * `bun run check:ci`. Absent, the server has none and solo merges wait for CI.
    */
   localCheckRunner?: LocalCheckRunnerShape["run"] | undefined;
+  /**
+   * What GitHub says of branches, by `owner/repo#branch` lower-cased in the repo: a head, `null` for
+   * no such branch; absent, it can't be read. `defaultBranches` by `owner/repo` lower-cased.
+   */
+  readonly branchHeads: Map<string, string | null>;
+  readonly defaultBranches: Map<string, string>;
 }
 
 const prKey = (pr: { readonly repo: string; readonly number: number }) =>
@@ -140,6 +149,8 @@ export const makeWorld = Effect.gen(function* () {
     prBadges: new Map(),
     freshPrReads: [],
     prWatches: new Map(),
+    branchHeads: new Map(),
+    defaultBranches: new Map(),
   };
   return world;
 });
@@ -287,6 +298,21 @@ const localChecksOf = (world: World) =>
         Layer.provide(ProcLive),
       )) as Layer.Layer<never, never, SqlClient.SqlClient | ServerConfig | ThreadStore>;
 
+/** GitHub's branches as `world` has them. */
+const fakeBranchHeads = (world: World) =>
+  Layer.succeed(BranchHeads, {
+    defaultBranch: (_cwd, repo) => Effect.sync(() => world.defaultBranches.get(repo.toLowerCase())),
+    head: (_cwd, repo, branch) =>
+      Effect.sync(() => world.branchHeads.get(`${repo.toLowerCase()}#${branch}`)),
+  });
+
+/** The condition wakes' engine over the real sources, reading branches from `world`. */
+const conditionsOf = (world: World) =>
+  WakeConditionsLive.pipe(
+    Layer.provide(WakeConditionSourcesLive),
+    Layer.provide(fakeBranchHeads(world)),
+  );
+
 /** The server over `world`'s database file and memory root. */
 export const serverLayer = (
   world: World,
@@ -305,6 +331,7 @@ export const serverLayer = (
     Layer.provideMerge(ComposerPresence.layer),
     Layer.provideMerge(localChecksOf(world)),
     Layer.provideMerge(ThreadWakesLive),
+    Layer.provideMerge(conditionsOf(world)),
     Layer.provideMerge(OrchestrationMemory.layerAt(nodePath.join(world.dir, "memory"))),
     Layer.provideMerge(fakePublisher(world)),
     Layer.provideMerge(AppToolRegistry.layer),

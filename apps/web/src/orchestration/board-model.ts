@@ -3,6 +3,7 @@ import {
   featureState,
   liveWorkerState,
   prWakeWhen,
+  wakeConditionWhen,
   type FeatureGroupLedgerEntry,
   type FeatureLedgerEntry,
   type FeatureStage,
@@ -161,12 +162,14 @@ export const reportLine = (summary: string, max = 140): string => {
  * #645 merges or gets a new push, else at Fri 14:30".
  */
 export const wakeWhenText = (
-  wake: Pick<PendingWake, "at" | "onPr" | "on">,
+  wake: Pick<PendingWake, "at" | "onPr" | "on" | "condition">,
   time: (at: number) => string,
 ): string =>
-  wake.onPr === undefined
-    ? `Wakes at ${time(wake.at)}`
-    : `Wakes when ${prWakeWhen(wake.onPr, wake.on ?? DEFAULT_PR_WAKE_EVENTS)}, else at ${time(wake.at)}`;
+  wake.condition !== undefined
+    ? `Wakes when ${wakeConditionWhen(wake.condition)}, else at ${time(wake.at)}`
+    : wake.onPr === undefined
+      ? `Wakes at ${time(wake.at)}`
+      : `Wakes when ${prWakeWhen(wake.onPr, wake.on ?? DEFAULT_PR_WAKE_EVENTS)}, else at ${time(wake.at)}`;
 
 /**
  * From this much of its context window on, an orchestrator is offered a fresh session:

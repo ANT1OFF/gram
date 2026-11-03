@@ -3,6 +3,8 @@ import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import {
   type PrWakeFired,
   type PrWatchSeen,
+  type WakeConditionFired,
+  type WakeConditionSeen,
   CLOSED_THREADS_LIMIT,
   DEFAULT_SETTINGS,
   DRAFT_STASH_LIMIT,
@@ -562,6 +564,14 @@ export interface ThreadStoreShape {
     id: string,
     change: { readonly seen?: PrWatchSeen; readonly fired?: PrWakeFired },
   ): Effect.Effect<void>;
+  /**
+   * Keeps what a pending wake's condition last saw, or the look that found it met; answers whether
+   * it did, which it doesn't for a wake that is gone, on no condition, or found met already.
+   */
+  updateThreadWakeCondition(
+    id: string,
+    change: { readonly seen?: WakeConditionSeen; readonly fired?: WakeConditionFired },
+  ): Effect.Effect<boolean>;
   /** Removes the thread's wake `id`, or with no `id` all of them, and answers those removed. */
   removeThreadWakes(
     threadId: ThreadId,
@@ -839,13 +849,29 @@ export interface ThreadStoreShape {
   takeStash(threadId: ThreadId, stashId: StashId): Effect.Effect<DraftStash, NotFound>;
 }
 
-/** A thread wake's `pr` column: the PR it waits on, its events, and what it saw when set. */
+/**
+ * A thread wake's `pr` column: the PR it waits on, its events, and what it saw when set; or, for a
+ * wake on a condition instead, that condition with what its source saw and found.
+ */
 const ThreadWakePr = Schema.Struct({
   onPr: ThreadWake.fields.onPr,
   on: ThreadWake.fields.on,
   seen: ThreadWake.fields.seen,
   fired: ThreadWake.fields.fired,
+  conditionState: ThreadWake.fields.conditionState,
 });
+
+/** The `pr` column of `wake`, or `null` for a wake on a time alone. */
+const threadWakePrJson = (wake: ThreadWake): string | null =>
+  wake.onPr === undefined && wake.conditionState === undefined
+    ? null
+    : toJson(ThreadWakePr, {
+        ...(wake.onPr === undefined ? {} : { onPr: wake.onPr }),
+        ...(wake.on === undefined ? {} : { on: wake.on }),
+        ...(wake.seen === undefined ? {} : { seen: wake.seen }),
+        ...(wake.fired === undefined ? {} : { fired: wake.fired }),
+        ...(wake.conditionState === undefined ? {} : { conditionState: wake.conditionState }),
+      });
 
 const toJson = <S extends Schema.Top>(schema: S, value: S["Type"]): string =>
   JSON.stringify(Schema.encodeSync(schema as unknown as Schema.Codec<S["Type"], unknown>)(value));
@@ -1099,6 +1125,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 setAt: Number(r.set_at),
                 note: r.note,
                 ...pr?.value,
+                ...(pr?.value.conditionState === undefined
+                  ? {}
+                  : { condition: pr.value.conditionState.spec }),
               }),
             );
           },
@@ -2308,15 +2337,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const [row] = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM thread_wakes
                 WHERE thread_id = ${wake.threadId}`;
               if (Number(row?.n ?? 0) >= max) return false;
-              const pr =
-                wake.onPr === undefined
-                  ? null
-                  : toJson(ThreadWakePr, {
-                      onPr: wake.onPr,
-                      ...(wake.on === undefined ? {} : { on: wake.on }),
-                      ...(wake.seen === undefined ? {} : { seen: wake.seen }),
-                      ...(wake.fired === undefined ? {} : { fired: wake.fired }),
-                    });
+              const pr = threadWakePrJson(wake);
               yield* sql`INSERT INTO thread_wakes (id, thread_id, at, set_at, note, pr)
                 VALUES (${wake.id}, ${wake.threadId}, ${wake.at}, ${wake.setAt}, ${wake.note}, ${pr})`;
               return true;
@@ -2333,13 +2354,35 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const seen = change.seen ?? wake.seen;
               // The first event kept stands: a concurrent look's later one doesn't replace it.
               const fired = wake.fired ?? change.fired;
-              const pr = toJson(ThreadWakePr, {
-                onPr: wake.onPr,
-                ...(wake.on === undefined ? {} : { on: wake.on }),
+              const pr = threadWakePrJson({
+                ...wake,
                 ...(seen === undefined ? {} : { seen }),
                 ...(fired === undefined ? {} : { fired }),
               });
               yield* sql`UPDATE thread_wakes SET pr = ${pr} WHERE id = ${id}`;
+            }),
+          ),
+        updateThreadWakeCondition: (id, change) =>
+          tx(
+            Effect.gen(function* () {
+              const [row] = yield* sql<WakeRow>`SELECT id, thread_id, at, set_at, note, pr
+                FROM thread_wakes WHERE id = ${id}`;
+              if (row === undefined) return false;
+              const [wake] = yield* wakeRows([row]);
+              const state = wake?.conditionState;
+              // Found met already: that finding stands, and nothing it saw since matters.
+              if (wake === undefined || state === undefined || state.fired !== undefined)
+                return false;
+              const pr = threadWakePrJson({
+                ...wake,
+                conditionState: {
+                  ...state,
+                  ...(change.seen === undefined ? {} : { seen: change.seen }),
+                  ...(change.fired === undefined ? {} : { fired: change.fired }),
+                },
+              });
+              yield* sql`UPDATE thread_wakes SET pr = ${pr} WHERE id = ${id}`;
+              return true;
             }),
           ),
         removeThreadWakes: (threadId, id) =>

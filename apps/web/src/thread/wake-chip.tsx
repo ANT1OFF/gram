@@ -4,6 +4,8 @@ import {
   prWakeWhen,
   type ThreadId,
   type ThreadWake,
+  wakeConditionLabel,
+  wakeConditionWhen,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { AlarmClock, X } from "lucide-react";
@@ -45,9 +47,13 @@ const hintOf = (wakes: readonly ThreadWake[], now: number) =>
     .map((wake) => `${wakeWhenText(wake, (at) => formatWakeTime(at, now))}: ${wake.note}`)
     .join("\n");
 
-/** A chip's label: the PR a wake on another PR waits on, or when a timed one is due. */
+/** A chip's label: what a wake on a condition or another PR waits on, or when a timed one is due. */
 const labelOf = (wake: ThreadWake, now: number) =>
-  wake.onPr === undefined ? formatWakeTime(wake.at, now) : `#${wake.onPr.number}`;
+  wake.condition !== undefined
+    ? wakeConditionLabel(wake.condition)
+    : wake.onPr === undefined
+      ? formatWakeTime(wake.at, now)
+      : `#${wake.onPr.number}`;
 
 /**
  * The pane header's ⏰ chip: the soonest wake's time, opening a list of every wake with its note
@@ -71,9 +77,11 @@ export function HeaderWakeChip({
       <Popover.Trigger
         data-testid="pane-wake"
         aria-label={`${wakes.length === 1 ? "Wake" : `${wakes.length} wakes`} pending, the first ${
-          soonest.onPr === undefined
-            ? `at ${formatWakeTime(soonest.at, now)}`
-            : `when ${prWakeWhen(soonest.onPr, soonest.on ?? DEFAULT_PR_WAKE_EVENTS)}`
+          soonest.condition !== undefined
+            ? `when ${wakeConditionWhen(soonest.condition)}`
+            : soonest.onPr === undefined
+              ? `at ${formatWakeTime(soonest.at, now)}`
+              : `when ${prWakeWhen(soonest.onPr, soonest.on ?? DEFAULT_PR_WAKE_EVENTS)}`
         }`}
         title={hintOf(wakes, now)}
         className={cn(

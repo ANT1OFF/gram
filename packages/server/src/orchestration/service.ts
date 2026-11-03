@@ -382,6 +382,7 @@ export const OrchestrationLive = Layer.effect(
       armAlarm,
       syncPrWatches,
       onWatchedPr,
+      conditionHost,
       armAlarms,
       pendingWakesOf,
       scheduleWake,
@@ -684,6 +685,7 @@ export const OrchestrationLive = Layer.effect(
       onRound: () => Effect.void,
       onWatchedPr,
     });
+    yield* kit.conditions.register(conditionHost);
     // Before the boot signal: a worker the boot continues opens its session there, and a session
     // keeps the policy it opened with, so one opened earlier would run without its role's tools.
     yield* runtimes.setSessionPolicy({ forThread: policyFor });

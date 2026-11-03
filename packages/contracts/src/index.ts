@@ -100,6 +100,7 @@ export * from "./mock-visuals.ts";
 export * from "./questions.ts";
 export * from "./worker-questions.ts";
 export * from "./waits.ts";
+export * from "./wake-conditions.ts";
 export * from "./merge-policy.ts";
 export * from "./tool-image-output.ts";
 

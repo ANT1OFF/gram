@@ -13,6 +13,7 @@ import { PrReviewRequest } from "./pr-people.ts";
 import { RunWatch } from "./run-watch.ts";
 import { ThreadStatus } from "./thread-status.ts";
 import { WaitId, WaitKind } from "./waits.ts";
+import { StoredWakeCondition, WakeCondition, wakeConditionWhen } from "./wake-conditions.ts";
 import { WorkerQuestion } from "./worker-questions.ts";
 
 /** What a thread is beyond a conversation: a workspace's orchestrator, or its memory's dream pass. */
@@ -373,6 +374,8 @@ export const PendingWake = Schema.Struct({
   onPr: Schema.optionalKey(PrRef),
   /** The events of `onPr` that fire it, the first of them only. */
   on: Schema.optionalKey(Schema.Array(PrWakeEvent)),
+  /** What else it waits for beside `at`, instead of a PR; `at` is then its fallback. */
+  condition: Schema.optionalKey(WakeCondition),
 });
 export type PendingWake = typeof PendingWake.Type;
 
@@ -389,6 +392,8 @@ export const ThreadWake = Schema.Struct({
   seen: Schema.optionalKey(PrWatchSeen),
   /** The event of `onPr` that fired it, kept while its thread can't take it yet. */
   fired: Schema.optionalKey(PrWakeFired),
+  /** Its condition with what its source saw and found; `condition` is the same spec. */
+  conditionState: Schema.optionalKey(StoredWakeCondition),
 });
 export type ThreadWake = typeof ThreadWake.Type;
 
@@ -1046,9 +1051,11 @@ const errorText = (error: WorkerError): string =>
 export const wakeText = (wake: PendingWake): string => {
   const at = `${new Date(wake.at).toISOString().slice(0, 16)}Z`;
   const when =
-    wake.onPr === undefined
-      ? at
-      : `when ${prWakeWhen(wake.onPr, wake.on ?? DEFAULT_PR_WAKE_EVENTS, prRefText(wake.onPr))}, else ${at}`;
+    wake.condition !== undefined
+      ? `when ${wakeConditionWhen(wake.condition)}, else ${at}`
+      : wake.onPr === undefined
+        ? at
+        : `when ${prWakeWhen(wake.onPr, wake.on ?? DEFAULT_PR_WAKE_EVENTS, prRefText(wake.onPr))}, else ${at}`;
   return `wakes ${when} "${inline(wake.note, REASON_MAX)}"`;
 };
 

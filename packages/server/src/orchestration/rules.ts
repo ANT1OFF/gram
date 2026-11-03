@@ -54,6 +54,8 @@ import {
   type PrWakeFired,
   type PrWatchSeen,
   type ProjectId,
+  type StoredWakeCondition,
+  wakeConditionWhen,
   type Settings,
   type SpawnedBy,
   type ThreadId,
@@ -2062,20 +2064,62 @@ export const wakeDueAt = (
 };
 
 /**
- * `wakeDueAt` for a wake that may wait on a PR: with `onPr`, its time is the fallback, and without
- * one it falls back after the furthest a wake may be set, so none waits forever.
+ * `wakeDueAt` for a wake that may wait on a PR or a condition: with either, its time is the
+ * fallback, and without one it falls back after the furthest a wake may be set, so none waits
+ * forever.
  */
 export const prWakeDueAt = (
   input: {
     readonly at?: string | undefined;
     readonly inMinutes?: number | undefined;
     readonly onPr?: PrRef | undefined;
+    readonly conditionState?: StoredWakeCondition | undefined;
   },
   now: number,
 ): ReturnType<typeof wakeDueAt> =>
-  input.onPr !== undefined && input.at === undefined && input.inMinutes === undefined
+  (input.onPr !== undefined || input.conditionState !== undefined) &&
+  input.at === undefined &&
+  input.inMinutes === undefined
     ? { ok: true, at: now + WAKE_MAX_MINUTES * 60_000 }
     : wakeDueAt(input, now);
+
+/** One line of a condition's facts, which are server words but may quote a title. */
+const factLine = (value: string): string => value.replaceAll(/\s+/g, " ").trim().slice(0, 200);
+
+/** "head 1a2b3c4, outcome reported done": a condition's facts inline, for a digest's note. */
+const factsInline = (facts: Readonly<Record<string, string>>): string =>
+  Object.entries(facts)
+    .map(([key, value]) => `${key} ${factLine(value)}`)
+    .join(", ");
+
+/**
+ * What a thread is sent when a wake it set on a condition fires: what it waited for, and the facts
+ * of the look that found it met in a fenced block; or, from its time alone, that it didn't happen.
+ */
+export const conditionWakeText = (wake: {
+  readonly note: string;
+  readonly setAt: number;
+  readonly conditionState: StoredWakeCondition;
+}): string => {
+  const { spec, fired } = wake.conditionState;
+  const set = `The wake you set with schedule_wake at ${minuteOf(wake.setAt)}Z for when ${wakeConditionWhen(spec)}`;
+  if (fired === undefined) {
+    return `${set} is due: that hadn't happened by then. Your note: ${wake.note}`;
+  }
+  const block = [
+    "```wake-event",
+    `condition: ${spec.kind}`,
+    ...Object.entries(fired.facts).map(([key, value]) => `${key}: ${factLine(value)}`),
+    "```",
+  ].join("\n");
+  return `${set} fired.\n${block}\nYour note: ${wake.note}`;
+};
+
+/** Why an orchestrator's digest is given for a wake on a condition, as `Woken by:` lists it. */
+export const conditionWakeReason = (state: StoredWakeCondition): string =>
+  state.fired === undefined
+    ? `the wake you set for when ${wakeConditionWhen(state.spec)} timed out`
+    : `a wake you set fired: ${wakeConditionWhen(state.spec)}`;
 
 /** What a worker is sent when a wake it set falls due. */
 export const wakeDueText = (wake: { readonly note: string; readonly setAt: number }): string =>
@@ -2088,9 +2132,17 @@ export const orchestratorWakeNote = (wake: {
   readonly onPr?: PrRef | undefined;
   readonly on?: ReadonlyArray<PrWakeEvent> | undefined;
   readonly fired?: PrWakeFired | undefined;
+  readonly conditionState?: StoredWakeCondition | undefined;
 }) => {
   const set = `A wake you set with schedule_wake at ${minuteOf(wake.setAt)}Z`;
   const note = `Your note: ${wake.note.replaceAll(/\s+/g, " ").trim()}`;
+  const state = wake.conditionState;
+  if (state !== undefined) {
+    const when = wakeConditionWhen(state.spec);
+    return state.fired === undefined
+      ? `${set} for when ${when} is due: that hadn't happened by then. ${note}`
+      : `${set} fired: ${when} (${factsInline(state.fired.facts)}). ${note}`;
+  }
   if (wake.onPr === undefined) return `${set} is due. ${note}`;
   const pr = prRefText(wake.onPr);
   if (wake.fired === undefined) return `${set} on ${pr} is due: ${timedOutWords(wake)}. ${note}`;

@@ -15,6 +15,7 @@ import {
   PrWakeEvent,
   PrWatchSeen,
   ReasoningVariant,
+  StoredWakeCondition,
   ThreadId,
   type PendingWake,
   TurnId,
@@ -257,6 +258,11 @@ export const StoredWake = Schema.Struct({
    * and the resume delivers it even if the PR has moved back since (checks rerun, say).
    */
   fired: Schema.optionalKey(PrWakeFired),
+  /**
+   * What it waits for instead of a PR (`WakeConditions`), with what its source saw, and the look
+   * that found it met, kept from then on as `fired` is.
+   */
+  conditionState: Schema.optionalKey(StoredWakeCondition),
 });
 export type StoredWake = typeof StoredWake.Type;
 
@@ -365,12 +371,14 @@ const pendingWakeOf = (wake: {
   readonly note: string;
   readonly onPr?: PrRef | undefined;
   readonly on?: ReadonlyArray<PrWakeEvent> | undefined;
+  readonly conditionState?: StoredWakeCondition | undefined;
 }): PendingWake => ({
   id: wake.id,
   at: wake.at,
   note: wake.note,
   ...(wake.onPr === undefined ? {} : { onPr: wake.onPr }),
   ...(wake.on === undefined ? {} : { on: wake.on }),
+  ...(wake.conditionState === undefined ? {} : { condition: wake.conditionState.spec }),
 });
 
 /** A thread's pending wakes as the ledger shows them, soonest first. */
