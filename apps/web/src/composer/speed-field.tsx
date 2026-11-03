@@ -6,6 +6,7 @@ import {
   type SpeedState,
 } from "@gram/contracts";
 import { Zap } from "lucide-react";
+import { Hint } from "@/components/hint";
 import {
   Select,
   SelectContent,
@@ -72,6 +73,7 @@ export function SpeedField({
   state?: SpeedState | undefined;
   ghost?: boolean;
   disabled?: boolean;
+  /** Shows the value beside the glyph; without it the trigger's name and tooltip say it instead. */
   labelled?: boolean;
   /** `sm` to sit in a row of small controls; the ghost style is always small. */
   size?: "sm" | "default";
@@ -81,6 +83,13 @@ export function SpeedField({
   const items = speedOptions(models, model, value, state);
   const usage = speedUsage(agent);
   const report = speedReport(state);
+  const named = `Speed: ${items.find((item) => item.value === (value ?? "default"))?.label ?? "CLI default"}`;
+  const glyph = (
+    <>
+      {ghost && <Zap aria-hidden className="size-3.5" />}
+      <SelectValue data-toolbar-label className={cn(!labelled && "sr-only")} />
+    </>
+  );
   return (
     <div className="flex flex-col gap-1" data-testid="speed-field">
       <Select
@@ -91,15 +100,30 @@ export function SpeedField({
           if (next === "standard" || (next === "fast" && fast)) onChange(next);
         }}
       >
-        <SelectTrigger
-          aria-label="Speed"
-          title={`${usage} ${report}`}
-          size={ghost ? "sm" : size}
-          {...(ghost ? { className: GHOST_TRIGGER } : {})}
-        >
-          {ghost && <Zap aria-hidden className="size-3.5" />}
-          <SelectValue data-toolbar-label className={cn(!labelled && "sr-only")} />
-        </SelectTrigger>
+        {labelled ? (
+          <SelectTrigger
+            aria-label="Speed"
+            title={`${usage} ${report}`}
+            size={ghost ? "sm" : size}
+            {...(ghost ? { className: GHOST_TRIGGER } : {})}
+          >
+            {glyph}
+          </SelectTrigger>
+        ) : (
+          // The glyph alone: the tooltip names the speed at once, and the open list explains it.
+          <Hint
+            label={named}
+            render={
+              <SelectTrigger
+                aria-label={named}
+                size={ghost ? "sm" : size}
+                {...(ghost ? { className: GHOST_TRIGGER } : {})}
+              />
+            }
+          >
+            {glyph}
+          </Hint>
+        )}
         <SelectContent>
           {items.map((item) => (
             <SelectItem

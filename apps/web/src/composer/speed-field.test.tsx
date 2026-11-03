@@ -72,3 +72,25 @@ it("keeps an unset speed as the CLI's preference and makes new unset choices Sta
   );
   expect(screen.getByRole("combobox").textContent).toContain("CLI default");
 });
+it("as a glyph alone names the speed on the trigger and keeps the words in the open list", async () => {
+  const user = userEvent.setup();
+  render(
+    <SpeedField
+      agent="claude"
+      model="fixture"
+      models={models}
+      value="standard"
+      onChange={() => {}}
+      ghost
+      labelled={false}
+    />,
+  );
+  const trigger = screen.getByRole("combobox", { name: "Speed: Standard" });
+  expect(trigger.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
+  await user.hover(trigger);
+  expect(await screen.findByText("Speed: Standard")).toBeTruthy();
+  await user.click(trigger);
+  expect(screen.getByRole("option", { name: "Standard" })).toBeTruthy();
+  expect(screen.getByRole("option", { name: "Fast" })).toBeTruthy();
+  expect(screen.getByText(/separately billed usage credits/)).toBeTruthy();
+});

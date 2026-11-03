@@ -35,15 +35,25 @@ test("the toolbar stays one row as it narrows, folding pickers into …", async 
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   const message = page.getByLabel("Message", { exact: true });
   const toolbar = page.getByTestId("composer-toolbar");
-  const mode = toolbar.getByRole("combobox", { name: "Mode", exact: true });
-  await expect(mode).toContainText("Ask");
+  // Mode is a glyph alone: its name and its tooltip say the mode, the open list spells them out.
+  const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
+  await expect(mode).toHaveAccessibleName("Mode: Ask");
+  await expect(mode.locator("[data-toolbar-label]")).toHaveClass(/\bsr-only\b/);
+  await mode.hover();
+  const tooltip = page.locator('[data-slot="tooltip-content"]');
+  await expect(tooltip).toHaveText(/^Mode: Ask/);
+  // Opening the list puts the tooltip away, so the two never sit on top of each other.
+  await mode.click();
+  await expect(page.getByRole("option", { name: "Bypass", exact: true })).toBeVisible();
+  await expect(tooltip).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
   // Speed at the CLI's default waits in "…", which is there from the start.
   const more = toolbar.getByRole("button", { name: "More composer controls" });
   await expect(more).toBeVisible();
-  await expect(toolbar.getByRole("combobox", { name: "Speed", exact: true })).toHaveCount(0);
+  await expect(toolbar.getByRole("combobox", { name: /^Speed/ })).toHaveCount(0);
   await squeeze(page, 400);
-  await expect(mode).toHaveAttribute("title", /^Mode: Ask/);
+  await expect(mode).toBeVisible();
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
 
   await squeeze(page, 280);
@@ -84,10 +94,8 @@ test("the toolbar stays one row as it narrows, folding pickers into …", async 
     .getByRole("menuitemradio", { name: "Plan" })
     .click();
   await squeeze(page, 720);
-  await expect(toolbar.getByRole("combobox", { name: "Mode", exact: true })).toContainText("Plan");
-  await expect(toolbar.getByRole("combobox", { name: "Speed", exact: true })).toContainText(
-    "Standard",
-  );
+  await expect(mode).toHaveAccessibleName("Mode: Plan");
+  await expect(toolbar.getByRole("combobox", { name: "Speed: Standard" })).toBeVisible();
 });
 
 test("right-click on Send offers steering and sending into a new draft", async ({ page }) => {

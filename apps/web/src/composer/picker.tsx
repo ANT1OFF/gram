@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 
+import { Hint } from "@/components/hint";
 import {
   Select,
   SelectContent,
@@ -38,7 +39,10 @@ interface PickerProps<V extends string> {
   icon?: ReactNode;
   /** What `icon` stands for, in the tooltip and read after the label. */
   iconLabel?: string | undefined;
-  /** Shows the value beside the glyph; without it the tooltip names the value instead. */
+  /**
+   * Shows the value beside the glyph. Without it the glyph stands alone: its name and tooltip say
+   * the value instead ("Mode: Bypass"), and the open list still spells out every option.
+   */
   labelled?: boolean;
   /** Moved into the toolbar's "…" menu: nothing renders, and the shortcut calls `onFoldedOpen`. */
   folded?: boolean;
@@ -94,9 +98,8 @@ export function Picker<V extends string>({
   const named = labelled
     ? label
     : `${label}: ${options.find((option) => option.value === value)?.label ?? "none"}`;
-  const title =
-    warning ??
-    (iconLabel === undefined ? withHint(named, hint) : `${iconLabel} · ${withHint(named, hint)}`);
+  const tagged = withHint(named, hint);
+  const title = warning ?? (iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`);
   const description = [iconLabel, warning].filter(Boolean).join(". ") || undefined;
 
   if (search && options.length > MODEL_SEARCH_THRESHOLD) {
@@ -118,6 +121,18 @@ export function Picker<V extends string>({
     );
   }
 
+  const trigger = {
+    "aria-description": description,
+    "data-warning": warning ? "true" : undefined,
+    className: cn(GHOST_TRIGGER, warning && "text-status-needs hover:text-status-needs"),
+  };
+  const glyph = (
+    <>
+      {icon && <Swap swapKey={String(value)}>{icon}</Swap>}
+      <SelectValue data-toolbar-label placeholder={label} className={cn(!labelled && "sr-only")} />
+    </>
+  );
+
   return (
     <Select
       value={value ?? null}
@@ -128,21 +143,21 @@ export function Picker<V extends string>({
         if (next !== null) onChange(next as V);
       }}
     >
-      <SelectTrigger
-        size="sm"
-        aria-label={label}
-        aria-description={description}
-        title={title}
-        data-warning={warning ? "true" : undefined}
-        className={cn(GHOST_TRIGGER, warning && "text-status-needs hover:text-status-needs")}
-      >
-        {icon && <Swap swapKey={String(value)}>{icon}</Swap>}
-        <SelectValue
-          data-toolbar-label
-          placeholder={label}
-          className={cn(!labelled && "sr-only")}
-        />
-      </SelectTrigger>
+      {labelled ? (
+        <SelectTrigger size="sm" aria-label={label} title={title} {...trigger}>
+          {glyph}
+        </SelectTrigger>
+      ) : (
+        // A glyph alone says what it is the moment it's hovered; a native title would wait.
+        <Hint
+          label={[iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
+            .filter(Boolean)
+            .join("\n")}
+          render={<SelectTrigger size="sm" aria-label={named} {...trigger} />}
+        >
+          {glyph}
+        </Hint>
+      )}
       <SelectContent side="top">
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} title={option.description}>

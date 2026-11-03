@@ -901,7 +901,8 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   const modeIcon = <ModeIcon aria-hidden className="size-3.5" />;
   const effortIcon = <Gauge aria-hidden className="size-3.5" />;
 
-  // Fold order is from the end: the mode picker first, then effort. Labels go first.
+  // Fold order is from the end: the mode picker first, then effort. The model's label goes first;
+  // speed, effort and mode are glyphs alone, their values named in a tooltip and in the open list.
   const hasEffort = efforts.length > 0;
   // A default nobody chose says nothing: Speed on the CLI's default, and Mode on the user's own,
   // wait in "…" (their shortcuts still open them there). A mode with a warning always shows.
@@ -914,9 +915,9 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   const blocks = useMemo(
     () => [
       { id: "model", foldable: false },
-      ...(quietSpeed ? [] : [{ id: "speed", foldable: true }]),
-      ...(hasEffort ? [{ id: "effort", foldable: true }] : []),
-      ...(quietMode ? [] : [{ id: "mode", foldable: true }]),
+      ...(quietSpeed ? [] : [{ id: "speed", foldable: true, glyph: true }]),
+      ...(hasEffort ? [{ id: "effort", foldable: true, glyph: true }] : []),
+      ...(quietMode ? [] : [{ id: "mode", foldable: true, glyph: true }]),
     ],
     [hasEffort, quietSpeed, quietMode],
   );
@@ -1170,7 +1171,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                 value={model.speed}
                 state={summary?.thread.speedState ?? { speed: "unknown" }}
                 ghost
-                labelled={isLabelled("speed")}
+                labelled={false}
                 onChange={onSpeed}
               />
             </ToolbarBlock>
@@ -1185,7 +1186,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               options={MODE_OPTIONS}
               icon={modeIcon}
               warning={modeWarning(summary?.thread.mode)}
-              labelled={isLabelled("mode")}
+              labelled={false}
               folded={isFolded("mode")}
               onFoldedOpen={() => openFolded("mode")}
               onChange={onMode}
