@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.5.0](https://github.com/ANT1OFF/gram/compare/v1.4.0...v1.5.0) (2026-11-03)
+
+
+### Features
+
+* **voice:** a normal Voice setting with a push-to-talk key picker ([#98](https://github.com/ANT1OFF/gram/issues/98)) ([a49acdf](https://github.com/ANT1OFF/gram/commit/a49acdf8d061dcdafd0853c72e7f459ab7174e81))
+* **voice:** recognise this project's names ([#102](https://github.com/ANT1OFF/gram/issues/102)) ([d306e35](https://github.com/ANT1OFF/gram/commit/d306e3518eb4e51476636a438ea56e4ec00f1be4))
+* **voice:** spoken symbols, formatting and filler clean-up ([#99](https://github.com/ANT1OFF/gram/issues/99)) ([912b5e5](https://github.com/ANT1OFF/gram/commit/912b5e5732958a5441eb701b307dabf98c3db10d))
+* **voice:** voice input on Linux with a TTS-free sherpa-onnx build ([#100](https://github.com/ANT1OFF/gram/issues/100)) ([4606b96](https://github.com/ANT1OFF/gram/commit/4606b96b2b01b5232c51fe068be33c5362f52433))
+
+
+### Bug Fixes
+
+* **release:** stop the release notes saying voice is missing on Linux ([#107](https://github.com/ANT1OFF/gram/issues/107)) ([fbde4f2](https://github.com/ANT1OFF/gram/commit/fbde4f27906424ff7002d1286fc859418df1e2c5))
+* **worktrees:** sweep archived merged and no-PR worker worktrees ([#103](https://github.com/ANT1OFF/gram/issues/103)) ([b9ed8d4](https://github.com/ANT1OFF/gram/commit/b9ed8d4460c1ed50b8ceeb1da5da98da218ec0b0))
+
 ## [1.4.0](https://github.com/ANT1OFF/gram/compare/v1.3.1...v1.4.0) (2026-11-02)
 
 
