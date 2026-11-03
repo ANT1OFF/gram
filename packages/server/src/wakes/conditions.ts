@@ -167,8 +167,11 @@ export const WakeConditionsLive = Layer.effect(
     const nudges = new Map<string, Queue.Queue<void>>();
     /** Per kind, one sweep at a time. */
     const sweeping = makeKeyedLock<string>();
-    /** Per wake id, when a look first found it met; a look that doesn't drops it. */
-    const metSince = new Map<string, number>();
+    /**
+     * Per wake id, when a look first found it met, and the kind whose sweep looks at it; a look that
+     * doesn't find it met drops it.
+     */
+    const metSince = new Map<string, { readonly kind: string; readonly at: number }>();
     /** Per wake id, the look its debounce asks for. */
     const debounces = yield* FiberMap.make<string>();
     /**
@@ -201,9 +204,9 @@ export const WakeConditionsLive = Layer.effect(
         }
         const now = yield* Clock.currentTimeMillis;
         const debounce = Duration.toMillis(source.debounce);
-        const since = metSince.get(wake.id);
+        const since = metSince.get(wake.id)?.at;
         if (debounce > 0 && (since === undefined || now - since < debounce)) {
-          if (since === undefined) metSince.set(wake.id, now);
+          if (since === undefined) metSince.set(wake.id, { kind: source.kind, at: now });
           const wait = debounce - (now - (since ?? now));
           yield* FiberMap.run(
             debounces,
@@ -242,9 +245,10 @@ export const WakeConditionsLive = Layer.effect(
                 yield* lookAt(source, host, wake);
               }
             }
-            // A wake cancelled, delivered or gone with its thread leaves nothing behind.
-            for (const id of metSince.keys()) {
-              if (live.has(id)) continue;
+            // A wake cancelled, delivered or gone with its thread leaves nothing behind. Only this
+            // kind's: another kind's wakes aren't in `live`, and their debounces aren't this sweep's.
+            for (const [id, met] of metSince) {
+              if (met.kind !== kind || live.has(id)) continue;
               metSince.delete(id);
               yield* FiberMap.remove(debounces, id);
             }

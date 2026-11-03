@@ -51,8 +51,10 @@ import { ReviewRequestsLive } from "../github/review-requests.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
 import { BranchHeadsLive } from "../wakes/branch-heads.ts";
+import { CiJobsLive } from "../wakes/ci-stuck.ts";
 import { WakeConditionsLive } from "../wakes/conditions.ts";
 import { WakeConditionSourcesLive } from "../wakes/condition-sources.ts";
+import { MachineStateLive } from "../wakes/machine.ts";
 import { AppActivityLive } from "../git/activity.ts";
 import { ThreadVisibility } from "../git/visibility.ts";
 import type { GitPlatform } from "../git/platform.ts";
@@ -373,7 +375,7 @@ export const ServerCore = Layer.unwrap(
               PlanKeeperLive,
               WakeConditionsLive.pipe(
                 Layer.provide(WakeConditionSourcesLive),
-                Layer.provide(BranchHeadsLive),
+                Layer.provide(Layer.mergeAll(BranchHeadsLive, CiJobsLive, MachineStateLive)),
               ),
             ),
           ),
