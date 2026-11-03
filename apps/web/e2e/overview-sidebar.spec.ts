@@ -1550,15 +1550,17 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
   await expect(waits(made.editing)).toHaveCount(0);
   await expect(waits(made.conflicts)).toHaveCount(0);
 
-  // The orchestrator, resting on a wake of its own, says so on its line and its hover.
+  // The orchestrator, resting on wakes of its own, says so on its line and its hover: the one for
+  // a thread to finish named first, a timed wake being the fallback (`waitingOf`).
   const workspace = page.locator(
     `[data-testid="overview-workspace"][data-workspace-id="${made.workspaceId}"]`,
   );
   const own = workspace.getByTestId("overview-orchestrator-waiting");
-  await expect(own).toHaveText(/^Waiting · until \d{2}:\d{2}$/);
+  await expect(own).toHaveText("Waiting · thread to finish");
+  await expect(own).toHaveAttribute("data-kind", "condition");
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAttribute(
     "title",
-    /Orchestrator: Waiting · until \d{2}:\d{2} · \+1\nWakes at \d{2}:\d{2}: Check #341 and #343, then merge the index\nWakes when "Cut 2\.4\.0" finishes, else at (\w{3} )?\d{2}:\d{2}: Announce 2\.4\.0/,
+    /Orchestrator: Waiting · thread to finish · \+1\nWakes when "Cut 2\.4\.0" finishes, else at (\w{3} )?\d{2}:\d{2}: Announce 2\.4\.0\nWakes at \d{2}:\d{2}: Check #341 and #343, then merge the index/,
   );
 
   // Hover lists every wait, the one its row names first.
