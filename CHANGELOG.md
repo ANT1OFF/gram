@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/ANT1OFF/gram/compare/v1.6.0...v1.7.0) (2026-11-03)
+
+
+### Features
+
+* icon-only speed and mode pickers in the composer ([#115](https://github.com/ANT1OFF/gram/issues/115)) ([6392f07](https://github.com/ANT1OFF/gram/commit/6392f07a8cf3042ff5da268b56dda0bff606861f))
+* icon-only speed and mode pickers in the new-thread form ([#117](https://github.com/ANT1OFF/gram/issues/117)) ([c70d37b](https://github.com/ANT1OFF/gram/commit/c70d37b397d47d2f6dcc494570b2e4f94b98e7e0))
+
 ## [1.6.0](https://github.com/ANT1OFF/gram/compare/v1.5.0...v1.6.0) (2026-11-03)
 
 
