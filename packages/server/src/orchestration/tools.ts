@@ -33,6 +33,7 @@ import {
   WAKE_NOTE_MAX,
   WAKES_PER_THREAD_MAX,
   WakeCondition,
+  WakeConditionInput,
   wakeConditionWhen,
   WorkerReportState,
   WorkerReportEvidence,
@@ -77,7 +78,7 @@ const questionEdit = (tool: string, edit: QuestionEdit) =>
 
 /** What a question's options show, as `ask_user` and `ask_question` describe it to the agent. */
 const VISUALS_HELP =
-  " When the options are directions of a mock, give each an `image` (a screenshot, such as the mock's shots/a-inbox-dark.png) and a `preview` (its page and board, such as v1.html#a-inbox), and name the mock in `mock` (its mock.json or a page): the card shows each option's thumbnail, enlarges it on a click, and opens the page at that board in Preview. Paths are relative to your folder or absolute, and must be inside your worktree or repo.";
+  " When the options are a mock's directions, give each an `image` (a screenshot, such as shots/a-inbox-dark.png) and a `preview` (its page and board, such as v1.html#a-inbox), and name the mock in `mock` (its mock.json or a page): the card shows each thumbnail and opens its board in Preview. Paths are relative to your folder or absolute, inside your worktree or repo.";
 
 // Tool limits apply before question persistence/visual confinement. Stored historical choices
 // remain readable through the broader contract schema.
@@ -96,6 +97,9 @@ const hasVisuals = (option: QuestionChoice): boolean =>
 
 const NOT_AN_ORCHESTRATOR =
   "This thread is not its workspace's orchestrator, so its memory isn't open here.";
+
+/** `schedule_wake` lists its condition flat (`WakeConditionInput`); this decodes it as the union. */
+const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
 
 /**
  * The tools only an orchestrator or a worker is bound, and the wake
@@ -149,7 +153,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "spawn_worker",
         class: "crossThread",
         description:
-          "Start a worker thread on a brief, in a new git worktree of one of this workspace's projects. This, not `spawn_task`, is how work for this workspace starts: a worker gets a worktree, a pull request and a place on the board, and reports back to you. For a change that spans repos, name the repo where most of the work happens as `project` and the others in `alsoIn`: the worker gets a worktree in each, all on the same branch, and opens one pull request per repo; if any of them can't give it a worktree, no worker is started. Workers sharing a `feature` are one group in the ledger and get the same branch name (feat/<feature>) unless `branch` says otherwise. The worker sees only `brief`, so make it stand alone. Give `title` a concise, task-specific sidebar name, usually 2–5 words (about 24–40 characters when natural). Keep the key bug, system or feature identifier; make review titles distinct from implementation titles (for example, “Review browser safety” and “Fix browser safety”). Put procedure and full scope in `brief`. Don't mechanically truncate or use a vague label. `group` puts the feature in a group of features run as one effort (a release, say), making the group if need be. `model` names one of the charter's worker models, as `list_workers` lists them (`agent:model`, or the bare id when only one entry has it): pick it by what the user said each is for; without it the worker starts on the default one, else on your model. `scope` is an advisory list of paths it will touch (overlaps with a live worker come back as a warning); `readAlso` lists your own workers whose worktrees it may read; `clientRequestId` makes a retried call return the worker it already made. `plan` is the brief's checklist, if it has one, as the worker's first plan: steps the worker keeps and the board counts (2 of 3). `userMessages` (1–5) attaches the user's latest messages in your conversation after the brief, word for word: for a paste the worker needs exactly (a log, a spec, an error), instead of retyping it. Inside the charter this needs no approval; a project outside the workspace (in `project` or `alsoIn`), or one worker more than the charter allows at once, asks the user. When a subscription limit the worker would run on stands at the workspace's pause threshold, the user is asked once whether to pause new workers until it resets; while paused, the call is refused and running workers carry on. `priority: \"low\"` marks a brief that can wait: when the agent its worker would run on refuses turns at a subscription limit, or the limit is at the workspace's pause threshold if the user set one, it is held instead of spawned (`held: true` in the result, and in list_workers' `held`), starts on its own when the limit resets or a turn on that agent goes through, and the user can start it sooner; a share alone, even 100%, never holds it, since credits can carry on past a full window; a digest tells you when it starts. A recent worker auth, model-unavailable or network failure before any output also holds spawns on that model, at either priority. The result names the failure, its time and models clear of this breaker; output on the model clears it, or one held worker probes after ten minutes. Use `manage_held_spawn` to cancel or retarget a held brief. When the workspace offers another model at a limit, a spawn a subscription limit stops lists the worker models clear of it in `alternatives`, with their notes: one not made returns `routeOffer: true` (call again with `model` set to one whose note fits the brief, or with `atLimit: \"stay\"`), and a held brief carries them for `manage_held_spawn` to retarget. Give a held brief a `clientRequestId`: a retried call with it returns the brief already held, while one without it holds a second copy. Use it for chores, follow-ups and nice-to-haves, never for what the user is waiting on. A repo Gram doesn't know yet is named by the absolute path of its top folder, and the user is asked to add it to the workspace; a folder without git can't be one. Refused while orchestration is paused. To mention a thread to the user, link it as [title](#threadId).",
+          "Start a worker thread on a brief, in a new git worktree of one of this workspace's projects. This, not `spawn_task`, is how work for this workspace starts: a worker gets a worktree, a pull request and a place on the board, and reports back to you. For a change that spans repos, name the repo where most of the work happens as `project` and the others in `alsoIn`: the worker gets a worktree in each, all on the same branch, and opens one pull request per repo; if any can't give it a worktree, no worker starts. Workers sharing a `feature` are one group in the ledger and share its branch (feat/<feature>) unless `branch` says otherwise. The worker sees only `brief`, so make it stand alone, with procedure and full scope. Give `title` a concise, task-specific sidebar name, usually 2–5 words (about 24–40 characters), keeping the key bug, system or feature identifier and telling review from implementation (“Review browser safety”, “Fix browser safety”); never a truncated or vague label. `group` puts the feature in a group run as one effort (a release, say), making it if need be. `model` names one of the charter's worker models as `list_workers` lists them (`agent:model`, or the bare id when only one entry has it): pick it by what the user said each is for; without it, the default one, else your model. `scope` is an advisory list of paths it will touch (overlaps with a live worker come back as a warning); `readAlso` lists your own workers whose worktrees it may read; `clientRequestId` makes a retried call return the worker or held brief it already made (a retry without one holds a second copy). `plan` is the brief's checklist, if any, as the worker's first plan, which the board counts (2 of 3). `userMessages` (1–5) attaches the user's latest messages in your conversation after the brief, word for word: for a paste the worker needs exactly (a log, a spec, an error). Inside the charter this needs no approval; a project outside the workspace (in `project` or `alsoIn`), or one worker more than the charter allows at once, asks the user. When a subscription limit the worker would run on stands at the workspace's pause threshold, the user is asked once whether to pause new workers until it resets; while paused, the call is refused and running workers carry on. `priority: \"low\"` marks a brief that can wait (chores, follow-ups, nice-to-haves; never what the user is waiting on): when its agent refuses turns at a subscription limit, or the limit is at the user's pause threshold, it is held instead (`held: true`, and in list_workers' `held`) and starts by itself when the limit resets or a turn on that agent goes through, or when the user starts it; a share alone, even 100%, never holds it. A recent auth, model-unavailable or network failure before any output also holds spawns on that model, at either priority; the result names the failure and the models clear of it. `manage_held_spawn` cancels or retargets a held brief. When the workspace offers another model at a limit, a spawn a limit stops lists the models clear of it in `alternatives`, with their notes: one not made returns `routeOffer: true` (call again with a `model` whose note fits, or `atLimit: \"stay\"`). A repo Gram doesn't know yet is named by the absolute path of its top folder, and the user is asked to add it to the workspace; a folder without git can't be one. Refused while orchestration is paused. Link a thread for the user as [title](#threadId).",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -289,7 +293,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "list_workers",
         class: "read",
         description:
-          "The ledger of your workers, grouped by feature, with each feature's stage and group, the groups with theirs, how many workers are live beside the charter's cap, the subscription limits in use with the share at which new workers pause, the workspace's `autonomy`, `app` (the running Gram app's version and build, to tell whether a merged fix is live yet), and `workerModels`: the models you may pass to spawn_worker, each with what the user wants it used for (`useFor`) and the one a worker gets when you name none (`default`). A worker's row gives its state, status, project, branch, pull request (and the same for each other repo it spans), the start of its last report, pending requests (each with its requestId and what it asks), overlaps and changed files, and cost only for a worker on a gateway; what is empty or zero is left out. `detail` gives full rows instead: the whole last report with its interface, the activity line, context use and how many messages you sent it. `live` keeps only the workers that count against the cap, and `state` only those in the states named. Archived groups and their stage notes, as well as archived workers, are left out unless includeArchived (or `state` names `archived`); with `since` (epoch ms), archived, merged and delivered ones last active before it are left out too. To mention a thread to the user, link it as [title](#threadId).",
+          "The ledger of your workers, grouped by feature with each feature's stage and group, and the groups with theirs; how many workers are live beside the charter's cap; the subscription limits in use and the share at which new workers pause; the workspace's `autonomy`; `app` (the running Gram's version and build, to tell whether a merged fix is live yet); and `workerModels`, the models spawn_worker takes, each with what the user wants it for (`useFor`) and the `default`. A worker's row gives its state, status, project, branch and pull request (and those of each other repo it spans), the start of its last report, pending requests (each with its requestId and what it asks), overlaps, changed files, and cost only on a gateway; what is empty or zero is left out. `detail` gives full rows: the whole last report with its interface, the activity line, context use and how many messages you sent it. `live` keeps the workers that count against the cap, `state` those in the states named. Archived groups, their stage notes and archived workers are left out unless includeArchived (or `state` names `archived`); `since` (epoch ms) also leaves out archived, merged and delivered ones last active before it. Link a thread for the user as [title](#threadId).",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -411,7 +415,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       descriptor: {
         name: "schedule_wake",
         class: "self",
-        description: `Have Gram wake you later, then end your turn: to wait out a time (a rollout, "check the canary in 45 minutes") or for something to happen that nothing else would tell you of. Give \`inMinutes\`, or \`at\` as an ISO 8601 time with its zone, at most ${WAKE_MAX_MINUTES / 1440} days ahead, and a \`note\` telling yourself what to do then, read back to you then. With \`onPr\` (owner/repo#N or its URL) it fires on the first of \`on\` to happen to that PR: \`merged\`, \`closed\`, \`headChanged\` (a new push), \`checksSettled\`, \`verdict\` (the review bot's on its head); \`on\` defaults to ${DEFAULT_PR_WAKE_EVENTS.join(", ")}. With \`condition\` instead it fires when that happens, by \`kind\`: \`branchMoved\` (\`repo\`'s \`branch\`, else its default, gets a new head), \`threadFinished\` (\`threadId\` reports done, is marked completed or rests after reporting; or is archived or closed), \`ciStuck\` (a job of \`repo\`'s \`pr\`, else yours, or \`runId\` sits queued \`queuedMinutes\`, else 15, with no runner; or a run awaits approval), \`machine\` with \`metric\` \`load\` (the 1-minute load average, as uptime shows it, stays under \`below\` for \`forMinutes\`, else 5) or \`diskFree\` (free space on your repo's volume, or \`path\`'s, drops under \`belowGB\`), \`freezeLifted\` (a merge_freeze on \`repo\`'s \`branch\`, else the one standing, ends), \`releasePublished\` (a release of \`name\` newer than \`after\`, \`minAgeDays\` old) or \`versionChanged\` (installed \`target\` leaves \`from\`). With \`onPr\` or \`condition\`, \`at\` or \`inMinutes\` is a fallback (default ${WAKE_MAX_MINUTES / 1440} days on). A PR already merged or closed, or a condition already met, is refused. A thread is sent a message; an orchestrator gets it in its next digest. It survives a restart, and a parked thread or a paused workspace holds it until it is back. Closing the thread drops it. Up to ${WAKES_PER_THREAD_MAX} can be pending, and the user sees them; \`cancel_wake\` drops one. Don't use it to wait for CI, a review or a workflow run of your own PR to settle: their monitors wake you. To wait for a PR your own PR depends on, declare it with depends_on instead, which wakes you on each of its events.`,
+        description: `Have Gram wake you later, then end your turn: to wait out a time ("check the canary in 45 minutes") or for something nothing else would tell you of. Give \`inMinutes\` or \`at\` (ISO 8601 with its zone), at most ${WAKE_MAX_MINUTES / 1440} days ahead, and a \`note\` telling yourself what to do then. \`onPr\` (owner/repo#N or URL) fires on the first of \`on\` to happen to it (default ${DEFAULT_PR_WAKE_EVENTS.join(", ")}); \`headChanged\` is a push, \`verdict\` the review bot's on its head. Or a \`condition\` by \`kind\`: \`branchMoved\` (\`repo\`'s \`branch\` gets a new head), \`threadFinished\` (\`threadId\` is done, rests after reporting, or closes), \`ciStuck\` (a job of \`repo\`'s \`pr\`, else yours, or of \`runId\` sits queued \`queuedMinutes\` with no runner, or a run awaits approval), \`machine\` (\`metric\` \`load\` stays under \`below\` for \`forMinutes\`, or \`diskFree\` at \`path\`, else your repo, drops under \`belowGB\`), \`freezeLifted\` (a merge_freeze on \`repo\`'s \`branch\` ends), \`releasePublished\` (\`source\`'s \`name\` releases past \`after\`, \`minAgeDays\` old) or \`versionChanged\` (installed \`target\` leaves \`from\`); the result's \`when\` spells it out with defaults. Either way the time is a fallback (default ${WAKE_MAX_MINUTES / 1440} days). One already merged, closed or met is refused. A thread gets a message, an orchestrator its next digest. It survives a restart; a parked thread or paused workspace holds it; closing the thread drops it. Up to ${WAKES_PER_THREAD_MAX} pending, shown to the user; \`cancel_wake\` drops one. Not for your own PR's CI, review or runs (their monitors wake you), nor a PR yours depends on (depends_on).`,
       },
       input: Schema.Struct({
         at: Schema.optionalKey(Schema.String),
@@ -419,7 +423,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         note: Schema.NonEmptyString.check(Schema.isMaxLength(WAKE_NOTE_MAX)),
         onPr: Schema.optionalKey(Schema.NonEmptyString),
         on: Schema.optionalKey(Schema.Array(PrWakeEvent).check(Schema.isMinLength(1))),
-        condition: Schema.optionalKey(WakeCondition),
+        condition: Schema.optionalKey(WakeConditionInput),
       }),
       // One cap over both stores: a thread whose role changed keeps the wakes it set before. Each
       // store checks only its own count in its write, so the count read from the other store and
@@ -432,14 +436,27 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
               message: "Give one of `onPr` and `condition`, not both.",
             });
           }
-          const conditionState =
+          // Listed flat (`WakeConditionInput`), decoded here as the union it is.
+          const spec =
             condition === undefined
+              ? undefined
+              : yield* decodeWakeCondition(condition).pipe(
+                  Effect.mapError(
+                    (e) =>
+                      new AppToolError({
+                        tool: "schedule_wake",
+                        message: `condition: ${e.message}`,
+                      }),
+                  ),
+                );
+          const conditionState =
+            spec === undefined
               ? undefined
               : yield* store.getThread(caller).pipe(
                   Effect.mapError(
                     () => new AppToolError({ tool: "schedule_wake", message: "No such thread." }),
                   ),
-                  Effect.flatMap((thread) => conditions.arm(thread, condition)),
+                  Effect.flatMap((thread) => conditions.arm(thread, spec)),
                 );
           const wake: WakeInput = {
             ...rest,
@@ -499,7 +516,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       descriptor: {
         name: "depends_on",
         class: "self",
-        description: `Declare that a pull request depends on another one (\`pr\`, owner/repo#N or its URL): it can't merge, or can't be finished, until that one has. For your own bound PR, or with \`threadId\` your worker's. From then on the thread is woken by itself whenever the dependency merges, is closed or gets a new push, with no wake to set; merge_when_ready waits for it to merge first unless \`mergeAfter: false\`; and the ledger shows the chain, flagging a dependency that drags on so the dependent PR can be stacked on its branch instead. \`remove: true\` drops it. Needs a bound PR (pr_bind); at most ${MAX_PR_DEPENDENCIES} per PR; a PR already merged or closed is refused. What an orchestrator declares, its worker can't drop.`,
+        description: `Declare that a pull request depends on another one (\`pr\`, owner/repo#N or its URL): it can't merge, or can't be finished, until that one has. For your own bound PR, or with \`threadId\` your worker's. The thread is then woken whenever the dependency merges, closes or gets a new push, with no wake to set; merge_when_ready waits for it to merge first unless \`mergeAfter: false\`; and the ledger shows the chain, flagging a dependency that drags on so the dependent PR can be stacked on its branch instead. \`remove: true\` drops it. Needs a bound PR (pr_bind); at most ${MAX_PR_DEPENDENCIES} per PR; a PR already merged or closed is refused. What an orchestrator declares, its worker can't drop.`,
       },
       audience: ["orchestrator", "worker"],
       input: Schema.Struct({
@@ -627,7 +644,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "ask_question",
         class: "self",
         description:
-          "Ask a decision you need, without waiting for it. Your orchestrator sees it first and answers it only when your brief, a standing decision or its memory settles it; otherwise it goes to the user as you wrote it. The answer reaches you as a message naming the question's id, mid-turn if you are running; if the user dismisses it, you are told that too. Give `options` (2–4, each a short `label` and a `description`) when the answer is a choice, `multiSelect` when several may be picked, and `recommended`: the label you would pick, or with no options a short recommendation of your own. Put what the decision needs in `context`. Keep working on what doesn't depend on it; end your turn only if nothing can move without it. Not for approvals: those your tools ask for themselves." +
+          "Ask a decision you need, without waiting for it. Your orchestrator sees it first and answers it only when your brief, a standing decision or its memory settles it; otherwise it goes to the user as you wrote it. The answer, or the user dismissing it, reaches you as a message naming the question's id, mid-turn if you are running. Give `options` (2–4, each a short `label` and a `description`) when the answer is a choice, `multiSelect` when several may be picked, and `recommended`: the label you would pick, or with no options your own short recommendation. Put what the decision needs in `context`. Keep working on what doesn't depend on it; end your turn only if nothing can move without it. Not for approvals: those your tools ask for themselves." +
           VISUALS_HELP,
       },
       audience: ["worker"],
@@ -841,9 +858,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "ask_user",
         class: "self",
         description:
-          "Ask the user a question without waiting for the answer. It is kept in questions.md in your memory and shown on the board and in Memory with an Answer button; the answer reaches you as a message naming its id, with the entry already closed. Give `options` (2–4, each a short `label` and a `description`) when the answer is a choice, `multiSelect` when several may be picked, and `recommended` naming the label you would pick; the user can always answer in their own words instead. Put what the user needs to decide in `context`. An existing `id`, or the words of an open question, updates that entry instead of adding one, and asking a closed one again reopens it. This doesn't block: carry on with what doesn't depend on the answer. The question that picks a mock's direction always carries the mock: each option's `image` and `preview`, and `mock`; never a bare path in `context`." +
+          "Ask the user a question without waiting for the answer. It is kept in questions.md in your memory and shown on the board and in Memory with an Answer button; the answer reaches you as a message naming its id, with the entry already closed. Give `options` (2–4, each a short `label` and a `description`) when the answer is a choice, `multiSelect` when several may be picked, and `recommended`, the label you would pick; the user can always answer in their own words. Put what the user needs to decide in `context`. An existing `id`, or an open question's words, updates that entry, and asking a closed one again reopens it. Carry on with what doesn't depend on the answer." +
           VISUALS_HELP +
-          ' A worker\'s mock is in its worktree, under your repo; `mock: ""` takes the mock away.',
+          " A question picking a mock's direction always carries the mock this way, never as a bare path in `context`. A worker's mock is in its worktree, under your repo; `mock: \"\"` takes the mock away.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({

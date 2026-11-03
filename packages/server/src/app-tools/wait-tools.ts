@@ -72,15 +72,7 @@ export const waitAppTools = (
     descriptor: {
       name: "wait_on_user",
       class: "self",
-      description:
-        "Use `content` for the body (`body`, `text` and `message` are aliases). Add to the user's Waiting on you list what they must act on outside this conversation: " +
-        "a `draft` to send elsewhere (Teams, mail, a PR), a `review` of a link, a `decision` you " +
-        "can't make, an `action` only they can take. Not for status. Write a draft in your reply " +
-        "as well; `copy` is what the Copy button copies, the exact text to paste, and without it " +
-        "Copy takes the reply's quoted or fenced block. `link` is an http(s) URL to open. Pass the " +
-        "`id` of an open item to update it, a revised draft say, rather than add another. Call " +
-        "`resolve_wait` once it is done or no longer needed. At most " +
-        `${MAX_OPEN_WAITS} open at once.`,
+      description: `Use \`content\` for the body (\`body\`, \`text\` and \`message\` are aliases). Add to the user's Waiting on you list what they must act on outside this conversation: a \`draft\` to send elsewhere (Teams, mail, a PR), a \`review\` of a link, a \`decision\` you can't make, an \`action\` only they can take. Not for status. Write a draft in your reply too; \`copy\` is the exact text the Copy button copies, else it takes the reply's quoted or fenced block. \`link\` is an http(s) URL to open. Pass an open item's \`id\` to update it, a revised draft say, rather than add another. Call \`resolve_wait\` once it is done or no longer needed. At most ${MAX_OPEN_WAITS} open at once.`,
     },
     input: waitOnUserInput,
     handle: (threadId, input) =>
@@ -169,10 +161,7 @@ export const waitAppTools = (
       name: "list_waits",
       class: "read",
       description:
-        "List the user's Waiting on you items in this thread: the open ones, or with " +
-        '`state: "all"` those resolved in the last 30 days too, each with its id, kind, title, ' +
-        "who added and who resolved it, and its age. Items the user added themselves have " +
-        '`source: "user"`. Read it after a compaction or a fresh session, rather than guess.',
+        'List the user\'s Waiting on you items in this thread: the open ones, or with `state: "all"` those resolved in the last 30 days too, each with its id, kind, title, who added and resolved it, and its age; ones the user added have `source: "user"`. Read it after a compaction or a fresh session rather than guess.',
     },
     input: Schema.Struct({ state: Schema.optionalKey(WaitListState) }),
     handle: (threadId, { state }) =>

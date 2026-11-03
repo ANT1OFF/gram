@@ -1,6 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
-import { WakeCondition, wakeConditionLabel, wakeConditionWhen } from "./wake-conditions.ts";
+import {
+  WakeCondition,
+  WakeConditionInput,
+  wakeConditionLabel,
+  wakeConditionWhen,
+} from "./wake-conditions.ts";
 
 const decode = Schema.decodeUnknownSync(WakeCondition);
 
@@ -80,5 +85,12 @@ describe("wake condition words", () => {
     expect(() => decode({ kind: "releasePublished", source: "github", name: "-x/y" })).toThrow();
     expect(() => decode({ kind: "versionChanged", target: "gh", from: "latest" })).toThrow();
     expect(() => decode({ kind: "versionChanged", target: "node" })).toThrow();
+  });
+
+  it("lists every kind and field of the union in schedule_wake's flat input, and no other", () => {
+    const kinds = new Set(WakeCondition.members.map((member) => member.fields.kind.literal));
+    expect(new Set(WakeConditionInput.fields.kind.literals)).toEqual(kinds);
+    const fields = new Set(WakeCondition.members.flatMap((member) => Object.keys(member.fields)));
+    expect(new Set(Object.keys(WakeConditionInput.fields))).toEqual(fields);
   });
 });

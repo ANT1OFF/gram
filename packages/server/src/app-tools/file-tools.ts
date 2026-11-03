@@ -47,7 +47,7 @@ export const sendFileTool = (
       name: "send_file",
       class: "self",
       description:
-        "Show the user files that already exist on disk, such as a screenshot, a diagram or a report, as cards in your reply; images preview inline. Paths are absolute or relative to the thread's folder. Use it for a deliverable worth looking at, not for working files.",
+        "Show the user files already on disk, such as a screenshot, a diagram or a report, as cards in your reply; images preview inline. Paths are absolute or relative to the thread's folder. For a deliverable worth looking at, not for working files.",
     },
     input: Schema.Struct({
       files: Schema.Array(Schema.NonEmptyString).check(

@@ -160,6 +160,48 @@ export const WakeCondition = Schema.Union([
 export type WakeCondition = typeof WakeCondition.Type;
 export type WakeConditionKind = WakeCondition["kind"];
 
+const optionalNumber = Schema.optionalKey(Schema.Finite);
+const optionalString = Schema.optionalKey(Schema.String);
+
+/**
+ * `WakeCondition` as `schedule_wake` lists it to a session: one object with every kind's fields,
+ * each optional but `kind`. Every session reads a tool's input schema at its start, and the union
+ * spelled out costs over twice this; `schedule_wake`'s description says which fields go with which
+ * kind. Only the listing: the tool decodes what it is given with `WakeCondition` itself, so what is
+ * accepted is the union's to say. A new kind or field goes in both (`wake-conditions.test.ts`
+ * holds them together).
+ */
+export const WakeConditionInput = Schema.Struct({
+  kind: Schema.Literals([
+    "branchMoved",
+    "threadFinished",
+    "ciStuck",
+    "machine",
+    "freezeLifted",
+    "releasePublished",
+    "versionChanged",
+  ]),
+  repo: optionalString,
+  branch: optionalString,
+  threadId: optionalString,
+  pr: optionalNumber,
+  runId: optionalNumber,
+  queuedMinutes: optionalNumber,
+  metric: Schema.optionalKey(Schema.Literals(["load", "diskFree"])),
+  below: optionalNumber,
+  forMinutes: optionalNumber,
+  belowGB: optionalNumber,
+  path: optionalString,
+  source: Schema.optionalKey(Schema.Literals(["npm", "github"])),
+  name: optionalString,
+  after: optionalString,
+  minAgeDays: optionalNumber,
+  includePrerelease: Schema.optionalKey(Schema.Boolean),
+  target: Schema.optionalKey(VersionTarget),
+  from: optionalString,
+});
+export type WakeConditionInput = typeof WakeConditionInput.Type;
+
 /**
  * What a condition's source last saw, which its next look is measured from: a head, a report
  * time. Its own small record of strings; nothing else reads it.
