@@ -114,7 +114,10 @@ export interface WakeConditionsShape {
   ) => Effect.Effect<StoredWakeCondition, AppToolError>;
   /** A store whose wakes the sources look at; the stores register once, as they are built. */
   readonly register: (host: WakeConditionHost) => Effect.Effect<void>;
-  /** Asks for a look at the kind's wakes now rather than at its next poll. */
+  /**
+   * Asks for a look at the kind's wakes now rather than at its next poll. A host nudges a wake's
+   * kind as it stores the wake: a kind with nothing pending doesn't poll until then.
+   */
   readonly nudge: (kind: WakeConditionKind) => Effect.Effect<void>;
   /** One look at every pending wake of the kind; the loops run it, and tests call it. */
   readonly sweep: (kind: WakeConditionKind) => Effect.Effect<void>;
@@ -168,6 +171,11 @@ export const WakeConditionsLive = Layer.effect(
     const metSince = new Map<string, number>();
     /** Per wake id, the look its debounce asks for. */
     const debounces = yield* FiberMap.make<string>();
+    /**
+     * The kinds whose last sweep found no pending wake: their loops wait for a nudge, which a host
+     * gives as it stores a wake of the kind, rather than polling for nothing.
+     */
+    const idle = new Set<string>();
 
     for (const source of sources) {
       nudges.set(source.kind, yield* Queue.sliding<void>(1));
@@ -223,10 +231,13 @@ export const WakeConditionsLive = Layer.effect(
           kind,
           Effect.gen(function* () {
             const live = new Set<string>();
+            // Idle unless a wake turns up below; a nudge while this runs still sweeps again.
+            idle.add(kind);
             for (const host of hosts) {
               const pending = yield* host.pending;
               for (const wake of pending) {
                 if (wake.spec.kind !== kind) continue;
+                idle.delete(kind);
                 live.add(wake.id);
                 yield* lookAt(source, host, wake);
               }
@@ -249,13 +260,13 @@ export const WakeConditionsLive = Layer.effect(
 
     for (const source of sources) {
       const queue = nudges.get(source.kind)!;
-      // A look at every poll, or sooner on a nudge, whichever comes first.
-      yield* Queue.take(queue).pipe(
-        Effect.timeoutOption(source.pollEvery),
-        Effect.andThen(sweep(source.kind)),
-        Effect.forever,
-        Effect.forkScoped,
-      );
+      // A look at every poll, or sooner on a nudge, whichever comes first; with nothing pending,
+      // on the next nudge alone.
+      yield* Effect.suspend(() =>
+        idle.has(source.kind)
+          ? Queue.take(queue)
+          : Queue.take(queue).pipe(Effect.timeoutOption(source.pollEvery)),
+      ).pipe(Effect.andThen(sweep(source.kind)), Effect.forever, Effect.forkScoped);
       if (source.changes !== undefined) {
         yield* source.changes.pipe(
           Stream.runForEach(() => nudge(source.kind)),

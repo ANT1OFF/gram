@@ -339,6 +339,9 @@ export const ThreadWakesLive = Layer.effect(
         }
         yield* arm(wake);
         yield* changed;
+        if (wake.conditionState !== undefined) {
+          yield* conditions.nudge(wake.conditionState.spec.kind);
+        }
         // Another watch of the PR may have seen it move since the tool looked it up.
         const badge =
           wake.onPr === undefined ? undefined : yield* publisher.watchedBadge(wake.onPr);

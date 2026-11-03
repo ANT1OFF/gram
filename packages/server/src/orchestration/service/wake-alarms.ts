@@ -259,6 +259,9 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
       yield* armAlarm(workspaceId, alarm);
       yield* syncPrWatches(workspaceId);
       yield* orchestrationChanged(workspaceId);
+      if (alarm.conditionState !== undefined) {
+        yield* kit.conditions.nudge(alarm.conditionState.spec.kind);
+      }
       // Another watch of the PR may have seen it move since the tool looked it up.
       const badge =
         alarm.onPr === undefined ? undefined : yield* publisher.watchedBadge(alarm.onPr);
