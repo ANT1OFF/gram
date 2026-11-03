@@ -58,6 +58,14 @@ describe("public notes", () => {
     expect(publicNotesProblems(notes, { versions: ["1.0.0", "13.0"] })).toEqual([]);
   });
 
+  it("lists the Linux files without saying voice is missing there", () => {
+    const notes = renderPublicNotes({ version: "1.0.0", cards, minimumMacOS: "13.0", linux: true });
+    expect(notes).toContain("Or Linux on x64");
+    expect(notes).toContain("gram_1.0.0_x86_64.AppImage");
+    expect(notes).not.toMatch(/voice|dictation/i);
+    expect(publicNotesProblems(notes, { versions: ["1.0.0", "13.0"] })).toEqual([]);
+  });
+
   it("says something even with no cards", () => {
     const notes = renderPublicNotes({ version: "1.0.1", cards: [], minimumMacOS: "13.0" });
     expect(notes).toMatch(/^Gram 1\.0\.1: fixes and improvements\./);

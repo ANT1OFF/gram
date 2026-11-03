@@ -230,7 +230,7 @@ export function renderPublicNotes({ version, cards, minimumMacOS, linux = false 
     `- macOS ${minimumMacOS} or later on Apple silicon.`,
     ...(linux
       ? [
-          "- Or Linux on x64: the AppImage, or the .deb for Debian 12, Ubuntu 24.04 and later. Gateway keys need a desktop keyring (GNOME Keyring or KWallet). Voice dictation isn't available on Linux yet.",
+          "- Or Linux on x64: the AppImage, or the .deb for Debian 12, Ubuntu 24.04 and later. Gateway keys need a desktop keyring (GNOME Keyring or KWallet).",
         ]
       : []),
     "- Claude Code and/or Codex installed and signed in with your own account. Gram runs them; it adds no subscription of its own.",
