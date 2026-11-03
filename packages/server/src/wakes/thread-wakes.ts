@@ -16,6 +16,7 @@ import {
   type PrStatus,
   type PrWakeEvent,
   type PrWatchSeen,
+  type StoredWakeCondition,
   type Thread,
   type ThreadId,
   type ThreadWake,
@@ -34,6 +35,7 @@ import { isBadgeOf } from "../git/extra-prs.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { redactText } from "../logging/redact.ts";
 import {
+  conditionWakeText,
   nextPrWatchSeen,
   prWakeDueAt,
   prWakeEventOf,
@@ -44,6 +46,7 @@ import {
 import { ThreadStore } from "../persistence/thread-store.ts";
 import type { Handlers } from "../rpc/handlers/common.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { conditionWakeOf, WakeConditions } from "./conditions.ts";
 
 /** How soon a due wake is tried again when its thread can't take it yet, or is parked. */
 const THREAD_WAKE_RETRY = Duration.minutes(1);
@@ -85,17 +88,21 @@ export interface WakeInput {
   readonly on?: ReadonlyArray<PrWakeEvent> | undefined;
   /** What the tool's lookup saw of `onPr`; absent when GitHub couldn't be asked. */
   readonly seen?: PrWatchSeen | undefined;
+  /** What it waits for instead of a PR, armed by its source (`WakeConditions.arm`). */
+  readonly conditionState?: StoredWakeCondition | undefined;
 }
 
-/** The PR fields of a stored wake, from what `schedule_wake` was given. */
+/** The PR or condition fields of a stored wake, from what `schedule_wake` was given. */
 export const prWakeFields = (input: WakeInput) =>
-  input.onPr === undefined
-    ? {}
-    : {
-        onPr: { repo: input.onPr.repo, number: input.onPr.number },
-        ...(input.on === undefined ? {} : { on: [...input.on] }),
-        ...(input.seen === undefined ? {} : { seen: input.seen }),
-      };
+  input.conditionState !== undefined
+    ? { condition: input.conditionState.spec, conditionState: input.conditionState }
+    : input.onPr === undefined
+      ? {}
+      : {
+          onPr: { repo: input.onPr.repo, number: input.onPr.number },
+          ...(input.on === undefined ? {} : { on: [...input.on] }),
+          ...(input.seen === undefined ? {} : { seen: input.seen }),
+        };
 
 /** What the publisher's sweeps look up for a thread's wakes on PRs, the verdict's with reviews. */
 export const prWakeWatches = (
@@ -132,6 +139,7 @@ export const ThreadWakesLive = Layer.effect(
     const runtimes = yield* ThreadRuntimes;
     const hub = yield* EventHub;
     const publisher = yield* GitStatePublisher;
+    const conditions = yield* WakeConditions;
     /** Per wake id, the fiber that fires it. */
     const alarms = yield* FiberMap.make<string>();
     /** Each armed wake's thread, so a thread's removal can stop its alarms. */
@@ -195,17 +203,20 @@ export const ThreadWakesLive = Layer.effect(
           // The event kept on the wake is the first one; a later one a concurrent look armed with
           // gives way to it.
           const fired = wake.fired ?? firedNow;
+          const met = wake.conditionState?.fired !== undefined;
           const now = yield* Clock.currentTimeMillis;
-          if (fired === undefined && now < wake.at) return yield* arm(wake);
+          if (fired === undefined && !met && now < wake.at) return yield* arm(wake);
           const thread = yield* store.getThread(wake.threadId).pipe(Effect.option);
           if (thread._tag === "Some" && (yield* held(thread.value))) {
             return yield* arm(wake, THREAD_WAKE_RETRY, fired);
           }
           if (thread._tag === "Some") {
             const text =
-              wake.onPr === undefined
-                ? wakeDueText(wake)
-                : prWakeText({ ...wake, onPr: wake.onPr }, fired);
+              wake.conditionState !== undefined
+                ? conditionWakeText({ ...wake, conditionState: wake.conditionState })
+                : wake.onPr === undefined
+                  ? wakeDueText(wake)
+                  : prWakeText({ ...wake, onPr: wake.onPr }, fired);
             const delivered = yield* runtimes
               .sendNotice(wake.threadId, `wake:${wake.id}`, { text })
               .pipe(
@@ -262,9 +273,31 @@ export const ThreadWakesLive = Layer.effect(
       if (started) return;
       started = true;
       for (const wake of yield* store.listThreadWakes) {
-        yield* wake.fired === undefined ? arm(wake) : arm(wake, Duration.zero, wake.fired);
+        yield* wake.fired !== undefined
+          ? arm(wake, Duration.zero, wake.fired)
+          : wake.conditionState?.fired !== undefined
+            ? arm(wake, Duration.zero)
+            : arm(wake);
       }
       yield* syncWatches;
+    });
+
+    // The condition sources look at these wakes; one found met is kept, then fired as a due one is.
+    // Before `start`, only kept: its start fires it with the rest.
+    yield* conditions.register({
+      name: "thread wakes",
+      pending: store.listThreadWakes.pipe(
+        Effect.map((wakes) => wakes.flatMap((wake) => conditionWakeOf(wake) ?? [])),
+      ),
+      saveSeen: (id, seen) => store.updateThreadWakeCondition(id, { seen }).pipe(Effect.asVoid),
+      fire: (id, fired) =>
+        Effect.gen(function* () {
+          if (!(yield* store.updateThreadWakeCondition(id, { fired }))) return;
+          yield* changed;
+          if (!started) return;
+          const wake = yield* findWake(id);
+          if (wake !== undefined) yield* arm(wake, Duration.zero);
+        }),
     });
 
     // The store drops a closed or removed thread's wakes with it; their alarms go here.

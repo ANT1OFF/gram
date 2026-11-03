@@ -50,6 +50,9 @@ import { LaunchChecksCache } from "../launch-checks/handler.ts";
 import { ReviewRequestsLive } from "../github/review-requests.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
+import { BranchHeadsLive } from "../wakes/branch-heads.ts";
+import { WakeConditionsLive } from "../wakes/conditions.ts";
+import { WakeConditionSourcesLive } from "../wakes/condition-sources.ts";
 import { AppActivityLive } from "../git/activity.ts";
 import { ThreadVisibility } from "../git/visibility.ts";
 import type { GitPlatform } from "../git/platform.ts";
@@ -363,7 +366,17 @@ export const ServerCore = Layer.unwrap(
               ThreadWakesLive,
             ),
           ),
-          Layer.provideMerge(PlanKeeperLive),
+          // The condition wakes' engine, under the wakes and the orchestration, which keep the
+          // wakes its sources look at.
+          Layer.provideMerge(
+            Layer.mergeAll(
+              PlanKeeperLive,
+              WakeConditionsLive.pipe(
+                Layer.provide(WakeConditionSourcesLive),
+                Layer.provide(BranchHeadsLive),
+              ),
+            ),
+          ),
           Layer.provideMerge(GitStatePublisherLive),
           Layer.provideMerge(ReviewRequestsLive),
           Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),

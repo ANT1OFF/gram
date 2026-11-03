@@ -59,15 +59,53 @@ changes into events that wake the thread that cares:
   and reviewers, and `run_monitor` a GitHub Actions run such as a release build. Each sends one
   message when the checks settle, the bot posts a round or a verdict, a person approves or
   requests changes, the merge state changes, or the run completes.
-- **Wakes.** `schedule_wake` wakes a thread at a time, or on the first of a set of pull request
-  events: checks settling, a review bot's verdict on its head, a new push, a merge or a close.
-  `depends_on` wakes a thread whenever the pull request it depends on merges, closes or gets a
-  new push.
+- **Wakes.** `schedule_wake` wakes a thread at a time, on the first of a set of pull request
+  events (checks settling, a review bot's verdict on its head, a new push, a merge or a close), or
+  on a [condition](#condition-wakes) such as a branch getting a new head or another thread
+  finishing. `depends_on` wakes a thread whenever the pull request it depends on merges, closes or
+  gets a new push.
 - **Merges.** `merge_when_ready` waits for the workspace's merge review policy, required checks or
   a passing [local merge check](#project-local-merge-checks), and GitHub's rules, then merges
   pinned to the head it checked.
 - **Digests.** Worker reports, finished turns, errors, long-open requests and pull request changes
   wake the orchestrator with one digest built from the current ledger.
+
+### Condition wakes
+
+`schedule_wake` takes a `condition` from a closed union of kinds, instead of `onPr`:
+
+| Kind             | Input                        | Fires when                                                                                                                |
+| ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `branchMoved`    | `repo`, optional `branch`    | the branch (the repo's default branch when none is named) gets a new head, or is deleted                                  |
+| `threadFinished` | `threadId` of another thread | it reports done, is marked completed, or is at rest after a report; or it is archived or closed, which also ends the wait |
+
+A condition wake is a wake like any other. It counts toward the thread's cap of five, the user sees
+it on the thread's chip and in the ledger (`wakes when acme/app main gets a new head, else …`),
+`cancel_wake` drops it, and its time (`at` or `inMinutes`, else seven days on) is its fallback. A
+condition already met when the wake is set is refused. Once a look finds it met, the finding is
+kept on the wake and delivered through the same path as a due time: to the thread as a message
+with the facts in a `wake-event` block, or into the orchestrator's next digest. A parked thread or
+a paused workspace holds it, and a restart delivers it as it was found.
+
+Each kind has a source on the server (`packages/server/src/wakes/condition-sources.ts`), which the
+engine (`packages/server/src/wakes/conditions.ts`) runs. A source takes the condition's baseline
+when the wake is set, then looks at every pending wake of its kind on a poll and whenever its event
+source says something may have changed. A look that finds the condition met fires only if a second
+look, the kind's debounce later, still finds it met; the second look's facts are the ones told.
+`branchMoved` polls GitHub every two minutes, once per branch however many wakes wait on it, paced
+to the background share of the API allowance, with a 30-second debounce. `threadFinished` looks
+when the thread changes or a worker reports, and every two minutes, with a 20-second debounce.
+
+To add a kind:
+
+1. Add a member to `WakeCondition` in `packages/contracts/src/wake-conditions.ts`, and its words in
+   `wakeConditionWhen` and `wakeConditionLabel`. Add new optional fields freely. A change to what
+   an existing field means bumps `WAKE_CONDITION_VERSION`.
+2. Write a `WakeConditionSource` for it: `arm` checks the condition for the calling thread, fills
+   in defaults, takes the baseline, and refuses one already met. `look` must not fail, and answers
+   met (with its facts), not met (with a new baseline, if any), or `undefined` when it couldn't
+   tell. Give it a `pollEvery`, a `debounce`, and optionally a `changes` stream.
+3. List it in `WakeConditionSourcesLive`, and name it in `schedule_wake`'s description.
 
 ## Accounts, models and speed
 
