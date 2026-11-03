@@ -17,9 +17,12 @@ const UNMEASURED: ToolbarLayout = { labelled: new Set(["*"]), folded: [] };
  * and without its `[data-toolbar-label]`; every `[data-toolbar-fixed]` is space the blocks can't
  * have. `blocks` lists the blocks in toolbar order, folded ones too, whose widths are remembered
  * from when they last showed; keep the array stable while they don't change, since a new one
- * measures again. Anything measured resizing measures again too.
+ * measures again. Anything measured resizing measures again too. A block marked `glyph` never shows
+ * its label, so the hidden one it carries for screen readers isn't counted as width it could take.
  */
-export function useToolbarLayout(blocks: readonly { id: string; foldable: boolean }[]) {
+export function useToolbarLayout(
+  blocks: readonly { id: string; foldable: boolean; glyph?: boolean }[],
+) {
   const ref = useRef<HTMLDivElement>(null);
   const widths = useRef(new Map<string, { full: number; icon: number }>());
   const observer = useRef<ResizeObserver | undefined>(undefined);
@@ -47,7 +50,8 @@ export function useToolbarLayout(blocks: readonly { id: string; foldable: boolea
     for (const node of el.querySelectorAll<HTMLElement>("[data-toolbar-block]")) {
       observer.current?.observe(node);
       const id = node.dataset["toolbarBlock"]!;
-      const label = node.querySelector<HTMLElement>("[data-toolbar-label]");
+      const glyph = blocks.some((block) => block.id === id && block.glyph === true);
+      const label = glyph ? null : node.querySelector<HTMLElement>("[data-toolbar-label]");
       const extra = label === null ? 0 : label.scrollWidth + LABEL_GAP;
       const shown = node.offsetWidth + gap;
       widths.current.set(

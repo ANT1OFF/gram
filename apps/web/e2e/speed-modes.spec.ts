@@ -74,12 +74,13 @@ for (const agent of ["claude", "codex"] as const)
     expect(
       await page.evaluate(() => JSON.parse(sessionStorage.getItem("gram.speed-created")!)),
     ).toEqual({ agent, model: "fixture-fast", variant: "high", speed: "fast" });
-    const currentSpeed = page.getByRole("combobox", { name: "Speed", exact: true });
-    await expect(currentSpeed).toContainText("Fast");
+    // In the thread's composer speed and effort are glyphs, named with their values.
+    const currentSpeed = page.getByRole("combobox", { name: /^Speed: / });
+    await expect(currentSpeed).toHaveAccessibleName(/^Speed: Fast/);
     await page.getByRole("combobox", { name: "Model", exact: true }).click();
     await page.getByRole("option", { name: "Synthetic Standard model", exact: true }).click();
-    await expect(currentSpeed).toContainText("Standard");
-    await expect(page.getByRole("combobox", { name: "Effort", exact: true })).toContainText("High");
+    await expect(currentSpeed).toHaveAccessibleName("Speed: Standard");
+    await expect(page.getByRole("combobox", { name: "Effort: High effort" })).toBeVisible();
     await currentSpeed.click();
     await expect(page.getByRole("option", { name: "Fast", exact: true })).toHaveCount(0);
   });
