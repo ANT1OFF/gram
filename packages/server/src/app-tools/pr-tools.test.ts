@@ -1,6 +1,11 @@
 // PR app tools and run_monitor.
 import { describe, expect, it } from "@effect/vitest";
-import { MAX_RUN_WATCHES, ORCHESTRATOR_HAS_NO_PR, type PrStatus } from "@gram/contracts";
+import {
+  MAX_RUN_WATCHES,
+  ORCHESTRATOR_HAS_NO_PR,
+  type PrStatus,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -29,6 +34,7 @@ import {
   RunTestLayer,
   monitorReads,
   RunLoopTestLayer,
+  standingFreeze,
   viewsOf,
   sentTo,
   runJson,
@@ -239,6 +245,41 @@ describe.skipIf(!hasGit)("PR app tools", () => {
       expect(yield* store.listRequests(none.thread.id)).toEqual([]);
       expect(ghCalls.filter(([, , verb]) => verb === "merge")).toHaveLength(2);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.live(
+    "set_auto_merge reads a frozen repo's PR base afresh and refuses a merge onto the frozen branch",
+    () =>
+      Effect.gen(function* () {
+        standingFreeze.current = {
+          repo: "acme/web",
+          branch: "main",
+          threadId: "release" as ThreadId,
+          title: "Release 1.6",
+          reason: "the cut",
+          at: 0,
+          until: Date.parse("2099-01-01T00:00:00Z"),
+        };
+        // The badge still names the base the PR was opened against; GitHub says main now.
+        const refused = yield* setAutoMerge(
+          badge({ mergeState: "CLEAN", headRefOid: "abc123", baseRef: "release" }),
+          (args) => (command(args) === "pr view" ? { ...ok, stdout: "main\n" } : ok),
+        ).pipe(Effect.flip);
+        expect(refused.message).toContain('main is frozen by "Release 1.6" for the cut');
+        expect(ghCalls).toEqual([viewCall("baseRefName")]);
+
+        // A PR the freeze allows merges.
+        standingFreeze.current = { ...standingFreeze.current, allow: [7] };
+        const allowed = yield* setAutoMerge(
+          badge({ mergeState: "CLEAN", headRefOid: "abc123", baseRef: "release" }),
+          (args) => (command(args) === "pr view" ? { ...ok, stdout: "main\n" } : ok),
+        );
+        expect(allowed).toMatchObject({ merged: true });
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => (standingFreeze.current = undefined))),
+        Effect.scoped,
+        Effect.provide(TestLayer),
+      ),
   );
 
   it.live("set_auto_merge merges a clean PR at once and arms one that has to wait", () =>

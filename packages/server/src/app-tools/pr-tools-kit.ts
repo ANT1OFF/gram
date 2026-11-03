@@ -1,14 +1,22 @@
 // Shared fixtures for the PR app tool tests, which are split across files so they run side by side.
 import { afterAll, expect } from "@effect/vitest";
-import { MAX_RUN_WATCHES, type PrStatus, type ProjectId } from "@gram/contracts";
+import {
+  MAX_RUN_WATCHES,
+  mergeFreezeHolds,
+  type MergeFreeze,
+  type PrStatus,
+  type ProjectId,
+} from "@gram/contracts";
 import { Pr, Proc } from "@gram/git";
 import { captureLogs } from "@gram/agents/testing/logs";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import { spawnSync } from "node:child_process";
 import { gitPlatformTest } from "../git/platform.ts";
+import { MergeFreezes, MergeFreezesNone } from "../git/merge-freezes.ts";
 import { MergeWhenReadyLive } from "../git/merge-when-ready.ts";
 import { GitStatePublisherLive } from "../git/publisher.ts";
 import { RunMonitorLive } from "../git/run-monitor.ts";
@@ -89,7 +97,40 @@ const FakeGh = Layer.succeed(Proc, {
 // Approvals, turns and merges log as they go; a warning would be news.
 const quietLogs = captureLogs({ printWarnings: true }).layer;
 
+/** A merge freeze the PR tools see, when a test sets one; none otherwise. */
+export const standingFreeze: { current: MergeFreeze | undefined } = { current: undefined };
+
+/** Merge freezes as `standingFreeze` says, with no fence to wait on. */
+const StubFreezes = Layer.succeed(MergeFreezes, {
+  freeze: () => Effect.die("not in these tests"),
+  lift: () => Effect.die("not in these tests"),
+  active: (repo, branch) =>
+    Effect.sync(() => {
+      const freeze = standingFreeze.current;
+      return freeze !== undefined &&
+        freeze.repo === repo &&
+        (branch === undefined || freeze.branch === branch)
+        ? freeze
+        : undefined;
+    }),
+  holding: (repo, branch, number) =>
+    Effect.sync(() => {
+      const freeze = standingFreeze.current;
+      return freeze !== undefined &&
+        freeze.repo === repo &&
+        (branch === undefined || freeze.branch === branch) &&
+        mergeFreezeHolds(freeze, number)
+        ? freeze
+        : undefined;
+    }),
+  list: Effect.sync(() => (standingFreeze.current === undefined ? [] : [standingFreeze.current])),
+  forget: () => Effect.void,
+  fence: (_repo, effect) => effect,
+  changes: Stream.empty,
+});
+
 export const TestLayer = PrAppToolsLive.pipe(
+  Layer.provide(StubFreezes),
   Layer.provide(FakeGh),
   Layer.provideMerge(GitStatePublisherLive),
   Layer.provideMerge(RuntimeTestLayer),
@@ -166,6 +207,7 @@ export const liveThread = Effect.gen(function* () {
 });
 
 export const RunTestLayer = PrAppToolsLive.pipe(
+  Layer.provide(MergeFreezesNone),
   Layer.provideMerge(RunMonitorLive),
   Layer.provide(FakeGh),
   Layer.provideMerge(GitStatePublisherLive),
@@ -199,6 +241,7 @@ const CountedStore = Layer.effect(
 
 /** The monitor with its own loop running every 20 ms, and its store reads counted. */
 export const RunLoopTestLayer = PrAppToolsLive.pipe(
+  Layer.provide(MergeFreezesNone),
   Layer.provideMerge(RunMonitorLive.pipe(Layer.provide(CountedStore))),
   Layer.provide(FakeGh),
   Layer.provideMerge(GitStatePublisherLive),
@@ -240,6 +283,7 @@ export const watches = (from: number) =>
 
 export const MergeTestLayer = PrAppToolsLive.pipe(
   Layer.provideMerge(MergeWhenReadyLive),
+  Layer.provideMerge(MergeFreezesNone),
   Layer.provide(FakeGh),
   Layer.provideMerge(GitStatePublisherLive),
   Layer.provideMerge(RuntimeTestLayer),

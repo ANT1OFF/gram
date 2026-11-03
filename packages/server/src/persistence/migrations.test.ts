@@ -42,7 +42,10 @@ describe("migration ordering gate", () => {
   it.effect("the production registry is the baseline, then contiguous ids", () =>
     Effect.gen(function* () {
       const resolved = yield* migrationLoader(migrations);
-      expect(resolved.map(([id, name]) => [id, name])).toEqual([[1, "baseline"]]);
+      expect(resolved.map(([id, name]) => [id, name])).toEqual([
+        [1, "baseline"],
+        [2, "merge_freezes"],
+      ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
     ),
@@ -149,6 +152,7 @@ describe("the baseline", () => {
         "table helper_usage",
         "table labels",
         "table local_checks",
+        "table merge_freezes",
         "table message_search",
         "table messages",
         "table orchestration_events",
@@ -190,6 +194,7 @@ describe("the baseline", () => {
       ]);
       expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
         [1, "baseline"],
+        [2, "merge_freezes"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -209,7 +214,7 @@ describe("the baseline", () => {
       yield* Effect.gen(function* () {
         const store = yield* ThreadStore;
         expect((yield* store.listProjects).map((p) => p.root)).toEqual(["/invented/baseline"]);
-        expect((yield* applied).map((row) => row.name)).toEqual(["baseline"]);
+        expect((yield* applied).map((row) => row.name)).toEqual(["baseline", "merge_freezes"]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
   );
@@ -224,7 +229,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0002_example": Effect.gen(function* () {
+        "0003_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -238,7 +243,8 @@ describe("the baseline", () => {
           expect(columns.map((c) => c.name)).toContain("example");
           expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
             [1, "baseline"],
-            [2, "example"],
+            [2, "merge_freezes"],
+            [3, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

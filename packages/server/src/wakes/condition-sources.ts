@@ -10,17 +10,20 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
+import type { AutoMerges } from "../git/auto-merges.ts";
+import { MergeFreezes, MergeFreezesLive } from "../git/merge-freezes.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { BranchHeads } from "./branch-heads.ts";
-import { ciStuckSource } from "./ci-stuck.ts";
+import { type CiJobs, ciStuckSource } from "./ci-stuck.ts";
 import { folderOf } from "./condition-folders.ts";
 import {
   type ConditionLook,
+  WakeConditionsLive,
   WakeConditionSources,
   type WakeConditionSource,
 } from "./conditions.ts";
-import { machineSource } from "./machine.ts";
+import { type MachineState, machineSource } from "./machine.ts";
 
 const met = (facts: Readonly<Record<string, string>>): ConditionLook => ({ met: true, facts });
 const notMet = (seen?: Readonly<Record<string, string>>): ConditionLook =>
@@ -184,8 +187,60 @@ export const threadFinishedSource = Effect.gen(function* () {
   return source;
 });
 
+/**
+ * `freezeLifted`: a merge freeze (`merge_freeze`) on a repo's branch ends, lifted or expired. Set
+ * without a branch, it waits on the freeze standing on the repo then; set on a branch that isn't
+ * frozen, it is refused. Every change of a freeze asks for a look.
+ */
+export const freezeLiftedSource = Effect.gen(function* () {
+  const freezes = yield* MergeFreezes;
+  const source: WakeConditionSource<"freezeLifted"> = {
+    kind: "freezeLifted",
+    pollEvery: Duration.minutes(1),
+    debounce: Duration.seconds(5),
+    arm: (_caller, spec) =>
+      Effect.gen(function* () {
+        const held = yield* freezes.active(spec.repo, spec.branch);
+        if (held === undefined) {
+          return yield* refuse(
+            `${spec.repo}${spec.branch === undefined ? "" : ` ${spec.branch}`} isn't frozen.`,
+          );
+        }
+        return { spec: { ...spec, branch: held.branch } };
+      }),
+    look: (wake) =>
+      Effect.gen(function* () {
+        const branch = wake.spec.branch;
+        if (branch === undefined) return undefined;
+        const held = yield* freezes.active(wake.spec.repo, branch);
+        return held === undefined ? met({ repo: wake.spec.repo, branch }) : notMet();
+      }),
+    changes: freezes.changes,
+  };
+  return source;
+});
+
 /** Every kind's source, for `WakeConditionsLive`. */
 export const WakeConditionSourcesLive = Layer.effect(
   WakeConditionSources,
-  Effect.all([branchMovedSource, threadFinishedSource, ciStuckSource, machineSource]),
+  Effect.all([
+    branchMovedSource,
+    threadFinishedSource,
+    ciStuckSource,
+    machineSource,
+    freezeLiftedSource,
+  ]),
 );
+
+/**
+ * The condition wakes' engine with its sources, and the merge freezes, which the merge gate reads
+ * too; GitHub's branches are read through `branchHeads`, and its auto-merges through `autoMerges`.
+ */
+export const wakeConditionsLayer = <E, R>(
+  io: Layer.Layer<BranchHeads | AutoMerges | CiJobs | MachineState, E, R>,
+) =>
+  WakeConditionsLive.pipe(
+    Layer.provide(WakeConditionSourcesLive),
+    Layer.provideMerge(MergeFreezesLive),
+    Layer.provide(io),
+  );

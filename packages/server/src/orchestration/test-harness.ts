@@ -59,8 +59,8 @@ import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
 import { BranchHeads } from "../wakes/branch-heads.ts";
 import { CiJobs, type CiState } from "../wakes/ci-stuck.ts";
 import { type DiskSpace, MachineState } from "../wakes/machine.ts";
-import { WakeConditionsLive } from "../wakes/conditions.ts";
-import { WakeConditionSourcesLive } from "../wakes/condition-sources.ts";
+import { AutoMerges } from "../git/auto-merges.ts";
+import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
 
 /** What outlives a layer: the temp dir with the repo, the database and the memory, and the fake git states. */
 export interface World {
@@ -127,6 +127,17 @@ export interface World {
    */
   machineLoad: readonly [number, number, number] | undefined;
   readonly diskSpace: Map<string, DiskSpace>;
+  /** Each checkout's origin as `owner/repo`, by folder; a folder without one has none. */
+  readonly originRepos: Map<string, string>;
+  /** GitHub auto-merges armed, by `owner/repo#N` lower-cased in the repo. */
+  readonly autoMerges: Map<
+    string,
+    { readonly base: string; readonly method: "squash" | "merge" | "rebase" }
+  >;
+  /** What a freeze did to them, in order: `disable acme/app#7`, `enable acme/app#7 squash`. */
+  readonly autoMergeCalls: Array<string>;
+  /** Runs before a PR's auto-merge is turned off, for a test to hold the freeze there. */
+  autoMergeDisableGate?: ((number: number) => Effect.Effect<void>) | undefined;
 }
 
 const prKey = (pr: { readonly repo: string; readonly number: number }) =>
@@ -167,6 +178,9 @@ export const makeWorld = Effect.gen(function* () {
     ciStates: new Map(),
     machineLoad: [1, 1, 1],
     diskSpace: new Map(),
+    originRepos: new Map(),
+    autoMerges: new Map(),
+    autoMergeCalls: [],
   };
   return world;
 });
@@ -339,11 +353,46 @@ const fakeMachine = (world: World) =>
     disk: (path) => Effect.sync(() => world.diskSpace.get(path) ?? world.diskSpace.get("*")),
   });
 
+/** GitHub's auto-merges and the checkouts' origins as `world` has them; each change is recorded. */
+const fakeAutoMerges = (world: World) =>
+  Layer.succeed(AutoMerges, {
+    repoOf: (cwd) => Effect.sync(() => world.originRepos.get(cwd)),
+    armed: (_cwd, repo, base) =>
+      Effect.sync(() =>
+        [...world.autoMerges].flatMap(([key, armed]) => {
+          const [r, n] = key.split("#");
+          return r === repo.toLowerCase() && armed.base === base
+            ? [{ number: Number(n), method: armed.method }]
+            : [];
+        }),
+      ),
+    disable: (_cwd, repo, number) =>
+      (world.autoMergeDisableGate?.(number) ?? Effect.void).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            world.autoMergeCalls.push(`disable ${repo}#${number}`);
+            world.autoMerges.delete(`${repo.toLowerCase()}#${number}`);
+            return undefined;
+          }),
+        ),
+      ),
+    enable: (_cwd, repo, number, method) =>
+      Effect.sync(() => {
+        world.autoMergeCalls.push(`enable ${repo}#${number} ${method}`);
+        world.autoMerges.set(`${repo.toLowerCase()}#${number}`, { base: "main", method });
+        return undefined;
+      }),
+  });
+
 /** The condition wakes' engine over the real sources, reading GitHub and the machine from `world`. */
 const conditionsOf = (world: World) =>
-  WakeConditionsLive.pipe(
-    Layer.provide(WakeConditionSourcesLive),
-    Layer.provide(Layer.mergeAll(fakeBranchHeads(world), fakeCiJobs(world), fakeMachine(world))),
+  wakeConditionsLayer(
+    Layer.mergeAll(
+      fakeBranchHeads(world),
+      fakeCiJobs(world),
+      fakeMachine(world),
+      fakeAutoMerges(world),
+    ),
   );
 
 /** The server over `world`'s database file and memory root. */

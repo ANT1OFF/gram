@@ -14,6 +14,7 @@ import { RuntimeTestLayer } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { GitRefresh } from "./platform.ts";
 import { GitStatePublisher } from "./publisher.ts";
+import { MergeFreezesNone } from "./merge-freezes.ts";
 import { MergeWhenReady, MergeWhenReadyLive } from "./merge-when-ready.ts";
 import { waitReal } from "../orchestration/test-harness.ts";
 
@@ -348,6 +349,7 @@ describe("actual merge launch with GitHub CI evidence", () => {
           observe: () => Effect.void,
         });
         const layer = MergeWhenReadyLive.pipe(
+          Layer.provide(MergeFreezesNone),
           Layer.provideMerge(provider),
           Layer.provideMerge(proc),
           Layer.provideMerge(publisher),

@@ -18,6 +18,7 @@ import {
   autonomyOf,
   mergeAfterDependencies,
   localCheckOnHead,
+  mergeFreezeText,
   type BoundPr,
   type LocalCheckPass,
   type ReviewBot,
@@ -48,6 +49,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { isBadgeOf } from "./extra-prs.ts";
 import { LocalChecks, type LocalCheck } from "./local-checks.ts";
+import { MergeFreezes } from "./merge-freezes.ts";
 import { GitRefresh } from "./platform.ts";
 import { GitStatePublisher } from "./publisher.ts";
 import { workerPrBlocker, workerPrIdentity } from "./worker-pr.ts";
@@ -263,6 +265,15 @@ export const MergeWhenReadyLive = Layer.effect(
     const recheck = Effect.sleep(Duration.millis(recheckMs));
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const localChecks = Option.getOrUndefined(yield* Effect.serviceOption(LocalChecks));
+    const freezes = yield* MergeFreezes;
+    /**
+     * Why a merge of `pr` onto its base waits for a merge freeze, or `undefined` when none holds it
+     * (none stands, or the freeze allows this PR).
+     */
+    const frozenFor = (pr: Pick<BoundPr, "repo" | "number">, baseRef: string | undefined) =>
+      freezes
+        .holding(pr.repo, baseRef, pr.number)
+        .pipe(Effect.map((freeze) => (freeze === undefined ? undefined : mergeFreezeText(freeze))));
 
     /** Gram's own passing check of the badge's head merged onto its current base, if there is one. */
     const localCheckFor = (thread: Thread, badge: PrStatus) =>
@@ -539,6 +550,9 @@ export const MergeWhenReadyLive = Layer.effect(
         const badge = yield* publisher.badgeFor(thread.value);
         if (badge === undefined || !isBadgeOf(badge, bound) || badge.headRefOid !== head) return;
         if ((yield* blockerFor(thread.value, bound.repo, intent, badge)) !== undefined) return;
+        const frozen = yield* frozenFor(bound, badge.baseRef);
+        // The freeze's end looks at every armed merge in the repo again.
+        if (frozen !== undefined) return yield* noteWait(thread.value, bound, frozen);
         const cwd = thread.value.checkout.path;
         // `--repo` names the repo, so gh needs only a folder to start in: with the worktree deleted
         // outside Gram, its main checkout, or every gh would fail to start and stall it.
@@ -640,170 +654,188 @@ export const MergeWhenReadyLive = Layer.effect(
               const key = baseKey(bound.repo, baseRef);
               return baseLocks.withLock(
                 key,
-                Effect.gen(function* () {
-                  // Dependency/ownership lookups can outlive CI or a policy edit. Recheck both at launch.
-                  // Under solo, Gram's own check of this head merged onto the base stands in for runner
-                  // evidence; it must still be the base GitHub reads afresh below.
-                  const { policy } = yield* policyFor(now.value, bound.repo);
-                  const localCheck =
-                    policy === "solo" ? yield* localCheckFor(now.value, badge) : undefined;
-                  const read = yield* providerPr
-                    .status(
-                      ghCwd,
-                      { repo: bound.repo, number: bound.number, reviews: true },
-                      undefined,
-                      {
-                        fresh: true,
-                        forMerge: true,
-                        ...(localCheck === undefined ? {} : { localCheckHead: localCheck.head }),
-                      },
+                // No freeze of the repo lands between the last look at it below and the launch.
+                freezes.fence(
+                  bound.repo,
+                  Effect.gen(function* () {
+                    // Dependency/ownership lookups can outlive CI or a policy edit. Recheck both at launch.
+                    // Under solo, Gram's own check of this head merged onto the base stands in for runner
+                    // evidence; it must still be the base GitHub reads afresh below.
+                    const { policy } = yield* policyFor(now.value, bound.repo);
+                    const localCheck =
+                      policy === "solo" ? yield* localCheckFor(now.value, badge) : undefined;
+                    const read = yield* providerPr
+                      .status(
+                        ghCwd,
+                        { repo: bound.repo, number: bound.number, reviews: true },
+                        undefined,
+                        {
+                          fresh: true,
+                          forMerge: true,
+                          ...(localCheck === undefined ? {} : { localCheckHead: localCheck.head }),
+                        },
+                      )
+                      .pipe(Effect.option);
+                    // GitHub couldn't be read (asleep, offline, rate-limited): nothing else may
+                    // change the badge to bring the merge back, so it asks again in a while.
+                    if (Option.isNone(read)) return { unread: true } as const;
+                    const fresh = read.value;
+                    if (
+                      fresh === undefined ||
+                      !isBadgeOf(fresh, bound) ||
+                      fresh.headRefOid !== head
                     )
-                    .pipe(Effect.option);
-                  // GitHub couldn't be read (asleep, offline, rate-limited): nothing else may
-                  // change the badge to bring the merge back, so it asks again in a while.
-                  if (Option.isNone(read)) return { unread: true } as const;
-                  const fresh = read.value;
-                  if (fresh === undefined || !isBadgeOf(fresh, bound) || fresh.headRefOid !== head)
-                    return undefined;
-                  // Another base branch than the lock's (a retarget, or a badge that didn't name it):
-                  // the launch goes through that branch's lock instead.
-                  if (fresh.baseRef !== baseRef) return { retarget: fresh.baseRef } as const;
-                  const settled = yield* settle(key, ghCwd);
-                  if (settled === "merged") foundMerged = true;
-                  else if (settled !== undefined) return { unsettled: settled.pr } as const;
-                  const tip = currentBaseOf(fresh);
-                  // A merge by Gram moved this base, and GitHub's read hasn't caught up yet.
-                  if (tip !== undefined && movedBases.get(key)?.includes(tip))
-                    return { lagging: tip } as const;
-                  // The base moved since the check: what would merge is not what was checked, so the
-                  // check runs again on the tip GitHub reads now.
-                  if (localCheck !== undefined && tip !== localCheck.base)
-                    return { recheck: fresh } as const;
-                  if (
-                    // The fresh read skipped runner evidence for the check; only solo may rely on it.
-                    (localCheck !== undefined &&
-                      (yield* policyFor(now.value, bound.repo)).policy !== "solo") ||
-                    (yield* blockerFor(now.value, bound.repo, standingIntent, fresh, {
-                      localCheck,
-                    })) !== undefined
-                  )
-                    return undefined;
-                  // A setting may change during GitHub's read. CI skipped for an older command
-                  // cannot authorize a merge, even while the head and base still match.
-                  if (
-                    localCheck !== undefined &&
-                    (yield* localCheckFor(now.value, fresh)) !== localCheck
-                  )
-                    return undefined;
-                  launchedLocalCheck = localCheck;
-                  // The provider request yields: a park, pause or autonomy change may land meanwhile.
-                  const latest = yield* store.getThread(threadId);
-                  const latestBound = latest.boundPr;
-                  const latestWorkspace =
-                    latest.workspaceId === undefined
-                      ? undefined
-                      : yield* store
-                          .getWorkspace(latest.workspaceId)
-                          .pipe(Effect.orElseSucceed(() => undefined));
-                  if (
-                    latestWorkspace?.paused !== undefined ||
-                    latest.parked ||
-                    latest.babysit !== undefined ||
-                    latestBound === undefined ||
-                    !samePr(latestBound, bound) ||
-                    latestBound.mergeWhenReady?.setAt !== intent.setAt ||
-                    latestBound.mergeWhenReady.hold !== undefined
-                  )
-                    return undefined;
-                  if (intent.allowedBy === "autonomy") {
-                    const workspace =
+                      return undefined;
+                    // Another base branch than the lock's (a retarget, or a badge that didn't name it):
+                    // the launch goes through that branch's lock instead.
+                    if (fresh.baseRef !== baseRef) return { retarget: fresh.baseRef } as const;
+                    const settled = yield* settle(key, ghCwd);
+                    if (settled === "merged") foundMerged = true;
+                    else if (settled !== undefined) return { unsettled: settled.pr } as const;
+                    const tip = currentBaseOf(fresh);
+                    // A merge by Gram moved this base, and GitHub's read hasn't caught up yet.
+                    if (tip !== undefined && movedBases.get(key)?.includes(tip))
+                      return { lagging: tip } as const;
+                    // The base moved since the check: what would merge is not what was checked, so the
+                    // check runs again on the tip GitHub reads now.
+                    if (localCheck !== undefined && tip !== localCheck.base)
+                      return { recheck: fresh } as const;
+                    if (
+                      // The fresh read skipped runner evidence for the check; only solo may rely on it.
+                      (localCheck !== undefined &&
+                        (yield* policyFor(now.value, bound.repo)).policy !== "solo") ||
+                      (yield* blockerFor(now.value, bound.repo, standingIntent, fresh, {
+                        localCheck,
+                      })) !== undefined
+                    )
+                      return undefined;
+                    // A setting may change during GitHub's read. CI skipped for an older command
+                    // cannot authorize a merge, even while the head and base still match.
+                    if (
+                      localCheck !== undefined &&
+                      (yield* localCheckFor(now.value, fresh)) !== localCheck
+                    )
+                      return undefined;
+                    launchedLocalCheck = localCheck;
+                    // The provider request yields: a park, pause or autonomy change may land meanwhile.
+                    const latest = yield* store.getThread(threadId);
+                    const latestBound = latest.boundPr;
+                    const latestWorkspace =
                       latest.workspaceId === undefined
                         ? undefined
                         : yield* store
                             .getWorkspace(latest.workspaceId)
                             .pipe(Effect.orElseSucceed(() => undefined));
                     if (
-                      workspace === undefined ||
-                      autonomyOf(workspace.charter) !== "full" ||
-                      workspace.paused !== undefined ||
-                      featurePaused(workspace, latest) ||
-                      orchestration === undefined ||
-                      !(yield* orchestration.workerMergesOwn(threadId))
+                      latestWorkspace?.paused !== undefined ||
+                      latest.parked ||
+                      latest.babysit !== undefined ||
+                      latestBound === undefined ||
+                      !samePr(latestBound, bound) ||
+                      latestBound.mergeWhenReady?.setAt !== intent.setAt ||
+                      latestBound.mergeWhenReady.hold !== undefined
                     )
                       return undefined;
-                  }
-                  if (reusedScope !== undefined) {
-                    const approval = intent.userAuthorization!;
-                    const final = yield* store.getThreadWithAuthority(threadId, approval.callerId);
-                    if (
-                      !userMergeAuthorizationMatches(
+                    if (intent.allowedBy === "autonomy") {
+                      const workspace =
+                        latest.workspaceId === undefined
+                          ? undefined
+                          : yield* store
+                              .getWorkspace(latest.workspaceId)
+                              .pipe(Effect.orElseSucceed(() => undefined));
+                      if (
+                        workspace === undefined ||
+                        autonomyOf(workspace.charter) !== "full" ||
+                        workspace.paused !== undefined ||
+                        featurePaused(workspace, latest) ||
+                        orchestration === undefined ||
+                        !(yield* orchestration.workerMergesOwn(threadId))
+                      )
+                        return undefined;
+                    }
+                    if (reusedScope !== undefined) {
+                      const approval = intent.userAuthorization!;
+                      const final = yield* store.getThreadWithAuthority(
+                        threadId,
                         approval.callerId,
-                        final.thread,
-                        bound,
-                        intent.method,
-                      ) ||
-                      !userMergeDelegationIsLive(approval.callerId, final.thread, final.context) ||
-                      JSON.stringify(final.thread.boundPr?.mergeWhenReady) !==
-                        JSON.stringify(intent) ||
-                      JSON.stringify(final.thread.checkout) !==
-                        JSON.stringify(reusedScope.thread.checkout) ||
-                      JSON.stringify(final.thread.extraCheckouts) !==
-                        JSON.stringify(reusedScope.thread.extraCheckouts) ||
-                      JSON.stringify(final.context.workspace?.workspace.projectIds) !==
-                        JSON.stringify(reusedScope.context.workspace?.workspace.projectIds) ||
-                      mergeBlocker(
-                        intent,
-                        fresh,
-                        mergeReviewPolicyOf(
-                          final.context.workspace?.charter,
-                          bound.repo,
+                      );
+                      if (
+                        !userMergeAuthorizationMatches(
+                          approval.callerId,
+                          final.thread,
+                          bound,
+                          intent.method,
+                        ) ||
+                        !userMergeDelegationIsLive(
+                          approval.callerId,
+                          final.thread,
+                          final.context,
+                        ) ||
+                        JSON.stringify(final.thread.boundPr?.mergeWhenReady) !==
+                          JSON.stringify(intent) ||
+                        JSON.stringify(final.thread.checkout) !==
+                          JSON.stringify(reusedScope.thread.checkout) ||
+                        JSON.stringify(final.thread.extraCheckouts) !==
+                          JSON.stringify(reusedScope.thread.extraCheckouts) ||
+                        JSON.stringify(final.context.workspace?.workspace.projectIds) !==
+                          JSON.stringify(reusedScope.context.workspace?.workspace.projectIds) ||
+                        mergeBlocker(
+                          intent,
+                          fresh,
+                          mergeReviewPolicyOf(
+                            final.context.workspace?.charter,
+                            bound.repo,
+                            reviewBotsOf(final.context.settings),
+                          ),
                           reviewBotsOf(final.context.settings),
-                        ),
-                        reviewBotsOf(final.context.settings),
-                        localCheck,
-                      ) !== undefined
+                          localCheck,
+                        ) !== undefined
+                      )
+                        return undefined;
+                    }
+                    if (
+                      localCheck !== undefined &&
+                      (yield* localCheckFor(latest, fresh)) !== localCheck
                     )
                       return undefined;
-                  }
-                  if (
-                    localCheck !== undefined &&
-                    (yield* localCheckFor(latest, fresh)) !== localCheck
-                  )
-                    return undefined;
-                  const fenceBase = Effect.map(Clock.currentTimeMillis, (at) => {
-                    unsettled.set(key, { pr: bound, tip, at });
-                  });
-                  const merge = run(ghCwd, [
-                    "pr",
-                    "merge",
-                    String(bound.number),
-                    `--${intent.method}`,
-                    "--match-head-commit",
-                    head,
-                    "--repo",
-                    bound.repo,
-                  ]).pipe(
-                    // gh that timed out or couldn't start says nothing of whether GitHub merged.
-                    Effect.map((out) => ({ out })),
-                    Effect.catch((e) => Effect.succeed({ lost: e.message })),
-                    // Part of the launch, with no way for a stop to come between it and the answer.
-                    // Still under the base's lock: the next merge onto it never takes the old base.
-                    Effect.tap((result) =>
-                      "out" in result && result.out.status === 0
-                        ? Effect.sync(() => {
-                            if (tip !== undefined) baseMoved(key, tip);
-                          })
-                        : fenceBase,
-                    ),
-                    Effect.onInterrupt(() => fenceBase),
-                  );
-                  // The pause is read again with the launch, behind the workspace's pause fence: one that
-                  // landed during the checks above holds the intent, and one asked for now waits for the
-                  // launch, which is in flight from here.
-                  return latest.workspaceId === undefined || orchestration === undefined
-                    ? yield* merge
-                    : yield* orchestration.launchUnlessPaused(latest.workspaceId, merge);
-                }),
+                    // A freeze set while the lookups ran: the merge waits for its end.
+                    const frozenNow = yield* frozenFor(bound, fresh.baseRef);
+                    if (frozenNow !== undefined) return { frozen: frozenNow } as const;
+                    const fenceBase = Effect.map(Clock.currentTimeMillis, (at) => {
+                      unsettled.set(key, { pr: bound, tip, at });
+                    });
+                    const merge = run(ghCwd, [
+                      "pr",
+                      "merge",
+                      String(bound.number),
+                      `--${intent.method}`,
+                      "--match-head-commit",
+                      head,
+                      "--repo",
+                      bound.repo,
+                    ]).pipe(
+                      // gh that timed out or couldn't start says nothing of whether GitHub merged.
+                      Effect.map((out) => ({ out })),
+                      Effect.catch((e) => Effect.succeed({ lost: e.message })),
+                      // Part of the launch, with no way for a stop to come between it and the answer.
+                      // Still under the base's lock: the next merge onto it never takes the old base.
+                      Effect.tap((result) =>
+                        "out" in result && result.out.status === 0
+                          ? Effect.sync(() => {
+                              if (tip !== undefined) baseMoved(key, tip);
+                            })
+                          : fenceBase,
+                      ),
+                      Effect.onInterrupt(() => fenceBase),
+                    );
+                    // The pause is read again with the launch, behind the workspace's pause fence: one that
+                    // landed during the checks above holds the intent, and one asked for now waits for the
+                    // launch, which is in flight from here.
+                    return latest.workspaceId === undefined || orchestration === undefined
+                      ? yield* merge
+                      : yield* orchestration.launchUnlessPaused(latest.workspaceId, merge);
+                  }),
+                ),
               );
             };
             const first = yield* launchOnto(badge.baseRef);
@@ -819,6 +851,7 @@ export const MergeWhenReadyLive = Layer.effect(
             onlyIfMissing: true,
           });
         if (launched === undefined) return yield* noteWait(thread.value, bound, undefined);
+        if ("frozen" in launched) return yield* noteWait(thread.value, bound, launched.frozen);
         if ("recheck" in launched) {
           // Its badge still names the old base until the publisher reads the new one.
           yield* refreshes.request(cwd, true, { expectChange: true });
@@ -1089,6 +1122,13 @@ export const MergeWhenReadyLive = Layer.effect(
           return;
         }
         const head = badge.headRefOid;
+        // Frozen: it waits, saying who froze the base and why, and the freeze's end looks again.
+        const frozen =
+          intent.hold === undefined ? yield* frozenFor(bound, badge.baseRef) : undefined;
+        if (frozen !== undefined) {
+          yield* noteWait(thread, bound, frozen);
+          return yield* stop(thread.id);
+        }
         if (
           (yield* blockerFor(thread, bound.repo, intent, badge)) !== undefined ||
           head === undefined
@@ -1159,6 +1199,29 @@ export const MergeWhenReadyLive = Layer.effect(
         ),
         Effect.forkScoped,
       );
+
+    // A freeze that ends lets go of the merges it held: their badges may not move by themselves.
+    yield* freezes.changes.pipe(
+      Stream.runForEach((change) =>
+        Effect.gen(function* () {
+          for (const thread of yield* store.listThreads) {
+            if (
+              thread.boundPr?.mergeWhenReady !== undefined &&
+              thread.boundPr.repo.toLowerCase() === change.repo.toLowerCase()
+            ) {
+              yield* check(thread.id);
+            }
+          }
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("merge_when_ready freeze check failed").pipe(
+              Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+            ),
+          ),
+        ),
+      ),
+      Effect.forkScoped,
+    );
 
     const check: MergeWhenReadyShape["check"] = (threadId) =>
       Effect.gen(function* () {
