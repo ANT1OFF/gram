@@ -74,13 +74,22 @@ changes into events that wake the thread that cares:
 
 `schedule_wake` takes a `condition` from a closed union of kinds, instead of `onPr`:
 
-| Kind               | Input                                                                                     | Fires when                                                                                                                                                                                                                                                       |
-| ------------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `branchMoved`      | `repo`, optional `branch`                                                                 | the branch (the repo's default branch when none is named) gets a new head, or is deleted                                                                                                                                                                         |
-| `threadFinished`   | `threadId` of another thread                                                              | it reports done, is marked completed, or is at rest after a report; or it is archived or closed, which also ends the wait                                                                                                                                        |
-| `freezeLifted`     | `repo`, optional `branch`                                                                 | a [merge freeze](#merge-freezes) on it is lifted or expires                                                                                                                                                                                                      |
-| `releasePublished` | `source` (`npm` or `github`), `name`, optional `after`, `minAgeDays`, `includePrerelease` | the package or repo publishes a version newer than `after` (the latest when the wake is set, by default) that is at least `minAgeDays` old (7 by default, as Gram's Dependabot waits; 0 for none); prereleases and drafts don't count unless `includePrerelease` |
-| `versionChanged`   | `target` (`gram`, `claude`, `codex` or `gh`), optional `from`                             | the installed version changes from `from` (the installed one when the wake is set, by default): Gram's at the start after an update, a CLI's when Gram's launch checks next run                                                                                  |
+| Kind               | Input                                                                                                 | Fires when                                                                                                                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `branchMoved`      | `repo`, optional `branch`                                                                             | the branch (the repo's default branch when none is named) gets a new head, or is deleted                                                                                                                                                                         |
+| `threadFinished`   | `threadId` of another thread                                                                          | it reports done, is marked completed, or is at rest after a report; or it is archived or closed, which also ends the wait                                                                                                                                        |
+| `ciStuck`          | `repo`, optional `pr` or `runId`, `queuedMinutes`                                                     | a hosted job of the PR (the thread's bound PR by default) or of the run sits queued with no runner for `queuedMinutes` (15 by default), or a run waits for a maintainer's approval, as a fork's does                                                             |
+| `machine`          | `metric: "load"`, `below`, optional `forMinutes`; or `metric: "diskFree"`, `belowGB`, optional `path` | this machine's 1-minute load average, absolute as `uptime` shows it, stays below `below` for `forMinutes` (5 by default); or free space on the volume holding `path` (the thread's repo by default) drops below `belowGB`, in GB of 10^9 bytes                   |
+| `freezeLifted`     | `repo`, optional `branch`                                                                             | a [merge freeze](#merge-freezes) on it is lifted or expires                                                                                                                                                                                                      |
+| `releasePublished` | `source` (`npm` or `github`), `name`, optional `after`, `minAgeDays`, `includePrerelease`             | the package or repo publishes a version newer than `after` (the latest when the wake is set, by default) that is at least `minAgeDays` old (7 by default, as Gram's Dependabot waits; 0 for none); prereleases and drafts don't count unless `includePrerelease` |
+| `versionChanged`   | `target` (`gram`, `claude`, `codex` or `gh`), optional `from`                                         | the installed version changes from `from` (the installed one when the wake is set, by default): Gram's at the start after an update, a CLI's when Gram's launch checks next run                                                                                  |
+
+The tool lists `condition` to a session as one flat object (`WakeConditionInput`): every kind's
+fields, each optional but `kind`. The union spelled out cost over twice as much, read at every
+session's start. `schedule_wake`'s description says which fields go with which kind, and the tool
+decodes what it is given with `WakeCondition` itself, so the union still decides what is accepted;
+a condition that doesn't decode is refused with the reason under `condition:`. The result's `when`
+states the condition with its defaults filled in, so the description doesn't list them.
 
 A condition wake is a wake like any other. It counts toward the thread's cap of five, the user sees
 it on the thread's chip and in the ledger (`wakes when acme/app main gets a new head, else …`),
@@ -98,7 +107,8 @@ look, the kind's debounce later, still finds it met; the second look's facts are
 `branchMoved` polls GitHub every two minutes, once per branch however many wakes wait on it, paced
 to the background share of the API allowance, with a 30-second debounce. `threadFinished` looks
 when the thread changes or a worker reports, and every two minutes, with a 20-second debounce.
-`releasePublished` reads a package's releases through the user's own tools: `npm view <name> time
+`ciStuck` polls every two minutes with a one-minute debounce, and `machine` every 30 seconds
+with none. `releasePublished` reads a package's releases through the user's own tools: `npm view <name> time
 versions --json` with the user's npm (its registry, proxy and cache; Gram never reads `.npmrc`), or
 `gh api repos/<owner>/<repo>/releases` on github.com with the user's gh, paced to the background
 share. A read answers for every wake on that package for six hours; a failed one is never met and
@@ -106,13 +116,14 @@ is tried again after twelve hours, then once a day. Looks run hourly over what w
 release passes its age within the hour without another read. `versionChanged` starts no probe: it
 reads Gram's own version, and each CLI's off the launch checks' runs (at start, on Re-check, after
 an update from Settings), looking as each finishes, ten seconds after the start, and every ten
-minutes. Neither has a debounce.
+minutes. Neither of these two has a debounce.
 
 To add a kind:
 
 1. Add a member to `WakeCondition` in `packages/contracts/src/wake-conditions.ts`, and its words in
-   `wakeConditionWhen` and `wakeConditionLabel`. Add new optional fields freely. A change to what
-   an existing field means bumps `WAKE_CONDITION_VERSION`.
+   `wakeConditionWhen` and `wakeConditionLabel`, and its fields in `WakeConditionInput`, the flat
+   shape the tool lists (`wake-conditions.test.ts` holds the two together). Add new optional fields
+   freely. A change to what an existing field means bumps `WAKE_CONDITION_VERSION`.
 2. Write a `WakeConditionSource` for it: `arm` checks the condition for the calling thread, fills
    in defaults, takes the baseline, and refuses one already met. `look` must not fail, and answers
    met (with its facts), not met (with a new baseline, if any), or `undefined` when it couldn't
@@ -326,6 +337,14 @@ Only its current owning orchestrator can act. Cancellation removes the pending
 brief. Retargeting keeps its brief, plan and retry identity, rechecks provider
 limits and starts through ordinary admission when limits, slots and user pauses
 allow. `stop_thread` and `set_thread_model` operate on threads that have started.
+
+A `priority: "low"` brief is held, not spawned, when its agent refuses turns at a subscription
+limit or the limit stands at the user's pause threshold; a share alone, even a full window, never
+holds it, since credits can carry on past it. A digest tells the orchestrator when a held brief
+starts. A recent auth, model-unavailable or network failure before any output holds spawns on that
+model at either priority: the result names the failure, its time and the models clear of it, and
+output on the model clears it, or one held worker probes after ten minutes. A retry with the held
+brief's `clientRequestId` returns that brief; one without it holds a second copy.
 
 ### Worker brief footer
 

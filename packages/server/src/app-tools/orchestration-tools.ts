@@ -446,7 +446,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "send_message",
         class: "crossThread",
         description:
-          'Use `message` for message text (`text` and `content` are aliases). Send a message to another Gram thread using the exact full threadId from list_threads or list_workers; shortened IDs are refused. For parent coordination, use message_orchestrator without an ID. Messages are queued until it\'s idle, or with mode "steer" delivered mid-turn, once the tool call running now finishes, when that agent supports it. To your own running worker a message is steered unless you pass mode "queue": steer what changes what it should do now, queue context it can read after its current step. A queued message to your own worker joins your earlier one while that is still waiting, and the result says how long it has waited. Your own workers need no approval. In Full Auto, a current worker may also coordinate with its bound workspace orchestrator or a current sibling worker without approval; these messages queue by default and keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and workers held by the user refuse these messages. Other targets and worker sends outside Full Auto require approval for each call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto worker send without sending it again. An orchestrator\'s `userMessages` (1–5) attaches the user\'s latest messages in its conversation after `message`, word for word: for a paste the worker needs exactly, instead of retyping it. To mention a thread to the user, link it as [title](#threadId).',
+          'Use `message` for message text (`text` and `content` are aliases). Send it to another Gram thread by the exact full threadId from list_threads or list_workers; shortened IDs are refused. For your parent, use message_orchestrator without an ID. A message queues until the thread is idle, or with mode "steer" arrives mid-turn once its running tool call finishes, where the agent supports it. To your own running worker it steers unless mode "queue": steer what changes what it should do now, queue context for after its current step. A queued message to your own worker joins your earlier one still waiting, and the result says how long it has waited. Your own workers need no approval. In Full Auto a current worker may also message its bound workspace orchestrator or a current sibling worker without approval; these queue by default and keep the back-to-back, chain and rate limits. Prefer `report` for progress, decisions, blockers and completed work to your orchestrator. Paused workspaces and user-held workers refuse these messages. Other targets, and worker sends outside Full Auto, ask approval per call, even in Bypass. `clientRequestId` retries an own-worker or Full Auto send without sending it twice. An orchestrator\'s `userMessages` (1–5) appends the user\'s latest messages word for word, for a paste the worker needs exactly. Link a thread for the user as [title](#threadId).',
       },
       input: inputAliases(
         Schema.Struct({
@@ -501,7 +501,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "message_orchestrator",
         class: "crossThread",
         description:
-          "Use `message` for message text (`text` and `content` are aliases). Send specific coordination or clarification to your current bound workspace orchestrator, queued by default. No thread ID is needed. Prefer report for structured progress, completion and interface status. Full Auto needs no approval for this current owned route; lower autonomy requires per-call approval even in Bypass. Pauses, user holds and stale membership refuse. The usual origin, back-to-back, two-hop and rate guards apply. clientRequestId deduplicates Full Auto retries per sender.",
+          "Use `message` for message text (`text` and `content` are aliases). Send specific coordination or clarification to your current bound workspace orchestrator, queued by default; no thread ID is needed. Prefer `report` for structured progress, completion and interface status. Full Auto needs no approval for this current owned route; lower autonomy asks per call, even in Bypass. Pauses, user holds and stale membership refuse it. The usual origin, back-to-back, two-hop and rate guards apply. clientRequestId deduplicates Full Auto retries per sender.",
       },
       audience: ["worker"],
       rejectExcessProperties: true,
@@ -635,7 +635,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "restart_session",
         class: "crossThread",
         description:
-          "Restart an agent session so it reads its setup from disk again (settings, MCP servers and connectors, CLAUDE.md or AGENTS.md, skills, the agent CLI) after one of them changed; the conversation carries on where it was. Without threadId it is your own session, which restarts once this turn ends, so end your turn after calling it. Another thread's session restarts at once when it is at rest, stopping its background tasks; while it runs a turn it restarts when the turn ends, unless interrupt: true cuts the turn off. On your own worker at full autonomy this needs no approval; on any other thread the user approves it.",
+          "Restart an agent session so it rereads its setup (settings, MCP servers and connectors, CLAUDE.md or AGENTS.md, skills, the agent CLI) after a change; the conversation carries on. Without threadId it is your own, restarting once this turn ends, so end your turn. Another thread's restarts at once when at rest, stopping its background tasks; mid-turn it restarts when the turn ends, unless interrupt: true cuts the turn off. On your own worker at full autonomy this needs no approval; on any other thread the user approves it.",
       },
       input: Schema.Struct({
         threadId: Schema.optionalKey(Schema.NonEmptyString),
@@ -790,7 +790,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "archive_thread",
         class: "crossThread",
         description:
-          "Archive another thread: it's parked, leaving the active list; nothing is deleted. An archived thread isn't woken by its pull request's checks or review, so archiving one whose pull request is open, or that monitors one, is refused unless `force`. The user approves it.",
+          "Archive another thread: it's parked off the active list; nothing is deleted. An archived thread isn't woken by its pull request's checks or review, so archiving one with an open or monitored pull request is refused unless `force`. The user approves it.",
       },
       input: Schema.Struct({
         threadId: Schema.NonEmptyString,
@@ -827,7 +827,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         name: "restore_worktree",
         class: "crossThread",
         description:
-          "Recreate another thread's worktree that was deleted outside Gram (its git state reads missing, a worker's ledger row says `worktree missing`): at its recorded path, on its branch, from the local branch or else origin's, with `.worktreeinclude` and permissions seeded as for a new worktree. What was uncommitted in it is gone and can't come back. When the branch is gone everywhere it answers branchGone, naming the PR whose head `fromPr: true` recreates it from. The thread is cold afterwards; send it a message to carry on. On your own worker this needs no approval; elsewhere the user approves it.",
+          "Recreate another thread's worktree deleted outside Gram (its git state reads missing; a worker's ledger row says `worktree missing`) at its recorded path and branch, from the local branch or else origin's, seeded with `.worktreeinclude` and permissions like a new worktree. What was uncommitted in it is gone for good. If the branch is gone everywhere it answers branchGone, naming the PR whose head `fromPr: true` recreates it from. The thread is cold afterwards; message it to carry on. On your own worker this needs no approval; elsewhere the user approves it.",
       },
       input: Schema.Struct({
         threadId: Schema.NonEmptyString,

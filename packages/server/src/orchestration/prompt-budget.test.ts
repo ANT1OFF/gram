@@ -17,18 +17,18 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
 
 /**
  * Characters, prompt and tools together. Measured on 2026-11-02 at 59,373, 33,022 and 22,669.
- * Characters rather than tokens: no tokenizer is a dependency, and the ratio moves little. Worker
- * and plain raised by 1,000 on 2026-11-03 for the `ciStuck` and `machine` wake conditions, which
- * every role's `schedule_wake` lists (measured then at 61,307, 35,201 and 24,370). Orchestrator and
- * worker raised again the same day for `merge_freeze` and the `freezeLifted` condition (measured
- * then at 62,424 and 36,318). Worker and plain raised by 500 the same day for the
- * `releasePublished` and `versionChanged` conditions, whose fields every role's `schedule_wake`
- * lists (measured then at 36,747 and 25,071).
+ * Characters rather than tokens: no tokenizer is a dependency, and the ratio moves little. Raised
+ * on 2026-11-03 for the `ciStuck`, `machine`, `freezeLifted`, `releasePublished` and
+ * `versionChanged` wake conditions and `merge_freeze` (measured last at 62,853, 36,747 and 25,071),
+ * then trimmed the same day back under the sizes measured before condition wakes (59,504, 33,500
+ * and 22,669): `schedule_wake` lists its condition flat (`WakeConditionInput`), and prompts and
+ * tool descriptions lost their repeats. Measured then at 58,957, 33,497 and 22,649; each limit
+ * sits about 4% over.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 63_000,
-  worker: 37_100,
-  plain: 25_400,
+  orchestrator: 61_300,
+  worker: 34_850,
+  plain: 23_550,
 };
 
 const AUTONOMIES: ReadonlyArray<Autonomy> = ["supervised", "publish", "full"];

@@ -24,7 +24,7 @@ export const showMockTool = (
       name: "show_mock",
       class: "self",
       description:
-        "Show the user a UI mock as a card in your reply, instead of its path: its title and version, a thumbnail per direction (dark and light when both screenshots exist) and Open in Preview. `path` is the mock's mock.json, its folder under docs/design/mocks, or one of its version pages; relative to your folder or absolute, inside your worktree or repo. Directions come from mock.json's `directions` ({name, board, shots: {dark, light}}) or else from the files in its shots/. `version` picks a version other than the current one. An orchestrator can show a worker's mock from that worker's worktree to relay it.",
+        "Show the user a UI mock as a card in your reply, instead of its path: title, version, a thumbnail per direction (dark and light when both exist) and Open in Preview. `path` is its mock.json, its folder under docs/design/mocks or a version page, relative to your folder or absolute, inside your worktree or repo. Directions come from mock.json's `directions` ({name, board, shots: {dark, light}}), else its shots/ files. `version` picks one other than the current. An orchestrator can show a worker's mock from its worktree to relay it.",
     },
     input: Schema.Struct({
       path: Schema.NonEmptyString,

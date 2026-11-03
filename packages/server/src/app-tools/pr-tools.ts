@@ -265,7 +265,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: "pr_bind",
         class: "self",
         description:
-          "Follow a pull request from this thread, so its badge and CI state track it. Defaults to the PR for this branch. A thread has one main PR, which a second pr_bind replaces unless merge_when_ready is armed on it; wait for that merge or explicitly disable the intent first. Pass add: true to follow another PR beside it instead (badge and CI watching only, up to 8).",
+          "Follow a pull request from this thread, so its badge and CI state track it; by default the PR for this branch. A thread has one main PR, which a second pr_bind replaces unless merge_when_ready is armed on it: wait for that merge or disable the intent first. add: true follows another PR beside it instead (badge and CI only, up to 8).",
       },
       input: Schema.Struct({
         repo: Schema.optionalKey(Schema.String),
@@ -336,7 +336,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: "pr_status",
         class: "read",
         description:
-          "A thread's pull request from Gram's cached gh state: state, checks, resolved merge review policy, under solo Gram's own full check of its head merged onto its base (running, passed or failed with why, which merge_when_ready or local_check starts), and whether it's bound and monitored. This thread's unless threadId names another. Prefer this to polling gh.",
+          "A thread's pull request from Gram's cached gh state: state, checks, resolved merge review policy, under solo Gram's own full check of its head merged onto its base (running, passed or failed with why; merge_when_ready or local_check starts it), and whether it's bound and monitored. This thread's unless threadId names another. Prefer this to polling gh.",
       },
       input: Schema.Struct({
         refresh: Schema.optionalKey(Schema.Boolean),
@@ -435,7 +435,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: "set_auto_merge",
         class: "outward",
         description:
-          "Merge a thread's pull request once GitHub allows it, or with enabled: false turn its auto-merge off: this thread's, or with threadId another's; its bound PR, else its branch's, unless number names another in the same repo. Solo development must use merge_when_ready for its CI and hold gates. A PR that can merge now (CLEAN) is merged at once, pinned to the head its badge showed; otherwise GitHub auto-merge is armed and merges it when its requirements are met. The result's `merged` says it merged, `autoMerge` that it is armed. If a PR it armed is still open once it is clean, call it again. Branch protection is never bypassed. The user approves every call, except a worker on its own PR, or an orchestrator on its worker's, in a workspace whose autonomy is `full`: the PR its branch opened, in a workspace project.",
+          "Merge a thread's pull request once GitHub allows it, or with enabled: false turn its auto-merge off: this thread's, or threadId's; its bound PR, else its branch's, unless number names another in the same repo. Solo development must use merge_when_ready for its CI and hold gates. A PR that can merge now (CLEAN) merges at once, pinned to the head its badge showed; otherwise GitHub auto-merge is armed. The result's `merged` or `autoMerge` says which. If a PR it armed is still open once clean, call again. Branch protection is never bypassed. The user approves every call, except a worker on its own PR, or an orchestrator on its worker's, in a workspace whose autonomy is `full`: the PR its branch opened, in a workspace project.",
       },
       input: Schema.Struct({
         enabled: Schema.optionalKey(Schema.Boolean),
@@ -651,7 +651,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: "run_monitor",
         class: "self",
         description:
-          "Watch a GitHub Actions run, such as a release build or a deploy, and end your turn: when it completes, Gram sends one message into this thread with its conclusion, the jobs that failed and its link. Name it by `run` (its id or its page's URL) or by `workflow` (file name or name, with `branch` to narrow it) for its latest run; `repo` defaults to the thread's pull request's, else origin's. A run already completed is answered at once. It survives a restart. With enabled: false, stop watching `run`, or every run. Use it instead of `gh run watch`, which holds your turn and dies with it; for a pull request's own checks, use pr_review_monitor.",
+          "Watch a GitHub Actions run, such as a release build or a deploy, and end your turn: when it completes, Gram sends one message here with its conclusion, failed jobs and link. Name it by `run` (id or page URL) or by `workflow` (file name or name; `branch` narrows it) for its latest run; `repo` defaults to the thread's PR's, else origin's. A completed run is answered at once. It survives a restart. enabled: false stops watching `run`, or every run. Use it instead of `gh run watch`, which holds your turn and dies with it; for a PR's own checks, use pr_review_monitor.",
       },
       input: Schema.Struct({
         run: Schema.optionalKey(Schema.String),
@@ -705,7 +705,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: MERGE,
         class: "outward",
         description:
-          "Merge a pull request once it is ready, then end your turn: Gram squash-merges it (or `method`), pinned with --match-head-commit to the head it checked, as soon as the workspace's merge review policy is satisfied, required checks are green and GitHub would merge it. Defaults to this thread's bound PR or its branch's new PR; threadId targets your worker. `pr` names a number in its checkout's repo, or owner/repo#N (or URL), including a stacked PR; arming binds it, unless another PR already has an intent. `after` lists PRs (`owner/repo#N` or URLs) that must have merged first, such as a release PR; `hold` keeps it waiting, with why, until a call with `release: true` or `hold: null` (an empty or whitespace-only hold also clears it), and `holdWaitsOn` says on whom: `person` (the default) for the user or a reviewer, `agent` for an agent's work, such as a review bot's re-review or another worker's change. What an orchestrator holds, its worker can't lift. enabled: false drops the intent. The thread is told when it merges, or why GitHub refused. The user approves the call, except a worker on its own PR, or an orchestrator on its worker's, in a workspace whose autonomy is `full`: an open, non-fork PR from a branch observed in a worktree the worker holds in a workspace project. The same orchestrator may maintain or release an identical intent carrying its explicit user approval without another card in Full Auto; changes of target, method or scope still ask. Approvals without that provenance still ask. A worker's call on an orchestrator-held intent still asks. There the autonomy is asked again before merging.",
+          "Merge a pull request once it is ready, then end your turn: Gram squash-merges it (or `method`), pinned with --match-head-commit to the head it checked, once the workspace's merge review policy is satisfied, required checks are green and GitHub would merge it. Defaults to this thread's bound PR or its branch's new PR; threadId targets your worker. `pr` is a number in its checkout's repo or owner/repo#N (or URL), stacked PRs included; arming binds it unless another PR already has an intent. `after` lists PRs that must merge first, such as a release PR. `hold` keeps it waiting, with why, until `release: true` or `hold: null` (or an empty hold); `holdWaitsOn` says on whom: `person` (default; the user or a reviewer) or `agent` (a review bot's re-review, another worker's change). What an orchestrator holds, its worker can't lift. enabled: false drops the intent. The thread is told when it merges, or why GitHub refused. The user approves the call, except a worker on its own PR, or an orchestrator on its worker's, in a workspace whose autonomy is `full`: an open, non-fork PR from a branch observed in a worktree the worker holds in a workspace project. In Full Auto the same orchestrator may maintain or release an identical intent carrying its explicit user approval without another card; a change of target, method or scope, an approval without that provenance, and a worker's call on an orchestrator-held intent still ask. There the autonomy is asked again before merging.",
       },
       input: Schema.Struct({
         enabled: Schema.optionalKey(Schema.Boolean),
@@ -1109,7 +1109,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: LOCAL_CHECK,
         class: "outward",
         description:
-          "Under the solo merge review policy, has Gram run its own full check of your bound pull request now, ahead of merge_when_ready: the head GitHub has, merged onto its base's current tip, in a clean worktree on this machine. It runs the PR's own code outside your sandbox, so the user approves the call, except on your own PR (the one your worktree's branch opened) in a workspace whose autonomy is `full`. A pass Gram recorded for that exact head, base and check is reused rather than run again, and merge_when_ready accepts it in place of CI; a failure is run again, unless `rerun: false`, which only reports what Gram has recorded. You are told how it ends, with why it failed. A push, moved base or changed command/setup/timeout needs a new check. No configured command means the local gate is OFF; CI and GitHub rules apply. Nothing you claim or run yourself counts as a pass.",
+          "Under the solo merge review policy, have Gram run its own full check of your bound PR now, ahead of merge_when_ready: the head GitHub has, merged onto its base's current tip, in a clean worktree on this machine. It runs the PR's code outside your sandbox, so the user approves the call, except on your own PR (the one your worktree's branch opened) in a workspace whose autonomy is `full`. A pass recorded for that exact head, base and check is reused, and merge_when_ready accepts it in place of CI; a failure is run again unless `rerun: false`, which only reports the record. You are told how it ends, and why it failed. A push, a moved base or a changed command, setup or timeout needs a new check. With no configured command the local gate is OFF; CI and GitHub rules apply. Nothing you claim or run yourself counts as a pass.",
       },
       input: Schema.Struct({ rerun: Schema.optionalKey(Schema.Boolean) }),
       audience: OWN_PR_AUDIENCE,

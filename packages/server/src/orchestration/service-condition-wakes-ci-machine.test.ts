@@ -301,6 +301,18 @@ describe.skipIf(!hasGit)("condition wakes on CI and the machine", () => {
           })
           .pipe(Effect.flip);
         expect(relative.message).toContain("`path` is an absolute path");
+        // The tool lists `condition` flat; the union still decides what is accepted.
+        for (const condition of [
+          { kind: "machine", metric: "diskFree", below: 20 },
+          { kind: "releasePublished", source: "npm", name: "--registry=evil" },
+          { kind: "branchMoved" },
+        ]) {
+          const malformed = yield* session
+            .callTool("schedule_wake", { condition, note: "x" })
+            .pipe(Effect.flip);
+          expect(malformed.message).toContain("condition:");
+        }
+        expect(yield* (yield* ThreadWakes).pendingOf(thread.id)).toBe(0);
 
         const set = yield* session.callTool("schedule_wake", {
           condition: { kind: "machine", metric: "diskFree", belowGB: 20 },
