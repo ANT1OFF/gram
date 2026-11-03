@@ -57,6 +57,8 @@ import { OrchestratorAppToolsLive } from "./tools.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
 import { BranchHeads } from "../wakes/branch-heads.ts";
+import { CiJobs, type CiState } from "../wakes/ci-stuck.ts";
+import { type DiskSpace, MachineState } from "../wakes/machine.ts";
 import { WakeConditionsLive } from "../wakes/conditions.ts";
 import { WakeConditionSourcesLive } from "../wakes/condition-sources.ts";
 
@@ -114,6 +116,17 @@ export interface World {
    */
   readonly branchHeads: Map<string, string | null>;
   readonly defaultBranches: Map<string, string>;
+  /**
+   * What GitHub says of CI, by `owner/repo#N` for a PR or `owner/repo@id` for a run, lower-cased in
+   * the repo: `null` for no such run; absent, it can't be read.
+   */
+  readonly ciStates: Map<string, CiState | null>;
+  /**
+   * This machine's load averages (absent: it keeps none) and its volumes' space by path, `*` for
+   * any path not named.
+   */
+  machineLoad: readonly [number, number, number] | undefined;
+  readonly diskSpace: Map<string, DiskSpace>;
 }
 
 const prKey = (pr: { readonly repo: string; readonly number: number }) =>
@@ -151,6 +164,9 @@ export const makeWorld = Effect.gen(function* () {
     prWatches: new Map(),
     branchHeads: new Map(),
     defaultBranches: new Map(),
+    ciStates: new Map(),
+    machineLoad: [1, 1, 1],
+    diskSpace: new Map(),
   };
   return world;
 });
@@ -306,11 +322,28 @@ const fakeBranchHeads = (world: World) =>
       Effect.sync(() => world.branchHeads.get(`${repo.toLowerCase()}#${branch}`)),
   });
 
-/** The condition wakes' engine over the real sources, reading branches from `world`. */
+/** GitHub's CI as `world` has it. */
+const fakeCiJobs = (world: World) =>
+  Layer.succeed(CiJobs, {
+    pr: (_cwd, repo, number) =>
+      Effect.sync(() => world.ciStates.get(`${repo.toLowerCase()}#${number}`) ?? undefined),
+    run: (_cwd, repo, runId) =>
+      Effect.sync(() => world.ciStates.get(`${repo.toLowerCase()}@${runId}`)),
+  });
+
+/** This machine as `world` has it. */
+const fakeMachine = (world: World) =>
+  Layer.succeed(MachineState, {
+    loadAverages: Effect.sync(() => world.machineLoad),
+    cpus: 8,
+    disk: (path) => Effect.sync(() => world.diskSpace.get(path) ?? world.diskSpace.get("*")),
+  });
+
+/** The condition wakes' engine over the real sources, reading GitHub and the machine from `world`. */
 const conditionsOf = (world: World) =>
   WakeConditionsLive.pipe(
     Layer.provide(WakeConditionSourcesLive),
-    Layer.provide(fakeBranchHeads(world)),
+    Layer.provide(Layer.mergeAll(fakeBranchHeads(world), fakeCiJobs(world), fakeMachine(world))),
   );
 
 /** The server over `world`'s database file and memory root. */

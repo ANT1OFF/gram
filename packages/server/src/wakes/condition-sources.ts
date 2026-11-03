@@ -10,30 +10,23 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
-import { folderExists } from "../fs/folders.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { BranchHeads } from "./branch-heads.ts";
+import { ciStuckSource } from "./ci-stuck.ts";
+import { folderOf } from "./condition-folders.ts";
 import {
   type ConditionLook,
   WakeConditionSources,
   type WakeConditionSource,
 } from "./conditions.ts";
+import { machineSource } from "./machine.ts";
 
 const met = (facts: Readonly<Record<string, string>>): ConditionLook => ({ met: true, facts });
 const notMet = (seen?: Readonly<Record<string, string>>): ConditionLook =>
   seen === undefined ? { met: false } : { met: false, seen: { ...seen } };
 
 const refuse = (message: string) => new AppToolError({ tool: "schedule_wake", message });
-
-/** A folder of the thread's to run gh in: its checkout, or its repo's main one. */
-const folderOf = (thread: Thread) =>
-  Effect.gen(function* () {
-    const cwd = thread.checkout.path;
-    return (yield* folderExists(cwd)) || thread.checkout.repoRoot === undefined
-      ? cwd
-      : thread.checkout.repoRoot;
-  });
 
 /** How long one branch's head, read for one wake, answers for the others on it. */
 const HEAD_READ_REUSE_MS = 20_000;
@@ -194,5 +187,5 @@ export const threadFinishedSource = Effect.gen(function* () {
 /** Every kind's source, for `WakeConditionsLive`. */
 export const WakeConditionSourcesLive = Layer.effect(
   WakeConditionSources,
-  Effect.all([branchMovedSource, threadFinishedSource]),
+  Effect.all([branchMovedSource, threadFinishedSource, ciStuckSource, machineSource]),
 );

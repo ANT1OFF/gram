@@ -41,8 +41,60 @@ export const ThreadFinishedCondition = Schema.Struct({
 });
 export type ThreadFinishedCondition = typeof ThreadFinishedCondition.Type;
 
+/** The minutes a `ciStuck` wake lets a job sit queued when it names none. */
+export const CI_STUCK_DEFAULT_MINUTES = 15;
+
+/**
+ * A hosted CI job sits queued, with no runner, for `queuedMinutes` (filled in with
+ * `CI_STUCK_DEFAULT_MINUTES`); or a run waits for a maintainer to approve it, as a fork's does. Of a
+ * PR's checks, or of one Actions run; without either, the waiting thread's bound PR.
+ */
+export const CiStuckCondition = Schema.Struct({
+  kind: Schema.Literal("ciStuck"),
+  repo: RepoName,
+  // Finite rather than Int: a tool's input schema is read at every session's start, and an Int's
+  // bounds cost twice its words there. The source refuses a fraction.
+  pr: Schema.optionalKey(Schema.Finite),
+  runId: Schema.optionalKey(Schema.Finite),
+  queuedMinutes: Schema.optionalKey(Schema.Finite),
+});
+export type CiStuckCondition = typeof CiStuckCondition.Type;
+
+/** The minutes a `machine` load wake wants the load to stay low when it names none. */
+export const MACHINE_LOAD_DEFAULT_MINUTES = 5;
+
+/**
+ * This machine's 1-minute load average, absolute as `uptime` shows it (not divided by its CPUs),
+ * stays below `below` for `forMinutes` (filled in with `MACHINE_LOAD_DEFAULT_MINUTES`).
+ */
+export const MachineLoadCondition = Schema.Struct({
+  kind: Schema.Literal("machine"),
+  metric: Schema.Literal("load"),
+  below: Schema.Finite,
+  forMinutes: Schema.optionalKey(Schema.Finite),
+});
+export type MachineLoadCondition = typeof MachineLoadCondition.Type;
+
+/**
+ * Free space on the volume holding `path` (filled in with the waiting thread's repo) drops below
+ * `belowGB`, in GB of 10^9 bytes as Finder and `df -H` count them.
+ */
+export const DiskFreeCondition = Schema.Struct({
+  kind: Schema.Literal("machine"),
+  metric: Schema.Literal("diskFree"),
+  belowGB: Schema.Finite,
+  path: Schema.optionalKey(Schema.String),
+});
+export type DiskFreeCondition = typeof DiskFreeCondition.Type;
+
 /** Everything a wake can wait on beside its time. Closed: an unknown kind doesn't decode. */
-export const WakeCondition = Schema.Union([BranchMovedCondition, ThreadFinishedCondition]);
+export const WakeCondition = Schema.Union([
+  BranchMovedCondition,
+  ThreadFinishedCondition,
+  CiStuckCondition,
+  MachineLoadCondition,
+  DiskFreeCondition,
+]);
 export type WakeCondition = typeof WakeCondition.Type;
 export type WakeConditionKind = WakeCondition["kind"];
 
@@ -85,15 +137,35 @@ export const wakeConditionWhen = (condition: WakeCondition, name?: string): stri
       return `${condition.repo} ${condition.branch ?? "default branch"} gets a new head`;
     case "threadFinished":
       return `${name === undefined ? `thread ${condition.threadId}` : `"${name}"`} finishes`;
+    case "ciStuck":
+      return `a CI job of ${ciTarget(condition)} sits queued ${ciMinutes(condition)}+ min, or a run awaits approval`;
+    case "machine":
+      return condition.metric === "load"
+        ? `this machine's load stays below ${condition.below} for ${condition.forMinutes ?? MACHINE_LOAD_DEFAULT_MINUTES} min`
+        : `free disk space${condition.path === undefined ? "" : ` at ${condition.path}`} drops below ${condition.belowGB} GB`;
   }
 };
 
-/** A chip's short label for a condition: the branch, or the thread. */
+const ciTarget = (condition: CiStuckCondition) =>
+  condition.runId !== undefined
+    ? `${condition.repo} run ${condition.runId}`
+    : `${condition.repo}${condition.pr === undefined ? "" : `#${condition.pr}`}`;
+
+const ciMinutes = (condition: CiStuckCondition) =>
+  condition.queuedMinutes ?? CI_STUCK_DEFAULT_MINUTES;
+
+/** A chip's short label for a condition: the branch, the thread, the CI, the load or the disk. */
 export const wakeConditionLabel = (condition: WakeCondition): string => {
   switch (condition.kind) {
     case "branchMoved":
       return condition.branch ?? condition.repo;
     case "threadFinished":
       return "thread";
+    case "ciStuck":
+      return `CI job queued ${ciMinutes(condition)}+ min`;
+    case "machine":
+      return condition.metric === "load"
+        ? `quieter (load < ${condition.below})`
+        : `disk < ${condition.belowGB} GB`;
   }
 };

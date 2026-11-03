@@ -17,12 +17,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
 
 /**
  * Characters, prompt and tools together. Measured on 2026-11-02 at 59,373, 33,022 and 22,669.
- * Characters rather than tokens: no tokenizer is a dependency, and the ratio moves little.
+ * Characters rather than tokens: no tokenizer is a dependency, and the ratio moves little. Worker
+ * and plain raised by 1,000 on 2026-11-03 for the `ciStuck` and `machine` wake conditions, which
+ * every role's `schedule_wake` lists (measured then at 61,307, 35,201 and 24,370).
  */
 const BUDGET: Readonly<Record<Role, number>> = {
   orchestrator: 62_400,
-  worker: 34_700,
-  plain: 23_900,
+  worker: 35_700,
+  plain: 24_900,
 };
 
 const AUTONOMIES: ReadonlyArray<Autonomy> = ["supervised", "publish", "full"];
