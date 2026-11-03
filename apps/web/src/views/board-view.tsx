@@ -91,7 +91,9 @@ function WorkerChip({
       <button
         type="button"
         onClick={(event) => onOpen(worker.threadId, event)}
-        title={worker.title}
+        title={
+          worker.waiting === undefined ? worker.title : `${worker.title}\n${worker.waiting.hint}`
+        }
         aria-label={`${worker.title}, ${tone.label}, ${worker.now}`}
         className="flex min-w-0 items-center gap-1.5 text-left outline-none after:absolute after:inset-0 after:content-['']"
       >

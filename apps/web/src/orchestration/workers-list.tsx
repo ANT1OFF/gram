@@ -100,7 +100,7 @@ export const workerGlideId = (threadId: ThreadId) => `worker-name-${threadId}`;
 
 const GLYPHS: Readonly<Record<WorkerGlyph, { icon: LucideIcon; tone: string; label: string }>> = {
   working: { icon: Spinner, tone: "text-status-working", label: "Working" },
-  waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting on checks" },
+  waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting" },
   needsYou: { icon: CircleAlert, tone: "text-status-needs", label: "Needs you" },
   error: { icon: CircleAlert, tone: "text-destructive", label: "Error" },
   idle: { icon: CircleDot, tone: "text-status-idle", label: "Idle" },
@@ -492,6 +492,7 @@ function WorkerListRow({
       <span className="shrink-0 text-xs text-muted-foreground">{row.repo}</span>
       <span
         data-testid="worker-now"
+        title={row.waiting?.hint}
         className="ml-auto shrink-0 pl-3 text-right text-xs text-muted-foreground"
       >
         <Swap swapKey={row.now}>{row.now}</Swap>

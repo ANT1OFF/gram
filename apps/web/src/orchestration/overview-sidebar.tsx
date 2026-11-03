@@ -8,7 +8,7 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
-import { ChevronDown, PanelLeftClose, PanelLeftDashed } from "lucide-react";
+import { ChevronDown, Hourglass, PanelLeftClose, PanelLeftDashed } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -75,6 +75,7 @@ import {
   plainActivity,
   plainRunning,
   rowTone,
+  rowWaiting,
   stateWordShown,
   steplessLine,
   workLineText,
@@ -95,6 +96,8 @@ import { useNeedsYou, useNeedsYouCounts } from "./use-needs-you";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
+import { useOrchestratorWaiting, useWorkerWaitings } from "./use-waiting-on";
+import type { WaitingOn } from "./waiting-on";
 import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
 
 // The overview sidebar: the Orchestrator layout's left
@@ -144,6 +147,8 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
         ).tones,
     ),
   );
+  // What each one at rest waits on, in the Board's and ⌘J's words.
+  const waits = useWorkerWaitings(ledger, asking);
   return useMemo(() => {
     const running: RunningWorker[] = [];
     for (let i = 0; i + 2 < flat.length; i += 3) {
@@ -162,8 +167,8 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
         reports.set(worker.threadId, { at: report.at, nextStep: report.evidence?.nextStep });
       }
     }
-    return overviewFeatures(cards, keys, over, running, held, activities, reports, tones);
-  }, [cards, asks, ledger, over, flat, activities, tones]);
+    return overviewFeatures(cards, keys, over, running, held, activities, reports, tones, waits);
+  }, [cards, asks, ledger, over, flat, activities, tones, waits]);
 }
 
 /** ⌘/Ctrl-click: beside the chat rather than in its own view. */
@@ -449,7 +454,11 @@ function WorkspaceRow({
   const folded = useLayoutStore((s) => s.workspacesCollapsedNodes.includes(foldKey));
   const fold = (to: boolean) => useLayoutStore.getState().toggleWorkspaceNode(foldKey, to);
   const bodyId = useId();
-  const hover = orchestratorHover(word, { live, working, asks }, ledgerSlotsText(ledger));
+  // What its orchestrator waits on at rest, unless its pause or park holds everything anyway.
+  const orchestratorWaiting = useOrchestratorWaiting(ledger);
+  const waiting = stateWordShown(word) ? undefined : orchestratorWaiting;
+  const summary = orchestratorHover(word, { live, working, asks }, ledgerSlotsText(ledger));
+  const hover = waiting === undefined ? summary : `${summary}\nOrchestrator: ${waiting.hint}`;
   const line = orchestratorLine(word, { working, asks });
   const name = state.workspace.name;
   // ← folds and → unfolds, as a tree row's do, and Shift+F10 opens its menu; anything else is the
@@ -491,7 +500,7 @@ function WorkspaceRow({
             aria-expanded={!folded}
             aria-controls={bodyId}
             aria-keyshortcuts="ArrowLeft ArrowRight Shift+F10"
-            aria-label={`${name}, ${hover}`}
+            aria-label={`${name}, ${summary}${waiting === undefined ? "" : `, ${waiting.label}`}`}
             title={hover}
             onClick={() => switchTo(state.workspace)}
             onKeyDown={onKeyDown}
@@ -526,6 +535,9 @@ function WorkspaceRow({
                 </span>
               )}
             </span>
+            {waiting !== undefined && (
+              <WaitingLine waiting={waiting} testId="overview-orchestrator-waiting" />
+            )}
           </button>
           <button
             type="button"
@@ -651,6 +663,7 @@ export function WorkerRow({
   const tone = rowTone(row, { status, working: busy });
   const dot = TONE_DOT[tone];
   const working = tone === "working";
+  const waiting = rowWaiting(row, tone);
   // Ages to the minute.
   const now = useNow(true, undefined, 60_000);
   const settled =
@@ -661,7 +674,7 @@ export function WorkerRow({
   const facts = [
     row.title,
     ...(pause === undefined ? [] : [PAUSE_WORD[pause.state]]),
-    row.now,
+    waiting?.label ?? row.now,
     ...(agent === undefined ? [] : [agentLabel(agent)]),
     ...(lastActivity === undefined ? [] : [`last active ${formatClockTime(lastActivity)}`]),
   ];
@@ -679,7 +692,9 @@ export function WorkerRow({
     "data-asking": asking || undefined,
     "aria-label": facts.join(", "),
     // The compact rail's flyout has no card to say them.
-    title: card ? undefined : facts.join(" · "),
+    title: card
+      ? undefined
+      : `${facts.join(" · ")}${waiting === undefined ? "" : `\n${waiting.hint}`}`,
     "aria-keyshortcuts": "Shift+F10",
     onClick,
     onKeyDown: rowMenuKeys,
@@ -708,6 +723,8 @@ export function WorkerRow({
           card's now line. An ask or a failure is all the row says. */}
       {working && !asking && !row.failed ? (
         <WorkerStep row={row} />
+      ) : waiting !== undefined ? (
+        <WaitingLine waiting={waiting} testId="overview-worker-waiting" />
       ) : (
         <WorkerNow row={row} asking={asking} />
       )}
@@ -750,6 +767,7 @@ export function WorkerRow({
                 tone={tone}
                 asking={asking}
                 pause={pause}
+                waiting={waiting}
               />
             </PreviewCard.Popup>
           </PreviewCard.Positioner>
@@ -819,6 +837,7 @@ function WorkerCard({
   tone,
   asking,
   pause,
+  waiting,
 }: {
   row: OverviewWorkerRow;
   feature: string;
@@ -828,6 +847,7 @@ function WorkerCard({
   tone: RailTone;
   asking: boolean;
   pause: WorkerPauseState | undefined;
+  waiting: WaitingOn | undefined;
 }) {
   const time = formatClockTime(lastActivity);
   return (
@@ -862,7 +882,7 @@ function WorkerCard({
                 : "text-muted-foreground",
           )}
         >
-          {row.now}
+          {waiting?.label ?? row.now}
         </span>
         <time
           data-testid="overview-worker-card-time"
@@ -874,6 +894,7 @@ function WorkerCard({
         </time>
       </p>
       {tone === "working" && !asking && !row.failed && <WorkerCardStep row={row} />}
+      {waiting !== undefined && <WaitingList waiting={waiting} />}
       {pause !== undefined && (
         <p
           data-testid="overview-worker-card-paused"
@@ -894,6 +915,45 @@ function WorkerCard({
         <span>{keyLabel("⌘-click")} · beside</span>
       </p>
     </>
+  );
+}
+
+/**
+ * What a worker or an orchestrator at rest waits on, as a row's second line: an hourglass and the
+ * short label, muted, as calm as an idle row. The whole list is on the row's hover.
+ */
+function WaitingLine({ waiting, testId }: { waiting: WaitingOn; testId: string }) {
+  return (
+    <Swap
+      swapKey={waiting.label}
+      className="col-span-2 col-start-2 min-w-0 truncate text-xs text-muted-foreground"
+    >
+      <span
+        data-testid={testId}
+        data-kind={waiting.kind}
+        className="flex min-w-0 items-center gap-1"
+      >
+        <Hourglass aria-hidden className="size-3 shrink-0" />
+        <span className="truncate">{waiting.label}</span>
+      </span>
+    </Swap>
+  );
+}
+
+/** Every wait of a worker on its hover card, the one its row names first. */
+function WaitingList({ waiting }: { waiting: WaitingOn }) {
+  return (
+    <ul
+      data-testid="overview-worker-card-waits"
+      className="flex flex-col gap-0.5 text-xs text-muted-foreground"
+    >
+      {waiting.reasons.map((reason, i) => (
+        <li key={i} data-kind={reason.kind} className="flex min-w-0 gap-1.5">
+          <Hourglass aria-hidden className="mt-0.5 size-3 shrink-0" />
+          <span className="min-w-0">{reason.detail}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

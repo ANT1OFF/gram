@@ -222,7 +222,7 @@ describe("Quiet, the Board and the sidebar", () => {
     );
     const row = workerRow(entry, { byId: {}, statusDetail: {}, now: NOW });
     expect(row.glyph).toBe("waiting");
-    expect(row.now).toBe("CI pending");
+    expect(row.now).toBe("Waiting · checks on #12");
     expect(dotTone(row)).toBe("waiting");
     expect(
       railTone(card(entry), { asking: new Set(), status: () => "idle", activity: shared }),
@@ -344,7 +344,7 @@ describe("one tone for a worker", () => {
     expect(tones.quiet).toBe("idle");
     const row = workerRow(entry, { byId: {}, statusDetail: {}, now: NOW });
     expect(row.glyph).toBe("idle");
-    expect(row.now).toBe("you hold it");
+    expect(row.now).toBe("Held · by you");
   });
 });
 

@@ -7,7 +7,11 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 
-import type { MockQuietBusySimulation, MockScenes } from "./mock-orchestration";
+import type {
+  MockQuietBusySimulation,
+  MockScenes,
+  MockWaitingOnSimulation,
+} from "./mock-orchestration";
 
 // Quiet's scenarios: a workspace whose workers are all busy somewhere, and two more workspaces at
 // rest beside the board's for the sidebar's realistic load.
@@ -117,6 +121,118 @@ export async function simulateQuietBusy(
     reviewing: reviewing.id,
     stacked: stacked.id,
     conflicts: conflicts.id,
+  };
+}
+
+/**
+ * `casefiles` as `simulateQuietBusy` leaves it, with a worker more for each other kind of wait the
+ * sidebar names: a timed wake, a release run it watches, a usage limit it waits out, a merge Gram
+ * makes once ready, and a wake on another PR; and the orchestrator resting on a wake of its own.
+ * Times sit on the half hour after now, so a shot's labels move only with the clock's half hour.
+ */
+export async function simulateWaitingOn(
+  scenes: MockScenes,
+  projectIds: readonly ProjectId[],
+): Promise<MockWaitingOnSimulation> {
+  const busy = await simulateQuietBusy(scenes, projectIds);
+  const { host, wakesOf, project, find } = scenes;
+  const settings = await host.settings();
+  const home = find(busy.workspaceId).workspace.homeProjectId;
+  const origin = `example/${project(home).name}`;
+  const minute = 60_000;
+  const base = Math.ceil(Date.now() / (30 * minute)) * 30 * minute;
+  const spawn = async (feature: string, title: string, slug: string) => {
+    const created = await host.createThread({
+      projectRoot: project(home).root,
+      title,
+      mode: orchestrationMode(settings),
+      branch: `feat/${slug}`,
+    });
+    const worker: Thread = {
+      ...created,
+      workspaceId: busy.workspaceId,
+      spawnedBy: { threadId: busy.orchestratorThreadId, feature },
+    };
+    host.replace(worker);
+    return worker;
+  };
+  const wake = (threadId: ThreadId, at: number, note: string, more: object = {}) =>
+    wakesOf.set(threadId, [
+      ...(wakesOf.get(threadId) ?? []),
+      { id: `wake-${at}`, at, note, ...more },
+    ]);
+
+  const timed = await spawn("casefile-export", "Nightly export retry", "export-retry");
+  wake(timed.id, base + 40 * minute, "Retry the export once the archive job is done");
+  const release = await spawn("casefile-release", "Cut 2.4.0", "release-240");
+  host.replace({
+    ...release,
+    completedAt: Date.now(),
+    completedReason: "agent",
+    runWatches: [{ repo: origin, runId: 8812, name: "Release", since: Date.now() - 4 * minute }],
+  });
+  const limited = await spawn("casefile-index", "Reindex old casefiles", "reindex-old");
+  host.replace({
+    ...limited,
+    limitWait: {
+      kind: "limit",
+      account: `${limited.model.agent}/`,
+      resumeAt: base + 70 * minute,
+      since: Date.now(),
+      attempt: 1,
+    },
+  });
+  const merging = await spawn("casefile-retention", "Retention settings page", "retention-page");
+  host.setGit(merging.id, {
+    repo: true,
+    branch: merging.checkout.branch!,
+    worktree: true,
+    head: "345".padEnd(40, "c"),
+    changesToken: "mock-waiting-345",
+    changedFiles: 0,
+    base: "origin/main",
+    behindBase: 0,
+    aheadBase: 1,
+    conflicts: false,
+    upstream: "synced",
+    origin,
+    pr: {
+      number: 345,
+      state: "OPEN",
+      url: `https://github.com/${origin}/pull/345`,
+      title: merging.title,
+      isDraft: false,
+      checks: "passing",
+      headMatches: true,
+      aheadOfPr: false,
+      baseRef: "main",
+      headRef: merging.checkout.branch!,
+      mergeState: "CLEAN",
+    },
+  });
+  host.replace({
+    ...merging,
+    boundPr: {
+      repo: origin,
+      number: 345,
+      monitor: true,
+      mergeWhenReady: { method: "squash", allowedBy: "autonomy", setAt: Date.now() },
+    },
+  });
+  const rebase = await spawn("casefile-index", "Owner column sort", "owner-sort");
+  wake(rebase.id, base + 120 * minute, "Rebase onto #341 once it lands", {
+    onPr: { repo: origin, number: 341 },
+    on: ["merged"],
+  });
+  wake(busy.orchestratorThreadId, base + 10 * minute, "Check #341 and #343, then merge the index");
+  host.emit({ type: "orchestration.changed", workspaceId: busy.workspaceId });
+  return {
+    ...busy,
+    timed: timed.id,
+    release: release.id,
+    limited: limited.id,
+    merging: merging.id,
+    rebase: rebase.id,
   };
 }
 

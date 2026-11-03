@@ -15,6 +15,7 @@ import {
 
 import { leastAdvanced } from "./board-model";
 import type { WorkerActivity } from "./wait-model";
+import type { WaitingOn } from "./waiting-on";
 import { workerShown } from "./worker-shown";
 
 // The Board view's feature lines: one row per feature card, its
@@ -30,9 +31,11 @@ export type RailTone = "needs" | "attention" | "error" | "working" | "waiting" |
 export interface RailWorker {
   readonly threadId: ThreadId;
   readonly title: string;
-  /** Four words or fewer, the card's. */
+  /** Four words or fewer, the card's; what it waits on's label while it waits (`waiting`). */
   readonly now: string;
   readonly tone: RailTone;
+  /** What it waits on (`workerWaitings`), as the sidebar and ⌘J say it; its hint is the chip's hover. */
+  readonly waiting?: WaitingOn | undefined;
   /** Its first PR, shown beside its name. */
   readonly pr: FeatureCardPr | undefined;
   /** Titles of the workers whose changed files meet this one's: advisory, from the card. */
@@ -97,6 +100,8 @@ export interface RailFacts {
   readonly over?: ReadonlyMap<ThreadId, boolean> | undefined;
   /** Workers at work now (`workingWorkerThreads`); a line shows them whatever their cards say. */
   readonly running?: ReadonlySet<ThreadId> | undefined;
+  /** What each worker at rest waits on (`workerWaitings`), the sidebar's and ⌘J's words. */
+  readonly waiting?: Readonly<Record<string, WaitingOn>> | undefined;
 }
 
 /** A card's plan with steps still to come: its line isn't finished, whatever its workers say. */
@@ -140,6 +145,13 @@ export const workerTone = (facts: ToneFacts): RailTone => {
         ? "attention"
         : "idle";
 };
+
+/**
+ * Tones a wait is said beside (`workerWaitings`): waiting on automation, at rest, or finished with
+ * something still to come (a watched release run). Never beside work, an ask or a failure.
+ */
+export const calmTone = (tone: RailTone): boolean =>
+  tone === "waiting" || tone === "idle" || tone === "merged";
 
 /** A chip's tone: the worker's live tone (`workerTones`), else its card's by `workerTone`. */
 export const railTone = (worker: FeatureCardWorker, facts: RailFacts): RailTone =>
@@ -214,11 +226,15 @@ export const railRows = (
     let reach = 0;
     for (const worker of drawn) {
       reach = Math.max(reach, FEATURE_STATIONS.indexOf(worker.station));
+      const tone = railTone(worker, facts);
+      // Said only of a calm chip, as the sidebar's row says it.
+      const waiting = calmTone(tone) ? facts.waiting?.[worker.threadId] : undefined;
       cells[worker.station].push({
         threadId: worker.threadId,
         title: worker.title,
-        now: worker.now,
-        tone: railTone(worker, facts),
+        now: waiting?.label ?? worker.now,
+        tone,
+        ...(waiting === undefined ? {} : { waiting }),
         pr: worker.prs[0],
         overlaps: worker.overlapsWith.flatMap((id) => {
           const title = titles.get(id);

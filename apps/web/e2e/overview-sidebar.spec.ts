@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { MockOneThreadSimulation } from "../src/api/mock-asks";
 import { setLayout } from "./layout";
 import { openMore } from "./more-menu";
-import { pressFirstWorkspaceKey, threadRow } from "./thread-row";
+import { openOrchestrator, pressFirstWorkspaceKey, threadRow } from "./thread-row";
 import { flakyAsked, flakyAsks, parkSeedAsks } from "./seed-asks";
 
 // The overview sidebar, the Orchestrator layout's left
@@ -1510,4 +1510,56 @@ test("a solo thread at work trades its age for a pulsing dot, and can't be marke
   await expect(page.getByTestId("menu-done")).not.toHaveAttribute("data-disabled");
   await expect(page.getByTestId("menu-done")).toHaveText("Mark done");
   await page.keyboard.press("Escape");
+});
+
+test("a calm worker and its orchestrator say what they wait on, the whole list on hover, and never need you", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.goto("/t/t-flaky");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  const made = await page.evaluate(() => window.gramMock!.simulateWaitingOn());
+  await openOrchestrator(page, made.orchestratorThreadId);
+  const row = (threadId: string) =>
+    page.locator(`[data-testid="overview-worker"][data-thread-id="${threadId}"]`);
+  const waits = (threadId: string) => row(threadId).getByTestId("overview-worker-waiting");
+
+  await expect(waits(made.ci)).toHaveText("Waiting · checks on #341");
+  await expect(waits(made.ci)).toHaveAttribute("data-kind", "checks");
+  await expect(waits(made.reviewing)).toHaveText("Waiting · review on #343");
+  await expect(waits(made.stacked)).toHaveText("Waiting · #341 to merge");
+  await expect(waits(made.merging)).toHaveText("Waiting · merge of #345");
+  await expect(waits(made.release)).toHaveText("Waiting · Release run");
+  await expect(waits(made.rebase)).toHaveText("Waiting · #341 to merge");
+  await expect(waits(made.timed)).toHaveText(/^Waiting · until \d{2}:\d{2}$/);
+  await expect(waits(made.limited)).toHaveText(/^Paused · limit until (\w{3} )?\d{2}:\d{2}$/);
+  // Calm: the hollow waiting dot, never the needs-you one, and nothing added to Needs you.
+  for (const id of [made.ci, made.timed, made.limited, made.release]) {
+    await expect(row(id).getByTestId("overview-worker-dot")).not.toHaveAttribute(
+      "data-tone",
+      /needs|attention|error/,
+    );
+  }
+  // A worker at work or one that needs attention says what it does, not a wait.
+  await expect(waits(made.editing)).toHaveCount(0);
+  await expect(waits(made.conflicts)).toHaveCount(0);
+
+  // The orchestrator, resting on a wake of its own, says so on its line and its hover.
+  const workspace = page.locator(
+    `[data-testid="overview-workspace"][data-workspace-id="${made.workspaceId}"]`,
+  );
+  const own = workspace.getByTestId("overview-orchestrator-waiting");
+  await expect(own).toHaveText(/^Waiting · until \d{2}:\d{2}$/);
+  await expect(workspace.getByTestId("overview-workspace-row")).toHaveAttribute(
+    "title",
+    /Orchestrator: Waiting · until \d{2}:\d{2}\nWakes at \d{2}:\d{2}: Check #341 and #343/,
+  );
+
+  // Hover lists every wait, the one its row names first.
+  await row(made.timed).hover();
+  const card = page.getByTestId("overview-worker-card-waits");
+  await expect(card).toBeVisible();
+  await expect(card.locator("li").first()).toHaveText(
+    /^Wakes at \d{2}:\d{2}: Retry the export once the archive job is done$/,
+  );
 });
