@@ -54,13 +54,19 @@ describe("New thread draft @ mentions", () => {
           agents: {
             ...DEFAULT_SETTINGS.agents,
             defaultModel: { agent: "codex", model: "gpt-5.5", variant: "high", speed: "fast" },
+            defaultMode: "bypassPermissions",
           },
         },
       });
     });
     expect(await screen.findByRole("form", { name: "New thread" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Agent" }).textContent).toContain("Codex");
-    expect(screen.getByRole("combobox", { name: "Speed" }).textContent).toContain("Fast");
+    // Speed and mode are glyphs alone, as in a thread's composer; Bypass keeps its tint.
+    expect(screen.getByRole("combobox", { name: "Speed: Fast" })).toBeTruthy();
+    const mode = screen.getByRole("combobox", { name: "Mode: Bypass" });
+    expect(mode.getAttribute("data-warning")).toBe("true");
+    expect(mode.className).toContain("text-status-needs");
+    expect(mode.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
   });
 
   it("offers the project folder's files and inserts the chosen one", async () => {

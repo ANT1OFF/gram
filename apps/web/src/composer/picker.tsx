@@ -1,13 +1,6 @@
 import { useState, type ReactNode } from "react";
 
-import { Hint } from "@/components/hint";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
@@ -15,6 +8,7 @@ import { Swap } from "@/motion";
 
 import { ModelCombobox } from "./model-picker";
 import { MODEL_SEARCH_THRESHOLD } from "./models";
+import { PickerTrigger } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
 
 export interface PickerOption<V extends string> {
@@ -95,9 +89,8 @@ export function Picker<V extends string>({
   );
 
   if (folded) return null;
-  const named = labelled
-    ? label
-    : `${label}: ${options.find((option) => option.value === value)?.label ?? "none"}`;
+  const shown = options.find((option) => option.value === value)?.label ?? "none";
+  const named = labelled ? label : `${label}: ${shown}`;
   const tagged = withHint(named, hint);
   const title = warning ?? (iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`);
   const description = [iconLabel, warning].filter(Boolean).join(". ") || undefined;
@@ -121,18 +114,6 @@ export function Picker<V extends string>({
     );
   }
 
-  const trigger = {
-    "aria-description": description,
-    "data-warning": warning ? "true" : undefined,
-    className: cn(GHOST_TRIGGER, warning && "text-status-needs hover:text-status-needs"),
-  };
-  const glyph = (
-    <>
-      {icon && <Swap swapKey={String(value)}>{icon}</Swap>}
-      <SelectValue data-toolbar-label placeholder={label} className={cn(!labelled && "sr-only")} />
-    </>
-  );
-
   return (
     <Select
       value={value ?? null}
@@ -143,21 +124,20 @@ export function Picker<V extends string>({
         if (next !== null) onChange(next as V);
       }}
     >
-      {labelled ? (
-        <SelectTrigger size="sm" aria-label={label} title={title} {...trigger}>
-          {glyph}
-        </SelectTrigger>
-      ) : (
-        // A glyph alone says what it is the moment it's hovered; a native title would wait.
-        <Hint
-          label={[iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
-            .filter(Boolean)
-            .join("\n")}
-          render={<SelectTrigger size="sm" aria-label={named} {...trigger} />}
-        >
-          {glyph}
-        </Hint>
-      )}
+      <PickerTrigger
+        size="sm"
+        label={label}
+        value={shown}
+        labelled={labelled}
+        icon={icon && <Swap swapKey={String(value)}>{icon}</Swap>}
+        title={title}
+        tip={[iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
+          .filter(Boolean)
+          .join("\n")}
+        aria-description={description}
+        data-warning={warning ? "true" : undefined}
+        className={cn(GHOST_TRIGGER, warning && "text-status-needs hover:text-status-needs")}
+      />
       <SelectContent side="top">
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} title={option.description}>

@@ -24,6 +24,7 @@ import {
 
 import { SpeedField } from "./speed-field";
 import { ModelSelect } from "./model-select";
+import { PickerTrigger } from "./picker-trigger";
 import { defaultModelId, effortOptions, useModels } from "./models";
 import { GHOST_TRIGGER } from "./styles";
 
@@ -99,7 +100,10 @@ export function AgentFields({
   onChange: (next: AgentChoice) => void;
   /** Only these agent kinds are offered, for a role not every agent may take; absent offers all. */
   allowed?: readonly AgentKind[] | undefined;
-  /** Styled as composer toolbar controls, each with its glyph, for the `/new` hero's prompt box. */
+  /**
+   * Styled as composer toolbar controls for the `/new` hero's prompt box: speed and effort as their
+   * glyphs alone, named with their values, as in a thread's composer.
+   */
   ghost?: boolean;
   /** Drafts resolve an empty choice; an unset saved setting may display it without saving. */
   initializeDefault?: boolean;
@@ -254,6 +258,7 @@ export function AgentFields({
           value={value.speed}
           onChange={(speed) => onChange({ ...value, speed })}
           ghost={ghost}
+          labelled={!ghost}
         />
       )}
       {efforts.length > 0 && (
@@ -267,10 +272,16 @@ export function AgentFields({
             );
           }}
         >
-          <SelectTrigger aria-label="Effort" {...trigger}>
-            {ghost && <Gauge aria-hidden className="size-3.5" />}
-            <SelectValue />
-          </SelectTrigger>
+          <PickerTrigger
+            label="Effort"
+            value={
+              effortItems.find((o) => o.value === (value.variant ?? DEFAULT_EFFORT))?.label ??
+              "Default effort"
+            }
+            labelled={!ghost}
+            icon={ghost && <Gauge aria-hidden className="size-3.5" />}
+            {...trigger}
+          />
           <SelectContent>
             {effortItems.map((o) => (
               <SelectItem key={o.value} value={o.value}>
