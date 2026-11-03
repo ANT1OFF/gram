@@ -78,6 +78,33 @@ installed in a temporary directory with `npm ci --ignore-scripts --omit=dev`.
 - **Source:** the release PR is merged, all three version fields read the version, the exact
   merged source has passed its checks, and nobody else is cutting this version.
 
+### Holding main during the cut
+
+The Linux workflow builds only when `main`'s head is the release commit (see
+[Linux files](#linux-files)), so nothing may merge to `main` from the release PR's merge until the
+Linux run is dispatched. When Gram cuts the release, the thread that cuts it holds `main` itself
+with a merge freeze instead of asking the orchestrator to keep merges back:
+
+1. Just before merging the release PR, freeze main and let that PR through: `merge_freeze` with
+   `repo: "ANT1OFF/gram"`, `reason: "release <version> cut"` and `allow: [<release PR number>]`.
+   Only the PRs in `allow` may still merge, so the cutting thread's own `merge_when_ready` (or
+   `set_auto_merge`) on the release PR goes through and nothing else does. It lasts at most 60
+   minutes; call it again to renew it while the cut is still before the dispatch.
+2. Merge the release PR, then run `release:rc --stable`.
+3. Once `release:rc` has recorded the Linux dispatch (its run id is in `release.json` and the
+   log), lift it: `merge_freeze` with `lift: true`. The rest of the cut doesn't need `main` held.
+
+While it stands, every other `merge_when_ready` onto `main` waits, and the ledger shows the reason
+as `main is frozen by "<thread>" for release <version> cut until HH:MMZ (except #N)`. GitHub
+auto-merge armed on Gram's threads' PRs into `main` is turned off when the freeze starts and armed
+again, with the same method, when it ends; the freeze's result lists the PRs it took down and any
+it couldn't. Workers whose work must land after the cut can wait on `schedule_wake` with
+`condition: { kind: "freezeLifted", repo: "ANT1OFF/gram" }`.
+
+The freeze doesn't cover a person merging by hand, auto-merge armed on a PR no Gram thread has, or
+an entry already in a merge queue, so tell anyone merging by hand. It ends at its expiry even if
+the cutting thread stops, and the orchestrator can lift it early.
+
 ## 1. Build and draft: `bun run release:rc --stable <version>`
 
 From a clean checkout of `origin/main`, with the pinned Bun and Node:

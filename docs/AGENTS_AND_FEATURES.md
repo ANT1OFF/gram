@@ -78,6 +78,7 @@ changes into events that wake the thread that cares:
 | ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `branchMoved`    | `repo`, optional `branch`    | the branch (the repo's default branch when none is named) gets a new head, or is deleted                                  |
 | `threadFinished` | `threadId` of another thread | it reports done, is marked completed, or is at rest after a report; or it is archived or closed, which also ends the wait |
+| `freezeLifted`   | `repo`, optional `branch`    | a [merge freeze](#merge-freezes) on it is lifted or expires                                                               |
 
 A condition wake is a wake like any other. It counts toward the thread's cap of five, the user sees
 it on the thread's chip and in the ledger (`wakes when acme/app main gets a new head, else …`),
@@ -106,6 +107,35 @@ To add a kind:
    met (with its facts), not met (with a new baseline, if any), or `undefined` when it couldn't
    tell. Give it a `pollEvery`, a `debounce`, and optionally a `changes` stream.
 3. List it in `WakeConditionSourcesLive`, and name it in `schedule_wake`'s description.
+
+### Merge freezes
+
+`merge_freeze` holds Gram's own merges onto a branch of one of the caller's workspace's repos (its
+default branch unless one is named) for a reason, for at most 60 minutes. The thread that froze it
+renews it by calling again, up to four hours from when it was first set; then it ends, the merges
+it held go, and holding the branch again takes a fresh freeze. `allow` names up to four PR numbers that may still merge, such as the
+release PR a cut freezes `main` for; a renewal without it keeps the list. While it stands,
+`merge_when_ready` waits for every other PR and records why on the PR
+(`main is frozen by "<thread>" for <reason> until HH:MMZ`), and `set_auto_merge` refuses them. A
+merge whose last check passed, from `merge_when_ready` or `set_auto_merge`, is launched under a
+fence the freeze also takes, so a freeze is either seen by that check or set after the launch. The
+fence covers that merge's fresh read of GitHub too, so a freeze can wait behind a slow `gh` call
+in flight. `set_auto_merge` reads the PR's base afresh when a freeze stands on its repo, so a PR
+retargeted onto the frozen branch is held too.
+
+GitHub merges a PR whose auto-merge is armed by itself. So a freeze turns off GitHub auto-merge on
+the open PRs into its branch that belong to Gram's threads (the allowed ones aside), keeps them on
+the freeze (each one before GitHub is asked, so a quit partway loses none), and arms them again
+with the same method when it ends. If another freeze stands on the branch by then, they are
+handed to it instead. A PR whose auto-merge someone turns off, whose merge is held, that is
+unbound, or that closes or merges during the freeze is let go of at once and never armed again;
+nor is one whose thread is archived, babysat or in a paused workspace when the freeze ends. It can't stop a person merging, auto-merge on a
+PR no Gram thread has, or an entry already in a merge queue.
+
+Only the thread that froze it, or its workspace's orchestrator, can lift it. It always ends at its
+expiry: every read checks the time, whatever the timers did, so a thread that stopped, or a
+restart past the expiry, never keeps it. A closed thread's freezes end with it. Its end looks again
+at every armed merge in the repo, and fires `freezeLifted` wakes.
 
 ## Accounts, models and speed
 

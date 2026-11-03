@@ -1,7 +1,12 @@
 import {
   currentBaseOf,
   AppToolError,
+  BranchName,
   MERGE_AFTER_MAX,
+  MERGE_FREEZE_ALLOW_MAX,
+  MERGE_FREEZE_MAX_MINUTES,
+  MERGE_FREEZE_REASON_MAX,
+  mergeFreezeText,
   mergeReviewPolicyOf,
   reviewBotsOf,
   samePr,
@@ -41,6 +46,7 @@ import {
 } from "../git/extra-prs.ts";
 import { GitRefresh } from "../git/platform.ts";
 import { LocalChecks } from "../git/local-checks.ts";
+import { MergeFreezes } from "../git/merge-freezes.ts";
 import { mergeBlocker, MergeWhenReady, parsePrRef, prName } from "../git/merge-when-ready.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { parseRunRef, RunMonitor } from "../git/run-monitor.ts";
@@ -83,6 +89,8 @@ interface MergeTarget {
   readonly head?: string | undefined;
   /** That badge's `mergeStateStatus`. */
   readonly mergeState?: string | undefined;
+  /** That badge's base branch; absent, a freeze anywhere on the repo holds it. */
+  readonly base?: string | undefined;
 }
 
 /** GitHub refusing to arm auto-merge on a PR that can merge right now. */
@@ -136,6 +144,29 @@ export const PrAppToolsLive = Layer.effectDiscard(
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const runMonitor = Option.getOrUndefined(yield* Effect.serviceOption(RunMonitor));
     const mergeWhenReady = Option.getOrUndefined(yield* Effect.serviceOption(MergeWhenReady));
+    const freezes = yield* MergeFreezes;
+    /**
+     * Refuses a merge, or GitHub's auto-merge, onto a frozen base: once armed, GitHub would merge
+     * under a freeze Gram can't hold back. Without a known base, a freeze anywhere on the repo.
+     */
+    const refuseWhileFrozen = (
+      tool: string,
+      repo: string,
+      base: string | undefined,
+      number: number,
+    ) =>
+      freezes.holding(repo, base, number).pipe(
+        Effect.flatMap((frozen) =>
+          frozen === undefined
+            ? Effect.void
+            : Effect.fail(
+                new AppToolError({
+                  tool,
+                  message: `${mergeFreezeText(frozen)}; Gram doesn't merge onto it until the freeze ends.`,
+                }),
+              ),
+        ),
+      );
 
     const currentPr = (thread: Thread) => threadPr.badge(thread.checkout.path);
 
@@ -275,11 +306,14 @@ export const PrAppToolsLive = Layer.effectDiscard(
           }
           const ref = repo === undefined || number === undefined ? undefined : { repo, number };
           let held: string | undefined;
+          let unbound: { readonly repo: string; readonly number: number } | undefined;
           const thread = yield* runtimes.updateThread(threadId, (t) => {
             if (ref !== undefined && !(t.boundPr !== undefined && samePr(t.boundPr, ref))) {
+              unbound = ref;
               return removeExtraPr(t, ref);
             }
             const { boundPr, ...rest } = t;
+            unbound = boundPr;
             if (boundPr?.mergeWhenReady?.heldBy === "orchestrator") {
               held = heldMessage(boundPr.mergeWhenReady);
               return t;
@@ -290,6 +324,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
           if (held !== undefined) {
             return yield* new AppToolError({ tool: "pr_unbind", message: held });
           }
+          // No longer this thread's: a freeze that took its auto-merge down lets it go.
+          if (unbound !== undefined) yield* freezes.forget(unbound.repo, unbound.number);
           yield* refreshes.request(thread.checkout.path, true);
           return { unbound: true };
         }).pipe(Effect.mapError(failed("pr_unbind"))),
@@ -460,7 +496,6 @@ export const PrAppToolsLive = Layer.effectDiscard(
               message: `Can't tell which repository #${target} is in; bind it with pr_bind repo and number.`,
             });
           }
-          if (enabled) yield* requireGitHubAutoPolicy(thread, repo);
           // Only badges already fetched: naming the PR costs GitHub nothing.
           const known = [
             branch,
@@ -476,6 +511,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 { repo: repoFromPrUrl(badge.url) ?? "", number: badge.number },
               ),
           );
+          if (enabled) {
+            yield* refuseWhileFrozen(tool, repo, seen?.baseRef, target);
+            yield* requireGitHubAutoPolicy(thread, repo);
+          }
           return {
             thread,
             other: threadId !== caller,
@@ -485,7 +524,12 @@ export const PrAppToolsLive = Layer.effectDiscard(
             repo,
             ...(seen === undefined
               ? {}
-              : { title: seen.title, head: seen.headRefOid, mergeState: seen.mergeState }),
+              : {
+                  title: seen.title,
+                  head: seen.headRefOid,
+                  mergeState: seen.mergeState,
+                  base: seen.baseRef,
+                }),
           } satisfies MergeTarget;
         }),
       describe: (_caller, { thread, other, enabled, method, number, repo, title }) => {
@@ -497,7 +541,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
             : `Stop auto-merging ${pr}${on}`,
         );
       },
-      handle: (caller, { thread, other, enabled, method, number, repo, head, mergeState }, call) =>
+      handle: (
+        caller,
+        { thread, other, enabled, method, number, repo, head, mergeState, base },
+        call,
+      ) =>
         Effect.gen(function* () {
           const tool = "set_auto_merge";
           const cwd = thread.checkout.path;
@@ -512,6 +560,15 @@ export const PrAppToolsLive = Layer.effectDiscard(
             if (enabled) {
               yield* refuseOverHold(tool, caller, latest);
               yield* requireGitHubAutoPolicy(latest, repo);
+              // Inside the fence, which a freeze takes too: one set from here on waits for this
+              // call. With a freeze standing on the repo, the PR's base is read afresh, since the
+              // badge's may be from before a retarget.
+              if ((yield* freezes.active(repo, undefined)) !== undefined) {
+                const fresh = yield* view("baseRefName");
+                yield* refuseWhileFrozen(tool, repo, fresh === "" ? undefined : fresh, number);
+              } else {
+                yield* refuseWhileFrozen(tool, repo, base, number);
+              }
             }
             if (call.carded !== false) return;
             const own =
@@ -540,35 +597,40 @@ export const PrAppToolsLive = Layer.effectDiscard(
           const fail = (out: ProcOutput) =>
             new AppToolError({ tool, message: gitFailMsg(out, "gh pr merge failed") });
 
-          const go = Effect.gen(function* () {
-            yield* stillAllowed;
-            let merged = false;
-            if (!enabled) {
-              const out = yield* run(["pr", "merge", String(number), "--disable-auto"]);
-              if (out.status !== 0) return yield* fail(out);
-            } else if (mergeState === "CLEAN" && head !== undefined) {
-              const out = yield* merge(head);
-              if (out.status !== 0) return yield* fail(out);
-              merged = true;
-            } else {
-              const armed = yield* run(["pr", "merge", String(number), "--auto", `--${method}`]);
-              if (armed.status === 0) {
-                // gh merges at once when it reads the PR as mergeable, and says nothing either way.
-                merged = (yield* view("state")) === "MERGED";
-              } else if (CLEAN_STATUS.test(armed.stderr)) {
-                // GitHub computes the merge state lazily, so gh can read BLOCKED or UNKNOWN from a
-                // PR that is clean by the time it asks to arm auto-merge, which GitHub then refuses.
-                const pin = head ?? (yield* view("headRefOid"));
-                if (pin === "") return yield* fail(armed);
-                const out = yield* merge(pin);
+          const go = freezes.fence(
+            repo,
+            Effect.gen(function* () {
+              yield* stillAllowed;
+              let merged = false;
+              if (!enabled) {
+                const out = yield* run(["pr", "merge", String(number), "--disable-auto"]);
+                if (out.status !== 0) return yield* fail(out);
+                // Turned off on purpose: a freeze that took it down doesn't arm it again.
+                yield* freezes.forget(repo, number);
+              } else if (mergeState === "CLEAN" && head !== undefined) {
+                const out = yield* merge(head);
                 if (out.status !== 0) return yield* fail(out);
                 merged = true;
               } else {
-                return yield* fail(armed);
+                const armed = yield* run(["pr", "merge", String(number), "--auto", `--${method}`]);
+                if (armed.status === 0) {
+                  // gh merges at once when it reads the PR as mergeable, and says nothing either way.
+                  merged = (yield* view("state")) === "MERGED";
+                } else if (CLEAN_STATUS.test(armed.stderr)) {
+                  // GitHub computes the merge state lazily, so gh can read BLOCKED or UNKNOWN from a
+                  // PR that is clean by the time it asks to arm auto-merge, which GitHub then refuses.
+                  const pin = head ?? (yield* view("headRefOid"));
+                  if (pin === "") return yield* fail(armed);
+                  const out = yield* merge(pin);
+                  if (out.status !== 0) return yield* fail(out);
+                  merged = true;
+                } else {
+                  return yield* fail(armed);
+                }
               }
-            }
-            return merged;
-          });
+              return merged;
+            }),
+          );
           const merged = yield* mergeWhenReady === undefined
             ? go
             : mergeWhenReady.mutate(thread.id, go);
@@ -994,6 +1056,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
             return yield* new AppToolError({ tool: MERGE, message: refused });
           yield* refreshes.request(updated.checkout.path, true);
           const intent = updated.boundPr?.mergeWhenReady;
+          // Held on purpose: a freeze that took its auto-merge down doesn't arm it again.
+          if (intent?.hold !== undefined) yield* freezes.forget(pr.repo, pr.number);
           if (intent === undefined) return { pr: prName(pr), mergeWhenReady: false };
           const configuration =
             localChecks === undefined
@@ -1110,7 +1174,65 @@ export const PrAppToolsLive = Layer.effectDiscard(
         }).pipe(Effect.mapError(failed(LOCAL_CHECK))),
     });
 
+    const mergeFreezeTool = defineAppTool({
+      descriptor: {
+        name: "merge_freeze",
+        class: "self",
+        description: `Freeze Gram's merges onto a branch of a workspace \`repo\` (default: your PR's; \`branch\`: its default) for a \`reason\`, up to ${MERGE_FREEZE_MAX_MINUTES} \`minutes\`; call again to renew, 4 h at most. merge_when_ready waits and set_auto_merge refuses, except PRs in \`allow\`; Gram's PRs' GitHub auto-merge is off meanwhile, then restored. A person, a merge queue or other PRs' auto-merge can still merge. \`lift: true\` ends it (its thread or orchestrator). Wait with schedule_wake's freezeLifted.`,
+      },
+      audience: ["orchestrator", "worker"],
+      input: Schema.Struct({
+        repo: Schema.optionalKey(Schema.String),
+        branch: Schema.optionalKey(BranchName),
+        reason: Schema.optionalKey(
+          Schema.NonEmptyString.check(Schema.isMaxLength(MERGE_FREEZE_REASON_MAX)),
+        ),
+        minutes: Schema.optionalKey(
+          Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: MERGE_FREEZE_MAX_MINUTES })),
+        ),
+        allow: Schema.optionalKey(
+          Schema.Array(Schema.Int).check(Schema.isMaxLength(MERGE_FREEZE_ALLOW_MAX)),
+        ),
+        lift: Schema.optionalKey(Schema.Boolean),
+      }),
+      handle: (caller, input) =>
+        Effect.gen(function* () {
+          const tool = "merge_freeze";
+          const thread = yield* store.getThread(caller).pipe(Effect.mapError(failed(tool)));
+          const repo = input.repo ?? thread.boundPr?.repo;
+          if (repo === undefined || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+            return yield* new AppToolError({ tool, message: "Name the `repo` as owner/repo." });
+          }
+          if (input.lift === true) {
+            const lifted = yield* freezes.lift(thread, { repo, branch: input.branch });
+            return { lifted: true, repo: lifted.repo, branch: lifted.branch };
+          }
+          if (input.reason === undefined) {
+            return yield* new AppToolError({ tool, message: "Say why in `reason`." });
+          }
+          const { freeze: frozen, notDisarmed } = yield* freezes.freeze(thread, {
+            repo,
+            branch: input.branch,
+            reason: input.reason,
+            minutes: input.minutes,
+            allow: input.allow,
+          });
+          return {
+            frozen: true,
+            repo: frozen.repo,
+            branch: frozen.branch,
+            until: new Date(frozen.until).toISOString(),
+            ...(frozen.allow === undefined ? {} : { allow: frozen.allow }),
+            ...(frozen.disarmed === undefined
+              ? {}
+              : { autoMergeOff: frozen.disarmed.map((pr) => pr.number) }),
+            ...(notDisarmed.length === 0 ? {} : { autoMergeStillArmed: notDisarmed }),
+          };
+        }),
+    });
+
     yield* registry.register([
+      mergeFreezeTool,
       prBind,
       prUnbind,
       prStatus,

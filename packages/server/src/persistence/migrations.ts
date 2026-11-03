@@ -378,8 +378,18 @@ const baseline = Effect.gen(function* () {
  * id (`0002_name`, …) after merging main. Never reserve an id or change a shipped one. The loader
  * rejects anything Effect's migrator would silently skip.
  */
+/**
+ * Merge freezes (`git/merge-freezes.ts`): a thread's hold on Gram's own merges to a repo's branch,
+ * one row per repo and branch, each expiring at the `until` its data carries.
+ */
+const mergeFreezes = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE merge_freezes (key TEXT PRIMARY KEY, data TEXT NOT NULL)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
+  "0002_merge_freezes": mergeFreezes,
 };
 
 /**

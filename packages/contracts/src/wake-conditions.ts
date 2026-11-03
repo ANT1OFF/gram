@@ -6,7 +6,7 @@
 // those three; see docs/AGENTS_AND_FEATURES.md#condition-wakes.
 
 import * as Schema from "effect/Schema";
-import { ThreadId } from "./ids.ts";
+import { ThreadId, WorkspaceId } from "./ids.ts";
 
 /**
  * The version of the stored condition shapes. A wake keeps it beside its condition
@@ -87,6 +87,18 @@ export const DiskFreeCondition = Schema.Struct({
 });
 export type DiskFreeCondition = typeof DiskFreeCondition.Type;
 
+/**
+ * A merge freeze on a repo's branch (`merge_freeze`) is lifted or expires; without `branch`, the
+ * freeze on the repo there is when the wake is set.
+ */
+export const FreezeLiftedCondition = Schema.Struct({
+  kind: Schema.Literal("freezeLifted"),
+  repo: RepoName,
+  /** Filled in with the frozen branch when the wake is set without one. */
+  branch: Schema.optionalKey(BranchName),
+});
+export type FreezeLiftedCondition = typeof FreezeLiftedCondition.Type;
+
 /** Everything a wake can wait on beside its time. Closed: an unknown kind doesn't decode. */
 export const WakeCondition = Schema.Union([
   BranchMovedCondition,
@@ -94,6 +106,7 @@ export const WakeCondition = Schema.Union([
   CiStuckCondition,
   MachineLoadCondition,
   DiskFreeCondition,
+  FreezeLiftedCondition,
 ]);
 export type WakeCondition = typeof WakeCondition.Type;
 export type WakeConditionKind = WakeCondition["kind"];
@@ -143,6 +156,8 @@ export const wakeConditionWhen = (condition: WakeCondition, name?: string): stri
       return condition.metric === "load"
         ? `this machine's load stays below ${condition.below} for ${condition.forMinutes ?? MACHINE_LOAD_DEFAULT_MINUTES} min`
         : `free disk space${condition.path === undefined ? "" : ` at ${condition.path}`} drops below ${condition.belowGB} GB`;
+    case "freezeLifted":
+      return `${condition.repo} ${condition.branch ?? "default branch"} is no longer frozen`;
   }
 };
 
@@ -167,5 +182,69 @@ export const wakeConditionLabel = (condition: WakeCondition): string => {
       return condition.metric === "load"
         ? `quieter (load < ${condition.below})`
         : `disk < ${condition.belowGB} GB`;
+    case "freezeLifted":
+      return `${condition.branch ?? condition.repo} thaw`;
   }
 };
+
+/** The longest a merge freeze lasts before it expires on its own; a renewal starts it again. */
+export const MERGE_FREEZE_MAX_MINUTES = 60;
+/** The longest reason a merge freeze carries. */
+export const MERGE_FREEZE_REASON_MAX = 200;
+/**
+ * The longest a freeze may stand, renewals included, from when it was first set: then it ends, and
+ * the merges it held go, even if its thread freezes the branch again right after.
+ */
+export const MERGE_FREEZE_TOTAL_MAX_MINUTES = 240;
+/** How many PRs a merge freeze may let through (`MergeFreeze.allow`). */
+export const MERGE_FREEZE_ALLOW_MAX = 4;
+
+/**
+ * A thread's freeze on merges to a repo's branch (`merge_freeze`): Gram's own merges onto it
+ * (`merge_when_ready`, `set_auto_merge`) wait until it is lifted or expires, except the PRs it
+ * allows. GitHub auto-merge that Gram's threads' PRs had armed is turned off for its time and armed
+ * again after. It can't stop a person, or an auto-merge or merge-queue entry on any other PR. It
+ * always expires at `until`, whatever becomes of the thread.
+ */
+export const MergeFreeze = Schema.Struct({
+  repo: RepoName,
+  branch: BranchName,
+  /** The thread that froze it, which may renew or lift it; its workspace's orchestrator may lift it. */
+  threadId: ThreadId,
+  /** The thread's title when it froze it, for the line that says who. */
+  title: Schema.String,
+  workspaceId: Schema.optionalKey(WorkspaceId),
+  reason: Schema.String.check(Schema.isMaxLength(MERGE_FREEZE_REASON_MAX)),
+  /** PR numbers in the repo that may still merge, such as the release PR the freeze is for. */
+  allow: Schema.optionalKey(
+    Schema.Array(Schema.Int).check(Schema.isMaxLength(MERGE_FREEZE_ALLOW_MAX)),
+  ),
+  /** PRs whose GitHub auto-merge the freeze turned off, to arm again with its method once it ends. */
+  disarmed: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        number: Schema.Int,
+        method: Schema.Literals(["squash", "merge", "rebase"]),
+      }),
+    ),
+  ),
+  /** Epoch ms it was frozen, or last renewed. */
+  at: Schema.Number,
+  /** Epoch ms it was first frozen, which renewals keep: it stands `MERGE_FREEZE_TOTAL_MAX_MINUTES` at most. */
+  since: Schema.optionalKey(Schema.Number),
+  /** Epoch ms it expires. */
+  until: Schema.Number,
+});
+export type MergeFreeze = typeof MergeFreeze.Type;
+
+/** `"main is frozen by "Release 1.6" for the release cut until 14:05Z"`: why a merge waits. */
+export const mergeFreezeText = (freeze: MergeFreeze): string =>
+  `${freeze.branch} is frozen by "${freeze.title}" for ${freeze.reason} until ${new Date(freeze.until).toISOString().slice(11, 16)}Z${
+    freeze.allow === undefined || freeze.allow.length === 0
+      ? ""
+      : ` (except ${freeze.allow.map((n) => `#${n}`).join(", ")})`
+  }`;
+
+/** Whether `freeze` holds back a merge of PR `number`: every PR but those it allows. */
+export const mergeFreezeHolds = (freeze: MergeFreeze, number: number | undefined): boolean =>
+  number === undefined || !(freeze.allow ?? []).includes(number);
