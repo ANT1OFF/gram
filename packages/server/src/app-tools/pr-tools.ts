@@ -1178,7 +1178,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
       descriptor: {
         name: "merge_freeze",
         class: "self",
-        description: `Freeze Gram's merges onto a branch of \`repo\` (a repo of your workspace; default: your bound PR's; \`branch\` defaults to the default branch) for a \`reason\`, up to ${MERGE_FREEZE_MAX_MINUTES} \`minutes\`; call again to renew. merge_when_ready waits and set_auto_merge refuses, except for PR numbers in \`allow\` (the release PR). GitHub auto-merge armed on Gram's threads' PRs is turned off and armed again after. A person, a merge-queue entry or another PR's auto-merge can still merge. \`lift: true\` ends it (its thread or orchestrator only); it always ends at expiry. Wait with schedule_wake's freezeLifted.`,
+        description: `Freeze Gram's merges onto a branch of a workspace \`repo\` (default: your PR's; \`branch\`: its default) for a \`reason\`, up to ${MERGE_FREEZE_MAX_MINUTES} \`minutes\`; call again to renew, 4 h at most. merge_when_ready waits and set_auto_merge refuses, except PRs in \`allow\`; Gram's PRs' GitHub auto-merge is off meanwhile, then restored. A person, a merge queue or other PRs' auto-merge can still merge. \`lift: true\` ends it (its thread or orchestrator). Wait with schedule_wake's freezeLifted.`,
       },
       audience: ["orchestrator", "worker"],
       input: Schema.Struct({
