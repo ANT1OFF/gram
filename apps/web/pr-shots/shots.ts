@@ -1926,6 +1926,47 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "new-thread-pickers",
+    title: "The new-thread prompt box's toolbar: Fast speed, High effort and Bypass mode",
+    open: async (page) => {
+      await seedMockSettings(page, {
+        agents: {
+          defaultModel: { agent: "claude", model: "fixture-fast", variant: "high", speed: "fast" },
+          defaultMode: "bypassPermissions",
+        },
+      });
+      // A synthetic model that offers Fast, put in as the app hands the mock its window hook.
+      await page.addInitScript(() => {
+        let mock: unknown;
+        Object.defineProperty(window, "gramMock", {
+          configurable: true,
+          get: () => mock,
+          set: (next: { listModels: unknown }) => {
+            next.listModels = async () => ({
+              models: [
+                {
+                  id: "fixture-fast",
+                  displayName: "Synthetic Fast model",
+                  supportsEffort: true,
+                  efforts: ["low", "high"],
+                  speeds: ["standard", "fast"],
+                  isDefault: true,
+                },
+              ],
+            });
+            mock = next;
+          },
+        });
+      });
+      await page.goto("/new");
+      await page
+        .getByRole("group", { name: "Agent" })
+        .getByLabel(/^Effort/)
+        .waitFor();
+    },
+    element: (page) => page.getByRole("group", { name: "Agent" }),
+  },
+  {
     name: "appearance-palette-library",
     title: "Appearance palette library: existing palettes and six new light/dark pairs",
     open: async (page) => {

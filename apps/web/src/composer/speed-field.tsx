@@ -6,16 +6,10 @@ import {
   type SpeedState,
 } from "@gram/contracts";
 import { Zap } from "lucide-react";
-import { Hint } from "@/components/hint";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem } from "@/components/ui/select";
+
+import { PickerTrigger } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
-import { cn } from "@/lib/utils";
 
 export const speedOptions = (
   models: readonly AgentModel[] | undefined,
@@ -83,13 +77,7 @@ export function SpeedField({
   const items = speedOptions(models, model, value, state);
   const usage = speedUsage(agent);
   const report = speedReport(state);
-  const named = `Speed: ${items.find((item) => item.value === (value ?? "default"))?.label ?? "CLI default"}`;
-  const glyph = (
-    <>
-      {ghost && <Zap aria-hidden className="size-3.5" />}
-      <SelectValue data-toolbar-label className={cn(!labelled && "sr-only")} />
-    </>
-  );
+  const shown = items.find((item) => item.value === (value ?? "default"))?.label ?? "CLI default";
   return (
     <div className="flex flex-col gap-1" data-testid="speed-field">
       <Select
@@ -100,30 +88,15 @@ export function SpeedField({
           if (next === "standard" || (next === "fast" && fast)) onChange(next);
         }}
       >
-        {labelled ? (
-          <SelectTrigger
-            aria-label="Speed"
-            title={`${usage} ${report}`}
-            size={ghost ? "sm" : size}
-            {...(ghost ? { className: GHOST_TRIGGER } : {})}
-          >
-            {glyph}
-          </SelectTrigger>
-        ) : (
-          // The glyph alone: the tooltip names the speed at once, and the open list explains it.
-          <Hint
-            label={named}
-            render={
-              <SelectTrigger
-                aria-label={named}
-                size={ghost ? "sm" : size}
-                {...(ghost ? { className: GHOST_TRIGGER } : {})}
-              />
-            }
-          >
-            {glyph}
-          </Hint>
-        )}
+        <PickerTrigger
+          label="Speed"
+          value={shown}
+          labelled={labelled}
+          icon={ghost && <Zap aria-hidden className="size-3.5" />}
+          title={`${usage} ${report}`}
+          size={ghost ? "sm" : size}
+          {...(ghost ? { className: GHOST_TRIGGER } : {})}
+        />
         <SelectContent>
           {items.map((item) => (
             <SelectItem

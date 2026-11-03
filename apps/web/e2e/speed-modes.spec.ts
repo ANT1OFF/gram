@@ -55,8 +55,10 @@ for (const agent of ["claude", "codex"] as const)
     await page.clock.fastForward("05:01");
     await form.getByRole("combobox", { name: "Model", exact: true }).click();
     await page.getByRole("option", { name: "Synthetic Fast model", exact: true }).click();
-    const speed = form.getByRole("combobox", { name: "Speed", exact: true });
-    await expect(speed).toContainText("Standard");
+    // In the new-thread form, as in a thread's composer, speed and effort are glyphs named with
+    // their values.
+    const speed = form.getByRole("combobox", { name: /^Speed: / });
+    await expect(speed).toHaveAccessibleName("Speed: Standard");
     await speed.click();
     await expect(
       page
@@ -66,7 +68,8 @@ for (const agent of ["claude", "codex"] as const)
         .last(),
     ).toBeVisible();
     await page.getByRole("option", { name: "Fast", exact: true }).click();
-    await expect(form.getByRole("combobox", { name: "Effort", exact: true })).toContainText("High");
+    await expect(speed).toHaveAccessibleName("Speed: Fast");
+    await expect(form.getByRole("combobox", { name: "Effort: High effort" })).toBeVisible();
     await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
     await form.getByLabel("First prompt").fill("Synthetic speed preference test.");
     await form.getByRole("button", { name: /Create thread/ }).click();

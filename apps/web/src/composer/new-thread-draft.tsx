@@ -15,13 +15,7 @@ import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-pref
 import { checkoutInUsePath } from "@/api/errors";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { shortcutPressed } from "@/keyboard/bindings";
 import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
@@ -53,6 +47,7 @@ import { modeWarning } from "@/thread/mode-warning";
 import { inOpenFence } from "./mention";
 import { enterSends } from "./send-key";
 import { AgentFields, choiceModel, gatewayReady } from "./agent-fields";
+import { PickerTrigger } from "./picker-trigger";
 import { useModels } from "./models";
 import { AttachmentChips } from "./attachment-chips";
 import { randomBranchName } from "./branch-name";
@@ -319,6 +314,8 @@ function ConfiguredNewThreadDraft() {
 
   const createLabel = stage === "failed" ? "Retry" : "Create thread";
   const ModeIcon = MODE_ICONS[mode];
+  const modeLabel = MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
+  const modeWarned = modeWarning(mode);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -475,19 +472,20 @@ function ConfiguredNewThreadDraft() {
                   if (value !== null) setMode(value as PermissionMode);
                 }}
               >
-                <SelectTrigger
+                <PickerTrigger
                   size="sm"
-                  aria-label="Mode"
-                  data-warning={modeWarning(mode) ? "true" : undefined}
-                  title={modeWarning(mode)}
+                  label="Mode"
+                  value={modeLabel}
+                  labelled={false}
+                  icon={<ModeIcon aria-hidden className="size-3.5" />}
+                  tip={[`Mode: ${modeLabel}`, modeWarned].filter(Boolean).join("\n")}
+                  aria-description={modeWarned}
+                  data-warning={modeWarned ? "true" : undefined}
                   className={cn(
                     GHOST_TRIGGER,
-                    modeWarning(mode) && "text-status-needs hover:text-status-needs",
+                    modeWarned && "text-status-needs hover:text-status-needs",
                   )}
-                >
-                  <ModeIcon aria-hidden className="size-3.5" />
-                  <SelectValue />
-                </SelectTrigger>
+                />
                 <SelectContent>
                   {MODE_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>

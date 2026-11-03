@@ -345,20 +345,40 @@ describe("AgentFields speed", () => {
     // The CLI decides, though Fast is there.
     renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
     expect(await screen.findByLabelText("Model")).toBeTruthy();
-    expect(screen.queryByLabelText("Speed")).toBeNull();
+    expect(screen.queryByLabelText(/^Speed/)).toBeNull();
     cleanup();
     // Standard is all the model offers.
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard"], true);
     expect(await screen.findByLabelText("Model")).toBeTruthy();
-    expect(screen.queryByLabelText("Speed")).toBeNull();
+    expect(screen.queryByLabelText(/^Speed/)).toBeNull();
   });
 
   it("shows Speed in the prompt box with Fast to pick, and always outside it", async () => {
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard", "fast"], true);
-    expect((await screen.findByLabelText("Speed")).textContent).toContain("Standard");
+    // In the prompt box Speed is its glyph alone, as in a thread's composer.
+    const glyph = await screen.findByRole("combobox", { name: "Speed: Standard" });
+    expect(glyph.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
     cleanup();
     renderSpeed({ agent: "claude", model: "m" }, ["standard"], false);
     expect((await screen.findByLabelText("Speed")).textContent).toContain("CLI default");
+  });
+});
+
+describe("AgentFields effort", () => {
+  it("is a glyph in the prompt box, named with its value, and labelled outside it", async () => {
+    const user = userEvent.setup();
+    const choice: AgentChoice = { agent: "claude", model: "opus", variant: "high" };
+    renderWithApi(<AgentFields ghost value={choice} onChange={() => {}} />, mockApi());
+    const glyph = await screen.findByRole("combobox", { name: "Effort: High effort" });
+    expect(glyph.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
+    await user.hover(glyph);
+    expect(await screen.findByText("Effort: High effort")).toBeTruthy();
+    await user.click(glyph);
+    expect(screen.getByRole("option", { name: "Default effort" })).toBeTruthy();
+    cleanup();
+    renderWithApi(<AgentFields value={choice} onChange={() => {}} />, mockApi());
+    const labelled = await screen.findByRole("combobox", { name: "Effort" });
+    expect(labelled.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
   });
 });
 
