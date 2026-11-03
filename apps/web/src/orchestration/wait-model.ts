@@ -52,7 +52,7 @@ export type WaitInput = Pick<
   | "wakes"
   | "runWatches"
 > &
-  Partial<Pick<WorkerLedgerEntry, "userIntervened" | "quiet">>;
+  Partial<Pick<WorkerLedgerEntry, "userIntervened" | "quiet" | "limitWait">>;
 
 const REQUEST_TAGS: Readonly<Record<string, string>> = {
   approval: "you: approve",
@@ -179,7 +179,7 @@ export const prWait = (pr: WorkerPr): WorkerWait => {
 const RANK: Readonly<Record<WaitBucket, number>> = { person: 0, checks: 1, working: 2, done: 3 };
 
 /** Its PRs still open, its own repo's and every other's. */
-const openPrs = (worker: WaitInput, state: WorkerState): WorkerPr[] =>
+export const openPrs = (worker: WaitInput, state: WorkerState): WorkerPr[] =>
   [
     worker.pr,
     ...(worker.morePrs ?? []),
@@ -241,6 +241,9 @@ export const workerWait = (
   }
   if (worker.userIntervened)
     return person(HELD, "You are directing this worker; hand it back when ready.");
+  // A provider limit resumes it on its own: whatever its PRs wait on, it moves on once that resets.
+  if (worker.limitWait !== undefined)
+    return checks("usage limit", "It waits out a usage limit and resumes on its own.");
   const monitoring = [
     ...((worker.runWatches?.length ?? 0) === 0
       ? []
@@ -315,6 +318,7 @@ const AUTOMATED = new Set([
   "looking up",
   "run monitored",
   "wake scheduled",
+  "usage limit",
 ]);
 
 /**

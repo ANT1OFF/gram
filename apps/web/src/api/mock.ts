@@ -77,6 +77,7 @@ import {
   type MockFinishedSimulation,
   type MockReleaseSimulation,
   type MockQuietBusySimulation,
+  type MockWaitingOnSimulation,
   type MockWaitsSimulation,
   type MockOrchestrationScenario,
   type MockOrchestrationSimulation,
@@ -158,6 +159,7 @@ import {
   simulateReachingWorkers,
   simulateWorkerQuestions,
   simulateQuietBusy,
+  simulateWaitingOn,
   simulateReadme,
   simulateWorkerWaits,
   simulateReleaseGroup,
@@ -1679,6 +1681,11 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /** `simulateQuietBusy` (`mock-scenarios.ts`). */
   simulateQuietBusy(): Promise<MockQuietBusySimulation> {
     return simulateQuietBusy(this.#scenes);
+  }
+
+  /** `simulateWaitingOn` (`mock-scenarios.ts`). */
+  simulateWaitingOn(): Promise<MockWaitingOnSimulation> {
+    return simulateWaitingOn(this.#scenes);
   }
 
   /** `simulateReadme` (`mock-scenarios.ts`). */

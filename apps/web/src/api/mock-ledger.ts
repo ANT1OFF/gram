@@ -9,6 +9,7 @@ import {
   WORKER_REQUEST_SUMMARY_MAX,
   type MergeIntent,
   type PendingRequest,
+  type PendingWake,
   type PrStatus,
   type ThreadId,
   type ThreadSummary,
@@ -75,6 +76,8 @@ export interface WorkerExtras {
   readonly overlapsWith: readonly ThreadId[];
   readonly userIntervened: boolean;
   readonly alsoIn?: readonly WorkerRepo[] | undefined;
+  /** The wakes it set itself, soonest first. */
+  readonly wakes?: readonly PendingWake[] | undefined;
   readonly now: number;
 }
 
@@ -126,7 +129,7 @@ export const ledgerEntry = (
   summary: ThreadSummary,
   feature: string,
   projectName: string,
-  { lastReport, askedAt, overlapsWith, userIntervened, alsoIn, now }: WorkerExtras,
+  { lastReport, askedAt, overlapsWith, userIntervened, alsoIn, wakes, now }: WorkerExtras,
 ): WorkerLedgerEntry => {
   const { thread, git, usage } = summary;
   return {
@@ -150,6 +153,11 @@ export const ledgerEntry = (
               : { httpStatus: thread.lastError.httpStatus }),
             text: thread.lastError.text,
           },
+        }),
+    ...(thread.limitWait === undefined || thread.limitWait.cancelled === true
+      ? {}
+      : {
+          limitWait: { kind: thread.limitWait.kind, resumeAt: thread.limitWait.resumeAt },
         }),
     ...(lastReport === undefined ? {} : { lastReport }),
     pendingRequests: summary.pendingRequests.map((request) => {
@@ -189,6 +197,7 @@ export const ledgerEntry = (
     ...(usage?.costUsd === undefined ? {} : { costUsd: usage.costUsd }),
     userIntervened,
     messagesFromOrchestrator: 0,
+    ...(wakes?.length ? { wakes } : {}),
     ...(thread.runWatches?.length ? { runWatches: thread.runWatches } : {}),
   };
 };

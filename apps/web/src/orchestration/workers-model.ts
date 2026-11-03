@@ -19,10 +19,11 @@ import { threadDisplayTitle } from "@/thread/thread-title";
 
 import { liveWorkerEntry, workerTitle } from "./board-model";
 import { dayLabel } from "./outputs-model";
-import { workerTone, type RailTone } from "./rail-model";
+import { calmTone, workerTone, type RailTone } from "./rail-model";
 import { threadWorking } from "./tree-model";
 import { OVER_STATES, workerShown } from "./worker-shown";
 import { workerActivity, workerWait, type WorkerActivity, type WorkerBusy } from "./wait-model";
+import { workerWaitingOn, type ThreadName, type WaitClock, type WaitingOn } from "./waiting-on";
 
 // The ⌘J Workers list: every worker of a workspace in Now and Done, grouped by feature (and in
 // Done, by the day it finished), each with a "now" line of four words or fewer. Pure and
@@ -62,8 +63,10 @@ export interface WorkerRow {
   readonly activity: WorkerActivity;
   /** Its tone (`liveWorkerTone`), the one its glyph, Quiet's dot, the Board's chip and the sidebar's dot take. */
   readonly tone: RailTone;
-  /** Four words or fewer: what it is doing or where it stands. */
+  /** Four words or fewer: what it is doing or where it stands; what it waits on (`waiting`)'s label. */
   readonly now: string;
+  /** What it waits on at rest (`workerWaitingOn`), the sidebar's and the Board's words too. */
+  readonly waiting?: WaitingOn | undefined;
   /** Epoch ms its work ended, for the done tabs; absent while it goes on. */
   readonly finishedAt?: number | undefined;
   /** The user holds it (`userIntervened`). */
@@ -99,6 +102,8 @@ export interface WorkerLiveFacts {
   readonly ownedCi?: ReadonlySet<string>;
   /** Workers with an ask of theirs in the stack. */
   readonly asking?: ReadonlySet<ThreadId>;
+  /** How a wait's time reads; the viewer's clock at `now` by default. */
+  readonly clock?: WaitClock;
 }
 
 /** Local midnight `days` days before the day `now` falls on, by the calendar (so across DST too). */
@@ -211,6 +216,22 @@ const liveActivity = (
     : busy;
 };
 
+/**
+ * What a worker waits on (`workerWaitingOn`), by its live activity and tone: only while its tone is
+ * calm (`calmTone`), so a wait is never said of a worker at work, asking or failed.
+ */
+const liveWaiting = (
+  live: WorkerLedgerEntry,
+  busy: WorkerBusy,
+  tone: RailTone,
+  now: number,
+  clock: WaitClock | undefined,
+  name: ThreadName,
+): WaitingOn | undefined =>
+  calmTone(tone)
+    ? workerWaitingOn(live, busy, now, { ...(clock === undefined ? {} : { clock }), name })
+    : undefined;
+
 /** What one worker's tone reads beside its ledger entry. */
 export interface LiveToneFacts {
   readonly summary: ThreadSummary | undefined;
@@ -321,7 +342,7 @@ export const workerTones = (
  */
 export const workerRow = (
   worker: WorkerLedgerEntry,
-  { byId, statusDetail, now, ownedCi, asking }: WorkerLiveFacts,
+  { byId, statusDetail, now, ownedCi, asking, clock }: WorkerLiveFacts,
 ): WorkerRow => {
   const summary = byId[worker.threadId];
   const live = liveWorkerEntry(worker, summary);
@@ -336,6 +357,12 @@ export const workerRow = (
     asking: asking?.has(worker.threadId) === true,
     ownedCi,
   });
+  // Another thread a condition wake waits on is named by its title, as its row names it.
+  const name: ThreadName = (id) => {
+    const other = byId[id];
+    return other === undefined ? undefined : threadDisplayTitle(other.thread);
+  };
+  const waiting = done ? undefined : liveWaiting(live, busy, tone, now, clock, name);
   const running = live.status === "running" || live.status === "starting";
   const activity = running ? (statusDetail[worker.threadId] ?? live.activity) : undefined;
   const report = live.lastReport;
@@ -352,6 +379,7 @@ export const workerRow = (
     activity: busy.activity,
     tone,
     ...(at === undefined ? {} : { finishedAt: at }),
+    ...(waiting === undefined ? {} : { waiting }),
   };
   // The glyph is the tone's, as every other view's dot is; a finished worker's says how it ended.
   const row = (finished: WorkerGlyph | undefined, line: string): WorkerRow => ({
@@ -379,6 +407,8 @@ export const workerRow = (
     return row(undefined, "asked a question");
   }
   if (live.state === "blocked" || live.reportStands === true) return row(undefined, "blocked");
+  // What it waits on, in the words the sidebar and the Board use: short already, so not capped.
+  if (waiting !== undefined) return { ...row(undefined, ""), now: waiting.label };
   if (live.userIntervened) return row(undefined, "you hold it");
   if (wait.bucket === "person") return row(undefined, wait.tag ?? "waits on a person");
   if (busy.activity === "working") return row(undefined, busy.reason ?? "compacting");
@@ -534,6 +564,28 @@ export const workerActivities = (
       liveActivity(entry, byId[entry.threadId], details[entry.threadId], ownedCi).activity,
     ]),
   );
+};
+
+/**
+ * What each ledger worker at rest waits on, by thread (`workerWaitingOn`), read as ⌘J's rows read
+ * it: what the sidebar's rows and the Board's chips say, so the three agree. A worker that waits on
+ * nothing is left out.
+ */
+export const workerWaitings = (
+  ledger: Pick<OrchestratorLedger, "features"> | undefined,
+  facts: WorkerLiveFacts,
+): Readonly<Record<string, WaitingOn>> => {
+  const { byId } = facts;
+  const entries = (ledger?.features ?? []).flatMap((feature) => feature.workers);
+  const ownedCi = ciFixOwnedPrs(
+    entries.map((entry) => liveWorkerEntry(entry, byId[entry.threadId])),
+  );
+  const waits: Record<string, WaitingOn> = {};
+  for (const entry of entries) {
+    const waiting = workerRow(entry, { ...facts, ownedCi }).waiting;
+    if (waiting !== undefined) waits[entry.threadId] = waiting;
+  }
+  return waits;
 };
 
 /** How many rows a tab holds. */

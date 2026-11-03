@@ -22,6 +22,7 @@ import {
   type MockFinishedSimulation,
   type MockReleaseSimulation,
   type MockQuietBusySimulation,
+  type MockWaitingOnSimulation,
   type MockWaitsSimulation,
 } from "./mock-orchestration";
 import {
@@ -216,6 +217,14 @@ export async function simulateWorkerQuestions(
  */
 export function simulateQuietBusy(core: MockCoreScenes): Promise<MockQuietBusySimulation> {
   return core.orchestration.simulateQuietBusy(PROJECTS.map((project) => project.id));
+}
+
+/**
+ * Dev, e2e and screenshot hook: `casefiles` as `simulateQuietBusy` leaves it, with a worker more
+ * for each other kind of wait the sidebar names, and its orchestrator resting on a wake.
+ */
+export function simulateWaitingOn(core: MockCoreScenes): Promise<MockWaitingOnSimulation> {
+  return core.orchestration.simulateWaitingOn(PROJECTS.map((project) => project.id));
 }
 
 /** Dev and screenshot hook: `storefront`, the README's calm scene (`mock-readme.ts`). */

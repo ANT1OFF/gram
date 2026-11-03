@@ -33,6 +33,7 @@ import {
   type OrchestratorCharter,
   type OrchestratorLedger,
   type PendingRequest,
+  type PendingWake,
   type PermissionMode,
   type Project,
   type ProjectId,
@@ -69,7 +70,7 @@ import {
   simulateArchivedGroups,
 } from "./mock-board";
 import { simulateWaits } from "./mock-board-waits";
-import { simulateQuietBusy, simulateQuietWorkspaces } from "./mock-quiet";
+import { simulateQuietBusy, simulateQuietWorkspaces, simulateWaitingOn } from "./mock-quiet";
 import { simulateReadme } from "./mock-readme";
 import { simulateRelease } from "./mock-release";
 import { simulate } from "./mock-orchestration-report";
@@ -183,6 +184,8 @@ export interface MockScenes {
   ) => Promise<WorkerQuestion>;
   /** Each workspace's low-priority briefs held until a usage limit resets. */
   readonly heldOf: Map<WorkspaceId, readonly HeldBrief[]>;
+  /** The wakes each worker or orchestrator set itself; only the simulations set any. */
+  readonly wakesOf: Map<ThreadId, readonly PendingWake[]>;
   /** The timer that releases each held brief at its reset. */
   readonly heldTimers: Map<string, ReturnType<typeof setTimeout>>;
   /** Helper sentences armed per feature. */
@@ -243,6 +246,17 @@ export interface MockQuietBusySimulation {
   readonly reviewing: ThreadId;
   readonly stacked: ThreadId;
   readonly conflicts: ThreadId;
+}
+
+/** `simulateQuietBusy`'s workers and those `simulateWaitingOn` adds, one per other kind of wait. */
+export interface MockWaitingOnSimulation extends MockQuietBusySimulation {
+  readonly timed: ThreadId;
+  readonly release: ThreadId;
+  readonly limited: ThreadId;
+  readonly merging: ThreadId;
+  readonly rebase: ThreadId;
+  /** Waits on main to move. */
+  readonly exportPresets: ThreadId;
 }
 
 export interface MockFinishedSimulation extends MockBoardSimulation {
@@ -406,6 +420,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
                   ),
                   userIntervened: intervened.has(t.id),
                   alsoIn: alsoIn.get(t.id),
+                  wakes: wakesOf.get(t.id),
                   now: Date.now(),
                 },
               ),
@@ -451,6 +466,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       },
     );
     const held = (heldOf.get(state.workspace.id) ?? []).toSorted((a, b) => a.until - b.until);
+    const wakes = orchestrator === undefined ? [] : (wakesOf.get(orchestrator.id) ?? []);
     const asked = questionsOf.get(state.workspace.id) ?? [];
     // As the server lists them: the open ones oldest first, then the closed ones newest first.
     const questions = [
@@ -468,6 +484,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       orchestratorEdits: 0,
       ...(state.paused === undefined ? {} : { paused: state.paused }),
       ...(held.length === 0 ? {} : { held }),
+      ...(wakes.length === 0 ? {} : { wakes }),
       ...(questions.length === 0 ? {} : { questions }),
       builtAt: Date.now(),
     };
@@ -535,6 +552,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
 
   /** Each workspace's low-priority briefs held until a usage limit resets (`simulateHeldBrief`). */
   const heldOf = new Map<WorkspaceId, readonly HeldBrief[]>();
+  const wakesOf = new Map<ThreadId, readonly PendingWake[]>();
   /** The timer that releases each held brief at its reset, as the server's alarm does. */
   const heldTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -630,6 +648,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     showQuestion,
     closeQuestion,
     heldOf,
+    wakesOf,
     heldTimers,
     summaries,
     digestMessage,
@@ -1719,6 +1738,11 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     /** `simulateQuietBusy` (`mock-quiet.ts`). */
     simulateQuietBusy(projectIds: readonly ProjectId[]) {
       return simulateQuietBusy(scenes, projectIds);
+    },
+
+    /** `simulateWaitingOn` (`mock-quiet.ts`). */
+    simulateWaitingOn(projectIds: readonly ProjectId[]) {
+      return simulateWaitingOn(scenes, projectIds);
     },
 
     /** `simulateReadme` (`mock-readme.ts`). */

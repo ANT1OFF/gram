@@ -265,6 +265,22 @@ const openQuietBusy = async (page: Page): Promise<string> => {
   return page.evaluate(() => sessionStorage.getItem("gram.shots.workspace") ?? "");
 };
 
+/**
+ * `casefiles`'s orchestrator, the sidebar open on its workers: `simulateWaitingOn` when `kinds`,
+ * every kind of wait and the orchestrator's own wake; else `simulateQuietBusy`, which the base can
+ * stage too, for a before and after.
+ */
+const openWaitingOn = async (page: Page, kinds: boolean) => {
+  // The seed runs in the page, so each is a function of its own, closing over nothing.
+  await openOrchestratorOf(
+    page,
+    kinds ? () => window.gramMock!.simulateWaitingOn() : () => window.gramMock!.simulateQuietBusy(),
+  );
+  await page.getByTestId("overview-worker").first().waitFor();
+  await page.mouse.move(1430, 890);
+  await page.waitForTimeout(600);
+};
+
 /** The seeded solo threads that ask or read oddly out of context, parked for the README's shots. */
 const README_PARKED = ["t-flaky", "t-question", "t-plan", "t-background", "t-edits-codex"];
 
@@ -1036,6 +1052,51 @@ export const SHOTS: readonly Shot[] = [
     title: "README: Quiet at rest over `casefiles`, its workers busy and nothing asked",
     modes: ["dark"],
     open: (page) => openReadmeQuiet(page, 1024, 640),
+  },
+  {
+    name: "sidebar-waiting",
+    title:
+      "The sidebar over `casefiles`: workers waiting on CI, the review bot and a dependency say what they wait on",
+    open: (page) => openWaitingOn(page, false),
+    element: (page) => page.getByTestId("overview-sidebar"),
+  },
+  {
+    name: "sidebar-waiting-kinds",
+    title:
+      "Every kind of wait in the sidebar, and the orchestrator resting on a wake of its own (after only)",
+    open: (page) => openWaitingOn(page, true),
+    element: (page) => page.getByTestId("overview-sidebar"),
+  },
+  {
+    name: "sidebar-waiting-hover",
+    title: "A waiting worker's hover card lists every wait, the one its row names first",
+    modes: ["dark"],
+    open: async (page) => {
+      await openWaitingOn(page, true);
+      await page.getByTestId("overview-worker-waiting").first().hover();
+      await page.getByTestId("overview-worker-card-waits").waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "board-waiting-kinds",
+    title: "The same waits on the Board's chips, in the sidebar's words",
+    open: async (page) => {
+      await openWaitingOn(page, true);
+      await openBoardView(page);
+      await page.getByTestId("rail-worker").first().waitFor();
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "workers-list-waiting",
+    title: "⌘J's Workers list says the same",
+    modes: ["dark"],
+    open: async (page) => {
+      await openWaitingOn(page, true);
+      await pressWorkersList(page);
+      await page.waitForTimeout(400);
+    },
   },
   {
     name: "quiet-busy-board",

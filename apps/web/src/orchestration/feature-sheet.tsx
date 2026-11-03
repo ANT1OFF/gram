@@ -55,6 +55,7 @@ import { StageStepper } from "./stage-stepper";
 import { useSetGroup, useSetStage } from "./use-board-actions";
 import { useFeatureCards, useFeatureSummary } from "./use-feature-cards";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
+import { useWorkerWaitings } from "./use-waiting-on";
 import { useWorkersListStore } from "./workers-list";
 import { workingWorkerThreads } from "./tree-model";
 import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-model";
@@ -71,7 +72,7 @@ export const RAIL_TONES: Readonly<
   attention: { icon: CircleAlert, tone: "text-status-needs", label: "Needs attention" },
   error: { icon: CircleAlert, tone: "text-destructive", label: "Failed" },
   working: { icon: Spinner, tone: "text-status-working", label: "Working" },
-  waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting on checks" },
+  waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting" },
   idle: { icon: CircleDot, tone: "text-status-idle", label: "Idle" },
   merged: { icon: GitMerge, tone: "text-merged", label: "Merged" },
 };
@@ -145,6 +146,8 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
         ).tones,
     ),
   );
+  // What each one at rest waits on, in the sidebar's and ⌘J's words.
+  const waiting = useWorkerWaitings(ledger, asking);
   return useMemo(
     () => ({
       asking,
@@ -153,13 +156,14 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
       tones,
       over,
       running,
+      waiting,
       // A thread on no card isn't drawn here; it reads as it stands, as before.
       status: (threadId) =>
         Object.hasOwn(statuses, threadId)
           ? statuses[threadId]
           : useThreadsStore.getState().byId[threadId]?.status,
     }),
-    [asking, ongoing, activity, tones, over, running, statuses],
+    [asking, ongoing, activity, tones, over, running, waiting, statuses],
   );
 }
 
@@ -755,7 +759,10 @@ function SheetContent({
                 >
                   {worker.title}
                 </button>
-                <span className="ml-auto min-w-0 shrink-0 truncate text-muted-foreground">
+                <span
+                  title={worker.waiting?.hint}
+                  className="ml-auto min-w-0 shrink-0 truncate text-muted-foreground"
+                >
                   {worker.now}
                 </span>
               </li>

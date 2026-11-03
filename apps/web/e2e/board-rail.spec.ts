@@ -55,7 +55,13 @@ test("each feature is a line, its workers on the stations their cards give them"
 
   // A row says no sentences: each now line is four words or fewer.
   for (const now of await board(page).getByTestId("rail-now").allTextContents()) {
-    expect(now.trim().split(/\s+/).length).toBeLessThanOrEqual(4);
+    // " · " joins a wait's word to what it waits on (`waitLabel`): punctuation, not a word.
+    expect(
+      now
+        .trim()
+        .split(/\s+/)
+        .filter((word) => word !== "·").length,
+    ).toBeLessThanOrEqual(4);
   }
 });
 

@@ -58,7 +58,13 @@ test("⌘J lists every worker by section and feature, and opens one in two steps
   await expect(row(page, made.asking).getByTestId("worker-now")).toHaveText("asked a question");
   await expect(row(page, made.held).getByLabel("You hold it")).toBeVisible();
   for (const line of await list(page).getByTestId("worker-now").allTextContents()) {
-    expect(line.replace(/…$/, "").trim().split(/\s+/).length, line).toBeLessThanOrEqual(4);
+    // " · " joins a wait's word to what it waits on (`waitLabel`): punctuation, not a word.
+    const words = line
+      .replace(/…$/, "")
+      .trim()
+      .split(/\s+/)
+      .filter((word) => word !== "·");
+    expect(words.length, line).toBeLessThanOrEqual(4);
   }
   await expect(
     now

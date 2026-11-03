@@ -13,10 +13,11 @@ import {
   planText,
 } from "@gram/contracts";
 
-import { workerTone, type RailTone } from "./rail-model";
+import { calmTone, workerTone, type RailTone } from "./rail-model";
 import { OVER_STATES, workerShown } from "./worker-shown";
 import type { WorkspaceStatus } from "./tree-model";
 import type { WorkerActivity } from "./wait-model";
+import type { WaitingOn } from "./waiting-on";
 
 // The overview sidebar: one line per workspace, the
 // one the window is on opened into its features and their live workers. Everything a worker row
@@ -58,6 +59,8 @@ export interface OverviewWorkerRow {
   readonly tone?: RailTone | undefined;
   /** Its last report, from the ledger. */
   readonly report?: ReportNext | undefined;
+  /** What it waits on at rest (`workerWaitings`), as the Board and ⌘J say it. */
+  readonly waiting?: WaitingOn | undefined;
 }
 
 export interface OverviewFeature {
@@ -106,6 +109,7 @@ export const overviewFeatures = (
   activities: Readonly<Record<string, WorkerActivity>> = {},
   reports: ReadonlyMap<ThreadId, ReportNext> = new Map(),
   tones: Readonly<Record<string, RailTone>> = {},
+  waits: Readonly<Record<string, WaitingOn>> = {},
 ): readonly OverviewFeature[] => {
   const runningIds = new Set(running.map((worker) => worker.threadId));
   const shownFacts = { running: runningIds, asking: new Set(askKeys.keys()), over };
@@ -131,6 +135,7 @@ export const overviewFeatures = (
       activity: activities[worker.threadId],
       tone: tones[worker.threadId],
       report: reports.get(worker.threadId),
+      waiting: askKey === undefined ? waits[worker.threadId] : undefined,
     };
   };
   const shown = new Set<ThreadId>();
@@ -274,6 +279,16 @@ export const rowTone = (
     working: live.working,
     activity: row.activity,
   });
+
+/**
+ * What a worker row says it waits on: its wait while its tone is calm (`calmTone`), never beside
+ * an ask, a failure or work.
+ */
+export const rowWaiting = (
+  row: Pick<OverviewWorkerRow, "waiting" | "askKey" | "failed">,
+  tone: RailTone,
+): WaitingOn | undefined =>
+  row.askKey === undefined && !row.failed && calmTone(tone) ? row.waiting : undefined;
 
 /**
  * A worker's dot on its feature card, by its station: a failure, merged, briefed, else at work. The
