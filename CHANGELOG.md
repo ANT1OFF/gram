@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.0](https://github.com/ANT1OFF/gram/compare/v1.5.0...v1.6.0) (2026-11-03)
+
+
+### Features
+
+* condition wakes for schedule_wake (branch moved, thread finished) ([#108](https://github.com/ANT1OFF/gram/issues/108)) ([550545a](https://github.com/ANT1OFF/gram/commit/550545a75132094c2727114e618a8418f6710fa9))
+* merge freeze that holds Gram's own merges, and a freezeLifted wake ([#110](https://github.com/ANT1OFF/gram/issues/110)) ([5096a48](https://github.com/ANT1OFF/gram/commit/5096a480cd51242e999c8b6cac680bd3bd1320fa))
+* **orchestration:** wake on an upstream release or an installed version change ([#112](https://github.com/ANT1OFF/gram/issues/112)) ([efdd8fa](https://github.com/ANT1OFF/gram/commit/efdd8fa1155d20010ea2aaef88f2548598d94cd8))
+* **orchestration:** wake on stuck CI and on machine load or low disk ([#111](https://github.com/ANT1OFF/gram/issues/111)) ([be9f98f](https://github.com/ANT1OFF/gram/commit/be9f98fc2802ac63f0aae063ef2034be51ada492))
+* **web:** show what a worker or orchestrator is waiting on ([#113](https://github.com/ANT1OFF/gram/issues/113)) ([4a2ae69](https://github.com/ANT1OFF/gram/commit/4a2ae696f88570e7653374fdad5949cc0bb2bf01))
+
 ## [1.5.0](https://github.com/ANT1OFF/gram/compare/v1.4.0...v1.5.0) (2026-11-03)
 
 
