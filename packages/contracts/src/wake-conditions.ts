@@ -189,7 +189,7 @@ export const StoredWakeCondition = Schema.Struct({
 });
 export type StoredWakeCondition = typeof StoredWakeCondition.Type;
 
-const VERSION_TARGET_NAMES: Readonly<Record<VersionTarget, string>> = {
+export const VERSION_TARGET_NAMES: Readonly<Record<VersionTarget, string>> = {
   gram: "Gram",
   claude: "Claude Code",
   codex: "Codex",
@@ -197,7 +197,7 @@ const VERSION_TARGET_NAMES: Readonly<Record<VersionTarget, string>> = {
 };
 
 /** `codex` for `@openai/codex` or `openai/codex`: a release's name, short. */
-const shortName = (name: string): string => name.slice(name.lastIndexOf("/") + 1);
+export const releaseShortName = (name: string): string => name.slice(name.lastIndexOf("/") + 1);
 
 /** How old a release must be, in words: ", at least 7 days old"; nothing for no age. */
 const ageWords = (condition: ReleasePublishedCondition, least = "at least "): string => {
@@ -264,7 +264,7 @@ export const wakeConditionLabel = (condition: WakeCondition): string => {
     case "freezeLifted":
       return `${condition.branch ?? condition.repo} thaw`;
     case "releasePublished":
-      return `${shortName(condition.name)} ${condition.after === undefined ? "release" : `newer than ${condition.after}`}${ageWords(condition, "")}`;
+      return `${releaseShortName(condition.name)} ${condition.after === undefined ? "release" : `newer than ${condition.after}`}${ageWords(condition, "")}`;
     case "versionChanged":
       return `${VERSION_TARGET_NAMES[condition.target]} update`;
   }

@@ -1,6 +1,8 @@
 import {
   DEFAULT_PR_WAKE_EVENTS,
   checksOf,
+  releaseShortName,
+  VERSION_TARGET_NAMES,
   wakeConditionLabel,
   wakeConditionWhen,
   type PendingWake,
@@ -146,6 +148,10 @@ export const conditionShort = (condition: WakeCondition): string => {
       return `${condition.branch ?? condition.repo} to move`;
     case "threadFinished":
       return "thread to finish";
+    case "releasePublished":
+      return `${releaseShortName(condition.name)} release`;
+    case "versionChanged":
+      return `${VERSION_TARGET_NAMES[condition.target]} update`;
     default:
       // A kind this build's contracts don't know yet still says something.
       return wakeConditionLabel(condition) ?? (condition as { kind: string }).kind;
