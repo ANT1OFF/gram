@@ -6,6 +6,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
+import * as Stream from "effect/Stream";
 import { codexGatewayInheritance } from "../gateway/codex-home.ts";
 import { ServerConfig } from "../config.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -34,12 +36,44 @@ export const pathLookup: Pick<LaunchProbe, "which" | "whichAll" | "realpath"> = 
 };
 
 /**
+ * `get` with its runs observed: `latest` is the last result any caller got, and `changes` has each
+ * new one. A cached run answers with the same object, so only a new run is a change.
+ */
+export const observeRuns = (cached: (refresh: boolean) => Effect.Effect<LaunchChecks>) =>
+  Effect.gen(function* () {
+    const runs = yield* PubSub.sliding<LaunchChecks>(1);
+    let latest: LaunchChecks | undefined;
+    const get = (refresh: boolean) =>
+      cached(refresh).pipe(
+        Effect.tap((checks) =>
+          checks === latest
+            ? Effect.void
+            : Effect.sync(() => {
+                latest = checks;
+              }).pipe(Effect.andThen(PubSub.publish(runs, checks))),
+        ),
+      );
+    return {
+      get,
+      latest: Effect.sync(() => latest),
+      changes: Stream.fromPubSub(runs),
+    };
+  });
+
+/**
  * The launch checks over the login-shell PATH the git runtime probes, run once when first asked and
- * shared: `app.launchChecks` shows them, and an issue's diagnostics read the agent versions off them.
+ * shared: `app.launchChecks` shows them, an issue's diagnostics read the agent versions off them,
+ * and a `versionChanged` wake reads a CLI's version off each run.
  */
 export class LaunchChecksCache extends Context.Service<
   LaunchChecksCache,
-  { readonly get: (refresh: boolean) => Effect.Effect<LaunchChecks> }
+  {
+    readonly get: (refresh: boolean) => Effect.Effect<LaunchChecks>;
+    /** The last run's result, without starting one; `undefined` before any has finished. */
+    readonly latest: Effect.Effect<LaunchChecks | undefined>;
+    /** Each run's result as it finishes. */
+    readonly changes: Stream.Stream<LaunchChecks>;
+  }
 >()("@gram/server/LaunchChecksCache") {
   static readonly layer: Layer.Layer<LaunchChecksCache, never, Proc> = Layer.effect(
     LaunchChecksCache,
@@ -63,7 +97,7 @@ export class LaunchChecksCache extends Context.Service<
         run: (file, args) => proc.run(file, args, { cwd: homedir(), timeoutMs: CHECK_TIMEOUT_MS }),
         now: () => Date.now(),
       };
-      return { get: yield* makeLaunchChecksCache(live) };
+      return yield* observeRuns(yield* makeLaunchChecksCache(live));
     }),
   );
 }

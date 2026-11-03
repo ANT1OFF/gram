@@ -7,6 +7,7 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import { LaunchChecksCache } from "../launch-checks/handler.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -16,6 +17,9 @@ import { RuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { agentSupportHandlers } from "./handler.ts";
 import { makeAgentSupport } from "./service.ts";
+
+/** A cache whose runs nothing here watches. */
+const NO_RUNS = { latest: Effect.succeed(undefined), changes: Stream.empty };
 
 const signedIn: LaunchChecks = {
   checkedAt: 7,
@@ -49,6 +53,7 @@ describe("selected harness read-only service", () => {
           Effect.provide(Layer.succeed(AgentHosts, AgentHosts.fromHosts([host]))),
           Effect.provide(
             Layer.succeed(LaunchChecksCache, {
+              ...NO_RUNS,
               get: (refresh) =>
                 Effect.sync(() => {
                   cacheReads.push(refresh);
@@ -242,7 +247,9 @@ describe("selected harness read-only service", () => {
           ),
         );
         const handlers = yield* agentSupportHandlers.pipe(
-          Effect.provide(Layer.succeed(LaunchChecksCache, { get: () => Effect.succeed(signedIn) })),
+          Effect.provide(
+            Layer.succeed(LaunchChecksCache, { ...NO_RUNS, get: () => Effect.succeed(signedIn) }),
+          ),
         );
         const result = yield* handlers["agents.support"]({
           model: thread.model,

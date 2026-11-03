@@ -12,6 +12,7 @@ import {
   type ServerEvent,
   type Thread,
   type ThreadId,
+  type VersionTarget,
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
@@ -19,6 +20,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as nodePath from "node:path";
@@ -61,6 +63,8 @@ import { CiJobs, type CiState } from "../wakes/ci-stuck.ts";
 import { type DiskSpace, MachineState } from "../wakes/machine.ts";
 import { AutoMerges } from "../git/auto-merges.ts";
 import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
+import { InstalledVersions } from "../wakes/installed-versions.ts";
+import { UpstreamReleases, type UpstreamRelease } from "../wakes/upstream-releases.ts";
 
 /** What outlives a layer: the temp dir with the repo, the database and the memory, and the fake git states. */
 export interface World {
@@ -138,6 +142,15 @@ export interface World {
   readonly autoMergeCalls: Array<string>;
   /** Runs before a PR's auto-merge is turned off, for a test to hold the freeze there. */
   autoMergeDisableGate?: ((number: number) => Effect.Effect<void>) | undefined;
+  /**
+   * What npm or GitHub lists of a package's releases, by `npm:name` or `github:owner/repo`: the
+   * releases, `null` for no such package; absent, it can't be read. Each read is in `releaseReads`.
+   */
+  readonly releases: Map<string, ReadonlyArray<UpstreamRelease> | null>;
+  readonly releaseReads: Array<string>;
+  /** The installed versions `versionChanged` reads, by target; `installedChanged` asks for a look. */
+  readonly installed: Map<VersionTarget, string>;
+  readonly installedChanged: PubSub.PubSub<void>;
 }
 
 const prKey = (pr: { readonly repo: string; readonly number: number }) =>
@@ -181,6 +194,10 @@ export const makeWorld = Effect.gen(function* () {
     originRepos: new Map(),
     autoMerges: new Map(),
     autoMergeCalls: [],
+    releases: new Map(),
+    releaseReads: [],
+    installed: new Map(),
+    installedChanged: yield* PubSub.unbounded<void>(),
   };
   return world;
 });
@@ -384,7 +401,26 @@ const fakeAutoMerges = (world: World) =>
       }),
   });
 
-/** The condition wakes' engine over the real sources, reading GitHub and the machine from `world`. */
+/** npm's and GitHub's releases as `world` has them. */
+const fakeReleases = (world: World) =>
+  Layer.succeed(UpstreamReleases, {
+    list: (source, name) =>
+      Effect.sync(() => {
+        const key = `${source}:${name}`;
+        world.releaseReads.push(key);
+        return world.releases.get(key);
+      }),
+  });
+
+/** Gram's and the CLIs' versions as `world` has them. */
+const fakeInstalled = (world: World) =>
+  Layer.succeed(InstalledVersions, {
+    current: (target) => Effect.sync(() => world.installed.get(target)),
+    baseline: (target) => Effect.sync(() => world.installed.get(target)),
+    changes: Stream.fromPubSub(world.installedChanged),
+  });
+
+/** The condition wakes' engine over the real sources, reading GitHub, npm, versions and the machine from `world`. */
 const conditionsOf = (world: World) =>
   wakeConditionsLayer(
     Layer.mergeAll(
@@ -392,6 +428,8 @@ const conditionsOf = (world: World) =>
       fakeCiJobs(world),
       fakeMachine(world),
       fakeAutoMerges(world),
+      fakeReleases(world),
+      fakeInstalled(world),
     ),
   );
 

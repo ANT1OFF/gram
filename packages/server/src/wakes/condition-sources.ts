@@ -2,7 +2,14 @@
  * The condition kinds Gram can wait on (`WakeCondition`), one `WakeConditionSource` each. A new kind
  * is a source here and a line in `WakeConditionSourcesLive`; the engine (`conditions.ts`) runs them.
  */
-import { AppToolError, type Thread, type ThreadId, type ThreadStatus } from "@gram/contracts";
+import {
+  AppToolError,
+  RELEASE_MIN_AGE_DAYS,
+  type ReleasePublishedCondition,
+  type Thread,
+  type ThreadId,
+  type ThreadStatus,
+} from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -14,9 +21,13 @@ import type { AutoMerges } from "../git/auto-merges.ts";
 import { MergeFreezes, MergeFreezesLive } from "../git/merge-freezes.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { compareVersions } from "../agent-runtime/policy.ts";
+import { DAY_MS } from "../zone-time.ts";
 import { BranchHeads } from "./branch-heads.ts";
 import { type CiJobs, ciStuckSource } from "./ci-stuck.ts";
 import { folderOf } from "./condition-folders.ts";
+import { InstalledVersions } from "./installed-versions.ts";
+import { type UpstreamRelease, UpstreamReleases } from "./upstream-releases.ts";
 import {
   type ConditionLook,
   WakeConditionsLive,
@@ -220,6 +231,203 @@ export const freezeLiftedSource = Effect.gen(function* () {
   return source;
 });
 
+const HOUR_MS = 3_600_000;
+/** How long a package's releases, read once, answer for every wake on it. */
+export const RELEASE_READ_EVERY_MS = 6 * HOUR_MS;
+/** The longest a failing registry is left before it is asked again. */
+export const RELEASE_BACKOFF_MAX_MS = 24 * HOUR_MS;
+/** Setting a wake reads afresh, unless a read this recent answered. */
+const RELEASE_ARM_REUSE_MS = 60_000;
+
+/** `1.2.3` for `v1.2.3`. */
+const bareVersion = (version: string) => version.replace(/^v/, "");
+
+/** The newest of `releases` by version; `undefined` for none. */
+const newest = (releases: ReadonlyArray<UpstreamRelease>) =>
+  releases.reduce<UpstreamRelease | undefined>(
+    (best, each) =>
+      best === undefined || compareVersions(each.version, best.version) > 0 ? each : best,
+    undefined,
+  );
+
+/** The releases a wake counts: stable ones, and prereleases when it asked for them. */
+const counted = (spec: ReleasePublishedCondition, releases: ReadonlyArray<UpstreamRelease>) =>
+  releases.filter((release) => spec.includePrerelease === true || !release.prerelease);
+
+/** The newest release newer than `after` and old enough by `now`, if any. */
+export const releaseDue = (
+  spec: ReleasePublishedCondition,
+  after: string,
+  releases: ReadonlyArray<UpstreamRelease>,
+  now: number,
+): UpstreamRelease | undefined => {
+  const minAge = (spec.minAgeDays ?? RELEASE_MIN_AGE_DAYS) * DAY_MS;
+  return newest(
+    counted(spec, releases).filter(
+      (release) =>
+        compareVersions(release.version, after) > 0 && now - release.publishedAt >= minAge,
+    ),
+  );
+};
+
+const where = (spec: ReleasePublishedCondition) => (spec.source === "npm" ? "npm" : "GitHub");
+
+/**
+ * `releasePublished`: a package on npm, or a GitHub repo, publishes a version newer than `after`
+ * that is at least `minAgeDays` old (seven by default, as Gram's own Dependabot waits). Set without
+ * `after`, the latest release now is the baseline. A package's releases are read once for every
+ * wake on it and kept six hours; a failed read is retried after twelve, then a day, and is never
+ * met. Looks run hourly over what was read, so a release crosses its age within the hour without
+ * asking the registry again.
+ */
+export const releasePublishedSource = Effect.gen(function* () {
+  const upstream = yield* UpstreamReleases;
+  /** Per package: the last answer that read, when, and when to ask again. */
+  const reads = new Map<
+    string,
+    {
+      readonly list: ReadonlyArray<UpstreamRelease> | null | undefined;
+      readonly at: number;
+      readonly nextAt: number;
+      readonly failures: number;
+    }
+  >();
+
+  /** The package's releases: the kept answer while it is due no read, else a new one. */
+  const releasesOf = (spec: ReleasePublishedCondition, reuseMs?: number) =>
+    Effect.gen(function* () {
+      const key = `${spec.source}\u0000${spec.name.toLowerCase()}`;
+      const now = yield* Clock.currentTimeMillis;
+      const kept = reads.get(key);
+      if (
+        kept !== undefined &&
+        (reuseMs === undefined
+          ? now < kept.nextAt
+          : kept.list !== undefined && now - kept.at < reuseMs)
+      ) {
+        return kept.list;
+      }
+      const list = yield* upstream.list(spec.source, spec.name);
+      if (list === undefined) {
+        const failures = (kept?.failures ?? 0) + 1;
+        const wait = Math.min(RELEASE_READ_EVERY_MS * 2 ** failures, RELEASE_BACKOFF_MAX_MS);
+        // A failure keeps the last answer that read, if there was one.
+        reads.set(key, { list: kept?.list, at: kept?.at ?? now, nextAt: now + wait, failures });
+        return kept?.list;
+      }
+      reads.set(key, { list, at: now, nextAt: now + RELEASE_READ_EVERY_MS, failures: 0 });
+      return list;
+    });
+
+  const source: WakeConditionSource<"releasePublished"> = {
+    kind: "releasePublished",
+    pollEvery: Duration.hours(1),
+    // A published release doesn't flap.
+    debounce: Duration.zero,
+    arm: (_caller, spec) =>
+      Effect.gen(function* () {
+        // An owner never starts with a dot; a repo may (`.github`), but isn't `.` or `..`.
+        if (spec.source === "github" && !/^[\w-][\w.-]*\/(?!\.\.?$)[\w.-]+$/.test(spec.name)) {
+          return yield* refuse(`Name a GitHub repo as owner/repo, not ${spec.name}.`);
+        }
+        if (
+          spec.minAgeDays !== undefined &&
+          !(Number.isInteger(spec.minAgeDays) && spec.minAgeDays >= 0 && spec.minAgeDays <= 90)
+        ) {
+          return yield* refuse("`minAgeDays` is a whole number of days from 0 to 90.");
+        }
+        const filled: ReleasePublishedCondition = {
+          ...spec,
+          ...(spec.after === undefined ? {} : { after: bareVersion(spec.after) }),
+          minAgeDays: spec.minAgeDays ?? RELEASE_MIN_AGE_DAYS,
+        };
+        const list = yield* releasesOf(filled, RELEASE_ARM_REUSE_MS);
+        if (list === null) return yield* refuse(`${where(spec)} has no ${spec.name}.`);
+        // Unreadable now: the first look that reads it takes the baseline.
+        if (list === undefined) return { spec: filled };
+        if (filled.after === undefined) {
+          const latest = newest(counted(filled, list));
+          return { spec: { ...filled, after: latest?.version ?? "0.0.0" } };
+        }
+        const due = releaseDue(filled, filled.after, list, yield* Clock.currentTimeMillis);
+        if (due !== undefined) {
+          return yield* refuse(
+            `${spec.name} has ${due.version} already, published ${new Date(due.publishedAt).toISOString().slice(0, 10)}.`,
+          );
+        }
+        return { spec: filled };
+      }),
+    look: (wake) =>
+      Effect.gen(function* () {
+        const spec = wake.spec;
+        const list = yield* releasesOf(spec);
+        if (list === undefined) return undefined;
+        // Gone since: nothing will be published there to wait for; the fallback time still is.
+        if (list === null) return notMet();
+        const after = spec.after ?? wake.seen?.after;
+        if (after === undefined) {
+          return notMet({ after: newest(counted(spec, list))?.version ?? "0.0.0" });
+        }
+        const due = releaseDue(spec, after, list, yield* Clock.currentTimeMillis);
+        if (due === undefined) return notMet();
+        return met({
+          source: spec.source,
+          name: spec.name,
+          version: due.version,
+          published: new Date(due.publishedAt).toISOString(),
+          url: due.url,
+          after,
+        });
+      }),
+  };
+  return source;
+});
+
+const TARGET_NAMES = { gram: "Gram", claude: "Claude Code", codex: "Codex", gh: "gh" } as const;
+
+/**
+ * `versionChanged`: the installed version of Gram or a CLI changes from `from` (the installed one
+ * when the wake is set, by default). It reads what Gram already knows and starts no probe: Gram's
+ * own version, which changes with a restart into an update, and each CLI's from the launch checks'
+ * runs, which ask for a look as they finish. One look shortly after the start sees an update.
+ */
+export const versionChangedSource = Effect.gen(function* () {
+  const installed = yield* InstalledVersions;
+  const source: WakeConditionSource<"versionChanged"> = {
+    kind: "versionChanged",
+    pollEvery: Duration.minutes(10),
+    debounce: Duration.zero,
+    arm: (_caller, spec) =>
+      Effect.gen(function* () {
+        const name = TARGET_NAMES[spec.target];
+        const now = yield* installed.baseline(spec.target);
+        if (now === undefined) {
+          return yield* refuse(
+            spec.target === "gram"
+              ? "This Gram build doesn't report its version, so it can't tell an update."
+              : `Gram's launch checks found no ${name} version on the PATH.`,
+          );
+        }
+        const from = spec.from === undefined ? now : bareVersion(spec.from);
+        if (from !== now) return yield* refuse(`${name} is ${now} already, not ${from}.`);
+        return { spec: { ...spec, from } };
+      }),
+    look: (wake) =>
+      Effect.gen(function* () {
+        const now = yield* installed.current(wake.spec.target);
+        const from = wake.spec.from;
+        if (now === undefined || from === undefined) return undefined;
+        if (now === from) return notMet();
+        return met({ target: wake.spec.target, version: now, previous: from });
+      }),
+    // The hosts register as the server finishes starting: a look then sees an update.
+    changes: Stream.fromEffect(Effect.sleep(Duration.seconds(10))).pipe(
+      Stream.concat(installed.changes),
+    ),
+  };
+  return source;
+});
+
 /** Every kind's source, for `WakeConditionsLive`. */
 export const WakeConditionSourcesLive = Layer.effect(
   WakeConditionSources,
@@ -229,6 +437,8 @@ export const WakeConditionSourcesLive = Layer.effect(
     ciStuckSource,
     machineSource,
     freezeLiftedSource,
+    releasePublishedSource,
+    versionChangedSource,
   ]),
 );
 
@@ -237,7 +447,11 @@ export const WakeConditionSourcesLive = Layer.effect(
  * too; GitHub's branches are read through `branchHeads`, and its auto-merges through `autoMerges`.
  */
 export const wakeConditionsLayer = <E, R>(
-  io: Layer.Layer<BranchHeads | AutoMerges | CiJobs | MachineState, E, R>,
+  io: Layer.Layer<
+    BranchHeads | AutoMerges | CiJobs | MachineState | UpstreamReleases | InstalledVersions,
+    E,
+    R
+  >,
 ) =>
   WakeConditionsLive.pipe(
     Layer.provide(WakeConditionSourcesLive),

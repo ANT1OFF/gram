@@ -142,6 +142,28 @@ describe.skipIf(!hasGit)("condition wakes", () => {
     ),
   );
 
+  it.effect("another kind's sweep leaves a debounce under way alone", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const conditions = yield* WakeConditions;
+        yield* openProject(world);
+        const { thread, session } = yield* openPlain(world, "Debounced");
+        world.branchHeads.set("acme/app#main", "aaa1");
+        yield* session.callTool("schedule_wake", {
+          condition: { kind: "branchMoved", repo: "acme/app", branch: "main" },
+          note: "rebase",
+        });
+        world.branchHeads.set("acme/app#main", "bbb2");
+        yield* conditions.sweep("branchMoved");
+        // A kind with nothing pending sweeps meanwhile; it used to drop this debounce.
+        yield* conditions.sweep("versionChanged");
+        yield* TestClock.adjust("31 seconds");
+        const woken = yield* waitSent(thread.id, 2);
+        expect(woken.sent[1]?.text).toContain("head: bbb2\nprevious: aaa1");
+      }),
+    ),
+  );
+
   it.effect(
     "a condition wake outlives a restart, fires on a move made while down, and falls back on its time",
     () =>

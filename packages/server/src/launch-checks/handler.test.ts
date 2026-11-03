@@ -2,10 +2,15 @@ import { describe, expect, it } from "@effect/vitest";
 import type { AgentHost } from "@gram/agents";
 import type { LaunchChecks, ProfileId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { RuntimeTestLayer } from "../runtime/test-harness.ts";
-import { LaunchChecksCache, launchChecksHandlers } from "./handler.ts";
+import { LaunchChecksCache, launchChecksHandlers, observeRuns } from "./handler.ts";
+
+/** A cache whose runs nothing here watches. */
+const NO_RUNS = { latest: Effect.succeed(undefined), changes: Stream.empty };
 
 const checks: LaunchChecks = {
   checkedAt: 1,
@@ -41,6 +46,7 @@ describe("launch-check model refresh", () => {
           ),
           Effect.provide(
             Layer.succeed(LaunchChecksCache, {
+              ...NO_RUNS,
               get: (refresh) =>
                 Effect.sync(() => {
                   cacheReads.push(refresh);
@@ -67,7 +73,9 @@ describe("launch-check model refresh", () => {
     Effect.gen(function* () {
       const handlers = yield* launchChecksHandlers.pipe(
         Effect.provide(AgentHosts.layerNone),
-        Effect.provide(Layer.succeed(LaunchChecksCache, { get: () => Effect.succeed(checks) })),
+        Effect.provide(
+          Layer.succeed(LaunchChecksCache, { ...NO_RUNS, get: () => Effect.succeed(checks) }),
+        ),
       );
       expect((yield* handlers["app.launchChecks"]({ refresh: true })).codexSignIn).toBe("signedIn");
     }).pipe(Effect.provide(RuntimeTestLayer)),
@@ -82,11 +90,43 @@ describe("launch-check model refresh", () => {
       };
       const handlers = yield* launchChecksHandlers.pipe(
         Effect.provide(AgentHosts.layerNone),
-        Effect.provide(Layer.succeed(LaunchChecksCache, { get: () => Effect.succeed(codexOnly) })),
+        Effect.provide(
+          Layer.succeed(LaunchChecksCache, { ...NO_RUNS, get: () => Effect.succeed(codexOnly) }),
+        ),
       );
       const result = yield* handlers["app.launchChecks"]({ refresh: false });
       expect(result.localAgentsInUse).toEqual(["codex"]);
       expect(result.agentsInUse).toEqual(["codex"]);
     }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+});
+
+describe("observed launch-check runs", () => {
+  it.effect("keeps the latest result and tells each new run, not a cached answer", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let run = 0;
+        const results: Array<LaunchChecks> = [];
+        const cached = (refresh: boolean) =>
+          Effect.sync(() => {
+            if (refresh || results.length === 0) results.push({ ...checks, checkedAt: ++run });
+            return results.at(-1)!;
+          });
+        const observed = yield* observeRuns(cached);
+        expect(yield* observed.latest).toBeUndefined();
+        const told = yield* observed.changes.pipe(
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        yield* Effect.yieldNow;
+        yield* observed.get(false);
+        yield* observed.get(false);
+        yield* observed.get(true);
+        expect((yield* observed.latest)?.checkedAt).toBe(2);
+        const runs = yield* Fiber.join(told);
+        expect(Array.from(runs, (each) => each.checkedAt)).toEqual([1, 2]);
+      }),
+    ),
   );
 });
