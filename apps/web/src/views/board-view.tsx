@@ -135,16 +135,19 @@ function WorkerChip({
       </Hint>
       <span
         className={cn(
-          "flex min-w-0 items-center gap-1.5 pl-4.5 text-[11px] text-muted-foreground",
+          // In a narrow column the PR and the overlap wrap under the words rather than cut them.
+          "flex min-w-0 flex-wrap items-center justify-end gap-x-1.5 pl-4.5 text-[11px] text-muted-foreground",
           !named && worker.pr === undefined && overlap === undefined && "hidden",
         )}
       >
         {named && (
-          <span data-testid="rail-now" className="line-clamp-2 min-w-0 break-words">
+          <span
+            data-testid="rail-now"
+            className="line-clamp-2 min-w-0 flex-[1_1_5.5rem] break-words"
+          >
             {worker.now}
           </span>
         )}
-        <span className="flex-1" />
         {worker.pr !== undefined &&
           (worker.pr.url === undefined ? (
             <span className="shrink-0 tabular-nums">#{worker.pr.number}</span>

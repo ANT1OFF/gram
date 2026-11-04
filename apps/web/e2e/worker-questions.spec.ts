@@ -231,6 +231,8 @@ test("a long question's Answer opens the ask sheet, its answer row in sight", as
     [made.workspaceId] as const,
   );
   await openBand(page);
+  // The longer question has reached the band before its Answer is pressed.
+  await expect(card(page, "WQ1")).toContainText("The relay retries on its own schedule.");
   await card(page, "WQ1").getByTestId("question-answer").click();
   const sheet = page.getByTestId("ask-sheet");
   await expect(sheet).toBeVisible();

@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
+import { openOrchestrator, threadRow } from "../e2e/thread-row";
 import { elapse, FLAKY_DONE_MS, SHOTS, seedMockSettings, type Shot } from "./shots";
 import { TOUR } from "./tour";
 
@@ -133,15 +134,18 @@ const steps: readonly Shot[] = [
     name: "question-sheet",
     title: "Answer: a long question opens in the ask sheet, its answer row in sight",
     open: async (page) => {
-      await tour("09-questions")(page);
-      await page.evaluate(async () => {
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      const made = await page.evaluate(() => window.gramMock!.simulateWorkerQuestions());
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await page
+        .getByRole("radiogroup", { name: "View" })
+        .getByRole("radio", { name: /^Board\b/ })
+        .click();
+      await page.evaluate(async (workspaceId) => {
         const mock = window.gramMock!;
-        const ledgers = await Promise.all(
-          (await mock.listWorkspaces()).map((state) => mock.orchestratorLedger(state.workspace.id)),
-        );
-        const question = ledgers
-          .flatMap((ledger) => ledger.questions ?? [])
-          .find((each) => each.id === "WQ1");
+        const ledger = await mock.orchestratorLedger(workspaceId as never);
+        const question = ledger.questions?.find((each) => each.id === "WQ1");
         if (question === undefined) throw new Error("no WQ1");
         await mock.simulateWorkerQuestion({
           ...question,
@@ -153,8 +157,11 @@ const steps: readonly Shot[] = [
             { label: "Retry with backoff", description: "Five tries, then report it." },
           ],
         });
-      });
+      }, made.workspaceId);
+      await page.getByTestId("rail-waiting-chip").click();
       const card = page.locator('[data-testid="rail-waiting"] [data-question="WQ1"]');
+      // The longer question has reached the band before its Answer is pressed.
+      await expect(card).toContainText("30 days");
       await card.getByTestId("question-answer").click();
       await expect(page.getByTestId("ask-sheet-answer-row")).toBeInViewport();
     },
