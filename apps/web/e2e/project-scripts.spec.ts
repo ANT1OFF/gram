@@ -109,6 +109,11 @@ test("with scripts saved, the header's Run script leaves every chip room at 1440
     .click();
   await expect(page.getByTestId("pr-row")).toHaveCount(0);
 
+  // The PR review opens wider than Files. Match pane-header-overflow's 352 px panel:
+  // the review deliberately leaves less chat room and folds chips sooner.
+  await panel.getByRole("tab", { name: "Files", exact: true }).click();
+  await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(352);
+
   const header = page.getByTestId("pane-header").first();
   const run = header.getByRole("button", { name: "Run script" });
   await expect(run).toBeVisible();
