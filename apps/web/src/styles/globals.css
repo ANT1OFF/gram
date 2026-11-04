@@ -134,3 +134,34 @@
     outline-offset: 2px;
   }
 }
+
+/* Settings → Appearance → Reading (thread/reading.ts): a transcript's messages at the reading size,
+   and the markdown in them scaled with it, so headings, code and tables keep their proportions.
+   Unlayered, so it wins over the text-sm the message and streamdown's elements carry; the
+   fallbacks are those classes' own sizes, the original look. Tool cards keep their sizes. */
+[data-transcript] [data-slot="message-content"],
+[data-transcript]
+  :is(
+    [data-streamdown="inline-code"],
+    [data-streamdown="code-block-body"],
+    [data-streamdown="table-cell"],
+    [data-streamdown="table-header-cell"],
+    [data-streamdown="heading-6"]
+  ) {
+  font-size: var(--transcript-text-size, 0.875rem);
+}
+[data-transcript] [data-streamdown="heading-5"] {
+  font-size: calc(1rem * var(--transcript-scale, 1));
+}
+[data-transcript] [data-streamdown="heading-4"] {
+  font-size: calc(1.125rem * var(--transcript-scale, 1));
+}
+[data-transcript] [data-streamdown="heading-3"] {
+  font-size: calc(1.25rem * var(--transcript-scale, 1));
+}
+[data-transcript] [data-streamdown="heading-2"] {
+  font-size: calc(1.5rem * var(--transcript-scale, 1));
+}
+[data-transcript] [data-streamdown="heading-1"] {
+  font-size: calc(1.875rem * var(--transcript-scale, 1));
+}

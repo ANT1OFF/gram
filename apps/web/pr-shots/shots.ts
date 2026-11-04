@@ -2150,6 +2150,33 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "settings-appearance-reading",
+    title: "Settings → Appearance → Reading: transcript text size and width over a live sample",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 2400 });
+      await seedMockSettings(page, { reading: { textSize: 16, width: "wide" } });
+      await page.goto("/settings/appearance");
+      await page.getByRole("heading", { name: "Fonts", exact: true }).waitFor();
+    },
+    element: (page) => page.getByRole("region", { name: "Reading" }),
+  },
+  {
+    name: "thread-reading-small-narrow",
+    title: "A thread with the transcript at 13px in the Narrow column",
+    open: async (page) => {
+      await seedMockSettings(page, { reading: { textSize: 13, width: "narrow" } });
+      await openThread(page);
+    },
+  },
+  {
+    name: "thread-reading-large-wide",
+    title: "A thread with the transcript at 18px in the Wide column",
+    open: async (page) => {
+      await seedMockSettings(page, { reading: { textSize: 18, width: "wide" } });
+      await openThread(page);
+    },
+  },
+  {
     name: "settings-storage",
     title: "Settings → Storage: worktrees across repos by group, with sizes and free space",
     open: async (page) => {

@@ -626,6 +626,7 @@ export function Transcript({
       <div
         ref={scrollRef}
         data-testid="transcript"
+        data-transcript=""
         className="h-full min-h-0 overflow-y-auto mask-b-from-[calc(100%-1.5rem)] [overflow-anchor:none]"
         onWheel={(event) => {
           if (event.deltaY === 0) return;
