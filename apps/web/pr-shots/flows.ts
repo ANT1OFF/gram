@@ -57,7 +57,9 @@ const steps: readonly Shot[] = [
     open: async (page) => {
       await openApproval(page);
       await page.getByRole("button", { name: "New", exact: true }).click();
-      await expect(page.getByRole("menu").or(page.getByRole("radiogroup").first())).toBeVisible();
+      await expect(
+        page.getByRole("menu").or(page.getByRole("radiogroup", { name: "Who does it" })),
+      ).toBeVisible();
     },
   },
   {
