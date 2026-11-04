@@ -81,7 +81,7 @@ export const useHistoryStore = create<HistoryState>()((set) => ({
   setFilter: (filter) => set({ filter }),
 }));
 
-const OUTCOME_GLYPH: Readonly<Record<HistoryOutcome, { icon: LucideIcon; tone: string }>> = {
+export const OUTCOME_GLYPH: Readonly<Record<HistoryOutcome, { icon: LucideIcon; tone: string }>> = {
   merged: { icon: GitMerge, tone: "text-merged" },
   delivered: { icon: CircleCheck, tone: "text-success" },
   stopped: { icon: CircleMinus, tone: "text-muted-foreground" },

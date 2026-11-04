@@ -685,11 +685,11 @@ describe("side panels", () => {
     expect(sanitizeOverviewView({ overviewBeforeHide: "hidden" })).toEqual({});
   });
 
-  it("starts Pull requests and Done folded, and remembers them opened", () => {
+  it("starts Pull requests folded and Done open, and remembers them", () => {
     const folded = (section: OverviewSection) => overviewSectionFolded(s(), section);
-    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["pullRequests", "doneToday"]);
+    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["pullRequests"]);
     expect(folded("pullRequests")).toBe(true);
-    expect(folded("doneToday")).toBe(true);
+    expect(folded("doneToday")).toBe(false);
     expect(folded("solo")).toBe(false);
     s().toggleOverviewSection("pullRequests");
     expect(folded("pullRequests")).toBe(false);
@@ -705,14 +705,17 @@ describe("side panels", () => {
     expect(folded("orchestrators")).toBe(false);
     s().unfoldOverviewSection("orchestrators");
     expect(folded("orchestrators")).toBe(false);
+    s().toggleOverviewSection("doneToday");
+    expect(folded("doneToday")).toBe(true);
+    expect(s().overviewFolded).toEqual(["doneToday"]);
     s().unfoldOverviewSection("doneToday");
     expect(folded("doneToday")).toBe(false);
 
     // A default-folded section is never kept among the folded ones, nor the reverse.
     expect(
       sanitizeOverviewView({
-        overviewFolded: ["doneToday", "solo"],
-        overviewUnfolded: ["solo", "pullRequests", "x"],
+        overviewFolded: ["pullRequests", "solo"],
+        overviewUnfolded: ["solo", "pullRequests", "doneToday", "x"],
       }),
     ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["pullRequests"] });
   });

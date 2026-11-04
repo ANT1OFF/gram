@@ -343,3 +343,52 @@ export const sessionRoots = (
 /** The thread a row opens, when it is one of Gram's own. */
 export const historyThreadId = (entry: HistoryEntry): ThreadId | undefined =>
   entry.kind === "imported" ? undefined : (entry.threadId as ThreadId);
+
+/** How many finished chats the sidebar's Done lists before Open History takes over. */
+export const RECENT_DONE = 5;
+
+/** A finished chat as the sidebar's Done has it: one muted line. */
+export interface RecentDone {
+  readonly threadId: ThreadId;
+  readonly title: string;
+  readonly outcome: HistoryOutcome | undefined;
+  readonly place: string;
+  readonly finishedAt: number | undefined;
+}
+
+/**
+ * The `max` most recently finished Gram chats, latest first: History's rows without the CLI
+ * sessions, which only History reads, and none a click couldn't open.
+ */
+export const recentDone = (
+  sources: Omit<HistorySources, "sessions">,
+  max: number = RECENT_DONE,
+): RecentDone[] =>
+  historyEntries({ ...sources, sessions: [] })
+    .flatMap((entry): RecentDone[] => {
+      const threadId = historyThreadId(entry);
+      return threadId === undefined
+        ? []
+        : [
+            {
+              threadId,
+              title: entry.title,
+              outcome: entry.outcome,
+              place: entry.place,
+              finishedAt: entry.finishedAt,
+            },
+          ];
+    })
+    .slice(0, max);
+
+/** A Done row's time: its 24-hour clock today, else its day (`3 Nov`), with the year if not this one's. */
+export const recentWhen = (at: number | undefined, now: number): string => {
+  if (at === undefined) return "";
+  if (at >= startOfDay(now)) return clockTime(at);
+  const year = new Date(at).getFullYear() !== new Date(now).getFullYear();
+  return dateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(year ? { year: "numeric" } : {}),
+  }).format(new Date(at));
+};

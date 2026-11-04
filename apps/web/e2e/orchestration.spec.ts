@@ -99,7 +99,9 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   // done, is in History, which names its workspace. Solo threads lists neither.
   const workspace = workspaceRow(page, made.workspaceId);
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAccessibleName(/^api, /);
-  await expect(workspace).toContainText("No workers now.");
+  // With no worker and its orchestrator at rest, the workspace is one line: its name and "idle".
+  await expect(workspace.getByTestId("overview-workspace-idle")).toHaveText("· idle");
+  await expect(workspace.getByTestId("overview-workers")).toHaveCount(0);
   await openHistory(page);
   await expect(historyRow(page, made.workerThreadId)).toHaveAccessibleName(
     /^Return rate-limit headers, api, delivered, /,

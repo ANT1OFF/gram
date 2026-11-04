@@ -17,6 +17,8 @@ import {
   historyEntries,
   historyWhen,
   IMPORTED_OWNER,
+  recentDone,
+  recentWhen,
   searchHistory,
   sessionRoots,
   type HistorySession,
@@ -360,5 +362,34 @@ describe("the folders whose sessions History reads", () => {
     ];
     expect(sessionRoots(projects, summaries, 2)).toEqual(["/b", "/c"]);
     expect(sessionRoots(projects, [], 5)).toEqual(["/a", "/b", "/c"]);
+  });
+});
+
+describe("the sidebar's Done", () => {
+  it("lists the five latest finished chats, never a past CLI session", () => {
+    const { sessions: _, ...rest } = sources({ sessions: [session("late", at(14, 30))] });
+    const rows = recentDone(rest);
+    expect(rows.map((row) => row.threadId)).toEqual([
+      "t-merged",
+      "t-closed",
+      "t-done",
+      "t-swept",
+      "t-old",
+    ]);
+    expect(rows[0]).toEqual({
+      threadId: "t-merged",
+      title: "Title of t-merged",
+      outcome: "merged",
+      place: "agent-platform",
+      finishedAt: at(13, 5),
+    });
+    expect(recentDone(rest, 2)).toHaveLength(2);
+  });
+
+  it("times a row by its clock today and by its day before", () => {
+    expect(recentWhen(at(9, 5), NOW)).toBe("09:05");
+    expect(recentWhen(new Date(2026, 9, 3, 18).getTime(), NOW)).toBe("3 Oct");
+    expect(recentWhen(new Date(2025, 11, 30, 18).getTime(), NOW)).toBe("30 Dec 2025");
+    expect(recentWhen(undefined, NOW)).toBe("");
   });
 });
