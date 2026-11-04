@@ -5,7 +5,12 @@ test("/new warns when the current checkout already has a thread, with ways forwa
 }) => {
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
-  await form.getByRole("region", { name: "Recent" }).getByRole("button", { name: /^docs/ }).click();
+  await form.getByRole("button", { name: "Folder", exact: true }).click();
+  await page
+    .getByTestId("where-folder-menu")
+    .getByRole("region", { name: "Recent" })
+    .getByRole("button", { name: /^docs/ })
+    .click();
   await form.getByRole("radio", { name: "Current checkout" }).click();
 
   const notice = form.getByTestId("checkout-in-use");
@@ -33,7 +38,12 @@ test("/new warns when the current checkout already has a thread, with ways forwa
 test("/new creates in a shared checkout when asked to anyway", async ({ page }) => {
   await page.goto("/new");
   const form = page.getByRole("form", { name: "New thread" });
-  await form.getByRole("region", { name: "Recent" }).getByRole("button", { name: /^docs/ }).click();
+  await form.getByRole("button", { name: "Folder", exact: true }).click();
+  await page
+    .getByTestId("where-folder-menu")
+    .getByRole("region", { name: "Recent" })
+    .getByRole("button", { name: /^docs/ })
+    .click();
   await form.getByRole("radio", { name: "Current checkout" }).click();
   await form.getByLabel("First prompt").fill("tidy the changelog");
 

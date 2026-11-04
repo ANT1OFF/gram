@@ -96,6 +96,12 @@ export interface World {
   /** Runs before each event the server publishes, for a test to hold one. */
   onPublish?: ((event: ServerEvent) => Effect.Effect<void>) | undefined;
   /**
+   * Runs once `ThreadRuntimes.create` has made a thread (and sent its first input), before it
+   * returns to its caller: a test holds it to act between a thread's creation and what the caller
+   * records of it.
+   */
+  afterCreate?: ((thread: Thread) => Effect.Effect<void>) | undefined;
+  /**
    * What GitHub says of a PR some thread waits on, by `owner/repo#N` lower-cased: `lookupPr` and
    * `watchedBadge` answer from it, and `watchedPr` publishes a new one to the observers.
    */
@@ -217,6 +223,26 @@ const hubOf = (world: World) =>
       });
     }),
   ).pipe(Layer.provide(EventHub.layer));
+
+/** The thread runtimes, running `world.afterCreate` before `create` returns when a test set one. */
+const runtimesOf = (world: World) =>
+  Layer.effect(
+    ThreadRuntimes,
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      return ThreadRuntimes.of({
+        ...runtimes,
+        create: (input) =>
+          runtimes
+            .create(input)
+            .pipe(
+              Effect.tap((thread) =>
+                Effect.suspend(() => world.afterCreate?.(thread) ?? Effect.void),
+              ),
+            ),
+      });
+    }),
+  );
 
 const fakePublisher = (world: World) =>
   Layer.sync(GitStatePublisher, () => {
@@ -455,6 +481,7 @@ export const serverLayer = (
     Layer.provideMerge(OrchestrationMemory.layerAt(nodePath.join(world.dir, "memory"))),
     Layer.provideMerge(fakePublisher(world)),
     Layer.provideMerge(AppToolRegistry.layer),
+    Layer.provideMerge(runtimesOf(world)),
     // As the server has it: the runtime reads the limits (`limitedUntil`, early releases).
     Layer.provideMerge(ThreadRuntimes.layer.pipe(Layer.provideMerge(UsageLimitReadings.layer))),
     Layer.provideMerge(GitCheckoutLive),

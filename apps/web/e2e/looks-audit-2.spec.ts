@@ -377,7 +377,9 @@ const SURFACES: Surface[] = [
     name: "checkout-in-use",
     open: async (page) => {
       const form = await newThreadForm(page);
-      await form
+      await form.getByRole("button", { name: "Folder", exact: true }).click();
+      await page
+        .getByTestId("where-folder-menu")
         .getByRole("region", { name: "Recent" })
         .getByRole("button", { name: /^docs/ })
         .click();
@@ -390,7 +392,11 @@ const SURFACES: Surface[] = [
   {
     name: "remove-from-recents",
     open: async (page) => {
-      const recent = page.getByRole("form", { name: "New thread" }).getByRole("region", {
+      await page
+        .getByRole("form", { name: "New thread" })
+        .getByRole("button", { name: "Folder", exact: true })
+        .click();
+      const recent = page.getByTestId("where-folder-menu").getByRole("region", {
         name: "Recent",
       });
       await recent
@@ -437,7 +443,7 @@ const SURFACES: Surface[] = [
     open: async (page) => {
       // The seeded gateway profile has no key, so a gateway agent points at Settings instead.
       const form = await newThreadForm(page);
-      await form.getByLabel("Agent").click();
+      await form.getByLabel("Agent", { exact: true }).click();
       await page.getByRole("option", { name: "Codex", exact: true }).click();
       const link = form.getByRole("link", { name: "Add your gateway key" });
       await expect(link).toBeVisible();

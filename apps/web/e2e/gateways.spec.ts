@@ -11,7 +11,7 @@ const openNewThread = async (page: Page) => {
 };
 
 const pickAgent = async (page: Page, agent: string) => {
-  await page.getByRole("form", { name: "New thread" }).getByLabel("Agent").click();
+  await page.getByRole("form", { name: "New thread" }).getByLabel("Agent", { exact: true }).click();
   await page.getByRole("option", { name: agent, exact: true }).click();
 };
 

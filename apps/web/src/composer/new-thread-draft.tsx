@@ -9,18 +9,17 @@ import {
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowUp, History, RotateCw } from "lucide-react";
+import { History, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
 import { checkoutInUsePath } from "@/api/errors";
-import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import { shortcutPressed } from "@/keyboard/bindings";
 import { useShortcut } from "@/keyboard/registry";
-import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { ShortcutKbd, useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { PressScale, Spinner, Swap } from "@/motion";
@@ -29,7 +28,7 @@ import { ExistingWorktrees } from "@/new-thread/existing-worktrees";
 import { folderProblem } from "@/new-thread/fs-errors";
 import { ProjectPicker } from "@/new-thread/project-picker";
 import { useFolderStatus, useIsGitRepo } from "@/new-thread/use-folder";
-import { FolderPicker, WhereChips } from "@/new-thread/where-chips";
+import { FolderPicker } from "@/new-thread/where-chips";
 import { NewFormHeader, WHO_ENTRY, type Who } from "@/new-thread/who-does-it";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import type { TaskTarget } from "@/orchestration/task-model";
@@ -67,7 +66,7 @@ import {
 import { MentionMenu } from "./mention-menu";
 import { MODE_ICONS, MODE_OPTIONS } from "./options";
 import { useSlabHandoff } from "./slab-handoff";
-import { GHOST_TRIGGER, ROUND, SEND_FILL, SLAB, SLAB_TEXTAREA } from "./styles";
+import { GHOST_TRIGGER, SLAB, SLAB_TEXTAREA } from "./styles";
 import { useAttachments } from "./use-attachments";
 import { useMentions } from "./use-mentions";
 import {
@@ -217,7 +216,6 @@ function ConfiguredNewThreadDraft() {
   const [resuming, setResuming] = useState(false);
   const [dragging, setDragging] = useState(false);
   const slabRef = useRef<HTMLDivElement>(null);
-  const createHint = useShortcutHint("draft.create");
   const errorRef = useRef<HTMLParagraphElement>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
 
@@ -432,7 +430,7 @@ function ConfiguredNewThreadDraft() {
                 placeholder={
                   dictation.active
                     ? ""
-                    : "Describe the task. @ mentions a file, and pasted or dropped files attach. Leave it empty to open a warm draft."
+                    : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
                 }
                 value={prompt}
                 onFocus={(event) => {
@@ -534,27 +532,6 @@ function ConfiguredNewThreadDraft() {
                   onToggle={dictation.toggle}
                 />
               )}
-              <PressScale hover={valid && stage !== "creating" ? 1.05 : undefined}>
-                <Hint
-                  label={withHint(createLabel, createHint)}
-                  render={
-                    <button
-                      type="submit"
-                      aria-label={createLabel}
-                      disabled={!valid || stage === "creating"}
-                      className={cn(ROUND, SEND_FILL)}
-                    />
-                  }
-                >
-                  {stage === "creating" ? (
-                    <Spinner aria-hidden className="size-4" />
-                  ) : stage === "failed" ? (
-                    <RotateCw aria-hidden className="size-4" />
-                  ) : (
-                    <ArrowUp aria-hidden className="size-4" strokeWidth={2.25} />
-                  )}
-                </Hint>
-              </PressScale>
             </fieldset>
           </div>
 
@@ -572,77 +549,7 @@ function ConfiguredNewThreadDraft() {
               onRetry={imagePreflight.recheck}
             />
           )}
-          {/* Where it runs, hung under the box: the branch it starts from and the worktree. */}
-          <div className="px-3">
-            <WhereChips
-              showFolder={false}
-              folder={projectRoot}
-              projects={recents}
-              onPickFolder={setTypedRoot}
-              onBrowse={browse}
-              repoPath={notRepo ? "" : repoPath}
-              worktree={checkout !== "current"}
-              onWorktree={(next) => setCheckout(next ? "newWorktree" : "current")}
-              base={checkout === "newWorktree" ? worktree.base : undefined}
-              onBase={(base) => setWorktree((current) => ({ ...current, base }))}
-            />
-          </div>
-
-          {stage !== "draft" && (
-            <ol aria-label="Setup progress" className="flex flex-wrap items-center gap-2 text-xs">
-              {SETUP_STAGES[checkout].map((step) => (
-                <li
-                  key={step}
-                  className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-muted-foreground"
-                >
-                  {stage === "creating" && <Spinner aria-hidden className="size-3" />}
-                  {step}
-                </li>
-              ))}
-            </ol>
-          )}
-          {error && (
-            <p ref={errorRef} role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-        </section>
-
-        <section
-          aria-label="More options"
-          className="flex flex-col gap-5 border-t border-border pt-6"
-        >
-          <ProjectPicker
-            value={pathValue}
-            onChange={setTypedRoot}
-            status={folderStatus}
-            projects={projects}
-          />
-
-          {folder && (
-            <div className="flex flex-col gap-2">
-              {/* Resumed sessions run on the agent fields' choice, effort included. */}
-              <div className="flex flex-wrap items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-expanded={resuming}
-                  onClick={() => setResuming((open) => !open)}
-                >
-                  <History data-icon="inline-start" />
-                  {resuming ? "Hide past sessions" : "Resume a past session…"}
-                </Button>
-                <ContinueLatest
-                  projectRoot={projectRoot}
-                  model={choiceModel(choice)}
-                  disabled={!ready}
-                />
-              </div>
-              {resuming && <ResumeSessions projectRoot={projectRoot} model={choiceModel(choice)} />}
-            </div>
-          )}
-
+          {/* Where it runs: the one control for the folder itself or a worktree, and its branch. */}
           <fieldset className="flex flex-col gap-2">
             <legend className={labelCls}>Checkout</legend>
             <div role="radiogroup" aria-label="Checkout" className="flex gap-1">
@@ -699,7 +606,75 @@ function ConfiguredNewThreadDraft() {
               </div>
             )}
           </fieldset>
+          {stage !== "draft" && (
+            <ol aria-label="Setup progress" className="flex flex-wrap items-center gap-2 text-xs">
+              {SETUP_STAGES[checkout].map((step) => (
+                <li
+                  key={step}
+                  className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-muted-foreground"
+                >
+                  {stage === "creating" && <Spinner aria-hidden className="size-3" />}
+                  {step}
+                </li>
+              ))}
+            </ol>
+          )}
+          {error && (
+            <p ref={errorRef} role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </section>
+
+        <section
+          aria-label="More options"
+          className="flex flex-col gap-5 border-t border-border pt-6"
+        >
+          <ProjectPicker value={pathValue} onChange={setTypedRoot} status={folderStatus} />
+
+          {folder && (
+            <div className="flex flex-col gap-2">
+              {/* Resumed sessions run on the agent fields' choice, effort included. */}
+              <div className="flex flex-wrap items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-expanded={resuming}
+                  onClick={() => setResuming((open) => !open)}
+                >
+                  <History data-icon="inline-start" />
+                  {resuming ? "Hide past sessions" : "Resume a past session…"}
+                </Button>
+                <ContinueLatest
+                  projectRoot={projectRoot}
+                  model={choiceModel(choice)}
+                  disabled={!ready}
+                />
+              </div>
+              {resuming && <ResumeSessions projectRoot={projectRoot} model={choiceModel(choice)} />}
+            </div>
+          )}
+        </section>
+
+        {/* Last, after everything it starts with. */}
+        <div className="flex flex-wrap items-center gap-3">
+          <PressScale>
+            <Button
+              type="submit"
+              aria-label={createLabel}
+              disabled={!valid || stage === "creating"}
+            >
+              {stage === "creating" ? (
+                <Spinner aria-hidden />
+              ) : (
+                stage === "failed" && <RotateCw aria-hidden data-icon="inline-start" />
+              )}
+              {createLabel}
+              <ShortcutKbd id="draft.create" className="opacity-70" />
+            </Button>
+          </PressScale>
+        </div>
       </form>
     </div>
   );

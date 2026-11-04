@@ -618,33 +618,49 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           workerWorkspaces.set(worker.id, workspaceId);
           if (mode === "auto") openedInAuto.add(worker.id);
           const now = yield* Clock.currentTimeMillis;
-          yield* updateOutbox(workspaceId, (outbox) => [
-            withNotes(
-              {
-                ...outbox,
-                workers: {
-                  ...outbox.workers,
-                  [worker.id]: {
-                    ...emptyWorkerMemo(now),
-                    ...(input.scope === undefined || input.scope.length === 0
-                      ? {}
-                      : { scope: input.scope }),
-                    ...(byUser?.hold === true ? { userIntervened: true, userInputAt: now } : {}),
+          yield* updateOutbox(workspaceId, (outbox) => {
+            // The thread was live, its brief sent, before this records it: a message the user typed
+            // into it meanwhile took it over (`onUserInput`), and that stands.
+            const taken = outbox.workers[worker.id];
+            const held = byUser?.hold === true || taken?.userIntervened === true;
+            return [
+              withNotes(
+                {
+                  ...outbox,
+                  workers: {
+                    ...outbox.workers,
+                    [worker.id]: {
+                      ...emptyWorkerMemo(now),
+                      ...(input.scope === undefined || input.scope.length === 0
+                        ? {}
+                        : { scope: input.scope }),
+                      ...(taken?.userIntervened === true
+                        ? {
+                            userIntervened: true,
+                            lastInputAt: taken.lastInputAt,
+                            ...(taken.userInputAt === undefined
+                              ? {}
+                              : { userInputAt: taken.userInputAt }),
+                          }
+                        : byUser?.hold === true
+                          ? { userIntervened: true, userInputAt: now }
+                          : {}),
+                    },
                   },
                 },
-              },
-              byUser === undefined
-                ? []
-                : byUser.hold === true
-                  ? [
-                      `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} under their own control, for feature ${slug}. It is theirs until it reports, they hand it back, or it sits idle ${USER_HOLD_IDLE_MS / 60_000} minutes; follow its pull request like your own workers'.`,
-                    ]
-                  : [
-                      `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} for you, for feature ${slug}, with their words as its brief. It is your worker: direct it and follow its pull request like your own.`,
-                    ],
-            ),
-            undefined,
-          ]);
+                byUser === undefined
+                  ? []
+                  : held
+                    ? [
+                        `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} ${byUser.hold === true ? "under their own control" : "and wrote to it as it started"}, for feature ${slug}. It is theirs until it reports, they hand it back, or it sits idle ${USER_HOLD_IDLE_MS / 60_000} minutes; follow its pull request like your own workers'.`,
+                      ]
+                    : [
+                        `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} for you, for feature ${slug}, with their words as its brief. It is your worker: direct it and follow its pull request like your own.`,
+                      ],
+              ),
+              undefined,
+            ];
+          });
           if (byUser?.hold === true) yield* armHold(worker.id, USER_HOLD_IDLE_MS);
           yield* joinWorkspace(state, caller.id, [project, ...others]);
           if (group !== undefined) yield* joinGroup(workspaceId, slug, group);

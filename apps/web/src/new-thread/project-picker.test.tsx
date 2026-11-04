@@ -17,7 +17,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiProvider } from "@/api/context";
 import { prefillDraftProject, useDraftProjectRoot } from "@/composer/draft-prefill";
 import { createMockApi, type MockApi } from "@/api/mock";
-import { PROJECTS } from "@/api/mock-scripts";
 import { Expand } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
 import { DialogShell } from "@/thread/dialog-shell";
@@ -30,15 +29,7 @@ import { useFolderStatus } from "./use-folder";
 function Harness({ initial }: { initial: string }) {
   const [value, setValue] = useState(initial);
   const status = useFolderStatus(value, 0);
-  return (
-    <ProjectPicker
-      value={value}
-      onChange={setValue}
-      status={status}
-      projects={PROJECTS}
-      debounceMs={0}
-    />
-  );
+  return <ProjectPicker value={value} onChange={setValue} status={status} debounceMs={0} />;
 }
 
 let api: MockApi;
@@ -204,14 +195,11 @@ describe("FolderBrowser", () => {
     );
   });
 
-  it("lists recent and bookmarked projects, a bookmark once", () => {
+  it("leaves recent and bookmarked projects to the folder chip's menu", () => {
     renderPicker();
-    expect(
-      within(screen.getByRole("region", { name: "Recent" })).getAllByRole("listitem"),
-    ).toHaveLength(2);
-    expect(
-      within(screen.getByRole("region", { name: "Bookmarks" })).getByRole("listitem").textContent,
-    ).toContain("api");
+    expect(screen.queryByRole("region", { name: "Recent" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Bookmarks" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Shortcuts" })).toBeTruthy();
   });
 });
 

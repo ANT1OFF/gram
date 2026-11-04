@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("a one-off thread opens on the prompt-first controls, not scrolled down to the path field", async ({
+test("a single agent chat opens on the prompt-first controls, not scrolled down to the path field", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 600 });
@@ -11,28 +11,41 @@ test("a one-off thread opens on the prompt-first controls, not scrolled down to 
   await expect(page).toHaveURL(/\/new$/);
   await expect(page.getByRole("heading", { name: "New", exact: true })).toBeVisible();
   await expect(page.getByRole("radio", { name: "Single agent chat" })).toBeChecked();
-  await expect(page.getByTestId("where-chips")).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Folder", exact: true })).toBeInViewport();
   await expect(page.getByLabel("First prompt")).toBeInViewport();
   await expect(page.getByLabel("Project path")).not.toBeFocused();
 });
 
-test("the in chip picks the folder, and the chips under the prompt whether it gets a worktree", async ({
+test("the in chip holds bookmarks and recents, Checkout is the one worktree control, and Create comes last", async ({
   page,
 }) => {
   await page.goto("/new");
-  const chips = page.getByTestId("where-chips");
+  const form = page.getByRole("form", { name: "New thread" });
   const folder = page.getByRole("button", { name: "Folder", exact: true });
   await expect(folder).toHaveText("api");
-  await expect(page.getByRole("radio", { name: "New worktree" })).toBeChecked();
-
-  await chips.getByRole("checkbox", { name: "worktree" }).uncheck();
-  await expect(page.getByRole("radio", { name: "Current checkout" })).toBeChecked();
-  await expect(chips.getByRole("combobox", { name: "Start from" })).toHaveCount(0);
-  await chips.getByRole("checkbox", { name: "worktree" }).check();
-  await expect(chips.getByRole("combobox", { name: "Start from" })).toBeVisible();
+  // One worktree control and one base branch: no checkbox beside the Checkout choice.
+  await expect(form.getByRole("radio", { name: "New worktree" })).toBeChecked();
+  await expect(form.getByRole("checkbox")).toHaveCount(0);
+  await expect(form.getByRole("combobox", { name: "Base branch" })).toHaveCount(1);
+  await expect(form.getByRole("combobox", { name: "Start from" })).toHaveCount(0);
+  // Bookmarks and Recent are in the folder menu, not on the page.
+  await expect(form.getByRole("region", { name: "Recent" })).toHaveCount(0);
+  // Create thread is the form's last control, after where it runs.
+  const create = form.getByRole("button", { name: "Create thread" });
+  const last = form.locator("button, input, textarea, [role=combobox]").last();
+  await expect(last).toHaveAccessibleName("Create thread");
+  expect((await create.boundingBox())!.y).toBeGreaterThan(
+    (await form.getByRole("radio", { name: "New worktree" }).boundingBox())!.y,
+  );
+  await expect(form.getByLabel("First prompt")).toHaveAttribute(
+    "placeholder",
+    /leave it empty to start the agent now/,
+  );
 
   await folder.click();
-  await page.getByTestId("where-folder-menu").getByRole("button", { name: /^web/ }).click();
+  const menu = page.getByTestId("where-folder-menu");
+  await expect(menu.getByRole("region", { name: "Bookmarks" })).toContainText("api");
+  await menu.getByRole("region", { name: "Recent" }).getByRole("button", { name: /^web/ }).click();
   await expect(folder).toHaveText("web");
   await expect(page.getByLabel("Project path")).toHaveValue("/Users/dev/code/web");
 

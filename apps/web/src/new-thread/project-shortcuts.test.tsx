@@ -9,7 +9,7 @@ import { PROJECTS } from "@/api/mock-scripts";
 import { renderWithApi } from "@/panels/test-utils";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
-import { ProjectShortcuts } from "./project-shortcuts";
+import { ProjectLists } from "./project-shortcuts";
 
 function Harness() {
   const api = useApi();
@@ -17,20 +17,12 @@ function Harness() {
     queryKey: ["projects"],
     queryFn: () => api.listProjects(),
   });
-  return (
-    <ProjectShortcuts
-      projects={projects}
-      current={undefined}
-      defaultFolder={undefined}
-      onChoose={() => undefined}
-      onBrowse={() => undefined}
-    />
-  );
+  return <ProjectLists projects={projects} current={undefined} onChoose={() => undefined} />;
 }
 
 afterEach(cleanup);
 
-describe("ProjectShortcuts bookmarks", () => {
+describe("ProjectLists bookmarks", () => {
   it("bookmarks a recent project into Bookmarks and removes it again", async () => {
     renderWithApi(<Harness />, createMockApi({ speed: 0, autoplay: false }));
     const bookmarks = await screen.findByRole("region", { name: "Bookmarks" });
@@ -57,7 +49,7 @@ describe("ProjectShortcuts bookmarks", () => {
   });
 });
 
-describe("ProjectShortcuts recents", () => {
+describe("ProjectLists recents", () => {
   afterEach(() => useThreadDialogs.setState({ error: undefined }));
 
   it("removes a project from Recent, and says why the server refused another", async () => {
