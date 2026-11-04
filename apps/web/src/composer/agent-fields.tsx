@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 
 import { SpeedField } from "./speed-field";
-import { ModelSelect } from "./model-select";
+import { ModelSelect, type ModelPick } from "./model-select";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { EffortGauge } from "./picker-glyphs";
 import { defaultModelId, effortOptions, useModels } from "./models";
@@ -233,6 +233,20 @@ export function AgentFields({
           {...(value.profileId === undefined ? {} : { profileId: value.profileId })}
           value={shownModel}
           ghost={ghost}
+          // The prompt box lists every agent's models; picking another's switches to it, as the
+          // agent and gateway pickers do.
+          {...(ghost && !subscriptionOnly
+            ? {
+                agents,
+                onPick: (pick: ModelPick) =>
+                  onChange({
+                    agent: pick.agent,
+                    model: pick.model,
+                    speed: "standard",
+                    ...(pick.profileId === undefined ? {} : { profileId: pick.profileId }),
+                  }),
+              }
+            : {})}
           onChange={(model) => {
             const keep =
               value.variant !== undefined &&

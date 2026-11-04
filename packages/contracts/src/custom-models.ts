@@ -7,6 +7,9 @@ import {
 import type { AgentModel } from "./models.ts";
 import type { CustomModel } from "./settings.ts";
 
+/** How a model the user added in Settings, not one the agent lists, describes itself. */
+export const CUSTOM_MODEL_DESCRIPTION = "Added in Settings";
+
 /**
  * `listed` followed by the user's own models. One whose id the agent already lists is dropped, so
  * the agent's entry, which knows the model's real efforts, is the one the picker shows.
@@ -23,7 +26,7 @@ export const withCustomModels = (
     added.push({
       id: model.id,
       displayName: model.name?.trim() || model.id,
-      description: "Added in Settings",
+      description: CUSTOM_MODEL_DESCRIPTION,
       supportsEffort: model.effort !== false,
     });
   }

@@ -1958,6 +1958,51 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "model-picker",
+    title: "A thread's model picker, open: search, a starred favourite, and the agent's section",
+    open: async (page) => {
+      await page.addInitScript(() => {
+        localStorage.setItem(
+          "gram.modelFavourites",
+          JSON.stringify({ state: { keys: ["claude:sonnet"] }, version: 1 }),
+        );
+      });
+      await page.setViewportSize({ width: 1200, height: 800 });
+      await page.goto("/t/t-deps");
+      await page
+        .getByTestId("composer-toolbar")
+        .getByRole("combobox", { name: "Model", exact: true })
+        .click();
+      await page.getByRole("option").first().waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "model-picker-new-thread",
+    title: "The new-thread form's model picker, open: every agent's models, each in its section",
+    open: async (page) => {
+      await page.addInitScript(() => {
+        sessionStorage.setItem("gram.mock.agents", "claude,codex");
+        localStorage.setItem(
+          "gram.modelFavourites",
+          JSON.stringify({ state: { keys: ["claude:haiku"] }, version: 1 }),
+        );
+      });
+      await seedMockSettings(page, {
+        agents: {
+          customModels: [{ agent: "claude", id: "claude-preview", name: "Claude Preview" }],
+        },
+      });
+      await page.setViewportSize({ width: 1200, height: 900 });
+      await page.goto("/new");
+      const form = page.getByRole("form", { name: "New thread" });
+      await form.getByRole("combobox", { name: "Model", exact: true }).click();
+      // Before, a plain list of Claude's models; after, Codex's section too.
+      await page.getByRole("option").first().waitFor();
+      await page.waitForTimeout(800);
+    },
+  },
+  {
     name: "new-thread-pickers",
     title: "The new-thread prompt box's toolbar: Fast speed, High effort and Bypass mode",
     open: async (page) => {

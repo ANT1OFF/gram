@@ -128,7 +128,35 @@ test("Gram answers its own slash commands, and explains a terminal-only one", as
   await expect(page).toHaveURL(/\/new$/);
 });
 
-test("past eight models the picker searches, and a starred model comes first", async ({ page }) => {
+test("the model picker searches by name and agent, and the keyboard picks", async ({ page }) => {
+  await page.goto("/t/t-deps");
+  const picker = page
+    .getByTestId("composer-toolbar")
+    .getByRole("combobox", { name: "Model", exact: true });
+  await expect(picker).toHaveText(/Claude Opus/);
+  await picker.click();
+  const search = page.getByRole("combobox", { name: "Search models" });
+  await expect(search).toBeFocused();
+  const list = page.getByTestId("model-picker");
+  // No favourites yet: the agent's own section, and no Favourites heading.
+  await expect(list.getByText("Claude Code", { exact: true })).toBeVisible();
+  await expect(list.getByText("Favourites")).toHaveCount(0);
+  await expect(list.getByRole("option")).toHaveCount(3);
+  await search.fill("claude code haiku");
+  await expect(list.getByRole("option")).toHaveCount(1);
+  await search.fill("");
+  await search.press("ArrowDown");
+  await search.press("ArrowDown");
+  await search.press("Enter");
+  await expect(list).toBeHidden();
+  await expect(picker).toHaveText(/Claude Haiku/);
+  await picker.click();
+  await expect(search).toBeFocused();
+  await search.press("Escape");
+  await expect(list).toBeHidden();
+});
+
+test("with many models the picker searches, and a starred model comes first", async ({ page }) => {
   const custom = ["Opus 5.5", "Sonnet 5.5", "Fable 5.1", "Haiku 4.5", "Opus 5", "Sonnet 5"].map(
     (name) => ({ agent: "claude", id: name.toLowerCase().replaceAll(" ", "-"), name }),
   );
@@ -174,4 +202,27 @@ test("past eight models the picker searches, and a starred model comes first", a
   await expect(search).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(list).toBeHidden();
+});
+
+test("the new thread's model picker lists every agent's models, and a Codex pick switches the agent", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("gram.mock.agents", "claude,codex");
+  });
+  await page.goto("/new");
+  const form = page.getByRole("form", { name: "New thread" });
+  const picker = form.getByRole("combobox", { name: "Model", exact: true });
+  await expect(picker).toHaveText(/Claude Opus/);
+  await picker.click();
+  const search = page.getByRole("combobox", { name: "Search models" });
+  await expect(search).toBeFocused();
+  const list = page.getByTestId("model-picker");
+  await expect(list.getByText("Claude Code", { exact: true })).toBeVisible();
+  await expect(list.getByText("Codex", { exact: true })).toBeVisible();
+  await search.fill("codex");
+  await expect(list.getByRole("option")).toHaveCount(1);
+  await search.press("Enter");
+  await expect(picker).toHaveText(/GPT-5\.5/);
+  await expect(form.getByLabel("Agent")).toContainText("Codex");
 });

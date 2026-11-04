@@ -51,3 +51,9 @@ export function useIsFavourite(agent: AgentKind): (model: string) => boolean {
   const keys = useModelFavourites((s) => s.keys);
   return (model) => keys.includes(keyOf(agent, model));
 }
+
+/** Whether a model is starred, for a list of more than one agent's models. */
+export function useIsFavouriteOf(): (agent: AgentKind, model: string) => boolean {
+  const keys = useModelFavourites((s) => s.keys);
+  return (agent, model) => keys.includes(keyOf(agent, model));
+}

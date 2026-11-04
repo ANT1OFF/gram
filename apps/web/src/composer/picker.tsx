@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 
 import { ModelCombobox } from "./model-picker";
-import { MODEL_SEARCH_THRESHOLD } from "./models";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
 
@@ -16,6 +15,10 @@ export interface PickerOption<V extends string> {
   label: string;
   /** A line under the label where the list has room for one: the model picker's search list. */
   description?: string | undefined;
+  /** The model picker's section past favourites: the agent or gateway it runs on, or Custom. */
+  group?: string | undefined;
+  /** The model picker's mark beside the row, for a list of more than one agent's models. */
+  icon?: ReactNode;
 }
 
 interface PickerProps<V extends string> {
@@ -46,7 +49,7 @@ interface PickerProps<V extends string> {
   onFoldedOpen?: (() => void) | undefined;
   /** Called as the list opens, by click or shortcut. */
   onOpen?: (() => void) | undefined;
-  /** Past `MODEL_SEARCH_THRESHOLD` options, a searchable list with favourites instead of a select. */
+  /** A searchable list with favourites, grouped by agent or gateway, instead of a select. */
   search?:
     | {
         rowIcon: ReactNode;
@@ -99,7 +102,7 @@ export function Picker<V extends string>({
   const title = warning ?? (iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`);
   const description = [iconLabel, warning].filter(Boolean).join(". ") || undefined;
 
-  if (search && options.length > MODEL_SEARCH_THRESHOLD) {
+  if (search) {
     return (
       <ModelCombobox
         label={label}
@@ -113,6 +116,9 @@ export function Picker<V extends string>({
         description={description}
         warning={warning}
         labelled={labelled}
+        tip={[iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
+          .filter(Boolean)
+          .join("\n")}
         {...search}
       />
     );

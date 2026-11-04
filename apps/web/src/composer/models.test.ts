@@ -1,5 +1,10 @@
 // @vitest-environment happy-dom
-import { ProfileId, type AgentModel } from "@gram/contracts";
+import {
+  CUSTOM_MODEL_DESCRIPTION,
+  ProfileId,
+  withCustomModels,
+  type AgentModel,
+} from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import { useModelFavourites } from "./model-favourites";
@@ -191,6 +196,27 @@ describe("modelGroups", () => {
   it("has no empty second section when every model is a favourite", () => {
     expect(modelGroups(options, () => true).map((g) => g.label)).toEqual(["Favourites"]);
   });
+
+  it("sections the rest by agent, then models added in Settings, favourites above them", () => {
+    const listed = withCustomModels(models, [{ agent: "claude", id: "claude-eap" }]);
+    expect(listed.at(-1)?.description).toBe(CUSTOM_MODEL_DESCRIPTION);
+    const claude = modelOptions(listed, "claude-unlisted", undefined, undefined, "Claude Code");
+    const codex = modelOptions(
+      [{ id: "gpt", displayName: "GPT", supportsEffort: false }],
+      undefined,
+      [],
+      undefined,
+      "Codex",
+    );
+    const groups = modelGroups([...claude, ...codex], (value) => value === "opus");
+    expect(groups.map((g) => [g.label, g.items.map((o) => o.value)])).toEqual([
+      ["Favourites", ["opus"]],
+      // The current model the account doesn't list stays under its agent, not after Custom.
+      ["Claude Code", ["sonnet", "haiku", "claude-unlisted"]],
+      ["Custom", ["claude-eap"]],
+      ["Codex", ["gpt"]],
+    ]);
+  });
 });
 
 describe("matchesModel", () => {
@@ -200,6 +226,11 @@ describe("matchesModel", () => {
     expect(matchesModel(option, "sonnet 1m")).toBe(true);
     expect(matchesModel(option, "CLAUDE context")).toBe(true);
     expect(matchesModel(option, "sonnet opus")).toBe(false);
+  });
+
+  it("finds a model by its agent or gateway", () => {
+    expect(matchesModel({ ...option, group: "Team Gateway" }, "gateway sonnet")).toBe(true);
+    expect(matchesModel({ ...option, group: "Codex" }, "team gateway")).toBe(false);
   });
 
   it("matches everything for an empty query", () => {

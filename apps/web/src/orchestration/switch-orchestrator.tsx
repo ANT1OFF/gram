@@ -1,4 +1,10 @@
-import { type ModelRef, type SessionSwitch, type Thread, type WorkspaceId } from "@gram/contracts";
+import {
+  CUSTOM_MODEL_DESCRIPTION,
+  type ModelRef,
+  type SessionSwitch,
+  type Thread,
+  type WorkspaceId,
+} from "@gram/contracts";
 import { useState } from "react";
 
 import { agentLabel } from "@/agents/agent-display";
@@ -134,7 +140,7 @@ export function SwitchOrchestratorDialog({
   );
   const known =
     listed !== undefined &&
-    listed.description !== "Added in Settings" &&
+    listed.description !== CUSTOM_MODEL_DESCRIPTION &&
     listed.warning === undefined;
   const act = async (run: () => Promise<unknown>) => {
     setBusy(true);
