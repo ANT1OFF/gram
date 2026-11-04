@@ -131,7 +131,7 @@ export function SubgroupToggle({
       type="button"
       aria-expanded={expanded}
       className={cn(
-        "flex w-full items-center gap-1 rounded-(--radius-sm) pt-1.5 pr-2 pb-0.5 pl-4 text-[10px] text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full items-center gap-1 rounded-(--radius-sm) pt-1.5 pr-2 pb-0.5 pl-4 text-xs text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
       {...button}

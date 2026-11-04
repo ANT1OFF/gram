@@ -29,6 +29,7 @@ import type { AskOption } from "./ask-model";
 import { useAskStackStore } from "./ask-stack-store";
 import { saveSetAside, SNOOZE_MS } from "./inbox-set-aside";
 import { itemText, type NeedsYouItem } from "./needs-you-items";
+import { opensThread } from "./use-needs-you";
 
 // One row of Needs you, as the popover and the panel list it (needs-you-home mock, C Hybrid): what
 // kind it is, its words, its thread and age, and the answers it takes in place. A click on its words
@@ -190,13 +191,22 @@ export function useNeedsYouActions() {
 
 const ICON_BUTTON = "size-6 text-muted-foreground hover:text-foreground";
 
+/** What an option's hint says: its words, and what choosing it means when the asker said. */
+const optionHint = (option: AskOption): string =>
+  option.description === undefined || option.description.trim() === ""
+    ? option.label
+    : `${option.label}: ${option.description.trim()}`;
+
 /** A row's answers in place: its options, or Done for a wait. */
 function QuickAnswers({
   item,
   actions,
+  full,
 }: {
   item: NeedsYouItem;
   actions: ReturnType<typeof useNeedsYouActions>;
+  /** The options spelled out under the focused request, rather than numbered beside it. */
+  full: boolean;
 }) {
   if (item.kind === "wait") {
     return (
@@ -217,12 +227,13 @@ function QuickAnswers({
       </Hint>
     );
   }
+  if (full) return null;
   return quickOptions(item).map((option, index) => {
     const Glyph = glyphOf(option);
     return (
       <Hint
         key={option.label}
-        label={option.label}
+        label={optionHint(option)}
         render={
           <Button
             size={Glyph === undefined ? "xs" : "icon-xs"}
@@ -289,6 +300,67 @@ function SetAside({
   );
 }
 
+/**
+ * The focused request's options with their words, under its text: numbered as its row's buttons
+ * are, so the number learnt here answers the next one from the row.
+ */
+function FullAnswers({
+  item,
+  actions,
+}: {
+  item: NeedsYouItem;
+  actions: ReturnType<typeof useNeedsYouActions>;
+}) {
+  const options = quickOptions(item);
+  if (options.length === 0) return null;
+  return (
+    <span
+      data-testid="needs-you-full-answers"
+      className="col-start-2 col-end-4 flex flex-wrap gap-1 pt-1.5"
+    >
+      {options.map((option, index) => {
+        const Glyph = glyphOf(option);
+        return (
+          <Hint
+            key={option.label}
+            label={optionHint(option)}
+            render={
+              <Button
+                size="xs"
+                variant="outline"
+                aria-label={`${option.label}: ${itemText(item)}`}
+                data-testid="needs-you-answer"
+                data-option={option.label}
+                className="h-auto min-h-6 max-w-full py-0.5 text-left whitespace-normal"
+                onClick={() => actions.answer(item, option)}
+              />
+            }
+          >
+            {Glyph === undefined ? (
+              <span aria-hidden className="font-mono text-[11px] text-muted-foreground">
+                {index + 1}
+              </span>
+            ) : (
+              <Glyph aria-hidden className="size-3.5" />
+            )}
+            <span className="min-w-0 break-words">{option.label}</span>
+          </Hint>
+        );
+      })}
+    </span>
+  );
+}
+
+/** A section's heading in the popover and the panel: its kind, and how many. */
+export function SectionHead({ label, count }: { label: string; count: number }) {
+  return (
+    <h3 className="flex items-center gap-2 px-2 pt-2.5 pb-1 text-xs font-semibold text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="font-normal tabular-nums">{count}</span>
+    </h3>
+  );
+}
+
 /** A row's option screenshots, small, numbered as its answers are; a click enlarges one. */
 function OptionThumbs({ item }: { item: NeedsYouItem }) {
   const thumbs = optionThumbs(item);
@@ -337,17 +409,26 @@ export function NeedsYouRow({
   actions: ReturnType<typeof useNeedsYouActions>;
 }) {
   const kind = kindOf(item);
-  const where =
-    item.owned || item.kind !== "failure" ? item.where : `${item.where} · no live worker`;
+  // Its workspace, then the thread it came from: where it is, whichever section lists it.
+  const where = [
+    item.workspace,
+    item.where === "" ? undefined : item.where,
+    item.owned || item.kind !== "failure" ? undefined : "no live worker",
+  ]
+    .filter((part) => part !== undefined)
+    .join(" · ");
+  const full = current && quickOptions(item).length > 0;
   return (
     <li
       data-testid="needs-you-item"
       data-kind={item.kind}
       data-key={item.key}
       data-thread-id={item.threadId}
+      data-opens={opensThread(item)}
+      data-workspace={item.workspaceId}
       data-current={current || undefined}
       className={cn(
-        "group/row grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-(--radius-md) px-2 py-1 hover:bg-muted/60 focus-within:bg-muted/60",
+        "group/row grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-(--radius-md) px-2 py-1.5 hover:bg-muted/60 focus-within:bg-muted/60",
         current && "bg-muted/60",
       )}
     >
@@ -376,9 +457,9 @@ export function NeedsYouRow({
         title={item.threadId === undefined ? "No thread to open" : `Open ${item.where} at it`}
         disabled={item.threadId === undefined}
         onClick={() => onOpen(item)}
-        className="flex min-w-0 flex-col rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+        className="flex min-w-0 flex-col gap-0.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
       >
-        <span className="truncate text-[13px] text-foreground">
+        <span className="line-clamp-2 text-[13px] break-words text-foreground">
           {item.title}
           {item.command !== undefined && (
             <>
@@ -387,13 +468,16 @@ export function NeedsYouRow({
             </>
           )}
         </span>
-        <span className={cn("truncate text-xs text-muted-foreground", !item.owned && "italic")}>
+        <span
+          data-testid="needs-you-where"
+          className={cn("truncate text-xs text-muted-foreground", !item.owned && "italic")}
+        >
           {where}
         </span>
       </button>
       <span className="flex flex-col items-end gap-0.5">
         {item.at !== undefined && (
-          <span className="text-[11px] leading-5 text-muted-foreground tabular-nums">
+          <span className="text-xs leading-5 text-muted-foreground tabular-nums">
             {formatRelative(item.at, now)}
           </span>
         )}
@@ -405,10 +489,11 @@ export function NeedsYouRow({
             variant === "panel" && current && "opacity-100",
           )}
         >
-          <QuickAnswers item={item} actions={actions} />
+          <QuickAnswers item={item} actions={actions} full={full} />
           {variant === "panel" && <SetAside item={item} actions={actions} />}
         </span>
       </span>
+      {full && <FullAnswers item={item} actions={actions} />}
       <OptionThumbs item={item} />
     </li>
   );

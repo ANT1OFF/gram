@@ -80,7 +80,7 @@ export function WorkerPrChips({
           data-testid="overview-pr-more"
           role="img"
           aria-label={`${more} more pull ${more === 1 ? "request" : "requests"}`}
-          className="inline-flex h-5 items-center px-1 text-[11px] text-muted-foreground tabular-nums"
+          className="inline-flex h-5 items-center px-1 text-xs text-muted-foreground tabular-nums"
         >
           +{more}
         </span>
@@ -115,7 +115,7 @@ function PrChipButton({
     "aria-label": chip.label,
     onClick: open,
     className: cn(
-      "inline-flex h-5 cursor-default items-center gap-1 rounded-(--radius-sm) px-1.5 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      "inline-flex h-5 cursor-default items-center gap-1 rounded-(--radius-sm) px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
       TONE[chip.tone],
       chip.kind === "merged" && "px-0.5",
     ),
@@ -126,7 +126,7 @@ function PrChipButton({
       <PrMarkIcon group="state" mark={marks.state} data-state-glyph={marks.state.kind} />
       <span
         className={cn(
-          "font-mono text-[10.5px] tabular-nums",
+          "font-mono text-[11.5px] tabular-nums",
           chip.kind === "draft" && "opacity-60",
         )}
       >
