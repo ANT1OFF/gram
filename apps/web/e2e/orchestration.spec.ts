@@ -665,7 +665,7 @@ test("the overview lists a workspace's workers under it, and a worker's thread n
   await expect(crumbs.getByTestId("worker-crumb-feature")).toHaveText("mail-trigger");
   const held = page.getByTestId("worker-hold");
   // A narrow bar keeps the hold's glyph and Hand back, its words for the tooltip and screen readers.
-  await expect(held).toContainText("You took over");
+  await expect(held).toContainText("Under your control");
   await held.getByTestId("worker-hold-words").hover();
   await expect(page.locator(`[data-slot="tooltip-content"]`)).toContainText(
     "The orchestrator can't message it until you hand it back",

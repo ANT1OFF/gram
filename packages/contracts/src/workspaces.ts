@@ -359,7 +359,8 @@ export const StartTaskInput = Schema.Struct({
   draftId: Schema.optionalKey(DraftId),
   /**
    * Straight to a worker: one starts now in a new worktree of this project, one of the target's,
-   * with `input` as its brief, instead of the orchestrator reading it first.
+   * with `input` as its brief, instead of the orchestrator reading it first. It is the
+   * orchestrator's worker unless `hold` asks to start it under the user's control.
    */
   direct: Schema.optionalKey(
     Schema.Struct({
@@ -370,6 +371,12 @@ export const StartTaskInput = Schema.Struct({
        * roster's default. One no longer on the roster, or unavailable here, is refused.
        */
       worker: Schema.optionalKey(ModelRef),
+      /**
+       * "Start under my control": the worker is the user's from its first input, as one they took
+       * over is, until they hand it back. Absent, it is the orchestrator's from the start, with the
+       * user's words as its brief.
+       */
+      hold: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   /**

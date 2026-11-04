@@ -78,7 +78,7 @@ describe("MockApi orchestration", () => {
     expect(await api.listWorkspaces()).toEqual([]);
   });
 
-  it("starts a task: a repo's workspace, the words to its orchestrator, or a held worker", async () => {
+  it("starts a task: a repo's workspace, the words to its orchestrator, or a worker", async () => {
     const api = createMockApi({ speed: 0, autoplay: false });
     const draftId = "5a9b6bc9-01d5" as DraftId;
     const staged = await api.uploadAttachment(
@@ -112,15 +112,24 @@ describe("MockApi orchestration", () => {
       spawnedBy: { threadId: orchestrator.id, feature: "fix-the-flaky-retry-test" },
       checkout: { kind: "worktree", branch: "feat/fix-the-flaky-retry-test" },
     });
+    // "Start under my control" holds the next one as the user's; the first stays the orchestrator's.
     const again = await api.startTask({
       target: { workspaceId },
       input: { text: "Fix the flaky retry test" },
-      direct: { projectId: "p-api" as ProjectId },
+      direct: { projectId: "p-api" as ProjectId, hold: true },
     });
     expect(again.spawnedBy?.feature).toBe("fix-the-flaky-retry-test-2");
     const ledger = await api.orchestratorLedger(workspaceId);
-    const entry = ledger.features.flatMap((f) => f.workers).find((w) => w.threadId === worker.id);
-    expect(entry?.userIntervened).toBe(true);
+    const workers = ledger.features.flatMap((f) => f.workers);
+    expect(workers.find((w) => w.threadId === worker.id)?.userIntervened).toBe(false);
+    expect(workers.find((w) => w.threadId === again.id)?.userIntervened).toBe(true);
+    // Writing to it afterwards is the user stepping in, as for any worker.
+    await api.send(worker.id, { text: "Use the other queue." });
+    const later = await api.orchestratorLedger(workspaceId);
+    expect(
+      later.features.flatMap((f) => f.workers).find((w) => w.threadId === worker.id)
+        ?.userIntervened,
+    ).toBe(true);
     await expect(
       api.startTask({
         target: { workspaceId },

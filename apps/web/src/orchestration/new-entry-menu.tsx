@@ -20,7 +20,7 @@ const SHORTCUT: Readonly<Record<Exclude<NewEntry, "workspace">, string>> = {
 
 /**
  * The overview header's `+`: the one New form, on Who does it as it was last left (the
- * orchestrator, a worker, or Just me). Where it goes, a new workspace included, is the form's own
+ * agent team, one worker or a single agent chat). Where it goes, a new workspace included, is the form's own
  * "in" chip.
  */
 export function NewEntryMenu() {

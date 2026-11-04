@@ -116,6 +116,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
     updateMemo,
     readOutbox,
     openedInAuto,
+    briefedByUser,
     stopsAsked,
     sampleExtras,
     changedFiles,
@@ -467,6 +468,8 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
 
   const onUserInput = (thread: Thread) =>
     Effect.gen(function* () {
+      // A worker the user started for its orchestrator: its first input is the brief.
+      if (briefedByUser.delete(thread.id)) return;
       const state = yield* listeningWorkspace(thread);
       if (state === undefined) return;
       const now = yield* Clock.currentTimeMillis;

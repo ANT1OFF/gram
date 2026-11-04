@@ -16,25 +16,47 @@ const SHORTCUTS = [
 const rowCls =
   "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:bg-accent";
 
-/** Shortcut chips plus the recent and bookmarked projects. */
-export function ProjectShortcuts({
-  projects,
-  current,
+/** Folder chips worth one click (the default folder, ~/Documents/code, Home), each opening the browser there. */
+export function ShortcutChips({
   defaultFolder,
-  onChoose,
   onBrowse,
 }: {
-  projects: readonly Project[];
-  /** The resolved chosen folder, to mark the matching project. */
-  current: string | undefined;
   /** `Settings.agents.defaultFolder`; may contain `~`. */
   defaultFolder: string | undefined;
-  onChoose: (root: string) => void;
   onBrowse: (path: string) => void;
 }) {
   const shortcuts = defaultFolder
     ? [{ label: "Default folder", path: defaultFolder }, ...SHORTCUTS]
     : SHORTCUTS;
+  return (
+    <div role="group" aria-label="Shortcuts" className="flex flex-wrap gap-1">
+      {shortcuts.map((shortcut) => (
+        <button
+          key={shortcut.label}
+          type="button"
+          title={shortcut.path}
+          onClick={() => onBrowse(shortcut.path)}
+          className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <FolderOpen aria-hidden className="size-3.5" />
+          {shortcut.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The bookmarked projects, then the recent ones, a bookmark listed once: the folder chip's menu. */
+export function ProjectLists({
+  projects,
+  current,
+  onChoose,
+}: {
+  projects: readonly Project[];
+  /** The resolved chosen folder, to mark the matching project. */
+  current: string | undefined;
+  onChoose: (root: string) => void;
+}) {
   // A bookmarked project is listed once, under Bookmarks.
   const recents = projects
     .filter((p) => p.lastOpenedAt !== undefined && !p.bookmarked)
@@ -44,21 +66,6 @@ export function ProjectShortcuts({
 
   return (
     <div className="flex flex-col gap-3">
-      <div role="group" aria-label="Shortcuts" className="flex flex-wrap gap-1">
-        {shortcuts.map((shortcut) => (
-          <button
-            key={shortcut.label}
-            type="button"
-            title={shortcut.path}
-            onClick={() => onBrowse(shortcut.path)}
-            className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <FolderOpen aria-hidden className="size-3.5" />
-            {shortcut.label}
-          </button>
-        ))}
-      </div>
-      {/* Full width, one above the other: side by side, each path was cut to half a column. */}
       {bookmarks.length > 0 && (
         <Section title="Bookmarks" icon={Bookmark}>
           {bookmarks.map((project) => (
@@ -103,7 +110,7 @@ function Section({
 }) {
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-1">
-      <h3 className="flex items-center gap-1.5 font-caption text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      <h3 className="flex items-center gap-1.5 px-2 font-caption text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
         <Icon className="size-3.5" />
         {title}
       </h3>

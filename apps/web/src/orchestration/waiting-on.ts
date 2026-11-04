@@ -58,7 +58,10 @@ export const WAIT_KINDS: readonly WaitKind[] = [
 
 export interface WaitReason {
   readonly kind: WaitKind;
-  /** What the row says after its word: "checks on #69", "#102 to merge", "until 08:10". */
+  /**
+   * What the row says after its word: "checks on #69", "#102 to merge", "until 08:10"; empty when
+   * the word says it all ("Under your control").
+   */
   readonly short: string;
   /** The hover's line for it, whole: "CI is running on #69 in acme/web." */
   readonly detail: string;
@@ -87,12 +90,20 @@ const RANK: Readonly<Record<WaitKind, number>> = Object.fromEntries(
   WAIT_KINDS.map((kind, i) => [kind, i]),
 ) as Record<WaitKind, number>;
 
-/** The word a row's line starts with: a limit or the user pauses it, the rest waits. */
-const WORD: Readonly<Partial<Record<WaitKind, string>>> = { limit: "Paused", held: "Paused" };
+/**
+ * The words a row's line starts with: a limit pauses it, the user's hold puts it under their
+ * control (never "Paused": that is the workspace's pause action), and the rest waits.
+ */
+const WORD: Readonly<Partial<Record<WaitKind, string>>> = {
+  limit: "Paused",
+  held: "Under your control",
+};
 
-/** "Waiting · checks on #69": a wait as a row's line. */
-export const waitLabel = (reason: Pick<WaitReason, "kind" | "short">): string =>
-  `${WORD[reason.kind] ?? "Waiting"} · ${reason.short}`;
+/** "Waiting · checks on #69": a wait as a row's line; its words alone when it has no `short`. */
+export const waitLabel = (reason: Pick<WaitReason, "kind" | "short">): string => {
+  const word = WORD[reason.kind] ?? "Waiting";
+  return reason.short === "" ? word : `${word} · ${reason.short}`;
+};
 
 /** The reasons, the one the label names first, and the label and hover they make; none, nothing. */
 export const waitingOf = (reasons: readonly WaitReason[]): WaitingOn | undefined => {
@@ -325,8 +336,9 @@ export const workerWaitingOn = (
     return waitingOf([
       {
         kind: "held",
-        short: "by you",
-        detail: "You took over this worker; hand it back to the orchestrator when ready.",
+        short: "",
+        detail:
+          "It's under your control, so the orchestrator can't message it. Hand it back when ready.",
       },
     ]);
   }

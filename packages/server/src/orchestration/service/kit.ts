@@ -724,6 +724,11 @@ export const makeOrchestrationKit = Effect.gen(function* () {
   const retrying = new Set<ThreadId>();
   /** Threads this service started in `auto`, until their first turn ends: see `onUpsert`. */
   const openedInAuto = new Set<ThreadId>();
+  /**
+   * Workers the user started from New for their orchestrator, until their first input is heard:
+   * the user typed it, but as the worker's brief, so it doesn't take the worker over.
+   */
+  const briefedByUser = new Set<ThreadId>();
   /** Workers their orchestrator stopped with `stop_thread`, until that turn's end is heard. */
   const stopsAsked = new Set<ThreadId>();
   const completedSeen = new Set<ThreadId>();
@@ -1229,6 +1234,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     parkedWorkers,
     retrying,
     openedInAuto,
+    briefedByUser,
     stopsAsked,
     noteStop,
     completedSeen,

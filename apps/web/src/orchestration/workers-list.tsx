@@ -433,7 +433,10 @@ function WorkerListRow({
         {row.title}
       </GlideText>
       {row.held && (
-        <HandGrab aria-label="You took over" className="size-3.5 shrink-0 text-muted-foreground" />
+        <HandGrab
+          aria-label="Under your control"
+          className="size-3.5 shrink-0 text-muted-foreground"
+        />
       )}
       <span className="shrink-0 text-xs text-muted-foreground">{row.repo}</span>
       <span

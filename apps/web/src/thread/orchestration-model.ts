@@ -270,9 +270,12 @@ export const workerPauseLine = (pause: WorkerPause, at: number): string => {
   }
 };
 
-/** A held worker's banner line, after "Paused by you": why, and what Hand back does. */
+/**
+ * A held worker's banner line, after "Under your control": what that means, and what Hand back
+ * does. The same whether the user took it over or started it under their control.
+ */
 export const WORKER_HELD_LINE =
-  "You took it over, so the orchestrator can't message or direct it. Hand back returns it to the orchestrator.";
+  "The orchestrator can't message or direct it while it's yours. Hand back returns it to the orchestrator.";
 
 /** When a hold ends without Hand back, for the held line's hint. */
 export const workerHeldEnds = (idleMinutes: number): string =>

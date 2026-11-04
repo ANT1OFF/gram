@@ -20,10 +20,13 @@ test("a row says its status, the opened thread its label and fork, and a bookmar
     "Forked from Fix flaky retry test",
   );
 
-  // A project bookmarked in /new is listed there under Bookmarks, and no longer under Recent.
+  // A project bookmarked in /new's folder menu is listed there under Bookmarks, and no longer
+  // under Recent.
   await page.keyboard.press("ControlOrMeta+KeyT");
-  const recent = page.getByRole("region", { name: "Recent" });
-  const bookmarks = page.getByRole("region", { name: "Bookmarks" });
+  await page.getByRole("button", { name: "Folder", exact: true }).click();
+  const menu = page.getByTestId("where-folder-menu");
+  const recent = menu.getByRole("region", { name: "Recent" });
+  const bookmarks = menu.getByRole("region", { name: "Bookmarks" });
   await recent.getByRole("button", { name: "Bookmark docs" }).click();
   await expect(
     bookmarks.getByRole("button", { name: "Remove bookmark from docs" }),

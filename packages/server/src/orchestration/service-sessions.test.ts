@@ -1,7 +1,9 @@
 // Orchestration service: tasks, admitted agents and models, autonomy and connectors.
 import { describe, expect, it } from "@effect/vitest";
 import { type AgentKind, DEFAULT_CHARTER, type ModelRef, type ProfileId } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { hasGit } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -86,20 +88,30 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             checkout: { kind: "worktree", branch: "feat/fix-the-flaky-retry-test" },
           });
           const brief = yield* waitSent(worker.id, 1);
-          // The user's own words, so it starts theirs.
+          // The user's own words, as its brief: the worker is the orchestrator's, not taken over.
           expect(brief.sent[0]).toEqual({ text: "Fix the flaky retry test\nIt fails on Windows." });
+          yield* settle;
           const outbox = yield* outboxOf(workspaceId);
-          expect(outbox.workers[worker.id]?.userIntervened).toBe(true);
+          expect(outbox.workers[worker.id]?.userIntervened).toBe(false);
           expect(outbox.notes.at(-1)).toContain(
-            `The user started "Fix the flaky retry test" [thread ${worker.id}] in shop themselves`,
+            `The user started "Fix the flaky retry test" [thread ${worker.id}] in shop for you`,
           );
-          // The same words again make a feature of their own.
+          expect(outbox.notes.at(-1)).toContain("It is your worker");
+          // The same words again make a feature of their own; "Start under my control" holds it.
           const again = yield* handlers["workspace.startTask"]({
             target: { workspaceId },
             input: { text: "Fix the flaky retry test" },
-            direct: { projectId: project.id },
+            direct: { projectId: project.id, hold: true },
           });
           expect(again.spawnedBy?.feature).toBe("fix-the-flaky-retry-test-2");
+          yield* waitSent(again.id, 1);
+          yield* settle;
+          const held = yield* outboxOf(workspaceId);
+          expect(held.workers[again.id]?.userIntervened).toBe(true);
+          expect(held.workers[worker.id]?.userIntervened).toBe(false);
+          expect(held.notes.at(-1)).toContain(
+            `The user started "Fix the flaky retry test" [thread ${again.id}] in shop under their own control`,
+          );
 
           const elsewhere = yield* store.ensureProject({ root: world.dir, name: "elsewhere" });
           const refused = yield* handlers["workspace.startTask"]({
@@ -109,6 +121,67 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           }).pipe(Effect.flip);
           expect(refused).toMatchObject({ _tag: "InvalidState" });
           expect(refused.message).toContain("isn't one of");
+        }),
+      ),
+    GIT_HEAVY,
+  );
+
+  it.effect(
+    "keeps a takeover the user typed into a worker started from New while it was still starting",
+    () =>
+      inServer((world) =>
+        Effect.gen(function* () {
+          const handlers = yield* orchestrationHandlers;
+          const orchestration = yield* Orchestration;
+          const runtimes = yield* ThreadRuntimes;
+          const project = yield* openProject(world);
+          const orchestrator = yield* handlers["workspace.startTask"]({
+            target: { projectId: project.id },
+            input: { text: "Plan the mail trigger" },
+          });
+          const workspaceId = orchestrator.workspaceId!;
+          const intervened = (id: string) =>
+            outboxOf(workspaceId).pipe(
+              Effect.map((outbox) => outbox.workers[id as never]?.userIntervened === true),
+            );
+
+          // Hold the worker between its creation (thread live, brief sent) and what startWorker
+          // records of it, as a slow start would.
+          const created = yield* Deferred.make<string>();
+          const release = yield* Deferred.make<void>();
+          world.afterCreate = (thread) =>
+            thread.spawnedBy === undefined
+              ? Effect.void
+              : Deferred.succeed(created, thread.id).pipe(Effect.andThen(Deferred.await(release)));
+          const starting = yield* handlers["workspace.startTask"]({
+            target: { workspaceId },
+            input: { text: "Fix the flaky retry test" },
+            direct: { projectId: project.id },
+          }).pipe(Effect.forkScoped);
+          const workerId = yield* Deferred.await(created);
+          yield* waitSent(workerId as never, 1);
+          // The brief alone takes nothing over.
+          yield* settle;
+          expect(yield* intervened(workerId)).toBe(false);
+
+          // The user opens it and writes to it before startup has finished: that is a takeover.
+          yield* runtimes.send(workerId as never, { text: "Use the other queue." });
+          yield* waitReal("the takeover", intervened(workerId));
+          yield* Deferred.succeed(release, undefined);
+          world.afterCreate = undefined;
+          const worker = yield* Fiber.join(starting);
+          expect(worker.id).toBe(workerId);
+          yield* settle;
+
+          // Recording the spawn kept it, so the orchestrator can't message the worker.
+          expect(yield* intervened(workerId)).toBe(true);
+          const refused = yield* orchestration
+            .checkSend(orchestrator.id, worker.id)
+            .pipe(Effect.flip);
+          expect(refused.message).toContain("user_intervened");
+          expect((yield* outboxOf(workspaceId)).notes.at(-1)).toContain(
+            "and wrote to it as it started",
+          );
         }),
       ),
     GIT_HEAVY,

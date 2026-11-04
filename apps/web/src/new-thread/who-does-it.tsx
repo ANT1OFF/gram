@@ -21,35 +21,38 @@ export const WHO_ENTRY: Readonly<Record<Who, Exclude<NewEntry, "workspace">>> = 
 };
 
 /**
- * Each choice with who owns the work in one line, so the name alone needn't say whether an agent
- * runs: the orchestrator plans and briefs workers (`deliver`), a direct worker is one agent held
- * as the user's in its own worktree (`startWorker`), and Just me is a one-off thread with no
- * workspace.
+ * Each choice named for the work it suits, with who owns that work in one line: an agent team,
+ * whose orchestrator plans and briefs workers (`deliver`); one worker of that orchestrator in its
+ * own worktree, through to a pull request (`startWorker`); and a single agent chat, a one-off
+ * thread with no workspace.
  */
 export const WHO_CHOICES: readonly {
   readonly value: Who;
   readonly label: string;
+  /** What a screen reader says for `label`, where its glyph would read badly. */
+  readonly spoken?: string;
   readonly line: string;
   readonly icon: LucideIcon;
   readonly shortcut: string;
 }[] = [
   {
     value: "orchestrator",
-    label: "Orchestrator",
+    label: "Agent team (orchestrator)",
     line: "An orchestrator plans it and runs workers for you.",
     icon: Network,
     shortcut: "thread.new",
   },
   {
     value: "worker",
-    label: "Worker",
+    label: "One worker → PR",
+    spoken: "One worker to PR",
     line: "One agent works on it in its own worktree and opens a pull request.",
     icon: User,
     shortcut: "thread.newWorker",
   },
   {
     value: "me",
-    label: "Just me",
+    label: "Single agent chat",
     line: "A single chat with one agent in a folder. No workspace or orchestrator.",
     icon: MessageSquare,
     shortcut: "thread.newInProject",
@@ -80,7 +83,7 @@ function Choice({
           type="button"
           role="radio"
           aria-checked={checked}
-          aria-label={choice.label}
+          aria-label={choice.spoken ?? choice.label}
           aria-description={choice.line}
           data-testid={`new-who-${choice.value}`}
           disabled={disabled}

@@ -135,6 +135,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     creator,
     checkouts,
     openedInAuto,
+    briefedByUser,
   } = kit;
   const {
     outsideWorkspace,
@@ -233,7 +234,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   const spawnFor = (
     callerId: ThreadId,
     input: SpawnWorkerInput,
-    byUser?: { readonly id: ThreadId; readonly input: UserInput; readonly model?: ModelRef },
+    byUser?: {
+      readonly id: ThreadId;
+      readonly input: UserInput;
+      readonly model?: ModelRef;
+      /** Started under the user's control, as one they took over; else the orchestrator's. */
+      readonly hold?: boolean;
+    },
   ): Effect.Effect<SpawnedWorker, AppToolError> => {
     let recorded: { key: string; id: ThreadId; workspaceId: WorkspaceId } | undefined;
     return underKeysOf(
@@ -611,30 +618,50 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
           workerWorkspaces.set(worker.id, workspaceId);
           if (mode === "auto") openedInAuto.add(worker.id);
           const now = yield* Clock.currentTimeMillis;
-          yield* updateOutbox(workspaceId, (outbox) => [
-            withNotes(
-              {
-                ...outbox,
-                workers: {
-                  ...outbox.workers,
-                  [worker.id]: {
-                    ...emptyWorkerMemo(now),
-                    ...(input.scope === undefined || input.scope.length === 0
-                      ? {}
-                      : { scope: input.scope }),
-                    ...(byUser === undefined ? {} : { userIntervened: true, userInputAt: now }),
+          yield* updateOutbox(workspaceId, (outbox) => {
+            // The thread was live, its brief sent, before this records it: a message the user typed
+            // into it meanwhile took it over (`onUserInput`), and that stands.
+            const taken = outbox.workers[worker.id];
+            const held = byUser?.hold === true || taken?.userIntervened === true;
+            return [
+              withNotes(
+                {
+                  ...outbox,
+                  workers: {
+                    ...outbox.workers,
+                    [worker.id]: {
+                      ...emptyWorkerMemo(now),
+                      ...(input.scope === undefined || input.scope.length === 0
+                        ? {}
+                        : { scope: input.scope }),
+                      ...(taken?.userIntervened === true
+                        ? {
+                            userIntervened: true,
+                            lastInputAt: taken.lastInputAt,
+                            ...(taken.userInputAt === undefined
+                              ? {}
+                              : { userInputAt: taken.userInputAt }),
+                          }
+                        : byUser?.hold === true
+                          ? { userIntervened: true, userInputAt: now }
+                          : {}),
+                    },
                   },
                 },
-              },
-              byUser === undefined
-                ? []
-                : [
-                    `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} themselves, for feature ${slug}. It is theirs until it reports, they hand it back, or it sits idle ${USER_HOLD_IDLE_MS / 60_000} minutes; follow its pull request like your own workers'.`,
-                  ],
-            ),
-            undefined,
-          ]);
-          if (byUser !== undefined) yield* armHold(worker.id, USER_HOLD_IDLE_MS);
+                byUser === undefined
+                  ? []
+                  : held
+                    ? [
+                        `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} ${byUser.hold === true ? "under their own control" : "and wrote to it as it started"}, for feature ${slug}. It is theirs until it reports, they hand it back, or it sits idle ${USER_HOLD_IDLE_MS / 60_000} minutes; follow its pull request like your own workers'.`,
+                      ]
+                    : [
+                        `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} for you, for feature ${slug}, with their words as its brief. It is your worker: direct it and follow its pull request like your own.`,
+                      ],
+              ),
+              undefined,
+            ];
+          });
+          if (byUser?.hold === true) yield* armHold(worker.id, USER_HOLD_IDLE_MS);
           yield* joinWorkspace(state, caller.id, [project, ...others]);
           if (group !== undefined) yield* joinGroup(workspaceId, slug, group);
           yield* sampleExtras(worker);
@@ -746,6 +773,10 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       const feature = taskFeature(input.input.text, taken);
       // The workspace's standing instructions reach a worker the user starts too.
       const text = withBriefFooter(input.input.text, briefFooterOf(state.charter));
+      const hold = input.hold === true;
+      // Its first input is the user's typing, which would otherwise take it over: set before the
+      // send it starts with is heard, and dropped again if it never starts.
+      if (!hold) briefedByUser.add(input.id);
       const spawned = yield* spawnFor(
         holder,
         {
@@ -758,9 +789,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         {
           id: input.id,
           input: { ...input.input, text },
+          hold,
           ...(input.model === undefined ? {} : { model: input.model }),
         },
       ).pipe(
+        Effect.onError(() => Effect.sync(() => void briefedByUser.delete(input.id))),
         // Worded for the orchestrator, whose code the user has no use for.
         Effect.mapError((e) => new InvalidState({ message: e.message.replace(/^[a-z_]+: /, "") })),
       );

@@ -25,15 +25,15 @@ describe("NewFormHeader", () => {
     const who = screen.getByRole("radiogroup", { name: "Who does it" });
     const radios = within(who).getAllByRole("radio");
     expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual([
-      "Orchestrator",
-      "Worker",
-      "Just me",
+      "Agent team (orchestrator)",
+      "One worker to PR",
+      "Single agent chat",
     ]);
     // Each choice says who owns the work in one line, under its name.
     expect(radios.map((radio) => radio.textContent)).toEqual([
-      "OrchestratorAn orchestrator plans it and runs workers for you.",
-      "WorkerOne agent works on it in its own worktree and opens a pull request.",
-      "Just meA single chat with one agent in a folder. No workspace or orchestrator.",
+      "Agent team (orchestrator)An orchestrator plans it and runs workers for you.",
+      "One worker → PROne agent works on it in its own worktree and opens a pull request.",
+      "Single agent chatA single chat with one agent in a folder. No workspace or orchestrator.",
     ]);
     expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual([
       "false",

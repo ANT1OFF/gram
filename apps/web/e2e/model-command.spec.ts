@@ -224,5 +224,5 @@ test("the new thread's model picker lists every agent's models, and a Codex pick
   await expect(list.getByRole("option")).toHaveCount(1);
   await search.press("Enter");
   await expect(picker).toHaveText(/GPT-5\.5/);
-  await expect(form.getByLabel("Agent")).toContainText("Codex");
+  await expect(form.getByLabel("Agent", { exact: true })).toContainText("Codex");
 });

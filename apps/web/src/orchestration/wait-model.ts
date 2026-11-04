@@ -240,7 +240,10 @@ export const workerWait = (
     );
   }
   if (worker.userIntervened)
-    return person(HELD, "You took over this worker; hand it back to the orchestrator when ready.");
+    return person(
+      HELD,
+      "It's under your control, so the orchestrator can't message it. Hand it back when ready.",
+    );
   // A provider limit resumes it on its own: whatever its PRs wait on, it moves on once that resets.
   if (worker.limitWait !== undefined)
     return checks("usage limit", "It waits out a usage limit and resumes on its own.");

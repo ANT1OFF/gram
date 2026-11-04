@@ -105,7 +105,7 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   expect(await isHeld(page, made, made.asking)).toBe(false);
 
   await page.getByTestId("worker-take-over").click();
-  await expect(page.getByTestId("worker-hold")).toContainText("You took over");
+  await expect(page.getByTestId("worker-hold")).toContainText("Under your control");
   await expect(page.getByTestId("worker-take-over")).toHaveCount(0);
   expect(await isHeld(page, made, made.asking)).toBe(true);
   // Nothing was sent to it: its composer is untouched and no message of the user's appeared.

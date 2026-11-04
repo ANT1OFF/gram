@@ -4,7 +4,10 @@ test("refuses to remove a project with threads from recents, then removes it onc
   page,
 }) => {
   await page.goto("/new");
-  const recent = page.getByRole("region", { name: "Recent" });
+  // Recent projects are the folder chip's menu.
+  const folder = page.getByRole("button", { name: "Folder", exact: true });
+  await folder.click();
+  const recent = page.getByTestId("where-folder-menu").getByRole("region", { name: "Recent" });
   const removeDocs = recent.getByRole("button", { name: "Remove docs from recents" });
 
   await removeDocs.click();
@@ -14,6 +17,7 @@ test("refuses to remove a project with threads from recents, then removes it onc
   );
   await page.keyboard.press("Escape");
   await expect(error).toBeHidden();
+  if (!(await recent.isVisible())) await folder.click();
   await expect(removeDocs).toBeVisible();
 
   await page.evaluate(() => window.gramMock?.closeThread("t-docs" as never));

@@ -1,4 +1,3 @@
-import type { Project } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, FolderCheck, FolderSearch } from "lucide-react";
 import { useId } from "react";
@@ -13,7 +12,7 @@ import { ChooseFolderButton } from "./choose-folder-button";
 import { FolderBrowser } from "./folder-browser";
 import { GitBadge } from "./git-badge";
 import { PathField } from "./path-field";
-import { ProjectShortcuts } from "./project-shortcuts";
+import { ShortcutChips } from "./project-shortcuts";
 import { SetDefaultFolder } from "./set-default-folder";
 import { useProjectPickerStore } from "./store";
 import { tildify } from "./path";
@@ -24,21 +23,15 @@ interface ProjectPickerProps {
   onChange: (value: string) => void;
   /** From `useFolderStatus(value)`; the draft gates Create on it. */
   status: FolderStatus;
-  projects: readonly Project[];
   debounceMs?: number;
 }
 
 /**
- * Where a new thread runs: a typed path, the folder browser, or a recent / bookmarked project. A
- * typed `owner/repo` or git URL that isn't a folder is offered for cloning.
+ * Where a new thread runs, by path: typed, or found in the folder browser. Recent and bookmarked
+ * projects are the folder chip's menu (`FolderPicker`). A typed `owner/repo` or git URL that isn't a
+ * folder is offered for cloning.
  */
-export function ProjectPicker({
-  value,
-  onChange,
-  status,
-  projects,
-  debounceMs,
-}: ProjectPickerProps) {
+export function ProjectPicker({ value, onChange, status, debounceMs }: ProjectPickerProps) {
   const browserId = useId();
   const browserOpen = useProjectPickerStore((s) => s.browserOpen);
   const setBrowserOpen = useProjectPickerStore((s) => s.setBrowserOpen);
@@ -104,11 +97,8 @@ export function ProjectPicker({
           )}
         </div>
       </Expand>
-      <ProjectShortcuts
-        projects={projects}
-        current={chosen}
+      <ShortcutChips
         defaultFolder={defaultFolder}
-        onChoose={onChange}
         onBrowse={(path) => {
           onChange(path === "~" ? "~/" : `${path}/`);
           openBrowserAt(path);
@@ -126,7 +116,7 @@ function FolderStatusLine({ status }: { status: FolderStatus }) {
     case "empty":
       return (
         <p className="text-xs text-muted-foreground">
-          Type a path, browse, or pick a recent project.
+          Type a path, browse, or pick a project from the folder chip.
         </p>
       );
     case "checking":

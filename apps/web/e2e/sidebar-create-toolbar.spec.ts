@@ -3,8 +3,8 @@ import { expect, test } from "@playwright/test";
 import { openOverviewDensity } from "./overview-density";
 import { seedTheme } from "./seed-theme";
 
-// The overview header's `+` opens the one New form: Who does it (the orchestrator, a worker, or
-// Just me), where it goes, and the goal. Its place in the header at each width is in
+// The overview header's `+` opens the one New form: Who does it (an agent team, one worker through
+// to a PR, or a single agent chat), where it goes, and the goal. Its place in the header at each width is in
 // sidebar-top-utilities.spec.ts.
 
 test("New is one form: Who does it, an in chip with New workspace, and the shortcuts preset it", async ({
@@ -30,21 +30,25 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   const draft = page.getByRole("form", { name: "New task" });
   await expect(draft.getByRole("heading", { name: "New", exact: true })).toBeVisible();
   const who = draft.getByRole("radiogroup", { name: "Who does it" });
-  // Each choice is named for its role and says who owns the work in one line.
-  for (const [index, name] of ["Orchestrator", "Worker", "Just me"].entries())
+  // Each choice is named for the work it suits and says who owns the work in one line.
+  for (const [index, name] of [
+    "Agent team (orchestrator)",
+    "One worker to PR",
+    "Single agent chat",
+  ].entries())
     await expect(who.getByRole("radio").nth(index)).toHaveAccessibleName(name);
   await expect(who.getByRole("radio")).toHaveText([
     /plans it and runs workers for you/,
     /in its own worktree and opens a pull request/,
     /A single chat with one agent/,
   ]);
-  await expect(who.getByRole("radio", { name: "Orchestrator" })).toBeChecked();
+  await expect(who.getByRole("radio", { name: "Agent team (orchestrator)" })).toBeChecked();
   await expect(draft.getByTestId("task-target")).toHaveText("agent-platform");
   await expect(draft.getByText(/^Orchestrator: /)).toBeVisible();
 
   // Worker keeps the goal and the workspace.
   await draft.getByLabel("What needs doing").fill("Synthetic draft kept for review");
-  await who.getByRole("radio", { name: "Worker" }).click();
+  await who.getByRole("radio", { name: "One worker to PR" }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   await expect(draft.getByTestId("task-target")).toHaveText("agent-platform");
   await expect(draft.getByLabel("What needs doing")).toHaveValue("Synthetic draft kept for review");
@@ -62,19 +66,21 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   // Opened again, New starts on the worker, the choice used last.
   await add.click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
-  await expect(who.getByRole("radio", { name: "Worker" })).toBeChecked();
+  await expect(who.getByRole("radio", { name: "One worker to PR" })).toBeChecked();
 
-  // ⌘N is still the orchestrator, ⌥⌘N the worker, ⌘T Just me.
+  // ⌘N is still the agent team, ⌥⌘N one worker, ⌘T a single agent chat.
   await page.keyboard.press("ControlOrMeta+n");
   await expect(page).toHaveURL(/\/new-task$/);
-  await expect(who.getByRole("radio", { name: "Orchestrator" })).toBeChecked();
+  await expect(who.getByRole("radio", { name: "Agent team (orchestrator)" })).toBeChecked();
   await page.keyboard.press("ControlOrMeta+Alt+n");
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
-  await expect(who.getByRole("radio", { name: "Worker" })).toBeChecked();
+  await expect(who.getByRole("radio", { name: "One worker to PR" })).toBeChecked();
   await page.keyboard.press("ControlOrMeta+t");
   await expect(page).toHaveURL(/\/new$/);
   await expect(
-    page.getByRole("radiogroup", { name: "Who does it" }).getByRole("radio", { name: "Just me" }),
+    page
+      .getByRole("radiogroup", { name: "Who does it" })
+      .getByRole("radio", { name: "Single agent chat" }),
   ).toBeChecked();
 
   // A workspace named by the route is the target.
@@ -117,8 +123,8 @@ test("worker draft keeps the selected unavailable provider blocked without creat
     .getByRole("button", { name: "New", exact: true })
     .click();
   const draft = page.getByRole("form", { name: "New task" });
-  await draft.getByRole("radio", { name: "Worker" }).click();
-  await expect(draft.getByRole("radio", { name: "Worker" })).toBeChecked();
+  await draft.getByRole("radio", { name: "One worker to PR" }).click();
+  await expect(draft.getByRole("radio", { name: "One worker to PR" })).toBeChecked();
   await draft.getByLabel("What needs doing").fill("Synthetic refusal fixture");
   await expect(
     draft.getByText("Synthetic provider is signed out; log in explicitly.").first(),

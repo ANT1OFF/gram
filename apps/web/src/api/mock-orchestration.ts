@@ -298,6 +298,8 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
   const overlaps = new Map<ThreadId, readonly ThreadId[]>();
   /** Workers the user typed into since their last report. */
   const intervened = new Set<ThreadId>();
+  /** Workers started from New for their orchestrator, until their brief, the user's words, is sent. */
+  const briefed = new Set<ThreadId>();
   const closedWorkers = new Map<ThreadId, FinishedWorkerDetail>();
   /** The other repos of a worker that spans several. */
   const alsoIn = new Map<ThreadId, readonly WorkerRepo[]>();
@@ -1398,9 +1400,15 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     /**
      * New task straight to a worker: a worker of `orchestrator` in a new worktree of `projectId`,
      * on a feature named from the first words of `text` and numbered past the ones taken, as the
-     * server's `startWorker` makes it. The caller sends it `text`, which holds it as the user's.
+     * server's `startWorker` makes it. The caller sends it `text` as its brief, which leaves it the
+     * orchestrator's; with `hold` ("Start under my control") that send holds it as the user's.
      */
-    async startWorker(orchestrator: Thread, projectId: ProjectId, text: string): Promise<Thread> {
+    async startWorker(
+      orchestrator: Thread,
+      projectId: ProjectId,
+      text: string,
+      hold = false,
+    ): Promise<Thread> {
       const workspaceId = orchestrator.workspaceId;
       const state = workspaces.find((w) => w.workspace.id === workspaceId);
       if (workspaceId === undefined || state === undefined) throw notFound("workspace", "(none)");
@@ -1437,6 +1445,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
         workspaceId,
         spawnedBy: { threadId: orchestrator.id, feature },
       };
+      if (!hold) briefed.add(worker.id);
       host.replace(worker);
       host.emit({ type: "orchestration.changed", workspaceId });
       return worker;
@@ -1555,6 +1564,8 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
 
     /** The user sent `threadId` a message: a worker is marked so its orchestrator holds off. */
     userTyped(threadId: ThreadId): void {
+      // A worker's brief from New: the user's words, but the worker stays its orchestrator's.
+      if (briefed.delete(threadId)) return;
       const thread = host.threads().find((t) => t.id === threadId);
       if (thread?.spawnedBy === undefined || intervened.has(threadId)) return;
       intervened.add(threadId);
