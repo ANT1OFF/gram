@@ -34,7 +34,8 @@ const MEMORY_INDEX_MAX_BYTES = 8 * 1024;
 const MEMORY_FILE_MAX_BYTES = 32 * 1024;
 const MEMORY_MAX_FILES = 40;
 
-const memoryCapFor = (path: string): number =>
+/** The most a file at `path` may hold: the index has the smaller cap. */
+export const memoryCapFor = (path: string): number =>
   path === MEMORY_INDEX ? MEMORY_INDEX_MAX_BYTES : MEMORY_FILE_MAX_BYTES;
 
 /** The size the server will count: UTF-8 bytes, not characters. */
