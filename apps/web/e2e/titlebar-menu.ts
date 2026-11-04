@@ -59,3 +59,22 @@ export async function closeContents(page: Page): Promise<void> {
   for (let i = 0; i < 2 && (await root.isVisible()); i++) await page.keyboard.press("Escape");
   await expect(root).toBeHidden();
 }
+
+/**
+ * Opens the carried thread's Contents from the keyboard alone, so the pointer can rest elsewhere,
+ * over the transcript say: the "…" opens on its first item, End reaches View, whose first item is
+ * Contents. Resolves with the open list.
+ */
+export async function openContentsByKeyboard(page: Page): Promise<Locator> {
+  const toc = page.getByTestId("toc");
+  await titlebarMore(page).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeVisible();
+  await page.keyboard.press("End");
+  await expect(page.getByTestId("menu-view")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("menu-contents")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(toc).toBeVisible();
+  return toc;
+}

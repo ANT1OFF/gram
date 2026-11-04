@@ -3,7 +3,12 @@ import type { GramUIMessage } from "@gram/contracts";
 
 import { seedTheme } from "./seed-theme";
 import { setLayout } from "./layout";
-import { contentsTrigger, openBarSubmenu, openContents } from "./titlebar-menu";
+import {
+  contentsTrigger,
+  openBarSubmenu,
+  openContents,
+  openContentsByKeyboard,
+} from "./titlebar-menu";
 import { threadRow } from "./thread-row";
 
 const shots = process.env["GRAM_LONG_SHOTS"] ?? "e2e/__screenshots__";
@@ -733,8 +738,10 @@ test("trusted wheel during the unsettled jump wins over a late append", async ({
   const transcript = page.getByTestId("transcript");
   const box = (await transcript.boundingBox())!;
   await observeFrames(page);
-  await openContents(page);
+  // The pointer rests over the transcript for the wheel, so Contents opens from the keyboard: a
+  // pointer leaving the bar's submenus closes them.
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await openContentsByKeyboard(page);
   await page
     .getByTestId("toc")
     .getByRole("menuitem", { name: "Synthetic decision 111", exact: true })
