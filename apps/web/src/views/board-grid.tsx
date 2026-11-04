@@ -14,7 +14,7 @@ import type { RowPlace } from "@/lib/virtual-rows";
 import { FeatureMenu, PausedBadge, RAIL_TONES } from "@/orchestration/feature-sheet";
 import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { HeldBriefChip } from "@/orchestration/held-brief";
-import { WorkerPrChips } from "@/orchestration/overview-pr-chips";
+import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "@/orchestration/overview-pr-chips";
 import {
   nowBesidePrs,
   overlapHint,
@@ -144,10 +144,6 @@ export function Status({ tone, now }: { tone: RailWorker["tone"]; now: string })
   );
 }
 
-/** The PRs its PR cell surely shows: the open ones, as a merged or closed one may be left out. */
-const openPrs = (worker: RailWorker) =>
-  worker.prs.filter((pr) => pr.state !== "merged" && pr.state !== "closed");
-
 /** How soon a status's whole text shows on hover: quick, but not for a pointer passing over. */
 const HINT_MS = 200;
 
@@ -159,11 +155,14 @@ function NowCell({
   worker,
   station,
   asking,
+  shown,
   onOpen,
 }: {
   worker: RailWorker;
   station: FeatureStation;
   asking: boolean;
+  /** The PRs its PR cell shows, which its words leave out. */
+  shown: readonly { readonly number: number }[];
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
   const tone = RAIL_TONES[worker.tone];
@@ -197,7 +196,7 @@ function NowCell({
       >
         <tone.icon aria-hidden className={cn("mt-px size-3.5 shrink-0", tone.tone)} />
         {/* Its PRs are in the cell beside it: each said once. */}
-        <Status tone={worker.tone} now={nowBesidePrs(worker.now, openPrs(worker))} />
+        <Status tone={worker.tone} now={nowBesidePrs(worker.now, shown)} />
       </Hint>
       {overlap !== undefined && (
         <Hint
@@ -229,10 +228,17 @@ function WorkerCells({
   asking: boolean;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
+  const chips = useWorkerPrChips(worker.threadId, worker.prs);
   return (
     <>
       <StationSteps station={station} tone={worker.tone} />
-      <NowCell worker={worker} station={station} asking={asking} onOpen={onOpen} />
+      <NowCell
+        worker={worker}
+        station={station}
+        asking={asking}
+        shown={shownPrNumbers(chips)}
+        onOpen={onOpen}
+      />
       <WorkerPrChips threadId={worker.threadId} cardPrs={worker.prs} className="min-w-0" />
     </>
   );

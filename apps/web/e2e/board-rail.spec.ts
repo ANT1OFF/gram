@@ -142,10 +142,19 @@ test("the grid is the default, its cells side by side, and Lanes is a remembered
     await expect(chip(page, pusher)).toHaveAttribute("data-tone", "needs");
   }
 
-  // Each PR said once: the Now cell leaves to the PR cell a PR it shows.
-  for (const words of await board(page).getByTestId("rail-now").allTextContents()) {
-    expect(words).not.toMatch(/ on #\d+$/);
-  }
+  // Each PR said once: the Now cell leaves to the PR cell beside it a PR the cell shows.
+  const repeats = await board(page)
+    .getByTestId("rail-worker")
+    .evaluateAll((workers) =>
+      workers.flatMap((worker) => {
+        const words = worker.querySelector('[data-testid="rail-now"]')?.textContent ?? "";
+        const shown = [
+          ...(worker.parentElement?.querySelectorAll('[data-testid="overview-pr-chip"]') ?? []),
+        ].map((each) => each.getAttribute("data-pr"));
+        return shown.filter((pr) => new RegExp(`#${pr}\\b`).test(words));
+      }),
+    );
+  expect(repeats).toEqual([]);
   // Asks sits right under the rows, not at the foot of an empty pane.
   const rows = await board(page).getByRole("list", { name: "Features", exact: true }).boundingBox();
   const asks = await board(page).getByTestId("ask-stack").boundingBox();
