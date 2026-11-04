@@ -1,14 +1,17 @@
 import type { GramUIMessage, ThreadError, ThreadId, ThreadStatus, TurnId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
-import { CircleX, RotateCw } from "lucide-react";
-import { useState } from "react";
+import { ArrowDown, CircleX, RotateCw } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
-import { feedMessages } from "@/stores/feeds";
+import { formatClockTime } from "@/lib/time";
+import { feedMessages, useThreadFeed } from "@/stores/feeds";
+import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 
+import { attemptsOf, errorKey, type AttemptFacts, type RetryReceipt } from "./attempt-model";
 import { failureLabel } from "./failure-kinds";
 
 /** Failures a gateway profile's settings can fix: its key, its models, or its spending limit. */
@@ -55,16 +58,33 @@ const retryFailure = (error: unknown): string => {
     : `Couldn't confirm the retry reached the agent: ${errorMessage(error)}. Check the transcript before trying again.`;
 };
 
+/** This failed turn's attempt facts, from the thread's transcript as it stands. */
+function useAttempt(threadId: ThreadId, error: ThreadError): AttemptFacts | undefined {
+  const messages = useThreadFeed(threadId, (state) => state.messages);
+  const attempts = useMemo(() => attemptsOf(messages), [messages]);
+  return attempts.get(errorKey(error));
+}
+
+/** "Retried · 14:05", and how that went when it failed too. */
+const retriedLabel = (retried: RetryReceipt): string => {
+  const at = retried.at === undefined ? "" : ` · ${formatClockTime(retried.at)}`;
+  return retried.failed ? `Retried${at} · failed again` : `Retried${at}`;
+};
+
 /**
  * Where a turn failed, in the transcript: Gram's sentence for it, and a retry that sends the
  * turn's message again while that still makes sense: the failure may clear, it is still the thread's
  * last error, and nothing is running. A retry that fails says so under the turn's own failure, until
- * the next try.
+ * the next try. Once the message was sent again the card is a receipt: "Retried · 14:05", no longer
+ * red and with no Retry of its own, and a link to the attempt that came of it, or, when that failed
+ * too, to the newest attempt, which is the one that needs action.
  */
 export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
   const api = useApi();
   const [pending, setPending] = useState(false);
   const [unsent, setUnsent] = useState<string | undefined>();
+  const attempt = useAttempt(threadId, error);
+  const retried = attempt?.retried;
   const current = useThreadsStore((s) => {
     const summary = s.byId[threadId];
     return summary?.thread.lastError?.at === error.at && SETTLED.has(summary.status);
@@ -73,7 +93,9 @@ export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error:
 
   // Read, not subscribed: the turn's own message is in the feed before its error is.
   const text =
-    error.retryable && current ? retryText(feedMessages(threadId), error.turnId) : undefined;
+    error.retryable && current && retried === undefined
+      ? retryText(feedMessages(threadId), error.turnId)
+      : undefined;
 
   const retry = async (again: string) => {
     setPending(true);
@@ -88,16 +110,60 @@ export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error:
     }
   };
 
+  if (retried !== undefined) {
+    const target = retried.latestFailed ? retried.latestMessageId : retried.messageId;
+    return (
+      <div
+        role="status"
+        data-testid="agent-error"
+        data-kind={error.kind}
+        data-state="retried"
+        className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-border p-2.5 text-sm text-muted-foreground"
+      >
+        <RotateCw aria-hidden className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium">
+            {failureLabel(error.kind)}
+            {attempt !== undefined && attempt.attempt > 1 && ` · attempt ${attempt.attempt}`}
+            <span data-testid="agent-error-retried" className="text-foreground">
+              {" · "}
+              {retriedLabel(retried)}
+            </span>
+          </p>
+          <p className="break-words">{error.text}</p>
+        </div>
+        <Button
+          size="xs"
+          variant="ghost"
+          data-testid="agent-error-attempt"
+          onClick={() => useRevealStore.getState().reveal(threadId, target)}
+        >
+          <ArrowDown aria-hidden />
+          {retried.latestFailed ? "Go to the attempt that needs action" : "View new attempt"}
+        </Button>
+      </div>
+    );
+  }
+
+  const repeat = attempt !== undefined && attempt.attempt > 1;
   return (
     <div
       role="alert"
       data-testid="agent-error"
       data-kind={error.kind}
+      data-state="failed"
       className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-destructive/40 p-2.5 text-sm"
     >
       <CircleX aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-destructive">{failureLabel(error.kind)}</p>
+        <p className="text-xs font-medium text-destructive">
+          {failureLabel(error.kind)}
+          {repeat && (
+            <span data-testid="agent-error-attempt-number" className="text-foreground">
+              {` · attempt ${attempt.attempt} failed too · needs action`}
+            </span>
+          )}
+        </p>
         <p className="break-words">{error.text}</p>
         {onGateway && GATEWAY_FIXES.has(error.kind) && (
           <Link

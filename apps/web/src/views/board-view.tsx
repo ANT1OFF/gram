@@ -18,7 +18,7 @@ import { askKeysByThread } from "@/orchestration/ask-model";
 import { showAsk } from "@/orchestration/ask-sheet-store";
 import { AskStack, useWorkspaceAsks } from "@/orchestration/ask-stack";
 import { useBoardWaiting, WaitingList, WAITING_BAND } from "@/orchestration/board-waiting";
-import { FailingStrip } from "@/orchestration/failing-strip";
+import { FailuresCard } from "@/orchestration/failures-card";
 import {
   FeatureMenu,
   PausedBadge,
@@ -53,7 +53,7 @@ import { useViewStore } from "./view-store";
 // The Board view: the workspace as feature lines, each worker on
 // the station its feature card gives it, and the ask stack docked below. Its header carries the
 // workspace's controls and what waits on you; lines carry their stage and gather under their
-// group's band; failures stand in a strip above the stack.
+// group's band; unresolved failures stand in a card above them all.
 
 /** What a view is given: the workspace the window is on, if any. */
 export interface ViewProps {
@@ -457,6 +457,8 @@ function RailBoard({ state }: { state: WorkspaceState }) {
         waitingOpen={bandOpen}
         onWaiting={() => useBoardBand.getState().setOpen(workspaceId, !bandOpen)}
       />
+      {/* Failures first: above the lines and what waits on you, and never scrolled away. */}
+      <FailuresCard workspaceId={workspaceId} className="shrink-0 px-4 pt-2 pb-1" />
       {/* One scroller for the band and the lines: the band grows to hold what waits on you, its
           questions' choices whole, and scrolls away with the Board rather than in a box of its own. */}
       <div data-testid="rail-scroller" className="min-h-0 flex-1 overflow-y-auto pb-4">
@@ -552,7 +554,6 @@ function RailBoard({ state }: { state: WorkspaceState }) {
           </GlideList>
         )}
       </div>
-      <FailingStrip workspaceId={workspaceId} className="shrink-0" />
       <div className="shrink-0 pb-3">
         <AskStack workspaceId={workspaceId} focused />
       </div>

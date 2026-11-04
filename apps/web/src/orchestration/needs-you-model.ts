@@ -17,9 +17,9 @@ import { failureLabel } from "@/thread/failure-kinds";
 import { liveWorkerEntry, workerTitle } from "./board-model";
 
 // What needs the user beside the asks, shared by every view that counts it: workers stopped on an
-// error, and failing CI that no live worker owns (`ciFixOwnedPrs`). The Board shows them as
-// its Failing strip, and Needs you counts them with the asks, with the errors of threads outside any
-// workspace. Dismissing one (`inbox.cleared`) holds for that occurrence only. No React.
+// error, and failing CI that no live worker owns (`ciFixOwnedPrs`). The Board and the orchestrator's
+// chat lead with them in their failure card, and Needs you counts them with the asks, with the
+// errors of threads outside any workspace. Dismissing one (`inbox.cleared`) holds for that occurrence only. No React.
 
 /**
  * A worker stopped on an error, or a PR of its with failing checks; or a thread that needs the user

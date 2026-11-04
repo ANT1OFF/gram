@@ -35,6 +35,8 @@ const feed = new Map<string, ReadonlyArray<GramUIMessage>>();
 vi.mock("@/stores/feeds", async (original) => ({
   ...(await original<typeof Feeds>()),
   feedMessages: (threadId: string) => feed.get(threadId) ?? [],
+  useThreadFeed: (threadId: string, select: (state: { messages: unknown }) => unknown) =>
+    select({ messages: feed.get(threadId) ?? [] }),
 }));
 
 const T = "t-attach" as ThreadId;
@@ -930,6 +932,88 @@ describe("MessageBlock agent errors", () => {
     );
     expect(logged).toHaveBeenCalledExactlyOnceWith("retry turn", refused);
     logged.mockClear();
+  });
+
+  it("reads as a receipt once the message was sent again, linking the new attempt", () => {
+    const again: GramUIMessage = {
+      id: "u2",
+      role: "user",
+      metadata: { createdAt: Date.UTC(2026, 10, 4, 14, 5) },
+      parts: [{ type: "text", text: "Fix the build" }],
+    };
+    const built: GramUIMessage = {
+      id: "a2",
+      role: "assistant",
+      parts: [{ type: "text", text: "Built.", state: "done" }],
+    };
+    show(vi.fn(), error, "idle");
+    feed.set(E, [sent, failed, again, built]);
+    cleanup();
+    renderWithApi(
+      <MessageBlock
+        threadId={E}
+        message={failed}
+        streamingIds={new Set()}
+        subagents={new Map()}
+        subagentUsage={new Map()}
+      />,
+      {} as never,
+    );
+    const card = screen.getByTestId("agent-error");
+    expect(card.dataset["state"]).toBe("retried");
+    expect(card.getAttribute("role")).toBe("status");
+    expect(screen.getByTestId("agent-error-retried").textContent).toMatch(/Retried · \d\d:\d\d$/);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByTestId("agent-error-attempt").textContent).toBe("View new attempt");
+  });
+
+  it("keeps Retry on the newest attempt when the retry failed too, and says it needs action", () => {
+    const second = { ...error, turnId: "turn-2", at: 9 } as const;
+    const again: GramUIMessage = {
+      id: "u2",
+      role: "user",
+      metadata: { turnId: "turn-2" as never },
+      parts: [{ type: "text", text: "Fix the build" }],
+    };
+    const failedAgain: GramUIMessage = {
+      id: "error-turn-2",
+      role: "assistant",
+      parts: [{ type: "data-agent-error", id: "error-turn-2", data: second as never }],
+    };
+    feed.set(E, [sent, failed, again, failedAgain]);
+    useThreadsStore.setState({
+      byId: {
+        [E]: {
+          status: "error",
+          thread: { id: E, lastError: second, checkout: { kind: "main", path: "/r" } },
+        },
+      },
+    } as never);
+    renderWithApi(
+      <>
+        <MessageBlock
+          threadId={E}
+          message={failed}
+          streamingIds={new Set()}
+          subagents={new Map()}
+          subagentUsage={new Map()}
+        />
+        <MessageBlock
+          threadId={E}
+          message={failedAgain}
+          streamingIds={new Set()}
+          subagents={new Map()}
+          subagentUsage={new Map()}
+        />
+      </>,
+      {} as never,
+    );
+    const [old, newest] = screen.getAllByTestId("agent-error");
+    expect(old?.dataset["state"]).toBe("retried");
+    expect(old?.textContent).toContain("failed again");
+    expect(newest?.dataset["state"]).toBe("failed");
+    expect(newest?.textContent).toContain("attempt 2 failed too · needs action");
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
   });
 
   it("offers no retry once a later turn has moved on, or for a refusal that would only repeat", () => {

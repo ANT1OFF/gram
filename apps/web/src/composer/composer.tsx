@@ -114,6 +114,7 @@ import { useMentions } from "./use-mentions";
 import { useModHeld } from "./use-mod-held";
 import { useToolbarLayout } from "./use-toolbar-layout";
 import { useTypingPresence } from "./typing-presence";
+import { stopTurn } from "@/thread/stop-store";
 
 const RUNNING: ReadonlySet<ThreadStatus> = new Set(["starting", "running"]);
 const BUSY: ReadonlySet<ThreadStatus> = new Set([
@@ -861,7 +862,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
       keys: "mod+.",
       label: "Stop the turn",
       group: "Composer",
-      run: () => void api.interrupt(threadId),
+      run: () => void stopTurn(api, threadId),
     },
     focused && (busy || background),
   );
@@ -876,7 +877,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
       case "stop":
         // The second click of a double click on Send lands here once the composer has emptied.
         if (event.detail > 1) return;
-        return void api.interrupt(threadId);
+        return void stopTurn(api, threadId);
     }
   };
 
@@ -1307,7 +1308,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                   </kbd>
                 </ContextMenuItem>
                 {(busy || background) && (
-                  <ContextMenuItem onClick={() => void api.interrupt(threadId)}>
+                  <ContextMenuItem onClick={() => void stopTurn(api, threadId)}>
                     <Square aria-hidden className="fill-current" />
                     {stopLabel}
                   </ContextMenuItem>

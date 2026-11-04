@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useServerSettings } from "@/settings-sync/store";
 
 // What Needs you sets aside, kept in settings so it outlasts a reload and a restart: failures
-// dismissed from the Board's Failing strip or the Needs you panel (`inbox.cleared`, named for the
+// dismissed from the failure card or the Needs you panel (`inbox.cleared`, named for the
 // Inbox that first wrote it), and items put away for Later until a wake time (`inbox.snoozed`).
-// Both are hidden from every view that reads `useWorkspaceAsks` or the strip, through the same
+// Both are hidden from every view that reads `useWorkspaceAsks` or the failure card, through the same
 // hidden ids as an answer; a snoozed one comes back on its own when it wakes.
 
 /** How long Later puts an item away. */
