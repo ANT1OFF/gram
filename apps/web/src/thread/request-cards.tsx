@@ -52,6 +52,7 @@ import {
   type Choice,
 } from "./choice-model";
 import {
+  alwaysRules,
   appToolSummary,
   limitPauseAsk,
   approvalDetails,
@@ -60,6 +61,7 @@ import {
   mustReadDetails,
   settingsProposal,
   workspaceProposal,
+  type AlwaysRule,
   type ApprovalDetailField,
   type ApprovalDetails,
 } from "./request-model";
@@ -645,20 +647,21 @@ export function ApprovalCard({
   const workspace = pause === undefined ? workspaceProposal(request) : undefined;
   // Outward app tools restrict scopes to `["once"]`; absent means every scope is allowed. A browse
   // card's "always" is the host's place in Settings → Agent may browse, not a permission rule.
-  const browseHost = request.browseHost;
-  const canAlways =
-    (browseHost !== undefined || request.suggestions.length > 0) &&
-    (request.scopes?.includes("always") ?? true);
-  const alwaysLabel = browseHost === undefined ? "Allow always" : `Always for ${browseHost}`;
+  // "Always allow…" never saves on its first press: it shows exactly what it would keep, and where,
+  // and saves only from there. A card with nothing to show offers no "always" at all.
+  const rules = alwaysRules(request);
+  const canAlways = rules.length > 0 && (request.scopes?.includes("always") ?? true);
+  const [confirming, setConfirming] = useState(false);
   const allow = (scope: "once" | "always") =>
     void respond({ kind: "approval", decision: "allow", scope });
   const deny = () => void respond({ kind: "approval", decision: "deny", scope: "once" });
+  const always = () => (confirming ? allow("always") : setConfirming(true));
 
   useShortcut(
     {
       id: "approval.allow",
       keys: "enter",
-      label: "Allow",
+      label: "Allow once",
       group: "Thread",
       once: true,
       run: () => allow("once"),
@@ -669,11 +672,10 @@ export function ApprovalCard({
     {
       id: "approval.always",
       keys: "alt+enter",
-      label: "Allow always",
+      label: "Always allow…",
       group: "Thread",
       when: () => canAlways,
-      once: true,
-      run: () => allow("always"),
+      run: always,
     },
     active && pause === undefined,
   );
@@ -729,7 +731,7 @@ export function ApprovalCard({
                   ? "Create workspace"
                   : settings !== undefined || workspace !== undefined
                     ? "Apply changes"
-                    : "Allow"}{" "}
+                    : "Allow once"}{" "}
                 <CardKbd id="approval.allow" />
               </Button>
             </PressScale>
@@ -738,10 +740,22 @@ export function ApprovalCard({
                 size="sm"
                 variant="secondary"
                 data-testid="approval-always"
+                aria-expanded={confirming}
                 disabled={pending}
-                onClick={() => allow("always")}
+                onClick={always}
               >
-                {alwaysLabel} <CardKbd id="approval.always" />
+                {confirming ? "Save and allow" : "Always allow…"} <CardKbd id="approval.always" />
+              </Button>
+            )}
+            {confirming && (
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="approval-always-back"
+                disabled={pending}
+                onClick={() => setConfirming(false)}
+              >
+                Back
               </Button>
             )}
             <Button
@@ -789,7 +803,62 @@ export function ApprovalCard({
           Outside the workspace: {request.blockedPath}
         </p>
       )}
+      {canAlways && confirming && <AlwaysRules rules={rules} />}
     </CardShell>
+  );
+}
+
+const REACH_WORD: Record<AlwaysRule["reach"], string> = {
+  thread: "This thread",
+  folder: "This folder",
+  project: "This project",
+  everywhere: "Every workspace",
+};
+
+/**
+ * What "Always allow…" would keep, before it keeps it: each rule in the agent's own spelling, what
+ * it does, how far it reaches and where it is written. Nothing is saved until "Save and allow".
+ */
+function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
+  const compact = useContext(CompactContext);
+  return (
+    <div
+      data-testid="approval-always-rules"
+      role="group"
+      aria-label="What Always allow saves"
+      className={cn(
+        "mt-3 flex flex-col gap-2 rounded-(--radius-sm) border border-border bg-muted/30 p-2.5",
+        compact ? "text-xs" : "text-sm",
+      )}
+    >
+      <p className="font-medium">
+        {rules.length === 1 ? "Save this rule?" : `Save these ${rules.length} rules?`}
+      </p>
+      <ul className="flex flex-col gap-2">
+        {rules.map((rule, index) => (
+          <li
+            key={`${rule.rule}:${index}`}
+            data-testid="approval-always-rule"
+            data-reach={rule.reach}
+            className="flex flex-col gap-0.5"
+          >
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="shrink-0 text-xs text-muted-foreground">{rule.behavior}</span>
+              <code className="min-w-0 font-mono text-xs break-all">{rule.rule}</code>
+            </span>
+            <span className="text-xs text-muted-foreground">
+              <span className="text-foreground">{REACH_WORD[rule.reach]}</span>
+              {" · "}
+              {rule.scope}
+              {rule.kept !== undefined && ` · kept in ${rule.kept}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        Nothing is saved until you choose Save and allow. Allow once saves nothing.
+      </p>
+    </div>
   );
 }
 

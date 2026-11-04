@@ -24,15 +24,22 @@ export interface StreamDigest {
   readonly at: number | undefined;
 }
 
+/** A line a digest spoke, with when that digest was delivered. */
+export interface TimedLine {
+  readonly line: StreamLine;
+  /** Epoch ms; absent when the digest's message doesn't say. */
+  readonly at: number | undefined;
+}
+
 /** What a message of the orchestrator's transcript shows besides, or instead of, itself. */
 interface StreamExtras {
-  /** The lines its digest speaks; empty for any other message. */
-  readonly lines: readonly StreamLine[];
+  /** The lines its run of digests speaks, oldest first; empty for any other message. */
+  readonly lines: readonly TimedLine[];
   /** The features whose cards sit here, in the order they were first seen. */
   readonly cards: readonly string[];
   /**
-   * The digests its one collapsed digest line stands for, oldest first: on the last digest of a
-   * run of digests with no other message between them, the whole run; empty on any other message.
+   * The digests its one update stands for, oldest first: on the last digest of a run of digests
+   * with no other message between them, the whole run; empty on any other message.
    */
   readonly digests: readonly StreamDigest[];
 }
@@ -104,9 +111,10 @@ export function digestLineWords(
  * spawned a worker for its feature or carried it in a digest, and nowhere else, so a newer version
  * replaces it in place. A card none of the loaded messages anchors sits at the top of the loaded
  * page while it moved since that page began, so a long-finished feature doesn't follow every page.
- * Every digest is told by one quiet, collapsed line; digests with no other message between them
- * share that line, on the last of them, and one folded there with no line or card of its own
- * leaves the stream.
+ * A run of digests with no other message between them is one update: its lines, its cards and its
+ * digests all gather on the last digest of the run, in order, and the others leave the stream, so
+ * consecutive background events read as one block rather than a stack of similar ones. Nothing is
+ * dropped: every line and digest of the run is in that one update.
  */
 export function planStream(
   messages: readonly GramUIMessage[],
@@ -118,17 +126,24 @@ export function planStream(
   const kept: GramUIMessage[] = [];
   const digests: DeliveredDigest[] = [];
   let previous: OrchestrationDigest | undefined;
-  /** The digests since the last other message, and whether each shows a line or card of its own. */
-  let run: { readonly entry: StreamDigest; readonly speaks: boolean }[] = [];
+  /** The digests since the last other message, with the lines and cards each brought. */
+  let run: {
+    readonly entry: StreamDigest;
+    readonly lines: readonly TimedLine[];
+    readonly cards: readonly string[];
+  }[] = [];
   const folded = new Set<string>();
   const closeRun = () => {
     const last = run.at(-1);
     if (last === undefined) return;
-    for (const { entry, speaks } of run) {
-      if (entry !== last.entry && !speaks) folded.add(entry.message.id);
+    for (const { entry } of run) {
+      if (entry !== last.entry) folded.add(entry.message.id);
     }
-    const id = last.entry.message.id;
-    extras.set(id, { ...(extras.get(id) ?? NOTHING), digests: run.map(({ entry }) => entry) });
+    extras.set(last.entry.message.id, {
+      lines: run.flatMap((each) => each.lines),
+      cards: run.flatMap((each) => each.cards),
+      digests: run.map(({ entry }) => entry),
+    });
     run = [];
   };
   for (const message of messages) {
@@ -148,13 +163,11 @@ export function planStream(
     }
     const at = message.metadata?.createdAt;
     if (at !== undefined) digests.push({ digest, at });
-    const lines = streamLinesOf(digest, previous);
+    const lines = streamLinesOf(digest, previous).map((line) => ({ line, at }));
     previous = digest;
     for (const feature of digest.features) anchor(feature.feature);
-    const speaks = lines.length > 0 || here.length > 0;
-    run.push({ entry: { message, digest, at }, speaks });
+    run.push({ entry: { message, digest, at }, lines, cards: here });
     kept.push(message);
-    if (speaks) extras.set(message.id, { lines, cards: here, digests: [] });
   }
   closeRun();
   const shown = folded.size === 0 ? kept : kept.filter((message) => !folded.has(message.id));
@@ -168,4 +181,62 @@ export function planStream(
     extras.set(first.id, { ...there, cards: [...loose, ...there.cards] });
   }
   return { messages: shown, extras, digests };
+}
+
+/** One count in an update's header: "2 merged", toned as its lines are. */
+export interface UpdateCount {
+  readonly kind: StreamLine["kind"];
+  readonly text: string;
+}
+
+/** What an update's one header line says: its counts, else its digests' words, and its time. */
+export interface UpdateWords {
+  /** By kind, what needs the user first: "1 waiting on you", "1 failed", then "2 merged". */
+  readonly counts: readonly UpdateCount[];
+  /** The digests' own words when no line spoke: "Digest #4 · 3 reports". */
+  readonly digest: DigestLineWords;
+  /** When its newest event was delivered, on the 24-hour clock. */
+  readonly time: string | undefined;
+  /** A line in it asks for the user or failed: it opens by itself, and its header says so. */
+  readonly needsYou: boolean;
+}
+
+const COUNT_ORDER: readonly StreamLine["kind"][] = [
+  "ask",
+  "failed",
+  "merged",
+  "delivered",
+  "paused",
+];
+
+const COUNT_WORDS: Readonly<Record<StreamLine["kind"], string>> = {
+  ask: "waiting on you",
+  failed: "failed",
+  merged: "merged",
+  delivered: "delivered",
+  paused: "paused",
+};
+
+export function updateWords(
+  lines: readonly TimedLine[],
+  digests: readonly StreamDigest[],
+  clock: (at: number) => string = formatClockTime,
+): UpdateWords {
+  const byKind = new Map<StreamLine["kind"], number>();
+  for (const { line } of lines) byKind.set(line.kind, (byKind.get(line.kind) ?? 0) + 1);
+  const counts = COUNT_ORDER.flatMap((kind) => {
+    const n = byKind.get(kind);
+    return n === undefined ? [] : [{ kind, text: `${n} ${COUNT_WORDS[kind]}` }];
+  });
+  const digest = digestLineWords(digests, clock);
+  const newest = Math.max(
+    ...lines.flatMap(({ at }) => (at === undefined ? [] : [at])),
+    ...digests.flatMap(({ at }) => (at === undefined ? [] : [at])),
+  );
+  return {
+    counts,
+    digest,
+    time: Number.isFinite(newest) ? clock(newest) : undefined,
+    needsYou: byKind.has("ask") || byKind.has("failed"),
+  };
 }

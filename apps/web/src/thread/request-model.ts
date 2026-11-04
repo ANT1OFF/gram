@@ -7,6 +7,8 @@ import {
   WORKSPACE_UPDATE_TOOL,
   WorkspaceProposalCard,
   type ApprovalRequest,
+  type PermissionBehavior,
+  type PermissionUpdateDestination,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
 
@@ -217,4 +219,124 @@ export const approvalDetails = (request: ApprovalRequest): ApprovalDetails => {
     scope: texts(input["scope"]),
     brief,
   };
+};
+
+/** How far a saved "always" reaches, from narrowest to widest. */
+export type AlwaysReach = "thread" | "folder" | "project" | "everywhere";
+
+/** One thing an "Always allow" saves: the rule as its agent stores it, and where. */
+export interface AlwaysRule {
+  /** The rule in the agent's own spelling: `Bash(git push:*)`, a folder, a mode, or a host. */
+  readonly rule: string;
+  /** "Allow", "Deny" or "Ask": what the rule does to a matching call. */
+  readonly behavior: string;
+  readonly reach: AlwaysReach;
+  /** How it reaches there, in words: "until its agent session ends". */
+  readonly scope: string;
+  /** Where it is kept, when that is a file or a setting the user can open. */
+  readonly kept: string | undefined;
+}
+
+/**
+ * Claude Code's settings destinations, as an "always" answer writes them (`resolveRequest` in
+ * `packages/agents/src/claude/permissions.ts` passes the suggestion's own destination through).
+ * `localSettings` and `projectSettings` live in the session's working folder, so every thread
+ * working in that folder gets the rule; `userSettings` reaches every workspace on that Claude
+ * login; `session` and `cliArg` end with the thread's session.
+ */
+const DESTINATION: Readonly<
+  Record<PermissionUpdateDestination, { reach: AlwaysReach; scope: string; kept?: string }>
+> = {
+  session: { reach: "thread", scope: "until its agent session ends" },
+  cliArg: { reach: "thread", scope: "until its agent session ends" },
+  localSettings: {
+    reach: "folder",
+    scope: "every thread working in it, for you only",
+    kept: ".claude/settings.local.json",
+  },
+  projectSettings: {
+    reach: "project",
+    scope: "everyone using its repository",
+    kept: ".claude/settings.json",
+  },
+  userSettings: {
+    reach: "everywhere",
+    scope: "every thread on this Claude login",
+    kept: "Claude Code user settings",
+  },
+};
+
+const BEHAVIOR: Readonly<Record<PermissionBehavior, string>> = {
+  allow: "Allow",
+  deny: "Deny",
+  ask: "Ask",
+};
+
+const MODE_WORDS: Readonly<Record<string, string>> = {
+  default: "Ask before edits and commands",
+  acceptEdits: "Accept edits without asking",
+  plan: "Plan mode",
+  bypassPermissions: "Bypass permissions",
+  dontAsk: "Don't ask",
+  auto: "Auto",
+};
+
+/**
+ * What the card's "Always allow…" would save, rule by rule, exactly as the agent's suggestions say,
+ * so the user reads the rule and its reach before it is kept. A browse card's "always" is the host
+ * in Settings → General → Agent may browse, which every workspace shares. Empty when the card has
+ * nothing to save: a Codex card, whose cards never carry a rule (`suggestions: []`), offers no
+ * "always" at all.
+ */
+export const alwaysRules = (request: ApprovalRequest): AlwaysRule[] => {
+  if (request.browseHost !== undefined) {
+    return [
+      {
+        rule: request.browseHost,
+        behavior: "Browse",
+        reach: "everywhere",
+        scope: "any agent may open it without asking",
+        kept: "Settings → General → Agent may browse",
+      },
+    ];
+  }
+  return request.suggestions.flatMap((update): AlwaysRule[] => {
+    const where = DESTINATION[update.destination];
+    const at = { reach: where.reach, scope: where.scope, kept: where.kept };
+    switch (update.type) {
+      case "addRules":
+      case "replaceRules":
+        return update.rules.map((rule) => ({
+          rule:
+            rule.ruleContent === undefined
+              ? rule.toolName
+              : `${rule.toolName}(${rule.ruleContent})`,
+          behavior: BEHAVIOR[update.behavior],
+          ...at,
+        }));
+      case "removeRules":
+        return update.rules.map((rule) => ({
+          rule:
+            rule.ruleContent === undefined
+              ? rule.toolName
+              : `${rule.toolName}(${rule.ruleContent})`,
+          behavior: "Remove",
+          ...at,
+        }));
+      case "addDirectories":
+        return update.directories.map((directory) => ({
+          rule: directory,
+          behavior: "Add folder",
+          ...at,
+        }));
+      case "removeDirectories":
+        return update.directories.map((directory) => ({
+          rule: directory,
+          behavior: "Remove folder",
+          ...at,
+        }));
+      case "setMode":
+        return [{ rule: MODE_WORDS[update.mode] ?? update.mode, behavior: "Mode", ...at }];
+    }
+  });
 };

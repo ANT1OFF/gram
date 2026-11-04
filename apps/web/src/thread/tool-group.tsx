@@ -1,10 +1,11 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, ShieldQuestion } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import { Expand } from "@/motion";
 
+import { useAwaitingTools } from "./awaiting-tools";
 import { ToolCard, type ToolCardProps } from "./tool-cards";
 import { EditCounts } from "./file-edit-card";
 import {
@@ -25,30 +26,42 @@ export function ToolGroup({
   run,
   ...card
 }: { run: readonly ToolCardProps["part"][] } & Omit<ToolCardProps, "part">) {
-  const { active, failed, cancelled, awaiting } = runState(run);
+  const { active, waiting, failed, cancelled, awaiting } = runState(run, useAwaitingTools());
   const edits = runEdits(run);
-  const [open, setOpen] = useState(awaiting);
+  // A run waiting on the user is open until the user says otherwise, even when the ask came later.
+  const [toggled, setToggled] = useState<boolean>();
+  const open = toggled ?? awaiting;
   // Like a tool card's body: not laid out until first opened, then kept so closing animates.
-  const [opened, setOpened] = useState(awaiting);
+  const [everOpened, setOpened] = useState(false);
+  const opened = everOpened || open;
   const bodyId = useId();
 
   return (
-    <div data-testid="tool-group" data-open={open} className="mb-2">
+    <div data-testid="tool-group" data-open={open}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={bodyId}
         className={cn(
           "flex max-w-full items-center gap-1 rounded-sm py-0.5 text-left text-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
-          active ? "text-foreground" : "text-muted-foreground",
+          active || waiting ? "text-foreground" : "text-muted-foreground",
         )}
         onClick={() => {
-          setOpen(!open);
+          setToggled(!open);
           setOpened(true);
         }}
       >
-        <span className="truncate">{active ? `${stepLabel(active)}…` : runSummary(run)}</span>
-        {!active && edits.length > 0 && (
+        {waiting !== undefined && (
+          <ShieldQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
+        )}
+        <span className="truncate">
+          {waiting !== undefined
+            ? `Waiting for your approval · ${stepLabel(waiting)}`
+            : active
+              ? `${stepLabel(active)}…`
+              : runSummary(run)}
+        </span>
+        {!active && waiting === undefined && edits.length > 0 && (
           <>
             {" "}
             <EditCounts
@@ -73,7 +86,7 @@ export function ToolGroup({
       </button>
       <Expand open={open} id={bodyId}>
         {opened && (
-          <div className="pt-1.5">
+          <div className="flex flex-col gap-2 pt-1.5">
             {run.map((part) => (
               <ToolCard key={part.toolCallId} part={part} {...card} />
             ))}

@@ -128,7 +128,7 @@ describe("stepLabel", () => {
     expect(stepLabel(tool("Bash", { command: "pnpm check\necho done" }))).toBe("Bash pnpm check");
     expect(stepLabel(tool("Read", { file_path: "/repo/src/retry.ts" }))).toBe("Read retry.ts");
     expect(stepLabel(tool("Grep", { pattern: "useFakeTimers" }))).toBe("Grep useFakeTimers");
-    expect(stepLabel(tool("TodoWrite"))).toBe("TodoWrite");
+    expect(stepLabel(tool("TodoWrite"))).toBe("Updating the to-do list");
   });
 
   it("names a browser input by what the agent said it is for", () => {
@@ -136,7 +136,7 @@ describe("stepLabel", () => {
       stepLabel(
         tool("mcp__gram__browser_click", { ref: "ref_4", actionSummary: "Opens the Filters menu" }),
       ),
-    ).toBe("mcp__gram__browser_click Opens the Filters menu");
+    ).toBe("Opens the Filters menu");
   });
 });
 

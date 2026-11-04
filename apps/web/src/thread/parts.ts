@@ -11,7 +11,7 @@ import {
   CircleDashed,
   CircleSlash,
   CircleX,
-  Clock,
+  ShieldQuestion,
   type LucideIcon,
 } from "lucide-react";
 
@@ -74,7 +74,8 @@ export function toolPhase(
 export const PHASE_DISPLAY: Record<ToolPhase, { label: string; icon: LucideIcon; tone: string }> = {
   pending: { label: "Preparing", icon: CircleDashed, tone: "text-muted-foreground" },
   running: { label: "Running", icon: Spinner, tone: "text-status-working" },
-  awaiting: { label: "Needs approval", icon: Clock, tone: "text-status-needs" },
+  // Held at the user's approval card: not running yet, so never the spinner or the word Running.
+  awaiting: { label: "Waiting for your approval", icon: ShieldQuestion, tone: "text-status-needs" },
   done: { label: "Done", icon: CircleCheck, tone: "text-success" },
   error: { label: "Error", icon: CircleX, tone: "text-destructive" },
   cancelled: { label: "Cancelled", icon: CircleSlash, tone: "text-muted-foreground" },

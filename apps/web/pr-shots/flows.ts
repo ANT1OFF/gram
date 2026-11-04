@@ -395,6 +395,44 @@ const steps: readonly Shot[] = [
       await expect(page.getByTestId("review-strip")).toBeVisible();
     },
   },
+  {
+    name: "approval-always",
+    title: "Answer: Always allow… shows the exact rule and how far it reaches before saving",
+    open: async (page) => {
+      await openApproval(page);
+      const card = page.getByTestId("approval-card");
+      await card.getByTestId("approval-always").click();
+      await expect(card.getByTestId("approval-always-rule")).toContainText("Bash(");
+    },
+  },
+  {
+    name: "limit-reset",
+    title: "Recover: a spent limit names its reset, Try again at HH:MM with Retry then and Usage",
+    open: async (page) => {
+      await page.goto("/t/t-docs");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.evaluate(() => {
+        window.gramMock!.simulateUsageLimit({
+          agent: "claude",
+          window: "five_hour",
+          utilization: 1,
+          status: "rejected",
+          resetsAt: Math.ceil((Date.now() + 75 * 60_000) / 900_000) * 900_000,
+        });
+        return window.gramMock!.simulateTurnError(
+          "t-docs" as never,
+          {
+            kind: "rateLimit",
+            httpStatus: 429,
+            retryable: false,
+            text: "The usage limit is reached (HTTP 429). It resets on the provider's schedule.",
+          },
+          "Run the e2e suite",
+        );
+      });
+      await expect(page.getByTestId("agent-error-retry-time")).toContainText(/Try again at/);
+    },
+  },
 ];
 
 /**
