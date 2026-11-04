@@ -812,15 +812,30 @@ const TURN_FOOTER_SHOTS: readonly Shot[] = [
 const seedProjectScripts = async (page: Page) => {
   await page.goto("/t/t-flaky");
   await page.getByLabel("Message", { exact: true }).waitFor();
-  await page.evaluate(async () => {
+  const seeded = await page.evaluate(async () => {
     const mock = window.gramMock!;
+    // The base has no scripts to seed; its header is the "before".
+    if (typeof mock.saveProjectScripts !== "function") return false;
     const projectId = mock.world.summary("t-flaky" as never).thread.projectId;
     await mock.saveProjectScripts(projectId, [
       { name: "dev", command: "pnpm run dev" },
       { name: "test", command: "pnpm run test", shortcut: "mod+alt+t" },
       { name: "lint", command: "pnpm run lint --max-warnings 0; exit 1", cwd: "src" },
     ]);
+    return true;
   });
+  if (!seeded) return;
+  // As after a hand edit: the editor reads the file again as it opens, and the header follows.
+  await page.getByLabel("Message", { exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByTestId("command-palette").getByRole("combobox").fill(">project scripts");
+  await page
+    .getByTestId("command-palette")
+    .getByRole("option", { name: /Project scripts…/ })
+    .click();
+  const dialog = page.getByTestId("project-scripts-dialog");
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await dialog.waitFor({ state: "detached" });
 };
 
 export const SHOTS: readonly Shot[] = [
@@ -1075,12 +1090,11 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "project-scripts-header",
-    title: "A thread's header: Run script beside the thread menu",
+    title: "A thread's header once its project has scripts: Run script beside the thread menu",
     open: async (page) => {
-      await page.goto("/t/t-flaky");
-      await page.getByTestId("pane-header").waitFor();
-      await page.getByLabel("Message", { exact: true }).waitFor();
-      await page.waitForTimeout(400);
+      await seedProjectScripts(page);
+      await page.getByTestId("pane-header").getByRole("button", { name: "Thread menu" }).waitFor();
+      await page.waitForTimeout(600);
     },
     element: (page) => page.getByTestId("pane-header"),
   },
@@ -1089,7 +1103,11 @@ export const SHOTS: readonly Shot[] = [
     title: "Project scripts on first use: package.json's scripts offered with Add",
     open: async (page) => {
       await page.goto("/t/t-flaky");
-      await page.getByTestId("pane-header").getByRole("button", { name: "Run script" }).click();
+      const panel = page.getByTestId("right-panel");
+      await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+      // The shell's canvas mounts as it starts; opened before, the menu loses the click to it.
+      await panel.locator("[data-terminal-text]").filter({ hasText: "$" }).waitFor();
+      await panel.getByRole("button", { name: "Run script" }).click();
       await page.getByRole("menuitem", { name: "Add project script…" }).click();
       await page.getByTestId("script-suggestion").first().waitFor();
       await page.waitForTimeout(400);

@@ -11,7 +11,10 @@ import { useThreadsStore } from "@/stores/threads";
 export const projectScriptsKey = (projectId: ProjectId | undefined) =>
   ["projectScripts", projectId] as const;
 
-/** The project's saved scripts and suggestions; read again whenever a menu or editor opens. */
+/**
+ * The project's saved scripts and suggestions, read again by each view that shows them as it opens
+ * (and the menu as it opens), so a hand edit of the file shows without a reload.
+ */
 export function useProjectScripts(projectId: ProjectId | undefined, enabled = true) {
   const api = useApi();
   return useQuery({
@@ -19,6 +22,7 @@ export function useProjectScripts(projectId: ProjectId | undefined, enabled = tr
     queryFn: () => api.projectScripts(projectId!),
     enabled: projectId !== undefined && enabled,
     staleTime: 5_000,
+    refetchOnMount: "always",
   });
 }
 

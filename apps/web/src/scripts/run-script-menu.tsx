@@ -29,18 +29,25 @@ export function RunScriptMenu({
   projectId,
   size = "icon-sm",
   className,
+  onlyWithScripts = false,
 }: {
   threadId: ThreadId;
   projectId: ProjectId;
   size?: "icon-sm" | "icon-xs";
   /** On the trigger, e.g. to drop it from a narrow header. */
   className?: string | undefined;
+  /**
+   * Shown only once the project has scripts: in the thread's header, whose chips need the room,
+   * the first one is added from the thread menu, the Terminal tab or the palette.
+   */
+  onlyWithScripts?: boolean;
 }) {
   const api = useApi();
   const { data, isPending, isError, refetch } = useProjectScripts(projectId);
   const scripts = data?.scripts ?? [];
   const openEditor = () =>
     useThreadDialogs.getState().open({ kind: "projectScripts", projectId, threadId });
+  if (onlyWithScripts && scripts.length === 0) return null;
 
   return (
     // Read again on open, so a hand edit of the file is in the menu.

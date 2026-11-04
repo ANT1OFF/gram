@@ -649,13 +649,15 @@ person can edit:
 `cwd` is a folder relative to the checkout, which must stay inside it. `shortcut` is keys in the
 keyboard settings' form and needs ⌘/Ctrl or ⌥ with a letter or digit, or a function key.
 
-Add and edit them from the thread header's **Run script** menu (Add project script…) or under
+Add and edit them from the **Run script** menu, a thread's **Project scripts…** (its More… or the
+palette), or under
 Settings → Workspaces → a workspace → Project scripts. On first use the editor offers
 `package.json`'s scripts, run through the package manager its `packageManager` field or
 lockfile names, and a Makefile's targets, each with an Add button. Nothing is added or run on its
 own.
 
-A script runs when the user picks it from **Run script** (the header's ▷, or the Terminal tab's),
+A script runs when the user picks it from **Run script** (the Terminal tab's ▷, and the header's
+once the project has scripts),
 from the palette's **Run script…**, or presses its key. It runs in the active thread's checkout
 (its worktree), in a Terminal tab named after it that shows the command first and keeps its
 output; running it again replaces that tab. The tab shows the run as running, finished (green)

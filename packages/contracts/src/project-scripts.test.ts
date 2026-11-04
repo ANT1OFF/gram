@@ -98,6 +98,14 @@ describe("Makefile targets", () => {
     ]);
   });
 
+  it("reads a long run of whitespace in linear time", () => {
+    // CodeQL js/polynomial-redos: a quote, then many tabs, with no colon after them.
+    const hostile = `"${"\t".repeat(50_000)}x`;
+    const started = performance.now();
+    expect(makefileTargets(`${hostile}\n${hostile}:\ntest:\n`)).toEqual(["x", "test"]);
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
   it("reads CRLF files", () => {
     expect(makefileTargets("test:\r\n\tgo test\r\nlint:\r\n")).toEqual(["test", "lint"]);
   });

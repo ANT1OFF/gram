@@ -274,11 +274,19 @@ export const makefileTargets = (text: string): string[] => {
   const targets: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     if (line.startsWith("\t") || line.startsWith(" ") || line.startsWith("#")) continue;
-    const match = /^([^:=#]+?)\s*::?(?![:=])(.*)$/.exec(line);
-    if (match === null) continue;
+    // Split at the first colon by index, not with a regex: a line is the user's file, and a pattern
+    // that backtracks over its whitespace runs in polynomial time.
+    const colon = line.indexOf(":");
+    if (colon <= 0) continue;
+    const head = line.slice(0, colon);
+    if (head.includes("=") || head.includes("#")) continue;
+    // `a := b` and `a ::= b` are assignments; `a::` is a double-colon rule.
+    let rest = line.slice(colon + 1);
+    if (rest.startsWith(":")) rest = rest.slice(1);
+    if (rest.startsWith(":") || rest.startsWith("=")) continue;
     // `a: b = c` is a target-specific variable, not a rule worth running.
-    if (/^\s*[\w.-]+\s*[?+:!]?=/.test(match[2] ?? "")) continue;
-    for (const target of match[1]!.trim().split(/\s+/)) {
+    if (/^\s*[\w.-]+\s*[?+:!]?=/.test(rest)) continue;
+    for (const target of head.trim().split(/\s+/)) {
       if (!/^[A-Za-z0-9][\w.-]*$/.test(target) || target.length > 64) continue;
       if (!targets.includes(target)) targets.push(target);
     }

@@ -8,8 +8,14 @@ test("adds a suggested script and one of its own, then runs them by click, key a
   await page.goto("/t/t-flaky");
   const header = page.getByTestId("pane-header");
 
-  // Nothing is saved yet: the menu says so and leads to the editor, which offers package.json's.
-  await header.getByRole("button", { name: "Run script" }).click();
+  // Nothing is saved yet, so the header keeps its room. The Terminal tab's Run script says so and
+  // leads to the editor, which offers package.json's scripts.
+  await expect(header.getByRole("button", { name: "Run script" })).toHaveCount(0);
+  const panel = page.getByTestId("right-panel");
+  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+  // The shell's canvas mounts as it starts; opened before, the menu would lose the click to it.
+  await expect(terminalText(panel.getByTestId("terminal").first())).toContainText("$");
+  await panel.getByRole("button", { name: "Run script" }).click();
   const popup = page.getByTestId("run-script-popup");
   await expect(popup).toContainText("No project scripts yet.");
   await popup.getByRole("menuitem", { name: "Add project script…" }).click();
@@ -36,20 +42,19 @@ test("adds a suggested script and one of its own, then runs them by click, key a
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toHaveCount(0);
 
-  // A click runs it in a terminal tab named after it, whose run finishes green.
+  // Saved, the header has Run script; a click runs it in a terminal tab named after it, green.
   await header.getByRole("button", { name: "Run script" }).click();
   const items = popup.getByTestId("run-script-item");
   await expect(items).toHaveCount(2);
   await expect(items.nth(1)).toContainText("pnpm run lint --max-warnings 0; exit 1");
   await items.filter({ hasText: "test" }).first().click();
 
-  const panel = page.getByTestId("right-panel");
   const tabs = panel.getByRole("tablist", { name: "Terminals" }).getByRole("tab");
   const testTab = tabs.filter({ hasText: "test" });
   await expect(testTab).toHaveCount(1);
   await expect(testTab).toHaveAttribute("data-run", "finished");
-  // The run replaced no shell: its tab is the only one.
-  await expect(tabs).toHaveCount(1);
+  // Beside the shell the Terminal tab opened, not in its place.
+  await expect(tabs).toHaveCount(2);
   const terminal = panel.locator('[data-testid="terminal"]:not([aria-hidden="true"])');
   await expect(terminalText(terminal)).toContainText("12 checks passed");
   await expect(panel.getByRole("status")).toContainText("test finished");
@@ -60,13 +65,15 @@ test("adds a suggested script and one of its own, then runs them by click, key a
   await expect(lintTab).toHaveAttribute("data-run", "failed");
   await expect(panel.getByRole("status")).toContainText("lint strict failed with code 1");
 
-  // From the palette, running test again reuses its tab.
+  // From the palette, running test again reuses its tab. Off macOS a focused terminal keeps plain
+  // Ctrl chords for its shell, so the palette is opened from the composer.
+  await page.getByLabel("Message", { exact: true }).click();
   await page.keyboard.press("ControlOrMeta+k");
   const palette = page.getByTestId("command-palette");
   await palette.getByRole("combobox").fill(">run script");
   await palette.getByRole("option", { name: /Run script…/ }).click();
   await palette.getByRole("option", { name: /^test/ }).click();
-  await expect(tabs).toHaveCount(2);
+  await expect(tabs).toHaveCount(3);
   await expect(testTab).toHaveAttribute("aria-selected", "true");
   await expect(testTab).toHaveAttribute("data-run", "finished");
 });

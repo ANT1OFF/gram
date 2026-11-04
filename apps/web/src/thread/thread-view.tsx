@@ -514,7 +514,12 @@ export function ThreadView({
           onLoadEarlier={() => void pageEarlier(true)}
         />
         {thread.role !== "orchestrator" && (
-          <RunScriptMenu threadId={threadId} projectId={thread.projectId} className={hideSm} />
+          <RunScriptMenu
+            threadId={threadId}
+            projectId={thread.projectId}
+            className={hideSm}
+            onlyWithScripts
+          />
         )}
         <ThreadMenu threadId={threadId} />
         {actions}
