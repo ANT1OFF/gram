@@ -8,7 +8,7 @@ import * as nodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { parseGitDiffCapped, whitespaceArgs, type DiffFile, type DiffOptions } from "./diff.ts";
+import { parseGitDiffCapped, type DiffFile } from "./diff.ts";
 import { CheckpointError } from "./errors.ts";
 import { git, gitFailMsg, tryRepoTop } from "./exec.ts";
 import { Proc } from "./proc.ts";
@@ -200,12 +200,7 @@ export interface CheckpointDiff {
 }
 
 /** Diff two checkpoint refs, or a ref against the live working tree (untracked files included). */
-export const diffBetween = (
-  repo: string,
-  from: string,
-  to: string | "worktree",
-  options: DiffOptions = {},
-) =>
+export const diffBetween = (repo: string, from: string, to: string | "worktree") =>
   Effect.gen(function* () {
     const top = yield* repoTopOrFail(repo);
     const base = yield* pinCommit(top, from);
@@ -217,7 +212,6 @@ export const diffBetween = (
       "diff.mnemonicPrefix=false",
       "diff",
       "--no-color",
-      ...whitespaceArgs(options),
       base,
       target,
     ]).pipe(Effect.mapError((e) => new CheckpointError({ message: e.message })));
@@ -317,7 +311,6 @@ export class Checkpoints extends Context.Service<
       repo: string,
       from: string,
       to: string | "worktree",
-      options?: DiffOptions,
     ) => Effect.Effect<CheckpointDiff, CheckpointError>;
     readonly restoreFiles: (repo: string, ref: string) => Effect.Effect<void, CheckpointError>;
     readonly list: (
@@ -340,7 +333,7 @@ export const CheckpointsLive = Layer.effect(
     const provide = Effect.provideService(Proc, proc);
     return {
       snapshot: (repo, threadId, turnId) => provide(snapshotCheckpoint(repo, threadId, turnId)),
-      diffBetween: (repo, from, to, options) => provide(diffBetween(repo, from, to, options)),
+      diffBetween: (repo, from, to) => provide(diffBetween(repo, from, to)),
       restoreFiles: (repo, ref) => provide(restoreFiles(repo, ref)),
       list: (repo, threadId) => provide(listCheckpoints(repo, threadId)),
       prune: (repo, threadId) => provide(pruneCheckpoints(repo, threadId)),

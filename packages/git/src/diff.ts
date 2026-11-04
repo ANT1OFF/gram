@@ -190,6 +190,73 @@ export const parseGitDiff = (text: string): Array<DiffFile> => {
   return files;
 };
 
+/** A patch line without its sign and whitespace, as `git diff -w` compares lines. */
+const bareLine = (line: string) => line.slice(1).replace(/\s+/g, "");
+
+/**
+ * `files` with whitespace-only changes left out, for a diff git can't be asked for with `-w` (one
+ * against a snapshot of the live tree): a run of removed lines followed by as many added ones, equal
+ * but for whitespace, becomes context; a hunk with no change left goes, and so does a file with no
+ * hunk left. Coarser than `-w`, which re-runs the diff: a reindented run beside a real change of
+ * another length stays as it was.
+ */
+export const withoutWhitespaceChanges = (files: ReadonlyArray<DiffFile>): Array<DiffFile> =>
+  files.flatMap((file) => {
+    if (file.note !== undefined || file.diff === "") return [file];
+    const hunks: Array<Array<string>> = [];
+    for (const line of file.diff.replace(/\n$/, "").split("\n")) {
+      if (line.startsWith("@@")) hunks.push([line]);
+      else hunks.at(-1)?.push(line);
+    }
+    const kept = hunks.flatMap(([header, ...lines]) => {
+      const out: Array<string> = [];
+      // A run of one sign, with the `\ No newline` note git puts after its last line.
+      const take = (sign: string, at: number) => {
+        let end = at;
+        while (lines[end]?.startsWith(sign)) end++;
+        if (end > at && lines[end]?.startsWith("\\")) end++;
+        return end;
+      };
+      for (let i = 0; i < lines.length;) {
+        const removedEnd = take("-", i);
+        const addedEnd = take("+", removedEnd);
+        if (addedEnd === i) {
+          out.push(lines[i++]!);
+          continue;
+        }
+        const removed = lines.slice(i, removedEnd);
+        const added = lines.slice(removedEnd, addedEnd);
+        i = addedEnd;
+        const before = removed.filter((line) => !line.startsWith("\\"));
+        const after = added.filter((line) => !line.startsWith("\\"));
+        const same =
+          before.length === after.length &&
+          before.every((line, k) => bareLine(line) === bareLine(after[k]!));
+        out.push(
+          ...(same
+            ? added.map((line) => (line.startsWith("+") ? ` ${line.slice(1)}` : line))
+            : [...removed, ...added]),
+        );
+      }
+      return out.some((line) => line.startsWith("+") || line.startsWith("-"))
+        ? [[header!, ...out]]
+        : [];
+    });
+    // A rename keeps its row, with no lines left to show.
+    if (kept.length === 0) {
+      return file.status === "modified" ? [] : [{ ...file, added: 0, removed: 0, diff: "" }];
+    }
+    const lines = kept.flat();
+    return [
+      {
+        ...file,
+        added: lines.filter((line) => line.startsWith("+")).length,
+        removed: lines.filter((line) => line.startsWith("-")).length,
+        diff: `${lines.join("\n")}\n`,
+      },
+    ];
+  });
+
 /** `parseGitDiff` behind the view cap: an over-cap body is dropped with the shared note. */
 export const parseGitDiffCapped = (
   text: string,

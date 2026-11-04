@@ -1,8 +1,40 @@
 import { GitError, NotFound, type Diff, type ThreadId, type TurnId } from "@gram/contracts";
-import { Checkpoints, tryRepoTop } from "@gram/git";
+import {
+  Checkpoints,
+  git,
+  parseGitDiffCapped,
+  tryRepoTop,
+  withoutWhitespaceChanges,
+} from "@gram/git";
 import * as Effect from "effect/Effect";
 import { toDiffFile, toGitError } from "./mapping.ts";
 import { endCheckpointId } from "./turn-hooks.ts";
+
+/**
+ * A finished turn's changes without whitespace-only ones: `git diff -w` between its two checkpoint
+ * commits, which `Checkpoints.resolve` has already read and pinned as full commit ids.
+ */
+const checkpointsDiffIgnoringWhitespace = (top: string, start: string, end: string) =>
+  Effect.gen(function* () {
+    const out = yield* git(top, [
+      "-c",
+      "core.quotepath=false",
+      "-c",
+      "diff.mnemonicPrefix=false",
+      "diff",
+      "--no-color",
+      "-w",
+      start,
+      end,
+    ]).pipe(Effect.mapError(toGitError));
+    if (out.status !== 0) {
+      return yield* new GitError({
+        message: out.stderr.trim() || "git diff failed",
+        command: "git diff",
+      });
+    }
+    return parseGitDiffCapped(out.stdout, out.truncated);
+  });
 
 /** A turn's changes: its start checkpoint against its end checkpoint, or the live tree while it runs. */
 export const turnDiff = (
@@ -28,13 +60,20 @@ export const turnDiff = (
       });
     }
     const end = yield* resolve(endCheckpointId(turnId));
-    const result = yield* checkpoints
-      .diffBetween(top, start, end ?? "worktree", options)
-      .pipe(
-        Effect.mapError(
-          (e) => new GitError({ message: `no checkpoint for turn ${turnId}: ${e.message}` }),
-        ),
-      );
+    const result =
+      options.ignoreWhitespace === true && end !== undefined
+        ? yield* checkpointsDiffIgnoringWhitespace(top, start, end)
+        : yield* checkpoints.diffBetween(top, start, end ?? "worktree").pipe(
+            Effect.mapError(
+              (e) => new GitError({ message: `no checkpoint for turn ${turnId}: ${e.message}` }),
+            ),
+            // A running turn's end is the live tree, which only the checkpoints can snapshot.
+            Effect.map((diff) =>
+              options.ignoreWhitespace === true
+                ? { ...diff, files: withoutWhitespaceChanges(diff.files) }
+                : diff,
+            ),
+          );
     return {
       repo: true,
       worktree: top,

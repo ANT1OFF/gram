@@ -14,6 +14,8 @@ import {
   untrackedOverflowNote,
   untrackedTextDiff,
   unquoteGitPath,
+  withoutWhitespaceChanges,
+  type DiffFile,
 } from "./diff.ts";
 import { ProcLive } from "./proc.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
@@ -133,6 +135,34 @@ describe("parseGitDiff", () => {
     const three = untrackedTextDiff("a\nb\nc");
     expect(three.added).toBe(3);
     expect(three.diff).toBe("@@ -0,0 +1,3 @@\n+a\n+b\n+c");
+  });
+});
+
+describe("withoutWhitespaceChanges", () => {
+  const file = (diff: string, status: DiffFile["status"] = "modified"): DiffFile => ({
+    path: "a.ts",
+    status,
+    added: 0,
+    removed: 0,
+    diff,
+  });
+
+  it("turns reindented lines into context and keeps real changes", () => {
+    const [kept] = withoutWhitespaceChanges([
+      file("@@ -1,3 +1,3 @@\n-a\n+b\n-  c(1)\n+    c(1)\n d\n"),
+    ]);
+    expect(kept).toMatchObject({ added: 1, removed: 1 });
+    expect(kept!.diff).toBe("@@ -1,3 +1,3 @@\n-a\n+b\n     c(1)\n d\n");
+  });
+
+  it("drops a file whose changes are all whitespace, but keeps a rename's row", () => {
+    const reindent = "@@ -1,2 +1,2 @@\n-x  y\n+x y\n\\ No newline at end of file\n";
+    expect(withoutWhitespaceChanges([file(reindent)])).toEqual([]);
+    expect(withoutWhitespaceChanges([file(reindent, "renamed")])).toEqual([
+      { ...file("", "renamed"), added: 0, removed: 0 },
+    ]);
+    const binary = { ...file(""), note: "binary" as const };
+    expect(withoutWhitespaceChanges([binary])).toEqual([binary]);
   });
 });
 
