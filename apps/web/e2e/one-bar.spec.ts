@@ -275,6 +275,10 @@ test('narrow, the title truncates, Tidy up and Workers fold into the bar\'s "…
   await fitsTheBar(page);
   await overflow.click();
   await expect(page.getByTestId("titlebar-overflow-menu").getByTestId("folded-tidy")).toBeVisible();
+  // So is its Grid or Lanes.
+  await expect(
+    page.getByTestId("titlebar-overflow-menu").getByTestId("folded-board-layout"),
+  ).toBeVisible();
   await page.keyboard.press("Escape");
   await page.keyboard.press("ControlOrMeta+Alt+1");
   await page.setViewportSize({ width: 640, height: 720 });

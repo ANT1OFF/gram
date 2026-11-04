@@ -7,8 +7,9 @@ import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { formatWakeTime } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 
-import type { NeedsYouItem } from "./needs-you-items";
+import { sectionsIn, type NeedsYouItem } from "./needs-you-items";
 import { NeedsYouRow, NeedsYouUndo, SectionHead, useNeedsYouActions } from "./needs-you-row";
+import { NeedsYouStrip } from "./needs-you-strip";
 import {
   openNeedsYouPanel,
   useNeedsYouJump,
@@ -20,6 +21,8 @@ import {
 // The Needs you popover (needs-you-home mock, C Hybrid · popover): the newest few items across every
 // workspace, by kind, each a click from its thread at the turn that asked and answerable in
 // place; See all opens the whole list as the right panel. The pill it hangs from is its trigger.
+// When the list runs past what it shows, a strip of categories with their counts heads it, so a
+// category below the fold is still seen; a pick lists that one, and See all keeps it.
 
 /** How many rows the popover shows before See all. */
 const POPOVER_ROWS = 6;
@@ -44,7 +47,10 @@ export const firstRows = <G extends { readonly items: readonly NeedsYouItem[] }>
     }
   }
   const shown = groups
-    .map((group, index) => ({ ...group, items: group.items.slice(0, taken[index]) }))
+    .map((group, index) => ({
+      ...group,
+      items: group.items.slice(0, taken[index]),
+    }))
     .filter((group) => group.items.length > 0);
   return { groups: shown, more: total - Math.min(rows, total) };
 };
@@ -86,12 +92,17 @@ export function NeedsYouPopover({
 function PopoverBody() {
   const { sections, later } = useNeedsYouList();
   const current = useNeedsYouUi((s) => s.current);
+  const category = useNeedsYouUi((s) => s.category);
+  const setCategory = useNeedsYouUi((s) => s.setCategory);
   const jump = useNeedsYouJump();
   const actions = useNeedsYouActions();
   const now = useNow(true, undefined, 60_000);
   const next = useShortcutHint("thread.nextNeedsYou");
-  const shown = firstRows(sections, POPOVER_ROWS);
+  const listed = sectionsIn(sections, category);
+  const shown = firstRows(listed, POPOVER_ROWS);
   const total = sections.reduce((n, section) => n + section.items.length, 0);
+  // Only once the list overflows, or a category is picked: a short list says it all itself.
+  const strip = firstRows(sections, POPOVER_ROWS).more > 0 || listed !== sections;
   return (
     <>
       <div className="flex items-center gap-2 px-2 pt-1.5 pb-1">
@@ -100,6 +111,14 @@ function PopoverBody() {
           <span className="ml-auto text-xs text-muted-foreground">{next} next</span>
         )}
       </div>
+      {total > 0 && strip && (
+        <NeedsYouStrip
+          sections={sections}
+          category={category}
+          onPick={setCategory}
+          className="border-b border-border px-1 pb-1"
+        />
+      )}
       {total === 0 ? (
         <p
           data-testid="needs-you-empty"

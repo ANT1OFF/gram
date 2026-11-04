@@ -28,18 +28,13 @@ const TONE: Record<PrChipTone, string> = {
 };
 
 /**
- * `card={false}` in the compact rail's flyout, itself a card: a chip's own card would sit outside it
- * and close it, so there the chip's name carries what its card would say.
+ * A worker's PR chips in the order its row shows them, from its thread, its card and its ledger
+ * row: what `WorkerPrChips` draws, for a view that says what they don't.
  */
-export function WorkerPrChips({
-  threadId,
-  cardPrs,
-  card = true,
-}: {
-  threadId: ThreadId;
-  cardPrs: readonly FeatureCardPr[];
-  card?: boolean;
-}) {
+export function useWorkerPrChips(
+  threadId: ThreadId,
+  cardPrs: readonly FeatureCardPr[],
+): readonly PrChip[] {
   // The thread and its git state only, so a worker's activity ticks don't rebuild its chips.
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const git = useThreadsStore((s) => s.byId[threadId]?.git);
@@ -61,6 +56,30 @@ export function WorkerPrChips({
       ),
     [thread, git, cardPrs, worker],
   );
+  return chips;
+}
+
+/** The PR numbers a worker's chips show, the first `MAX_PR_CHIPS`. */
+export const shownPrNumbers = (chips: readonly PrChip[]): readonly { number: number }[] =>
+  chips.slice(0, MAX_PR_CHIPS).map((chip) => ({ number: chip.entry.number }));
+
+/**
+ * `card={false}` in the compact rail's flyout, itself a card: a chip's own card would sit outside it
+ * and close it, so there the chip's name carries what its card would say.
+ */
+export function WorkerPrChips({
+  threadId,
+  cardPrs,
+  card = true,
+  className = "pr-1.5 pb-1 pl-6",
+}: {
+  threadId: ThreadId;
+  cardPrs: readonly FeatureCardPr[];
+  card?: boolean;
+  /** Where the chips sit: under an overview row's name by default. */
+  className?: string;
+}) {
+  const chips = useWorkerPrChips(threadId, cardPrs);
   if (chips.length === 0) return null;
   const shown = chips.slice(0, MAX_PR_CHIPS);
   const more = chips.length - shown.length;
@@ -70,7 +89,7 @@ export function WorkerPrChips({
       aria-label="Pull requests"
       data-testid="overview-pr-chips"
       data-thread-id={threadId}
-      className="flex flex-wrap gap-1 pr-1.5 pb-1 pl-6"
+      className={cn("flex flex-wrap gap-1", className)}
     >
       {shown.map((chip) => (
         <PrChipButton key={chip.entry.key} chip={chip} threadId={threadId} card={card} />

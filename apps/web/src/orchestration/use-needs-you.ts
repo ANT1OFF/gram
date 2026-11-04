@@ -17,7 +17,7 @@ import { useDerivedAsks } from "./needs-you-store";
 import {
   needsYouCounts,
   stepItem,
-  type NeedsYouFilter,
+  type NeedsYouCategory,
   type NeedsYouGroup,
   type NeedsYouCounts,
   type NeedsYouItem,
@@ -38,24 +38,30 @@ interface NeedsYouUiState {
   readonly popover: NeedsYouAnchor | undefined;
   /** The item last opened from here, which the next step moves on from. */
   readonly current: string | undefined;
-  /** The panel's filter. */
-  readonly filter: NeedsYouFilter;
+  /**
+   * The category the popover's strip picked, which See all carries into the panel and the panel's
+   * strip changes; each popover opens on every category.
+   */
+  readonly category: NeedsYouCategory;
   /** Whether the panel lists what is put away for Later instead. */
   readonly later: boolean;
   setPopover(anchor: NeedsYouAnchor | undefined): void;
   setCurrent(key: string | undefined): void;
-  setFilter(filter: NeedsYouFilter): void;
+  setCategory(category: NeedsYouCategory): void;
   setLater(later: boolean): void;
 }
 
 export const useNeedsYouUi = create<NeedsYouUiState>()((set) => ({
   popover: undefined,
   current: undefined,
-  filter: "all",
+  category: "all",
   later: false,
-  setPopover: (popover) => set({ popover }),
+  setPopover: (popover) =>
+    set((s) =>
+      popover !== undefined && s.popover === undefined ? { popover, category: "all" } : { popover },
+    ),
   setCurrent: (current) => set({ current }),
-  setFilter: (filter) => set({ filter }),
+  setCategory: (category) => set({ category }),
   setLater: (later) => set({ later }),
 }));
 

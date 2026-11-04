@@ -1,27 +1,13 @@
-import {
-  AlarmClock,
-  CircleAlert,
-  CircleCheck,
-  Inbox,
-  MessageCircleQuestion,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { AlarmClock, CircleCheck, X } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import { formatWakeTime } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { useLayoutStore } from "@/stores/layout";
 
-import {
-  filterCounts,
-  filterGroups,
-  NEEDS_YOU_FILTERS,
-  type NeedsYouFilter,
-} from "./needs-you-items";
+import { sectionsIn } from "./needs-you-items";
 import {
   kindOf,
   NeedsYouRow,
@@ -29,35 +15,26 @@ import {
   SectionHead,
   useNeedsYouActions,
 } from "./needs-you-row";
+import { NeedsYouStrip } from "./needs-you-strip";
 import { useNeedsYouJump, useNeedsYouList, useNeedsYouUi } from "./use-needs-you";
 
 // The Needs you panel (needs-you-home mock, C Hybrid · panel): the whole list beside the thread, by
-// kind, each row saying its workspace, filtered by family, each row with its answers, Later and Dismiss on hover or focus. It
+// kind, each row saying its workspace, filtered by the category strip the popover shares, each row with its answers, Later and Dismiss on hover or focus. It
 // stays open while each pick opens its thread beside it. The Later list shows what is put away, with
 // when it comes back and Wake.
 
-const FILTER_LABELS: Record<
-  NeedsYouFilter,
-  { readonly label: string; readonly icon?: LucideIcon }
-> = {
-  all: { label: "All" },
-  asks: { label: "Approvals and questions", icon: MessageCircleQuestion },
-  waits: { label: "Waiting on you", icon: Inbox },
-  failing: { label: "Failing", icon: CircleAlert },
-};
-
 export function NeedsYouPanel() {
   const { sections, later } = useNeedsYouList();
-  const filter = useNeedsYouUi((s) => s.filter);
-  const setFilter = useNeedsYouUi((s) => s.setFilter);
+  const category = useNeedsYouUi((s) => s.category);
+  const setCategory = useNeedsYouUi((s) => s.setCategory);
   const showLater = useNeedsYouUi((s) => s.later);
   const setLater = useNeedsYouUi((s) => s.setLater);
   const current = useNeedsYouUi((s) => s.current);
   const jump = useNeedsYouJump();
   const actions = useNeedsYouActions();
   const now = useNow(true, undefined, 60_000);
-  const counts = filterCounts(sections);
-  const shown = filterGroups(sections, counts[filter] === 0 ? "all" : filter);
+  const total = sections.reduce((n, section) => n + section.items.length, 0);
+  const shown = sectionsIn(sections, category);
   return (
     <section
       aria-label="Needs you"
@@ -68,39 +45,10 @@ export function NeedsYouPanel() {
         <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {showLater
             ? `${later.length} for later`
-            : counts.all === 0
+            : total === 0
               ? "Nothing needs you"
-              : `${counts.all} need${counts.all === 1 ? "s" : ""} you`}
+              : `${total} need${total === 1 ? "s" : ""} you`}
         </p>
-        {!showLater && counts.all > 0 && (
-          <ButtonGroup aria-label="Show">
-            {NEEDS_YOU_FILTERS.map((each) => {
-              const { label, icon: Icon } = FILTER_LABELS[each];
-              if (each !== "all" && counts[each] === 0) return null;
-              return (
-                <Hint
-                  key={each}
-                  label={label}
-                  side="bottom"
-                  render={
-                    <Button
-                      size="xs"
-                      variant={filter === each ? "secondary" : "ghost"}
-                      aria-pressed={filter === each}
-                      aria-label={`${label}, ${counts[each]}`}
-                      data-testid="needs-you-filter"
-                      data-filter={each}
-                      onClick={() => setFilter(each)}
-                    />
-                  }
-                >
-                  {Icon === undefined ? "All" : <Icon aria-hidden />}
-                  {Icon !== undefined && <span className="tabular-nums">{counts[each]}</span>}
-                </Hint>
-              );
-            })}
-          </ButtonGroup>
-        )}
         <Hint
           label={showLater ? "Back to what needs you" : "Later"}
           side="bottom"
@@ -133,6 +81,16 @@ export function NeedsYouPanel() {
           <X aria-hidden />
         </Hint>
       </div>
+      {/* Every category with its count, above the list rather than in it: the one the popover
+          picked is kept, and nothing sits below the fold unseen. */}
+      {!showLater && sections.length > 1 && (
+        <NeedsYouStrip
+          sections={sections}
+          category={category}
+          onPick={setCategory}
+          className="border-b border-border px-1.5 py-1"
+        />
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
         {showLater ? (
           later.length === 0 ? (

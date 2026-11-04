@@ -19,15 +19,6 @@ import type { FailureItem } from "./needs-you-model";
 
 type NeedsYouKind = "approval" | "question" | "plan" | "wait" | "failure";
 
-/** The panel's filter: everything, or one family of kinds. */
-export type NeedsYouFilter = "all" | "asks" | "waits" | "failing";
-
-export const NEEDS_YOU_FILTERS: readonly NeedsYouFilter[] = ["all", "asks", "waits", "failing"];
-
-/** The family a kind's filter shows it under. */
-const filterOf = (kind: NeedsYouKind): Exclude<NeedsYouFilter, "all"> =>
-  kind === "wait" ? "waits" : kind === "failure" ? "failing" : "asks";
-
 export interface NeedsYouItem {
   /** Unique across the list. */
   readonly key: string;
@@ -286,13 +277,23 @@ const SECTION_LABELS: Readonly<Record<NeedsYouSectionKey, string>> = {
   errors: "Errors",
 };
 
+/** A section's name in the category strip, one short word each. */
+export const CATEGORY_LABELS: Readonly<Record<NeedsYouSectionKey, string>> = {
+  ...SECTION_LABELS,
+  steps: "Steps",
+};
+
+/**
+ * What stops work first: failures, then approvals that hold a worker, then what it asks, then what
+ * waits on a read, and drafts, which hold nothing, last.
+ */
 const SECTION_ORDER: readonly NeedsYouSectionKey[] = [
+  "errors",
   "approvals",
   "questions",
   "reviews",
-  "drafts",
   "steps",
-  "errors",
+  "drafts",
 ];
 
 /** The section an item is listed in: what the user is asked to do with it. */
@@ -327,8 +328,8 @@ export interface NeedsYouSection {
 }
 
 /**
- * The list by what it asks of the user: approvals, questions, reviews, drafts, steps to take, then
- * errors, each across every workspace in the groups' order (newest first within each workspace).
+ * The list by what it asks of the user: errors, approvals, questions, reviews, steps to take, then
+ * drafts, each across every workspace in the groups' order (newest first within each workspace).
  * Empty sections are left out. This is the order the list shows and the next key walks.
  */
 export const needsYouSections = (groups: readonly NeedsYouGroup[]): NeedsYouSection[] => {
@@ -363,35 +364,20 @@ export const needsYouCounts = (groups: readonly NeedsYouGroup[]): NeedsYouCounts
   return { total, byWorkspace };
 };
 
-/** Anything that lists items: a workspace's group, or a kind's section. */
-interface Listing {
-  readonly items: readonly NeedsYouItem[];
-}
+/** The category Needs you shows: every section, or one of them. */
+export type NeedsYouCategory = "all" | NeedsYouSectionKey;
 
-/** `groups` with only the items `filter` shows, empty groups left out. */
-export const filterGroups = <G extends Listing>(
-  groups: readonly G[],
-  filter: NeedsYouFilter,
-): G[] =>
-  filter === "all"
-    ? [...groups]
-    : groups
-        .map((group) => ({
-          ...group,
-          items: group.items.filter((item) => filterOf(item.kind) === filter),
-        }))
-        .filter((group) => group.items.length > 0);
-
-/** How many of each family, for the filter's counts. */
-export const filterCounts = (
-  groups: readonly Listing[],
-): Readonly<Record<NeedsYouFilter, number>> => {
-  const counts = { all: 0, asks: 0, waits: 0, failing: 0 };
-  for (const item of groups.flatMap((group) => group.items)) {
-    counts.all += 1;
-    counts[filterOf(item.kind)] += 1;
-  }
-  return counts;
+/**
+ * The sections `category` shows: only its own, or all of them when it is "all" or has nothing left
+ * (its last item answered), so a pick never strands the list empty.
+ */
+export const sectionsIn = (
+  sections: readonly NeedsYouSection[],
+  category: NeedsYouCategory,
+): readonly NeedsYouSection[] => {
+  if (category === "all") return sections;
+  const one = sections.filter((section) => section.key === category);
+  return one.length === 0 ? sections : one;
 };
 
 /**

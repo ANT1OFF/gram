@@ -113,3 +113,73 @@ test("a line carries the helper's sentence on its feature, and goes without one"
   await expect(line(page, "registry-paging")).toBeVisible();
   await expect(line(page, "registry-paging").getByTestId("rail-summary")).toHaveCount(0);
 });
+
+test("the grid is the default, its cells side by side, and Lanes is a remembered click away", async ({
+  page,
+}) => {
+  const made = await start(page);
+  const scroller = board(page).getByTestId("rail-scroller");
+  await expect(scroller).toHaveAttribute("data-layout", "grid");
+  await expect(board(page).getByTestId("board-grid-heads")).toHaveText(
+    /Task\s*Stage\s*Now\s*Pull request/,
+  );
+  // A one-worker feature is one row: its name, its stage and what it does on one line.
+  const docs = line(page, "docs-refresh");
+  const name = await docs.getByTestId("rail-feature").boundingBox();
+  const stage = docs.getByTestId("grid-stage").first();
+  const now = await docs.getByTestId("rail-worker").first().boundingBox();
+  expect(Math.abs(now!.y - name!.y)).toBeLessThan(12);
+  expect(Math.abs((await stage.boundingBox())!.y - name!.y)).toBeLessThan(12);
+  // The Stage cell names the station the worker stands on, as the lanes place it.
+  await expect(stage).toHaveAttribute(
+    "data-station",
+    (await docs.getByTestId("rail-worker").first().getAttribute("data-station"))!,
+  );
+  // A feature with several workers heads their rows, each with its own cells.
+  const mail = line(page, "mail-trigger");
+  await expect(mail.getByTestId("grid-workers")).toContainText("workers");
+  for (const pusher of made.pushers) {
+    await expect(chip(page, pusher)).toHaveAttribute("data-tone", "needs");
+  }
+
+  // Each PR said once: the Now cell leaves to the PR cell beside it a PR the cell shows.
+  const repeats = await board(page)
+    .getByTestId("rail-worker")
+    .evaluateAll((workers) =>
+      workers.flatMap((worker) => {
+        const words = worker.querySelector('[data-testid="rail-now"]')?.textContent ?? "";
+        const shown = [
+          ...(worker.parentElement?.querySelectorAll('[data-testid="overview-pr-chip"]') ?? []),
+        ].map((each) => each.getAttribute("data-pr"));
+        return shown.filter((pr) => new RegExp(`#${pr}\\b`).test(words));
+      }),
+    );
+  expect(repeats).toEqual([]);
+  // Asks sits right under the rows, not at the foot of an empty pane.
+  const rows = await board(page).getByRole("list", { name: "Features", exact: true }).boundingBox();
+  const asks = await board(page).getByTestId("ask-stack").boundingBox();
+  expect(asks!.y - (rows!.y + rows!.height)).toBeLessThan(48);
+
+  // Lanes: the stations as columns, kept for the next Board.
+  const layouts = page.getByTestId("board-layout");
+  await layouts.locator('[data-layout="lanes"]').click();
+  await expect(scroller).toHaveAttribute("data-layout", /lanes|stacked/);
+  await expect(board(page).getByTestId("board-grid-heads")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("gram.layout") ?? "{}").state?.boardLayout,
+    ),
+  ).toBe("lanes");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("view-board")).toBeHidden();
+  await page
+    .getByRole("radiogroup", { name: "View" })
+    .getByRole("radio", { name: /^Board\b/ })
+    .click();
+  await expect(board(page).getByTestId("rail-scroller")).toHaveAttribute(
+    "data-layout",
+    /lanes|stacked/,
+  );
+  await page.getByTestId("board-layout").locator('[data-layout="grid"]').click();
+  await expect(board(page).getByTestId("rail-scroller")).toHaveAttribute("data-layout", "grid");
+});

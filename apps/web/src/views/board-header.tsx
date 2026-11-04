@@ -1,20 +1,23 @@
 import type { WorkspaceState } from "@gram/contracts";
-import { Archive, Inbox, Pause } from "lucide-react";
+import { Archive, Columns3, Inbox, Pause, Rows3 } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { cn } from "@/lib/utils";
 import { WAITING_BAND } from "@/orchestration/board-waiting";
 import { midTurnWorkers } from "@/orchestration/tree-model";
+import { Foldable } from "@/shell/foldable";
 import { useTitlebarSlot } from "@/shell/titlebar-slot";
-import { useLayoutStore } from "@/stores/layout";
+import { useLayoutStore, type BoardLayout } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { pauseClock, pauseLeavesRunning, pauseText } from "@/thread/orchestration-model";
 
 import { useViewStore } from "./view-store";
 
-// The Board's header: what waits on you, and Show finished; the stations below say who works. It
+// The Board's header: what waits on you, Show finished, and Grid or Lanes; the rows below say who
+// works. It
 // is the window's title bar's, one bar not two: the switcher there names the workspace, and Tidy up
 // and Pause or Resume are the bar's own. A pause says so in a line under it, in the shared pause
 // words.
@@ -45,6 +48,51 @@ function FinishedToggle({ workspaceId, count }: { workspaceId: string; count: nu
     >
       <Archive aria-hidden />
     </Hint>
+  );
+}
+
+const LAYOUTS: readonly {
+  readonly layout: BoardLayout;
+  readonly label: string;
+  readonly hint: string;
+  readonly icon: typeof Rows3;
+}[] = [
+  { layout: "grid", label: "Grid", hint: "A row per task", icon: Rows3 },
+  { layout: "lanes", label: "Lanes", hint: "Tasks on their stations' lanes", icon: Columns3 },
+];
+
+/** Grid or Lanes, the user's choice for every Board, remembered; in a narrow bar, in its "…". */
+function LayoutToggle() {
+  const current = useLayoutStore((s) => s.boardLayout);
+  return (
+    <ButtonGroup
+      aria-label="Board layout"
+      data-testid="board-layout"
+      className="shrink-0 [-webkit-app-region:no-drag]"
+    >
+      {LAYOUTS.map(({ layout, label, hint, icon: Icon }) => (
+        <Hint
+          key={layout}
+          label={hint}
+          side="bottom"
+          render={
+            <Button
+              size="xs"
+              variant={current === layout ? "secondary" : "ghost"}
+              aria-pressed={current === layout}
+              data-testid="board-layout-option"
+              data-layout={layout}
+              className={cn(current !== layout && "text-muted-foreground")}
+              onClick={() => useLayoutStore.getState().setBoardLayout(layout)}
+            />
+          }
+        >
+          <Icon aria-hidden data-icon="inline-start" />
+          {/* In a narrow bar, the icons alone; the hint and the name still say which. */}
+          <span className="@max-2xl/titlebar:sr-only">{label}</span>
+        </Hint>
+      ))}
+    </ButtonGroup>
   );
 }
 
@@ -95,6 +143,10 @@ export function BoardHeader({
         </button>
       )}
       <span data-titlebar-room="0" className="flex-1" />
+      {/* A narrow bar folds it into its "…" with Tidy up, the lesser buttons. */}
+      <Foldable level={1} gap={12}>
+        <LayoutToggle />
+      </Foldable>
       <FinishedToggle workspaceId={workspace.id} count={hidden} />
     </header>
   );

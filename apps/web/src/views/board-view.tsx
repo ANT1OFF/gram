@@ -55,16 +55,18 @@ import { useFeatureCards, useFeatureSummary } from "@/orchestration/use-feature-
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useLayoutStore } from "@/stores/layout";
 
-import { BoardHeader } from "./board-header";
 import { StageChip } from "@/orchestration/stage-stepper";
 
 import { GroupBand } from "./board-group";
+import { GridHeads, GridLine, Status } from "./board-grid";
+import { BoardHeader } from "./board-header";
 import { useViewStore } from "./view-store";
 
-// The Board view: the workspace as feature lines, each worker on
-// the station its feature card gives it, and the ask stack docked below. Its header carries the
-// workspace's controls and what waits on you; lines carry their stage and gather under their
-// group's band; unresolved failures stand in a card above them all.
+// The Board view: the workspace as feature lines, and the ask stack docked below. By default a
+// compact grid, a row per feature (board-grid.tsx); or, as the user picks in the header, lanes,
+// each worker on the station its feature card gives it. Its header carries the workspace's controls
+// and what waits on you; lines carry their stage and gather under their group's band; unresolved
+// failures stand in a card above them all.
 
 /** What a view is given: the workspace the window is on, if any. */
 export interface ViewProps {
@@ -178,41 +180,6 @@ function WorkerChip({
         </span>
       </span>
     </GlideItem>
-  );
-}
-
-/**
- * A card's state in words, its tone's word first (amber only while it needs you), then what it is
- * doing: "Working · tests 38/52".
- */
-function Status({ tone, now }: { tone: RailWorker["tone"]; now: string }) {
-  const { label } = RAIL_TONES[tone];
-  // What it waits on may lead with the same word ("Waiting · checks on #88"): said once.
-  const rest = now.replace(new RegExp(`^${label}\\s*(?:·\\s*)?`, "iu"), "");
-  return (
-    <span className="line-clamp-2 min-w-0 flex-[1_1_6rem] break-words">
-      <span
-        data-testid="rail-status"
-        className={cn(
-          "font-medium",
-          tone === "needs"
-            ? "text-status-needs"
-            : tone === "error"
-              ? "text-destructive"
-              : "text-foreground/80",
-        )}
-      >
-        {label}
-      </span>
-      {rest !== "" && (
-        <>
-          <span className="text-muted-foreground"> · </span>
-          <span data-testid="rail-now" className="text-muted-foreground">
-            {rest}
-          </span>
-        </>
-      )}
-    </span>
   );
 }
 
@@ -435,6 +402,8 @@ function OtherLine({ place, children }: { place: RowPlace; children: ReactNode }
 
 /** A line's height before it draws: a feature with a worker or two. */
 const LINE_HEIGHT = 96;
+/** A grid row's height before it draws: a feature with one worker. */
+const GRID_LINE_HEIGHT = 56;
 /** Lines drawn past each edge of the view: a line is tall, so a few cover a fast scroll. */
 const LINE_OVERSCAN = 3;
 
@@ -566,7 +535,8 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   // Each lane as wide as its cards need; in a pane too narrow for that, a list by station.
   const counts = useMemo(() => laneCounts(rows), [rows]);
   const width = usePaneWidth(root);
-  const listed = width !== undefined && width < lanesMinWidth(counts);
+  const grid = useLayoutStore((s) => s.boardLayout) === "grid";
+  const listed = !grid && width !== undefined && width < lanesMinWidth(counts);
   // Every open editor keeps its group's local draft mounted, even after another row takes focus.
   const [editingGroups, setEditingGroups] = useState<ReadonlySet<string>>(() => new Set());
   const waiting = useBoardWaiting(state);
@@ -575,25 +545,40 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   useEffect(() => {
     if (bandOpen) band.current?.scrollIntoView({ block: "nearest" });
   }, [bandOpen]);
-  const line = (row: RailRow, place?: RowPlace) => (
-    <FeatureLine
-      key={row.feature}
-      row={row}
-      stage={state.stages?.[row.feature]}
-      needsMark={row.group === undefined}
-      repos={state.workspace.projectIds.length > 1}
-      asking={asking}
-      onOpen={onOpen}
-      place={place}
-      stacked={listed}
-    />
-  );
+  const line = (row: RailRow, place?: RowPlace) =>
+    grid ? (
+      <GridLine
+        key={row.feature}
+        row={row}
+        stage={state.stages?.[row.feature]}
+        needsMark={row.group === undefined}
+        repos={state.workspace.projectIds.length > 1}
+        asking={asking}
+        onOpen={onOpen}
+        place={place}
+      />
+    ) : (
+      <FeatureLine
+        key={row.feature}
+        row={row}
+        stage={state.stages?.[row.feature]}
+        needsMark={row.group === undefined}
+        repos={state.workspace.projectIds.length > 1}
+        asking={asking}
+        onOpen={onOpen}
+        place={place}
+        stacked={listed}
+      />
+    );
   // A rule under every line but the last, as `divide-y` drew it: the list's last drawn child isn't
   // its last line.
   const placed = (place: RowPlace, index: number): RowPlace =>
     index === entries.length - 1
       ? place
-      : { ...place, className: cn(place.className, "border-b border-border/60") };
+      : {
+          ...place,
+          className: cn(place.className, "border-b border-border/60"),
+        };
 
   return (
     <div
@@ -616,8 +601,10 @@ function RailBoard({ state }: { state: WorkspaceState }) {
           questions' choices whole, and scrolls away with the Board rather than in a box of its own. */}
       <div
         data-testid="rail-scroller"
-        data-layout={listed ? "stacked" : "lanes"}
-        className="min-h-0 flex-1 overflow-y-auto pb-4"
+        data-layout={grid ? "grid" : listed ? "stacked" : "lanes"}
+        // As tall as its lines and no taller, so the Asks dock sits right under them rather than at
+        // the foot of an empty pane; past the pane's height it scrolls.
+        className="min-h-0 flex-[0_1_auto] overflow-y-auto pb-2"
         style={{ "--board-lanes": laneTemplate(counts) } as CSSProperties}
       >
         <Expand open={bandOpen}>
@@ -631,7 +618,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
             {waiting.count > 0 && <WaitingList state={state} waiting={waiting} shown={bandOpen} />}
           </section>
         </Expand>
-        {!listed && rows.length > 0 && <LaneHeads counts={counts} />}
+        {rows.length > 0 && (grid ? <GridHeads /> : !listed && <LaneHeads counts={counts} />)}
         {rows.length === 0 ? (
           <div
             role="status"
@@ -666,7 +653,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
               bare
               items={entries}
               rowKey={entryKey}
-              estimate={LINE_HEIGHT}
+              estimate={grid ? GRID_LINE_HEIGHT : LINE_HEIGHT}
               overscan={LINE_OVERSCAN}
               retainedKeys={editingGroups}
             >
@@ -701,7 +688,8 @@ function RailBoard({ state }: { state: WorkspaceState }) {
           </GlideList>
         )}
       </div>
-      <div className="shrink-0 pb-3">
+      {/* Bounded: an opened stack scrolls in half the pane at most, the lines above still in view. */}
+      <div data-testid="board-asks" className="max-h-[50%] min-h-0 shrink-0 overflow-y-auto pb-3">
         <AskStack workspaceId={workspaceId} focused />
       </div>
     </div>

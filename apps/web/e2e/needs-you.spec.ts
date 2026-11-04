@@ -79,13 +79,23 @@ test("the pill opens every workspace's items, and a row opens its ask in that wo
   const count = 11;
   await expect(pill(page)).toHaveAttribute("data-count", String(count));
   await openPopover(page);
-  // Grouped by kind, approvals first, each row saying its workspace.
-  await expect(popover(page).getByTestId("needs-you-section").first()).toHaveAttribute(
-    "data-section",
-    "approvals",
-  );
-  await expect(popover(page).getByRole("region", { name: "Approvals" })).toBeVisible();
+  // Grouped by kind, what stops work first: errors, then approvals.
+  const sections = popover(page).getByTestId("needs-you-section");
+  await expect(sections.first()).toHaveAttribute("data-section", "errors");
+  await expect(sections.nth(1)).toHaveAttribute("data-section", "approvals");
   await expect(popover(page).getByTestId("needs-you-see-all")).toHaveText(`See all ${count}`);
+  // More than it shows, so a strip heads it with every category and its count, in the list's order.
+  const categories = popover(page).getByTestId("needs-you-strip").getByTestId("needs-you-category");
+  await expect(categories.nth(0)).toHaveAttribute("data-category", "errors");
+  await expect(categories.nth(0)).toHaveAccessibleName("Errors, 2");
+  await expect(categories.nth(1)).toHaveAttribute("data-category", "approvals");
+  // All only once one is picked, as the way back.
+  await expect(categories.and(page.locator('[data-category="all"]'))).toHaveCount(0);
+  // A pick lists that category alone.
+  await categories.and(page.locator('[data-category="approvals"]')).click();
+  await expect(sections).toHaveCount(1);
+  await expect(popover(page).getByRole("region", { name: "Approvals" })).toBeVisible();
+  await expect(categories.first()).toHaveAttribute("data-category", "all");
   // Each row says its kind, behind a hint, its workspace and its thread.
   const merge = row(popover(page), "gh pr merge 91 --squash");
   await expect(merge.getByTestId("needs-you-where")).toHaveText("billing · Export invoices as CSV");
@@ -196,20 +206,23 @@ test("⌘⇧U and ⌘⇧Y step through what needs you, each at its thread", asyn
   await expect(panel(page)).toBeVisible();
 });
 
-test("See all: the panel filters by kind, puts an item away for Later, and dismisses a failure", async ({
+test("See all: the panel filters by category, puts an item away for Later, and dismisses a failure", async ({
   page,
 }) => {
   const made = await start(page);
-  await seeAll(page);
+  // Errors picked in the popover's strip: See all keeps it, the stopped worker and the red build.
+  await openPopover(page);
+  await popover(page).locator('[data-testid="needs-you-category"][data-category="errors"]').click();
+  await popover(page).getByTestId("needs-you-see-all").click();
+  await expect(panel(page)).toBeVisible();
   const items = panel(page).getByTestId("needs-you-item");
-  const all = await items.count();
-
-  // Failing only: the stopped worker and the red build.
-  await panel(page).locator('[data-testid="needs-you-filter"][data-filter="failing"]').click();
+  await expect(
+    panel(page).locator('[data-testid="needs-you-category"][data-category="errors"]'),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(items).toHaveCount(2);
   await expect(items.and(page.locator(`[data-thread-id="${made.failing}"]`))).toHaveCount(1);
-  await panel(page).locator('[data-testid="needs-you-filter"][data-filter="all"]').click();
-  await expect(items).toHaveCount(all);
+  await panel(page).locator('[data-testid="needs-you-category"][data-category="all"]').click();
+  await expect(items).toHaveCount(11);
 
   // Later: away from the list and the count, in the Later list until it wakes or is brought back.
   const before = Number(await pill(page).getAttribute("data-count"));

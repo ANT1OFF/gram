@@ -1,6 +1,15 @@
 import { Menu } from "@base-ui/react/menu";
 import type { GridPreset, WorkspaceState } from "@gram/contracts";
-import { BroomSparkles, CheckIcon, Ellipsis, Focus, Moon, Users } from "lucide-react";
+import {
+  BroomSparkles,
+  CheckIcon,
+  Columns3,
+  Ellipsis,
+  Focus,
+  Moon,
+  Rows3,
+  Users,
+} from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
@@ -10,7 +19,7 @@ import { useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
 import { useWorkersListStore } from "@/orchestration/workers-list";
-import { GRID_PRESETS, PRESET_LABELS, useLayoutStore } from "@/stores/layout";
+import { GRID_PRESETS, PRESET_LABELS, useLayoutStore, type BoardLayout } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useViewStore } from "@/views/view-store";
 import { useViewWorkspace } from "@/views/view-workspace";
@@ -66,6 +75,9 @@ function TitlebarMenuItems({
   const focusMode = useLayoutStore((s) => s.focusMode);
   const fold = useTitlebarSlot((s) => s.fold);
   const all = fold >= FOLD_ALL;
+  // The Board's Grid or Lanes, folded out of its header with the lesser buttons.
+  const board = useViewStore((s) => s.view === "board") && state !== undefined && fold > 0;
+  const boardLayout = useLayoutStore((s) => s.boardLayout);
   // A worker in the bar folded all the way: its own actions are this menu's.
   const carried = useTitlebarThread();
   const worker = useThreadsStore((s) =>
@@ -103,6 +115,36 @@ function TitlebarMenuItems({
       {tidy && <TidyItem key={state.workspace.id} state={state} className={itemClassName} />}
       {(tidy || (orchestration && state !== undefined && all)) && (
         <div role="separator" className="-mx-1 my-1 h-px bg-border" />
+      )}
+      {board && (
+        <>
+          <Menu.RadioGroup
+            data-testid="folded-board-layout"
+            value={boardLayout}
+            onValueChange={(next: BoardLayout) => useLayoutStore.getState().setBoardLayout(next)}
+          >
+            <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
+              Board
+            </Menu.GroupLabel>
+            {(
+              [
+                ["grid", "Grid", Rows3],
+                ["lanes", "Lanes", Columns3],
+              ] as const
+            ).map(([value, label, Icon]) => (
+              <Menu.RadioItem key={value} value={value} closeOnClick className={itemClassName}>
+                <span className="flex size-3.5 items-center justify-center">
+                  <Menu.RadioItemIndicator>
+                    <CheckIcon aria-hidden />
+                  </Menu.RadioItemIndicator>
+                </span>
+                <Icon aria-hidden />
+                {label}
+              </Menu.RadioItem>
+            ))}
+          </Menu.RadioGroup>
+          <div role="separator" className="-mx-1 my-1 h-px bg-border" />
+        </>
       )}
       <Menu.Item
         data-testid="folded-quiet"
