@@ -325,7 +325,13 @@ const untrackedFiles = (
 export interface DiffOptions {
   /** The rebase signal's resolved base, so a clean tree diffs against the base the chip names. */
   readonly baseOverride?: string | undefined;
+  /** Leaves whitespace-only changes out (`git diff -w`); a file with nothing else isn't listed. */
+  readonly ignoreWhitespace?: boolean | undefined;
 }
+
+/** The flag `DiffOptions.ignoreWhitespace` adds to a `git diff`. */
+export const whitespaceArgs = (options: { readonly ignoreWhitespace?: boolean | undefined }) =>
+  options.ignoreWhitespace === true ? ["-w"] : [];
 
 /**
  * The working-tree diff for `cwd`. A timed-out git call is an error, never a fabricated empty diff
@@ -348,6 +354,7 @@ export const gitDiff = (
       "diff",
       ...(hasHead ? ["HEAD"] : []),
       "--no-color",
+      ...whitespaceArgs(options),
     ]);
     const capped = parseGitDiffCapped(tracked.stdout, tracked.truncated);
     if (capped.note !== undefined) {
@@ -374,6 +381,13 @@ export const gitDiff = (
     }
 
     if (files.length > 0 || !hasHead) return { repo: true, branch, files, worktree: workTree };
+    // Whitespace-only changes are still uncommitted work: the tree isn't clean, so no fallback.
+    if (
+      options.ignoreWhitespace === true &&
+      (yield* git(workTree, ["diff", "--quiet", "HEAD"])).status === 1
+    ) {
+      return { repo: true, branch, files, worktree: workTree };
+    }
 
     const chosen = options.baseOverride ?? (yield* localBaseRef(workTree));
     if (chosen === undefined) return { repo: true, branch, files, worktree: workTree };
@@ -389,6 +403,7 @@ export const gitDiff = (
       "diff",
       `${chosen}...HEAD`,
       "--no-color",
+      ...whitespaceArgs(options),
     ]);
     const branchDiff = parseGitDiffCapped(fallback.stdout, fallback.truncated);
     if (branchDiff.note !== undefined) {

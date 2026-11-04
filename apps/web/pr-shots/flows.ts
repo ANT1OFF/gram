@@ -295,6 +295,21 @@ const steps: readonly Shot[] = [
       await expect(page.getByTestId("effort-gauge")).toHaveAttribute("data-level", "xhigh");
     },
   },
+  {
+    // Last, so the frames before it keep their numbers from round to round.
+    name: "review-focus",
+    title: "Review: Focus review takes the window, the conversation a strip beside it",
+    open: async (page) => {
+      await openApproval(page);
+      await page
+        .locator('[data-testid="diff-file"][data-path="src/retry.test.ts"]')
+        .getByRole("button")
+        .first()
+        .click();
+      await page.getByTestId("right-panel").getByRole("button", { name: "Focus review" }).click();
+      await expect(page.getByTestId("review-strip")).toBeVisible();
+    },
+  },
 ];
 
 export const FLOW_SHOTS: readonly Shot[] = steps.map((step, index) => ({
