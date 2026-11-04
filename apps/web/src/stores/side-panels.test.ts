@@ -10,6 +10,9 @@ import {
   overviewShown,
   panelBounds,
   PANEL_WIDTH,
+  REVIEW_CHAT_WIDTH,
+  REVIEW_STRIP_WIDTH,
+  REVIEW_WIDTH_SHARE,
   sanitizeBoardFilters,
   OVERVIEW_FOLDED_BY_DEFAULT,
   overviewSectionFolded,
@@ -47,6 +50,9 @@ beforeEach(() =>
     overviewFolded: [],
     overviewUnfolded: [],
     overviewHidden: [],
+    reviewWidth: undefined,
+    reviewFocus: false,
+    chatBusy: false,
   }),
 );
 
@@ -54,7 +60,7 @@ const fit = (overrides: Partial<ShellFitInput> = {}) => fitShell({ ...s(), ...ov
 
 describe("fitShell", () => {
   it("lays out the stored widths when they fit beside the chat", () => {
-    expect(fit()).toMatchObject({
+    expect(fit({ panelTab: "files" })).toMatchObject({
       sidebar: "full",
       sidebarWidth: SIDEBAR_WIDTH.default,
       panel: "side",
@@ -100,6 +106,95 @@ describe("fitShell", () => {
       fit({ threadInView: false, panelTab: "reviews", reviewRequestsPlacement: "panel" }),
     ).toMatchObject({ panel: "side" });
     expect(fit({ threadInView: false, panelPeek: true })).toMatchObject({ panel: "side" });
+  });
+});
+
+describe("review width", () => {
+  it("opens the Diff and PR tabs at a share of the window, the others at their own width", () => {
+    for (const panelTab of ["diff", "pr"] as const) {
+      expect(fit({ panelTab, windowWidth: 2400 })).toMatchObject({
+        panel: "side",
+        panelWidth: Math.round(2400 * REVIEW_WIDTH_SHARE),
+        sidebarWidth: SIDEBAR_WIDTH.default,
+      });
+    }
+    expect(fit({ panelTab: "terminal", windowWidth: 2400 }).panelWidth).toBe(PANEL_WIDTH.default);
+    // As far as it leaves the chat its room, and never narrower than the other tabs.
+    expect(fit({ panelTab: "diff", windowWidth: 1600 }).panelWidth).toBe(
+      1600 - SIDEBAR_WIDTH.default - REVIEW_CHAT_WIDTH,
+    );
+    expect(fit({ panelTab: "diff", windowWidth: 1600, panelWidth: 950 }).panelWidth).toBe(950);
+    expect(fit({ panelTab: "diff", windowWidth: 1000 }).panelWidth).toBe(PANEL_WIDTH.default);
+    // A drag goes past the chat's room, down to its minimum.
+    expect(fit({ panelTab: "diff", windowWidth: 1600, reviewWidth: 1200 }).panelWidth).toBe(
+      1600 - SIDEBAR_WIDTH.default - CHAT_MIN_WIDTH,
+    );
+  });
+
+  it("keeps the usual width beside a board, a grid or an orchestrator, which need the room", () => {
+    expect(fit({ panelTab: "diff", windowWidth: 1600, chatBusy: true }).panelWidth).toBe(
+      PANEL_WIDTH.default,
+    );
+  });
+
+  it("keeps a review's drag apart from the other tabs' width", () => {
+    s().setPanelTab("diff");
+    s().setReviewWidth(800);
+    expect(s()).toMatchObject({ reviewWidth: 800, panelWidth: PANEL_WIDTH.default });
+    expect(fit().panelWidth).toBe(800);
+    s().setPanelTab("files");
+    expect(fit().panelWidth).toBe(PANEL_WIDTH.default);
+    s().setPanelTab("pr");
+    expect(fit().panelWidth).toBe(800);
+  });
+
+  it("puts a review in focus and back, leaving a strip of the chat", () => {
+    s().setPanelTab("terminal");
+    s().toggleReviewFocus();
+    // Asked for from another tab, the review shows the Diff.
+    expect(s()).toMatchObject({ panelTab: "diff", reviewFocus: true });
+    expect(fit()).toMatchObject({
+      sidebar: "none",
+      sidebarWidth: 0,
+      panel: "side",
+      panelWidth: 1440 - REVIEW_STRIP_WIDTH,
+      reviewFocus: true,
+    });
+    s().toggleReviewFocus();
+    expect(fit()).toMatchObject({ sidebar: "full", reviewFocus: false });
+  });
+
+  it("leaves focus for another tab, a hidden panel, focus mode or another page", () => {
+    const focused = () => {
+      s().setPanelTab("diff");
+      s().toggleReviewFocus();
+      expect(fit().reviewFocus).toBe(true);
+    };
+    focused();
+    s().setPanelTab("files");
+    expect(s().reviewFocus).toBe(false);
+    focused();
+    s().togglePanel();
+    expect(s()).toMatchObject({ reviewFocus: false, panelOpen: false });
+    s().togglePanel();
+    focused();
+    s().toggleFocusMode();
+    expect(s().reviewFocus).toBe(false);
+    s().toggleFocusMode();
+    focused();
+    s().setShellContext({ windowWidth: 1440, threadInView: true, page: "/t/t-b" });
+    expect(s().reviewFocus).toBe(false);
+    focused();
+    // A drag gives the chat back at the width dragged to.
+    s().setReviewWidth(700);
+    expect(fit()).toMatchObject({ reviewFocus: false, panelWidth: 700 });
+  });
+
+  it("opens the panel on the Diff tab for focus from focus mode", () => {
+    useLayoutStore.setState({ focusMode: true, panelTab: "pr" });
+    s().toggleReviewFocus();
+    expect(s()).toMatchObject({ focusMode: false, panelTab: "pr", reviewFocus: true });
+    expect(fit().reviewFocus).toBe(true);
   });
 });
 
@@ -453,7 +548,7 @@ describe("side panels", () => {
     expect(overviewShown("compact", 1600)).toBe("compact");
     expect(overviewShown("hidden", 1600)).toBe("hidden");
     expect(fit({ windowWidth: 1440 })).toMatchObject({ sidebar: "full" });
-    expect(fit({ windowWidth: 1100 })).toMatchObject({
+    expect(fit({ windowWidth: 1100, panelTab: "files" })).toMatchObject({
       sidebar: "compact",
       sidebarWidth: OVERVIEW_RAIL_WIDTH,
       panel: "side",

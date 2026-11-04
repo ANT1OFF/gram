@@ -658,6 +658,12 @@ function PaletteBody({
       },
     },
     {
+      id: "action:reviewFocus",
+      label: "Focus review",
+      ...shortcut("review.focus"),
+      run: () => useLayoutStore.getState().toggleReviewFocus(),
+    },
+    {
       id: "action:focus",
       label: "Focus mode",
       ...shortcut("focus.toggle"),

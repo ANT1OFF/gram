@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ServerConfig } from "../../config.ts";
 import { gitPlatformTest } from "../../git/platform.ts";
-import { hasGit, makeRepo, removeDir, tempDir, write } from "../../git/test-repo.ts";
+import { hasGit, makeRepo, removeDir, run, tempDir, write } from "../../git/test-repo.ts";
 import { LaunchToken, serverPort, ServerLayer } from "../../http/server.ts";
 import { HttpServer, RpcClient, RpcSerialization, Socket } from "../../platform/unstable.ts";
 import { FakeAgentAdapter } from "../../runtime/fake-agent.ts";
@@ -104,6 +104,60 @@ describe.skipIf(!hasGit)("git.diff turn scope", () => {
           entity: "checkpoint",
           id: "turn-missing",
         });
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("leaves whitespace-only changes out of a turn and a branch on request", () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        dirs.push(dir);
+        const repo = makeRepo(dir);
+        run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+        run(repo, "checkout", "-q", "-b", "feat");
+        const client = yield* makeClient;
+        const thread = yield* client["thread.create"]({
+          projectRoot: repo,
+          checkout: { kind: "current" },
+        });
+        yield* Effect.addFinalizer(() =>
+          client["thread.close"]({ threadId: thread.id }).pipe(Effect.ignore),
+        );
+        const snapshot = (id: string) =>
+          snapshotCheckpoint(repo, thread.id, id).pipe(Effect.provide(ProcLive));
+        const paths = (scope: "turn" | "branch", ignoreWhitespace?: boolean) =>
+          client["git.diff"]({
+            threadId: thread.id,
+            scope:
+              scope === "turn" ? { kind: "turn", turnId: "turn-1" as TurnId } : { kind: scope },
+            ...(ignoreWhitespace === undefined ? {} : { ignoreWhitespace }),
+          }).pipe(Effect.map((diff) => (diff.files ?? []).map((f) => f.path).toSorted()));
+
+        yield* snapshot("turn-1");
+        write(nodePath.join(repo, "tracked.txt"), "  tracked  ");
+        write(nodePath.join(repo, "real.txt"), "new\n");
+        yield* snapshot("turn-1.end");
+        expect(yield* paths("turn")).toEqual(["real.txt", "tracked.txt"]);
+        expect(yield* paths("turn", true)).toEqual(["real.txt"]);
+
+        // A running turn's end is the live tree.
+        yield* snapshot("turn-2");
+        write(nodePath.join(repo, "tracked.txt"), "tracked");
+        write(nodePath.join(repo, "real.txt"), "newer\n");
+        const running = (ignoreWhitespace?: boolean) =>
+          client["git.diff"]({
+            threadId: thread.id,
+            scope: { kind: "turn", turnId: "turn-2" as TurnId },
+            ...(ignoreWhitespace === undefined ? {} : { ignoreWhitespace }),
+          }).pipe(Effect.map((diff) => (diff.files ?? []).map((f) => f.path).toSorted()));
+        expect(yield* running()).toEqual(["real.txt", "tracked.txt"]);
+        expect(yield* running(true)).toEqual(["real.txt"]);
+        write(nodePath.join(repo, "tracked.txt"), "  tracked  ");
+        write(nodePath.join(repo, "real.txt"), "new\n");
+
+        run(repo, "add", "-A");
+        run(repo, "commit", "-qm", "work");
+        expect(yield* paths("branch")).toEqual(["real.txt", "tracked.txt"]);
+        expect(yield* paths("branch", true)).toEqual(["real.txt"]);
       }).pipe(Effect.scoped),
     );
   });

@@ -56,7 +56,7 @@ import {
 } from "@/orchestration/worker-header";
 import { RunScriptMenu } from "@/scripts/run-script-menu";
 import { loadEarlier, useThreadFeed } from "@/stores/feeds";
-import { useLayoutStore } from "@/stores/layout";
+import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -123,10 +123,10 @@ export function ThreadView({
   /** Makes the header a drag source; the grid swaps panes on drop. */
   onHeaderDragStart?: (event: DragEvent<HTMLElement>) => void;
 }) {
-  // An expanded right panel covers the chat, so nothing in it answers keys: Enter would otherwise
-  // approve a request nobody can see, and ⌘Enter send a draft behind the panel.
-  const panelExpanded = useLayoutStore((s) => s.panelExpanded);
-  const focused = paneFocused && !panelExpanded;
+  // An expanded right panel or a review in focus covers the chat, so nothing in it answers keys:
+  // Enter would otherwise approve a request nobody can see, and ⌘Enter send a draft behind the panel.
+  const covered = useLayoutStore((s) => s.panelExpanded || fitShell(s).reviewFocus);
+  const focused = paneFocused && !covered;
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const titlebarThread = useTitlebarThread();
   const titlebarSlot = useTitlebarSlot((s) => s.slot);

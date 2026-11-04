@@ -156,10 +156,11 @@ const UNCOMMITTED: DiffFile[] = [
     path: "src/clock.ts",
     oldPath: "src/timers.ts",
     status: "renamed",
-    additions: 1,
-    deletions: 1,
+    additions: 2,
+    deletions: 2,
+    // The second line is only re-indented, which Ignore whitespace leaves out.
     patch:
-      "@@ -1,3 +1,3 @@\n-export const sleep = (ms: number) =>\n+export const wait = (ms: number) =>\n   new Promise((r) => setTimeout(r, ms));\n \\ No newline at end of file",
+      "@@ -1,3 +1,3 @@\n-export const sleep = (ms: number) =>\n+export const wait = (ms: number) =>\n-  new Promise((r) => setTimeout(r, ms));\n+    new Promise((r) => setTimeout(r, ms));\n \\ No newline at end of file",
     binary: false,
     tooLarge: false,
   },
@@ -220,7 +221,60 @@ const README_FILE: DiffFile = {
   tooLarge: false,
 };
 
-export function mockDiff(threadId: ThreadId, scope: DiffScope): Diff {
+/** A patch line without its sign and whitespace, as `git diff -w` compares lines. */
+const bare = (line: string) => line.slice(1).replace(/\s+/g, "");
+
+/**
+ * What `git diff -w` leaves of a mock file: a run of removed lines followed by as many added ones,
+ * equal but for whitespace, becomes context; a hunk with no change left goes, and a file with no
+ * hunk left isn't listed.
+ */
+export function withoutWhitespaceChanges(file: DiffFile): DiffFile | undefined {
+  if (file.binary || file.tooLarge || file.patch === "") return file;
+  const hunks: string[][] = [];
+  for (const line of file.patch.split("\n")) {
+    if (line.startsWith("@@")) hunks.push([line]);
+    else hunks.at(-1)?.push(line);
+  }
+  const kept = hunks.flatMap(([header, ...lines]) => {
+    const out: string[] = [];
+    for (let i = 0; i < lines.length;) {
+      const dels: string[] = [];
+      while (lines[i]?.startsWith("-")) dels.push(lines[i++]!);
+      const adds: string[] = [];
+      while (lines[i]?.startsWith("+")) adds.push(lines[i++]!);
+      if (dels.length === 0 && adds.length === 0) {
+        out.push(lines[i++]!);
+        continue;
+      }
+      const same = dels.length === adds.length && dels.every((d, k) => bare(d) === bare(adds[k]!));
+      out.push(...(same ? adds.map((a) => ` ${a.slice(1)}`) : [...dels, ...adds]));
+    }
+    return out.some((line) => line.startsWith("+") || line.startsWith("-"))
+      ? [[header!, ...out]]
+      : [];
+  });
+  if (kept.length === 0) return undefined;
+  const lines = kept.flat();
+  return {
+    ...file,
+    additions: lines.filter((line) => line.startsWith("+")).length,
+    deletions: lines.filter((line) => line.startsWith("-")).length,
+    patch: lines.join("\n"),
+  };
+}
+
+export function mockDiff(
+  threadId: ThreadId,
+  scope: DiffScope,
+  options: { ignoreWhitespace?: boolean | undefined } = {},
+): Diff {
+  const diff = mockDiffOf(threadId, scope);
+  if (options.ignoreWhitespace !== true || !diff.repo || diff.files === undefined) return diff;
+  return { ...diff, files: diff.files.flatMap((file) => withoutWhitespaceChanges(file) ?? []) };
+}
+
+function mockDiffOf(threadId: ThreadId, scope: DiffScope): Diff {
   if (threadId === "t-grpc") return { repo: false };
   if (scope.kind === "turn") {
     const files = threadId === "t-deps" && scope.turnId === MOCK_DEPS_TURN ? DEPS_TURN_FILES : [];

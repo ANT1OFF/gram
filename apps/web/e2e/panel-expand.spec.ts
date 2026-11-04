@@ -37,6 +37,15 @@ async function dragHandle(page: Page, dx: number) {
   await page.mouse.up();
 }
 
+/**
+ * The Files tab, whose panel expands over the chat: the Diff and PR tabs put a review in focus
+ * instead (review-width.spec.ts).
+ */
+async function filesTab(page: Page) {
+  await page.getByTestId("right-panel").getByRole("tab", { name: "Files", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Expand panel" })).toBeVisible();
+}
+
 /** Restore from the panel edge, with no tooltip owning Escape. Tooltip Escape is a separate interaction. */
 async function restorePanelWithEscape(page: Page) {
   await page.mouse.move(0, 0);
@@ -54,6 +63,7 @@ test("the right panel widens past 960 px, expands over the chat and fits a narro
   const panel = page.getByTestId("right-panel");
   const chat = page.locator("main");
   await expect(panel).toBeVisible();
+  await filesTab(page);
   // This scenario keeps the full overview beside the chat, including in narrow windows.
   // Automatic mode instead becomes a 60 px rail below 1280 px.
   await page.getByRole("button", { name: "Compact overview", exact: true }).click();
@@ -124,6 +134,7 @@ test("keys reach the expanded panel, not the approval hidden behind it", async (
   await page.goto("/t/t-flaky");
   const card = page.getByTestId("approval-card");
   await expect(card).toBeVisible({ timeout: 20_000 * slowdown });
+  await filesTab(page);
   await page.getByRole("button", { name: "Expand panel" }).click();
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-panel-expanded", "true");
   // Enter on the edge, which isn't a button, mustn't reach the hidden card's Allow either.
@@ -143,6 +154,7 @@ test("expanding works in a grid and with the panel on the left", async ({ page }
   const shell = page.getByTestId("app-shell");
   const panel = page.getByTestId("right-panel");
 
+  await filesTab(page);
   await setLayout(page, "2 columns");
   await expect(page.getByTestId("pane")).toHaveCount(2);
   await page.getByRole("button", { name: "Expand panel" }).click();

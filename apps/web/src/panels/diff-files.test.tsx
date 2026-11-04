@@ -3,7 +3,7 @@ import type { DiffFile } from "@gram/contracts";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { mockDiff } from "@/api/mock-git";
+import { mockDiff, withoutWhitespaceChanges } from "@/api/mock-git";
 
 import { DiffFileList } from "./diff-files";
 import { ROW_BUDGET } from "./patch-view";
@@ -21,6 +21,19 @@ const file = (path: string): DiffFile => ({
 });
 
 const rows = () => document.querySelectorAll("tr").length;
+
+const expanded = () =>
+  screen
+    .getAllByTestId("diff-file")
+    .map((row) => row.querySelector("[data-diff-file-header]")!.getAttribute("aria-expanded"));
+
+const sized = (path: string, lines: number): DiffFile => ({
+  ...file(path),
+  additions: lines,
+  deletions: 0,
+});
+
+const patch = () => screen.getByTestId("patch");
 
 describe("DiffFileList", () => {
   it("moves between file headers with ↑ / ↓, stopping at the ends", () => {
@@ -52,5 +65,51 @@ describe("DiffFileList", () => {
       <DiffFileList files={[{ ...lockfile, patch: `${lockfile.patch}\n+x` }]} focus={focus} />,
     );
     expect(rows()).toBe(ROW_BUDGET);
+  });
+
+  it("starts every file open while the diff is small, however many files it has", () => {
+    render(<DiffFileList files={["a", "b", "c", "d", "e"].map((p) => sized(p, 79))} />);
+    expect(expanded()).toEqual(["true", "true", "true", "true", "true"]);
+    cleanup();
+    // 400 changed lines in all is past small: more than three files start folded, as before.
+    render(<DiffFileList files={["a", "b", "c", "d", "e"].map((p) => sized(p, 80))} />);
+    expect(expanded()).toEqual(["false", "false", "false", "false", "false"]);
+    cleanup();
+    render(<DiffFileList files={[sized("a", 10), sized("lock", 900)]} />);
+    expect(expanded()).toEqual(["true", "false"]);
+  });
+
+  it("wraps long unified lines on request instead of scrolling them", () => {
+    const long: DiffFile = { ...file("a.ts"), patch: `@@ -1 +1 @@\n-${"x".repeat(400)}\n+y` };
+    const { rerender } = render(<DiffFileList files={[long]} />);
+    expect(patch().getAttribute("data-wrap")).toBe("false");
+    expect(patch().className).toContain("overflow-x-auto");
+    rerender(<DiffFileList files={[long]} wrap />);
+    expect(patch().getAttribute("data-wrap")).toBe("true");
+    expect(patch().className).not.toContain("overflow-x-auto");
+    expect(patch().querySelector("td.whitespace-pre-wrap")).not.toBeNull();
+  });
+});
+
+describe("withoutWhitespaceChanges", () => {
+  it("keeps real changes, turns re-indented lines into context and drops what is left empty", () => {
+    const clock = mockDiff("t-flaky" as never, { kind: "uncommitted" }).files!.find(
+      (f) => f.path === "src/clock.ts",
+    )!;
+    expect(clock).toMatchObject({ additions: 2, deletions: 2 });
+    const kept = withoutWhitespaceChanges(clock)!;
+    expect(kept).toMatchObject({ additions: 1, deletions: 1 });
+    expect(kept.patch).toContain("\n     new Promise");
+    const reindent: DiffFile = { ...file("b.ts"), patch: "@@ -1 +1 @@\n-  a  b\n+a b" };
+    expect(withoutWhitespaceChanges(reindent)).toBeUndefined();
+    const filtered = mockDiff(
+      "t-flaky" as never,
+      { kind: "uncommitted" },
+      { ignoreWhitespace: true },
+    );
+    expect(filtered.files!.find((f) => f.path === "src/clock.ts")).toMatchObject({
+      additions: 1,
+      deletions: 1,
+    });
   });
 });

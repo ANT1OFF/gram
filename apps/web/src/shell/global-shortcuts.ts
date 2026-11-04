@@ -269,6 +269,14 @@ export function useGlobalShortcuts() {
   });
 
   useShortcut({
+    id: "review.focus",
+    keys: "mod+alt+f",
+    label: "Focus review",
+    group: "App",
+    run: () => useLayoutStore.getState().toggleReviewFocus(),
+  });
+
+  useShortcut({
     id: "focus.toggle",
     keys: "mod+shift+.",
     label: "Focus mode",

@@ -101,7 +101,12 @@ export const GitRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, GitError),
   }),
   Rpc.make("git.diff", {
-    payload: { ...threadRef, scope: DiffScope },
+    /** `ignoreWhitespace` leaves whitespace-only changes out, as `git diff -w` does. */
+    payload: {
+      ...threadRef,
+      scope: DiffScope,
+      ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
+    },
     success: Diff,
     error: errors(ThreadNotFound, GitError, NotFound),
   }),

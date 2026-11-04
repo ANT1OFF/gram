@@ -14,6 +14,11 @@ import { ROW_BUDGET } from "./patch-view";
 import { resetFilesStore, useFilesStore } from "./files/files-store";
 import { Remount, renderWithApi } from "./test-utils";
 
+// NumberFlow's custom element doesn't upgrade in happy-dom, so an animated ticker throws on update.
+vi.mock("@/motion/number-ticker", () => ({
+  NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
+}));
+
 const T = "t-flaky" as ThreadId;
 
 afterEach(() => {
@@ -21,7 +26,13 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   useThreadsStore.setState({ byId: {} });
-  useLayoutStore.setState({ panelTargets: {}, diffLayout: "unified", diffTreeShown: true });
+  useLayoutStore.setState({
+    panelTargets: {},
+    diffLayout: "unified",
+    diffTreeShown: true,
+    diffWrap: false,
+    diffIgnoreWhitespace: false,
+  });
   resetFilesStore();
   useDiffCommentsStore.setState({ byThread: {} });
 });
@@ -87,6 +98,40 @@ describe("DiffPanel", () => {
     expect(within(files[0]!).getByText("Binary file not shown")).toBeTruthy();
     fireEvent.click(within(files[5]!).getAllByRole("button")[0]!);
     expect(within(files[5]!).getByText("Diff too large to display")).toBeTruthy();
+  });
+
+  it("asks again without whitespace-only changes, and wraps lines, as remembered", async () => {
+    const gitDiff = vi.fn(
+      async (threadId: ThreadId, scope: DiffScope, options?: { ignoreWhitespace?: boolean }) =>
+        mockDiff(threadId, scope, options),
+    );
+    renderWithApi(<DiffPanel threadId={T} />, { gitDiff });
+    await screen.findAllByTestId("diff-file");
+    expect(gitDiff).toHaveBeenLastCalledWith(T, { kind: "uncommitted" });
+
+    const ignore = screen.getByRole("button", { name: "Ignore whitespace" });
+    expect(ignore.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(ignore);
+    await waitFor(() =>
+      expect(gitDiff).toHaveBeenLastCalledWith(
+        T,
+        { kind: "uncommitted" },
+        { ignoreWhitespace: true },
+      ),
+    );
+    expect(useLayoutStore.getState().diffIgnoreWhitespace).toBe(true);
+    const clock = (await screen.findAllByTestId("diff-file")).find(
+      (row) => row.dataset["path"] === "src/clock.ts",
+    )!;
+    // The re-indented line is context now: one line added and one removed are left.
+    fireEvent.click(within(clock).getAllByRole("button")[0]!);
+    await waitFor(() => expect(clock.querySelectorAll('tr[data-kind="add"]')).toHaveLength(1));
+    expect(clock.querySelectorAll('tr[data-kind="del"]')).toHaveLength(1);
+
+    const wrap = screen.getByRole("button", { name: "Wrap lines" });
+    fireEvent.click(wrap);
+    expect(wrap.getAttribute("aria-pressed")).toBe("true");
+    expect(useLayoutStore.getState().diffWrap).toBe(true);
   });
 
   it("renders the first rows of a long patch and offers the rest", async () => {

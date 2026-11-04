@@ -26,6 +26,7 @@ import {
   Proc,
   samePath,
   tryRepoTop,
+  whitespaceArgs,
   Worktrees,
 } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -162,17 +163,17 @@ export const gitHandlers = Effect.gen(function* () {
    * Uncommitted work. A clean tree on a branch ahead of its base falls back to branch vs base, with
    * `base` set so the panel can say so.
    */
-  const uncommittedDiff = (cwd: string) =>
+  const uncommittedDiff = (cwd: string, ignoreWhitespace: boolean) =>
     provide(
       Effect.gen(function* () {
-        const diff = yield* gitDiff(cwd).pipe(Effect.mapError(toGitError));
+        const diff = yield* gitDiff(cwd, { ignoreWhitespace }).pipe(Effect.mapError(toGitError));
         if (diff.worktree === undefined || diff.base !== undefined) return toDiff(diff, new Set());
         return toDiff(diff, yield* untrackedPaths(diff.worktree));
       }),
     );
 
   /** Committed branch work against the rebase signal's base, else the repo default. */
-  const branchDiff = (cwd: string) =>
+  const branchDiff = (cwd: string, ignoreWhitespace: boolean) =>
     provide(
       Effect.gen(function* () {
         const top = yield* tryRepoTop(cwd).pipe(Effect.mapError(toGitError));
@@ -191,6 +192,7 @@ export const gitHandlers = Effect.gen(function* () {
           "diff",
           `${base}...HEAD`,
           "--no-color",
+          ...whitespaceArgs({ ignoreWhitespace }),
         ]).pipe(Effect.mapError(toGitError));
         if (out.status !== 0) {
           return yield* new GitError({
@@ -307,17 +309,17 @@ export const gitHandlers = Effect.gen(function* () {
         return { branch: cleanup };
       }),
 
-    "git.diff": ({ threadId, scope }) =>
+    "git.diff": ({ threadId, scope, ignoreWhitespace = false }) =>
       Effect.gen(function* () {
         const cwd = yield* threadFolder(yield* store.getThread(threadId));
         switch (scope.kind) {
           case "uncommitted":
-            return yield* uncommittedDiff(cwd);
+            return yield* uncommittedDiff(cwd, ignoreWhitespace);
           case "branch":
-            return yield* branchDiff(cwd);
+            return yield* branchDiff(cwd, ignoreWhitespace);
           case "turn":
             return yield* provide(
-              turnDiff(threadId, cwd, scope.turnId).pipe(
+              turnDiff(threadId, cwd, scope.turnId, { ignoreWhitespace }).pipe(
                 Effect.provideService(Checkpoints, checkpoints),
               ),
             );

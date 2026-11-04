@@ -190,6 +190,72 @@ export const parseGitDiff = (text: string): Array<DiffFile> => {
   return files;
 };
 
+/** A patch line without its sign and whitespace, as `git diff -w` compares lines. */
+const bareLine = (line: string) => line.slice(1).replace(/\s+/g, "");
+
+/**
+ * `files` with whitespace-only changes left out, for a diff git can't be asked for with `-w` (one
+ * against a snapshot of the live tree): a run of removed lines followed by as many added ones, equal
+ * but for whitespace, becomes context; a hunk with no change left goes, and so does a file with no
+ * hunk left. Coarser than `-w`, which re-runs the diff: a reindented run beside a real change of
+ * another length stays as it was.
+ */
+export const withoutWhitespaceChanges = (files: ReadonlyArray<DiffFile>): Array<DiffFile> =>
+  files.flatMap((file) => {
+    if (file.note !== undefined || file.diff === "") return [file];
+    const hunks: Array<Array<string>> = [];
+    for (const line of file.diff.replace(/\n$/, "").split("\n")) {
+      if (line.startsWith("@@")) hunks.push([line]);
+      else hunks.at(-1)?.push(line);
+    }
+    const kept = hunks.flatMap(([header, ...lines]) => {
+      const out: Array<string> = [];
+      // A run of one sign, with the `\ No newline` note git puts after its last line.
+      const take = (sign: string, at: number) => {
+        const stop = lines.findIndex((line, k) => k >= at && !line.startsWith(sign));
+        const end = stop === -1 ? lines.length : stop;
+        return end > at && lines[end]?.startsWith("\\") === true ? end + 1 : end;
+      };
+      for (let i = 0; i < lines.length;) {
+        const removedEnd = take("-", i);
+        const addedEnd = take("+", removedEnd);
+        if (addedEnd === i) {
+          out.push(lines[i++]!);
+          continue;
+        }
+        const removed = lines.slice(i, removedEnd);
+        const added = lines.slice(removedEnd, addedEnd);
+        i = addedEnd;
+        const before = removed.filter((line) => !line.startsWith("\\"));
+        const after = added.filter((line) => !line.startsWith("\\"));
+        const same =
+          before.length === after.length &&
+          before.every((line, k) => bareLine(line) === bareLine(after[k]!));
+        out.push(
+          ...(same
+            ? added.map((line) => (line.startsWith("+") ? ` ${line.slice(1)}` : line))
+            : [...removed, ...added]),
+        );
+      }
+      return out.some((line) => line.startsWith("+") || line.startsWith("-"))
+        ? [[header!, ...out]]
+        : [];
+    });
+    // A rename keeps its row, with no lines left to show.
+    if (kept.length === 0) {
+      return file.status === "modified" ? [] : [{ ...file, added: 0, removed: 0, diff: "" }];
+    }
+    const lines = kept.flat();
+    return [
+      {
+        ...file,
+        added: lines.filter((line) => line.startsWith("+")).length,
+        removed: lines.filter((line) => line.startsWith("-")).length,
+        diff: `${lines.join("\n")}\n`,
+      },
+    ];
+  });
+
 /** `parseGitDiff` behind the view cap: an over-cap body is dropped with the shared note. */
 export const parseGitDiffCapped = (
   text: string,
@@ -325,7 +391,13 @@ const untrackedFiles = (
 export interface DiffOptions {
   /** The rebase signal's resolved base, so a clean tree diffs against the base the chip names. */
   readonly baseOverride?: string | undefined;
+  /** Leaves whitespace-only changes out (`git diff -w`); a file with nothing else isn't listed. */
+  readonly ignoreWhitespace?: boolean | undefined;
 }
+
+/** The flag `DiffOptions.ignoreWhitespace` adds to a `git diff`. */
+export const whitespaceArgs = (options: { readonly ignoreWhitespace?: boolean | undefined }) =>
+  options.ignoreWhitespace === true ? ["-w"] : [];
 
 /**
  * The working-tree diff for `cwd`. A timed-out git call is an error, never a fabricated empty diff
@@ -348,6 +420,7 @@ export const gitDiff = (
       "diff",
       ...(hasHead ? ["HEAD"] : []),
       "--no-color",
+      ...whitespaceArgs(options),
     ]);
     const capped = parseGitDiffCapped(tracked.stdout, tracked.truncated);
     if (capped.note !== undefined) {
@@ -374,6 +447,13 @@ export const gitDiff = (
     }
 
     if (files.length > 0 || !hasHead) return { repo: true, branch, files, worktree: workTree };
+    // Whitespace-only changes are still uncommitted work: the tree isn't clean, so no fallback.
+    if (
+      options.ignoreWhitespace === true &&
+      (yield* git(workTree, ["diff", "--quiet", "HEAD"])).status === 1
+    ) {
+      return { repo: true, branch, files, worktree: workTree };
+    }
 
     const chosen = options.baseOverride ?? (yield* localBaseRef(workTree));
     if (chosen === undefined) return { repo: true, branch, files, worktree: workTree };
@@ -389,6 +469,7 @@ export const gitDiff = (
       "diff",
       `${chosen}...HEAD`,
       "--no-color",
+      ...whitespaceArgs(options),
     ]);
     const branchDiff = parseGitDiffCapped(fallback.stdout, fallback.truncated);
     if (branchDiff.note !== undefined) {
