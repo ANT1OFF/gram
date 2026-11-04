@@ -112,3 +112,21 @@ test("Notify me about at Asks only keeps failures out of desktop notifications",
   await expect.poll(titles).toContain("Approval needed");
   expect(await titles()).not.toContain("Second failure");
 });
+
+test("Keep computer awake defaults on and saves in browser-only mode", async ({ page }) => {
+  await page.goto("/settings/general");
+  const awake = general(page).getByRole("switch", { name: "Keep computer awake while agents run" });
+  await expect(awake).toBeChecked();
+  await general(page).locator('[data-help-for="Keep computer awake while agents run"]').hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
+    "Stops the system from sleeping while a turn is running; the display can still sleep.",
+  );
+  await awake.click();
+  await expect(awake).not.toBeChecked();
+  await page.reload();
+  await expect(awake).not.toBeChecked();
+  await general(page)
+    .getByRole("button", { name: "Reset Keep computer awake while agents run to default" })
+    .click();
+  await expect(awake).toBeChecked();
+});

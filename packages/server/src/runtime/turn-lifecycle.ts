@@ -55,10 +55,12 @@ import type { EventHubShape } from "../events/event-hub.ts";
 import type { ServerConfigShape } from "../config.ts";
 import type { TurnHooksShape, CheckoutServiceShape } from "./hooks.ts";
 import type { ThreadWaitsShape } from "../waits/service.ts";
+import type { TurnActivity } from "./turn-activity.ts";
 import type { FeedWriter } from "./feed-writer.ts";
 
 /** What a thread's turns and status read and change beside its `Runtime`. */
 export interface TurnLifecycleDeps {
+  readonly turnActivity: TurnActivity["Service"];
   readonly store: ThreadStoreShape;
   readonly hub: EventHubShape;
   readonly config: ServerConfigShape;
@@ -82,6 +84,7 @@ export interface TurnLifecycleDeps {
 
 /** Status, turns and failures, which every other part of `ThreadRuntimes` reports through. */
 export const makeTurnLifecycle = ({
+  turnActivity,
   store,
   hub,
   config,
@@ -412,6 +415,7 @@ export const makeTurnLifecycle = ({
       const turn = rt.turn;
       if (turn === undefined) return;
       rt.turn = undefined;
+      turnActivity.end(turn.id);
       yield* clearQuiet(rt);
       yield* FiberMap.remove(quietTimers, rt.threadId);
       yield* setRetrying(rt, false);
@@ -507,6 +511,7 @@ export const makeTurnLifecycle = ({
         lastInputAt: now,
       };
       rt.turn = turn;
+      turnActivity.start(turn.id);
       yield* clearQuiet(rt);
       rt.lastTool = undefined;
       rt.runningTools.clear();

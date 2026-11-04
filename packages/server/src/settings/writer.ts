@@ -1,5 +1,6 @@
 import {
   applySettingsPatch,
+  keepAwakeOn,
   applySettingsWrites,
   settingsPatchPaths,
   type Settings,
@@ -8,6 +9,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import { TurnActivity } from "../runtime/turn-activity.ts";
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { ServerLog } from "../logging/service.ts";
@@ -36,6 +38,7 @@ export const makeSettingsWriter = Effect.gen(function* () {
   // Absent in handler tests that build no orchestration.
   const dreams = Option.getOrUndefined(yield* Effect.serviceOption(Dreams));
   const hub = Option.getOrUndefined(yield* Effect.serviceOption(EventHub));
+  const turnActivity = Option.getOrUndefined(yield* Effect.serviceOption(TurnActivity));
 
   /**
    * What a stored change sets off, by the groups it touched: the log level, the update prefs
@@ -47,6 +50,7 @@ export const makeSettingsWriter = Effect.gen(function* () {
     options: SettingsWriterOptions,
   ) =>
     Effect.gen(function* () {
+      if (groups.has("agents")) turnActivity?.setEnabled(keepAwakeOn(settings));
       yield* log.setLevel(settings.logLevel);
       if (groups.has("updates")) yield* mirrorUpdates(settings.updates);
       if (groups.has("agents") && dreams !== undefined) yield* dreams.automaticConfigurationChanged;

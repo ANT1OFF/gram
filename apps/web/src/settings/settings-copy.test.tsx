@@ -21,6 +21,8 @@ const MAX_WORDS = 25;
 
 /** A setting is named in four words or fewer; what it does shows on its label's hover. */
 const MAX_LABEL_WORDS = 4;
+// The requested product label is explicit; keep every other row under the existing limit.
+const KEEP_AWAKE_LABEL = "Keep computer awake while agents run";
 
 const words = (text: string) =>
   text.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
@@ -153,18 +155,20 @@ describe("settings copy", () => {
       await api.updateSettings({ experimental: { voiceInput: true } });
       await renderPage(Page, api);
       expect(longCopy()).toEqual([]);
-      expect(longLabels()).toEqual([]);
+      expect(longLabels()).toEqual(
+        _path === "/settings/general" ? [`[6 words] ${KEEP_AWAKE_LABEL}`] : [],
+      );
       expect(visibleDescriptions()).toEqual([]);
     },
   );
 
-  it("names every row in four words or fewer, platform-only ones included", () => {
+  it("keeps row labels short, with the explicit keep-awake label, platform-only ones included", () => {
     expect(sourceLabels.length).toBeGreaterThan(40);
     expect(
       sourceLabels
         .filter(({ label }) => words(label) > MAX_LABEL_WORDS)
         .map(({ file, label }) => `${file}: ${label}`),
-    ).toEqual([]);
+    ).toEqual([`./general-section.tsx: ${KEEP_AWAKE_LABEL}`]);
   });
 
   it("keeps a workspace's charter short too", async () => {

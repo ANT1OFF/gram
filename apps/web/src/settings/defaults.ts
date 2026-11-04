@@ -1,5 +1,6 @@
 import {
   chimeOf,
+  keepAwakeOn,
   DEFAULT_SETTINGS,
   helperDailyBudgetUsd,
   helperSource,
@@ -73,6 +74,11 @@ const defaults = <K extends string>(settings: Record<K, DefaultSetting>) => sett
 
 /** Settings → General. */
 export const GENERAL_DEFAULTS = defaults({
+  keepAwake: {
+    label: "Keep computer awake while agents run",
+    read: keepAwakeOn,
+    reset: { agents: { keepAwake: null } },
+  },
   openAtLaunch: {
     label: "Open at launch",
     read: openAtLaunchOf,

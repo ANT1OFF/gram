@@ -24,6 +24,7 @@ import {
   net,
   Notification,
   powerMonitor,
+  powerSaveBlocker,
   safeStorage,
   session,
   shell,
@@ -91,6 +92,7 @@ import {
   surfaceWindow,
   type ShellProduct,
 } from "@gram/shell/core";
+import { createKeepAwake } from "./keep-awake.ts";
 import { type PowerState, watchPower } from "./power.ts";
 import { killTree, launchedPidFromMessage, type RunSync } from "./process-tree.ts";
 import {
@@ -229,10 +231,12 @@ const treeCheckDeps: TreeCheckDeps = {
 /** Agents' pane commands, served once the app is up; until then a command finds no pane. */
 let agentPanes: AgentPanes | undefined;
 
+const keepAwake = createKeepAwake(powerSaveBlocker);
+
 /** The server process (src/server); see `server-host.ts`. */
 const server = createServerHost({
-  fork: () =>
-    utilityProcess.fork(join(__dirname, "../server/server.js"), [], {
+  fork: () => {
+    const child = utilityProcess.fork(join(__dirname, "../server/server.js"), [], {
       serviceName: "gram-server",
       stdio: "pipe",
       env: {
@@ -253,10 +257,15 @@ const server = createServerHost({
                 process.env["GRAM_ALLOWED_ORIGINS"] ?? devAllowedOrigins(WEB_DEV_URL),
             }),
       },
-    }),
+    });
+    // An exit must release the blocker even if the server never sent its final idle state.
+    child.on("exit", keepAwake.dispose);
+    return child;
+  },
   // Unpackaged builds also accept a tokenised stdout boot line, for servers that still print one.
   bootFromStdout: !app.isPackaged,
   onMessage: (message, reply) => {
+    keepAwake.accept(message);
     const level = logLevelFromMessage(message);
     if (level) log.level = level;
     const shutdown = serverShutdownFromMessage(message);

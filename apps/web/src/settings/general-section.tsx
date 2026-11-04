@@ -2,6 +2,7 @@ import {
   type LaunchAtLogin,
   DEFAULT_CLONE_FOLDER,
   notifyAboutOf,
+  keepAwakeOn,
   openAtLaunchOf,
   OVERVIEW_HIDDEN_BY_DEFAULT,
   OVERVIEW_OPTIONAL_SECTIONS,
@@ -168,6 +169,17 @@ export function GeneralSection() {
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup label="Threads">
+        <Toggle
+          label="Keep computer awake while agents run"
+          description="Stops the system from sleeping while a turn is running; the display can still sleep."
+          keywords={["sleep", "power", "awake", "agents"]}
+          checked={keepAwakeOn(settings)}
+          onReset={resetOf("keepAwake")}
+          error={errorOf("keepAwake")}
+          onChange={(keepAwake) =>
+            applyTo("keepAwake")({ agents: { keepAwake: keepAwake ? null : false } })
+          }
+        />
         <FolderField
           // A saved value from elsewhere resets the draft.
           key={`default:${settings.agents.defaultFolder ?? ""}`}

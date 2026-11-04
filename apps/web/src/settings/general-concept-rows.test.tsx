@@ -26,6 +26,18 @@ afterEach(() => {
 });
 
 describe("General's launch, overview and notify rows", () => {
+  it("keeps agents awake by default and saves and resets the opt-out", async () => {
+    const api = mockApi();
+    await renderGeneral(api);
+    const label = "Keep computer awake while agents run";
+    expect(screen.getByRole("switch", { name: label }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("switch", { name: label }));
+    await waitFor(async () => expect((await api.getSettings()).agents.keepAwake).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: `Reset ${label} to default` }));
+    await waitFor(async () => expect((await api.getSettings()).agents.keepAwake).toBeUndefined());
+    expect(screen.getByRole("switch", { name: label }).getAttribute("aria-checked")).toBe("true");
+  });
+
   it("saves Open at launch, clearing it back to Last orchestrator", async () => {
     const api = mockApi();
     await renderGeneral(api);

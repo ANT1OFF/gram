@@ -34,6 +34,7 @@ import * as Option from "effect/Option";
 import { samePath } from "@gram/git";
 import { McpTokens, mcpConnectionFor } from "../app-tools/mcp-tokens.ts";
 import { ServerConfig } from "../config.ts";
+import { TurnActivity } from "./turn-activity.ts";
 import { makeCostLedger } from "./cost-ledger.ts";
 import { ClaudeAiSeen } from "../connectors/claude-ai-seen.ts";
 import { HttpServer } from "../platform/unstable.ts";
@@ -125,13 +126,15 @@ export class ThreadRuntimes extends Context.Service<ThreadRuntimes, ThreadRuntim
    * the writer of what waits on the user, whose items the summaries carry.
    */
   static readonly layer: Layer.Layer<
-    ThreadRuntimes | ThreadPlans | ThreadWaits,
+    ThreadRuntimes | ThreadPlans | ThreadWaits | TurnActivity,
     never,
     ThreadStore | EventHub | AgentHosts | ServerConfig | TurnHooks | CheckoutService
   > = Layer.effect(
     ThreadRuntimes,
     Effect.suspend(() => make),
-  ).pipe(Layer.provideMerge(Layer.mergeAll(ThreadPlans.layer, ThreadWaits.layer)));
+  ).pipe(
+    Layer.provideMerge(Layer.mergeAll(ThreadPlans.layer, ThreadWaits.layer, TurnActivity.layer)),
+  );
 }
 
 /** One send of the input in flight: its runtime, and whether its message is in the feed. */
@@ -151,6 +154,7 @@ const make = Effect.gen(function* () {
   const hub = yield* EventHub;
   const plans = yield* ThreadPlans;
   const waits = yield* ThreadWaits;
+  const turnActivity = yield* TurnActivity;
   const hosts = yield* AgentHosts;
   const config = yield* ServerConfig;
   const hooks = yield* TurnHooks;
@@ -430,6 +434,7 @@ const make = Effect.gen(function* () {
     markRunning,
     markSessionUsed,
   } = makeTurnLifecycle({
+    turnActivity,
     store,
     hub,
     config,

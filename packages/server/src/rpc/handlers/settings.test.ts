@@ -1,3 +1,5 @@
+import { vi } from "vitest";
+import { TurnActivity } from "../../runtime/turn-activity.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { applySettingsPatch } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -40,6 +42,19 @@ describe("settings.get", () => {
       expect(yield* handlers["settings.get"]()).toEqual(yield* store.getSettings);
       expect((yield* handlers["settings.get"]()).layout).toEqual({ focusMode: true });
       expect(yield* storedRow).toBe(before);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+});
+
+describe("settings.set keep awake", () => {
+  it.effect("applies disabling and resetting to the shared turn activity service", () =>
+    Effect.gen(function* () {
+      const handlers = yield* settingsHandlers;
+      const activity = yield* TurnActivity;
+      const changed = vi.spyOn(activity, "setEnabled");
+      yield* handlers["settings.set"]({ patch: { agents: { keepAwake: false } } });
+      yield* handlers["settings.set"]({ patch: { agents: { keepAwake: null } } });
+      expect(changed.mock.calls).toEqual([[false], [true]]);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 });
