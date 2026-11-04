@@ -54,7 +54,12 @@ for (const agent of ["claude", "codex"] as const)
     });
     await page.clock.fastForward("05:01");
     await form.getByRole("combobox", { name: "Model", exact: true }).click();
-    await page.getByRole("option", { name: "Synthetic Fast model", exact: true }).click();
+    // The list holds every agent's models, each under its agent's name; this agent's is the one.
+    await page
+      .getByTestId("model-picker")
+      .getByRole("group", { name: agent === "claude" ? "Claude Code" : "Codex" })
+      .getByRole("option", { name: "Synthetic Fast model", exact: true })
+      .click();
     // In the new-thread form, as in a thread's composer, speed and effort are glyphs named with
     // their values.
     const speed = form.getByRole("combobox", { name: /^Speed: / });

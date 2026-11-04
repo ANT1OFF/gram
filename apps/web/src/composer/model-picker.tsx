@@ -171,7 +171,14 @@ export function ModelCombobox({
                     {(option: Option) => {
                       const starred = favourite(option.value);
                       return (
-                        <Combobox.Item key={option.value} value={option} className={ROW}>
+                        // Named by the model alone: the star inside would otherwise join its name.
+                        <Combobox.Item
+                          key={option.value}
+                          value={option}
+                          aria-label={option.label}
+                          aria-description={option.description}
+                          className={ROW}
+                        >
                           {(option.icon ?? rowIcon) !== undefined && (
                             <span
                               aria-hidden
