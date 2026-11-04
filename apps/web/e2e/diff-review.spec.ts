@@ -61,14 +61,36 @@ test("the file tree jumps to a file, and n / p step through its hunks", async ({
   await expect(retry.locator("[data-hunk='0']")).toHaveAttribute("data-current", "true");
 
   // The tree hides, and stays hidden across a reload.
-  await panel.getByRole("button", { name: "File tree" }).click();
+  await panel.getByRole("button", { name: "Files (5)" }).click();
   await expect(tree).toHaveCount(0);
   await page.reload();
   await expect(panel.getByTestId("diff-file").first()).toBeVisible();
-  await expect(panel.getByRole("button", { name: "File tree" })).toHaveAttribute(
+  await expect(panel.getByRole("button", { name: "Files (5)" })).toHaveAttribute(
     "aria-pressed",
     "false",
   );
+  await expect(panel.getByRole("tree")).toHaveCount(0);
+});
+
+test("a patch of three files or fewer opens with its tree folded, and Files (n) opens it", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto("/t/t-deps");
+  await page.getByTestId("turn-files-chip").click();
+  const panel = page.getByTestId("diff-panel");
+  await expect(panel.getByTestId("diff-file")).toHaveCount(2);
+  await dragPanelEdge(page, -420);
+  // Wide enough for the tree, which the stored choice shows for a larger patch.
+  const toggle = panel.getByRole("button", { name: "Files (2)" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(panel.getByRole("tree")).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    panel.getByRole("tree", { name: "Changed files" }).getByRole("treeitem"),
+  ).toHaveCount(2);
+  await toggle.click();
   await expect(panel.getByRole("tree")).toHaveCount(0);
 });
 

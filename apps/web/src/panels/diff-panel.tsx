@@ -54,6 +54,11 @@ const SPLIT_VIEW_MIN_WIDTH = 560;
  * only list: the tree above it would name the same files a second time.
  */
 const TREE_BESIDE_MIN_WIDTH = 720;
+/**
+ * The most files a patch can touch and still open with its tree folded away: so few are read top
+ * to bottom, and the tree would only name them again. "Files (n)" opens it.
+ */
+const SMALL_PATCH_FILES = 3;
 /** The file tree's width beside the files: `w-52`. */
 const TREE_WIDTH = 208;
 
@@ -146,8 +151,13 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
     retry: false,
   });
   const treeFits = width >= TREE_BESIDE_MIN_WIDTH;
+  const fileCount = query.data?.files?.length ?? 0;
+  // A small patch's tree starts folded whatever the stored choice, which is a larger patch's.
+  const smallPatch = fileCount <= SMALL_PATCH_FILES;
+  const [smallTreeOpen, setSmallTreeOpen] = useState(false);
+  const treeOpen = smallPatch ? smallTreeOpen : treeShown;
   // A single file gets no tree, so the tree takes no width from split view.
-  const treeBeside = treeShown && treeFits && (query.data?.files?.length ?? 0) > 1;
+  const treeBeside = treeOpen && treeFits && fileCount > 1;
   const splitFits = width - (treeBeside ? TREE_WIDTH : 0) >= SPLIT_VIEW_MIN_WIDTH;
   const refetch = () => (diffScope === undefined ? Promise.resolve() : query.refetch());
   const request = useLayoutStore((s) => s.panelTargets.diff);
@@ -275,16 +285,17 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
             pressed={ignoreWhitespace}
             onToggle={toggleIgnoreWhitespace}
           />
-          {treeFits && (
+          {treeFits && fileCount > 1 && (
             <button
               type="button"
-              aria-label="File tree"
-              aria-pressed={treeShown}
-              title={treeShown ? "Hide the file tree" : "Show the file tree"}
-              onClick={toggleTree}
-              className="rounded-(--radius-sm) p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:text-foreground"
+              aria-pressed={treeOpen}
+              data-testid="diff-tree-toggle"
+              title={treeOpen ? "Hide the file tree" : "Show the file tree"}
+              onClick={smallPatch ? () => setSmallTreeOpen((open) => !open) : toggleTree}
+              className="flex items-center gap-1 rounded-(--radius-sm) px-1.5 py-1 text-xs whitespace-nowrap text-muted-foreground tabular-nums outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:text-foreground"
             >
               <ListTree aria-hidden className="size-3.5" />
+              Files ({fileCount})
             </button>
           )}
           <RefreshButton

@@ -31,13 +31,14 @@ import { useToastDock } from "@/shell/toast-dock";
 import { isReviewTab, reviewsTabShown, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-import { useTabLabelFit } from "./panel-tab-labels";
+import { tabNamed, useTabLabelFit } from "./panel-tab-labels";
 import type * as PanelTabs from "./right-panel-tabs";
 
-const TABS: { value: RightPanelTab; label: string; icon: LucideIcon }[] = [
-  { value: "diff", label: "Diff", icon: FileDiff },
-  { value: "pr", label: "PR", icon: GitPullRequest },
-  { value: "files", label: "Files", icon: FolderTree },
+/** The tabs in strip order; the primary ones keep their names longest after the open one. */
+const TABS: { value: RightPanelTab; label: string; icon: LucideIcon; primary?: true }[] = [
+  { value: "diff", label: "Diff", icon: FileDiff, primary: true },
+  { value: "pr", label: "PR", icon: GitPullRequest, primary: true },
+  { value: "files", label: "Files", icon: FolderTree, primary: true },
   { value: "terminal", label: "Terminal", icon: SquareTerminal },
   { value: "preview", label: "Preview", icon: Globe },
   { value: "connectors", label: "Connectors", icon: Plug },
@@ -108,6 +109,10 @@ export function RightPanel() {
   const shownTabs = TABS.filter(
     (t) => (t.value !== "reviews" || reviewsHere) && (t.value !== "preview" || previewHere),
   );
+  const expanded = useLayoutStore((s) => s.panelExpanded);
+  const focused = useLayoutStore((s) => s.reviewFocus);
+  // On a review the action beside the tabs is Focus review, in words; elsewhere an icon at the end.
+  const reviewAction = isReviewTab(tab) && !expanded;
   const labelFit = useTabLabelFit(tabList, tab, shownTabs.map((t) => t.value).join());
   useEffect(() => {
     // The bell may select a tab beyond the narrow strip's edge without focusing that tab.
@@ -141,14 +146,15 @@ export function RightPanel() {
         onValueChange={(value: RightPanelTab) => setTab(value)}
         className="min-h-0 flex-1"
       >
-        <div className="flex items-center border-b border-border">
+        <div className="flex items-center border-b border-border pr-2">
           <TabsList
             ref={tabList}
-            data-label-fit={labelFit}
-            className="min-w-0 flex-1 overflow-x-auto border-b-0"
+            data-label-fit={labelFit.tabs}
+            className={cn("min-w-0 overflow-x-auto border-b-0", !reviewAction && "flex-1")}
           >
-            {/* An icon and a name each while the strip has room for every name, then the open
-                one's alone, then icons only, each named on hover in every case. */}
+            {/* An icon and a name each while the strip has room for every name, then Diff, PR,
+                Files and the open one's, then the open one's alone, then icons only, each named on
+                hover in every case. */}
             {shownTabs.map((t) => {
               const count =
                 t.value === "notifications"
@@ -172,6 +178,7 @@ export function RightPanel() {
                     <TabsTrigger
                       value={t.value}
                       data-panel-tab={t.value}
+                      data-primary={t.primary}
                       aria-label={name}
                       // A 28 px tab with its background on hover and focus; the open one is
                       // named, on a background and underlined, not told apart by colour alone.
@@ -195,8 +202,7 @@ export function RightPanel() {
                     data-tab-label
                     className={cn(
                       "overflow-hidden",
-                      !(labelFit === "all" || (labelFit === "active" && t.value === tab)) &&
-                        "max-w-0",
+                      !tabNamed(labelFit.tabs, t.value === tab, t.primary === true) && "max-w-0",
                     )}
                   >
                     <span data-tab-label-text className="block pl-1.5 whitespace-nowrap">
@@ -219,7 +225,11 @@ export function RightPanel() {
               );
             })}
           </TabsList>
-          <ExpandToggle review={isReviewTab(tab)} />
+          {reviewAction ? (
+            <ReviewFocusAction focused={focused} words={labelFit.action} />
+          ) : (
+            <ExpandToggle />
+          )}
         </div>
         <Suspense fallback={null}>
           <RightPanelTabs
@@ -237,15 +247,11 @@ export function RightPanel() {
   );
 }
 
-/**
- * Lets the panel take the chat's place beside the sidebar, and gives the chat back; on a review tab,
- * puts the review in focus instead, leaving a strip of the chat.
- */
-function ExpandToggle({ review }: { review: boolean }) {
+/** Lets the panel take the chat's place beside the sidebar, and gives the chat back. */
+function ExpandToggle() {
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const setExpanded = useLayoutStore((s) => s.setPanelExpanded);
   const restoreHint = useShortcutHint("panel.restore");
-  if (review && !expanded) return <ReviewFocusToggle />;
   const label = expanded ? "Restore panel width" : "Expand panel";
   return (
     <Hint
@@ -256,7 +262,7 @@ function ExpandToggle({ review }: { review: boolean }) {
           variant="ghost"
           size="icon-sm"
           aria-label={label}
-          className="mr-2 shrink-0 text-muted-foreground"
+          className="ml-auto shrink-0 text-muted-foreground"
           onClick={() => setExpanded(!expanded)}
         />
       }
@@ -266,29 +272,44 @@ function ExpandToggle({ review }: { review: boolean }) {
   );
 }
 
-function ReviewFocusToggle() {
-  const focused = useLayoutStore((s) => s.reviewFocus);
+/**
+ * Beside a review's tabs, puts the review in focus, leaving a strip of the chat, and gives the chat
+ * back. Its words fold away, leaving the icon, only once the row has no room for them. The words
+ * live in a `[data-action-label]` that collapses rather than unmounts, so they can be measured.
+ */
+function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolean }) {
   const toggle = useLayoutStore((s) => s.toggleReviewFocus);
   const focusHint = useShortcutHint("review.focus");
   const restoreHint = useShortcutHint("panel.restore");
-  const label = focused ? "Leave review focus" : "Focus review";
+  const label = focused ? "Restore" : "Focus review";
+  const hint = focused ? restoreHint : focusHint;
   return (
     <Hint
-      label={withHint(label, focused ? restoreHint : focusHint)}
+      label={withHint(label, hint)}
       side="bottom"
       render={
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="sm"
           aria-label={label}
-          aria-pressed={focused}
           data-testid="review-focus"
-          className="mr-2 shrink-0 text-muted-foreground aria-pressed:text-foreground"
+          data-words={words}
+          className="h-7 shrink-0 gap-0 px-1.5 text-xs text-muted-foreground hover:text-foreground"
           onClick={toggle}
         />
       }
     >
-      {focused ? <Minimize2 /> : <Focus />}
+      {focused ? (
+        <Minimize2 aria-hidden className="size-4" />
+      ) : (
+        <Focus aria-hidden className="size-4" />
+      )}
+      <span aria-hidden data-action-label className={cn("overflow-hidden", !words && "max-w-0")}>
+        <span data-action-label-text className="flex items-center gap-1.5 pl-1.5 whitespace-nowrap">
+          {label}
+          {hint && <kbd className="font-mono text-[10px] text-muted-foreground">{hint}</kbd>}
+        </span>
+      </span>
     </Hint>
   );
 }

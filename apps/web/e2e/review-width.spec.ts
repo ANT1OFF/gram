@@ -99,6 +99,16 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
   await tab(page, "Terminal").click();
   await expect(shell).toHaveAttribute("data-review-focus", "false");
   await expect.poll(() => widthOf(panel)).toBe(352);
+
+  // In focus, the action beside the tabs says Restore, and gives the chat back too.
+  await tab(page, "Diff").click();
+  await panel.getByRole("button", { name: "Focus review" }).click();
+  await expect(shell).toHaveAttribute("data-review-focus", "true");
+  const restore = panel.getByRole("button", { name: "Restore", exact: true });
+  await expect(restore).toContainText("Restore");
+  await restore.click();
+  await expect(shell).toHaveAttribute("data-review-focus", "false");
+  await expect(panel.getByRole("button", { name: "Focus review" })).toBeVisible();
 });
 
 test("Wrap lines and Ignore whitespace change the diff and are remembered", async ({ page }) => {

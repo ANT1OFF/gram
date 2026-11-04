@@ -471,7 +471,7 @@ describe("DiffPanel", () => {
     });
     await screen.findAllByTestId("diff-file");
     expect(screen.queryByRole("tree")).toBeNull();
-    expect(screen.queryByRole("button", { name: "File tree" })).toBeNull();
+    expect(screen.queryByTestId("diff-tree-toggle")).toBeNull();
   });
 
   it("says when a clean tree falls back to the branch", async () => {
