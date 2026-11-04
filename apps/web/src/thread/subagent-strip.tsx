@@ -328,7 +328,7 @@ function StopButton({
         />
       }
     >
-      <Square aria-hidden className="size-3 fill-current" />
+      <Square aria-hidden className="size-2.5 fill-current" />
     </Hint>
   );
 }
