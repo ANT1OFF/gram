@@ -2,10 +2,12 @@ import type { Project, RepositoryCandidate } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  ArrowRight,
   Circle,
   CircleAlert,
   CircleCheck,
   CircleX,
+  ExternalLink,
   FolderGit2,
   FolderOpen,
   GitPullRequest,
@@ -22,12 +24,13 @@ import { AgentIcon } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { CommandText } from "@/launch-checks/command-text";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
 import { cn } from "@/lib/utils";
 import { Expand, Spinner } from "@/motion";
+import { OutboundLink } from "@/panels/outbound-link";
 import { AddRepository } from "@/new-thread/add-repository";
 import { tildify } from "@/new-thread/path";
 import { useHome } from "@/new-thread/use-folder";
@@ -322,7 +325,7 @@ function RecentRepos({
                 projects.find((project) => project.id === repo.projectId),
               )
             }
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
+            className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
           >
             {pending === repo.root ? (
               <Spinner aria-hidden className="size-3.5 shrink-0" />
@@ -333,6 +336,15 @@ function RecentRepos({
             <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
               {tildify(repo.root, home)}
             </span>
+            {/* What a click does, said where the pointer or focus is: the row is the button. */}
+            <span
+              aria-hidden
+              className="ml-auto flex shrink-0 items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:opacity-0"
+            >
+              Open
+              <ArrowRight className="size-3" />
+            </span>
+            <span className="sr-only">: open as a workspace</span>
           </button>
         </li>
       ))}
@@ -342,16 +354,17 @@ function RecentRepos({
 
 /** How each state reads beside its icon: never by colour alone. */
 const STATE: Readonly<Record<ToolState, { icon: LucideIcon; words: string; className: string }>> = {
-  ready: { icon: CircleCheck, words: "Signed in", className: "text-success" },
+  ready: { icon: CircleCheck, words: "Ready", className: "text-success" },
   attention: { icon: CircleAlert, words: "Needs sign-in", className: "text-warning" },
   missing: { icon: CircleX, words: "Not installed", className: "text-destructive" },
   optional: { icon: Circle, words: "Not installed", className: "text-muted-foreground" },
 };
 
 /**
- * Claude Code and Codex, each installed and signed in or not, from the launch checks Settings →
- * Agents reads; git only when it is missing. What to do about one is on its hover and focus. Only
- * reads the checks, and Check again runs them once more.
+ * Claude Code and Codex, each ready or not, from the launch checks Settings → Agents reads; git
+ * only when it is missing. One that isn't installed links to its install instructions; one that
+ * isn't ready offers Check again, which runs the checks once more. Only reads the checks. The
+ * version or the remedy is on each name's hover and focus.
  */
 function AgentStrip() {
   const { checks, recheck } = useLaunchChecks();
@@ -365,24 +378,31 @@ function AgentStrip() {
             row.tool === "codex" ||
             (row.tool === "git" && row.state !== "ready"),
         );
-  const trouble = rows.some((row) => row.state === "attention" || row.state === "missing");
+  const again = () => {
+    setChecking(true);
+    recheck()
+      .catch((error: unknown) => console.error("welcome: re-check tools", error))
+      .finally(() => setChecking(false));
+  };
   return (
-    <div
-      data-testid="welcome-agents"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-accent/60 px-3 py-2 text-xs"
-    >
+    <div data-testid="welcome-agents" className="rounded-md bg-accent/60 px-3 py-1.5 text-xs">
       {checks === undefined ? (
-        <span role="status" className="text-muted-foreground">
+        <span role="status" className="block py-1 text-muted-foreground">
           Checking your agents…
         </span>
       ) : (
-        <ul aria-label="Agents" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <ul aria-label="Agents" className="flex flex-col">
           {rows.map((row) => {
             const state = STATE[row.state];
             const Icon = state.icon;
             const words = row.tool === "git" ? "Not installed" : state.words;
             return (
-              <li key={row.tool} data-state={row.state} data-tool={row.tool}>
+              <li
+                key={row.tool}
+                data-state={row.state}
+                data-tool={row.tool}
+                className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 py-0.5"
+              >
                 <Hint
                   label={<CommandText text={row.detail} />}
                   render={
@@ -399,30 +419,35 @@ function AgentStrip() {
                     <AgentIcon agent={row.tool} className="size-3.5" />
                   )}
                   <span className="font-medium">{row.name}</span>
-                  <Icon aria-hidden className={cn("size-3.5", state.className)} />
-                  <span className="text-muted-foreground">{words}</span>
+                  <Icon aria-hidden className={cn("ml-1 size-3.5", state.className)} />
+                  <span
+                    className={row.state === "ready" ? "text-foreground" : "text-muted-foreground"}
+                  >
+                    {words}
+                  </span>
                   <span className="sr-only">: {row.detail.replaceAll("`", "")}</span>
                 </Hint>
+                {row.state !== "ready" && (
+                  <span className="ml-auto flex items-center gap-1">
+                    {row.installUrl !== undefined && (
+                      <OutboundLink
+                        href={row.installUrl}
+                        title={`How to install ${row.name}`}
+                        className={buttonVariants({ size: "xs", variant: "outline" })}
+                      >
+                        Install {row.name}
+                        <ExternalLink data-icon="inline-end" aria-hidden />
+                      </OutboundLink>
+                    )}
+                    <Button size="xs" variant="ghost" disabled={checking} onClick={again}>
+                      {checking ? "Checking…" : "Check again"}
+                    </Button>
+                  </span>
+                )}
               </li>
             );
           })}
         </ul>
-      )}
-      {trouble && (
-        <Button
-          size="xs"
-          variant="ghost"
-          className="ml-auto"
-          disabled={checking}
-          onClick={() => {
-            setChecking(true);
-            recheck()
-              .catch((error: unknown) => console.error("welcome: re-check tools", error))
-              .finally(() => setChecking(false));
-          }}
-        >
-          {checking ? "Checking…" : "Check again"}
-        </Button>
       )}
     </div>
   );

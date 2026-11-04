@@ -126,6 +126,8 @@ describe("new-task authoritative preflight", () => {
     );
     await screen.findByText("Worker: Codex · synthetic-model");
     await screen.findByText("Synthetic worker needs codex login.");
+    // The footer follows who does it: a direct worker's form names no orchestrator.
+    expect(screen.queryByText(/^Orchestrator:/)).toBeNull();
     fireEvent.change(screen.getByLabelText("What needs doing"), {
       target: { value: "Synthetic task" },
     });

@@ -13,7 +13,7 @@ import { GHOST_TRIGGER } from "./styles";
 export interface PickerOption<V extends string> {
   value: V;
   label: string;
-  /** A line under the label where the list has room for one: the model picker's search list. */
+  /** A line under the label: the model picker's search list, and each mode's consequence. */
   description?: string | undefined;
   /** The model picker's section past favourites: the agent or gateway it runs on, or Custom. */
   group?: string | undefined;
@@ -153,7 +153,7 @@ export function Picker<V extends string>({
       />
       <SelectContent side="top">
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} title={option.description}>
+          <SelectItem key={option.value} value={option.value} description={option.description}>
             {option.label}
           </SelectItem>
         ))}

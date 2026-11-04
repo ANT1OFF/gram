@@ -7,6 +7,8 @@ import { SegmentSlab } from "@/motion";
 import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
 import { AUTONOMY_LEVELS, autonomyLevel } from "@/settings/workspace-settings-model";
 
+import { AuthorityExplainer } from "./authority-explainer";
+
 /** Each level in one plain line: what it does without asking you. */
 export const AUTONOMY_LINE: Readonly<Record<Autonomy, string>> = {
   supervised: "Asks before a push, a pull request or a merge.",
@@ -25,12 +27,15 @@ export function AutonomyChoice({
   disabled = false,
   label = "Autonomy",
   testId = "task-autonomy",
+  explain = false,
 }: {
   value: Autonomy;
   onChange: (autonomy: Autonomy) => void;
   disabled?: boolean;
   label?: string;
   testId?: string;
+  /** Tells autonomy apart from a thread's permission mode first, where a workspace is set up. */
+  explain?: boolean;
 }) {
   const slab = useId();
   const labelId = useId();
@@ -40,6 +45,7 @@ export function AutonomyChoice({
       <span id={labelId} className="text-xs font-medium text-muted-foreground">
         {label}
       </span>
+      {explain && <AuthorityExplainer className="mb-0.5" />}
       <div
         role="radiogroup"
         aria-labelledby={labelId}
