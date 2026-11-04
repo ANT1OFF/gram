@@ -40,6 +40,8 @@ import { ThreadPlans } from "../../plans/service.ts";
 import { ThreadWaits } from "../../waits/service.ts";
 import { ThreadPorts } from "../../ports/service.ts";
 import { endCheckpointId } from "../../git/turn-hooks.ts";
+import { GitRefresh } from "../../git/platform.ts";
+import { makeTurnUndo } from "../../git/turn-undo.ts";
 import { closeAtRest } from "../../runtime/close-at-rest.ts";
 import { TerminalGate } from "../../terminal/gate.ts";
 import { makeThreadCreator } from "../../runtime/create-in-checkout.ts";
@@ -131,6 +133,16 @@ export const threadHandlers = Effect.gen(function* () {
           Effect.provideService(Proc, service),
         ),
     });
+
+  const gitRefresh = yield* Effect.serviceOption(GitRefresh);
+  const undoTurn = makeTurnUndo({
+    store,
+    runtimes,
+    checkpoints,
+    ...(Option.isSome(gitRefresh)
+      ? { refresh: (cwd: string) => gitRefresh.value.request(cwd, false) }
+      : {}),
+  });
 
   const creator = makeThreadCreator({ store, checkouts, runtimes });
   const prepareCheckout = creator.prepare;
@@ -434,6 +446,8 @@ export const threadHandlers = Effect.gen(function* () {
         }
         yield* runtimes.rewind(threadId, target, restoreFiles);
       }),
+
+    "thread.undoTurn": ({ threadId, turnId }) => undoTurn(threadId, turnId),
 
     "thread.fork": ({ threadId, fromMessageId, checkout, title }) =>
       Effect.gen(function* () {

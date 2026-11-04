@@ -1,5 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ThreadNotFound, WorktreeDirty, type ServerEvent, type ThreadId } from "@gram/contracts";
+import {
+  ThreadNotFound,
+  WorktreeDirty,
+  type ServerEvent,
+  type ThreadId,
+  type TurnId,
+} from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -517,6 +523,36 @@ describe("restarting a thread's session", () => {
         const asked = (yield* store.listMessages(thread.id)).findLast((m) => m.role === "user")!;
         expect((yield* runtimes.rewindTarget(thread.id, asked.id)).resumeAt).toBe(resumeAt);
       }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
+  it.effect("looks past a turn-undo receipt to resume, fork and rewind, as past a divider", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const store = yield* ThreadStore;
+      const { thread, session } = yield* answered;
+      const [, reply] = yield* store.listMessages(thread.id);
+      const resumeAt = reply!.metadata?.agentMessageIds?.at(-1);
+      expect(resumeAt).toBeDefined();
+
+      yield* runtimes.emitChunk(thread.id, {
+        type: "data-turn-undo",
+        id: "undo-1",
+        data: { turnId: "turn-1" as TurnId, files: 2, at: 1_758_800_000_000 },
+      });
+      const receipt = (yield* store.listMessages(thread.id)).at(-1)!;
+      expect(receipt.parts.map((p) => p.type)).toEqual(["data-turn-undo"]);
+      expect((yield* runtimes.forkTarget(thread.id, undefined)).resumeAt).toBe(resumeAt);
+
+      yield* runtimes.send(thread.id, { text: "carry on" });
+      yield* waitFor(
+        "the send after the receipt",
+        Effect.sync(() => session.sent.length === 2),
+      );
+      yield* session.completeTurn("carried on");
+      yield* idle(thread.id);
+      const asked = (yield* store.listMessages(thread.id)).findLast((m) => m.role === "user")!;
+      expect((yield* runtimes.rewindTarget(thread.id, asked.id)).resumeAt).toBe(resumeAt);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
   it.effect("waits for a running turn to end, or interrupts it when asked", () =>

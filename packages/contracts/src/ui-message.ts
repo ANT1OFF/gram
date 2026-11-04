@@ -194,6 +194,20 @@ export const SessionRestartDataSchema = Schema.Struct({
 });
 export type SessionRestartData = typeof SessionRestartDataSchema.Type;
 
+/**
+ * Where the user undid one turn's file edits from its footer card: the receipt in the transcript, and
+ * what marks that turn's card undone.
+ */
+export const TurnUndoDataSchema = Schema.Struct({
+  /** The turn whose edits were undone. */
+  turnId: TurnId,
+  /** How many files were put back. */
+  files: Schema.Int,
+  /** Epoch ms. */
+  at: Schema.Number,
+});
+export type TurnUndoData = typeof TurnUndoDataSchema.Type;
+
 export type DataParts = {
   plan: PlanData;
   usage: UsageData;
@@ -211,6 +225,8 @@ export type DataParts = {
   "tool-image": ToolImageData;
   compaction: CompactionData;
   "session-restart": SessionRestartData;
+  /** Where the user undid a turn's file edits. */
+  "turn-undo": TurnUndoData;
   /** At the end of a turn that failed: what went wrong, in the transcript where it happened. */
   "agent-error": ThreadError;
   /** On a user message queued by the review monitor. */

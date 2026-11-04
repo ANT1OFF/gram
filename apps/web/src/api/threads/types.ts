@@ -24,6 +24,8 @@ import type {
   ThreadLabels,
   ThreadPlan,
   ThreadSearchResult,
+  TurnId,
+  TurnUndoData,
   UserInput,
   WorktreeRemoval,
 } from "@gram/contracts";
@@ -142,6 +144,12 @@ export interface ThreadsApi {
    * feed re-sends `messages` afterwards.
    */
   rewind(threadId: ThreadId, toMessageId: MessageId, files: boolean): Promise<void>;
+  /**
+   * Puts the files one finished turn changed back as they were before it, and only those. Refused
+   * (`InvalidState`, nothing touched) while the agent works, when one of those files changed again
+   * since, or when the turn's changes are committed. The feed gets a `turn-undo` receipt.
+   */
+  undoTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnUndoData>;
   /** A new thread with the conversation up to `options.fromMessageId`; `forkedFrom` names the source. */
   forkThread(threadId: ThreadId, options?: ForkThreadOptions): Promise<Thread>;
   /** Full-text search over messages, across threads or within `options.threadId`. */

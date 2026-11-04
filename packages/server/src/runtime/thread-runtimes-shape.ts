@@ -320,6 +320,19 @@ export interface ThreadRuntimesShape {
     threadId: ThreadId,
     chunk: GramUIMessageChunk,
   ): Effect.Effect<MessageId, ThreadNotFound>;
+  /**
+   * Runs `effect` under the thread's lock while it is at rest (a failed turn's `error` included):
+   * nothing running, queued, waiting on the user or being worked on, and the agent idle. Sends and
+   * system deliveries wait for it rather than being refused. `receipt` may give a data part to append
+   * before the lock is released, so it lands ahead of whatever runs next. Refused with
+   * `InvalidState`, running nothing, when the thread isn't at rest. For short work on its checkout,
+   * such as undoing a turn's edits.
+   */
+  whileIdle<A, E, R>(
+    threadId: ThreadId,
+    effect: Effect.Effect<A, E, R>,
+    receipt?: (a: A) => GramUIMessageChunk | undefined,
+  ): Effect.Effect<A, E | ThreadNotFound | InvalidState, R>;
   /** Replaces a data part by type + id in `messageId`, in flight or finished. */
   updateDataPart(
     threadId: ThreadId,

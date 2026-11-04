@@ -87,9 +87,15 @@ export const restartReady = (rt: RestartReadiness) =>
   !rt.subagentsRunning &&
   rt.openRequests === 0;
 
-/** A message that is only a `session-restart` divider, which no agent message stands behind. */
+/** Parts Gram writes between turns on its own, which no agent message stands behind. */
+const MARKER_PARTS: ReadonlySet<string> = new Set(["data-session-restart", "data-turn-undo"]);
+
+/**
+ * A message that is only a `session-restart` divider or a `turn-undo` receipt, which no agent
+ * message stands behind: resuming, rewinding and forking look past it.
+ */
 export const isRestartMarker = (message: GramUIMessage) =>
-  message.parts.length > 0 && message.parts.every((part) => part.type === "data-session-restart");
+  message.parts.length > 0 && message.parts.every((part) => MARKER_PARTS.has(part.type));
 
 /**
  * How long a pending restart holds off once the last background task ends: the agent may start a

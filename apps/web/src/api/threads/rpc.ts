@@ -73,6 +73,7 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => ({
   pendingPermissions: (threadId) => run(client["worktree.pendingPermissions"]({ threadId })),
   rewind: (threadId, toMessageId, files) =>
     run(client["thread.rewind"]({ threadId, toMessageId, files })),
+  undoTurn: (threadId, turnId) => run(client["thread.undoTurn"]({ threadId, turnId })),
   forkThread: (threadId, options = {}) => run(client["thread.fork"]({ threadId, ...options })),
   searchThreads: (query, options = {}) => run(client["thread.search"]({ query, ...options })),
   queueEdit: (threadId, itemId, input) =>

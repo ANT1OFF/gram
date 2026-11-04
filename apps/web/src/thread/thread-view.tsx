@@ -90,6 +90,7 @@ import {
 import { TableOfContents } from "./table-of-contents";
 import { ThreadMenu } from "./thread-menu";
 import { Transcript, type JumpRequest } from "./transcript";
+import { turnUndos } from "./turn-undo-marker";
 import { HeaderWakeChip } from "./wake-chip";
 
 const FLASH_MS = 1600;
@@ -152,6 +153,7 @@ export function ThreadView({
   );
   // Walks the whole history, so once per history change rather than on every scroll render.
   const turnEnds = useMemo(() => turnEndMessages(top), [top]);
+  const undos = useMemo(() => turnUndos(top), [top]);
   const turnStatus = summary?.status;
   const nestedIds = useMemo(
     () => new Set([...children.values()].flatMap((list) => list.map((m) => m.id))),
@@ -553,6 +555,7 @@ export function ThreadView({
           subagentUsage={subagentUsage}
           streamingIds={streamingSet}
           turnEnds={turnEnds}
+          turnUndos={undos}
           animate={focused}
           jump={chapterJump}
           chapters={chapters}

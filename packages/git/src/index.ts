@@ -8,6 +8,7 @@ import { ToolsLive } from "./tools.ts";
 import { WorktreesLive } from "./worktrees.ts";
 
 export * from "./checkpoints.ts";
+export * from "./turn-undo.ts";
 export * from "./claude-settings.ts";
 export * from "./diff.ts";
 export * from "./errors.ts";

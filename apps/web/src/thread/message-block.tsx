@@ -4,6 +4,7 @@ import {
   type GramUIMessage,
   type ThreadId,
   type TurnId,
+  type TurnUndoData,
 } from "@gram/contracts";
 import { FileText, Paperclip } from "lucide-react";
 import { memo, useMemo, useState } from "react";
@@ -61,6 +62,7 @@ import { ToolGroup, TurnFoldRow } from "./tool-group";
 import { toolImagesOf, toolRuns, type MessageFold } from "./tool-group-model";
 import { ToolImagesContext } from "./tool-images";
 import { TurnFilesChip } from "./turn-files-chip";
+import { isUndoReceipt, TurnUndoMarker } from "./turn-undo-marker";
 import { WidgetCard } from "./widget-card";
 
 /**
@@ -218,6 +220,8 @@ export interface MessageBlockProps {
   animate?: boolean;
   /** Set on a finished turn's last reply: the turn whose changed files it offers. */
   turnEnd?: TurnId | undefined;
+  /** The receipt for undoing `turnEnd`'s file edits, once they were. */
+  turnUndo?: TurnUndoData | undefined;
   /** How this reply's turn folds, when it does. */
   fold?: MessageFold | undefined;
   /** The reader opened that fold. */
@@ -232,6 +236,7 @@ export const MessageBlock = memo(function MessageBlock({
   subagentUsage,
   animate = false,
   turnEnd,
+  turnUndo,
   fold,
   foldOpen = false,
 }: MessageBlockProps) {
@@ -324,7 +329,7 @@ export const MessageBlock = memo(function MessageBlock({
 
   const streaming = streamingIds.has(message.id);
   const folded = fold !== undefined && !foldOpen;
-  const actions = topLevel && !streaming && !(folded && fold.empty);
+  const actions = topLevel && !streaming && !(folded && fold.empty) && !isUndoReceipt(message);
   const renderSubagent = (child: GramUIMessage) => (
     <MessageBlock
       threadId={threadId}
@@ -426,6 +431,8 @@ export const MessageBlock = memo(function MessageBlock({
                 return <CompactionMarker key={key} compaction={part.data} />;
               case "data-session-restart":
                 return <SessionRestartMarker key={key} restart={part.data} />;
+              case "data-turn-undo":
+                return <TurnUndoMarker key={key} undo={part.data} />;
               case "data-agent-error":
                 return <AgentErrorCard key={key} threadId={threadId} error={part.data} />;
               case "data-task-chip":
@@ -457,7 +464,9 @@ export const MessageBlock = memo(function MessageBlock({
         </ToolImagesContext>
         <PublishedFileCards threadId={threadId} parts={message.parts} />
       </MessageContent>
-      {actions && turnEnd !== undefined && <TurnFilesChip threadId={threadId} turnId={turnEnd} />}
+      {actions && turnEnd !== undefined && (
+        <TurnFilesChip threadId={threadId} turnId={turnEnd} undo={turnUndo} />
+      )}
       {actions && (
         <MessageActions threadId={threadId} message={message} turnEnd={turnEnd !== undefined} />
       )}

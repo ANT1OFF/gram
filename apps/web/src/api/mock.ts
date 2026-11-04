@@ -50,6 +50,8 @@ import type {
   AskInput,
   WorkerQuestion,
   TurnEndReason,
+  TurnId,
+  TurnUndoData,
 } from "@gram/contracts";
 import {
   effectiveCheckout,
@@ -193,7 +195,7 @@ import {
   mockStartsFresh,
   mockStartsWithBoard,
 } from "./mock-overrides";
-import { mockGitState, mockPrDetail } from "./mock-git";
+import { mockDiff, mockGitState, mockPrDetail } from "./mock-git";
 import { searchMessages } from "./mock-search";
 import {
   AUTOPLAY,
@@ -239,6 +241,9 @@ export interface MockApiOptions {
 type AgentKindOption = Parameters<Api["listModels"]>[0];
 
 class Interrupted extends Error {}
+
+/** A refusal shaped as the server's `InvalidState`. */
+const refuse = (message: string) => Object.assign(new Error(message), { _tag: "InvalidState" });
 
 const stampSubagentStart = (
   starts: Map<string, number>,
@@ -2103,6 +2108,37 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
         threadId,
       });
     }
+  }
+
+  /** Turns whose edits were undone, as `thread:turn`: undoing one again finds its files changed. */
+  readonly #undoneTurns = new Set<string>();
+
+  async undoTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnUndoData> {
+    const runtime = this.#runtime(threadId);
+    if (runtime.running) {
+      throw refuse(
+        "The agent is still working. Undo once it has stopped, or view the changes instead.",
+      );
+    }
+    await this.#delay(120);
+    const diff = mockDiff(threadId, { kind: "turn", turnId });
+    const paths = diff.repo ? (diff.files ?? []).map((file) => file.path) : [];
+    if (paths.length === 0) throw refuse("Undo not available: this turn changed no files.");
+    const key = `${threadId}:${turnId}`;
+    if (this.#undoneTurns.has(key)) {
+      throw refuse(
+        `Undo not available: ${paths.length} files changed again since this turn (${paths.slice(0, 3).join(", ")}), by a later turn or by you. View the changes to undo them by hand.`,
+      );
+    }
+    this.#undoneTurns.add(key);
+    const receipt: TurnUndoData = { turnId, files: paths.length, at: Date.now() };
+    this.#putMessage(runtime, {
+      id: `undo-${this.#ids()}`,
+      role: "assistant",
+      metadata: { createdAt: receipt.at },
+      parts: [{ type: "data-turn-undo", id: this.#ids(), data: receipt }],
+    });
+    return receipt;
   }
 
   /** The seeded PR is #412; any other number checks out a `pr-<n>` branch. */

@@ -25,8 +25,9 @@ import {
   WorktreeDirty,
 } from "../errors.ts";
 import { FeedRev, ShowPanelFields, ThreadFeedEvent } from "../events.ts";
-import { MessageId, QueueItemId, RequestId, TaskId, ThreadId } from "../ids.ts";
+import { MessageId, QueueItemId, RequestId, TaskId, ThreadId, TurnId } from "../ids.ts";
 import { ThreadWakes } from "../orchestration.ts";
+import { TurnUndoDataSchema } from "../ui-message.ts";
 import { ReviewMonitorResult } from "../review-monitor.ts";
 import { ReorderThreadsPayload } from "../sidebar.ts";
 import { PlanEdit, ThreadPlan } from "../thread-plan.ts";
@@ -159,6 +160,17 @@ export const ThreadRpcs = RpcGroup.make(
   Rpc.make("thread.rewind", {
     payload: { ...threadRef, toMessageId: MessageId, files: Schema.Boolean },
     error: errors(ThreadNotFound, InvalidState, GitError),
+  }),
+  /**
+   * Puts the files one finished turn changed back as they were before it, and only those, leaving a
+   * `turn-undo` receipt in the transcript. Refused (`InvalidState`, nothing touched) while the agent
+   * is working, when a later turn or the user has since changed one of those files, or when a commit
+   * holds the turn's changes.
+   */
+  Rpc.make("thread.undoTurn", {
+    payload: { ...threadRef, turnId: TurnId },
+    success: TurnUndoDataSchema,
+    error: errors(ThreadNotFound, InvalidState, NotFound, GitError),
   }),
   Rpc.make("thread.rename", {
     payload: { ...threadRef, title: Schema.String },
