@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
+import { openOrchestrator, threadRow } from "../e2e/thread-row";
 import { elapse, FLAKY_DONE_MS, SHOTS, seedMockSettings, type Shot } from "./shots";
 import { TOUR } from "./tour";
 
@@ -28,6 +29,25 @@ const retryableError = async (page: Page) => {
     ),
   );
   await expect(page.getByTestId("agent-error").last()).toBeVisible();
+};
+
+/** From the Needs you pill, a forwarded question's row: its ask turned to in the orchestrator's dock. */
+const questionInDock = async (page: Page) => {
+  await page.goto("/t/t-flaky");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  const made = await page.evaluate(() => window.gramMock!.simulateWorkerQuestions());
+  await page.getByTestId("overview-needs-you").click();
+  await page
+    .getByTestId("needs-you-popover")
+    .getByTestId("needs-you-item")
+    .filter({ hasText: "Should the retry queue drop a job" })
+    .getByTestId("needs-you-open")
+    .click();
+  const item = page.locator(
+    `[data-testid="ask-item"][data-ask-key="worker-question:${made.workspaceId}:WQ1"]`,
+  );
+  await expect(item).toBeFocused();
+  return item;
 };
 
 const steps: readonly Shot[] = [
@@ -92,6 +112,58 @@ const steps: readonly Shot[] = [
       await question.getByRole("radio", { name: /^Keep for replay/ }).click();
       await question.getByRole("button", { name: "Send to the worker" }).click();
       await expect(question).toHaveCount(0);
+    },
+  },
+  {
+    name: "question-dock",
+    title: "Answer: the Needs you row opens the forwarded question in the Asks dock",
+    open: async (page) => {
+      await questionInDock(page);
+    },
+  },
+  {
+    name: "question-dock-answered",
+    title: "Answer: one choice in the dock sends it to the worker, with Undo",
+    open: async (page) => {
+      const item = await questionInDock(page);
+      await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+      await expect(page.getByTestId("ask-undo-line")).toContainText("Keep for replay");
+    },
+  },
+  {
+    name: "question-sheet",
+    title: "Answer: a long question opens in the ask sheet, its answer row in sight",
+    open: async (page) => {
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      const made = await page.evaluate(() => window.gramMock!.simulateWorkerQuestions());
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await page
+        .getByRole("radiogroup", { name: "View" })
+        .getByRole("radio", { name: /^Board\b/ })
+        .click();
+      await page.evaluate(async (workspaceId) => {
+        const mock = window.gramMock!;
+        const ledger = await mock.orchestratorLedger(workspaceId as never);
+        const question = ledger.questions?.find((each) => each.id === "WQ1");
+        if (question === undefined) throw new Error("no WQ1");
+        await mock.simulateWorkerQuestion({
+          ...question,
+          context: `${question.context ?? ""} The relay retries on its own schedule, so a job kept for replay may already have been retried by the time someone looks. A replay button on the jobs page would need its own permission, and the queue keeps jobs for 30 days.`,
+          options: [
+            ...(question.options ?? []),
+            { label: "Park it", description: "Hold the job until someone looks." },
+            { label: "Ask the sender", description: "Mail the sender a link to retry." },
+            { label: "Retry with backoff", description: "Five tries, then report it." },
+          ],
+        });
+      }, made.workspaceId);
+      await page.getByTestId("rail-waiting-chip").click();
+      const card = page.locator('[data-testid="rail-waiting"] [data-question="WQ1"]');
+      // The longer question has reached the band before its Answer is pressed.
+      await expect(card).toContainText("30 days");
+      await card.getByTestId("question-answer").click();
+      await expect(page.getByTestId("ask-sheet-answer-row")).toBeInViewport();
     },
   },
   {

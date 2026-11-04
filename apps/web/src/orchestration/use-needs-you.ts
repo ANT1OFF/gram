@@ -11,6 +11,7 @@ import { useRequestRevealStore, useRevealStore } from "@/stores/reveal";
 import { useTrayUnfold } from "@/thread/waiting-tray";
 import { useViewStore } from "@/views/view-store";
 
+import { showAsk } from "./ask-sheet-store";
 import { useAskStackStore } from "./ask-stack-store";
 import { useDerivedAsks } from "./needs-you-store";
 import {
@@ -175,11 +176,20 @@ export const jumpTarget = (
 ):
   | { readonly kind: "message"; readonly messageId: string }
   | { readonly kind: "card"; readonly selector: string; readonly requestId?: string }
-  | { readonly kind: "stack"; readonly key: string }
+  | {
+      readonly kind: "stack";
+      readonly key: string;
+      /** The orchestrator whose dock answers it, when it isn't the thread that asked. */
+      readonly threadId?: ThreadId;
+    }
   | { readonly kind: "tray" }
   | { readonly kind: "thread" } => {
   if (item.messageId !== undefined) return { kind: "message", messageId: item.messageId };
   const { ask } = item;
+  // Every ask in a workspace is answered in its Asks dock, a worker's as well as the orchestrator's.
+  if (ask !== undefined && item.dock !== undefined) {
+    return { kind: "stack", key: ask.key, threadId: item.dock.orchestratorThreadId };
+  }
   if (ask?.worker !== undefined) {
     return {
       kind: "card",
@@ -209,21 +219,32 @@ export function useNeedsYouJump(): (item: NeedsYouItem) => void {
     const { setCurrent, setPopover } = useNeedsYouUi.getState();
     setCurrent(item.key);
     setPopover(undefined);
-    const threadId: ThreadId | undefined = item.threadId;
-    if (threadId === undefined) return;
     const target = jumpTarget(item);
-    const askStack = useAskStackStore.getState();
+    const threadId: ThreadId | undefined =
+      target.kind === "stack" ? (target.threadId ?? item.threadId) : item.threadId;
+    if (threadId === undefined) return;
     if (target.kind === "message") useRevealStore.getState().reveal(threadId, target.messageId);
-    if (target.kind === "stack") askStack.focus(target.key);
+    if (target.kind === "stack") {
+      if (item.dock !== undefined && item.ask !== undefined)
+        showAsk(item.dock.workspaceId, item.ask);
+      else useAskStackStore.getState().focus(target.key);
+    }
     if (target.kind === "tray") useTrayUnfold.getState().unfold(threadId);
     if (target.kind === "card" && target.requestId !== undefined) {
       useRequestRevealStore.getState().reveal(threadId, target.requestId);
     }
     const view = useViewStore.getState();
     view.setQuiet(false);
-    if (view.view !== "chat") view.setView("chat");
+    // The Board docks the same asks: a jump to one there stays on the Board.
+    const pathname = `/t/${threadId}`;
+    const keepBoard = target.kind === "stack" && view.view === "board";
+    if (keepBoard) {
+      if (window.location.pathname !== pathname) view.carryView(pathname);
+    } else if (view.view !== "chat") view.setView("chat");
     useLayoutStore.getState().openThread(threadId);
-    void navigate({ to: "/t/$threadId", params: { threadId } });
+    if (window.location.pathname !== pathname) {
+      void navigate({ to: "/t/$threadId", params: { threadId } });
+    }
     if (target.kind === "card") ringWhenDrawn(target.selector);
   };
 }

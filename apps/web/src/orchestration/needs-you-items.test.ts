@@ -151,16 +151,15 @@ describe("needsYouGroups", () => {
     const byKind = new Map(gram!.items.map((item) => [item.title, item]));
     const asked = byKind.get(workerQuestion.question)!;
     expect(asked).toMatchObject({ where: "Orchestrator rows collapse", threadId: "t-collapse" });
-    expect(jumpTarget(asked)).toEqual({
-      kind: "card",
-      selector: '[data-testid="worker-question-card"][data-question="WQ1"]',
-    });
+    // A worker's question and a worker's request are answered in the workspace's Asks dock too.
+    expect(jumpTarget(asked)).toEqual({ kind: "stack", key: asked.ask!.key, threadId: ORCH });
+    expect(asked.dock).toEqual({ workspaceId: GRAM, orchestratorThreadId: ORCH });
     const approve = gram!.items.find((item) => item.kind === "approval")!;
     expect(approve).toMatchObject({ where: "Usage clocks", threadId: "t-clocks" });
-    expect(jumpTarget(approve)).toMatchObject({ kind: "card", requestId: "r-1" });
+    expect(jumpTarget(approve)).toEqual({ kind: "stack", key: approve.ask!.key, threadId: ORCH });
     const own = byKind.get(memory.text)!;
     expect(own).toMatchObject({ where: "Orchestrator", threadId: ORCH, inStack: true });
-    expect(jumpTarget(own)).toEqual({ kind: "stack", key: own.ask!.key });
+    expect(jumpTarget(own)).toEqual({ kind: "stack", key: own.ask!.key, threadId: ORCH });
   });
 
   it("opens a wait at the message that added it, or its tray without one", () => {

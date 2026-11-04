@@ -12,6 +12,7 @@ export function Hint({
   render,
   children,
   side = "top",
+  delay,
 }: {
   /** Words, or for a list of them, a node. */
   label: ReactNode;
@@ -19,10 +20,14 @@ export function Hint({
   render: ReactElement;
   children?: ReactNode;
   side?: "top" | "right" | "bottom" | "left";
+  /** Ms before it shows, for marks met in passing, as a board's chips are; none by default. */
+  delay?: number | undefined;
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={render}>{children}</TooltipTrigger>
+      <TooltipTrigger render={render} {...(delay === undefined ? {} : { delay })}>
+        {children}
+      </TooltipTrigger>
       <TooltipContent side={side} className="whitespace-pre-line">
         {label}
       </TooltipContent>

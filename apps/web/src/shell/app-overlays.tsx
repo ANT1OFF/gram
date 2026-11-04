@@ -1,5 +1,6 @@
 import { AwayNotifications } from "@/desktop/away-notifications";
 import { LinkQuestion } from "@/links/link-dialog";
+import { AskSheet } from "@/orchestration/ask-sheet";
 import { FeatureSheet } from "@/orchestration/feature-sheet";
 import { FreshSessionDialog } from "@/orchestration/fresh-session";
 import { PeekSheet } from "@/orchestration/peek-sheet";
@@ -31,6 +32,7 @@ export function AppOverlays() {
       <WorkspaceSheet />
       <FeatureSheet />
       <PeekSheet />
+      <AskSheet />
       <WhatsNewDialog />
       <ReportIssueDialog />
       <ShortcutOverlay />

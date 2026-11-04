@@ -69,7 +69,7 @@ const seeAll = async (page: Page) => {
   await expect(panel(page)).toBeVisible();
 };
 
-test("the pill opens every workspace's items, and a row opens its thread at the card that asks", async ({
+test("the pill opens every workspace's items, and a row opens its ask in that workspace's dock", async ({
   page,
 }) => {
   const made = await start(page);
@@ -87,13 +87,17 @@ test("the pill opens every workspace's items, and a row opens its thread at the 
   await expect(merge).toContainText("Export invoices as CSV");
   await expect(merge.getByRole("img", { name: "Approval" })).toBeVisible();
 
+  // A worker's request is answered in its workspace's Asks dock, on its orchestrator, like the rest.
   await merge.getByTestId("needs-you-open").click();
   await expect(popover(page)).toBeHidden();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.other.asking}$`));
-  const card = page.locator(`[data-request-id="r-merge-${made.other.asking}"]`);
-  await expect(card).toBeInViewport();
-  await expect(card).toHaveAttribute("data-needs-you-flash", "true");
-  await expect(card).toBeFocused();
+  await expect(page).not.toHaveURL(new RegExp(`/t/${made.other.asking}$`));
+  const ask = page.locator(
+    `[data-testid="ask-item"][data-ask-key*="r-merge-${made.other.asking}"]`,
+  );
+  await expect(ask).toBeInViewport();
+  await expect(ask).toHaveAttribute("data-needs-you-flash", "true");
+  await expect(ask).toBeFocused();
+  await expect(ask.getByTestId("ask-option").first()).toHaveText(/Allow/);
 });
 
 test("quick answers: an option, Allow and Deny go out through the stack's path, with Undo", async ({
@@ -253,24 +257,26 @@ test("with nothing waiting, the popover and the panel say so", async ({ page }) 
   await expect(popover(page).getByTestId("needs-you-empty")).toBeVisible();
 });
 
-test("a worker's question opens at its card in the worker's thread", async ({ page }) => {
+test("a worker's question opens at its ask in the orchestrator's dock, answered in one click", async ({
+  page,
+}) => {
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await page.evaluate(() => window.gramMock!.simulateWorkerQuestions());
+  // Step 1, from the pill's popover: the forwarded question's row opens it in the Asks dock.
   await openPopover(page);
-  const asked = popover(page)
-    .getByTestId("needs-you-item")
-    .filter({ has: page.getByRole("img", { name: "Worker question" }) })
-    .first();
-  await expect(asked).toBeVisible();
-  const threadId = await asked.getAttribute("data-thread-id");
+  const asked = row(popover(page), "Should the retry queue drop a job");
+  await expect(asked).toHaveAttribute("data-kind", "question");
   await asked.getByTestId("needs-you-open").click();
-  await expect(page).toHaveURL(new RegExp(`/t/${threadId}$`));
-  const card = page
-    .getByTestId("worker-question-card")
-    .and(page.locator('[data-stage="forwarded"]'));
-  await expect(card.first()).toBeInViewport();
-  expect(made.workspaceId).toBeTruthy();
+  await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
+  const item = page
+    .getByTestId("ask-item")
+    .and(page.locator(`[data-ask-key="worker-question:${made.workspaceId}:WQ1"]`));
+  await expect(item).toBeInViewport();
+  await expect(item).toBeFocused();
+  // Step 2: its choice, the orchestrator's pick first, answers it straight to the worker.
+  await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+  await expect(page.getByTestId("ask-undo-line")).toContainText("Keep for replay");
 });
 
 test("narrow: the rail's pill opens a popover that fits, and with no pill ⌘⌥3 opens the panel", async ({

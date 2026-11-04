@@ -272,6 +272,10 @@ test("a finished group folds to one line, and a group's plan is set from its ban
   await start(page, () => window.gramMock!.simulateFinishedWork());
   await bar(page).getByTestId("rail-show-archived").click();
   const cleanup = band(page, "q3-cleanup");
+  // Finished work goes last, and the Board draws only the lines near its view: scroll down to it.
+  await board(page)
+    .getByTestId("rail-scroller")
+    .evaluate((scroller) => (scroller.scrollTop = scroller.scrollHeight));
   await expect(cleanup).toHaveAttribute("data-finished", "true");
   await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "false");
   await expect(foldAround(cleanup.getByTestId("rail-row").first())).toHaveCount(1);

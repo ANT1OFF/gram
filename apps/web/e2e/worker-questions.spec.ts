@@ -189,3 +189,62 @@ for (const mode of ["dark", "light"] as const) {
     }
   });
 }
+
+test("on the Board, a worker that asks is a click from its ask in the dock", async ({ page }) => {
+  const made = await start(page);
+  const chip = page
+    .getByTestId("rail-worker")
+    .and(page.locator(`[data-thread-id="${made.working}"]`));
+  await expect(chip).toHaveAttribute("data-asking", "true");
+  await chip.getByTestId("rail-worker-open").click();
+  // Still on the Board, its dock turned to that worker's question, focused for its keys.
+  await expect(page.getByTestId("rail-board")).toBeVisible();
+  // The Board's own dock: the chat's under it is laid out but inert.
+  const item = page
+    .getByTestId("rail-board")
+    .locator(`[data-testid="ask-item"][data-ask-key="worker-question:${made.workspaceId}:WQ1"]`);
+  await expect(item).toBeInViewport();
+  await expect(item).toBeFocused();
+});
+
+test("a long question's Answer opens the ask sheet, its answer row in sight", async ({ page }) => {
+  const made = await start(page);
+  await page.setViewportSize({ width: 1280, height: 560 });
+  // WQ1 grows past what the band holds in place: a fifth choice and a long context.
+  await page.evaluate(
+    async ([workspace]) => {
+      const mock = window.gramMock!;
+      const ledger = await mock.orchestratorLedger(workspace as never);
+      const question = ledger.questions?.find((each) => each.id === "WQ1");
+      if (question === undefined) throw new Error("no WQ1");
+      await mock.simulateWorkerQuestion({
+        ...question,
+        context: `${question.context ?? ""} ${"The relay retries on its own schedule. ".repeat(12)}`,
+        options: [
+          ...(question.options ?? []),
+          { label: "Park it", description: "Hold the job until someone looks." },
+          { label: "Ask the sender", description: "Mail the sender a link to retry." },
+          { label: "Retry with backoff", description: "Five tries, then report it." },
+        ],
+      });
+    },
+    [made.workspaceId] as const,
+  );
+  await openBand(page);
+  // The longer question has reached the band before its Answer is pressed.
+  await expect(card(page, "WQ1")).toContainText("The relay retries on its own schedule.");
+  await card(page, "WQ1").getByTestId("question-answer").click();
+  const sheet = page.getByTestId("ask-sheet");
+  await expect(sheet).toBeVisible();
+  // Every choice is there, and the answer row stays on screen whatever the scroll.
+  await expect(sheet.getByRole("radio")).toHaveCount(6);
+  const row = sheet.getByTestId("ask-sheet-answer-row");
+  await expect(row).toBeInViewport();
+  await sheet.getByRole("radio", { name: /^Retry with backoff/ }).click();
+  await expect(row).toBeInViewport();
+  await row.getByTestId("question-send").click();
+  await expect(sheet).toBeHidden();
+  await expect
+    .poll(async () => (await stageOf(page, made.workspaceId, "WQ1"))?.stage)
+    .toBe("answered");
+});

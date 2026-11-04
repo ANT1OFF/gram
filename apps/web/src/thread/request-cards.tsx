@@ -79,6 +79,18 @@ export function CompactRequestCards({ children }: { children: ReactNode }) {
   return <CompactContext value={true}>{children}</CompactContext>;
 }
 
+/** Whether cards render in the ask sheet, which scrolls them whole and keeps their buttons in sight. */
+const SheetContext = createContext(false);
+
+/**
+ * Cards inside render for the ask sheet (orchestration/ask-sheet.tsx): the sheet is their surface
+ * and their scroller, so the card's own height cap, inner scroll and pulse go, and its answer row
+ * sticks to the sheet's bottom edge.
+ */
+export function SheetRequestCards({ children }: { children: ReactNode }) {
+  return <SheetContext value={true}>{children}</SheetContext>;
+}
+
 /** A card's shortcut hint, which the inbox leaves out as its cards own no shortcuts. */
 function CardKbd({ id }: { id: string }) {
   return useContext(CompactContext) ? null : <ShortcutKbd id={id} className="opacity-70" />;
@@ -228,6 +240,32 @@ function CardShell({
 }) {
   const thread = useContext(RequestRoleContext);
   const compact = useContext(CompactContext);
+  const sheet = useContext(SheetContext);
+  if (sheet) {
+    return (
+      <section
+        data-testid={testId}
+        data-request-id={requestId}
+        data-sheet
+        aria-label={typeof title === "string" ? title : undefined}
+        className="flex flex-col text-sm"
+      >
+        <h3 className="mb-2 flex items-center gap-2 font-medium">
+          {icon}
+          {title}
+        </h3>
+        <div data-testid="request-card-body">{children}</div>
+        {footer && (
+          <div
+            data-testid="ask-sheet-answer-row"
+            className="sticky bottom-0 -mx-4 mt-3 flex flex-wrap items-center gap-2 border-t border-border bg-popover px-4 py-2.5"
+          >
+            {footer}
+          </div>
+        )}
+      </section>
+    );
+  }
   const card = (
     <section
       data-testid={testId}
@@ -951,6 +989,7 @@ const PLAN_MODES: { mode: PermissionMode; label: string; hint: string }[] = [
 
 export function PlanCard({ threadId, request }: { threadId: ThreadId; request: PlanRequest }) {
   const { respond, pending } = useRespond(threadId, request);
+  const inSheet = useContext(SheetContext);
   const [stage, setStage] = useState<"review" | "approve" | "reject">("review");
   const [mode, setMode] = useState<PermissionMode>("acceptEdits");
   const [message, setMessage] = useState("");
@@ -1007,7 +1046,13 @@ export function PlanCard({ threadId, request }: { threadId: ThreadId; request: P
         )
       }
     >
-      <div className="max-h-80 overflow-auto rounded-(--radius-sm) bg-muted/30 px-3 py-2">
+      <div
+        className={cn(
+          "rounded-(--radius-sm) bg-muted/30 px-3 py-2",
+          // In the sheet the plan reads whole; above the composer it keeps to a box.
+          !inSheet && "max-h-80 overflow-auto",
+        )}
+      >
         <MessageResponse>{request.plan}</MessageResponse>
       </div>
       {request.planFilePath && (

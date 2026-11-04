@@ -50,9 +50,9 @@ import {
   choiceLayout,
   type AskOption,
 } from "./ask-model";
+import { openAskSheet } from "./ask-sheet-store";
 import { useAskStackStore } from "./ask-stack-store";
 import { useDerivedAsks } from "./needs-you-store";
-import { useOpenBoard } from "./open-board";
 
 export interface WorkspaceAsks {
   readonly workspaceId: WorkspaceId;
@@ -326,6 +326,7 @@ function AskItem({
       animate={{ y: 0 }}
       transition={spring}
       data-testid="ask-item"
+      data-ask-key={ask.key}
       data-current={current || undefined}
       // Focusable from a jump (the overview's "asks you"), where the stack's plain keys answer it.
       tabIndex={-1}
@@ -412,6 +413,28 @@ function AskItem({
   );
 }
 
+/** How long an ask a jump lands on stays ringed. */
+const RING_MS = 1_600;
+
+/**
+ * Brings the ask `key` into view in the dock at `root`, rings it for a moment and gives it focus,
+ * where the stack's plain keys answer it: what a jump from Needs you or a Board chip lands on.
+ */
+const ringAsk = (root: HTMLElement, key: string) => {
+  const look = () => {
+    const item = [...root.querySelectorAll<HTMLElement>('[data-testid="ask-item"]')].find(
+      (element) => element.dataset["askKey"] === key,
+    );
+    if (item === undefined) return;
+    item.scrollIntoView({ block: "nearest" });
+    item.setAttribute("data-needs-you-flash", "true");
+    item.focus({ preventScroll: true });
+    setTimeout(() => item.removeAttribute("data-needs-you-flash"), RING_MS);
+  };
+  // After the step to it has drawn.
+  requestAnimationFrame(look);
+};
+
 /** What the stack's keys reach across: the thread's pane, or the view it is docked in. */
 const SCOPE = "[data-pane-root], [data-ask-scope]";
 
@@ -455,7 +478,6 @@ export function AskStack({
   const problems = useAskStackStore((s) => s.problems);
   const api = useApi();
   const queryClient = useQueryClient();
-  const openBoard = useOpenBoard();
   const open = useOpenThread();
   const rootRef = useRef<HTMLDivElement>(null);
   const replyRefs = useRef(new Map<string, HTMLInputElement>());
@@ -474,8 +496,12 @@ export function AskStack({
   const focusAt = focusKey === undefined ? -1 : asks.findIndex((ask) => ask.key === focusKey);
   if (focusAt >= 0 && cursor.key !== focusKey) setCursor({ key: focusKey, index: focusAt });
   useEffect(() => {
-    if (focusKey !== undefined && cursor.key === focusKey)
-      useAskStackStore.getState().focus(undefined);
+    if (focusKey === undefined || cursor.key !== focusKey) return;
+    useAskStackStore.getState().focus(undefined);
+    // Shown where it can be seen: a stack laid out under another view leaves it to the one on top.
+    const root = rootRef.current;
+    if (root === null || root.closest("[inert]") !== null) return;
+    ringAsk(root, focusKey);
   }, [focusKey, cursor.key]);
 
   const found = asks.findIndex((ask) => ask.key === cursor.key);
@@ -529,9 +555,10 @@ export function AskStack({
   };
   const choose = (ask: Ask, option: AskOption) => {
     const { action } = option;
-    if (action.kind === "open") return open(action.threadId);
-    if (action.kind === "board") {
-      openBoard(action.workspaceId, { waiting: true });
+    // What must be read in full first is read and answered in the ask sheet, over the dock.
+    if (action.kind === "open" || action.kind === "board") {
+      if (workspaceId !== undefined) return openAskSheet(workspaceId, ask);
+      if (action.kind === "open") open(action.threadId);
       return;
     }
     send(ask, option.done, action);

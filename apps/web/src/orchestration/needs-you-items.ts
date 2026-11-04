@@ -50,6 +50,13 @@ export interface NeedsYouItem {
   readonly owned: boolean;
   /** Answered in its orchestrator's ask stack, which a jump focuses, rather than in a card. */
   readonly inStack?: boolean | undefined;
+  /**
+   * The Asks dock that answers it: every ask in a workspace with an orchestrator, a worker's
+   * included, is answered there, so a jump opens that orchestrator (or keeps its Board) on it.
+   */
+  readonly dock?:
+    | { readonly workspaceId: WorkspaceId; readonly orchestratorThreadId: ThreadId }
+    | undefined;
   /** Epoch ms it was asked or added, when the source keeps it. */
   readonly at?: number | undefined;
   readonly ask?: Ask | undefined;
@@ -91,11 +98,20 @@ export interface NeedsYouThread {
 export const itemText = (item: Pick<NeedsYouItem, "title" | "command">): string =>
   item.command === undefined ? item.title : `${item.title} ${item.command}`;
 
-/** One item for an ask, opening the thread that asked. */
+/** One item for an ask, opening it in its workspace's Asks dock, or a solo thread's card. */
 const askItem = (
   ask: Ask,
-  workspace: Pick<NeedsYouWorkspace, "orchestratorThreadId">,
+  workspace: Pick<NeedsYouWorkspace, "orchestratorThreadId"> & {
+    readonly workspaceId?: WorkspaceId | undefined;
+  },
 ): NeedsYouItem => {
+  const dock =
+    workspace.workspaceId === undefined || workspace.orchestratorThreadId === undefined
+      ? undefined
+      : {
+          workspaceId: workspace.workspaceId,
+          orchestratorThreadId: workspace.orchestratorThreadId,
+        };
   const base = {
     key: `ask:${ask.key}`,
     ids: ask.ids,
@@ -104,6 +120,7 @@ const askItem = (
     command: ask.command,
     owned: true,
     ask,
+    ...(dock === undefined ? {} : { dock, inStack: true }),
   };
   if (ask.worker !== undefined) {
     const { question } = ask.worker;

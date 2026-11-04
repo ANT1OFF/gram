@@ -14,7 +14,9 @@ import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { VirtualRows, type RowPlace } from "@/lib/virtual-rows";
 import { drawOn, Expand, GlideItem, GlideList } from "@/motion";
-import { AskStack } from "@/orchestration/ask-stack";
+import { askKeysByThread } from "@/orchestration/ask-model";
+import { showAsk } from "@/orchestration/ask-sheet-store";
+import { AskStack, useWorkspaceAsks } from "@/orchestration/ask-stack";
 import { useBoardWaiting, WaitingList, WAITING_BAND } from "@/orchestration/board-waiting";
 import { FailingStrip } from "@/orchestration/failing-strip";
 import {
@@ -61,20 +63,31 @@ export interface ViewProps {
 /** The feature column, then the five stations. */
 const COLUMNS = "grid-cols-[minmax(8rem,12rem)_repeat(5,minmax(0,1fr))]";
 
+/** How soon a chip's whole title shows on hover: quick, but not for a pointer passing over. */
+const CHIP_HINT_MS = 200;
+
 function WorkerChip({
   worker,
   station,
   named,
+  asking,
   onOpen,
 }: {
   worker: RailWorker;
   station: FeatureStation;
   /** Whether it says its title: a line's only worker leaves that to the line's name. */
   named: boolean;
+  /** Whether it waits on an ask in the dock, which a click turns to. */
+  asking: boolean;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
   const tone = RAIL_TONES[worker.tone];
   const overlap = overlapHint(worker);
+  const hint = [
+    worker.title,
+    ...(worker.waiting === undefined ? [] : [worker.waiting.hint]),
+    ...(asking ? ["Click to answer in Asks"] : []),
+  ].join("\n");
   return (
     <GlideItem
       glideId={`rail-worker-${worker.threadId}`}
@@ -82,42 +95,59 @@ function WorkerChip({
       data-thread-id={worker.threadId}
       data-station={station}
       data-tone={worker.tone}
+      data-asking={asking || undefined}
       // The name's button stretches over the whole chip; the PR and the overlap sit above it.
       className={cn(
         "relative flex w-full max-w-52 min-w-0 flex-col gap-0.5 rounded-(--radius-md) border border-border bg-card px-2 py-1 text-xs focus-within:ring-2 focus-within:ring-ring hover:border-ring/60",
         worker.tone === "needs" && "border-status-needs-mark/60",
       )}
     >
-      <button
-        type="button"
-        onClick={(event) => onOpen(worker.threadId, event)}
-        title={
-          worker.waiting === undefined ? worker.title : `${worker.title}\n${worker.waiting.hint}`
+      {/* Its whole title on hover, as a two-line chip may still cut a long one short. */}
+      <Hint
+        label={hint}
+        delay={CHIP_HINT_MS}
+        render={
+          <button
+            type="button"
+            data-testid="rail-worker-open"
+            onClick={(event) => onOpen(worker.threadId, event)}
+            aria-label={`${worker.title}, ${tone.label}, ${worker.now}`}
+            className="flex min-w-0 items-start gap-1.5 text-left outline-none after:absolute after:inset-0 after:content-['']"
+          />
         }
-        aria-label={`${worker.title}, ${tone.label}, ${worker.now}`}
-        className="flex min-w-0 items-center gap-1.5 text-left outline-none after:absolute after:inset-0 after:content-['']"
       >
-        <tone.icon aria-hidden className={cn("size-3 shrink-0", tone.tone)} />
+        <tone.icon aria-hidden className={cn("mt-0.5 size-3 shrink-0", tone.tone)} />
         {named ? (
-          <span className="min-w-0 truncate font-medium">{worker.title}</span>
+          <span
+            data-testid="rail-worker-title"
+            className="line-clamp-2 min-w-0 font-medium break-words"
+          >
+            {worker.title}
+          </span>
         ) : (
-          <span data-testid="rail-now" className="min-w-0 truncate text-muted-foreground">
+          <span
+            data-testid="rail-now"
+            className="line-clamp-2 min-w-0 break-words text-muted-foreground"
+          >
             {worker.now}
           </span>
         )}
-      </button>
+      </Hint>
       <span
         className={cn(
-          "flex min-w-0 items-center gap-1.5 pl-4.5 text-[11px] text-muted-foreground",
+          // In a narrow column the PR and the overlap wrap under the words rather than cut them.
+          "flex min-w-0 flex-wrap items-center justify-end gap-x-1.5 pl-4.5 text-[11px] text-muted-foreground",
           !named && worker.pr === undefined && overlap === undefined && "hidden",
         )}
       >
         {named && (
-          <span data-testid="rail-now" className="min-w-0 truncate">
+          <span
+            data-testid="rail-now"
+            className="line-clamp-2 min-w-0 flex-[1_1_5.5rem] break-words"
+          >
             {worker.now}
           </span>
         )}
-        <span className="flex-1" />
         {worker.pr !== undefined &&
           (worker.pr.url === undefined ? (
             <span className="shrink-0 tabular-nums">#{worker.pr.number}</span>
@@ -178,10 +208,13 @@ function FeatureLine({
   stage,
   needsMark,
   repos,
+  asking,
   onOpen,
   place,
 }: {
   row: RailRow;
+  /** The workers waiting on an ask in the dock. */
+  asking: ReadonlySet<ThreadId>;
   /** Whether it names its repos: only where the workspace has more than one. */
   repos: boolean;
   /**
@@ -275,6 +308,7 @@ function FeatureLine({
               worker={worker}
               station={station}
               named={workerCount(row) > 1}
+              asking={asking.has(worker.threadId)}
               onOpen={onOpen}
             />
           ))}
@@ -348,7 +382,28 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   const facts = useRailFacts(workspaceId);
   // Show finished: archived workers, and the lines whose work is over, back on the Board.
   const finishedShown = useLayoutStore((s) => s.boardArchivedShown.includes(workspaceId));
-  const onOpen = useOpenWorker();
+  const openWorker = useOpenWorker();
+  // A worker that asks is a click from its ask in the dock below; ⌘-click or ⌥-click still opens it.
+  const asks = useWorkspaceAsks().find((w) => w.workspaceId === workspaceId)?.asks;
+  const askOf = useMemo(() => {
+    const keys = askKeysByThread(asks ?? []);
+    const byKey = new Map((asks ?? []).map((ask) => [ask.key, ask]));
+    return new Map(
+      [...keys].flatMap(([threadId, key]) => {
+        const ask = byKey.get(key);
+        return ask === undefined ? [] : [[threadId, ask] as const];
+      }),
+    );
+  }, [asks]);
+  const asking = useMemo(() => new Set(askOf.keys()), [askOf]);
+  const onOpen = (threadId: ThreadId, event: MouseEvent) => {
+    const ask = askOf.get(threadId);
+    if (ask !== undefined && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      showAsk(workspaceId, ask);
+      return;
+    }
+    openWorker(threadId, event);
+  };
   const setStage = useSetStage(workspaceId);
   const rows = useMemo(
     () => boardRows(railRows(cards, facts, finishedShown ? "all" : "shown"), finishedShown),
@@ -375,6 +430,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
       stage={state.stages?.[row.feature]}
       needsMark={row.group === undefined}
       repos={state.workspace.projectIds.length > 1}
+      asking={asking}
       onOpen={onOpen}
       place={place}
     />
@@ -401,30 +457,32 @@ function RailBoard({ state }: { state: WorkspaceState }) {
         waitingOpen={bandOpen}
         onWaiting={() => useBoardBand.getState().setOpen(workspaceId, !bandOpen)}
       />
-      <Expand open={bandOpen} className="shrink-0">
-        <section
-          ref={band}
-          id={WAITING_BAND}
-          data-testid="rail-waiting"
-          aria-label="Waiting on you"
-          className="max-h-[40vh] overflow-y-auto border-t border-border/60 px-4 py-2"
+      {/* One scroller for the band and the lines: the band grows to hold what waits on you, its
+          questions' choices whole, and scrolls away with the Board rather than in a box of its own. */}
+      <div data-testid="rail-scroller" className="min-h-0 flex-1 overflow-y-auto pb-4">
+        <Expand open={bandOpen}>
+          <section
+            ref={band}
+            id={WAITING_BAND}
+            data-testid="rail-waiting"
+            aria-label="Waiting on you"
+            className="border-t border-border/60 px-4 py-2"
+          >
+            {waiting.count > 0 && <WaitingList state={state} waiting={waiting} shown={bandOpen} />}
+          </section>
+        </Expand>
+        <div
+          aria-hidden
+          className={cn(
+            "sticky top-0 z-10 grid gap-x-2 border-b border-border bg-thread px-4 pb-1.5 text-center text-xs text-muted-foreground",
+            COLUMNS,
+          )}
         >
-          {waiting.count > 0 && <WaitingList state={state} waiting={waiting} shown={bandOpen} />}
-        </section>
-      </Expand>
-      <div
-        aria-hidden
-        className={cn(
-          "grid shrink-0 gap-x-2 border-b border-border px-4 pb-1.5 text-center text-xs text-muted-foreground",
-          COLUMNS,
-        )}
-      >
-        <span />
-        {FEATURE_STATIONS.map((station) => (
-          <span key={station}>{STATION_LABELS[station]}</span>
-        ))}
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+          <span />
+          {FEATURE_STATIONS.map((station) => (
+            <span key={station}>{STATION_LABELS[station]}</span>
+          ))}
+        </div>
         {rows.length === 0 ? (
           <div
             role="status"

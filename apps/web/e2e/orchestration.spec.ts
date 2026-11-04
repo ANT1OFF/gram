@@ -894,7 +894,11 @@ test("the Board hides finished work until asked, and remembers that per workspac
   await expect(spike.getByTestId("rail-worker")).toHaveAttribute("data-tone", "merged");
   await expect(spike).toHaveAttribute("data-finished", "true");
   await expect(chip(made.delivered)).toBeVisible();
-  // A group with nothing still going is folded to one line.
+  // A group with nothing still going is folded to one line, last: the Board draws only the lines
+  // near its view, so scroll down to it.
+  await board
+    .getByTestId("rail-scroller")
+    .evaluate((scroller) => (scroller.scrollTop = scroller.scrollHeight));
   await expect(cleanup).toHaveAttribute("data-finished", "true");
   await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "false");
   await expect(chip(made.merged[0]!).locator("xpath=ancestor::*[@inert]")).toHaveCount(1);
