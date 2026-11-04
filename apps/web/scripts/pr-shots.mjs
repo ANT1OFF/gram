@@ -22,6 +22,7 @@ const HELP = `bun run --filter @gram/web pr:shots [flags]
   --set tour        ordered UI tour over the realistic mock scenario; after-only, writes tour.md
                     and numbered PNGs (stress-test frames are named stress-…)
   --set flows       key interaction steps; after-only, dark by default, writes out/flows/
+  --set tasks       measured UI tasks; after-only, dark by default; out/tasks/{tasks.json,tasks.md,*.webm,*.png}
   --size <WxH>      the tour's and flows' window in CSS px, captured at 2× (default: 1728x1095,
                     a real window; 1440x900 is the older size)
   --path <route>    an ad-hoc shot of a route that only needs loading, e.g. /settings/agents
@@ -214,10 +215,12 @@ async function main() {
     },
   });
   if (values.help) return console.log(HELP);
-  if (values.set !== undefined && !["tour", "flows"].includes(values.set))
-    throw new Error("--set is tour or flows");
+  if (values.set !== undefined && !["tour", "flows", "tasks"].includes(values.set))
+    throw new Error("--set is tour, flows or tasks");
   const namedSet = values.set !== undefined;
   const flows = values.set === "flows";
+  const tasks = values.set === "tasks";
+  if (tasks) outDir = join(outDir, "tasks");
   if (flows) outDir = join(outDir, "flows");
   if (namedSet && values.path.length > 0) throw new Error("--set cannot be combined with --path");
   if (values.size !== undefined && !namedSet) throw new Error("--size goes with --set");
@@ -230,13 +233,18 @@ async function main() {
     GRAM_PR_SHOTS_SET: values.set ?? "",
     GRAM_PR_SHOTS_ONLY: split(values.shot).join(","),
     GRAM_PR_SHOTS_PATHS: split(values.path).join(","),
-    GRAM_PR_SHOTS_MODES: modes.length === 0 && flows ? "dark" : modes.join(","),
+    GRAM_PR_SHOTS_MODES: modes.length === 0 && (flows || tasks) ? "dark" : modes.join(","),
     GRAM_PR_SHOTS_SIZE: namedSet ? size : "",
   };
   if (values.list) return playwright(["--list"], env);
 
   rmSync(outDir, { recursive: true, force: true });
   console.log("after: the working tree");
+  if (tasks) {
+    await playwright([], env);
+    console.log(`Wrote task recordings and ${join(outDir, "tasks.md")}`);
+    return;
+  }
   const after = await captureRun("after", env);
   const failed = after.filter((r) => !r.ok);
   if (after.length === 0 || failed.length > 0) {

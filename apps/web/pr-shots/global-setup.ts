@@ -1,7 +1,11 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { chromium } from "@playwright/test";
 
+import { previewEnv } from "../scripts/isolated-preview.mjs";
 import { spawnVite, startE2eServer } from "../scripts/e2e-server.mjs";
 
 /** Generous, because a fresh base checkout's Vite bundles every dependency before the first page. */
@@ -15,10 +19,22 @@ const WARM_UP_TIMEOUT_MS = 180_000;
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const dir = process.env["GRAM_PR_SHOTS_WEB_DIR"] || undefined;
   const token = randomUUID();
+  const isolatedDir =
+    process.env["GRAM_PR_SHOTS_SET"] === "tasks"
+      ? mkdtempSync(join(tmpdir(), "gram-rating-"))
+      : undefined;
+  const serverEnv = isolatedDir ? previewEnv(isolatedDir) : process.env;
+  const clean = () => {
+    if (isolatedDir) rmSync(isolatedDir, { recursive: true, force: true });
+  };
   const server = await startE2eServer({
     token,
     startPort: 5194,
-    spawnServer: (port, key) => spawnVite(port, key, process.env, dir),
+    spawnServer: (port, key) =>
+      spawnVite(port, key, serverEnv, dir, isolatedDir ? { isolatedDir } : {}),
+  }).catch((error) => {
+    clean();
+    throw error;
   });
   process.env["GRAM_PR_SHOTS_PORT"] = String(server.port);
   try {
@@ -31,8 +47,18 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       await browser.close();
     }
   } catch (error) {
-    await server.stop();
+    try {
+      await server.stop();
+    } finally {
+      clean();
+    }
     throw error;
   }
-  return () => server.stop();
+  return async () => {
+    try {
+      await server.stop();
+    } finally {
+      clean();
+    }
+  };
 }

@@ -7,7 +7,7 @@ const port = process.env["GRAM_PR_SHOTS_PORT"] ?? "5194";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: "capture.spec.ts",
+  testMatch: process.env["GRAM_PR_SHOTS_SET"] === "tasks" ? "tasks.spec.ts" : "capture.spec.ts",
   globalSetup: "./global-setup.ts",
   outputDir: "../test-results/pr-shots",
   fullyParallel: false,
