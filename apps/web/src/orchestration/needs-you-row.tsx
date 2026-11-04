@@ -5,7 +5,8 @@ import {
   Check,
   CircleAlert,
   Eye,
-  Hand,
+  Footprints,
+  Inbox,
   ListChecks,
   MessageCircleQuestion,
   PenLine,
@@ -41,7 +42,7 @@ const WAIT_ICONS: Partial<Record<WaitViewKind, LucideIcon>> = {
   draft: PenLine,
   review: Eye,
   decision: Scale,
-  action: Hand,
+  action: Footprints,
 };
 
 const WAIT_LABELS: Partial<Record<WaitViewKind, string>> = {
@@ -73,7 +74,7 @@ export const kindOf = (
     case "wait": {
       const kind = item.wait?.view.kind;
       return {
-        icon: (kind === undefined ? undefined : WAIT_ICONS[kind]) ?? Hand,
+        icon: (kind === undefined ? undefined : WAIT_ICONS[kind]) ?? Inbox,
         label: (kind === undefined ? undefined : WAIT_LABELS[kind]) ?? "Waiting on you",
       };
     }

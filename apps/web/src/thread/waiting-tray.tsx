@@ -13,16 +13,18 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  CircleHelp,
   Copy,
   ExternalLink,
   Eye,
-  Hand,
+  Footprints,
   Inbox,
+  ListChecks,
   Locate,
+  MessageCircleQuestion,
   PenLine,
   Plus,
   Reply,
+  Scale,
   ShieldQuestion,
   Sparkles,
   Undo2,
@@ -63,11 +65,11 @@ import {
 const KIND: Record<WaitViewKind, { icon: LucideIcon; label: string }> = {
   draft: { icon: PenLine, label: "A draft to send" },
   review: { icon: Eye, label: "To review" },
-  decision: { icon: CircleHelp, label: "A decision" },
-  action: { icon: Hand, label: "A step only you can take" },
-  question: { icon: CircleHelp, label: "A question" },
+  decision: { icon: Scale, label: "A decision" },
+  action: { icon: Footprints, label: "A step only you can take" },
+  question: { icon: MessageCircleQuestion, label: "A question" },
   approval: { icon: ShieldQuestion, label: "An approval" },
-  plan: { icon: ShieldQuestion, label: "A plan to review" },
+  plan: { icon: ListChecks, label: "A plan to review" },
 };
 
 /** How long a row marked done offers Undo. */
@@ -342,7 +344,7 @@ function ResolvedLine({
       >
         <ChevronRight
           aria-hidden
-          className={cn("size-3 transition-transform duration-(--dur-fast)", open && "rotate-90")}
+          className={cn("size-3.5 transition-transform duration-(--dur-fast)", open && "rotate-90")}
         />
         Resolved ({resolved.length})
       </button>
@@ -366,7 +368,7 @@ function ResolvedLine({
                 onClick={() => onReopen(item)}
                 className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
               >
-                <Undo2 aria-hidden className="size-3" /> Reopen
+                <Undo2 aria-hidden className="size-3.5" /> Reopen
               </button>
             </li>
           ))}
@@ -465,7 +467,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         )}
         {suggestions > 0 && (
           <span className="flex shrink-0 items-center gap-1 @max-sm:hidden">
-            · <Sparkles aria-hidden className="size-3" /> {suggestions} suggested
+            · <Sparkles aria-hidden className="size-3.5" /> {suggestions} suggested
           </span>
         )}
         {byHelper.length > 0 && (
@@ -513,7 +515,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                   onClick={() => undo(item)}
                   className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
                 >
-                  <Undo2 aria-hidden className="size-3" /> Undo
+                  <Undo2 aria-hidden className="size-3.5" /> Undo
                 </button>
               </li>
             ))}
@@ -525,11 +527,11 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                   onClick={() => setShowResolved(!showResolved)}
                   className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
                 >
-                  <Sparkles aria-hidden className="size-3" />
+                  <Sparkles aria-hidden className="size-3.5" />
                   Resolved by the helper from what you wrote ({byHelper.length})
                   <ChevronDown
                     aria-hidden
-                    className={cn("size-3 transition-transform", showResolved && "rotate-180")}
+                    className={cn("size-3.5 transition-transform", showResolved && "rotate-180")}
                   />
                 </button>
                 {showResolved && (
@@ -551,7 +553,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                           onClick={() => reopen(item)}
                           className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
                         >
-                          <Undo2 aria-hidden className="size-3" /> Undo
+                          <Undo2 aria-hidden className="size-3.5" /> Undo
                         </button>
                       </li>
                     ))}
@@ -648,11 +650,11 @@ export function WaitNoteLine({ note }: { note: WaitNoteData }) {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
       >
-        <Inbox aria-hidden className="size-3" />
+        <Inbox aria-hidden className="size-3.5" />
         Gram told the agent
         <ChevronRight
           aria-hidden
-          className={cn("size-3 transition-transform duration-(--dur-fast)", open && "rotate-90")}
+          className={cn("size-3.5 transition-transform duration-(--dur-fast)", open && "rotate-90")}
         />
       </button>
       {open && (

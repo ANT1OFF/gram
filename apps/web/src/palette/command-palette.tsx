@@ -27,6 +27,7 @@ import { focusOtherWindow } from "@/desktop/open-thread";
 import { prefillDraftProject, prefillTaskTarget } from "@/composer/draft-prefill";
 import { useStashMenuStore } from "@/composer/stash-store";
 import { shortcutHint } from "@/keyboard/bindings";
+import { formatKeys } from "@/keyboard/registry";
 import { listIndexForKey } from "@/lib/list-keys";
 import { formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -43,6 +44,7 @@ import {
 } from "@/resume/resume-sessions";
 import { useHistoryStore } from "@/history/history-view";
 import { useServerSettings } from "@/settings-sync/store";
+import { startScript, useProjectScripts } from "@/scripts/use-project-scripts";
 import { projectNameOf } from "@/settings/workspace-settings-model";
 import {
   fitShell,
@@ -173,6 +175,9 @@ function PaletteBody({
   );
   const currentThread = currentId ? byId[currentId]?.thread : undefined;
   const currentProjectId = currentThread?.projectId;
+  /** The thread "Run script…" runs in: the one in view, unless it orchestrates. */
+  const scriptThread = currentThread?.role === "orchestrator" ? undefined : currentThread;
+  const { data: projectScripts } = useProjectScripts(scriptThread?.projectId);
   const workspaces = useWorkspaces();
   /** Whether `projectId` has the one-project workspace `openOrchestrator` would otherwise make. */
   const hasOwnWorkspace = (projectId: string) =>
@@ -366,6 +371,43 @@ function PaletteBody({
   }));
 
   const actions: PaletteItem[] = [
+    ...(scriptThread === undefined
+      ? []
+      : [
+          {
+            id: "action:runScript",
+            label: "Run script…",
+            keywords: "project scripts command build test lint dev terminal make npm",
+            run: () => {},
+            opens: () => ({
+              title: "Run script",
+              items: [
+                ...(projectScripts?.scripts ?? []).map((script) => ({
+                  id: `script:${script.name}`,
+                  label: script.name,
+                  hint: script.command,
+                  ...(script.shortcut === undefined
+                    ? {}
+                    : { shortcut: formatKeys(script.shortcut) }),
+                  run: () => startScript(api, scriptThread.id, script.name),
+                })),
+                {
+                  id: "script:edit",
+                  label:
+                    (projectScripts?.scripts.length ?? 0) === 0
+                      ? "Add project script…"
+                      : "Edit project scripts…",
+                  run: () =>
+                    useThreadDialogs.getState().open({
+                      kind: "projectScripts",
+                      projectId: scriptThread.projectId,
+                      threadId: scriptThread.id,
+                    }),
+                },
+              ],
+            }),
+          } satisfies PaletteItem,
+        ]),
     {
       id: "action:new",
       label: "New task",
@@ -614,6 +656,12 @@ function PaletteBody({
         if (!panelExpanded && fitShell(layout).panel === "none") togglePanel();
         setPanelExpanded(!panelExpanded);
       },
+    },
+    {
+      id: "action:reviewFocus",
+      label: "Focus review",
+      ...shortcut("review.focus"),
+      run: () => useLayoutStore.getState().toggleReviewFocus(),
     },
     {
       id: "action:focus",
@@ -942,7 +990,7 @@ function PaletteBody({
               onClick={() => enterScope(undefined)}
               className="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
             >
-              <X aria-hidden className="size-3" />
+              <X aria-hidden className="size-3.5" />
             </button>
           </span>
         )}

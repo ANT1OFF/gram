@@ -56,7 +56,7 @@ export function WorkerFields({
           }}
         >
           <SelectTrigger size="sm" aria-label="Worker agent" className={GHOST_TRIGGER}>
-            <AgentIcon agent={agent} className="size-3.5" />
+            <AgentIcon agent={agent} className="size-4" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent side="top">
@@ -80,7 +80,7 @@ export function WorkerFields({
         </Select>
       ) : (
         <span className="flex h-7 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground">
-          <AgentIcon agent={agent} className="size-3.5" />
+          <AgentIcon agent={agent} className="size-4" />
           {agentLabel(agent)}
         </span>
       )}

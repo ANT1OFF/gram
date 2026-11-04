@@ -1,5 +1,5 @@
 import type { Thread } from "@gram/contracts";
-import { Moon, Network, Workflow, type LucideIcon } from "lucide-react";
+import { MoonStar, Network, Workflow, type LucideIcon } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,7 @@ import {
 export const ROLE_ICON: Record<ThreadRoleInfo["kind"], LucideIcon> = {
   orchestrator: Network,
   worker: Workflow,
-  dream: Moon,
+  dream: MoonStar,
 };
 
 const ROLE_NAME: Record<ThreadRoleInfo["kind"], string> = {
@@ -68,7 +68,7 @@ export function RoleChip({
         className,
       )}
     >
-      <Icon aria-hidden className="size-3 shrink-0" />
+      <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="truncate">{info.label}</span>
     </span>
   );
@@ -102,7 +102,8 @@ export function RoleGlyph({
         />
       }
     >
-      <Icon aria-hidden className="size-3.5" />
+      {/* A header's mark, so a chrome glyph. */}
+      <Icon aria-hidden className="size-4" />
       <span className="sr-only">{info.name}</span>
     </Hint>
   );

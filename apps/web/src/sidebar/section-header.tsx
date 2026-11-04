@@ -92,7 +92,7 @@ export function SectionToggle({
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-3 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
+            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
             expanded && "rotate-90",
           )}
         />
@@ -139,7 +139,7 @@ export function SubgroupToggle({
       <ChevronRight
         aria-hidden
         className={cn(
-          "size-2.5 shrink-0 text-subtle transition-transform duration-(--dur-fast)",
+          "size-3.5 shrink-0 text-subtle transition-transform duration-(--dur-fast)",
           expanded && "rotate-90",
         )}
       />

@@ -94,7 +94,7 @@ export function PrReviewers({ detail, children }: { detail: PrDetail; children?:
                 aria-hidden
                 className={cn("size-3.5 shrink-0", reviewer.state.tone)}
               />
-              {reviewer.team && <Users aria-hidden className="size-3 shrink-0" />}
+              {reviewer.team && <Users aria-hidden className="size-3.5 shrink-0" />}
               <span className="text-foreground">{reviewer.name}</span>
               <span className="sr-only">
                 {reviewer.team ? " (team)" : ""}: {reviewer.state.label}

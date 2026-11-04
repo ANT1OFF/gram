@@ -17,6 +17,7 @@ import {
   resolveMockPath,
 } from "../mock-fs";
 import type { MockWorld } from "../mock-world";
+import { mockProjectScripts, saveMockProjectScripts } from "./mock-scripts";
 import type { ProjectsApi } from "./types";
 
 /**
@@ -111,6 +112,14 @@ export function createProjectsMock(world: MockWorld) {
       const next = { ...project, bookmarked };
       world.updateProjects((projects) => projects.map((p) => (p.id === projectId ? next : p)));
       return next;
+    },
+    projectScripts: async (projectId) => {
+      await world.delay(40);
+      return mockProjectScripts(world, projectId);
+    },
+    saveProjectScripts: async (projectId, scripts) => {
+      await world.delay(60);
+      return saveMockProjectScripts(world, projectId, scripts);
     },
     forgetProject: async (projectId) => {
       const project = find((p) => p.id === projectId);

@@ -16,7 +16,7 @@ import {
   Circle,
   ExternalLink,
   Globe,
-  Hand,
+  HandGrab,
   RotateCw,
   ScanSearch,
 } from "lucide-react";
@@ -515,7 +515,7 @@ function DriverButton({
         disabled={onHandBack === undefined}
         onClick={() => onHandBack?.()}
       >
-        <Hand />
+        <HandGrab />
       </ToolButton>
     </span>
   );

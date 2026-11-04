@@ -85,11 +85,13 @@ export const ROW_BUDGET = 400;
 /**
  * A file's patch as numbered rows, unified or side by side; binary, oversized and content-less files
  * get a short note. A long patch shows its first `budget` rows and offers the rest. `current`
- * marks a hunk, and each new `revealKey` renders it if it was past the budget.
+ * marks a hunk, and each new `revealKey` renders it if it was past the budget. Unified lines scroll
+ * sideways unless `wrap`; split lines always wrap, each side being half as wide.
  */
 export function PatchView({
   file,
   layout = "unified",
+  wrap = false,
   current,
   revealKey,
   budget: rowBudget = ROW_BUDGET,
@@ -99,6 +101,8 @@ export function PatchView({
 }: {
   file: DiffFile;
   layout?: DiffLayout;
+  /** Unified only: long lines wrap instead of scrolling the patch sideways. */
+  wrap?: boolean;
   current?: number | undefined;
   revealKey?: number | undefined;
   /** Rows shown before "Show more". */
@@ -203,6 +207,7 @@ export function PatchView({
             numbered={numbered}
             headers={headers}
             language={language}
+            wrap={wrap}
             {...(review ? { review: hunkReview(review, path, index, hunk, commented) } : {})}
           />
         ) : null,
@@ -214,7 +219,11 @@ export function PatchView({
     <div
       data-testid="patch"
       data-layout={layout}
-      className={cn("font-mono text-xs leading-5", layout === "unified" && "overflow-x-auto")}
+      data-wrap={layout === "split" || wrap}
+      className={cn(
+        "font-mono text-xs leading-5",
+        layout === "unified" && !wrap && "overflow-x-auto",
+      )}
     >
       {review ? (
         <ContextMenu>
@@ -393,6 +402,7 @@ interface HunkProps {
   numbered?: boolean;
   headers?: boolean;
   language?: BundledLanguage | undefined;
+  wrap?: boolean;
 }
 
 const isPicked = (review: HunkReview | undefined, line: number) =>
@@ -454,6 +464,7 @@ function UnifiedHunk({
   numbered = true,
   headers = true,
   language,
+  wrap = false,
 }: HunkProps) {
   const tokens = useHunkTokens(hunk, language);
   const span = numbered ? 4 : 2;
@@ -492,7 +503,12 @@ function UnifiedHunk({
                 </>
               )}
               <Sign kind={line.kind} />
-              <td className="pr-3 whitespace-pre">
+              <td
+                className={cn(
+                  "pr-3",
+                  wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre",
+                )}
+              >
                 {tokens && line.kind !== "note"
                   ? tokens[row]!.map((token, column) => (
                       // oxlint-disable-next-line react/no-array-index-key -- positions in this line

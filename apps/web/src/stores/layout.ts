@@ -32,6 +32,20 @@ export const SIDEBAR_WIDTH: WidthBounds = { min: 180, max: 520, default: 248 };
  * `panelBounds`.
  */
 export const PANEL_WIDTH: WidthBounds = { min: 240, max: 4096, default: 352 };
+/**
+ * The Diff and PR tabs' width until the user drags one: this share of the window, so code, checks and
+ * the conversation get room to read. A drag there is kept apart from the other tabs' `panelWidth`.
+ */
+export const REVIEW_WIDTH_SHARE = 0.55;
+/**
+ * The chat a review leaves when it sizes itself: the transcript's reading width
+ * (`--thread-max-width`, 48rem) and its gutters, so the review takes only the room the transcript
+ * leaves empty, and the title bar keeps its chips and crumbs. A drag goes past it, down to
+ * `CHAT_MIN_WIDTH`.
+ */
+export const REVIEW_CHAT_WIDTH = 800;
+/** What's left of the chat beside a review in focus: a strip that brings the conversation back. */
+export const REVIEW_STRIP_WIDTH = 48;
 /** The narrowest the chat (or grid) gets while the panel beside it is dragged wider. */
 export const CHAT_MIN_WIDTH = 360;
 /** The compact overview's rail: a tile per workspace. */
@@ -60,6 +74,37 @@ const PANEL_TABS: readonly RightPanelTab[] = [
   "needsYou",
 ];
 
+/** The tabs that are a review: they open wide, and can take the window in focus. */
+export const isReviewTab = (tab: RightPanelTab): boolean => tab === "diff" || tab === "pr";
+
+/**
+ * The panel is sized as a review: a review tab beside a thread's chat. Beside a board, a grid of
+ * panes or an orchestrator's chat (`chatBusy`), which need the room themselves, it keeps the other
+ * tabs' width.
+ */
+export const reviewSized = (state: Pick<LayoutState, "panelTab" | "chatBusy">): boolean =>
+  isReviewTab(state.panelTab) && state.chatBusy !== true;
+
+/**
+ * The width the panel asks for on its tab beside a `sidebarWidth` overview, before the window has
+ * its say: a review's own width (the remembered drag, else `REVIEW_WIDTH_SHARE` of the window as far
+ * as it leaves the chat `REVIEW_CHAT_WIDTH`, never narrower than the other tabs'), or `panelWidth`.
+ */
+export const panelWidthFor = (
+  state: Pick<LayoutState, "panelTab" | "panelWidth" | "reviewWidth" | "windowWidth" | "chatBusy">,
+  sidebarWidth: number,
+): number =>
+  reviewSized(state)
+    ? (state.reviewWidth ??
+      Math.max(
+        state.panelWidth,
+        Math.min(
+          Math.round(state.windowWidth * REVIEW_WIDTH_SHARE),
+          state.windowWidth - sidebarWidth - REVIEW_CHAT_WIDTH,
+        ),
+      ))
+    : state.panelWidth;
+
 export const clampWidth = (width: number, bounds: WidthBounds): number =>
   Number.isFinite(width)
     ? Math.round(Math.min(bounds.max, Math.max(bounds.min, width)))
@@ -83,6 +128,11 @@ interface ShellContext {
   threadQuiet?: boolean | undefined;
   /** Which page the route is, so `panelPeek` is cleared on leaving it; see `shellPage`. */
   page: string;
+  /**
+   * The chat's place holds a board, a grid or an orchestrator's chat, which need their room: a
+   * review beside them keeps the usual width.
+   */
+  chatBusy?: boolean | undefined;
 }
 
 /** The page `pathname` is, for `ShellContext.page`: Settings is one page across its tabs. */
@@ -102,6 +152,8 @@ export type ShellFitInput = Omit<ShellContext, "page"> &
     | "panelExpanded"
     | "panelPeek"
     | "panelTab"
+    | "reviewWidth"
+    | "reviewFocus"
     | "reviewRequestsPlacement"
     | "openPrsPlacement"
   >;
@@ -119,6 +171,11 @@ export interface ShellFit {
   panelRoom: boolean;
   /** The expanded sidebar fits beside the chat at its narrowest. */
   sidebarRoom: boolean;
+  /**
+   * A review in focus: the panel takes the window but for a `REVIEW_STRIP_WIDTH` strip of the chat,
+   * the overview hidden.
+   */
+  reviewFocus: boolean;
 }
 
 /**
@@ -169,13 +226,30 @@ export function fitShell(input: ShellFitInput): ShellFit {
         ? railWidth
         : shrunkSidebar(panel === "side" ? room - PANEL_WIDTH.min : room);
   const beside = Math.max(0, input.windowWidth - sidebarWidth);
+  // A review in focus takes the window but for the chat's strip, wherever the panel was.
+  if (
+    input.reviewFocus &&
+    panel !== "none" &&
+    isReviewTab(input.panelTab) &&
+    input.windowWidth - REVIEW_STRIP_WIDTH >= PANEL_WIDTH.min
+  ) {
+    return {
+      sidebar: "none",
+      sidebarWidth: 0,
+      panel: "side",
+      panelWidth: input.windowWidth - REVIEW_STRIP_WIDTH,
+      panelRoom,
+      sidebarRoom,
+      reviewFocus: true,
+    };
+  }
   const panelWidth =
     panel === "side"
-      ? clampWidth(input.panelWidth, panelBounds(input.windowWidth, sidebarWidth))
+      ? clampWidth(panelWidthFor(input, sidebarWidth), panelBounds(input.windowWidth, sidebarWidth))
       : panel === "over"
         ? beside
         : 0;
-  return { sidebar, sidebarWidth, panel, panelWidth, panelRoom, sidebarRoom };
+  return { sidebar, sidebarWidth, panel, panelWidth, panelRoom, sidebarRoom, reviewFocus: false };
 }
 
 /** The Diff tab of a thread with nothing to diff, where the stored panel stays closed. */
@@ -193,6 +267,12 @@ const showPanelPatch = (state: ShellFitInput): Partial<LayoutState> => {
     ? { focusMode: false, panelOpen: true, panelExpanded: !panelRoom }
     : { focusMode: false, panelPeek: true, panelExpanded: !panelRoom };
 };
+
+/** Leaves a review's focus once the panel shows another tab: only a review takes the window. */
+const reviewFocusFor = (
+  state: Pick<LayoutState, "reviewFocus">,
+  tab: RightPanelTab,
+): Partial<LayoutState> => (state.reviewFocus && !isReviewTab(tab) ? { reviewFocus: false } : {});
 
 export type FocusDirection = "left" | "right" | "up" | "down";
 
@@ -596,18 +676,32 @@ export function sanitizeBoardFilters(raw: unknown): Partial<BoardFilters> {
 /** How the Diff panel shows a patch: one column, or old and new side by side. */
 export type DiffLayout = "unified" | "split";
 
-/** The Diff panel's stored view: its layout and whether the file tree shows. */
+/**
+ * The Diff panel's stored view: its layout, whether the file tree shows, whether long lines wrap and
+ * whitespace-only changes are left out; and the review tabs' own width, this machine's alone.
+ */
 export interface DiffView {
   diffLayout: DiffLayout;
   diffTreeShown: boolean;
+  diffWrap: boolean;
+  diffIgnoreWhitespace: boolean;
+  /** The Diff and PR tabs' width as last dragged there; `undefined` follows the window. */
+  reviewWidth: number | undefined;
 }
 
-function sanitizeDiffView(raw: unknown): Partial<DiffView> {
+export function sanitizeDiffView(raw: unknown): Partial<DiffView> {
   const r = (raw ?? {}) as Record<string, unknown>;
   const layout = r["diffLayout"];
+  const flag = (key: "diffTreeShown" | "diffWrap" | "diffIgnoreWhitespace") =>
+    typeof r[key] === "boolean" ? { [key]: r[key] } : {};
   return {
     ...(layout === "unified" || layout === "split" ? { diffLayout: layout } : {}),
-    ...(typeof r["diffTreeShown"] === "boolean" ? { diffTreeShown: r["diffTreeShown"] } : {}),
+    ...flag("diffTreeShown"),
+    ...flag("diffWrap"),
+    ...flag("diffIgnoreWhitespace"),
+    ...(typeof r["reviewWidth"] === "number"
+      ? { reviewWidth: clampWidth(r["reviewWidth"], PANEL_WIDTH) }
+      : {}),
   };
 }
 
@@ -673,6 +767,8 @@ export interface LayoutState
   panelExpanded: boolean;
   /** The panel was opened on a page without a thread; until the route next changes. Local. */
   panelPeek: boolean;
+  /** The Diff or PR tab takes the window but for a strip of the chat; see `fitShell`. Local. */
+  reviewFocus: boolean;
   /** The overview was shown in a window too narrow for it beside the chat. Local. */
   sidebarPeek: boolean;
   grid: GridState;
@@ -707,6 +803,16 @@ export interface LayoutState
   toggleBoardArchived(workspaceId: string): void;
   setDiffLayout(layout: DiffLayout): void;
   toggleDiffTree(): void;
+  toggleDiffWrap(): void;
+  toggleDiffIgnoreWhitespace(): void;
+  /** The review tabs' width, kept apart from `panelWidth`; a drag there also leaves focus. */
+  setReviewWidth(width: number): void;
+  /**
+   * Puts a review in focus, showing the Diff tab if the panel was on no review, or leaves focus.
+   * In focus mode or with the panel hidden, it shows the panel first.
+   */
+  toggleReviewFocus(): void;
+  setReviewFocus(reviewFocus: boolean): void;
   openPalette(query?: string, scope?: PaletteScope): void;
   closePalette(): void;
   setOverlayOpen(open: boolean): void;
@@ -827,6 +933,10 @@ export const useLayoutStore = create<LayoutState>()(
         boardArchivedShown: [],
         diffLayout: "unified",
         diffTreeShown: true,
+        diffWrap: false,
+        diffIgnoreWhitespace: false,
+        reviewWidth: undefined,
+        reviewFocus: false,
         grid: EMPTY_GRID,
         paletteOpen: false,
         paletteQuery: "",
@@ -912,6 +1022,22 @@ export const useLayoutStore = create<LayoutState>()(
           })),
         setDiffLayout: (diffLayout) => set({ diffLayout }),
         toggleDiffTree: () => set((s) => ({ diffTreeShown: !s.diffTreeShown })),
+        toggleDiffWrap: () => set((s) => ({ diffWrap: !s.diffWrap })),
+        toggleDiffIgnoreWhitespace: () =>
+          set((s) => ({ diffIgnoreWhitespace: !s.diffIgnoreWhitespace })),
+        setReviewWidth: (width) =>
+          set({ reviewWidth: clampWidth(width, PANEL_WIDTH), reviewFocus: false }),
+        setReviewFocus: (reviewFocus) =>
+          set((s) => (s.reviewFocus === reviewFocus ? {} : { reviewFocus })),
+        toggleReviewFocus: () => {
+          const s = get();
+          if (fitShell(s).reviewFocus) {
+            set({ reviewFocus: false });
+            return;
+          }
+          set({ reviewFocus: true, panelExpanded: false });
+          get().revealPanel(isReviewTab(s.panelTab) ? undefined : "diff");
+        },
         openPalette: (query = "", scope) =>
           set({ paletteOpen: true, paletteQuery: query, paletteScope: scope }),
         closePalette: () => set({ paletteOpen: false, paletteQuery: "", paletteScope: undefined }),
@@ -950,6 +1076,7 @@ export const useLayoutStore = create<LayoutState>()(
         setPanelTab: (panelTab) =>
           set((s) => ({
             panelTab,
+            ...reviewFocusFor(s, panelTab),
             // A tab picked in an open panel keeps it open, Diff on a quiet thread included.
             ...(quietDiff({ ...s, panelTab }) && fitShell(s).panel !== "none"
               ? { panelPeek: true }
@@ -962,33 +1089,47 @@ export const useLayoutStore = create<LayoutState>()(
             panelWidth: clampWidth(width, PANEL_WIDTH),
             panelTab: tab,
             panelExpanded: open && s.panelExpanded,
+            ...reviewFocusFor(s, tab),
+            ...(open ? {} : { reviewFocus: false }),
           })),
-        setPanelExpanded: (panelExpanded) => set({ panelExpanded }),
+        setPanelExpanded: (panelExpanded) =>
+          set({ panelExpanded, ...(panelExpanded ? { reviewFocus: false } : {}) }),
         setFocusMode: (focusMode) =>
-          set((s) => ({ focusMode, panelExpanded: !focusMode && s.panelExpanded })),
-        setShellContext: ({ windowWidth, threadInView, threadQuiet, page }) =>
+          set((s) => ({
+            focusMode,
+            panelExpanded: !focusMode && s.panelExpanded,
+            reviewFocus: !focusMode && s.reviewFocus,
+          })),
+        setShellContext: ({ windowWidth, threadInView, threadQuiet, page, chatBusy }) =>
           set((s) =>
             s.windowWidth === windowWidth &&
             s.threadInView === threadInView &&
             s.threadQuiet === threadQuiet &&
-            s.page === page
+            s.page === page &&
+            s.chatBusy === chatBusy
               ? {}
               : {
                   windowWidth,
                   threadInView,
                   threadQuiet,
                   page,
+                  chatBusy,
                   // A panel opened on the page left goes with it, expanded or not.
+                  // So does a review's focus, which would otherwise come back with the panel.
                   ...(s.page === page
                     ? {}
-                    : { panelPeek: false, ...(s.panelPeek ? { panelExpanded: false } : {}) }),
+                    : {
+                        panelPeek: false,
+                        reviewFocus: false,
+                        ...(s.panelPeek ? { panelExpanded: false } : {}),
+                      }),
                 },
           ),
         revealPanel: (tab, options) =>
           set((s) => {
             const patch = {
               focusMode: false,
-              ...(tab === undefined ? {} : { panelTab: tab }),
+              ...(tab === undefined ? {} : { panelTab: tab, ...reviewFocusFor(s, tab) }),
             };
             if (options?.thread) {
               // The thread's own panel now, so leaving this page doesn't take it away again.
@@ -1069,12 +1210,13 @@ export const useLayoutStore = create<LayoutState>()(
             const fit = fitShell(s);
             if (fit.panel === "none") return showPanelPatch(s);
             if (s.panelPeek && (!s.threadInView || quietDiff(s))) {
-              return { panelPeek: false, panelExpanded: false };
+              return { panelPeek: false, panelExpanded: false, reviewFocus: false };
             }
             if (fit.panel === "over" && !fit.panelRoom) return { panelExpanded: false };
-            return { panelOpen: false, panelPeek: false, panelExpanded: false };
+            return { panelOpen: false, panelPeek: false, panelExpanded: false, reviewFocus: false };
           }),
-        toggleFocusMode: () => set((s) => ({ focusMode: !s.focusMode, panelExpanded: false })),
+        toggleFocusMode: () =>
+          set((s) => ({ focusMode: !s.focusMode, panelExpanded: false, reviewFocus: false })),
         requestPanel: ({ threadId, panel, target, driven }, viewedThreadId, options) => {
           if (threadId !== viewedThreadId) return;
           const id = ++requestSeq;
@@ -1201,6 +1343,9 @@ export const useLayoutStore = create<LayoutState>()(
         boardArchivedShown,
         diffLayout,
         diffTreeShown,
+        diffWrap,
+        diffIgnoreWhitespace,
+        reviewWidth,
       }) => ({
         sidebarWidth,
         panelOpen,
@@ -1225,6 +1370,9 @@ export const useLayoutStore = create<LayoutState>()(
         boardArchivedShown,
         diffLayout,
         diffTreeShown,
+        diffWrap,
+        diffIgnoreWhitespace,
+        reviewWidth,
       }),
       merge: (persisted, current) => ({
         ...current,

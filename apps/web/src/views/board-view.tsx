@@ -7,7 +7,7 @@ import {
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { CircleAlert, Layers, SquareKanban } from "lucide-react";
+import { CircleAlert, Columns3, Layers } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -127,7 +127,7 @@ function WorkerChip({
           />
         }
       >
-        <tone.icon aria-hidden className={cn("mt-0.5 size-3 shrink-0", tone.tone)} />
+        <tone.icon aria-hidden className={cn("mt-0.5 size-3.5 shrink-0", tone.tone)} />
         {named ? (
           <span
             data-testid="rail-worker-title"
@@ -171,7 +171,7 @@ function WorkerChip({
                 />
               }
             >
-              <Layers aria-hidden className="size-3" />
+              <Layers aria-hidden className="size-3.5" />
               <span className="sr-only">{overlap}</span>
             </Hint>
           )}
@@ -327,7 +327,7 @@ function FeatureLine({
             <CircleAlert
               aria-label="Needs you"
               data-testid="rail-needs"
-              className="mt-1 size-3 shrink-0 text-status-needs-mark"
+              className="mt-1 size-3.5 shrink-0 text-status-needs-mark"
             />
           )}
           <FeatureMenu
@@ -638,7 +638,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
             data-testid="rail-empty"
             className="flex flex-col items-center gap-1 p-10 text-center text-sm text-muted-foreground"
           >
-            <SquareKanban
+            <Columns3
               aria-hidden
               ref={drawOn}
               strokeWidth={1.5}

@@ -3,6 +3,7 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { AgentSessionList } from "../depth.ts";
 import { AgentKind, Project } from "../domain.ts";
+import { ProjectId } from "../ids.ts";
 import { AgentUnavailable, GitError, InvalidState, NotFound } from "../errors.ts";
 import {
   AddProjectPayload,
@@ -12,6 +13,7 @@ import {
   RepositoryCandidates,
   SetProjectBookmarkedPayload,
 } from "../projects.ts";
+import { ProjectScripts, SaveProjectScriptsPayload } from "../project-scripts.ts";
 import { DeleteSessionPayload } from "../resume.ts";
 import { SessionPreview, SessionPreviewPayload } from "../session-preview.ts";
 import { PositiveInt, errors } from "./shared.ts";
@@ -71,6 +73,24 @@ export const ProjectRpcs = RpcGroup.make(
   /** Removes a project from `/new` recents; `InvalidState` while threads still belong to it. */
   Rpc.make("projects.forget", {
     payload: ForgetProjectPayload,
+    error: errors(NotFound, InvalidState),
+  }),
+  /**
+   * The project's scripts from `.gram/scripts.json` in its folder, with what its `package.json`
+   * and Makefile name that isn't saved yet. A file that can't be read comes back as `problem`.
+   */
+  Rpc.make("projects.scripts", {
+    payload: { projectId: ProjectId },
+    success: ProjectScripts,
+    error: errors(NotFound),
+  }),
+  /**
+   * Writes the scripts to `.gram/scripts.json`, making `.gram` if needed; `InvalidState` for a
+   * script `validateScripts` refuses or a file that can't be written. Nothing here runs them.
+   */
+  Rpc.make("projects.saveScripts", {
+    payload: SaveProjectScriptsPayload,
+    success: ProjectScripts,
     error: errors(NotFound, InvalidState),
   }),
 );

@@ -914,8 +914,9 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     void api
       .setMode(threadId, mode)
       .catch((error: unknown) => flash(`Couldn't switch mode: ${errorMessage(error)}`));
-  const modeIcon = <ModeIcon aria-hidden className="size-3.5" />;
-  const effortIcon = <EffortGauge variant={model?.variant} />;
+  // The toolbar is chrome: its glyphs are 16 px, as the title bar's are.
+  const modeIcon = <ModeIcon aria-hidden className="size-4" />;
+  const effortIcon = <EffortGauge variant={model?.variant} className="size-4" />;
 
   // Fold order is from the end: the mode picker first, then effort. The model's label goes first;
   // speed, effort and mode are glyphs alone, their values named in a tooltip and in the open list.
@@ -1145,7 +1146,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               focused={focused}
               value={model?.model}
               options={modelChoices}
-              icon={model && <AgentIcon agent={model.agent} className="size-3.5" />}
+              icon={model && <AgentIcon agent={model.agent} className="size-4" />}
               iconLabel={model && agentLabel(model.agent)}
               warning={modelWarning}
               onOpen={refreshModels}
@@ -1326,7 +1327,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
 function SendGlyph({ action }: { action: SendAction }) {
   switch (action) {
     case "stop":
-      return <Square aria-hidden className="size-3 rounded-[2px] fill-current" />;
+      return <Square aria-hidden className="size-3.5 rounded-[2px] fill-current" />;
     case "queue":
       return <ListPlus aria-hidden className="size-4" />;
     case "steer":

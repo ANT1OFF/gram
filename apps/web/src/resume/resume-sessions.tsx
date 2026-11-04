@@ -397,7 +397,7 @@ export function ResumeSessions({
                     </time>
                     {session.gitBranch && (
                       <span className="flex min-w-0 items-center gap-0.5 truncate font-mono">
-                        <GitBranch aria-hidden className="size-3 shrink-0" />
+                        <GitBranch aria-hidden className="size-3.5 shrink-0" />
                         {session.gitBranch}
                       </span>
                     )}

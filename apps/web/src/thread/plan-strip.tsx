@@ -17,15 +17,15 @@ import {
   CircleCheck,
   CircleDot,
   CircleSlash,
+  ListRestart,
+  Network,
   Octagon,
   Pencil,
-  ListRestart,
   Plus,
   RefreshCw,
   Sparkles,
   Target,
   User,
-  Workflow,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -64,7 +64,7 @@ const SOURCE: Record<PlanSource, { icon: LucideIcon; label: string }> = {
   agent: { icon: Bot, label: "From the agent's own plan" },
   helper: { icon: Sparkles, label: "Kept by the helper" },
   user: { icon: User, label: "Edited by you" },
-  orchestrator: { icon: Workflow, label: "From the orchestrator's brief" },
+  orchestrator: { icon: Network, label: "From the orchestrator's brief" },
 };
 
 /** The plan statuses a `StatusMark` draws, so a step's ring fills and then checks in place. */
@@ -153,7 +153,7 @@ function StepPr({
         state === "merged" ? "text-merged" : "text-muted-foreground",
       )}
     >
-      <Icon aria-hidden className="size-3" />#{step.pr.number}
+      <Icon aria-hidden className="size-3.5" />#{step.pr.number}
     </span>
   );
 }
@@ -171,7 +171,7 @@ function TurnTodos({ items }: { items: readonly PlanItem[] }) {
           <li key={`${index}-${item.content}`} className="flex items-center gap-1.5">
             <Swap swapKey={display.mark === undefined ? item.status : "mark"} className="shrink-0">
               {display.mark === undefined ? (
-                <display.icon aria-hidden className={cn("size-3", display.tone)} />
+                <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
               ) : (
                 <StatusMark phase={display.mark} className={cn("size-3", display.tone)} />
               )}
@@ -183,7 +183,7 @@ function TurnTodos({ items }: { items: readonly PlanItem[] }) {
         );
       })}
       <li className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
-        <Bot aria-hidden className="size-2.5" /> the agent's todo list for this turn
+        <Bot aria-hidden className="size-3.5" /> the agent's todo list for this turn
       </li>
     </ul>
   );
@@ -279,7 +279,7 @@ function StepRow({
               onClick={() => setEditing(true)}
               className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
             >
-              <Pencil aria-hidden className="size-3" />
+              <Pencil aria-hidden className="size-3.5" />
             </button>
             {!first && (
               <button
@@ -288,7 +288,7 @@ function StepRow({
                 onClick={() => onEdit((edit) => moveStep(edit, step.id, -1))}
                 className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
               >
-                <ArrowUp aria-hidden className="size-3" />
+                <ArrowUp aria-hidden className="size-3.5" />
               </button>
             )}
             {!last && (
@@ -298,7 +298,7 @@ function StepRow({
                 onClick={() => onEdit((edit) => moveStep(edit, step.id, 1))}
                 className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
               >
-                <ArrowDown aria-hidden className="size-3" />
+                <ArrowDown aria-hidden className="size-3.5" />
               </button>
             )}
             <button
@@ -307,7 +307,7 @@ function StepRow({
               onClick={() => onEdit((edit) => withStep(edit, step.id, () => undefined))}
               className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
             >
-              <X aria-hidden className="size-3" />
+              <X aria-hidden className="size-3.5" />
             </button>
           </span>
         )}
@@ -321,11 +321,11 @@ function StepRow({
             }
             className="mt-0.5 flex shrink-0 items-center gap-0.5 text-muted-foreground/70 hover:text-foreground"
           >
-            <source.icon aria-hidden className="size-3" />
+            <source.icon aria-hidden className="size-3.5" />
           </button>
         ) : (
           <span title={source.label} className="mt-0.5 shrink-0 text-muted-foreground/70">
-            <source.icon aria-hidden className="size-3" />
+            <source.icon aria-hidden className="size-3.5" />
             <span className="sr-only">{source.label}</span>
           </span>
         )}
@@ -540,11 +540,11 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
             <span className="flex min-w-0 items-center gap-1">
               {plan === undefined || fromTodo ? (
                 <>
-                  <Bot aria-hidden className="size-3" /> The agent's todo list
+                  <Bot aria-hidden className="size-3.5" /> The agent's todo list
                 </>
               ) : (
                 <>
-                  <Sparkles aria-hidden className="size-3" />
+                  <Sparkles aria-hidden className="size-3.5" />
                   {updatedText(plan.updatedBy, agoText(plan.updatedAt, now))}
                 </>
               )}

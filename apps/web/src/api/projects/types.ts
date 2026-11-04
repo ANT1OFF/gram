@@ -1,4 +1,11 @@
-import type { CloneSuggestions, Project, ProjectId, RepositoryCandidates } from "@gram/contracts";
+import type {
+  CloneSuggestions,
+  Project,
+  ProjectId,
+  ProjectScript,
+  ProjectScripts,
+  RepositoryCandidates,
+} from "@gram/contracts";
 
 /** `projects.*`: the repositories the user works in, cloning one, and the `/new` recents. */
 export interface ProjectsApi {
@@ -29,4 +36,11 @@ export interface ProjectsApi {
   setProjectBookmarked(projectId: ProjectId, bookmarked: boolean): Promise<Project>;
   /** Removes the project from the `/new` recents; rejects with `InvalidState` while it has threads. */
   forgetProject(projectId: ProjectId): Promise<void>;
+  /** The project's scripts from `.gram/scripts.json`, and what `package.json` or a Makefile offer. */
+  projectScripts(projectId: ProjectId): Promise<ProjectScripts>;
+  /** Saves the project's scripts; rejects with `InvalidState` for one `validateScripts` refuses. */
+  saveProjectScripts(
+    projectId: ProjectId,
+    scripts: readonly ProjectScript[],
+  ): Promise<ProjectScripts>;
 }

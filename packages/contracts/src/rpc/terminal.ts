@@ -18,6 +18,13 @@ export const TerminalRpcs = RpcGroup.make(
       rows: PositiveInt,
       /** Defaults to the login shell (`terminal.shell` on Windows). */
       shell: Schema.optionalKey(Schema.String),
+      /**
+       * Runs the thread's project script of this name (`projects.scripts`) instead of an
+       * interactive shell, in the thread's checkout or its `cwd` there; the terminal ends with it.
+       * Needs `threadId`, and takes no `cwd`. Only the user's click or key sends it: no agent tool
+       * does.
+       */
+      script: Schema.optionalKey(Schema.String),
     },
     success: TerminalOpened,
     error: errors(ThreadNotFound, NotFound, InvalidState),

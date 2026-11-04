@@ -89,7 +89,7 @@ export function HeaderWakeChip({
           className,
         )}
       >
-        <AlarmClock aria-hidden className="size-3" />
+        <AlarmClock aria-hidden className="size-3.5" />
         {labelOf(soonest, now)}
         {wakes.length > 1 && <span className="tabular-nums">+{wakes.length - 1}</span>}
       </Popover.Trigger>

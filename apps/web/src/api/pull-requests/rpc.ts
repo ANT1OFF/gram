@@ -3,7 +3,14 @@ import type { PullRequestsApi } from "./types";
 
 /** `PullRequestsApi` over the RPC client. */
 export const pullRequestsRpc = ({ client }: RpcContext): PullRequestsApi => ({
-  gitDiff: (threadId, diffScope) => run(client["git.diff"]({ threadId, scope: diffScope })),
+  gitDiff: (threadId, diffScope, options) =>
+    run(
+      client["git.diff"]({
+        threadId,
+        scope: diffScope,
+        ...(options?.ignoreWhitespace === true ? { ignoreWhitespace: true } : {}),
+      }),
+    ),
   prDetail: (threadId) => run(client["git.prDetail"]({ threadId })),
   prCheckDiagnostic: (threadId, selection) =>
     run(client["git.prCheckDiagnostic"]({ threadId, selection })),

@@ -10,12 +10,13 @@ import { useMotionLevel } from "@/motion";
 import { OverviewRail } from "@/orchestration/overview-rail";
 import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview-sidebar";
 import { ConnectionBanner } from "@/shell/connection-banner";
+import { ReviewStrip } from "@/shell/review-strip";
 import { ShellTitlebar } from "@/shell/shell-titlebar";
 import { SettingsStrip } from "@/shell/settings-strip";
 import { SideResizeHandle } from "@/shell/side-resize";
 import { useShellLayout } from "@/shell/use-shell-layout";
 import { useWorkspaceKeys } from "@/shell/workspace-switcher";
-import { clampWidth, SIDEBAR_WIDTH, useLayoutStore } from "@/stores/layout";
+import { clampWidth, reviewSized, SIDEBAR_WIDTH, useLayoutStore } from "@/stores/layout";
 import { UpdateNotice } from "@/updates/update-notice";
 import { QuietLayer, ViewOutlet } from "@/views/view-frame";
 import { useViewStore } from "@/views/view-store";
@@ -29,6 +30,9 @@ export function AppShell() {
   const setSidebarWidth = useLayoutStore((s) => s.setSidebarWidth);
   const setPanelWidth = useLayoutStore((s) => s.setPanelWidth);
   const setPanelExpanded = useLayoutStore((s) => s.setPanelExpanded);
+  const setReviewWidth = useLayoutStore((s) => s.setReviewWidth);
+  const setReviewFocus = useLayoutStore((s) => s.setReviewFocus);
+  const reviewTab = useLayoutStore(reviewSized);
   const level = useMotionLevel();
   const [resizing, setResizing] = useState(false);
   const quiet = useViewStore((s) => s.quiet);
@@ -42,11 +46,11 @@ export function AppShell() {
     sidebarShown,
     panelShown,
     expanded,
+    reviewFocus,
     left,
     right,
     bounds,
-    shownWidth,
-    beside,
+    chatWidth,
   } = useShellLayout();
   useWorkspaceKeys();
   // The strip in Settings is no overview: entering or leaving Settings swaps nothing to carry.
@@ -60,17 +64,20 @@ export function AppShell() {
   useShortcut({
     id: "panel.restore",
     keys: "escape",
-    label: "Restore expanded right panel",
+    label: "Restore expanded right panel or review",
     group: "App",
     // Ahead of Escape's unscoped uses, which belong to the chat hidden behind the panel.
-    focusScope: () => expanded,
-    run: () => setPanelExpanded(false),
+    focusScope: () => expanded || reviewFocus,
+    run: () => (reviewFocus ? setReviewFocus(false) : setPanelExpanded(false)),
   });
 
+  // The Diff and PR tabs keep a width of their own, so a review dragged wide leaves the others be.
   const resizePanel = (width: number) => {
     setPanelExpanded(false);
-    setPanelWidth(clampWidth(width, bounds));
+    if (reviewTab) setReviewWidth(clampWidth(width, bounds));
+    else setPanelWidth(clampWidth(width, bounds));
   };
+  const chatCovered = expanded || reviewFocus;
 
   // The panel's column moves with `panel.side`; CSS `order` keeps the DOM, so nothing remounts.
   // Expanding keeps the template's shape so the column widths animate: the chat's track shrinks to
@@ -83,8 +90,9 @@ export function AppShell() {
         data-focus-mode={focusMode}
         data-panel-side={panelLeft ? "left" : "right"}
         data-panel-expanded={expanded}
+        data-review-focus={reviewFocus}
         className={cn(
-          "grid h-dvh overflow-hidden",
+          "relative grid h-dvh overflow-hidden",
           level === "full" &&
             !resizing &&
             !windowResizing &&
@@ -114,13 +122,13 @@ export function AppShell() {
           )}
         </div>
         <main
-          inert={expanded}
+          inert={chatCovered}
           // Its own stacking context, so nothing layered inside the chat rises over the panel above it.
           className={cn(
             "isolate flex min-h-0 min-w-0 flex-col bg-thread",
             panelLeft ? "order-3" : "order-2",
           )}
-          style={expanded ? { width: Math.max(0, beside - shownWidth) } : undefined}
+          style={chatCovered ? { width: chatWidth } : undefined}
         >
           <ShellTitlebar
             sidebarShown={sidebarShown}
@@ -135,6 +143,8 @@ export function AppShell() {
             <Outlet />
           </ViewOutlet>
         </main>
+        {/* Over the inert chat, not in it, so its way back can be clicked. */}
+        {reviewFocus && <ReviewStrip side={panelLeft ? "right" : "left"} />}
         <div
           className={cn(
             "relative z-10 flex min-h-0 min-w-0 flex-col overflow-hidden",

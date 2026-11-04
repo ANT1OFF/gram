@@ -58,7 +58,7 @@ export function TaskChip({ threadId, chip }: { threadId: ThreadId; chip: TaskChi
           data-testid="task-chip-where"
           className="mt-1 flex items-center gap-1 font-mono text-xs text-muted-foreground"
         >
-          <GitBranch aria-hidden className="size-3" />
+          <GitBranch aria-hidden className="size-3.5" />
           {taskStartLabel(taskStart(chip, git))}
         </p>
       </div>

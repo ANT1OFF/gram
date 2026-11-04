@@ -62,7 +62,7 @@ export function StashMenu({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Hint
-        label="Stashed drafts"
+        label={`Stashed drafts (${stashes.length})`}
         render={
           <Popover.Trigger
             data-testid="stash-trigger"
@@ -71,7 +71,7 @@ export function StashMenu({
           />
         }
       >
-        <Archive aria-hidden className="size-3.5" />
+        <Archive aria-hidden className="size-4" />
         {stashes.length}
       </Hint>
       <Popover.Portal>
@@ -105,15 +105,19 @@ export function StashMenu({
                           : ""}
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      aria-label={`Discard draft: ${stashPreview(stash)}`}
-                      title="Discard"
-                      className="shrink-0 rounded-sm p-1.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-                      onClick={() => void discard(stash)}
+                    <Hint
+                      label={`Discard draft: ${stashPreview(stash)}`}
+                      render={
+                        <button
+                          type="button"
+                          aria-label={`Discard draft: ${stashPreview(stash)}`}
+                          className="grid size-7 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
+                          onClick={() => void discard(stash)}
+                        />
+                      }
                     >
                       <Trash2 aria-hidden className="size-3.5" />
-                    </button>
+                    </Hint>
                   </li>
                 ))}
               </ul>

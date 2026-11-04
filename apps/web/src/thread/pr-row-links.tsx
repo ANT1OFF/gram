@@ -85,7 +85,7 @@ export function PrNumberLink({
                     display.tone,
                   )}
                 >
-                  <display.icon aria-hidden className="size-3" />
+                  <display.icon aria-hidden className="size-3.5" />
                   {prGlyphWords(facts)}
                 </span>
               )}

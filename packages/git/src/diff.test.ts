@@ -14,6 +14,8 @@ import {
   untrackedOverflowNote,
   untrackedTextDiff,
   unquoteGitPath,
+  withoutWhitespaceChanges,
+  type DiffFile,
 } from "./diff.ts";
 import { ProcLive } from "./proc.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
@@ -136,6 +138,34 @@ describe("parseGitDiff", () => {
   });
 });
 
+const file = (diff: string, status: DiffFile["status"] = "modified"): DiffFile => ({
+  path: "a.ts",
+  status,
+  added: 0,
+  removed: 0,
+  diff,
+});
+
+describe("withoutWhitespaceChanges", () => {
+  it("turns reindented lines into context and keeps real changes", () => {
+    const [kept] = withoutWhitespaceChanges([
+      file("@@ -1,3 +1,3 @@\n-a\n+b\n-  c(1)\n+    c(1)\n d\n"),
+    ]);
+    expect(kept).toMatchObject({ added: 1, removed: 1 });
+    expect(kept!.diff).toBe("@@ -1,3 +1,3 @@\n-a\n+b\n     c(1)\n d\n");
+  });
+
+  it("drops a file whose changes are all whitespace, but keeps a rename's row", () => {
+    const reindent = "@@ -1,2 +1,2 @@\n-x  y\n+x y\n\\ No newline at end of file\n";
+    expect(withoutWhitespaceChanges([file(reindent)])).toEqual([]);
+    expect(withoutWhitespaceChanges([file(reindent, "renamed")])).toEqual([
+      { ...file("", "renamed"), added: 0, removed: 0 },
+    ]);
+    const binary = { ...file(""), note: "binary" as const };
+    expect(withoutWhitespaceChanges([binary])).toEqual([binary]);
+  });
+});
+
 describe.skipIf(!hasGit)("gitDiff", () => {
   const dirs: Array<string> = [];
   const tmp = () => {
@@ -182,6 +212,30 @@ describe.skipIf(!hasGit)("gitDiff", () => {
       expect(overridden.base).toBe("origin/develop");
       write(nodePath.join(repo, "dirty.txt"), "x\n");
       expect((yield* gitDiff(repo, { baseOverride: "origin/develop" })).base).toBeUndefined();
+    }).pipe(provide),
+  );
+
+  it.live("leaves whitespace-only changes out on request, without falling back to the branch", () =>
+    Effect.gen(function* () {
+      const repo = makeRepo(tmp());
+      write(nodePath.join(repo, "a.txt"), "one\ntwo\n");
+      write(nodePath.join(repo, "b.txt"), "x\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "base");
+      run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+      run(repo, "checkout", "-q", "-b", "feat");
+      write(nodePath.join(repo, "b.txt"), "y\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "feat work");
+      write(nodePath.join(repo, "a.txt"), "one  \n    two\n");
+      expect((yield* gitDiff(repo)).files?.map((f) => f.path)).toEqual(["a.txt"]);
+      // Only whitespace is uncommitted: nothing to show, but the tree isn't clean either.
+      const ignored = yield* gitDiff(repo, { ignoreWhitespace: true });
+      expect(ignored.files).toEqual([]);
+      expect(ignored.base).toBeUndefined();
+      write(nodePath.join(repo, "b.txt"), "z\n");
+      const real = yield* gitDiff(repo, { ignoreWhitespace: true });
+      expect(real.files?.map((f) => [f.path, f.added, f.removed])).toEqual([["b.txt", 1, 1]]);
     }).pipe(provide),
   );
 

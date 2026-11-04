@@ -112,7 +112,7 @@ export function PrRowInformation({
           {author && (
             <span aria-label={`Author ${pr.author}${pr.isBot ? " (bot)" : ""}`}>
               {" "}
-              · {pr.isBot === true && <Bot aria-hidden className="mr-0.5 inline size-3" />}
+              · {pr.isBot === true && <Bot aria-hidden className="mr-0.5 inline size-3.5" />}
               {author}
             </span>
           )}
@@ -143,7 +143,7 @@ export function PrRowInformation({
               />
             }
           >
-            <Clock3 aria-hidden className="size-2.5" />
+            <Clock3 aria-hidden className="size-3.5" />
             {formatRelative(activity)}
           </Hint>
         )}
@@ -162,7 +162,7 @@ function PrDiffStats({ pr }: { pr: PrInformation }) {
         <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1 font-mono tabular-nums" />
       }
     >
-      {cached && <Clock3 aria-hidden className="size-2.5" />}
+      {cached && <Clock3 aria-hidden className="size-3.5" />}
       {pr.additions !== undefined && (
         <span
           aria-label={`${pr.additions} lines added${cached ? " (cached)" : ""}`}
@@ -190,9 +190,9 @@ export function PrInformationDetails({ pr }: { pr: PrInformation }) {
       {pr.author && (
         <p className="flex items-center gap-1 break-all">
           {pr.isBot ? (
-            <Bot aria-hidden className="size-3 shrink-0" />
+            <Bot aria-hidden className="size-3.5 shrink-0" />
           ) : (
-            <UserRound aria-hidden className="size-3 shrink-0" />
+            <UserRound aria-hidden className="size-3.5 shrink-0" />
           )}
           {pr.author}
           {pr.isBot && " · Bot"}

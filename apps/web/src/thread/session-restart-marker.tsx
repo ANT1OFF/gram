@@ -44,7 +44,7 @@ export function SessionRestartMarker({ restart }: { restart: SessionRestartData 
     >
       <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
       <span className="flex min-w-0 items-center gap-1.5">
-        <RotateCw aria-hidden className="size-3 shrink-0" />
+        <RotateCw aria-hidden className="size-3.5 shrink-0" />
         <span className="text-center">{label}</span>
       </span>
       <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />

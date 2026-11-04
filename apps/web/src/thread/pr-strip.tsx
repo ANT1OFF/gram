@@ -170,7 +170,7 @@ export function PrStrip({ threadId, focused }: { threadId: ThreadId; focused: bo
                 })
               }
             >
-              <EyeOff aria-hidden className="size-3" />
+              <EyeOff aria-hidden className="size-3.5" />
               {hidden} hidden
             </button>
           )}
@@ -406,7 +406,7 @@ function ExtraCiMenu({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow })
       >
         <span aria-hidden className={cn("size-1.5 rounded-full bg-current", tone)} />
         CI
-        <ChevronDown aria-hidden className="size-3 text-muted-foreground" />
+        <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="end" sideOffset={6} className="isolate z-50">
@@ -505,7 +505,7 @@ function CiMenu({
       >
         <span aria-hidden className={cn("size-1.5 rounded-full bg-current", tone)} />
         CI
-        <ChevronDown aria-hidden className="size-3 text-muted-foreground" />
+        <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="end" sideOffset={6} className="isolate z-50">

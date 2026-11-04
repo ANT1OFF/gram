@@ -1,7 +1,7 @@
 import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { Menu } from "@base-ui/react/menu";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, Hand, PanelRight } from "lucide-react";
+import { ChevronRight, HandGrab, PanelRight } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { focusOtherWindow } from "@/desktop/open-thread";
@@ -73,7 +73,7 @@ function useWorkerFacts(thread: Thread) {
 
 /** The › between crumbs, dropped with the crumb before it. */
 const crumbSeparator = (drop?: string) => (
-  <ChevronRight aria-hidden className={cn("size-3 shrink-0 text-muted-foreground/60", drop)} />
+  <ChevronRight aria-hidden className={cn("size-3.5 shrink-0 text-muted-foreground/60", drop)} />
 );
 
 /**
@@ -221,7 +221,7 @@ function HoldChip({
           />
         }
       >
-        <Hand aria-hidden className="size-3 text-muted-foreground" />
+        <HandGrab aria-hidden className="size-3.5 text-muted-foreground" />
         <span className={cn(compact && "sr-only")}>You took over</span>
       </Hint>
       <Hint
@@ -307,7 +307,7 @@ export function WorkerActions({
             />
           }
         >
-          <PanelRight aria-hidden className="size-3" />
+          <PanelRight aria-hidden className="size-3.5" />
           <span className={inTitlebar ? "sr-only" : "@max-md:sr-only"}>Keep beside</span>
         </Hint>
       )}
@@ -373,7 +373,7 @@ export function WorkerMenuItems({
           className={itemClassName}
           onClick={actions.takeOver}
         >
-          <Hand aria-hidden className="size-3.5" />
+          <HandGrab aria-hidden className="size-3.5" />
           Take over
         </Menu.Item>
       )}

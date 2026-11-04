@@ -1,10 +1,20 @@
 import type { Diff, DiffScope, ThreadId, TurnId } from "@gram/contracts";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { Columns2, GitBranch, History, ListTree, Rows2 } from "lucide-react";
+import {
+  Columns2,
+  GitBranch,
+  History,
+  ListTree,
+  Pilcrow,
+  Rows2,
+  WrapText,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, folderProblem } from "@/api/errors";
+import { Hint } from "@/components/hint";
 import { QueryError } from "@/components/not-available";
 import { useShortcut } from "@/keyboard/registry";
 import { radioGroupKeyDown } from "@/lib/list-keys";
@@ -85,6 +95,10 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
   const setLayout = useLayoutStore((s) => s.setDiffLayout);
   const treeShown = useLayoutStore((s) => s.diffTreeShown);
   const toggleTree = useLayoutStore((s) => s.toggleDiffTree);
+  const wrap = useLayoutStore((s) => s.diffWrap);
+  const toggleWrap = useLayoutStore((s) => s.toggleDiffWrap);
+  const ignoreWhitespace = useLayoutStore((s) => s.diffIgnoreWhitespace);
+  const toggleIgnoreWhitespace = useLayoutStore((s) => s.toggleDiffIgnoreWhitespace);
   // What the diff is a function of, as the server's `diffToken` has it: the working tree and HEAD,
   // and the base a branch diff (or a clean tree's fallback to one) compares against.
   const diffStamp = useThreadsStore((s) => {
@@ -107,9 +121,23 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
       : turnId === undefined
         ? undefined
         : { kind: "turn", turnId };
+  const diffKey = [
+    "git.diff",
+    threadId,
+    scope,
+    scope === "turn" ? (turnId ?? null) : null,
+    diffStamp,
+  ] as const;
   const query = useQuery({
-    queryKey: ["git.diff", threadId, scope, scope === "turn" ? (turnId ?? null) : null, diffStamp],
-    queryFn: () => api.gitDiff(threadId, diffScope!),
+    queryKey: [...diffKey, ignoreWhitespace],
+    // Whitespace switched on or off, the diff it was stays until the new one comes, so the files
+    // opened in it stay open.
+    placeholderData: (previous, previousQuery) =>
+      diffKey.every((part, at) => previousQuery?.queryKey[at] === part) ? previous : undefined,
+    queryFn: () =>
+      ignoreWhitespace
+        ? api.gitDiff(threadId, diffScope!, { ignoreWhitespace })
+        : api.gitDiff(threadId, diffScope!),
     enabled: diffScope !== undefined,
     // A new stamp refetches, so a remount (switching back to the thread) can reuse the diff for a
     // while, sparing several `git` runs. Only a while: the stamp's `status` doesn't list inside an
@@ -233,6 +261,20 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
               );
             })}
           </div>
+          <ViewToggle
+            label="Wrap lines"
+            icon={WrapText}
+            pressed={wrap}
+            onToggle={toggleWrap}
+            // Each side of a split is half as wide, so its lines always wrap.
+            fixed={layout === "split" && splitFits ? "Split view always wraps lines" : undefined}
+          />
+          <ViewToggle
+            label="Ignore whitespace"
+            icon={Pilcrow}
+            pressed={ignoreWhitespace}
+            onToggle={toggleIgnoreWhitespace}
+          />
           {treeFits && (
             <button
               type="button"
@@ -262,6 +304,8 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
             scope={scope}
             query={query}
             layout={layout === "split" && splitFits ? "split" : "unified"}
+            wrap={wrap}
+            ignoreWhitespace={ignoreWhitespace}
             tree={treeBeside ? "beside" : undefined}
             panelRef={rootRef}
             {...(pending && pendingTurn === undefined ? { request: pending } : {})}
@@ -272,11 +316,50 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
   );
 }
 
+/**
+ * A view preference in the toolbar, pressed while it is on; its name shows on hover. `fixed` says
+ * why the current view has it on whatever the preference, and holds the button pressed.
+ */
+function ViewToggle({
+  label,
+  icon: Icon,
+  pressed,
+  onToggle,
+  fixed,
+}: {
+  label: string;
+  icon: LucideIcon;
+  pressed: boolean;
+  onToggle: () => void;
+  fixed?: string | undefined;
+}) {
+  return (
+    <Hint
+      label={fixed ?? label}
+      side="bottom"
+      render={
+        <button
+          type="button"
+          aria-label={label}
+          aria-pressed={fixed !== undefined || pressed}
+          aria-disabled={fixed !== undefined || undefined}
+          onClick={fixed === undefined ? onToggle : undefined}
+          className="rounded-(--radius-sm) p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:opacity-50 aria-pressed:bg-muted aria-pressed:text-foreground"
+        />
+      }
+    >
+      <Icon aria-hidden className="size-3.5" />
+    </Hint>
+  );
+}
+
 function DiffBody({
   threadId,
   scope,
   query,
   layout,
+  wrap,
+  ignoreWhitespace,
   tree,
   panelRef,
   request,
@@ -285,6 +368,8 @@ function DiffBody({
   scope: ScopeKind;
   query: UseQueryResult<Diff>;
   layout: DiffLayout;
+  wrap: boolean;
+  ignoreWhitespace: boolean;
   tree: "beside" | undefined;
   panelRef: RefObject<HTMLElement | null>;
   request?: PanelTarget;
@@ -380,6 +465,7 @@ function DiffBody({
         <p data-testid="diff-empty" className="px-3 py-2 text-xs text-muted-foreground">
           No changes{diff.branch ? ` on ${diff.branch}` : ""}
           {base && (scope !== "uncommitted" || fallbackBase) ? ` against ${base}` : ""}
+          {ignoreWhitespace ? ", ignoring whitespace" : ""}
         </p>
         {diff.note && <p className="px-3 pb-2 text-xs text-warning">{diff.note}</p>}
       </>
@@ -396,7 +482,7 @@ function DiffBody({
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs text-muted-foreground">
         {diff.branch && (
           <span className="flex min-w-0 items-center gap-1 font-mono">
-            <GitBranch aria-hidden className="size-3 shrink-0" />
+            <GitBranch aria-hidden className="size-3.5 shrink-0" />
             <span className="truncate">{diff.branch}</span>
           </span>
         )}
@@ -439,7 +525,7 @@ function DiffBody({
         )}
         <div data-testid="diff-files" className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <DiffReviewContext value={review}>
-            <DiffFileList files={files} layout={layout} {...actions} focus={focus} />
+            <DiffFileList files={files} layout={layout} wrap={wrap} {...actions} focus={focus} />
           </DiffReviewContext>
         </div>
       </div>

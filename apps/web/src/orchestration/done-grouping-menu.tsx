@@ -1,5 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
-import { CalendarDays, CheckIcon, Workflow, type LucideIcon } from "lucide-react";
+import { CalendarDays, CheckIcon, Network, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useLayoutStore, type DoneGrouping } from "@/stores/layout";
@@ -12,7 +12,7 @@ import { DONE_GROUPINGS } from "./done-model";
 
 const ICONS: Readonly<Record<DoneGrouping, LucideIcon>> = {
   date: CalendarDays,
-  orchestrator: Workflow,
+  orchestrator: Network,
 };
 
 const POPUP =

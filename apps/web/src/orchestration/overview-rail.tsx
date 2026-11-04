@@ -87,7 +87,7 @@ export function OverviewRail() {
   const hide = (
     <Button
       variant="ghost"
-      size="icon-xs"
+      size="icon-sm"
       {...STOP}
       aria-label="Hide sidebar"
       data-testid="overview-hide"

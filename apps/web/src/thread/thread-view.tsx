@@ -54,8 +54,10 @@ import {
   WorkerCrumbs,
   WorkerNowChip,
 } from "@/orchestration/worker-header";
+import { RunScriptMenu } from "@/scripts/run-script-menu";
+import { Foldable } from "@/shell/foldable";
 import { loadEarlier, useThreadFeed } from "@/stores/feeds";
-import { useLayoutStore } from "@/stores/layout";
+import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -122,10 +124,10 @@ export function ThreadView({
   /** Makes the header a drag source; the grid swaps panes on drop. */
   onHeaderDragStart?: (event: DragEvent<HTMLElement>) => void;
 }) {
-  // An expanded right panel covers the chat, so nothing in it answers keys: Enter would otherwise
-  // approve a request nobody can see, and ⌘Enter send a draft behind the panel.
-  const panelExpanded = useLayoutStore((s) => s.panelExpanded);
-  const focused = paneFocused && !panelExpanded;
+  // An expanded right panel or a review in focus covers the chat, so nothing in it answers keys:
+  // Enter would otherwise approve a request nobody can see, and ⌘Enter send a draft behind the panel.
+  const covered = useLayoutStore((s) => s.panelExpanded || fitShell(s).reviewFocus);
+  const focused = paneFocused && !covered;
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const titlebarThread = useTitlebarThread();
   const titlebarSlot = useTitlebarSlot((s) => s.slot);
@@ -500,7 +502,7 @@ export function ThreadView({
               data-testid="status-icon"
               data-working={display.working}
               data-running={display.running}
-              className={cn("size-3.5", display.tone)}
+              className={cn("size-4", display.tone)}
             />
           </Swap>
           <RunningCount count={display.running} />
@@ -514,6 +516,14 @@ export function ThreadView({
           earlierFailed={earlierFailed}
           onLoadEarlier={() => void pageEarlier(true)}
         />
+        {thread.role !== "orchestrator" && (
+          <HeaderRunScript
+            threadId={threadId}
+            projectId={thread.projectId}
+            inTitlebar={inTitlebar}
+            hideClass={hideSm}
+          />
+        )}
         <ThreadMenu threadId={threadId} />
         {actions}
       </header>
@@ -750,5 +760,38 @@ function ThreadGoneNotice({ threadId }: { threadId: ThreadId }) {
         Close
       </Button>
     </div>
+  );
+}
+
+/**
+ * The header's Run script, once the project has scripts: the bare glyph, so every chip keeps its
+ * room. In the title bar a narrow bar folds it into its "…" (`RunScriptMenuItems`) with the other
+ * lesser buttons; in a pane of a grid it drops below the container's small width.
+ */
+function HeaderRunScript({
+  threadId,
+  projectId,
+  inTitlebar,
+  hideClass,
+}: {
+  threadId: ThreadId;
+  projectId: Thread["projectId"];
+  inTitlebar: boolean;
+  hideClass: string;
+}) {
+  const menu = (
+    <RunScriptMenu
+      threadId={threadId}
+      projectId={projectId}
+      size="glyph"
+      onlyWithScripts
+      {...(inTitlebar ? {} : { className: hideClass })}
+    />
+  );
+  if (!inTitlebar) return menu;
+  return (
+    <Foldable level={1} gap={8}>
+      {menu}
+    </Foldable>
   );
 }

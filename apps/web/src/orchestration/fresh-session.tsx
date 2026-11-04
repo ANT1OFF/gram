@@ -1,6 +1,7 @@
 import type { WorkspaceState } from "@gram/contracts";
-import { Gauge, RefreshCw } from "lucide-react";
+import { ChartPie, RefreshCw } from "lucide-react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Shimmer, spin } from "@/motion";
@@ -28,7 +29,7 @@ export function HandingOff({
         className,
       )}
     >
-      <RefreshCw aria-hidden ref={spin} className="size-3" />
+      <RefreshCw aria-hidden ref={spin} className="size-3.5" />
       {compact ? <span className="sr-only">Handing off…</span> : <Shimmer>Handing off…</Shimmer>}
     </span>
   );
@@ -48,21 +49,27 @@ export function ContextChip({
   onAct: () => void;
   className?: string;
 }) {
+  const label = `Context ${pct} % — start a fresh session`;
   return (
-    <button
-      type="button"
-      data-testid="context-chip"
-      data-pct={pct}
-      aria-label={`Context ${pct} % — start a fresh session`}
-      title={`Context ${pct} %. A fresh session starts again from the orchestrator's memory and the ledger.`}
-      onClick={onAct}
-      className={cn(
-        "inline-flex shrink-0 items-center rounded-sm p-0.5 text-warning outline-none hover:bg-card focus-visible:ring-2 focus-visible:ring-ring",
-        className,
-      )}
+    <Hint
+      label={`${label}\nIt starts again from the orchestrator's memory and the ledger.`}
+      side="bottom"
+      render={
+        <button
+          type="button"
+          data-testid="context-chip"
+          data-pct={pct}
+          aria-label={label}
+          onClick={onAct}
+          className={cn(
+            "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+            className,
+          )}
+        />
+      }
     >
-      <Gauge aria-hidden className="size-3 shrink-0" />
-    </button>
+      <ChartPie aria-hidden className="size-4 shrink-0" />
+    </Hint>
   );
 }
 

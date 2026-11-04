@@ -90,7 +90,7 @@ export function BoardHeader({
           onClick={onWaiting}
           className="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-needs-mark/60 px-2 py-0.5 text-xs text-status-needs outline-none [-webkit-app-region:no-drag] hover:bg-status-needs-mark/10 focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-status-needs-mark/10"
         >
-          <Inbox aria-hidden className="size-3" />
+          <Inbox aria-hidden className="size-3.5" />
           <span className="@max-2xl/titlebar:sr-only">Waiting on you</span>
         </button>
       )}

@@ -2,12 +2,13 @@ import type { ThreadId, ThreadSummary } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import {
   Bell,
+  Eye,
   FileDiff,
+  Focus,
   FolderTree,
   GitPullRequest,
   Globe,
   Hand,
-  Inbox,
   Maximize2,
   Minimize2,
   Plug,
@@ -27,7 +28,7 @@ import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { useFeature } from "@/settings/use-diagnostics";
 import { useToastDock } from "@/shell/toast-dock";
-import { reviewsTabShown, useLayoutStore, type RightPanelTab } from "@/stores/layout";
+import { isReviewTab, reviewsTabShown, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
 import type * as PanelTabs from "./right-panel-tabs";
@@ -39,7 +40,7 @@ const TABS: { value: RightPanelTab; label: string; icon: LucideIcon }[] = [
   { value: "terminal", label: "Terminal", icon: SquareTerminal },
   { value: "preview", label: "Preview", icon: Globe },
   { value: "connectors", label: "Connectors", icon: Plug },
-  { value: "reviews", label: "Reviews", icon: Inbox },
+  { value: "reviews", label: "Reviews", icon: Eye },
   { value: "notifications", label: "Notifications", icon: Bell },
   { value: "needsYou", label: "Needs you", icon: Hand },
 ];
@@ -154,26 +155,29 @@ export function RightPanel() {
                     : 0;
               const busy = t.value === "terminal" && busyTerminals !== "";
               const label = busy ? `${t.label}: ${busyTerminals}` : t.label;
+              // The tooltip and the accessible name say the same.
+              const name =
+                count > 0
+                  ? `${t.label}, ${count} ${t.value === "notifications" ? "unread" : "waiting"}`
+                  : label;
               return (
                 <Hint
                   key={t.value}
-                  label={label}
+                  label={name}
                   side="bottom"
                   render={
                     <TabsTrigger
                       value={t.value}
                       data-panel-tab={t.value}
-                      aria-label={
-                        count > 0
-                          ? `${t.label}, ${count} ${t.value === "notifications" ? "unread" : "waiting"}`
-                          : label
-                      }
-                      className="relative flex shrink-0 items-center gap-1.5 after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary"
+                      aria-label={name}
+                      // A 28 px tab with its background on hover and focus; the open one is
+                      // named, on a background and underlined, not told apart by colour alone.
+                      className="relative my-1 flex h-7 min-w-7 shrink-0 items-center justify-center gap-1.5 hover:bg-muted focus-visible:bg-muted aria-selected:bg-muted/60 after:absolute after:inset-x-1.5 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary"
                     />
                   }
                 >
                   <span className="relative flex">
-                    <t.icon aria-hidden className="size-3.5" />
+                    <t.icon aria-hidden className="size-4" />
                     {busy && (
                       <span
                         aria-hidden
@@ -201,7 +205,7 @@ export function RightPanel() {
               );
             })}
           </TabsList>
-          <ExpandToggle />
+          <ExpandToggle review={isReviewTab(tab)} />
         </div>
         <Suspense fallback={null}>
           <RightPanelTabs
@@ -219,11 +223,15 @@ export function RightPanel() {
   );
 }
 
-/** Lets the panel take the chat's place beside the sidebar, and gives the chat back. */
-function ExpandToggle() {
+/**
+ * Lets the panel take the chat's place beside the sidebar, and gives the chat back; on a review tab,
+ * puts the review in focus instead, leaving a strip of the chat.
+ */
+function ExpandToggle({ review }: { review: boolean }) {
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const setExpanded = useLayoutStore((s) => s.setPanelExpanded);
   const restoreHint = useShortcutHint("panel.restore");
+  if (review && !expanded) return <ReviewFocusToggle />;
   const label = expanded ? "Restore panel width" : "Expand panel";
   return (
     <Hint
@@ -232,7 +240,7 @@ function ExpandToggle() {
       render={
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           aria-label={label}
           className="mr-2 shrink-0 text-muted-foreground"
           onClick={() => setExpanded(!expanded)}
@@ -240,6 +248,33 @@ function ExpandToggle() {
       }
     >
       {expanded ? <Minimize2 /> : <Maximize2 />}
+    </Hint>
+  );
+}
+
+function ReviewFocusToggle() {
+  const focused = useLayoutStore((s) => s.reviewFocus);
+  const toggle = useLayoutStore((s) => s.toggleReviewFocus);
+  const focusHint = useShortcutHint("review.focus");
+  const restoreHint = useShortcutHint("panel.restore");
+  const label = focused ? "Leave review focus" : "Focus review";
+  return (
+    <Hint
+      label={withHint(label, focused ? restoreHint : focusHint)}
+      side="bottom"
+      render={
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={label}
+          aria-pressed={focused}
+          data-testid="review-focus"
+          className="mr-2 shrink-0 text-muted-foreground aria-pressed:text-foreground"
+          onClick={toggle}
+        />
+      }
+    >
+      {focused ? <Minimize2 /> : <Focus />}
     </Hint>
   );
 }

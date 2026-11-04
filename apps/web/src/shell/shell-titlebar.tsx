@@ -137,7 +137,7 @@ export function ShellTitlebar({
           role="group"
           aria-label="Workspace"
           data-testid="titlebar-workspace"
-          className="flex shrink-0 items-center gap-1"
+          className="flex shrink-0 items-center gap-0.5"
         >
           {/* Workers is one of the bar's main controls: it folds last. */}
           <Foldable level={2} gap={4}>
@@ -153,7 +153,7 @@ export function ShellTitlebar({
         role="group"
         aria-label="Attention"
         data-testid="titlebar-attention"
-        className={cn("flex shrink-0 items-center gap-1", !soloBar && CLUSTER_GAP)}
+        className={cn("flex shrink-0 items-center gap-0.5", !soloBar && CLUSTER_GAP)}
       >
         {/* Narrow, the title needs the room more than the meter needs its words. */}
         <UsageMeter
@@ -166,7 +166,7 @@ export function ShellTitlebar({
         role="group"
         aria-label="View"
         data-testid="titlebar-view"
-        className={cn("flex shrink-0 items-center gap-1", CLUSTER_GAP)}
+        className={cn("flex shrink-0 items-center gap-0.5", CLUSTER_GAP)}
       >
         {/* Quiet, focus mode and the layout, and what a narrow bar folds: Tidy up, then Workers
             and a worker's own actions. */}

@@ -159,7 +159,7 @@ export function FolderPicker({
         >
           <Folder aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="truncate">{folder === "" ? "Choose a folder" : baseName(folder)}</span>
-          <ChevronDown aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         </Popover.Trigger>
       )}
       <Popover.Portal>

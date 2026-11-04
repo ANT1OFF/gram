@@ -1,4 +1,12 @@
-import { AlarmClock, CircleCheck, Hand, MessageCircleQuestion, CircleAlert, X } from "lucide-react";
+import {
+  AlarmClock,
+  CircleAlert,
+  CircleCheck,
+  Inbox,
+  MessageCircleQuestion,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
@@ -30,11 +38,11 @@ import { useNeedsYouJump, useNeedsYouList, useNeedsYouUi } from "./use-needs-you
 
 const FILTER_LABELS: Record<
   NeedsYouFilter,
-  { readonly label: string; readonly icon?: typeof Hand }
+  { readonly label: string; readonly icon?: LucideIcon }
 > = {
   all: { label: "All" },
   asks: { label: "Approvals and questions", icon: MessageCircleQuestion },
-  waits: { label: "Waiting on you", icon: Hand },
+  waits: { label: "Waiting on you", icon: Inbox },
   failing: { label: "Failing", icon: CircleAlert },
 };
 

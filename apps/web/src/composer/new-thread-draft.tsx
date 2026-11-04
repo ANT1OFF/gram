@@ -502,7 +502,7 @@ function ConfiguredNewThreadDraft() {
                   labelled={false}
                   icon={
                     <Swap swapKey={mode}>
-                      <ModeIcon aria-hidden className="size-3.5" />
+                      <ModeIcon aria-hidden className="size-4" />
                     </Swap>
                   }
                   confirm={modeConfirm.landed}

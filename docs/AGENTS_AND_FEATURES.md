@@ -629,6 +629,44 @@ across independent server layers or Gram processes.
 Source: [thread ownership](../packages/agents/src/codex/thread-ownership.ts).
 See [verification](VERIFICATION.md#protocol-native-and-live-checks) for synthetic and live lifecycle checks.
 
+## Project scripts
+
+A project's common commands (build, test, lint, dev) can be saved as project scripts and run
+with one click or key instead of retyped or asked of an agent. They live in
+`.gram/scripts.json` in the project's own folder, beside `.gram/launch.json`, as plain JSON a
+person can edit:
+
+```json
+{
+  "scripts": [
+    { "name": "test", "command": "bun run test", "shortcut": "mod+alt+t" },
+    { "name": "web dev", "command": "bun run dev", "cwd": "apps/web" }
+  ]
+}
+```
+
+`name` (up to 64 letters, digits, spaces and `. : / _ -`) and `command` (one line) are required.
+`cwd` is a folder relative to the checkout, which must stay inside it. `shortcut` is keys in the
+keyboard settings' form and needs ⌘/Ctrl or ⌥ with a letter or digit, or a function key.
+
+Add and edit them from the **Run script** menu, a thread's **Project scripts…** (its More… or the
+palette), or under
+Settings → Workspaces → a workspace → Project scripts. On first use the editor offers
+`package.json`'s scripts, run through the package manager its `packageManager` field or
+lockfile names, and a Makefile's targets, each with an Add button. Nothing is added or run on its
+own.
+
+A script runs when the user picks it from **Run script** (the Terminal tab's ▷, and the header's
+▷ once the project has scripts, which a narrow title bar folds into its …),
+from the palette's **Run script…**, or presses its key. It runs in the active thread's checkout
+(its worktree), in a Terminal tab named after it that shows the command first and keeps its
+output; running it again replaces that tab. The tab shows the run as running, finished (green)
+or failed (red). The menu shows each script's exact command, with its folder in the tooltip.
+
+Definitions are read from the project's own folder each time, not from the thread's worktree, so
+an agent editing its worktree's copy changes nothing. No agent tool runs a script: only the
+user's click or key does.
+
 ## Worktree storage and cleanup
 
 Settings → Storage lists every known repo's linked worktrees in five groups: in

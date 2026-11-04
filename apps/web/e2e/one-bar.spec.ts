@@ -127,7 +127,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
     [bar.getByTestId("workspace-switcher-button"), /^Switch workspace \(.+1(–.+\d)?\)$/],
     [bar.getByRole("button", { name: /right panel$/ }), /^(Show|Hide) right panel \(.+\)$/],
     [bar.getByTestId("workers-button"), /^Workers, \d+ now \(.+J\)$/],
-    [bar.getByTestId("titlebar-overflow"), /^More: Quiet, focus mode, layout$/],
+    [bar.getByTestId("titlebar-overflow"), /^More window controls\s*Quiet, focus mode and layout$/],
   ] as const) {
     await control.hover();
     await expect(tooltip).toHaveText(text);

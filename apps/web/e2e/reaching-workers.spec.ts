@@ -21,6 +21,8 @@ const open = async (page: Page, helpers: object = {}): Promise<MockReachingSimul
   await page.setViewportSize({ width: 1680, height: 900 });
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
+  // Beside the Files tab: a review opens wider and leaves the chat, and its title bar, 800 px.
+  await page.getByTestId("right-panel").getByRole("tab", { name: "Files", exact: true }).click();
   const made = await page.evaluate(() => window.gramMock!.simulateReachingWorkers());
   await openOrchestrator(page, made.orchestratorThreadId);
   return made;

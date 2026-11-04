@@ -267,7 +267,7 @@ function ReportIssueForm({
             >
               <ChevronRight
                 aria-hidden
-                className="size-3 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+                className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
               />
               What's added
             </CollapsibleTrigger>

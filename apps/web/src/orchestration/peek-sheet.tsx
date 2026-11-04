@@ -1,6 +1,6 @@
 import type { ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, FileDiff, Terminal, X } from "lucide-react";
+import { ExternalLink, FileDiff, SquareTerminal, X } from "lucide-react";
 import { useId, useMemo, type KeyboardEvent, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
@@ -217,7 +217,7 @@ function WorkerPeekView({
           <ul data-testid="peek-files" className="flex flex-col gap-0.5 font-mono text-xs">
             {peek.files.map((file) => (
               <li key={file.path} className="flex min-w-0 items-center gap-1.5">
-                <FileDiff aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+                <FileDiff aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 truncate">{file.path}</span>
                 <span className="shrink-0 text-success">+{file.additions}</span>
                 <span className="shrink-0 text-destructive">−{file.deletions}</span>
@@ -228,7 +228,7 @@ function WorkerPeekView({
             )}
             {peek.changedFiles !== undefined && (
               <li className="flex items-center gap-1.5 text-muted-foreground">
-                <FileDiff aria-hidden className="size-3 shrink-0" />
+                <FileDiff aria-hidden className="size-3.5 shrink-0" />
                 {peek.changedFiles === 1 ? "1 file changed" : `${peek.changedFiles} files changed`}
               </li>
             )}
@@ -240,7 +240,7 @@ function WorkerPeekView({
             data-running={peek.command.running}
             className="flex min-w-0 items-center gap-1.5 font-mono text-xs"
           >
-            <Terminal aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+            <SquareTerminal aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate">{peek.command.command}</span>
             {peek.command.running && (
               <Spinner aria-hidden className="size-3 shrink-0 text-status-working" />

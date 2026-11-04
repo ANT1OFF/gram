@@ -17,4 +17,7 @@ export const projectsRpc = ({ client }: RpcContext): ProjectsApi => ({
   setProjectBookmarked: (projectId, bookmarked) =>
     run(client["projects.setBookmarked"]({ projectId, bookmarked })),
   forgetProject: (projectId) => run(client["projects.forget"]({ projectId })),
+  projectScripts: (projectId) => run(client["projects.scripts"]({ projectId })),
+  saveProjectScripts: (projectId, scripts) =>
+    run(client["projects.saveScripts"]({ projectId, scripts })),
 });

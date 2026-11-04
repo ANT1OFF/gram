@@ -369,7 +369,7 @@ function ApprovalDetailsFold({
       >
         <ChevronRight
           aria-hidden
-          className="size-3 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
         />
         Details
       </CollapsibleTrigger>
@@ -877,7 +877,7 @@ export function QuestionCard({
                 i === page && "border-primary bg-primary/10 text-foreground",
               )}
             >
-              {answerFor(each.question).length > 0 && <Check aria-hidden className="size-3" />}
+              {answerFor(each.question).length > 0 && <Check aria-hidden className="size-3.5" />}
               {each.header}
             </button>
           ))}

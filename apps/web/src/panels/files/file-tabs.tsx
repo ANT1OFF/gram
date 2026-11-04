@@ -85,7 +85,7 @@ export function FileTabs({
                 !active && "opacity-0 group-hover/tab:opacity-100",
               )}
             >
-              <X aria-hidden className="size-3" />
+              <X aria-hidden className="size-3.5" />
             </button>
           </div>
         );

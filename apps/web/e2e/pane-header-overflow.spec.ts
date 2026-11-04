@@ -22,6 +22,11 @@ for (const width of [880, 1440]) {
       .getByRole("button", { name: /^Hide #412 / })
       .click();
     await expect(page.getByTestId("pr-row")).toHaveCount(0);
+    // Measured beside the Files tab's 352 px: a review opens wider, leaving the chat 800 px, and
+    // the title bar then folds chips out of sight sooner (review-width.spec.ts).
+    await panel.getByRole("tab", { name: "Files", exact: true }).click();
+    // The shell's columns ease to the new width: measure once they've settled.
+    await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(352);
 
     const header = page.getByTestId("pane-header").first();
     const overflow = await header.evaluate((el) => el.scrollWidth - el.clientWidth);
@@ -30,17 +35,23 @@ for (const width of [880, 1440]) {
     // The chips that wrapped out of sight are out of the Tab order too, so focus can't scroll the
     // row off its first line.
     const chips = header.getByTestId("pane-header-chips");
-    const rows = await chips.evaluate((row) => {
-      const top = row.getBoundingClientRect().top;
-      return [...row.children].map((child) => ({
-        wrapped: child.getBoundingClientRect().top - top >= row.clientHeight,
-        inert: (child as HTMLElement).inert,
-      }));
-    });
-    expect(
-      rows.some((r) => r.wrapped),
-      width === 880 ? "a chip wrapped at this width" : "every chip fits at this width",
-    ).toBe(width === 880);
+    const measure = () =>
+      chips.evaluate((row) => {
+        const top = row.getBoundingClientRect().top;
+        return [...row.children].map((child) => ({
+          wrapped: child.getBoundingClientRect().top - top >= row.clientHeight,
+          inert: (child as HTMLElement).inert,
+        }));
+      });
+    await expect
+      .poll(
+        async () => (await measure()).some((r) => r.wrapped),
+        width === 880
+          ? { message: "a chip wrapped at this width" }
+          : { message: "every chip fits at this width" },
+      )
+      .toBe(width === 880);
+    const rows = await measure();
     expect(rows.every((r) => r.wrapped === r.inert)).toBe(true);
     for (let i = 0; i < 12; i++) await page.keyboard.press("Tab");
     expect(await chips.evaluate((row) => row.scrollTop)).toBe(0);

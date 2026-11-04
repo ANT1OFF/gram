@@ -22,7 +22,12 @@ import type {
 
 /** A thread's diff, its pull requests and their review bots, and pushing its branch. */
 export interface PullRequestsApi {
-  gitDiff(threadId: ThreadId, scope: DiffScope): Promise<Diff>;
+  /** `ignoreWhitespace` leaves whitespace-only changes out, as `git diff -w` does. */
+  gitDiff(
+    threadId: ThreadId,
+    scope: DiffScope,
+    options?: { ignoreWhitespace?: boolean },
+  ): Promise<Diff>;
   prDetail(threadId: ThreadId): Promise<PrDetailResult>;
   /** The PR's checks alone, one small request where `prDetail` fetches the whole PR and its diff. */
   prChecks(threadId: ThreadId): Promise<PrChecksResult>;

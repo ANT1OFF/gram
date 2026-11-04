@@ -1,4 +1,4 @@
-import type { ThreadId, WorkspaceId } from "@gram/contracts";
+import type { ProjectId, ThreadId, WorkspaceId } from "@gram/contracts";
 import { create } from "zustand";
 
 /** What the close dialog starts with ticked, e.g. cleaning up after a merged PR. */
@@ -20,7 +20,9 @@ type ThreadDialog =
   | { kind: "restartSession"; threadId: ThreadId }
   /** Without a workspace, the repository added opens on New thread. */
   | { kind: "addRepo"; workspaceId?: WorkspaceId }
-  | { kind: "removeWorkspace"; workspaceId: WorkspaceId };
+  | { kind: "removeWorkspace"; workspaceId: WorkspaceId }
+  /** The project's scripts to add and edit, opened from the thread it was asked from. */
+  | { kind: "projectScripts"; projectId: ProjectId; threadId?: ThreadId };
 
 interface ThreadDialogsState {
   dialog: ThreadDialog | undefined;
