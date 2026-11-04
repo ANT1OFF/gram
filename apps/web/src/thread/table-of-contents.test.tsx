@@ -142,6 +142,29 @@ describe("outline history continuity", () => {
   });
 });
 
+describe("ConversationRail with one place to go", () => {
+  it("leaves the gutter empty for a single prompt, which has nowhere to jump", () => {
+    const { container } = render(
+      <ConversationRail chapters={[chapters[0]!]} currentId="c1" onJump={() => {}} />,
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("still offers earlier history above a single loaded prompt", () => {
+    render(
+      <ConversationRail
+        chapters={[chapters[0]!]}
+        currentId="c1"
+        onJump={() => {}}
+        earlier
+        onLoadEarlier={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("conversation-rail")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reproduce the flake" })).toBeTruthy();
+  });
+});
+
 describe("rail paging focus ownership", () => {
   const older: Chapter = {
     id: "c0",

@@ -16,7 +16,7 @@ import {
 } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowUp, Gauge, ListPlus, Send, Square, SquarePen, Zap } from "lucide-react";
+import { ArrowUp, ListPlus, Send, Square, SquarePen } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -56,7 +56,7 @@ import {
   useMirrorFit,
 } from "@/dictation/composer-dictation";
 import { DictationButton } from "@/dictation/dictation-button";
-import { PressScale, RunningEdge, SharedSlab, Swap } from "@/motion";
+import { PressScale, RingSpinner, RunningEdge, SharedSlab, Swap } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
 import { activityLine, backgroundWorking } from "@/sidebar/status";
 import { useDiffComments, useDiffCommentsStore, withDiffComments } from "@/stores/diff-comments";
@@ -89,6 +89,7 @@ import {
 } from "./models";
 import { MODE_ICONS, MODE_OPTIONS } from "./options";
 import { Picker } from "./picker";
+import { EffortGauge, SpeedGlyph } from "./picker-glyphs";
 import { inOpenFence } from "./mention";
 import { sendAction, type SendAction } from "./send-action";
 import { enterSends, imeComposing } from "./send-key";
@@ -105,7 +106,7 @@ import {
 import { useSlabHandoff } from "./slab-handoff";
 import { useOrchestratorVerbs, VerbMenu } from "./verb-menu";
 import { filterVerbs, gridIndexForKey, VERB_COLUMNS, type Verb } from "./verbs";
-import { GHOST_MIRROR, ROUND, SEND_FILL, SLAB, SLAB_TEXTAREA, STOP_OUTLINE } from "./styles";
+import { GHOST_MIRROR, ROUND, SEND_FILL, SLAB, SLAB_TEXTAREA, STOP_RUNNING } from "./styles";
 import { StashMenu, stashesQueryKey } from "./stash-menu";
 import { ToolbarOverflow, type FoldedPicker } from "./toolbar-overflow";
 import { useMentions } from "./use-mentions";
@@ -162,6 +163,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   const dragDepth = useRef(0);
   const sendHint = useShortcutHint("composer.send");
   const newDraftHint = useShortcutHint("composer.sendNewDraft");
+  const stopHint = useShortcutHint("composer.stop");
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [overflowSub, setOverflowSub] = useState<string | undefined>();
 
@@ -848,8 +850,18 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     send: { aria: "Send", hint: withHint("Send", sendKeyHint) },
     queue: { aria: "Queue", hint: withHint(queueLabel, sendKeyHint) },
     steer: { aria: "Steer now", hint: STEER_LABEL },
-    stop: { aria: "Stop", hint: stopLabel },
+    stop: { aria: "Stop", hint: withHint(stopLabel, stopHint) },
   } as const;
+  useShortcut(
+    {
+      id: "composer.stop",
+      keys: "mod+.",
+      label: "Stop the turn",
+      group: "Composer",
+      run: () => void api.interrupt(threadId),
+    },
+    focused && (busy || background),
+  );
   const runAction = (event: MouseEvent<HTMLButtonElement>) => {
     const steering = steerable && (event.metaKey || event.ctrlKey);
     switch (sendAction({ hasDraft, busy, background, steering })) {
@@ -899,7 +911,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
       .setMode(threadId, mode)
       .catch((error: unknown) => flash(`Couldn't switch mode: ${errorMessage(error)}`));
   const modeIcon = <ModeIcon aria-hidden className="size-3.5" />;
-  const effortIcon = <Gauge aria-hidden className="size-3.5" />;
+  const effortIcon = <EffortGauge variant={model?.variant} />;
 
   // Fold order is from the end: the mode picker first, then effort. The model's label goes first;
   // speed, effort and mode are glyphs alone, their values named in a tooltip and in the open list.
@@ -936,7 +948,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
           {
             id: "speed",
             label: "Speed",
-            icon: <Zap aria-hidden />,
+            icon: <SpeedGlyph speed={model.speed} />,
             value: model.speed ?? "default",
             options: speedOptions(models, model.model, model.speed, summary?.thread.speedState),
             onChange: (value: string) => {
@@ -1247,11 +1259,20 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                         type="button"
                         aria-label={actionLabels[action].aria}
                         disabled={action !== "stop" && !canSend}
-                        className={cn(ROUND, action === "stop" ? STOP_OUTLINE : SEND_FILL)}
+                        className={cn(ROUND, action === "stop" ? STOP_RUNNING : SEND_FILL)}
                         onClick={runAction}
                       />
                     }
                   >
+                    {/* While it runs, the ring turns round Stop: the button says the agent is
+                        at work, not only how to end it. Still under Reduced and Off. */}
+                    {action === "stop" && (
+                      <RingSpinner
+                        aria-hidden
+                        data-testid="stop-ring"
+                        className="pointer-events-none absolute inset-0 size-full text-status-working"
+                      />
+                    )}
                     <Swap swapKey={action}>
                       <SendGlyph action={action} />
                     </Swap>
@@ -1301,7 +1322,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
 function SendGlyph({ action }: { action: SendAction }) {
   switch (action) {
     case "stop":
-      return <Square aria-hidden className="size-2.5 fill-current" />;
+      return <Square aria-hidden className="size-3 rounded-[2px] fill-current" />;
     case "queue":
       return <ListPlus aria-hidden className="size-4" />;
     case "steer":

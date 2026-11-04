@@ -5,10 +5,11 @@ import {
   type SpeedMode,
   type SpeedState,
 } from "@gram/contracts";
-import { Zap } from "lucide-react";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
+import { Swap } from "@/motion";
 
-import { PickerTrigger } from "./picker-trigger";
+import { PickerTrigger, usePickConfirm } from "./picker-trigger";
+import { SpeedGlyph } from "./picker-glyphs";
 import { GHOST_TRIGGER } from "./styles";
 
 export const speedOptions = (
@@ -72,6 +73,7 @@ export function SpeedField({
   /** `sm` to sit in a row of small controls; the ghost style is always small. */
   size?: "sm" | "default";
 }) {
+  const confirm = usePickConfirm(value);
   if (agent !== "claude" && agent !== "codex") return null;
   const fast = modelSpeeds(models, model).includes("fast");
   const items = speedOptions(models, model, value, state);
@@ -85,14 +87,23 @@ export function SpeedField({
         items={items}
         disabled={disabled}
         onValueChange={(next) => {
-          if (next === "standard" || (next === "fast" && fast)) onChange(next);
+          if (next !== "standard" && !(next === "fast" && fast)) return;
+          confirm.pick(next);
+          onChange(next);
         }}
       >
         <PickerTrigger
           label="Speed"
           value={shown}
           labelled={labelled}
-          icon={ghost && <Zap aria-hidden className="size-3.5" />}
+          icon={
+            ghost && (
+              <Swap swapKey={value ?? "default"}>
+                <SpeedGlyph speed={value} />
+              </Swap>
+            )
+          }
+          confirm={ghost ? confirm.landed : undefined}
           title={`${usage} ${report}`}
           size={ghost ? "sm" : size}
           {...(ghost ? { className: GHOST_TRIGGER } : {})}
