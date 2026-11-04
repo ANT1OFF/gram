@@ -2,13 +2,14 @@ import { useLayoutEffect, type ReactNode } from "react";
 
 import { MotionRoot } from "@/motion/root";
 import { startFontOverrides } from "@/theme/font-overrides";
+import { startReadingPrefs } from "@/thread/reading";
 import { themeStore, useThemeStore } from "@/theme/store";
 import { startThemeSync, syncCustomPaletteStyle } from "@/theme/sync";
 import { systemSource } from "@/theme/system";
 
 /**
- * Mirrors theme preferences and font overrides onto `<html>` and configures Motion for the motion
- * setting.
+ * Mirrors theme preferences, font overrides and the transcript's reading settings onto `<html>`,
+ * and configures Motion for the motion setting.
  */
 export function ThemeRoot({ children }: { children: ReactNode }) {
   const customPalettes = useThemeStore((s) => s.customPalettes);
@@ -27,6 +28,7 @@ export function ThemeRoot({ children }: { children: ReactNode }) {
     };
   }, []);
   useLayoutEffect(() => startFontOverrides(document.documentElement), []);
+  useLayoutEffect(() => startReadingPrefs(document.documentElement), []);
   useLayoutEffect(() => syncCustomPaletteStyle(document, customPalettes), [customPalettes]);
 
   return <MotionRoot>{children}</MotionRoot>;

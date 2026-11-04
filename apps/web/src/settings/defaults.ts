@@ -19,6 +19,8 @@ import {
   overviewSidebarOf,
   reviewRequestsOn,
   sendKeyOf,
+  transcriptTextSizeOf,
+  transcriptWidthOf,
   type Settings,
   type SettingsPatch,
 } from "@gram/contracts";
@@ -331,6 +333,20 @@ export const TERMINAL_DEFAULTS = defaults({
     label: "Windows terminal shell",
     read: (s) => s.terminal.shell ?? "powershell",
     reset: { terminal: { shell: null } },
+  },
+});
+
+/** Settings → Appearance → Reading. */
+export const READING_DEFAULTS = defaults({
+  textSize: {
+    label: "Transcript text size",
+    read: transcriptTextSizeOf,
+    reset: { reading: { textSize: null } },
+  },
+  width: {
+    label: "Transcript width",
+    read: transcriptWidthOf,
+    reset: { reading: { width: null } },
   },
 });
 

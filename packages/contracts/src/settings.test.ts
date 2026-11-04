@@ -8,6 +8,9 @@ import {
   Palette,
   Settings,
   SettingsPatch,
+  TRANSCRIPT_TEXT_SIZE,
+  transcriptTextSizeOf,
+  transcriptWidthOf,
   applySettingsPatch,
   continueAfterRestart,
   overviewHiddenOf,
@@ -415,6 +418,35 @@ describe("orchestration mode", () => {
     expect(orchestrationMode(withMode("acceptEdits"))).toBe("auto");
     expect(orchestrationMode(withMode("auto"))).toBe("auto");
     expect(orchestrationMode(withMode("bypassPermissions"))).toBe("bypassPermissions");
+  });
+});
+
+describe("reading settings", () => {
+  const decodePatch = Schema.decodeUnknownSync(SettingsPatch);
+
+  it("reads the original 14px comfortable column while unset", () => {
+    expect(transcriptTextSizeOf(DEFAULT_SETTINGS)).toBe(TRANSCRIPT_TEXT_SIZE.default);
+    expect(transcriptWidthOf(DEFAULT_SETTINGS)).toBe("comfortable");
+  });
+
+  it("sets and clears the text size and width", () => {
+    const set = applySettingsPatch(
+      DEFAULT_SETTINGS,
+      decodePatch({ reading: { textSize: 17, width: "wide" } }),
+    );
+    expect(transcriptTextSizeOf(set)).toBe(17);
+    expect(transcriptWidthOf(set)).toBe("wide");
+    expectRoundTrip(Settings, set);
+
+    const cleared = applySettingsPatch(set, decodePatch({ reading: { textSize: null } }));
+    expect(cleared.reading).toEqual({ width: "wide" });
+  });
+
+  it("refuses a size outside the range and an unknown width", () => {
+    expect(() => decodePatch({ reading: { textSize: TRANSCRIPT_TEXT_SIZE.max + 1 } })).toThrow();
+    expect(() => decodePatch({ reading: { textSize: TRANSCRIPT_TEXT_SIZE.min - 1 } })).toThrow();
+    expect(() => decodePatch({ reading: { textSize: 15.5 } })).toThrow();
+    expect(() => decodePatch({ reading: { width: "huge" } })).toThrow();
   });
 });
 

@@ -144,6 +144,32 @@ export const FontSettings = Schema.Struct({
   monoSize: Schema.optionalKey(Schema.Int),
 });
 
+/** Settings → Appearance → Reading: the transcript column's text size, in pixels. */
+export const TRANSCRIPT_TEXT_SIZE = { min: 12, max: 20, default: 14 } as const;
+
+/** The transcript column's widest line; `comfortable` is the original 48rem column. */
+export const TranscriptWidth = Schema.Literals(["narrow", "comfortable", "wide", "full"]);
+export type TranscriptWidth = typeof TranscriptWidth.Type;
+
+export const TranscriptTextSize = Schema.Int.check(
+  Schema.isBetween({ minimum: TRANSCRIPT_TEXT_SIZE.min, maximum: TRANSCRIPT_TEXT_SIZE.max }),
+);
+
+export const ReadingSettings = Schema.Struct({
+  /** Message text in thread transcripts, in pixels; absent means `TRANSCRIPT_TEXT_SIZE.default`. */
+  textSize: Schema.optionalKey(TranscriptTextSize),
+  /** Absent means `comfortable`. */
+  width: Schema.optionalKey(TranscriptWidth),
+});
+export type ReadingSettings = typeof ReadingSettings.Type;
+
+export const transcriptTextSizeOf = (settings: { readonly reading?: ReadingSettings }): number =>
+  settings.reading?.textSize ?? TRANSCRIPT_TEXT_SIZE.default;
+
+export const transcriptWidthOf = (settings: {
+  readonly reading?: ReadingSettings;
+}): TranscriptWidth => settings.reading?.width ?? "comfortable";
+
 export const TerminalSettings = Schema.Struct({
   /** The Windows shell: `powershell`, `pwsh`, `cmd`, `git-bash`, or an executable path. */
   shell: Schema.optionalKey(Schema.String),
@@ -590,6 +616,8 @@ export const Settings = Schema.Struct({
   /** Absent until something in the Inbox is snoozed or cleared. */
   inbox: Schema.optionalKey(InboxSettings),
   usageHistory: Schema.optionalKey(UsageHistorySettings),
+  /** Absent until a reading setting is changed. */
+  reading: Schema.optionalKey(ReadingSettings),
 });
 export type Settings = typeof Settings.Type;
 
@@ -941,6 +969,12 @@ export const SettingsPatch = Schema.Struct({
     Schema.Struct({ voiceInput: Schema.optionalKey(ExperimentalSettings.fields.voiceInput) }),
   ),
   usageHistory: Schema.optionalKey(UsageHistorySettings),
+  reading: Schema.optionalKey(
+    Schema.Struct({
+      textSize: clearable(TranscriptTextSize),
+      width: clearable(TranscriptWidth),
+    }),
+  ),
   workspaces: Schema.optionalKey(WorkspaceSettings),
   helpers: Schema.optionalKey(
     Schema.Struct({

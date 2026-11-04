@@ -38,6 +38,7 @@ import { LONG_COPY, SEGMENT, SEGMENT_SLAB, SEGMENT_TRACK } from "./fields";
 import { FontsSection } from "./fonts-section";
 import { PaletteEditor } from "./palette-editor";
 import { paletteChoices, type PaletteChoice } from "./palette-choices";
+import { ReadingSection } from "./reading-section";
 import { SearchScope, useSettingSearch } from "./search-scope";
 import { SettingsGroup } from "./settings-group";
 
@@ -67,7 +68,7 @@ function useThemeAttributes() {
 }
 
 /**
- * Settings → Appearance: the theme controls beside a live preview, then fonts. Glass is the only
+ * Settings → Appearance: the theme controls beside a live preview, then reading and fonts. Glass is the only
  * look, so the controls are Mode, Palette, Density, Contrast and Motion; the palette editor opens
  * from the palette picker.
  */
@@ -120,6 +121,14 @@ function AppearancePage({ preview }: { preview: boolean }) {
         </div>
       )}
       <SettingsGroup
+        label="Reading"
+        description="The size and width of the conversation in threads."
+        keywords={READING_KEYWORDS}
+        testId="reading-settings"
+      >
+        <ReadingSection />
+      </SettingsGroup>
+      <SettingsGroup
         label="Fonts"
         description="The typefaces and sizes for text and code."
         keywords={FONT_KEYWORDS}
@@ -133,6 +142,7 @@ function AppearancePage({ preview }: { preview: boolean }) {
 
 const PALETTE_HINT = "Each palette has a light and a dark version; Mode picks which one shows.";
 const FONT_KEYWORDS = ["typeface", "family", "monospace"];
+const READING_KEYWORDS = ["transcript", "conversation", "text size", "line width"];
 const PALETTE_EDITOR_KEYWORDS = ["custom palette", "edit palette", "colour", "color", "seed"];
 
 function AppearanceControls({ onEditColours }: { onEditColours: () => void }) {
