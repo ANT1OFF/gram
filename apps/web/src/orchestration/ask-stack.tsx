@@ -708,8 +708,13 @@ export function AskStack({
   useEffect(() => {
     if (!focused) return;
     const update = () => {
-      // Focus on the stack's own buttons keeps the hints: a click must not move what it pressed.
-      if (rootRef.current?.contains(document.activeElement)) return;
+      // Focus on the stack's own buttons keeps the hints: a click must not move what it pressed. A
+      // jump that lands focus on an ask brings the plain keys' hints, which reach it there.
+      const active = document.activeElement;
+      if (active !== null && rootRef.current?.contains(active)) {
+        if (!types(active)) setHints((was) => was ?? "plain");
+        return;
+      }
       const pane = rootRef.current?.closest(SCOPE);
       setHints(pane == null ? undefined : focusReach(document.activeElement, pane));
     };
