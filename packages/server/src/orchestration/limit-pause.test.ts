@@ -268,6 +268,38 @@ describe.skipIf(!hasGit)("pausing new workers near a limit", () => {
     ),
   );
 
+  it.effect("carries credits from subscription readings into list_workers budget limits", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const { session } = yield* openOrchestrator(world);
+        const readings = yield* UsageLimitReadings;
+        const now = yield* Clock.currentTimeMillis;
+        const credits = {
+          credits: true as const,
+          creditsAvailable: true as const,
+          creditsUnlimited: true as const,
+          creditsBalance: "12345.67",
+        };
+        yield* readings.replaceSubscription(
+          "claude",
+          [
+            {
+              status: "allowed",
+              window: "seven_day",
+              utilization: 1,
+              resetsAt: now + HOUR,
+              ...credits,
+            },
+          ],
+          yield* readings.current,
+        );
+        expect(yield* session.callTool("list_workers", {})).toMatchObject({
+          budget: { limits: [{ agent: "claude", window: "weekly", usedPct: 100, ...credits }] },
+        });
+      }),
+    ),
+  );
+
   it.effect("never asks without a threshold, and the digest names the limit, not dollars", () =>
     inServer((world) =>
       Effect.gen(function* () {

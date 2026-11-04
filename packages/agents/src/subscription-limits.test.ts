@@ -46,13 +46,22 @@ describe("live CLI subscription response shapes", () => {
       },
     };
     expect(codexSubscriptionLimits(withCredits)).toEqual([
-      { status: "allowed", window: "five_hour", utilization: 0, resetsAt: 1792244732000 },
+      {
+        status: "allowed",
+        window: "five_hour",
+        utilization: 0,
+        resetsAt: 1792244732000,
+        creditsAvailable: true,
+        creditsBalance: "12.50",
+      },
       {
         status: "allowed",
         window: "seven_day",
         utilization: 1,
         resetsAt: 1792711900000,
         credits: true,
+        creditsAvailable: true,
+        creditsBalance: "12.50",
       },
     ]);
     // Synthetic: Claude's weekly window spent, extra usage enabled and not used up.
@@ -80,6 +89,36 @@ describe("live CLI subscription response shapes", () => {
         })[1],
       ).toEqual({ status: "allowed", window: "seven_day", utilization: 1 });
     }
+  });
+  it.each([
+    [{ hasCredits: true, unlimited: false, balance: null }, { creditsAvailable: true }],
+    [
+      { hasCredits: false, unlimited: true, balance: null },
+      { creditsAvailable: true, creditsUnlimited: true },
+    ],
+    [{ hasCredits: false, unlimited: false, balance: "0" }, { creditsBalance: "0" }],
+    [{ hasCredits: false, unlimited: false, balance: null }, {}],
+  ])("reads credit availability at every window utilization: %j", (credits, fields) => {
+    const readings = codexSubscriptionLimits({
+      rateLimits: { ...codexUsage.rateLimits, credits },
+    });
+    expect(readings).toEqual([
+      {
+        status: "allowed",
+        window: "five_hour",
+        utilization: 0,
+        resetsAt: 1792244732000,
+        ...fields,
+      },
+      {
+        ...(credits.hasCredits || credits.unlimited ? { credits: true } : {}),
+        status: credits.hasCredits || credits.unlimited ? "allowed" : "rejected",
+        window: "seven_day",
+        utilization: 1,
+        resetsAt: 1792711900000,
+        ...fields,
+      },
+    ]);
   });
   it("leaves missing, nonfinite or unavailable windows unknown", () => {
     expect(claudeSubscriptionLimits({ rate_limits_available: false, rate_limits: null })).toEqual(
