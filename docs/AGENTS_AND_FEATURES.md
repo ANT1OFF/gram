@@ -657,7 +657,7 @@ lockfile names, and a Makefile's targets, each with an Add button. Nothing is ad
 own.
 
 A script runs when the user picks it from **Run script** (the Terminal tab's ▷, and the header's
-once the project has scripts),
+▷ once the project has scripts, which a narrow title bar folds into its …),
 from the palette's **Run script…**, or presses its key. It runs in the active thread's checkout
 (its worktree), in a Terminal tab named after it that shows the command first and keeps its
 output; running it again replaces that tab. The tab shows the run as running, finished (green)

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { terminalText } from "./terminal";
 
@@ -76,4 +76,70 @@ test("adds a suggested script and one of its own, then runs them by click, key a
   await expect(tabs).toHaveCount(3);
   await expect(testTab).toHaveAttribute("aria-selected", "true");
   await expect(testTab).toHaveAttribute("data-run", "finished");
+});
+
+/** Saves `test` from the suggestions through the palette's Project scripts…, as a user would. */
+const addTestScript = async (page: Page) => {
+  await page.getByLabel("Message", { exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByTestId("command-palette");
+  await palette.getByRole("combobox").fill(">project scripts");
+  await palette.getByRole("option", { name: /Project scripts…/ }).click();
+  const dialog = page.getByTestId("project-scripts-dialog");
+  await dialog.getByRole("button", { name: "Add test" }).click();
+  await expect(dialog.getByTestId("project-script")).toHaveCount(1);
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await expect(dialog).toHaveCount(0);
+};
+
+test("with scripts saved, the header's Run script leaves every chip room at 1440 px", async ({
+  page,
+}) => {
+  // pane-header-overflow's crowded 1440 px header, with a script saved so Run script is in it.
+  await page.setViewportSize({ width: 1440, height: 720 });
+  await page.goto("/t/t-flaky");
+  await addTestScript(page);
+  const panel = page.getByTestId("right-panel");
+  await panel.getByRole("tab", { name: "PR", exact: true }).click();
+  await expect(panel.getByTestId("pr-panel")).toBeVisible();
+  await page.evaluate(() => window.gramMock?.simulateUnpushed("t-flaky" as never, 2));
+  await page
+    .getByTestId("pr-row")
+    .getByRole("button", { name: /^Hide #412 / })
+    .click();
+  await expect(page.getByTestId("pr-row")).toHaveCount(0);
+
+  const header = page.getByTestId("pane-header").first();
+  const run = header.getByRole("button", { name: "Run script" });
+  await expect(run).toBeVisible();
+  expect((await run.boundingBox())?.width).toBe(16);
+  const chips = header.getByTestId("pane-header-chips");
+  const wrapped = await chips.evaluate((row) => {
+    const top = row.getBoundingClientRect().top;
+    return [...row.children].filter(
+      (child) => child.getBoundingClientRect().top - top >= row.clientHeight,
+    ).length;
+  });
+  expect(wrapped, "every chip fits at this width").toBe(0);
+});
+
+test("a narrow title bar folds Run script into its … and runs the script from there", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 700, height: 720 });
+  await page.goto("/t/t-flaky");
+  await addTestScript(page);
+  await expect(
+    page.getByTestId("pane-header").getByRole("button", { name: "Run script" }),
+  ).toBeHidden();
+  await page.getByTestId("titlebar-overflow").click();
+  const item = page.getByTestId("folded-script");
+  await expect(item).toHaveCount(1);
+  await expect(item).toHaveAttribute("title", "pnpm run test");
+  await item.click();
+  const tab = page
+    .getByTestId("right-panel")
+    .getByRole("tablist", { name: "Terminals" })
+    .getByRole("tab", { name: /^test/ });
+  await expect(tab).toHaveAttribute("data-run", "finished");
 });

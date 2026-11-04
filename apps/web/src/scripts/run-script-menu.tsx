@@ -33,7 +33,8 @@ export function RunScriptMenu({
 }: {
   threadId: ThreadId;
   projectId: ProjectId;
-  size?: "icon-sm" | "icon-xs";
+  /** `glyph` is the bare 16 px icon a crowded header has room for. */
+  size?: "icon-sm" | "icon-xs" | "glyph";
   /** On the trigger, e.g. to drop it from a narrow header. */
   className?: string | undefined;
   /**
@@ -57,16 +58,24 @@ export function RunScriptMenu({
         side="bottom"
         render={
           <Menu.Trigger
-            render={<Button size={size} variant="ghost" aria-label="Run script" />}
+            render={
+              <Button
+                size={size === "glyph" ? "icon-xs" : size}
+                variant="ghost"
+                aria-label="Run script"
+              />
+            }
             data-testid="run-script-menu"
             className={cn(
               "shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:text-foreground aria-expanded:text-foreground",
+              // As wide as the header's status glyph: every chip keeps its room.
+              size === "glyph" && "size-4 rounded-sm",
               className,
             )}
           />
         }
       >
-        <Play aria-hidden className={size === "icon-xs" ? "size-3" : "size-3.5"} />
+        <Play aria-hidden className={size === "icon-sm" ? "size-3.5" : "size-3"} />
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
@@ -127,5 +136,48 @@ export function RunScriptMenu({
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
+  );
+}
+
+/**
+ * The project's scripts as items of another menu, for the title bar's "…" once a narrow bar has
+ * folded the header's Run script into it. Nothing without scripts.
+ */
+export function RunScriptMenuItems({
+  threadId,
+  projectId,
+  itemClassName = ITEM,
+}: {
+  threadId: ThreadId;
+  projectId: ProjectId;
+  itemClassName?: string;
+}) {
+  const api = useApi();
+  const scripts = useProjectScripts(projectId).data?.scripts ?? [];
+  if (scripts.length === 0) return null;
+  return (
+    <Menu.Group data-testid="folded-scripts">
+      <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
+        Run script
+      </Menu.GroupLabel>
+      {scripts.map((script) => (
+        <Menu.Item
+          key={script.name}
+          data-testid="folded-script"
+          title={scriptCommandHint(script)}
+          className={itemClassName}
+          onClick={() => startScript(api, threadId, script.name)}
+        >
+          <Play aria-hidden />
+          <span className="truncate">{script.name}</span>
+          {script.shortcut !== undefined && (
+            <span className="ml-auto pl-4 text-xs text-muted-foreground">
+              {formatKeys(script.shortcut)}
+            </span>
+          )}
+        </Menu.Item>
+      ))}
+      <div role="separator" className="-mx-1 my-1 h-px bg-border" />
+    </Menu.Group>
   );
 }

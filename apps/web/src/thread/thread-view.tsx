@@ -55,6 +55,7 @@ import {
   WorkerNowChip,
 } from "@/orchestration/worker-header";
 import { RunScriptMenu } from "@/scripts/run-script-menu";
+import { Foldable } from "@/shell/foldable";
 import { loadEarlier, useThreadFeed } from "@/stores/feeds";
 import { useLayoutStore } from "@/stores/layout";
 import { useRevealStore } from "@/stores/reveal";
@@ -516,11 +517,11 @@ export function ThreadView({
           onLoadEarlier={() => void pageEarlier(true)}
         />
         {thread.role !== "orchestrator" && (
-          <RunScriptMenu
+          <HeaderRunScript
             threadId={threadId}
             projectId={thread.projectId}
-            className={hideSm}
-            onlyWithScripts
+            inTitlebar={inTitlebar}
+            hideClass={hideSm}
           />
         )}
         <ThreadMenu threadId={threadId} />
@@ -759,5 +760,38 @@ function ThreadGoneNotice({ threadId }: { threadId: ThreadId }) {
         Close
       </Button>
     </div>
+  );
+}
+
+/**
+ * The header's Run script, once the project has scripts: the bare glyph, so every chip keeps its
+ * room. In the title bar a narrow bar folds it into its "…" (`RunScriptMenuItems`) with the other
+ * lesser buttons; in a pane of a grid it drops below the container's small width.
+ */
+function HeaderRunScript({
+  threadId,
+  projectId,
+  inTitlebar,
+  hideClass,
+}: {
+  threadId: ThreadId;
+  projectId: Thread["projectId"];
+  inTitlebar: boolean;
+  hideClass: string;
+}) {
+  const menu = (
+    <RunScriptMenu
+      threadId={threadId}
+      projectId={projectId}
+      size="glyph"
+      onlyWithScripts
+      {...(inTitlebar ? {} : { className: hideClass })}
+    />
+  );
+  if (!inTitlebar) return menu;
+  return (
+    <Foldable level={1} gap={8}>
+      {menu}
+    </Foldable>
   );
 }
