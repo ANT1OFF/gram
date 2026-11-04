@@ -9,8 +9,6 @@ import { Fragment, useState } from "react";
 
 import { formatClockTime } from "@/lib/time";
 import { ExpandPresence } from "@/motion";
-import { limitSummaryText, resetText } from "@/usage/limit-format";
-import { tightestLimit, useUsageLimits } from "@/stores/usage-limits";
 
 import { PrChip, WorkerLink } from "./feature-card";
 
@@ -41,8 +39,9 @@ function Named({ lines }: { lines: readonly StreamLine[] }) {
 }
 
 /**
- * "Since you left", one card above the ask stack when you come back to the orchestrator: what
- * merged, what failed (and came back), how many asks wait and the tightest limit. Folded from the
+ * "Since you left", one line under the status header when you come back to the orchestrator: what
+ * merged and what failed (and came back) while you were away. The live state (running, waiting on
+ * you, the limits) is the header's; this keeps only the summary of the absence. Folded from the
  * digests the orchestrator was given while you were away, the same facts as its own `away` digest,
  * decided once as the view opens. Reading it changes nothing.
  */
@@ -56,16 +55,16 @@ export function SinceYouLeftCard({
   // Decided once, as the view opens; the caller keys this by thread, so another thread decides anew.
   const [opened] = useState<Opened>(() => ({ since: thread.lastViewedAt, at: Date.now() }));
   const [dismissed, setDismissed] = useState(false);
-  const limits = useUsageLimits((s) => s.limits);
   const since = opened.since;
   const now = opened.at;
-  // What arrives while you watch is in the stream; the card covers the time you were away.
+  // What arrives while you watch is in the stream; the line covers the time you were away.
   const summary = sinceYouLeftOf(
     digests.filter((delivered) => delivered.at <= now),
     since,
   );
-  const open = summary !== undefined && !dismissed;
-  const tightest = tightestLimit(limits, now);
+  // Only what happened: an absence with no merge and no failure needs no line.
+  const said = summary !== undefined && (summary.merged.length > 0 || summary.failed.length > 0);
+  const open = said && !dismissed;
   const recovered = new Set(summary?.recovered ?? []);
   return (
     <ExpandPresence open={open}>
@@ -73,60 +72,50 @@ export function SinceYouLeftCard({
         <section
           aria-label="Since you left"
           data-testid="since-you-left"
-          className="mx-auto mb-2 flex w-full max-w-(--thread-max-width) px-6"
+          className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1 text-xs"
         >
-          <div className="flex w-full max-w-2xl items-start gap-2 rounded-(--radius-md) border border-border bg-card/40 px-3 py-2 text-xs">
-            <History aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <p className="font-medium">
-                Since you left{" "}
-                <span className="font-normal text-muted-foreground tabular-nums">
-                  {since === undefined
-                    ? ""
-                    : `${formatClockTime(since)} to ${formatClockTime(now)}`}
+          <History aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <p className="flex min-w-0 flex-1 items-center gap-x-1 overflow-hidden whitespace-nowrap">
+            <span className="shrink-0 font-medium">Since you left</span>
+            {since !== undefined && (
+              <span className="shrink-0 text-muted-foreground tabular-nums">
+                {formatClockTime(since)} to {formatClockTime(now)}
+              </span>
+            )}
+            {summary.merged.length > 0 && (
+              <span data-testid="since-merged" className="flex min-w-0 items-center gap-1">
+                <span className="text-muted-foreground">·</span>
+                <span className="shrink-0">{summary.merged.length} merged:</span>
+                <span className="min-w-0 truncate">
+                  <Named lines={summary.merged} />
                 </span>
-              </p>
-              {summary.merged.length > 0 && (
-                <p data-testid="since-merged" className="flex flex-wrap items-center gap-1">
-                  {summary.merged.length} merged: <Named lines={summary.merged} />
-                </p>
-              )}
-              {summary.failed.map((line) => (
-                <p key={line.key} data-testid="since-failed" className="flex items-center gap-1">
-                  {line.feature !== "" && <span>{line.feature}</span>}
-                  {line.threadId !== undefined && (
-                    <WorkerLink threadId={line.threadId}>{line.title ?? "worker"}</WorkerLink>
-                  )}
-                  <span className="text-destructive">{line.words}</span>
-                  {line.threadId !== undefined && recovered.has(line.threadId) && (
-                    <span className="text-muted-foreground">, then fixed</span>
-                  )}
-                </p>
-              ))}
-              {summary.asksWaiting > 0 && (
-                <p data-testid="since-asks">
-                  {summary.asksWaiting} {summary.asksWaiting === 1 ? "ask waits" : "asks waiting"}{" "}
-                  below
-                </p>
-              )}
-              {tightest !== undefined && (
-                <p data-testid="since-limit" className="text-muted-foreground">
-                  {limitSummaryText(tightest)}
-                  {tightest.limit.resetsAt === undefined
-                    ? ""
-                    : `, resets ${resetText(tightest.limit.resetsAt, now)}`}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              aria-label="Dismiss"
-              className="shrink-0 rounded-sm p-0.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setDismissed(true)}
-            >
-              <X aria-hidden className="size-3.5" />
-            </button>
-          </div>
+              </span>
+            )}
+            {summary.failed.map((line) => (
+              <span key={line.key} data-testid="since-failed" className="flex items-center gap-1">
+                <span className="text-muted-foreground">·</span>
+                {line.threadId !== undefined ? (
+                  <WorkerLink threadId={line.threadId}>
+                    {line.title ?? (line.feature || "worker")}
+                  </WorkerLink>
+                ) : (
+                  line.feature !== "" && <span>{line.feature}</span>
+                )}
+                <span className="text-destructive">{line.words}</span>
+                {line.threadId !== undefined && recovered.has(line.threadId) && (
+                  <span className="text-muted-foreground">, then fixed</span>
+                )}
+              </span>
+            ))}
+          </p>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            className="flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setDismissed(true)}
+          >
+            <X aria-hidden className="size-3.5" />
+          </button>
         </section>
       )}
     </ExpandPresence>

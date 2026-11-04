@@ -754,3 +754,94 @@ const SEARCH_FILES: readonly DiffFile[] = [
     tooLarge: false,
   },
 ];
+
+/** What `simulateDigestStream` added to the realistic orchestrator's transcript. */
+export interface MockDigestStream {
+  /** The digests it delivered, oldest first. */
+  readonly digests: number;
+  /** The one that merged something, which the quiet stream never folds. */
+  readonly mergedAt: number;
+}
+
+/**
+ * Dev and screenshot hook, over the realistic scenario: a release afternoon as a live
+ * orchestrator's chat gets it, a long run of digests that changed nothing for the user, each with
+ * the orchestrator's "nothing is needed from you" reply, and one merge in the middle. What the
+ * quiet stream folds, and what "Show all activity" brings back.
+ */
+export function simulateDigestStream(
+  scenes: MockScenes,
+  made: Pick<MockRealisticSimulation, "workspaceId" | "orchestratorThreadId" | "searchWorker">,
+): MockDigestStream {
+  const { host, find, buildLedger, digestMessage } = scenes;
+  const now = Date.now();
+  const ledger = buildLedger(find(made.workspaceId));
+  const search = host.threads().find((thread) => thread.id === made.searchWorker);
+  const steps = [
+    "The release build is compiling. Nothing is needed from you.",
+    "Nothing is needed from you. The release build is about 9 minutes in, with no failures so far.",
+    "Still building, 12 minutes in with no failures. Nothing is needed from you.",
+    "Still building, 16 minutes in with no failures. Nothing is needed from you.",
+    "Clippy passed about 19 minutes into the release build, and the ARM build is still going. Nothing is needed from you.",
+    "The release build is 23 minutes in. The Python tests (2,253) and the first deploy guards passed. Still to run: the remaining guards, the Rust tests and the ARM build.",
+    "The remaining deploy guards passed. The Rust tests are running. Nothing is needed from you.",
+    "The Rust tests passed. Only the ARM build is left. Nothing is needed from you.",
+    "Still on the ARM build, about 31 minutes in. Nothing is needed from you.",
+    "The ARM build is linking. Nothing is needed from you.",
+  ];
+  const mergedAfter = 5;
+  let generation = 900;
+  // Half a minute apart, after the morning's last reply and ending just now: the newest is the one
+  // the update's line reads.
+  const total = steps.length + 1;
+  const at = (index: number) => now - (total - index) * 30_000;
+  let index = 0;
+  const put = (message: GramUIMessage, when: number) =>
+    host.putMessage(made.orchestratorThreadId, {
+      ...message,
+      metadata: { ...message.metadata, createdAt: when },
+    });
+  const deliver = (changes: readonly DigestChange[], reason: string) => {
+    const facts: OrchestrationDigest = {
+      kind: "orchestration",
+      variant: "digest",
+      generation: ++generation,
+      workspaceId: made.workspaceId,
+      workspaceName: "Gram",
+      reasons: [reason],
+      changes,
+      reports: [],
+      features: ledger.features,
+      ...(ledger.groups === undefined ? {} : { groups: ledger.groups }),
+      budget: ledger.budget,
+      notes: [],
+    };
+    put(digestMessage(facts), at(index));
+  };
+  const reply = (said: string) =>
+    put(
+      {
+        id: host.ids(),
+        role: "assistant",
+        metadata: { createdAt: at(index) + 10_000, agent: "claude", model: "opus" },
+        parts: [{ type: "step-start" }, text(said)],
+      },
+      at(index) + 10_000,
+    );
+  let mergedAt = 0;
+  for (const [step, said] of steps.entries()) {
+    if (step === mergedAfter && search !== undefined) {
+      mergedAt = at(index);
+      deliver([mergedChange(search, "settings-search")], "wake: merge");
+      reply(
+        `**[#142](${prUrl("example/gram", 142)}) merged.** Search in Settings is on main. The release build goes on.`,
+      );
+      index += 1;
+    }
+    deliver([], "wake: release build");
+    reply(said);
+    index += 1;
+  }
+  host.emit({ type: "orchestration.changed", workspaceId: made.workspaceId });
+  return { digests: index, mergedAt };
+}

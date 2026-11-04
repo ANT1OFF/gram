@@ -68,6 +68,19 @@ export const openRealisticOrchestrator = async (page: Page) => {
   return made;
 };
 
+/**
+ * The realistic orchestrator after a long release afternoon (`simulateDigestStream`): a run of
+ * digests that changed nothing for the user and one merge, at the end of its transcript.
+ */
+const openLongDay = async (page: Page) => {
+  await openRealisticOrchestrator(page);
+  await page.evaluate(() => window.gramMock!.simulateDigestStream());
+  await expect(
+    page.locator('[data-testid="update-block"][data-quiet="true"]').last(),
+  ).toBeVisible();
+  await page.waitForTimeout(600);
+};
+
 const existing = (name: string): Shot["open"] => {
   const shot = SHOTS.find((candidate) => candidate.name === name);
   if (!shot) throw new Error(`tour: missing shot ${name}`);
@@ -332,6 +345,24 @@ const scenes: readonly Shot[] = [
     title: "New workspace: repositories, goal, and autonomy",
     open: existing("new-workspace"),
   }),
+  {
+    name: "orchestrator-long-day",
+    title:
+      "Orchestrator, later the same day: a release build's quiet digests fold into one update; the merge stands",
+    open: async (page) => {
+      await openLongDay(page);
+    },
+  },
+  {
+    name: "orchestrator-all-activity",
+    title: "The same chat with Show all activity on: every digest and reply, as it was sent",
+    open: async (page) => {
+      await openLongDay(page);
+      await page.getByTestId("status-all-activity").click();
+      await expect(page.getByTestId("status-all-activity")).toHaveAttribute("aria-checked", "true");
+      await page.waitForTimeout(600);
+    },
+  },
   // Stress tests: every state at once, over the fixture workspaces. Not what a working day looks like.
   {
     name: "stress-many-asks",

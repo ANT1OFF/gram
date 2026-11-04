@@ -1,6 +1,8 @@
 import type { FeatureCard, GramUIMessage, Thread, ThreadId } from "@gram/contracts";
 import { createContext, use, useMemo, type ReactNode } from "react";
 
+import { useAllActivity } from "@/stores/all-activity";
+
 import { FeatureCardView } from "./feature-card";
 import { planStream, type StreamPlan } from "./stream-model";
 import { UpdateBlock } from "./update-block";
@@ -29,7 +31,12 @@ const OrchestratorStreamContext = createContext<OrchestratorStream | undefined>(
 export const useOrchestratorStreamContext = () => use(OrchestratorStreamContext);
 
 const NO_STREAM_CARDS: readonly FeatureCard[] = [];
-const NO_PLAN: StreamPlan = { messages: [], extras: new Map(), digests: [] };
+const NO_PLAN: StreamPlan = {
+  messages: [],
+  extras: new Map(),
+  digests: [],
+  foldedInto: new Map(),
+};
 
 /** The calm stream of an orchestrator thread: `messages` less its folded digests, and what goes with each. */
 export function useOrchestratorStream(
@@ -39,9 +46,11 @@ export function useOrchestratorStream(
   const orchestrator = thread?.role === "orchestrator";
   const cards = useFeatureCards(orchestrator ? thread.workspaceId : undefined);
   const shown = orchestrator ? cards : NO_STREAM_CARDS;
+  // Quiet unless the user asked for all of it: what changed nothing for them folds into its update.
+  const all = useAllActivity((s) => thread !== undefined && s.shown.has(thread.id));
   const plan = useMemo(
-    () => (orchestrator ? planStream(messages, shown) : NO_PLAN),
-    [orchestrator, messages, shown],
+    () => (orchestrator ? planStream(messages, shown, { quiet: !all }) : NO_PLAN),
+    [orchestrator, messages, shown, all],
   );
   const byFeature = useMemo(() => new Map(shown.map((card) => [card.feature, card])), [shown]);
   // Keyed by the names alone, so a card's new version doesn't re-render every message's markdown.
@@ -82,7 +91,14 @@ export function OrchestratorStreamProvider({
  * The update and cards that go with one message of the orchestrator's stream; nothing elsewhere.
  * A run of digests is one update block, its live cards beneath it.
  */
-export function StreamExtrasView({ messageId }: { messageId: string }) {
+export function StreamExtrasView({
+  messageId,
+  renderReply,
+}: {
+  messageId: string;
+  /** Draws a reply a quiet update folds, as the transcript draws a message. */
+  renderReply?: (reply: GramUIMessage) => ReactNode;
+}) {
   const stream = useOrchestratorStreamContext();
   const extras = stream?.plan.extras.get(messageId);
   if (stream === undefined || extras === undefined) return null;
@@ -90,7 +106,12 @@ export function StreamExtrasView({ messageId }: { messageId: string }) {
     stream.workers.find((worker) => worker.threadId === threadId)?.title;
   return (
     <div data-testid="stream-extras" className="flex flex-col gap-1.5">
-      <UpdateBlock lines={extras.lines} digests={extras.digests} />
+      <UpdateBlock
+        lines={extras.lines}
+        digests={extras.digests}
+        replies={extras.replies}
+        renderReply={renderReply}
+      />
       {extras.cards.map((feature) => {
         const card = stream.cards.get(feature);
         return card === undefined ? null : (

@@ -9,7 +9,13 @@ import type {
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { digestLineWords, planStream, spawnedFeatures, updateWords } from "./stream-model";
+import {
+  digestLineWords,
+  planStream,
+  replyPreview,
+  spawnedFeatures,
+  updateWords,
+} from "./stream-model";
 
 const W = "w-1" as WorkspaceId;
 const A = "t-a" as ThreadId;
@@ -284,5 +290,162 @@ describe("the calm stream", () => {
     );
     expect(calm.needsYou).toBe(false);
     expect(calm.counts.map((count) => count.text)).toEqual(["1 merged"]);
+  });
+});
+
+/** The orchestrator's words, as a reply says them. */
+const reply = (id: string, at: number, text: string): GramUIMessage => ({
+  id,
+  role: "assistant",
+  metadata: { createdAt: at },
+  parts: [{ type: "text", text }],
+});
+
+/** A digest whose worker merged #431: something the user should read. */
+const mergedDigest = (generation: number) =>
+  digest(generation, {
+    changes: [
+      {
+        threadId: A,
+        feature: "rate-headers",
+        title: "Queue worker",
+        from: "readyToMerge",
+        to: "merged",
+      },
+    ],
+    features: [
+      feature("rate-headers", [
+        worker({
+          state: "merged",
+          pr: { repo: "acme/api", number: 431, state: "merged", checks: "passing" },
+        }),
+      ]),
+    ],
+  });
+
+describe("the quiet stream", () => {
+  const ids = (messages: readonly GramUIMessage[]) => messages.map((message) => message.id);
+
+  it("folds digests that changed nothing for the user, and the replies to them, into one update", () => {
+    const messages = [
+      said("u1", 1, "user"),
+      reply("a1", 2, "Started the release build."),
+      digestMessage("d1", 3, digest(1)),
+      reply("r1", 4, "Nothing is needed from you. Still building, 12 minutes in."),
+      digestMessage("d2", 5, digest(2)),
+      reply("r2", 6, "Still building, 16 minutes in."),
+      digestMessage("d3", 7, digest(3)),
+      reply("r3", 8, "**The release build** is 23 minutes in. Nothing is needed from you."),
+    ];
+    const plan = planStream(messages, [], { quiet: true });
+    // The user's message and the reply to it stand; three digests and their replies are one line.
+    expect(ids(plan.messages)).toEqual(["u1", "a1", "d3"]);
+    const update = plan.extras.get("d3");
+    expect(update?.digests.map((each) => each.message.id)).toEqual(["d1", "d2", "d3"]);
+    expect(update?.replies?.map((each) => each.id)).toEqual(["r1", "r2", "r3"]);
+    // Nothing is lost: every folded message says where it went.
+    expect([...plan.foldedInto]).toEqual([
+      ["d1", "d3"],
+      ["r1", "d3"],
+      ["d2", "d3"],
+      ["r2", "d3"],
+      ["r3", "d3"],
+    ]);
+    expect(replyPreview(update?.replies)).toBe(
+      "The release build is 23 minutes in. Nothing is needed from you.",
+    );
+  });
+
+  it("keeps every digest and reply as it was with all activity shown", () => {
+    const messages = [
+      digestMessage("d1", 1, digest(1)),
+      reply("r1", 2, "Still building."),
+      digestMessage("d2", 3, digest(2)),
+      reply("r2", 4, "Still building."),
+    ];
+    const plan = planStream(messages, [], { quiet: false });
+    expect(ids(plan.messages)).toEqual(["d1", "r1", "d2", "r2"]);
+    expect(plan.extras.get("d2")?.replies).toBeUndefined();
+    expect(plan.foldedInto.size).toBe(0);
+  });
+
+  it("never folds a merge, a failure, a question or the reply to one", () => {
+    const failed = digest(3, {
+      changes: [{ threadId: A, feature: "f", title: "Queue worker", from: "working", to: "error" }],
+      features: [feature("f", [worker({ state: "error" })])],
+    });
+    const asks = digest(4, {
+      changes: [
+        { threadId: A, feature: "f", title: "Queue worker", from: "error", to: "question" },
+      ],
+      features: [feature("f", [worker({ state: "question" })])],
+    });
+    const messages = [
+      digestMessage("d1", 1, digest(1)),
+      reply("r1", 2, "Still building."),
+      digestMessage("d2", 3, mergedDigest(2)),
+      reply("r2", 4, "#431 merged."),
+      digestMessage("d3", 5, failed),
+      reply("r3", 6, "The queue worker stopped on an error."),
+      digestMessage("d4", 7, asks),
+      reply("r4", 8, "It asks you which retry policy to keep."),
+      digestMessage("d5", 9, digest(5)),
+      reply("r5", 10, "Still going."),
+    ];
+    const plan = planStream(messages, [], { quiet: true });
+    expect(ids(plan.messages)).toEqual(["d1", "d2", "r2", "d3", "r3", "d4", "r4", "d5"]);
+    expect(plan.extras.get("d1")?.replies?.map((each) => each.id)).toEqual(["r1"]);
+    expect(plan.extras.get("d2")?.replies).toBeUndefined();
+    expect(plan.extras.get("d5")?.replies?.map((each) => each.id)).toEqual(["r5"]);
+  });
+
+  it("never folds a boot or away digest, nor a reply that asks the user", () => {
+    const asking: GramUIMessage = {
+      id: "r3",
+      role: "assistant",
+      metadata: { createdAt: 6 },
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolName: "mcp__gram__ask_user",
+          toolCallId: "call-ask",
+          state: "input-available",
+          input: { question: "Ship it?" },
+        },
+      ],
+    };
+    const messages = [
+      digestMessage("d1", 1, digest(1, { variant: "boot" })),
+      reply("r1", 2, "Here is where things stand."),
+      digestMessage("d2", 3, digest(2, { variant: "away", userAwayMinutes: 40 })),
+      reply("r2", 4, "While you were away: nothing failed."),
+      digestMessage("d3", 5, digest(3)),
+      asking,
+    ];
+    const plan = planStream(messages, [], { quiet: true });
+    expect(ids(plan.messages)).toEqual(["d1", "r1", "d2", "r2", "d3", "r3"]);
+    expect(plan.foldedInto.size).toBe(0);
+  });
+
+  it("takes a folded reply's cards along to the update", () => {
+    const messages = [
+      digestMessage("d1", 1, digest(1)),
+      spawning("s1", 2, "rate-headers"),
+      said("u1", 3, "user"),
+    ];
+    const plan = planStream(messages, [card("rate-headers")], { quiet: true });
+    expect(ids(plan.messages)).toEqual(["d1", "u1"]);
+    expect(plan.extras.get("d1")?.cards).toEqual(["rate-headers"]);
+    expect(plan.extras.get("s1")).toBeUndefined();
+  });
+
+  it("previews a reply's first line in plain words, and says nothing for a reply with no text", () => {
+    expect(
+      replyPreview([reply("r", 1, "\n## Status\n[#431](https://example.test/431) **merged**.")]),
+    ).toBe("Status");
+    expect(replyPreview([reply("r", 1, "- `ci` is green")])).toBe("ci is green");
+    expect(replyPreview([spawning("s", 1, "f")])).toBeUndefined();
+    expect(replyPreview([reply("a", 1, "Older."), spawning("s", 2, "f")])).toBe("Older.");
+    expect(replyPreview([reply("r", 1, "x".repeat(400))])?.length).toBe(160);
   });
 });
