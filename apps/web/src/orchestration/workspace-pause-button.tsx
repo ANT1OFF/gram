@@ -57,7 +57,13 @@ export function TitlebarPause({ className }: { className?: string }) {
   return <PausedPill key={state.workspace.id} state={state} className={className} />;
 }
 
-function PausedPill({ state, className }: { state: WorkspaceState; className?: string }) {
+function PausedPill({
+  state,
+  className,
+}: {
+  state: WorkspaceState;
+  className?: string | undefined;
+}) {
   const { busy, run } = useWorkspacePause(state);
   const paused = state.paused!;
   const label = `${pauseText(paused)} since ${pauseClock(paused.at)}. Resume orchestration`;
