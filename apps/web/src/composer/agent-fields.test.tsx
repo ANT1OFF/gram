@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -379,6 +379,52 @@ describe("AgentFields effort", () => {
     renderWithApi(<AgentFields value={choice} onChange={() => {}} />, mockApi());
     const labelled = await screen.findByRole("combobox", { name: "Effort" });
     expect(labelled.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
+  });
+});
+
+describe("AgentFields model list", () => {
+  it("lists every agent's models in the prompt box, and picking Codex's switches to Codex", async () => {
+    const user = userEvent.setup();
+    const api = mockApi(["claude", "codex"]);
+    await api.removeProfile(LITELLM);
+    const onChange = vi.fn();
+    renderWithApi(
+      <AgentFields ghost value={{ agent: "claude", model: "opus" }} onChange={onChange} />,
+      api,
+    );
+    const picker = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => expect(picker.textContent).toContain("Claude Opus"));
+    await user.click(picker);
+    const search = screen.getByRole("combobox", { name: "Search models" });
+    await waitFor(() => expect(document.activeElement).toBe(search));
+    // A heading per agent, each with its own models.
+    const list = within(screen.getByTestId("model-picker"));
+    expect(await list.findByText("Codex")).toBeTruthy();
+    expect(list.getByText("Claude Code")).toBeTruthy();
+    await user.type(search, "codex");
+    await waitFor(() =>
+      expect(screen.getAllByRole("option").every((o) => !o.textContent?.includes("Claude"))).toBe(
+        true,
+      ),
+    );
+    await user.keyboard("{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith({
+      agent: "codex",
+      model: "gpt-5.5",
+      speed: "standard",
+    });
+  });
+
+  it("leaves the other agent unasked until the list opens", async () => {
+    const api = mockApi(["claude", "codex"]);
+    const listing = vi.spyOn(api, "listModels");
+    renderWithApi(
+      <AgentFields ghost value={{ agent: "claude", model: "opus" }} onChange={() => {}} />,
+      api,
+    );
+    await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => expect(listing).toHaveBeenCalledWith("claude"));
+    expect(listing.mock.calls.some(([agent]) => agent === "codex")).toBe(false);
   });
 });
 

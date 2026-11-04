@@ -2,16 +2,16 @@ import { Combobox } from "@base-ui/react/combobox";
 import { CheckIcon, ChevronDownIcon, Search, Star } from "lucide-react";
 import { useRef, type ReactNode } from "react";
 
+import { Hint } from "@/components/hint";
 import { keyLabel } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
+import { PulseOnce, Swap } from "@/motion";
 
 import { matchesModel, modelGroups, type ModelGroup } from "./models";
+import type { PickerOption } from "./picker";
+import { usePickConfirm } from "./picker-trigger";
 
-interface Option {
-  value: string;
-  label: string;
-  description?: string | undefined;
-}
+type Option = PickerOption<string>;
 
 const NO_FAVOURITES = () => false;
 
@@ -19,10 +19,11 @@ const ROW =
   "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground";
 
 /**
- * The model picker once the list is long: a search box over the models, favourites first, each row
- * with the agent's mark, its description and a star. The trigger is the toolbar's ghost control,
- * like every other picker, or a form's select for `field`. <kbd>⇧↵</kbd> stars the highlighted
- * model; without `favourite` there are no stars.
+ * The model picker: a search box over the models, favourites first, then a section per agent or
+ * gateway (and Custom), each row with its agent's mark, its description and a star. The trigger is
+ * the toolbar's ghost control, like every other picker, or a form's select for `field`. Typing
+ * filters by name and provider, ↑↓ move, <kbd>↵</kbd> picks, <kbd>⇧↵</kbd> stars the highlighted
+ * model and <kbd>Esc</kbd> closes; without `onToggleFavourite` there are no stars.
  */
 export function ModelCombobox({
   label,
@@ -34,6 +35,7 @@ export function ModelCombobox({
   icon,
   rowIcon,
   title,
+  tip,
   description,
   warning,
   labelled,
@@ -48,9 +50,11 @@ export function ModelCombobox({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   icon: ReactNode;
-  /** The mark beside each row: the agent the model runs on. */
+  /** The mark beside each row: the agent the model runs on, unless the option has its own. */
   rowIcon?: ReactNode;
   title: string;
+  /** The glyph's tooltip while it stands alone (`labelled` false), as the toolbar's other pickers. */
+  tip?: string | undefined;
   description: string | undefined;
   /** Tints the trigger amber, as the compact picker does; `title` carries the reason. */
   warning?: string | undefined;
@@ -62,14 +66,47 @@ export function ModelCombobox({
 }) {
   const highlighted = useRef<Option | undefined>(undefined);
   const groups = modelGroups(options, favourite);
+  // A single unnamed section needs no heading; an agent's or a gateway's name always says whose.
+  const headed = groups.length > 1 || options.some((option) => option.group !== undefined);
   const selected = options.find((option) => option.value === value);
+  const confirm = usePickConfirm(value);
+  const shown = selected?.label ?? label;
+
+  const triggerProps = {
+    "aria-label": labelled ? label : `${label}: ${shown}`,
+    "aria-description": description,
+    title: labelled ? title : undefined,
+    "data-warning": warning ? "true" : undefined,
+    className: cn(
+      field
+        ? "flex h-8 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-muted"
+        : "flex h-7 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-[min(var(--radius-md),10px)] border border-transparent bg-transparent px-2 text-xs font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none select-none hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[popup-open]:bg-accent",
+      warning && "text-warning hover:text-warning",
+    ),
+  };
+  const glyph = icon !== undefined && icon !== null && icon !== false && (
+    <PulseOnce trigger={confirm.landed} when={confirm.landed > 0}>
+      <Swap swapKey={value}>{icon}</Swap>
+    </PulseOnce>
+  );
+  const triggerContent = (
+    <>
+      {glyph}
+      <span data-toolbar-label className={cn("min-w-0 truncate", !labelled && "sr-only")}>
+        {shown}
+      </span>
+      <ChevronDownIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+    </>
+  );
 
   return (
     <Combobox.Root<Option>
       items={groups as unknown as Option[]}
       value={selected ?? null}
       onValueChange={(next) => {
-        if (next) onChange(next.value);
+        if (!next) return;
+        confirm.pick(next.value);
+        onChange(next.value);
       }}
       open={open}
       onOpenChange={(next) => onOpenChange(next)}
@@ -81,24 +118,14 @@ export function ModelCombobox({
         highlighted.current = option;
       }}
     >
-      <Combobox.Trigger
-        aria-label={label}
-        aria-description={description}
-        title={title}
-        data-warning={warning ? "true" : undefined}
-        className={cn(
-          field
-            ? "flex h-8 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-muted"
-            : "flex h-7 w-fit items-center gap-1.5 rounded-[min(var(--radius-md),10px)] border border-transparent bg-transparent px-2 text-xs font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none select-none hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[popup-open]:bg-accent",
-          warning && "text-warning hover:text-warning",
-        )}
-      >
-        {icon}
-        <span data-toolbar-label className={cn("min-w-0 truncate", !labelled && "sr-only")}>
-          {selected?.label ?? label}
-        </span>
-        <ChevronDownIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-      </Combobox.Trigger>
+      {labelled ? (
+        <Combobox.Trigger {...triggerProps}>{triggerContent}</Combobox.Trigger>
+      ) : (
+        // A native title would wait a second before saying what the glyph means.
+        <Hint label={tip ?? `${label}: ${shown}`} render={<Combobox.Trigger {...triggerProps} />}>
+          {triggerContent}
+        </Hint>
+      )}
       <Combobox.Portal>
         <Combobox.Positioner
           side={field ? "bottom" : "top"}
@@ -135,9 +162,8 @@ export function ModelCombobox({
             <Combobox.List className="max-h-[min(20rem,var(--available-height))] overflow-y-auto overscroll-contain p-1 empty:p-0">
               {(group: ModelGroup) => (
                 <Combobox.Group key={group.label} items={group.items as Option[]}>
-                  {/* A single section needs no heading: favourites are what make two. */}
-                  {groups.length > 1 && (
-                    <Combobox.GroupLabel className="px-2 pt-1.5 pb-1 text-[11px] font-medium text-muted-foreground">
+                  {headed && (
+                    <Combobox.GroupLabel className="px-2 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
                       {group.label}
                     </Combobox.GroupLabel>
                   )}
@@ -146,9 +172,12 @@ export function ModelCombobox({
                       const starred = favourite(option.value);
                       return (
                         <Combobox.Item key={option.value} value={option} className={ROW}>
-                          {rowIcon !== undefined && (
-                            <span aria-hidden className="flex size-4 shrink-0 items-center">
-                              {rowIcon}
+                          {(option.icon ?? rowIcon) !== undefined && (
+                            <span
+                              aria-hidden
+                              className="flex size-4 shrink-0 items-center text-muted-foreground"
+                            >
+                              {option.icon ?? rowIcon}
                             </span>
                           )}
                           <span className="flex min-w-0 flex-1 flex-col">
@@ -178,8 +207,9 @@ export function ModelCombobox({
                               )}
                               className={cn(
                                 "grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:text-foreground",
+                                // Every row shows its star, faint until the row is under the pointer.
                                 !starred &&
-                                  "opacity-0 group-hover/row:opacity-100 group-data-[highlighted]/row:opacity-100",
+                                  "opacity-40 group-hover/row:opacity-100 group-data-[highlighted]/row:opacity-100",
                               )}
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={(event) => {

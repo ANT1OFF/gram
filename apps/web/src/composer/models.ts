@@ -1,4 +1,5 @@
 import {
+  CUSTOM_MODEL_DESCRIPTION,
   GATEWAY_UNLISTED_WARNING,
   type AgentKind,
   type AgentModel,
@@ -8,6 +9,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
+import { agentLabel } from "@/agents/agent-label";
 import { useApi } from "@/api/context";
 
 import { DEFAULT_MODEL_OPTIONS, EFFORT_OPTIONS } from "./options";
@@ -71,6 +73,21 @@ export function useRefreshModels(agent: AgentKind, profileId?: ProfileId): () =>
   }, [queryClient, agent, profileId]);
 }
 
+/**
+ * The model picker's section for what `agent` lists through `profileId`: the agent's name on the
+ * user's own subscription, else the gateway profile's.
+ */
+export function useProviderLabel(agent: AgentKind, profileId: ProfileId | undefined): string {
+  const api = useApi();
+  const { data: profiles } = useQuery({
+    queryKey: ["profiles"],
+    queryFn: () => api.listProfiles(),
+    enabled: profileId !== undefined,
+  });
+  if (profileId === undefined) return agentLabel(agent);
+  return profiles?.find((profile) => profile.id === profileId)?.name ?? "Gateway";
+}
+
 /** What the picker says of a thread's model its gateway doesn't offer (or no longer does). */
 export const NOT_LISTED_BY_GATEWAY = GATEWAY_UNLISTED_WARNING;
 
@@ -118,23 +135,35 @@ export const unlistedWarning = (
         ? NOT_LISTED_BY_CODEX
         : undefined;
 
+/** The section a model the user added in Settings lists under, past the agents' own. */
+export const CUSTOM_GROUP = "Custom";
+
 /**
  * Picker options from the server's models, else `fallback` (the built-in Claude list); always
  * includes `current`, described as `unlisted` when the server's models lack it. A model's warning
- * stands in for its description.
+ * stands in for its description. With `group` (the agent or gateway the list comes from), each
+ * option lists under it, and a model added in Settings under `CUSTOM_GROUP`.
  */
 export function modelOptions(
   models: readonly AgentModel[] | undefined,
   current: string | undefined,
   fallback: readonly PickerOption<string>[] = DEFAULT_MODEL_OPTIONS,
   unlisted?: string,
+  group?: string,
 ): PickerOption<string>[] {
+  const inGroup = (custom: boolean) =>
+    group === undefined ? {} : { group: custom ? CUSTOM_GROUP : group };
   const options: PickerOption<string>[] = models
     ? models.map((m) => {
         const description = m.warning ?? m.description;
-        return { value: m.id, label: m.displayName, ...(description ? { description } : {}) };
+        return {
+          value: m.id,
+          label: m.displayName,
+          ...(description ? { description } : {}),
+          ...inGroup(m.description === CUSTOM_MODEL_DESCRIPTION && m.warning === undefined),
+        };
       })
-    : [...fallback];
+    : fallback.map((option) => ({ ...option, ...inGroup(false) }));
   if (current && !options.some((o) => o.value === current)) {
     options.push({
       value: current,
@@ -142,6 +171,7 @@ export function modelOptions(
       ...(models && unlisted !== undefined && !isOffered(models, current)
         ? { description: unlisted }
         : {}),
+      ...inGroup(false),
     });
   }
   return options;
@@ -207,7 +237,7 @@ export const effortsUnlisted = (
 export const defaultModelId = (models: readonly AgentModel[] | undefined): string | undefined =>
   (models?.find((m) => m.isDefault) ?? models?.[0])?.id;
 
-/** Past this many models the composer's model picker searches, and offers favourites. */
+/** Past this many models a Settings model picker searches; the composer's always does. */
 export const MODEL_SEARCH_THRESHOLD = 8;
 
 export interface ModelGroup {
@@ -215,23 +245,45 @@ export interface ModelGroup {
   readonly items: readonly PickerOption<string>[];
 }
 
-/** The searching picker's sections: favourites first, then the rest, each in the list's order. */
+/** The section of an option without a `group`, and the whole list's when no option has one. */
+const UNGROUPED = "Models";
+
+/**
+ * The searching picker's sections: favourites first, then the rest by their `group` (the agent or
+ * gateway, or Custom), each section where its first model is in the list, in the list's order.
+ * Without groups the rest are one section, "Other models" below favourites.
+ */
 export function modelGroups(
   options: readonly PickerOption<string>[],
   favourite: (value: string) => boolean,
 ): ModelGroup[] {
   const starred = options.filter((option) => favourite(option.value));
   const rest = options.filter((option) => !favourite(option.value));
-  if (starred.length === 0) return [{ label: "Models", items: rest }];
+  const grouped = options.some((option) => option.group !== undefined);
+  const sections = new Map<string, PickerOption<string>[]>();
+  for (const option of rest) {
+    const label = grouped
+      ? (option.group ?? UNGROUPED)
+      : starred.length > 0
+        ? "Other models"
+        : UNGROUPED;
+    const section = sections.get(label);
+    if (section) section.push(option);
+    else sections.set(label, [option]);
+  }
   return [
-    { label: "Favourites", items: starred },
-    ...(rest.length > 0 ? [{ label: "Other models", items: rest }] : []),
+    ...(starred.length > 0 ? [{ label: "Favourites", items: starred }] : []),
+    ...[...sections].map(([label, items]) => ({ label, items })),
   ];
 }
 
-/** Whether every word of `query` is in the model's name, id or description, ignoring case. */
+/**
+ * Whether every word of `query` is in the model's name, id, description or group (its agent or
+ * gateway), ignoring case.
+ */
 export function matchesModel(option: PickerOption<string>, query: string): boolean {
-  const haystack = `${option.label} ${option.value} ${option.description ?? ""}`.toLowerCase();
+  const haystack =
+    `${option.label} ${option.value} ${option.description ?? ""} ${option.group ?? ""}`.toLowerCase();
   return query
     .toLowerCase()
     .split(/\s+/)

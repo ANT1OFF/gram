@@ -85,6 +85,7 @@ import {
   modelOptions,
   unlistedWarning,
   useModels,
+  useProviderLabel,
   useRefreshModels,
 } from "./models";
 import { MODE_ICONS, MODE_OPTIONS } from "./options";
@@ -809,11 +810,13 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   const models = useModels(model?.agent ?? "claude", model?.profileId);
   // Claude's built-in list is no fallback for a gateway agent's models.
   const refreshModels = useRefreshModels(model?.agent ?? "claude", model?.profileId);
+  const provider = useProviderLabel(model?.agent ?? "claude", model?.profileId);
   const modelChoices = modelOptions(
     models,
     model?.model ?? summary?.identity?.model,
     model && model.agent !== "claude" ? [] : undefined,
     unlistedWarning(model?.agent ?? "claude", model?.profileId),
+    provider,
   );
   const efforts = effortOptions(models, model?.model);
   const modelWarning =
