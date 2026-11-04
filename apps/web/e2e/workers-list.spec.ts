@@ -56,7 +56,7 @@ test("⌘J lists every worker by section and feature, and opens one in two steps
   await expect(row(page, made.live).getByTestId("worker-now")).toHaveText("running tests");
   await expect(row(page, made.live)).toContainText("api");
   await expect(row(page, made.asking).getByTestId("worker-now")).toHaveText("asked a question");
-  await expect(row(page, made.held).getByLabel("You hold it")).toBeVisible();
+  await expect(row(page, made.held).getByLabel("You took over")).toBeVisible();
   for (const line of await list(page).getByTestId("worker-now").allTextContents()) {
     // " · " joins a wait's word to what it waits on (`waitLabel`): punctuation, not a word.
     const words = line
@@ -253,7 +253,7 @@ test("watching a worker never holds it; a message does, and Hand back returns it
   await composer.fill("Use seconds.");
   await page.keyboard.press("ControlOrMeta+Enter");
   const hold = page.getByTestId("worker-hold");
-  await expect(hold).toContainText("You hold it");
+  await expect(hold).toContainText("You took over");
   expect(await isHeld(page, made, made.asking)).toBe(true);
 
   // Hand back clears it.

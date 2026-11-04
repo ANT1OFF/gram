@@ -191,9 +191,9 @@ describe("merge marks", () => {
     [
       { intent: { hold: "after the release", heldBy: "orchestrator" } },
       "held",
-      "Merge held by the orchestrator: after the release",
+      "Merge paused by the orchestrator: after the release",
     ],
-    [{ intent: { hold: "until Monday" } }, "held", "Merge held: until Monday"],
+    [{ intent: { hold: "until Monday" } }, "held", "Merge paused: until Monday"],
     [
       { intent: { after: [{ repo: "acme/api", number: 9 }] } },
       "waiting",
@@ -241,7 +241,7 @@ describe("merge marks", () => {
       kind: "conflicts",
       word: "Conflicts",
       detail:
-        "Conflicts with main\nMerge held: after the release\nMerges after acme/api#9\nMerges when ready",
+        "Conflicts with main\nMerge paused: after the release\nMerges after acme/api#9\nMerges when ready",
     });
   });
 

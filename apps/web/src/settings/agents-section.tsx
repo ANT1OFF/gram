@@ -69,10 +69,14 @@ export function AgentsSection() {
   const resetOf = (key: AgentsKey) => resetFor(settings, applyTo(key))(AGENTS_DEFAULTS[key]);
 
   return (
-    <SettingsGroup label="New threads" testId="agent-settings">
+    <SettingsGroup
+      label="New threads"
+      description="The agent and model a new thread starts on."
+      testId="agent-settings"
+    >
       <SettingRow
         label="Default agent and model"
-        description="What a new thread starts on. You can still pick another in /new."
+        description="What a new thread starts on. You can pick another in /new."
         onReset={resetOf("defaultModel")}
         error={errorOf("defaultModel")}
         detail={

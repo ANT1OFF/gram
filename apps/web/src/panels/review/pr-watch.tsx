@@ -80,8 +80,8 @@ export function PrWatch({
       >
         <TogglePill
           on={on}
-          label="Babysit this PR"
-          title="Fix CI and review findings round by round until the PR is ready to merge"
+          label="Watch this PR"
+          title="Fix failing checks and review findings, round by round, until the PR is ready to merge"
           disabled={pending}
           onToggle={() =>
             void action.run(async () => {
@@ -92,12 +92,12 @@ export function PrWatch({
             })
           }
         >
-          Babysit
+          Watch PR
         </TogglePill>
         <TogglePill
           on={reviewMonitor}
           label="Watch reviews"
-          title={on ? "Babysit relies on this; turn babysit off first" : REVIEWS_HINT}
+          title={on ? "Watch PR relies on this; turn Watch PR off first" : REVIEWS_HINT}
           // Babysitting relies on the monitor; turn babysit off first.
           disabled={pending || on}
           onToggle={() =>

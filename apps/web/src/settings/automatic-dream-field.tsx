@@ -41,12 +41,12 @@ export function AutomaticDreamField({
         label="Dream automatically"
         checked={threshold !== undefined}
         disabled={disabled}
-        description="Start Dream once enough threads here are completed. Runs await your review."
+        description="Run a Dream, which drafts memory from past threads, once enough finish."
         learnMore={
           <p>
-            Turning this on or changing the threshold starts a fresh count; earlier completions do
-            not trigger a run. A manual or automatic start resets the count. Failed or cancelled
-            runs need a fresh batch.
+            Each run waits for your review. Turning this on or changing the threshold starts a fresh
+            count; earlier completions do not trigger a run. A manual or automatic start resets the
+            count. Failed or cancelled runs need a fresh batch.
           </p>
         }
         keywords={["dream", "automatic", "completed threads", "memory"]}
@@ -59,7 +59,11 @@ export function AutomaticDreamField({
       />
       {threshold !== undefined && (
         <>
-          <Field label="Completed threads before Dream" htmlFor={`dream-threshold-${workspaceId}`}>
+          <Field
+            label="Completed threads before Dream"
+            description="How many threads finish here before a Dream starts."
+            htmlFor={`dream-threshold-${workspaceId}`}
+          >
             <input
               id={`dream-threshold-${workspaceId}`}
               aria-label="Completed threads before Dream"

@@ -344,7 +344,7 @@ describe("one tone for a worker", () => {
     expect(tones.quiet).toBe("idle");
     const row = workerRow(entry, { byId: {}, statusDetail: {}, now: NOW });
     expect(row.glyph).toBe("idle");
-    expect(row.now).toBe("Held · by you");
+    expect(row.now).toBe("Paused · by you");
   });
 });
 

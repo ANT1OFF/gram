@@ -495,7 +495,7 @@ function WorkerListRow({
         {row.title}
       </GlideText>
       {row.held && (
-        <Hand aria-label="You hold it" className="size-3 shrink-0 text-muted-foreground" />
+        <Hand aria-label="You took over" className="size-3 shrink-0 text-muted-foreground" />
       )}
       <span className="shrink-0 text-xs text-muted-foreground">{row.repo}</span>
       <span

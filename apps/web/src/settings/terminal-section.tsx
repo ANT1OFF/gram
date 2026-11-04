@@ -36,10 +36,14 @@ export function TerminalSection() {
   };
 
   return (
-    <SettingsGroup label="Shell" testId="terminal-settings">
+    <SettingsGroup
+      label="Shell"
+      description="The program the Terminal tab runs."
+      testId="terminal-settings"
+    >
       <SettingRow
         label="Windows terminal shell"
-        description="The shell the Terminal tab starts: a profile, or another shell's name or path."
+        description="A profile, or another shell's name or path."
         onReset={resetFor(settings, apply)(TERMINAL_DEFAULTS.shell)}
         error={error}
         detail={

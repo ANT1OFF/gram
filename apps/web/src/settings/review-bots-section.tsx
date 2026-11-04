@@ -83,7 +83,11 @@ function ReviewBotsEditor({
             aria-label={`Review bot ${i + 1}`}
             className="flex flex-col gap-3 rounded-md border border-border p-3"
           >
-            <Field label="Login pattern" htmlFor={`${draft.key}-login`}>
+            <Field
+              label="Login pattern"
+              description="The bot's GitHub login; * matches any characters."
+              htmlFor={`${draft.key}-login`}
+            >
               <input
                 id={`${draft.key}-login`}
                 className={inputCls}

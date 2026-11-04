@@ -37,7 +37,7 @@ describe("PrWatch", () => {
     const threadSetBabysit = vi.fn(async () => ({}) as never);
     renderWithApi(<PrWatch threadId={T} />, { threadSetBabysit });
 
-    const toggle = screen.getByRole("switch", { name: "Babysit this PR" });
+    const toggle = screen.getByRole("switch", { name: "Watch this PR" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
     expect(screen.queryByTestId("babysit-status")).toBeNull();
     const rounds = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Max babysit rounds" });
@@ -113,7 +113,7 @@ describe("PrWatch", () => {
       throw new Error("This branch has no PR");
     });
     renderWithApi(<PrWatch threadId={T} />, { threadSetBabysit });
-    fireEvent.click(screen.getByRole("switch", { name: "Babysit this PR" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Watch this PR" }));
     expect((await screen.findByRole("alert")).textContent).toBe("This branch has no PR");
   });
 

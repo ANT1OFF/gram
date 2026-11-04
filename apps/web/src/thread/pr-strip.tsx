@@ -574,8 +574,8 @@ function CiMenu({
               />
               <Toggle
                 on={babysit}
-                label="Babysit this PR"
-                hint="Fix CI and answer review comments"
+                label="Watch this PR"
+                hint="Fix CI and review comments until it's ready"
                 disabled={action.pending}
                 onToggle={() =>
                   void action.run(async () => {

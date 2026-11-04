@@ -6,7 +6,6 @@ import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { UpdateDot, useUpdateAvailable } from "@/settings/advanced-page";
-import { HelpTip } from "@/settings/help-tip";
 import { useSettingsKeyboard } from "@/settings/leave-settings";
 import {
   isSubpage,
@@ -218,7 +217,10 @@ function PageSection({
                 {group.label}
               </Link>
             )}
-            <h2 id={titleId} className="flex items-center gap-1.5 font-heading text-lg font-medium">
+            <h2
+              id={titleId}
+              className="flex items-center gap-1.5 font-heading text-xl font-semibold tracking-tight"
+            >
               {searching ? (
                 <Link
                   to={page.path}
@@ -239,13 +241,13 @@ function PageSection({
                   />
                 </Link>
               ) : (
-                <HelpTip label={page.label} help={page.description}>
-                  {page.label}
-                </HelpTip>
+                page.label
               )}
             </h2>
-            {searching && page.search === null && (
-              <p className="text-muted-foreground">{page.description}</p>
+            {(!searching || page.search === null) && (
+              <p data-settings-page-description="" className="text-muted-foreground">
+                {page.description}
+              </p>
             )}
           </div>
           {!searching && (Actions || restore.button) && (

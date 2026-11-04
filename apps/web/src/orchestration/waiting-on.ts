@@ -87,8 +87,8 @@ const RANK: Readonly<Record<WaitKind, number>> = Object.fromEntries(
   WAIT_KINDS.map((kind, i) => [kind, i]),
 ) as Record<WaitKind, number>;
 
-/** The word a row's line starts with: a limit pauses it, the user holds it, the rest waits. */
-const WORD: Readonly<Partial<Record<WaitKind, string>>> = { limit: "Paused", held: "Held" };
+/** The word a row's line starts with: a limit or the user pauses it, the rest waits. */
+const WORD: Readonly<Partial<Record<WaitKind, string>>> = { limit: "Paused", held: "Paused" };
 
 /** "Waiting · checks on #69": a wait as a row's line. */
 export const waitLabel = (reason: Pick<WaitReason, "kind" | "short">): string =>
@@ -326,7 +326,7 @@ export const workerWaitingOn = (
       {
         kind: "held",
         short: "by you",
-        detail: "You are directing this worker; hand it back when ready.",
+        detail: "You took over this worker; hand it back to the orchestrator when ready.",
       },
     ]);
   }

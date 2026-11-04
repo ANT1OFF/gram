@@ -16,11 +16,11 @@ test("renames and parks from the row menu, and closes with the worktree checklis
   await expect(threadRow(page, "t-deps")).toContainText("Bump deps, carefully");
 
   await threadRow(page, "t-deps").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Park", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
   // Parked, it leaves Solo threads for the folded Parked line under them.
   const parked = page.getByTestId("overview-parked");
   await expect(threadRow(page, "t-deps")).toBeHidden();
-  await parked.getByRole("button", { name: /Parked/ }).click();
+  await parked.getByRole("button", { name: /Archived/ }).click();
   await expect(parked).toContainText("Bump deps, carefully");
   await expect(threadRow(page, "t-deps")).toBeVisible();
 

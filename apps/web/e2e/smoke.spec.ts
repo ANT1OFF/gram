@@ -43,7 +43,7 @@ test("the overview lists solo threads with their status in words, the parked one
   // Parked starts folded.
   const parked = page.getByTestId("overview-parked");
   await expect(threadRow(page, "t-grpc")).toBeHidden();
-  await parked.getByRole("button", { name: /Parked/ }).click();
+  await parked.getByRole("button", { name: /Archived/ }).click();
   await expect(threadRow(page, "t-grpc")).toBeVisible();
   await expect(parked).toContainText("Spike: gRPC transport");
 });

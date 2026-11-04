@@ -170,12 +170,12 @@ describe("prChipsOf", () => {
     });
     expect(held!.marks.merge).toEqual({
       kind: "held",
-      word: "Held",
+      word: "Paused",
       detail:
-        "Merge held by the orchestrator: after the release\nMerges after acme/api#214\nMerges when ready",
+        "Merge paused by the orchestrator: after the release\nMerges after acme/api#214\nMerges when ready",
     });
     expect(held!.label).toBe(
-      "PR #215 ready, checks passing, merge held by the orchestrator: after the release, merges after acme/api#214, merges when ready",
+      "PR #215 ready, checks passing, merge paused by the orchestrator: after the release, merges after acme/api#214, merges when ready",
     );
     // A merged PR's merge is done with.
     const [merged] = prChipsOf([entry(215, { state: "MERGED" })], [], {

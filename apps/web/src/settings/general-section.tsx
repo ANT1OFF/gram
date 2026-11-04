@@ -25,6 +25,7 @@ import { OVERVIEW_OPEN_FROM, useLayoutStore } from "@/stores/layout";
 import { branchPrefixSetting } from "./branch-prefix";
 import { GENERAL_DEFAULTS, resetFor } from "./defaults";
 import { OptionGroup, rowInputCls, SettingRow, Toggle } from "./fields";
+import { claimTouchedRow, markSaved, markTouchedSaved } from "./saved-mark";
 import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
@@ -106,10 +107,13 @@ export function GeneralSection() {
 
   return (
     <div className="flex flex-col gap-6" data-testid="general-settings">
-      <SettingsGroup label="Launch and layout">
+      <SettingsGroup
+        label="Launch and layout"
+        description="What Gram opens at launch, and how the left sidebar looks."
+      >
         <SettingRow
           label="Open at launch"
-          description="What a new launch opens: the orchestrator you used last, or the thread you had open last."
+          description="Reopen the orchestrator you used last, or your last thread."
           keywords={["launch", "start", "startup", "home", "reopen"]}
           onReset={resetOf("openAtLaunch")}
           error={errorOf("openAtLaunch")}
@@ -127,7 +131,14 @@ export function GeneralSection() {
         </SettingRow>
         <SettingRow
           label="Overview sidebar"
-          description={`The window's left column: what needs you, every workspace's orchestrator with the current one's workers, and solo threads. Compact is a narrow rail of tiles; Automatic is open from ${OVERVIEW_OPEN_FROM} px, compact below.${overviewHint ? ` ${overviewHint} hides or shows it.` : ""}`}
+          description={`The left column of threads.${overviewHint ? ` ${overviewHint} hides or shows it.` : ""}`}
+          learnMore={
+            <p>
+              It lists what needs you, every workspace&rsquo;s orchestrator with the current
+              one&rsquo;s workers, and solo threads. Compact is a narrow rail of tiles; Automatic is
+              open from {OVERVIEW_OPEN_FROM} px wide and compact below.
+            </p>
+          }
           keywords={[
             "overview",
             "sidebar",
@@ -144,12 +155,21 @@ export function GeneralSection() {
             label="Overview sidebar"
             options={OVERVIEW_SIDEBAR}
             value={overview ?? "automatic"}
-            onChange={(mode) => setOverview(mode === "automatic" ? undefined : mode)}
+            onChange={(mode) => {
+              setOverview(mode === "automatic" ? undefined : mode);
+              markTouchedSaved();
+            }}
           />
         </SettingRow>
         <SettingRow
           label="Sidebar sections"
-          description="Which of the overview sidebar's optional sections show: solo threads, pull requests, Done, and usage with worker slots at its foot, off by default as the title bar's meter has them."
+          description="Which optional sections the left sidebar shows."
+          learnMore={
+            <p>
+              Usage and slots sits at the sidebar&rsquo;s foot. It is off by default, since the
+              title bar&rsquo;s meter shows the same.
+            </p>
+          }
           keywords={[
             "overview",
             "sections",
@@ -165,10 +185,19 @@ export function GeneralSection() {
               : () => setOverviewHidden(OVERVIEW_HIDDEN_BY_DEFAULT)
           }
         >
-          <SectionChecks hidden={overviewHidden} onChange={setOverviewHidden} />
+          <SectionChecks
+            hidden={overviewHidden}
+            onChange={(hidden) => {
+              setOverviewHidden(hidden);
+              markTouchedSaved();
+            }}
+          />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup label="Threads">
+      <SettingsGroup
+        label="Threads"
+        description="Where new threads start, how branches are named, and staying awake while they run."
+      >
         <Toggle
           label="Keep computer awake while agents run"
           description="Stops the system from sleeping while a turn is running; the display can still sleep."
@@ -198,7 +227,7 @@ export function GeneralSection() {
           key={`clone:${settings.agents.cloneFolder ?? ""}`}
           id="settings-clone-folder"
           label="Where new clones go"
-          description="Where repositories added by GitHub name or URL are cloned. Empty means ~/Documents/code."
+          description="Where repositories added by GitHub name or URL are cloned."
           placeholder={DEFAULT_CLONE_FOLDER}
           value={settings.agents.cloneFolder}
           onReset={resetOf("cloneFolder")}
@@ -209,7 +238,7 @@ export function GeneralSection() {
         />
         <SettingRow
           label="Branch prefix"
-          description="New worktree branches start with this prefix, such as feat/brave-otter."
+          description="New worktree branches start with it, such as feat/brave-otter."
           onReset={resetOf("branchPrefix")}
           error={errorOf("branchPrefix")}
         >
@@ -222,7 +251,7 @@ export function GeneralSection() {
         </SettingRow>
         <Toggle
           label="Follow worktree moves"
-          description="When an agent moves into another worktree, the panels and git state follow it."
+          description="When an agent switches worktree, the panels follow it."
           checked={settings.agents.followWorktreeMoves}
           onReset={resetOf("followWorktreeMoves")}
           error={errorOf("followWorktreeMoves")}
@@ -231,7 +260,10 @@ export function GeneralSection() {
           }
         />
       </SettingsGroup>
-      <SettingsGroup label="Composer and panels">
+      <SettingsGroup
+        label="Composer and panels"
+        description="How you send a message, and where the side panel sits."
+      >
         <SettingRow
           label="Send with"
           description={sendWithDescription(sendHint, createHint)}
@@ -247,7 +279,7 @@ export function GeneralSection() {
         </SettingRow>
         <SettingRow
           label="Side panel"
-          description="Which side of the chat the Diff, PR, Files and Terminal panel sits on."
+          description="Where the Diff, PR, Files and Terminal panel sits."
           onReset={resetOf("panelSide")}
           error={errorOf("panelSide")}
         >
@@ -259,10 +291,13 @@ export function GeneralSection() {
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup label="Interruptions">
+      <SettingsGroup
+        label="Interruptions"
+        description="How much Gram asks for your attention while you work elsewhere."
+      >
         <Toggle
           label="Quiet when idle"
-          description="After five idle minutes with nothing asked, the window goes quiet."
+          description="After five idle minutes, switch to Quiet: only what needs you."
           keywords={["quiet", "idle", "away", "calm"]}
           checked={settings.layout?.quietWhenIdle === true}
           onReset={resetOf("quietWhenIdle")}
@@ -273,7 +308,8 @@ export function GeneralSection() {
         />
         <SettingRow
           label="Notify me about"
-          description="What raises a desktop notification while Gram isn't in front. Asks always do; the rest waits for Since you left."
+          description="What raises a desktop notification while Gram is in the background."
+          learnMore={<p>Asks always notify; the rest waits for Since you left.</p>}
           keywords={["notifications", "interrupt", "failures", "errors", "asks"]}
           onReset={resetOf("notifyAbout")}
           error={errorOf("notifyAbout")}
@@ -302,7 +338,7 @@ function WindowSettings() {
   const bridge = window.gram;
   if (bridge?.keepInTray === undefined && bridge?.launchAtLogin === undefined) return null;
   return (
-    <SettingsGroup label="Window">
+    <SettingsGroup label="Window" description="How Gram starts and keeps running.">
       <LaunchAtLoginSetting />
       <KeepInTraySetting />
     </SettingsGroup>
@@ -339,8 +375,13 @@ export function LaunchAtLoginSetting() {
       label="Open at login"
       description={
         mac
-          ? "Starts Gram when you log in, with no window open: the Dock icon or menu bar item brings it back."
-          : "Starts Gram when you sign in, with no window open while it keeps running in the tray."
+          ? "Start Gram in the background when you log in."
+          : "Start Gram in the tray when you sign in."
+      }
+      learnMore={
+        mac ? (
+          <p>It starts with no window; the Dock icon or menu bar item brings it back.</p>
+        ) : undefined
       }
       keywords={["login", "startup", "start", "boot", "background", "login items"]}
       checked={state.enabled}
@@ -369,9 +410,13 @@ export function LaunchAtLoginSetting() {
         setError(undefined);
         const before = state;
         setState({ enabled, needsApproval: false });
+        const row = claimTouchedRow();
         login
           .set(enabled)
-          .then((next) => setState(next ?? before))
+          .then((next) => {
+            setState(next ?? before);
+            markSaved(row);
+          })
           .catch((e: unknown) => {
             setState(before);
             setError(errorMessage(e));
@@ -423,10 +468,14 @@ export function KeepInTraySetting() {
       onChange={(enabled) => {
         setError(undefined);
         setChecked(enabled);
-        tray.set(enabled).catch((e: unknown) => {
-          setChecked(!enabled);
-          setError(errorMessage(e));
-        });
+        const row = claimTouchedRow();
+        tray.set(enabled).then(
+          () => markSaved(row),
+          (e: unknown) => {
+            setChecked(!enabled);
+            setError(errorMessage(e));
+          },
+        );
       }}
     />
   );

@@ -135,3 +135,10 @@ export const fitsInPlace = (card: QuestionCard): boolean => {
   ];
   return words.reduce((n, part) => n + part.length, 0) <= IN_PLACE_CHARS;
 };
+
+/**
+ * What a question's id names, in words: "WQ3" is a worker's question, forwarded to you; "Q1" is one
+ * the orchestrator keeps in memory for you to decide.
+ */
+export const questionKind = (id: string): string =>
+  /^WQ\d/.test(id) ? "Worker question" : "Question";

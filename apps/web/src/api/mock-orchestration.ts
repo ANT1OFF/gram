@@ -1149,7 +1149,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       }
       if (orchestrator.parked) {
         throw new MockInvalidState(
-          "The orchestrator is parked. Unpark it to start a fresh session.",
+          "The orchestrator is archived. Unarchive it to start a fresh session.",
         );
       }
       handingOff.add(workspaceId);

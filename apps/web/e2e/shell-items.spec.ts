@@ -19,7 +19,7 @@ test("watches reviews and babysits with a round budget from the PR panel", async
   await expect(watch).toHaveAttribute("aria-checked", "false");
 
   await panel.getByRole("spinbutton", { name: "Max babysit rounds" }).fill("3");
-  await panel.getByRole("switch", { name: "Babysit this PR" }).click();
+  await panel.getByRole("switch", { name: "Watch this PR" }).click();
   await expect(panel.getByTestId("babysit-status")).toHaveText(/^Watching · round \d of 3$/);
   await expect(watch).toHaveAttribute("aria-checked", "true");
   await expect(watch).toBeDisabled();

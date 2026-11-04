@@ -119,7 +119,12 @@ function AppearancePage({ preview }: { preview: boolean }) {
           </Button>
         </div>
       )}
-      <SettingsGroup label="Fonts" keywords={FONT_KEYWORDS} testId="font-settings">
+      <SettingsGroup
+        label="Fonts"
+        description="The typefaces and sizes for text and code."
+        keywords={FONT_KEYWORDS}
+        testId="font-settings"
+      >
         <FontsSection />
       </SettingsGroup>
     </div>

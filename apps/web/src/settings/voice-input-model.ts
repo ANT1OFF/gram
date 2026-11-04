@@ -31,7 +31,10 @@ export const STOP_HELP: Readonly<Record<SpeechPerformance, string>> = {
 };
 
 export const LOCAL_HINTS_HELP =
-  "The local NVIDIA models recognise English. Audio and transcripts stay on this computer. Names they mishear are spelled by Vocabulary below.";
+  "The local models recognise English; audio and transcripts stay on this computer.";
+
+export const LOCAL_HINTS_MORE =
+  "They are NVIDIA's models. Names they mishear are spelled by Vocabulary below.";
 
 export const MODE_OPTIONS: readonly { readonly value: SpeechMode; readonly label: string }[] = [
   { value: "accurate", label: "Accurate" },
@@ -43,9 +46,14 @@ export const MODE_OPTIONS: readonly { readonly value: SpeechMode; readonly label
  * took about a quarter of a second over a 5 s utterance on an M5 Pro.
  */
 export const MODE_HELP: Readonly<Record<SpeechMode, string>> = {
-  accurate:
-    "Words appear as you speak. Each pause then replaces them with a second pass that makes about half the mistakes and adds punctuation.",
+  accurate: "Words appear as you speak, then a second pass at each pause fixes them.",
   live: "Text comes from the streaming model alone, with no second pass and no punctuation.",
+};
+
+/** What `MODE_HELP` leaves out. */
+export const MODE_MORE: Readonly<Record<SpeechMode, string | undefined>> = {
+  accurate: "The second pass makes about half the mistakes and adds punctuation.",
+  live: undefined,
 };
 
 /** Whether this computer has the memory `accurate` wants; unknown counts as yes. */

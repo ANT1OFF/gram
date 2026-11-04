@@ -13,7 +13,7 @@ test("turns babysit on from the PR panel and shows the first review notice", asy
     "aria-selected",
     "true",
   );
-  const toggle = panel.getByRole("switch", { name: "Babysit this PR" });
+  const toggle = panel.getByRole("switch", { name: "Watch this PR" });
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
@@ -21,7 +21,7 @@ test("turns babysit on from the PR panel and shows the first review notice", asy
   // The PR row carries babysitting in a glyph of its own.
   const marks = page.getByTestId("pr-row").getByTestId("pr-row-marks");
   await expect(marks.getByTestId("babysit-glyph")).toHaveAttribute("data-phase", "watching");
-  await expect(marks.getByRole("img", { name: /^Babysitting/ })).toBeVisible();
+  await expect(marks.getByRole("img", { name: /^Watching PR/ })).toBeVisible();
 
   const notice = page.getByRole("article", { name: "Review update on #412" });
   await expect(notice).toBeVisible();

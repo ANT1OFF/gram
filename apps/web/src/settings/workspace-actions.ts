@@ -9,6 +9,7 @@ import type { SaveWorkspaceInput } from "@/api/types";
 import { useLayoutStore } from "@/stores/layout";
 import { showUndo } from "@/stores/undo-toasts";
 
+import { claimTouchedRow, markSaved } from "./saved-mark";
 import { draftOfWorkspace, validateWorkspaceDraft } from "./workspace-settings-model";
 
 /**
@@ -43,9 +44,11 @@ export function useWorkspaceChanges(state: WorkspaceState | undefined) {
   ): Promise<void> => {
     setError(undefined);
     setBusy(true);
+    const row = claimTouchedRow();
     return change()
       .then(refresh)
       .then(() => {
+        markSaved(row);
         if (undo !== undefined && state !== undefined) {
           showUndo({
             key: `workspace:${state.workspace.id}`,

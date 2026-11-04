@@ -72,8 +72,8 @@ describe("CheckoutInUseNotice", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("2 threads are already open in this folder");
-    expect(alert.textContent).toContain("Parked threads still use their checkout.");
-    expect(screen.getByRole("button", { name: "Open “Old work” (parked)" })).toBeTruthy();
+    expect(alert.textContent).toContain("Archived threads still use their checkout.");
+    expect(screen.getByRole("button", { name: "Open “Old work” (archived)" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Create here anyway" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Use a new worktree instead" })).toBeNull();
   });

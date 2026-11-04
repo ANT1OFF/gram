@@ -1,14 +1,14 @@
 import { Menu } from "@base-ui/react/menu";
 import type { ThreadId } from "@gram/contracts";
 import {
+  Archive,
+  ArchiveRestore,
   CircleCheck,
   Ellipsis,
   Hand,
-  Pause,
   Pencil,
   Pin,
   PinOff,
-  Play,
   RotateCcw,
   X,
 } from "lucide-react";
@@ -93,11 +93,11 @@ export function ThreadContextMenuItems({
       )}
       <ContextMenuItem onClick={actions.togglePark}>
         {thread.parked ? (
-          <Play aria-hidden className="size-3.5" />
+          <ArchiveRestore aria-hidden className="size-3.5" />
         ) : (
-          <Pause aria-hidden className="size-3.5" />
+          <Archive aria-hidden className="size-3.5" />
         )}
-        {thread.parked ? "Unpark" : "Park"}
+        {thread.parked ? "Unarchive" : "Archive"}
       </ContextMenuItem>
       {actions.toggleDone !== undefined && (
         <ContextMenuItem
@@ -168,11 +168,11 @@ export function ThreadMenuItems({
       )}
       <Menu.Item className={itemClassName} onClick={actions.togglePark}>
         {thread.parked ? (
-          <Play aria-hidden className="size-3.5" />
+          <ArchiveRestore aria-hidden className="size-3.5" />
         ) : (
-          <Pause aria-hidden className="size-3.5" />
+          <Archive aria-hidden className="size-3.5" />
         )}
-        {thread.parked ? "Unpark" : "Park"}
+        {thread.parked ? "Unarchive" : "Archive"}
       </Menu.Item>
       {actions.toggleDone !== undefined && (
         <Menu.Item

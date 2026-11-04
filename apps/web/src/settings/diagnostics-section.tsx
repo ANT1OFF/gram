@@ -51,7 +51,10 @@ export function DiagnosticsSection() {
   return (
     <div className="flex flex-col gap-6" data-testid="diagnostics">
       {info && (
-        <SettingsGroup label="This install">
+        <SettingsGroup
+          label="This install"
+          description="Which version of Gram this is, and where it keeps its data."
+        >
           <InfoRow label="Version" value={info.version} />
           <InfoRow label="Platform" value={`${info.platform} ${info.arch}`} />
           <InfoRow label="Data folder" value={info.dataDir} />
@@ -59,10 +62,13 @@ export function DiagnosticsSection() {
         </SettingsGroup>
       )}
       <ToolChecks />
-      <SettingsGroup label="Logs">
+      <SettingsGroup
+        label="Logs"
+        description="What Gram writes down while it runs, for troubleshooting."
+      >
         <SettingRow
           label="Log level"
-          description="How much goes into the log files. Use debug or trace while troubleshooting."
+          description="How much goes into the log files. Use debug or trace to troubleshoot."
           disabledReason={settings ? undefined : "Loading settings…"}
           onReset={settings && resetFor(settings, saveLevel)(DIAGNOSTICS_DEFAULTS.logLevel)}
           error={levelError}

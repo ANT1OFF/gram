@@ -348,7 +348,7 @@ export function mergeMarksOf(pr: MergeSource): readonly PrMark<MergeMarkKind>[] 
   }
   if (intent?.hold !== undefined) {
     const by = intent.heldBy === "orchestrator" ? " by the orchestrator" : "";
-    add("held", "Held", `Merge held${by}: ${intent.hold}`);
+    add("held", "Paused", `Merge paused${by}: ${intent.hold}`);
   }
   if (waits.length > 0) {
     add(

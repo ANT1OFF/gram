@@ -208,7 +208,10 @@ export function AiHelpersSection() {
 
   return (
     <div className="flex flex-col gap-6" data-testid="ai-helper-settings">
-      <SettingsGroup label="Helper model">
+      <SettingsGroup
+        label="Helper model"
+        description="A small model for background jobs, such as naming threads."
+      >
         <Toggle
           label="Use the helper model"
           description="Titles, plans, recaps and reply suggestions through your chosen harness."
@@ -219,7 +222,11 @@ export function AiHelpersSection() {
           onChange={(enabled) => apply("enabled", { enabled })}
         />
         {source === "gateway" && (
-          <SettingRow label="Harness" error={errorOf("source")}>
+          <SettingRow
+            label="Harness"
+            description="Which CLI runs the helper model."
+            error={errorOf("source")}
+          >
             <HelperHarnessPicker
               source={source}
               onChange={(nextSource) => apply("source", { source: nextSource })}
@@ -283,7 +290,7 @@ export function AiHelpersSection() {
 
       <SettingsGroup
         label="Features"
-        description="Each feature needs its own switch and context permission for the selected destination."
+        description="Turn each one on, and allow what context it may read, separately."
       >
         {FEATURES.map((feature) => {
           const reason = !on
@@ -330,7 +337,14 @@ export function AiHelpersSection() {
         })}
       </SettingsGroup>
 
-      <SettingsGroup label={source === "gateway" ? "Gateway estimates" : "Usage"}>
+      <SettingsGroup
+        label={source === "gateway" ? "Gateway estimates" : "Usage"}
+        description={
+          source === "gateway"
+            ? "What the helper is estimated to cost through your gateway."
+            : "How much the helper has run on your subscription."
+        }
+      >
         {source === "gateway" && (
           <BudgetField
             // A value saved elsewhere resets the draft.

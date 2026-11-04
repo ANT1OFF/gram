@@ -21,7 +21,7 @@ export function RouteAtLimitField({
     <div data-testid="route-at-limit" data-value={on ? "on" : "off"}>
       <Toggle
         label="Offer another model"
-        description="When a usage limit would hold a new worker, the orchestrator may start it on another worker model whose note fits instead."
+        description="At a usage limit, let the orchestrator start a worker on another model."
         keywords={["usage", "limit", "route", "routing", "fallback", "worker models"]}
         learnMore={
           <p>

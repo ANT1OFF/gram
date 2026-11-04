@@ -77,6 +77,7 @@ function WorkspaceList() {
   return (
     <SettingsGroup
       label="Workspaces"
+      description="Each workspace is a set of repositories one orchestrator works on together."
       keywords={WORKSPACE_KEYWORDS}
       card={false}
       action={
@@ -242,7 +243,13 @@ function Defaults({ settings }: { settings: Settings }) {
   return (
     <SettingsGroup
       label="Defaults"
-      description="An orchestrator dispatches workers into worktrees and spends tokens while you aren't watching. Gram sets no spending or time limits; your provider's apply."
+      description="What holds for every workspace. Gram sets no spending or time limits."
+      learnMore={
+        <p>
+          An orchestrator starts workers in worktrees and spends tokens while you aren&rsquo;t
+          watching. Your provider&rsquo;s own limits apply.
+        </p>
+      }
       testId="workspace-defaults"
     >
       <Toggle

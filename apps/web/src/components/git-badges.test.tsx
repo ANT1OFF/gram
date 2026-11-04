@@ -376,10 +376,10 @@ describe("PrBadge", () => {
     expect(screen.queryByTestId("babysit-glyph")).toBeNull();
 
     withBabysit({ ...initialBabysitState(0), rounds: 2 });
-    expect(screen.getByRole("img", { name: "Babysitting · round 2 of 6" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Watching PR · round 2 of 6" })).toBeTruthy();
     withBabysit({ ...initialBabysitState(0), phase: "stopped", stopReason: "forcePush" });
     expect(
-      screen.getByRole("img", { name: "Babysit stopped: force-push detected" }).dataset["phase"],
+      screen.getByRole("img", { name: "Watch PR stopped: force-push detected" }).dataset["phase"],
     ).toBe("stopped");
     act(() => useThreadsStore.setState({ byId: {} }));
   });

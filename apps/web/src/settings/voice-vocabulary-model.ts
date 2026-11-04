@@ -8,10 +8,15 @@ import {
 const TEXT_MAX = 80;
 
 export const PROJECT_NAMES_HELP =
-  "Dictation spells the thread's file names, exported symbols and branches the way the code does: “use dictation dot ts” becomes use-dictation.ts. Read from git on this computer and never sent anywhere. Names made only of everyday words, like setState, are left as spoken.";
+  "Spell the thread's file names, symbols and branches the way the code does.";
 
-export const YOUR_WORDS_HELP =
-  "Words dictation should write your way, with what it hears instead. A spelling you list is always replaced; the word itself only when it isn't an everyday word.";
+export const PROJECT_NAMES_MORE =
+  "“use dictation dot ts” becomes use-dictation.ts. Read from git on this computer and never sent anywhere. Names made only of everyday words, like setState, are left as spoken.";
+
+export const YOUR_WORDS_HELP = "Words dictation should write your way, with what it hears instead.";
+
+export const YOUR_WORDS_MORE =
+  "A spelling you list is always replaced; the word itself only when it isn't an everyday word.";
 
 /** The spellings typed into one field, split at commas, each once. */
 export const parseSoundsLike = (text: string): string[] => [

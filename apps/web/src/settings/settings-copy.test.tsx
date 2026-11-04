@@ -13,16 +13,20 @@ import { ALL_SETTINGS_PAGES } from "./pages";
 import { WorkspaceSettingsPage } from "./workspace-page";
 
 /**
- * A setting is a short label and its control. What it does, its caveats and mechanics show on the
- * label's hover or focus, and a consent or legal notice that must be read whole is marked with
- * `LONG_COPY`. What copy is left on screen, such as a status, stays one short line.
+ * A setting is a short label, one short line under it that says what it does, and its control. Its
+ * caveats and mechanics show behind the ⓘ beside its name, and a consent or legal notice that must
+ * be read whole is marked with `LONG_COPY`. What other copy is on screen, such as a status, stays
+ * one short line.
  */
 const MAX_WORDS = 25;
 
-/** A setting is named in four words or fewer; what it does shows on its label's hover. */
+/** A setting is named in four words or fewer; what it does is the line under its name. */
 const MAX_LABEL_WORDS = 4;
 // The requested product label is explicit; keep every other row under the existing limit.
 const KEEP_AWAKE_LABEL = "Keep computer awake while agents run";
+
+/** The line under a setting's name fits on one line at the narrowest a row gets beside its control. */
+const MAX_DESCRIPTION_WORDS = 16;
 
 const words = (text: string) =>
   text.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
@@ -80,21 +84,50 @@ function longLabels(): string[] {
     .map((text) => `[${words(text)} words] ${text}`);
 }
 
-/**
- * Descriptions shown under a setting's label, where they used to be: a row is its label, which
- * holds its help, and its control.
- */
-function visibleDescriptions(): string[] {
-  return [...document.body.querySelectorAll("[data-setting] [data-setting-label]")].flatMap(
-    (label) => {
-      // A label with help sits in the element that shows it; the row's line is around that.
-      const name = label.closest('[data-testid="setting-help"]') ?? label;
-      const next = name.parentElement?.nextElementSibling;
-      if (next?.tagName !== "P" || next.getAttribute("role") === "alert") return [];
-      return next.closest(`[${LONG_COPY}]`) === null ? [next.textContent.trim()] : [];
-    },
-  );
+/** Each setting on screen without its line of description, by its label. */
+function undescribed(): string[] {
+  return [...document.body.querySelectorAll("[data-setting]")]
+    .filter((row) => row.querySelector("[data-setting-description]") === null)
+    .map((row) => row.querySelector("[data-setting-label]")?.textContent.trim() ?? "(no label)");
 }
+
+/** Each setting's line of description that runs past one line, and each group's. */
+function longDescriptions(): string[] {
+  return [...document.body.querySelectorAll("[data-setting-description]")]
+    .map((element) => element.textContent.replace(/\s+/g, " ").trim())
+    .filter((text) => words(text) > MAX_DESCRIPTION_WORDS)
+    .map((text) => `[${words(text)} words] ${text}`);
+}
+
+/** Each group of settings on screen without its sentence under the title, by its title. */
+function undescribedGroups(): string[] {
+  return [...document.body.querySelectorAll("section[aria-labelledby]")]
+    .filter((section) => section.querySelector("h3") !== null)
+    .filter(
+      (section) =>
+        ![...section.querySelectorAll("[data-setting-description]")].some(
+          (line) => line.closest("[data-setting]") === null,
+        ),
+    )
+    .map((section) => section.querySelector("h3")!.textContent.trim());
+}
+
+/** What on screen breaks the rules above, by rule, so one failure lists them all. */
+const problems = () => ({
+  longCopy: longCopy(),
+  longLabels: longLabels(),
+  longDescriptions: longDescriptions(),
+  undescribed: undescribed(),
+  undescribedGroups: undescribedGroups(),
+});
+
+const NONE = {
+  longCopy: [],
+  longLabels: [],
+  longDescriptions: [],
+  undescribed: [],
+  undescribedGroups: [],
+};
 
 /** Renders `Page` against `api`, with its settings in the store, once its queries have settled. */
 async function renderPage(Page: ComponentType, api: MockApi) {
@@ -112,23 +145,20 @@ afterEach(() => {
   useServerSettings.setState({ settings: undefined });
 });
 
-/** A row as it was before labels went short and descriptions went into their help. */
+/** Rows as they were when a label held its description on hover, with nothing under it. */
 const OldStyleRow = () => (
   <>
     <div data-setting="">
       <div>
         <span data-setting-label="">Restart sessions after an MCP change</span>
       </div>
-      <p>Reload live sessions when Gram adds or removes a server.</p>
     </div>
-    {/* The same with its label in the element that shows its help. */}
     <div data-setting="">
       <div>
         <span data-testid="setting-help">
           <span data-setting-label="">Restart on MCP change</span>
         </span>
       </div>
-      <p>Reload live sessions when Gram adds or removes a server.</p>
     </div>
   </>
 );
@@ -154,11 +184,10 @@ describe("settings copy", () => {
       // Voice input on, so the rows it shows only while on are read too.
       await api.updateSettings({ experimental: { voiceInput: true } });
       await renderPage(Page, api);
-      expect(longCopy()).toEqual([]);
-      expect(longLabels()).toEqual(
-        _path === "/settings/general" ? [`[6 words] ${KEEP_AWAKE_LABEL}`] : [],
-      );
-      expect(visibleDescriptions()).toEqual([]);
+      expect(problems()).toEqual({
+        ...NONE,
+        longLabels: _path === "/settings/general" ? [`[6 words] ${KEEP_AWAKE_LABEL}`] : [],
+      });
     },
   );
 
@@ -188,17 +217,15 @@ describe("settings copy", () => {
     // And the workspace's own page, where its charter is.
     await renderPage(() => <WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
     expect(document.body.textContent).toContain("Reviews & merging");
-    expect(longCopy()).toEqual([]);
-    expect(longLabels()).toEqual([]);
-    expect(visibleDescriptions()).toEqual([]);
+    expect(problems()).toEqual(NONE);
   });
 
-  it("fails a label over four words, and a description shown beside its setting", async () => {
+  it("fails a label over four words, and a setting with no line under its name", async () => {
     await renderPage(OldStyleRow, mockApi());
     expect(longLabels()).toEqual(["[6 words] Restart sessions after an MCP change"]);
-    expect(visibleDescriptions()).toEqual([
-      "Reload live sessions when Gram adds or removes a server.",
-      "Reload live sessions when Gram adds or removes a server.",
+    expect(undescribed()).toEqual([
+      "Restart sessions after an MCP change",
+      "Restart on MCP change",
     ]);
   });
 

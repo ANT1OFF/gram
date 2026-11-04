@@ -22,12 +22,12 @@ const NOW = Date.parse("2026-10-15T14:39:00Z");
 
 describe("limit formatting", () => {
   it("says when a held brief starts, on a 24-hour clock, and why it waits", () => {
-    expect(heldUntilText(Date.parse("2026-10-15T23:15:00Z"), NOW, UTC)).toBe("Held until 23:15");
+    expect(heldUntilText(Date.parse("2026-10-15T23:15:00Z"), NOW, UTC)).toBe("Paused until 23:15");
     expect(heldUntilText(Date.parse("2026-10-17T09:00:00Z"), NOW, UTC)).toBe(
-      "Held until Sat 09:00",
+      "Paused until Sat 09:00",
     );
     const until = Date.parse("2026-10-15T18:00:00Z");
-    expect(heldStateText({ until }, NOW, UTC)).toBe("Held until 18:00");
+    expect(heldStateText({ until }, NOW, UTC)).toBe("Paused until 18:00");
     expect(heldStateText({ until }, NOW, { ...UTC, short: true })).toBe("until 18:00");
     const retryAt = Date.parse("2026-10-15T18:02:00Z");
     expect(heldStateText({ until, retryAt }, NOW, UTC)).toBe("Tried again at 18:02");
