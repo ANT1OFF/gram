@@ -1,6 +1,7 @@
 import { ChevronRight, History } from "lucide-react";
 import { useId, useState } from "react";
 
+import { PR_STATE_DISPLAY } from "@/components/pr-marks-model";
 import { cn } from "@/lib/utils";
 import { Expand } from "@/motion";
 
@@ -8,10 +9,14 @@ import { DigestLine } from "./digest-line";
 import { StreamLineView } from "./feature-card";
 import { updateWords, type StreamDigest, type TimedLine } from "./stream-model";
 
-/** A count's tone: amber only for what needs the user (#121), red for a failure. */
+/**
+ * A count's tone, as its lines are toned: amber only for what needs the user (#121), red for a
+ * failure, the merged colour for merges.
+ */
 const COUNT_TONE: Record<string, string> = {
   ask: "text-status-needs",
   failed: "text-destructive",
+  merged: PR_STATE_DISPLAY.merged.tone,
 };
 
 /**
