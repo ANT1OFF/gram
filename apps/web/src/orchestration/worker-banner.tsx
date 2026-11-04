@@ -155,7 +155,10 @@ export function OrchestratorChips({
   inTitlebar = false,
 }: {
   thread: Thread;
-  /** In the title bar, beside Chat · Board: no board button of its own. */
+  /**
+   * In the title bar, beside Chat · Board: no board button of its own, and Memory and the
+   * workspace's settings are in the bar's "…".
+   */
   inTitlebar?: boolean;
 }) {
   const { state, workspaceId } = useOrchestratorWorkspace(thread);
@@ -211,35 +214,40 @@ export function OrchestratorChips({
           <Columns3 aria-hidden className="size-4" />
         </Hint>
       )}
-      <Hint
-        label="Memory"
-        side="bottom"
-        render={
-          <Link
-            to="/w/$workspaceId/memory"
-            params={{ workspaceId }}
-            aria-label="Memory"
-            className={HEADER_LINK}
-          />
-        }
-      >
-        <Brain aria-hidden className="size-4" />
-      </Hint>
-      <Hint
-        label="Workspace settings"
-        side="bottom"
-        render={
-          <button
-            type="button"
-            aria-label="Workspace settings"
-            data-testid="orchestrator-workspace-settings"
-            onClick={() => openWorkspaceSettings(workspaceId)}
-            className={HEADER_LINK}
-          />
-        }
-      >
-        <Settings2 aria-hidden className="size-4" />
-      </Hint>
+      {/* In the title bar, Memory and the workspace's settings are the bar's "…". */}
+      {!inTitlebar && (
+        <>
+          <Hint
+            label="Memory"
+            side="bottom"
+            render={
+              <Link
+                to="/w/$workspaceId/memory"
+                params={{ workspaceId }}
+                aria-label="Memory"
+                className={HEADER_LINK}
+              />
+            }
+          >
+            <Brain aria-hidden className="size-4" />
+          </Hint>
+          <Hint
+            label="Workspace settings"
+            side="bottom"
+            render={
+              <button
+                type="button"
+                aria-label="Workspace settings"
+                data-testid="orchestrator-workspace-settings"
+                onClick={() => openWorkspaceSettings(workspaceId)}
+                className={HEADER_LINK}
+              />
+            }
+          >
+            <Settings2 aria-hidden className="size-4" />
+          </Hint>
+        </>
+      )}
     </>
   );
 }

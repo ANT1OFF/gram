@@ -1,54 +1,158 @@
 import { Menu } from "@base-ui/react/menu";
-import type { GridPreset, WorkspaceState } from "@gram/contracts";
+import type { GridPreset, ThreadId, WorkspaceState } from "@gram/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import {
+  BookOpen,
+  Brain,
   BroomSparkles,
   CheckIcon,
+  ChevronRightIcon,
+  CirclePause,
+  CirclePlay,
   Columns3,
   Ellipsis,
   Focus,
+  History,
+  LayoutGrid,
   Moon,
   Rows3,
+  Settings2,
   Users,
 } from "lucide-react";
+import { useState, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
+import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
+import { useWorkersListStore, useWorkersNow } from "@/orchestration/workers-list";
+import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
-import { useWorkersListStore } from "@/orchestration/workers-list";
+import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { GRID_PRESETS, PRESET_LABELS, useLayoutStore, type BoardLayout } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { pauseClock } from "@/thread/orchestration-model";
+import { useThreadMenu } from "@/thread/thread-menu";
 import { useViewStore } from "@/views/view-store";
 import { useViewWorkspace } from "@/views/view-workspace";
 
 import { PresetGlyph } from "./preset-glyph";
+import { useTitlebarOutline } from "./titlebar-outline";
 import { FOLD_ALL, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
-// The title bar's "…" holds the window's rarer toggles, and a narrow bar folds its lesser buttons
+// The title bar's one "…": everything the bar keeps out of sight, each item with its words and its
+// shortcut. The thread the bar carries first (its Contents, scripts and the thread menu's verbs),
+// then the workspace's (Workers, Tidy up, Pause, Memory, its settings), then the window's (Quiet,
+// focus mode, History, the layout). A narrow bar folds a worker's own actions and Board's layout
 // into it too. Each item does what its button did.
 
-const POPUP =
-  "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
-const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground [&_svg]:size-3.5 [&_svg]:shrink-0";
+const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
 
-/** A folded button's shortcut, right-aligned as the palette shows it. */
+/** An item's shortcut, right-aligned as the palette shows it. */
 function Keys({ id }: { id: string }) {
   const hint = useShortcutHint(id);
   return hint ? <span className="ml-auto pl-4 text-xs text-muted-foreground">{hint}</span> : null;
 }
 
-function TidyItem({ state, className }: { state: WorkspaceState; className: string }) {
+/** A submenu's current value, right-aligned before its chevron. */
+function Current({ children }: { children: ReactNode }) {
+  return (
+    <span className="ml-auto max-w-32 truncate pl-4 text-xs text-muted-foreground">{children}</span>
+  );
+}
+
+function Submenu({
+  label,
+  icon,
+  current,
+  testId,
+  children,
+}: {
+  label: string;
+  icon: ReactNode;
+  current?: ReactNode;
+  testId: string;
+  children: ReactNode;
+}) {
+  return (
+    <Menu.SubmenuRoot>
+      <Menu.SubmenuTrigger
+        data-testid={testId}
+        className={cn(MENU_ITEM, "data-[popup-open]:row-cursor")}
+      >
+        {icon}
+        {label}
+        {current === undefined ? <span className="ml-auto" /> : <Current>{current}</Current>}
+        <ChevronRightIcon aria-hidden className="text-muted-foreground" />
+      </Menu.SubmenuTrigger>
+      <Menu.Portal>
+        <Menu.Positioner
+          side="left"
+          align="start"
+          alignOffset={-4}
+          className="isolate z-50 outline-none"
+        >
+          <Menu.Popup aria-label={label} className={cn(MENU_POPUP, "max-h-80 overflow-y-auto")}>
+            {children}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.SubmenuRoot>
+  );
+}
+
+/** The carried thread's chapters, as its header's Contents button listed them. */
+function ContentsSubmenu({ threadId }: { threadId: ThreadId }) {
+  const outline = useTitlebarOutline((s) =>
+    s.outline?.threadId === threadId ? s.outline : undefined,
+  );
+  if (outline === undefined || (outline.chapters.length === 0 && !outline.earlier)) return null;
+  return (
+    <Submenu
+      label="Contents"
+      testId="menu-contents"
+      icon={<BookOpen aria-hidden />}
+      current={outline.chapters.length === 0 ? undefined : outline.chapters.length}
+    >
+      <div className="px-2 py-1 text-xs text-muted-foreground">Loaded prompts and chapters</div>
+      {outline.earlier && outline.onLoadEarlier && (
+        <Menu.Item
+          className={MENU_ITEM}
+          disabled={outline.loadingEarlier}
+          onClick={outline.onLoadEarlier}
+        >
+          {outline.loadingEarlier
+            ? "Loading earlier prompts and chapters…"
+            : outline.earlierFailed
+              ? "Couldn't load earlier prompts and chapters. Try again"
+              : "Load earlier prompts and chapters"}
+        </Menu.Item>
+      )}
+      {outline.chapters.map((chapter) => (
+        <Menu.Item
+          key={chapter.id}
+          className={cn(MENU_ITEM, "w-72 max-w-[calc(100vw-2rem)] wrap-anywhere")}
+          onClick={() => outline.jump(chapter.messageId)}
+        >
+          {chapter.title}
+        </Menu.Item>
+      ))}
+    </Submenu>
+  );
+}
+
+function TidyItem({ state }: { state: WorkspaceState }) {
   const tidy = useTidyUp(state);
   return (
     <Menu.Item
       data-testid="folded-tidy"
       disabled={tidy.blocked !== undefined || tidy.resting}
       title={tidy.blocked}
-      className={className}
+      className={MENU_ITEM}
       onClick={() => void tidy.send()}
     >
       <BroomSparkles aria-hidden />
@@ -58,98 +162,140 @@ function TidyItem({ state, className }: { state: WorkspaceState; className: stri
 }
 
 /**
- * The title bar's "…" menu: what a narrow bar folded first (a worker's Keep beside and Take over,
- * Workers, Tidy up), then the window's rarer toggles, Quiet and Focus mode, and the layout presets,
- * each with its shortcut.
+ * Pause or Resume the workspace. A pause that would stop work mid-flight asks first, in the menu:
+ * the item says what it stops and the next click pauses.
  */
-function TitlebarMenuItems({
-  orchestration,
-  itemClassName = ITEM,
-}: {
-  /** The bar shows the workspace's orchestration buttons, so Workers and Tidy up can fold. */
-  orchestration: boolean;
-  itemClassName?: string;
-}) {
+function PauseItem({ state }: { state: WorkspaceState }) {
+  const { busy, confirm, run } = useWorkspacePause(state);
+  const [confirming, setConfirming] = useState(false);
+  if (state.paused !== undefined) {
+    return (
+      <Menu.Item
+        data-testid="folded-pause"
+        data-paused=""
+        disabled={busy}
+        className={MENU_ITEM}
+        onClick={() => run(false)}
+      >
+        <CirclePlay aria-hidden />
+        Resume workspace
+        <Current>since {pauseClock(state.paused.at)}</Current>
+      </Menu.Item>
+    );
+  }
+  if (confirming && confirm !== undefined) {
+    return (
+      <div data-testid="folded-pause-confirm" className="flex max-w-72 flex-col gap-0.5">
+        <p className="px-2 py-1 text-xs text-muted-foreground">{confirm}</p>
+        <Menu.Item
+          data-testid="folded-pause-confirmed"
+          disabled={busy}
+          className={MENU_ITEM}
+          onClick={() => run(true)}
+        >
+          <CirclePause aria-hidden />
+          Pause {state.workspace.name} anyway
+        </Menu.Item>
+      </div>
+    );
+  }
+  return (
+    <Menu.Item
+      data-testid="folded-pause"
+      disabled={busy}
+      closeOnClick={confirm === undefined}
+      title="The orchestrator and its workers finish the step they're on and stop, and nothing wakes them until you resume"
+      className={MENU_ITEM}
+      onClick={() => (confirm === undefined ? run(true) : setConfirming(true))}
+    >
+      <CirclePause aria-hidden />
+      {confirm === undefined ? "Pause workspace" : "Pause workspace…"}
+    </Menu.Item>
+  );
+}
+
+/** The workspace's own: Workers, Tidy up, Pause, Memory and its settings. */
+function WorkspaceItems({ state }: { state: WorkspaceState }) {
+  const navigate = useNavigate();
+  const { count } = useWorkersNow();
+  const workspaceId = state.workspace.id;
+  return (
+    <Menu.Group data-testid="titlebar-menu-workspace">
+      <Menu.GroupLabel className={MENU_LABEL}>{state.workspace.name}</Menu.GroupLabel>
+      <Menu.Item
+        data-testid="folded-workers"
+        className={MENU_ITEM}
+        onClick={() => useWorkersListStore.getState().toggle()}
+      >
+        <Users aria-hidden />
+        Workers
+        {count > 0 && (
+          <span className="text-xs text-muted-foreground tabular-nums">{count} now</span>
+        )}
+        <Keys id="workers.open" />
+      </Menu.Item>
+      <TidyItem key={workspaceId} state={state} />
+      <PauseItem key={`pause-${workspaceId}`} state={state} />
+      <Menu.Item
+        data-testid="menu-memory"
+        className={MENU_ITEM}
+        onClick={() => void navigate({ to: "/w/$workspaceId/memory", params: { workspaceId } })}
+      >
+        <Brain aria-hidden />
+        Memory
+      </Menu.Item>
+      <Menu.Item
+        data-testid="menu-workspace-settings"
+        className={MENU_ITEM}
+        onClick={() => openWorkspaceSettings(workspaceId)}
+      >
+        <Settings2 aria-hidden />
+        Workspace settings
+      </Menu.Item>
+    </Menu.Group>
+  );
+}
+
+/** The window's own: Board's layout when folded, Quiet, focus mode, History and the layout. */
+function ViewItems() {
   const state = useViewWorkspace();
   const preset = useLayoutStore((s) => s.grid.preset);
   const focusMode = useLayoutStore((s) => s.focusMode);
   const fold = useTitlebarSlot((s) => s.fold);
-  const all = fold >= FOLD_ALL;
   // The Board's Grid or Lanes, folded out of its header with the lesser buttons.
   const board = useViewStore((s) => s.view === "board") && state !== undefined && fold > 0;
   const boardLayout = useLayoutStore((s) => s.boardLayout);
-  // A worker in the bar folded all the way: its own actions are this menu's.
-  const carried = useTitlebarThread();
-  const worker = useThreadsStore((s) =>
-    all && carried !== undefined ? s.byId[carried]?.thread : undefined,
-  );
-  const tidy = orchestration && state !== undefined && fold > 0;
-  // The thread in the bar, folded at all: its header's Run script is this menu's.
-  const scripted = useThreadsStore((s) => {
-    const thread = fold > 0 && carried !== undefined ? s.byId[carried]?.thread : undefined;
-    return thread !== undefined && thread.role !== "orchestrator" ? thread : undefined;
-  });
   return (
-    <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
-      {scripted !== undefined && (
-        <RunScriptMenuItems
-          threadId={scripted.id}
-          projectId={scripted.projectId}
-          itemClassName={itemClassName}
-        />
-      )}
-      {worker?.spawnedBy !== undefined && (
-        <WorkerMenuItems thread={worker} itemClassName={itemClassName} />
-      )}
-      {orchestration && state !== undefined && all && (
-        <Menu.Item
-          data-testid="folded-workers"
-          className={itemClassName}
-          onClick={() => useWorkersListStore.getState().toggle()}
-        >
-          <Users aria-hidden />
-          Workers
-          <Keys id="workers.open" />
-        </Menu.Item>
-      )}
-      {tidy && <TidyItem key={state.workspace.id} state={state} className={itemClassName} />}
-      {(tidy || (orchestration && state !== undefined && all)) && (
-        <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-      )}
+    <Menu.Group data-testid="titlebar-menu-view">
+      <Menu.GroupLabel className={MENU_LABEL}>View</Menu.GroupLabel>
       {board && (
-        <>
-          <Menu.RadioGroup
-            data-testid="folded-board-layout"
-            value={boardLayout}
-            onValueChange={(next: BoardLayout) => useLayoutStore.getState().setBoardLayout(next)}
-          >
-            <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
-              Board
-            </Menu.GroupLabel>
-            {(
-              [
-                ["grid", "Grid", Rows3],
-                ["lanes", "Lanes", Columns3],
-              ] as const
-            ).map(([value, label, Icon]) => (
-              <Menu.RadioItem key={value} value={value} closeOnClick className={itemClassName}>
-                <span className="flex size-3.5 items-center justify-center">
-                  <Menu.RadioItemIndicator>
-                    <CheckIcon aria-hidden />
-                  </Menu.RadioItemIndicator>
-                </span>
-                <Icon aria-hidden />
-                {label}
-              </Menu.RadioItem>
-            ))}
-          </Menu.RadioGroup>
-          <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-        </>
+        <Menu.RadioGroup
+          data-testid="folded-board-layout"
+          value={boardLayout}
+          onValueChange={(next: BoardLayout) => useLayoutStore.getState().setBoardLayout(next)}
+        >
+          {(
+            [
+              ["grid", "Board as grid", Rows3],
+              ["lanes", "Board as lanes", Columns3],
+            ] as const
+          ).map(([value, label, Icon]) => (
+            <Menu.RadioItem key={value} value={value} closeOnClick className={MENU_ITEM}>
+              <Icon aria-hidden />
+              {label}
+              <span className="ml-auto flex size-3.5 items-center justify-center pl-4">
+                <Menu.RadioItemIndicator>
+                  <CheckIcon aria-hidden />
+                </Menu.RadioItemIndicator>
+              </span>
+            </Menu.RadioItem>
+          ))}
+        </Menu.RadioGroup>
       )}
       <Menu.Item
         data-testid="folded-quiet"
         title="Show only what needs you, one card at a time"
-        className={itemClassName}
+        className={MENU_ITEM}
         onClick={() => useViewStore.getState().setQuiet(true)}
       >
         <Moon aria-hidden />
@@ -158,60 +304,100 @@ function TitlebarMenuItems({
       </Menu.Item>
       <Menu.Item
         data-testid="folded-focus"
-        className={itemClassName}
+        className={MENU_ITEM}
         onClick={() => useLayoutStore.getState().toggleFocusMode()}
       >
         <Focus aria-hidden />
         {focusMode ? "Leave focus mode" : "Focus mode"}
         <Keys id="focus.toggle" />
       </Menu.Item>
-      <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-      <Menu.RadioGroup
-        data-testid="folded-layout"
-        value={preset}
-        onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
+      <Menu.Item
+        data-testid="menu-history"
+        className={MENU_ITEM}
+        // After the menu has closed and given focus back, so History's field keeps it.
+        onClick={() => setTimeout(() => useHistoryStore.getState().toggle())}
       >
-        <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
-          Layout
-        </Menu.GroupLabel>
-        {GRID_PRESETS.map((value, i) => (
-          <Menu.RadioItem
-            key={value}
-            value={value}
-            aria-label={PRESET_LABELS[value]}
-            closeOnClick
-            className={itemClassName}
-          >
-            <span className="flex size-3.5 items-center justify-center">
-              <Menu.RadioItemIndicator>
-                <CheckIcon aria-hidden />
-              </Menu.RadioItemIndicator>
-            </span>
-            <PresetGlyph preset={value} />
-            {PRESET_LABELS[value]}
-            <Keys id={`layout.preset${i + 1}`} />
-          </Menu.RadioItem>
-        ))}
-      </Menu.RadioGroup>
-    </div>
+        <History aria-hidden />
+        History
+        <Keys id="history.open" />
+      </Menu.Item>
+      <Submenu
+        label="Layout"
+        testId="menu-layout"
+        icon={<LayoutGrid aria-hidden />}
+        current={PRESET_LABELS[preset]}
+      >
+        <Menu.RadioGroup
+          data-testid="folded-layout"
+          value={preset}
+          onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
+        >
+          {GRID_PRESETS.map((value, i) => (
+            <Menu.RadioItem
+              key={value}
+              value={value}
+              aria-label={PRESET_LABELS[value]}
+              closeOnClick
+              className={MENU_ITEM}
+            >
+              <PresetGlyph preset={value} />
+              {PRESET_LABELS[value]}
+              <Keys id={`layout.preset${i + 1}`} />
+              <span className="flex size-3.5 items-center justify-center">
+                <Menu.RadioItemIndicator>
+                  <CheckIcon aria-hidden />
+                </Menu.RadioItemIndicator>
+              </span>
+            </Menu.RadioItem>
+          ))}
+        </Menu.RadioGroup>
+      </Submenu>
+    </Menu.Group>
   );
 }
 
-/**
- * The bar's "…", always at the start of its view controls: the window's rarer toggles, and what a
- * narrow bar folds away.
- */
-export function TitlebarOverflow({
+/** The thread the bar carries: Contents, its scripts, a folded worker's actions, then its menu. */
+function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode }) {
+  const fold = useTitlebarSlot((s) => s.fold);
+  const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
+  if (thread === undefined) return null;
+  return (
+    <Menu.Group data-testid="titlebar-menu-thread">
+      <Menu.GroupLabel className={cn(MENU_LABEL, "max-w-64 truncate")}>
+        {thread.role === "orchestrator" ? "Orchestrator" : thread.title || "Thread"}
+      </Menu.GroupLabel>
+      {/* A worker in the bar folded all the way: its own actions are this menu's. */}
+      {fold >= FOLD_ALL && thread.spawnedBy !== undefined && (
+        <WorkerMenuItems thread={thread} itemClassName={MENU_ITEM} />
+      )}
+      <ContentsSubmenu threadId={threadId} />
+      {thread.role !== "orchestrator" && (
+        <RunScriptMenuItems
+          threadId={thread.id}
+          projectId={thread.projectId}
+          itemClassName={MENU_ITEM}
+        />
+      )}
+      {items}
+    </Menu.Group>
+  );
+}
+
+function OverflowMenu({
   orchestration,
+  thread,
   className,
 }: {
   orchestration: boolean;
-  className?: string;
+  thread?: { id: ThreadId; items: ReactNode } | undefined;
+  className?: string | undefined;
 }) {
+  const state = useViewWorkspace();
+  const workspace = orchestration && state !== undefined;
   return (
     <Menu.Root>
       <Hint
-        label={"More window controls\nQuiet, focus mode and layout"}
+        label={"More\nThe thread's, the workspace's and the window's controls"}
         side="bottom"
         render={
           <Menu.Trigger
@@ -220,7 +406,7 @@ export function TitlebarOverflow({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label="More window controls"
+                aria-label="More"
                 className={cn(
                   "text-muted-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
                   className,
@@ -234,11 +420,76 @@ export function TitlebarOverflow({
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
-          <Menu.Popup data-testid="titlebar-overflow-menu" className={POPUP}>
-            <TitlebarMenuItems orchestration={orchestration} />
+          <Menu.Popup
+            data-testid="titlebar-overflow-menu"
+            className={cn(MENU_POPUP, "max-h-(--available-height) w-64 overflow-y-auto")}
+          >
+            <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
+              {thread !== undefined && (
+                <>
+                  <ThreadItems threadId={thread.id} items={thread.items} />
+                  {SEPARATOR}
+                </>
+              )}
+              {workspace && (
+                <>
+                  <WorkspaceItems key={state.workspace.id} state={state} />
+                  {SEPARATOR}
+                </>
+              )}
+              <ViewItems />
+            </div>
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
+  );
+}
+
+/** The bar's "…" with the carried thread's menu in it, whose dialogs outlast the menu. */
+function ThreadOverflow({
+  threadId,
+  orchestration,
+  className,
+}: {
+  threadId: ThreadId;
+  orchestration: boolean;
+  className?: string | undefined;
+}) {
+  const { items, aside } = useThreadMenu(threadId);
+  return (
+    <>
+      {aside}
+      <OverflowMenu
+        orchestration={orchestration}
+        thread={{ id: threadId, items: items(MENU_ITEM) }}
+        className={className}
+      />
+    </>
+  );
+}
+
+/**
+ * The bar's one "…", before the panel toggle: the carried thread's menu, the workspace's controls
+ * and the window's, each labelled, with its shortcut.
+ */
+export function TitlebarOverflow({
+  orchestration,
+  className,
+}: {
+  /** The bar shows a workspace's work, so its controls (Workers, Tidy up, Pause…) are here. */
+  orchestration: boolean;
+  className?: string;
+}) {
+  const carried = useTitlebarThread();
+  return carried === undefined ? (
+    <OverflowMenu orchestration={orchestration} className={className} />
+  ) : (
+    <ThreadOverflow
+      key={carried}
+      threadId={carried}
+      orchestration={orchestration}
+      className={className}
+    />
   );
 }

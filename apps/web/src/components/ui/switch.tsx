@@ -13,7 +13,7 @@ function Switch({ className, ...props }: Omit<SwitchPrimitive.Root.Props, "nativ
       nativeButton
       render={<button type="button" />}
       className={cn(
-        "peer inline-flex h-4.5 w-8 shrink-0 cursor-default items-center rounded-full border border-transparent transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-checked:bg-primary data-disabled:opacity-50 data-unchecked:bg-input dark:data-unchecked:bg-input/80",
+        "peer inline-flex h-4.5 w-8 shrink-0 cursor-default items-center rounded-full border border-transparent transition-colors outline-none focus-visible:focus-ring data-checked:bg-primary data-disabled:opacity-50 data-unchecked:bg-input dark:data-unchecked:bg-input/80",
         className,
       )}
       {...props}

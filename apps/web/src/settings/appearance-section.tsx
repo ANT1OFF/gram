@@ -19,6 +19,7 @@ import { Expand } from "@/motion/expand";
 import { GlideItem, GlideList } from "@/motion/glide";
 import { NumberTicker } from "@/motion/number-ticker";
 import { PressScale } from "@/motion/press-scale";
+import { ChoiceCheck } from "@/components/choice-check";
 import { SegmentSlab } from "@/motion/segment-slab";
 import { Shimmer } from "@/motion/shimmer";
 import { Spinner } from "@/motion/spinner";
@@ -256,10 +257,11 @@ export function AppIconControl() {
             disabled={choose.isPending}
             onClick={() => choose.mutate(icon)}
             className={cn(
-              "flex flex-col items-center gap-1 rounded-md border p-1.5 outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50",
-              icon === current ? "border-primary" : "border-border",
+              "relative flex flex-col items-center gap-1 rounded-md border border-border p-1.5 outline-none hover:bg-accent focus-visible:focus-ring",
+              icon === current && "choice-selected hover:choice-selected",
             )}
           >
+            <ChoiceCheck checked={icon === current} className="absolute top-1 right-1" />
             <img src={`/app-icons/${icon}.png`} alt="" className="size-10" draggable={false} />
             <span className="text-[11px] leading-tight text-muted-foreground">
               {APP_ICON_NAMES[icon]}
@@ -295,8 +297,8 @@ function PaletteCard({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "flex flex-col gap-1.5 rounded-md border p-2 text-left outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50",
-        selected ? "border-primary" : "border-border",
+        "flex flex-col gap-1.5 rounded-md border border-border p-2 text-left outline-none hover:bg-accent focus-visible:focus-ring",
+        selected && "choice-selected hover:choice-selected",
       )}
     >
       <span aria-hidden className="flex h-3.5 overflow-hidden rounded-xs">
@@ -304,7 +306,10 @@ function PaletteCard({
           <span key={i} className="flex-1" style={{ backgroundColor: hex }} />
         ))}
       </span>
-      <span className="text-xs font-medium">{choice.name}</span>
+      <span className="flex items-center gap-1 text-xs font-medium">
+        {choice.name}
+        <ChoiceCheck checked={selected} className="ml-auto" />
+      </span>
       {choice.note && <span className="text-[11px] text-muted-foreground">{choice.note}</span>}
     </button>
   );

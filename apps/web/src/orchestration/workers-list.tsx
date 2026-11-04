@@ -116,7 +116,11 @@ function useListWorkspace(): WorkspaceId | undefined {
  * The title bar's way into ⌘J: the workers of the workspace in front of you, with how many are on
  * now. Shown only where a workspace is, as ⌘J is.
  */
-export function WorkersButton({ className }: { className?: string }) {
+/**
+ * The workspace ⌘J lists, and how many of its workers are on now: what the Workers button and the
+ * title bar's "…" say.
+ */
+export function useWorkersNow(): { workspaceId: WorkspaceId | undefined; count: number } {
   const workspaceId = useListWorkspace();
   const workspaces = useWorkspaces();
   const ids = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
@@ -129,6 +133,11 @@ export function WorkersButton({ className }: { className?: string }) {
       workersByTab(ledger, { byId: s.byId, statusDetail: s.statusDetail, now }, undefined).now,
     ),
   );
+  return { workspaceId, count };
+}
+
+export function WorkersButton({ className }: { className?: string }) {
+  const { workspaceId, count } = useWorkersNow();
   const open = useWorkersListStore((s) => s.open);
   const hint = useShortcutHint("workers.open");
   if (workspaceId === undefined) return null;

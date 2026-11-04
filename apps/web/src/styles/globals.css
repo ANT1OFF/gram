@@ -134,6 +134,40 @@
   --color-panel: var(--panel-bg);
 }
 
+/* One selection and focus style; the tokens are in tokens.css and DESIGN.md says where each goes.
+   `row-cursor`: the row the pointer or the arrow keys are on. `choice-selected`: a chosen card or
+   segment. `focus-ring`: keyboard focus, outside the control; `focus-ring-inset` inside a row. */
+@utility row-cursor {
+  /* The edge is a straight bar down the middle of the row's start, clear of its rounded corners. */
+  background-color: var(--row-cursor-bg);
+  background-image: linear-gradient(var(--row-cursor-edge), var(--row-cursor-edge));
+  background-repeat: no-repeat;
+  background-size: 2px 60%;
+  background-position: 0 50%;
+  color: var(--fg);
+  @media (forced-colors: active) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+@utility choice-selected {
+  background-color: var(--selected-bg);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--selected-edge);
+  @media (forced-colors: active) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+@utility focus-ring {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+@utility focus-ring-inset {
+  outline: var(--focus-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-width) * -1);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -148,6 +182,11 @@
     transition:
       background-color var(--dur-base) var(--ease-out),
       color var(--dur-base) var(--ease-out);
+  }
+  /* A menu, list or dialog that takes focus as it opens shows the keyboard on its rows and
+     controls, never as a ring round the whole popup. */
+  :where([role="menu"], [role="listbox"], [role="dialog"], [role="alertdialog"]):focus-visible {
+    outline: none;
   }
   ::selection {
     background-color: var(--selection);

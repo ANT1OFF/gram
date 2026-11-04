@@ -1,7 +1,9 @@
 import type { Autonomy } from "@gram/contracts";
 import { useId } from "react";
 
+import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
+import { CHOICE_CARD, FOCUS_RING } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
@@ -66,10 +68,13 @@ export function AutonomyChoice({
               onClick={() => {
                 if (!checked) onChange(level.value);
               }}
-              className="relative flex flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-checked:text-foreground"
+              className={CHOICE_CARD}
             >
               {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
-              <span className="text-sm font-medium">{level.label}</span>
+              <span className="flex w-full items-center gap-1.5 text-sm font-medium">
+                {level.label}
+                <ChoiceCheck checked={checked} className="ml-auto" />
+              </span>
               <span className="text-xs text-muted-foreground">{AUTONOMY_LINE[level.value]}</span>
             </button>
           );
@@ -83,7 +88,10 @@ export function AutonomyChoice({
             render={
               <button
                 type="button"
-                className="rounded-sm text-foreground underline decoration-muted-foreground/60 underline-offset-2 outline-none hover:decoration-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                className={cn(
+                  "rounded-sm text-foreground underline decoration-muted-foreground/60 underline-offset-2 hover:decoration-foreground",
+                  FOCUS_RING,
+                )}
               />
             }
           >

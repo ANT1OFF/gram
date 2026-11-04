@@ -32,7 +32,7 @@ const BUSY: ReadonlySet<ThreadStatus> = new Set([
 const ACTION =
   "rounded-(--radius-sm) text-muted-foreground aria-disabled:opacity-50 [@media(pointer:coarse)]:size-9";
 const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
 
 export const messageText = (message: GramUIMessage): string =>
   message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n");

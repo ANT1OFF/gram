@@ -1004,7 +1004,7 @@ function PaletteBody({
           aria-expanded
           aria-controls="palette-results"
           aria-activedescendant={activeIndex === -1 ? undefined : `palette-item-${activeIndex}`}
-          className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:shadow-[inset_0_-2px_0_0_var(--focus-ring)]"
+          className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           placeholder={
             scope === undefined
               ? "Go to a thread, worker or PR… (> for commands)"
@@ -1064,8 +1064,7 @@ function PaletteBody({
                     onClick={() => run(item)}
                     className={cn(
                       "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                      itemIndex === activeIndex &&
-                        "bg-accent text-accent-foreground ring-1 ring-ring ring-inset",
+                      itemIndex === activeIndex && "row-cursor",
                       item.unavailable !== undefined && "text-muted-foreground",
                     )}
                   >

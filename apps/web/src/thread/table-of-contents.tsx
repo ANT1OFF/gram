@@ -11,7 +11,7 @@ import type { Chapter } from "./parts";
 const POPUP =
   "z-50 max-h-80 w-72 max-w-[calc(100vw-2rem)] origin-(--transform-origin) overflow-y-auto rounded-(--radius-md) border border-border bg-popover p-1 text-popover-foreground shadow-(--shadow-raised) outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
-  "block w-full cursor-default rounded-(--radius-sm) px-2 py-1.5 text-left text-sm wrap-anywhere outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground";
+  "block w-full cursor-default rounded-(--radius-sm) px-2 py-1.5 text-left text-sm wrap-anywhere outline-none select-none data-[highlighted]:row-cursor";
 
 const targetClass =
   "group/turn flex h-6 w-full shrink-0 items-center rounded-(--radius-sm) px-3 focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2";

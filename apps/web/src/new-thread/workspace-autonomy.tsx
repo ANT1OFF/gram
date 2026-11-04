@@ -4,6 +4,7 @@ import { Popover } from "@base-ui/react/popover";
 import { ChevronDown, Shield, TriangleAlert } from "lucide-react";
 import { createElement, useState } from "react";
 
+import { ChoiceCheck } from "@/components/choice-check";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AUTONOMY_ICON } from "@/orchestration/autonomy-chip";
@@ -134,9 +135,12 @@ export function WorkspaceAutonomy({
                       data-testid={`workspace-autonomy-${each.value}`}
                       disabled={changes.busy}
                       onClick={() => pick(each.value)}
-                      className="flex flex-col items-start gap-0.5 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 aria-checked:bg-accent"
+                      className="flex flex-col items-start gap-0.5 rounded-sm px-2 py-1.5 text-left outline-none hover:row-cursor focus-visible:focus-ring-inset disabled:opacity-50 aria-checked:choice-selected"
                     >
-                      <span className="text-sm font-medium">{each.label}</span>
+                      <span className="flex w-full items-center gap-1.5 text-sm font-medium">
+                        {each.label}
+                        <ChoiceCheck checked={checked} className="ml-auto" />
+                      </span>
                       <span className="text-muted-foreground">{AUTONOMY_LINE[each.value]}</span>
                     </button>
                   );

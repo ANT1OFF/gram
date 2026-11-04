@@ -278,6 +278,9 @@ export function OverviewSidebar() {
   useRevealViewed();
   // The optional sections Settings → General turned off.
   const hidden = useLayoutStore((s) => s.overviewHidden);
+  // Before a first workspace the welcome is the one thing to look at: no pull requests or usage
+  // beside it.
+  const firstRun = useFirstRun();
   return (
     <aside
       aria-label="Overview"
@@ -326,11 +329,11 @@ export function OverviewSidebar() {
         </div>
         <Orchestrators />
         {!hidden.includes("solo") && <SoloThreads />}
-        {!hidden.includes("pullRequests") && <OverviewPullRequests />}
+        {!firstRun && !hidden.includes("pullRequests") && <OverviewPullRequests />}
         {!hidden.includes("doneToday") && <OverviewDone />}
       </div>
       {!hidden.includes("doneToday") && <OverviewHistory />}
-      {!hidden.includes("usage") && <OverviewFoot />}
+      {!firstRun && !hidden.includes("usage") && <OverviewFoot />}
     </aside>
   );
 }

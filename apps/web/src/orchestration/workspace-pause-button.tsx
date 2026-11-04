@@ -21,6 +21,37 @@ const PAUSE_HINT =
   "Pause\nThe orchestrator and its workers finish the step they're on and stop, and nothing wakes them until you resume";
 
 /**
+ * Pausing or resuming `state`'s workspace: `confirm` says what a pause stops while work is
+ * mid-flight, to ask first; resuming never asks. Failures show in the thread dialogs' error line.
+ */
+export function useWorkspacePause(state: WorkspaceState): {
+  busy: boolean;
+  confirm: string | undefined;
+  run: (pause: boolean) => void;
+} {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const { workspace } = state;
+  const working = useThreadsStore((s) => midTurnWorkers(s.byId, workspace.id));
+  const orchestratorWorking = useThreadsStore((s) =>
+    inTurn(orchestratorOf(Object.values(s.byId), workspace)?.status),
+  );
+  const confirm = pauseConfirmText(working, orchestratorWorking);
+  const run = (next: boolean) => {
+    setBusy(true);
+    setWorkspacePaused(api, queryClient, workspace, next)
+      .catch((error: unknown) =>
+        useThreadDialogs
+          .getState()
+          .fail(`Couldn't ${next ? "pause" : "resume"} the workspace: ${errorMessage(error)}`),
+      )
+      .finally(() => setBusy(false));
+  };
+  return { busy, confirm, run };
+}
+
+/**
  * Pause or Resume the workspace's orchestration, one click each. A pause with work mid-flight asks
  * first, in a line under the button, since it stops that work; resuming never asks. Paused, it says
  * since when.
@@ -37,27 +68,12 @@ function WorkspacePauseButton({
   compact?: boolean;
   className?: string | undefined;
 }) {
-  const api = useApi();
-  const queryClient = useQueryClient();
-  const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const { workspace, paused } = state;
-  const working = useThreadsStore((s) => midTurnWorkers(s.byId, workspace.id));
-  const orchestratorWorking = useThreadsStore((s) =>
-    inTurn(orchestratorOf(Object.values(s.byId), workspace)?.status),
-  );
-  const confirm = pauseConfirmText(working, orchestratorWorking);
-
+  const { busy, confirm, run: send } = useWorkspacePause(state);
   const run = (next: boolean) => {
     setConfirming(false);
-    setBusy(true);
-    setWorkspacePaused(api, queryClient, workspace, next)
-      .catch((error: unknown) =>
-        useThreadDialogs
-          .getState()
-          .fail(`Couldn't ${next ? "pause" : "resume"} the workspace: ${errorMessage(error)}`),
-      )
-      .finally(() => setBusy(false));
+    send(next);
   };
 
   if (paused !== undefined) {
@@ -131,10 +147,13 @@ function WorkspacePauseButton({
   );
 }
 
-/** The title bar's Pause or Resume, beside Tidy up, for the workspace the window is on. */
+/**
+ * The title bar's "Paused 14:02", for the workspace the window is on, while it is paused: a click
+ * resumes it. Pausing is in the bar's "…", so a running workspace shows nothing here.
+ */
 export function TitlebarPause({ className }: { className?: string }) {
   const state = useViewWorkspace();
-  if (state === undefined) return null;
+  if (state?.paused === undefined) return null;
   return (
     <WorkspacePauseButton
       key={state.workspace.id}

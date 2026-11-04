@@ -33,6 +33,7 @@ import { useShortcut } from "@/keyboard/registry";
 import { targetBadge } from "@/panels/pr-identity";
 import { turnEndMessages } from "@/panels/turn-diff";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
+import { useTitlebarOutline } from "@/shell/titlebar-outline";
 import { useTitlebarSlot, useTitlebarThread } from "@/shell/titlebar-slot";
 import { useStable } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
@@ -56,7 +57,6 @@ import {
   WorkerNowChip,
 } from "@/orchestration/worker-header";
 import { RunScriptMenu } from "@/scripts/run-script-menu";
-import { Foldable } from "@/shell/foldable";
 import { loadEarlier, useThreadFeed } from "@/stores/feeds";
 import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useRevealStore } from "@/stores/reveal";
@@ -207,6 +207,30 @@ export function ThreadView({
       nonce: (previous?.nonce ?? 0) + 1,
     }));
   };
+  // Carried by the title bar, the header's Contents is a submenu of the bar's one "…": published
+  // there, with stable callbacks that call this render's.
+  const carriedByBar =
+    titlebarSlot !== null && titlebarThread === threadId && actions === undefined;
+  const latestOutline = useRef({ jump: jumpToChapter, loadEarlier: () => void pageEarlier(true) });
+  useEffect(() => {
+    latestOutline.current = { jump: jumpToChapter, loadEarlier: () => void pageEarlier(true) };
+  });
+  useEffect(() => {
+    if (!carriedByBar) return;
+    const { set } = useTitlebarOutline.getState();
+    set({
+      threadId,
+      chapters,
+      earlier,
+      loadingEarlier,
+      earlierFailed,
+      jump: (messageId) => latestOutline.current.jump(messageId),
+      onLoadEarlier: () => latestOutline.current.loadEarlier(),
+    });
+    return () => {
+      if (useTitlebarOutline.getState().outline?.threadId === threadId) set(undefined);
+    };
+  }, [carriedByBar, threadId, chapters, earlier, loadingEarlier, earlierFailed]);
   const lastSubagentJump = useRef<string>(undefined);
   const [finding, setFinding] = useState(false);
   const revealRequest = useRevealStore((s) => s.request);
@@ -518,23 +542,27 @@ export function ThreadView({
           <RunningCount count={display.running} />
           <span className="sr-only">{display.label}</span>
         </Hint>
-        <TableOfContents
-          chapters={chapters}
-          onJump={jumpToChapter}
-          earlier={earlier}
-          loadingEarlier={loadingEarlier}
-          earlierFailed={earlierFailed}
-          onLoadEarlier={() => void pageEarlier(true)}
-        />
-        {thread.role !== "orchestrator" && (
-          <HeaderRunScript
-            threadId={threadId}
-            projectId={thread.projectId}
-            inTitlebar={inTitlebar}
-            hideClass={hideSm}
-          />
+        {/* In the title bar, Contents, Run script and the thread's menu are the bar's one "…". */}
+        {!inTitlebar && (
+          <>
+            <TableOfContents
+              chapters={chapters}
+              onJump={jumpToChapter}
+              earlier={earlier}
+              loadingEarlier={loadingEarlier}
+              earlierFailed={earlierFailed}
+              onLoadEarlier={() => void pageEarlier(true)}
+            />
+            {thread.role !== "orchestrator" && (
+              <HeaderRunScript
+                threadId={threadId}
+                projectId={thread.projectId}
+                hideClass={hideSm}
+              />
+            )}
+            <ThreadMenu threadId={threadId} />
+          </>
         )}
-        <ThreadMenu threadId={threadId} />
         {actions}
       </header>
     </AttentionPulse>
@@ -769,33 +797,25 @@ function ThreadGoneNotice({ threadId }: { threadId: ThreadId }) {
 
 /**
  * The header's Run script, once the project has scripts: the bare glyph, so every chip keeps its
- * room. In the title bar a narrow bar folds it into its "…" (`RunScriptMenuItems`) with the other
- * lesser buttons; in a pane of a grid it drops below the container's small width.
+ * room. In a pane of a grid it drops below the container's small width; a thread the title bar
+ * carries has it in the bar's "…" (`RunScriptMenuItems`) instead.
  */
 function HeaderRunScript({
   threadId,
   projectId,
-  inTitlebar,
   hideClass,
 }: {
   threadId: ThreadId;
   projectId: Thread["projectId"];
-  inTitlebar: boolean;
   hideClass: string;
 }) {
-  const menu = (
+  return (
     <RunScriptMenu
       threadId={threadId}
       projectId={projectId}
       size="glyph"
       onlyWithScripts
-      {...(inTitlebar ? {} : { className: hideClass })}
+      className={hideClass}
     />
-  );
-  if (!inTitlebar) return menu;
-  return (
-    <Foldable level={1} gap={8}>
-      {menu}
-    </Foldable>
   );
 }

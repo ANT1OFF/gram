@@ -263,10 +263,10 @@ export const SEGMENT =
   "relative text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent aria-checked:text-foreground aria-pressed:text-foreground";
 
 /**
- * The selected segment's slab: `surface-3` with a hairline. That fill is also a card's and a
- * popover's, so on one of them the track and the hairline are what set the slab apart.
+ * The selected segment's slab: the one selected style (`choice-selected`), an accent-tinted fill
+ * with an accent edge, so a pick reads the same in Settings, New and the first run.
  */
-export const SEGMENT_SLAB = "bg-secondary ring-1 ring-border";
+export const SEGMENT_SLAB = "choice-selected";
 
 /** One choice out of a few, as a row of radio buttons. */
 export function OptionGroup<T extends string>({

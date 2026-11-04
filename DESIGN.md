@@ -51,6 +51,17 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`.
+- **One selection and focus style.**
+  - The row the pointer or the arrow keys are on, in every menu, list, the palette and History,
+    takes `row-cursor`: a fill and an accent bar at its start.
+  - A chosen value (a card, a segment, a setting, a repository) takes `choice-selected`, an
+    accent-tinted fill and edge, with a check where it has room; never colour alone. A menu's
+    current value is its check.
+  - Keyboard focus is the `focus-ring` outline (`--focus-ring`, `--focus-width`); a menu, list or
+    dialog never rings as a whole.
+- **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title, then
+  what wants you (a paused workspace, usage, the bell), one "…" with everything else in words and
+  shortcuts, and the panel. A new control goes in the "…" unless it is needed at a glance.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
 

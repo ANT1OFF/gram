@@ -295,7 +295,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
               data-history-filter={id}
               onClick={() => changeFilter(id)}
               className={cn(
-                "h-7 rounded-(--radius-sm) px-2.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                "h-7 rounded-(--radius-sm) px-2.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring",
                 filter === id && "bg-accent font-medium text-accent-foreground",
               )}
             >
@@ -358,7 +358,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
             data-testid="history-more"
             aria-busy={busy || undefined}
             onClick={() => setLimit((current) => current + DONE_PAGE)}
-            className="mx-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="mx-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring"
           >
             Show more
           </button>
@@ -428,7 +428,7 @@ function HistoryRow({
       onClick={onOpen}
       className={cn(
         "flex min-h-9 cursor-default items-center gap-2.5 rounded-md px-2 text-sm",
-        active && "bg-accent text-accent-foreground",
+        active && "row-cursor",
         resuming && "opacity-60",
       )}
     >
