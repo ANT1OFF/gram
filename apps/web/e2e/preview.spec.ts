@@ -57,12 +57,15 @@ test("a port chip opens the thread's app in the Preview tab, loopback only", asy
   ).toHaveText("Hello from the local app", { timeout: 10_000 * slowdown });
   await expect(page.getByTestId("preview-address")).toHaveValue(`http://localhost:${port}/`);
 
-  // The page sits where the tab's placeholder is.
-  const placeholder = await page.getByTestId("preview-placeholder").boundingBox();
-  const drawn = await frame.boundingBox();
-  expect(drawn).not.toBeNull();
-  expect(Math.abs(drawn!.x - placeholder!.x)).toBeLessThan(2);
-  expect(Math.abs(drawn!.width - placeholder!.width)).toBeLessThan(2);
+  // The page sits where the tab's placeholder is, once the panel has eased from the Diff tab's
+  // review width to its own.
+  const offset = async () => {
+    const placeholder = await page.getByTestId("preview-placeholder").boundingBox();
+    const drawn = await frame.boundingBox();
+    if (placeholder === null || drawn === null) return Number.POSITIVE_INFINITY;
+    return Math.max(Math.abs(drawn.x - placeholder.x), Math.abs(drawn.width - placeholder.width));
+  };
+  await expect.poll(offset).toBeLessThan(2);
 
   // A dialog over it hides the page, which would otherwise draw over the dialog.
   await page.keyboard.press("ControlOrMeta+k");
