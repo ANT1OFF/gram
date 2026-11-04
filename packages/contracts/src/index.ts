@@ -65,6 +65,7 @@ export * from "./diagnostics.ts";
 export * from "./runtime-features.ts";
 export * from "./git-refresh.ts";
 export * from "./projects.ts";
+export * from "./project-scripts.ts";
 export * from "./session-preview.ts";
 export * from "./sidebar.ts";
 export * from "./thread-ui.ts";

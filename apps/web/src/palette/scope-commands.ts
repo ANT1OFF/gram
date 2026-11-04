@@ -224,6 +224,17 @@ export function useScopeCommands(
         ...(source !== undefined && byId[source] !== undefined
           ? [{ id: `scope:source:${id}`, label: "Go to source thread", run: () => goTo(source) }]
           : []),
+        ...(worker
+          ? [
+              {
+                id: `scope:scripts:${id}`,
+                label: "Project scripts…",
+                keywords: "run script add edit commands build test lint dev package.json makefile",
+                run: () =>
+                  open({ kind: "projectScripts", projectId: thread.projectId, threadId: id }),
+              },
+            ]
+          : []),
         {
           id: `scope:restart:${id}`,
           label: "Restart session",

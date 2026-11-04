@@ -112,7 +112,21 @@ const CHECKOUT = dir({
   }),
   latest: { kind: "symlink", target: "src" },
   "package.json": text(
-    `${JSON.stringify({ name: "api", private: true, scripts: { test: "vitest run" } }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        name: "api",
+        private: true,
+        packageManager: "pnpm@9.15.0",
+        scripts: {
+          dev: "tsx watch src/index.ts",
+          build: "tsc -b",
+          test: "vitest run",
+          lint: "oxlint",
+        },
+      },
+      null,
+      2,
+    )}\n`,
   ),
   "README.md": text("# api\n\nThe API service. Run `pnpm test` to check retries.\n"),
 });

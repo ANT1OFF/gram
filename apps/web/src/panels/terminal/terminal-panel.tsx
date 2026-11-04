@@ -1,4 +1,4 @@
-import type { TerminalId, ThreadId } from "@gram/contracts";
+import { scriptRunState, type TerminalId, type ThreadId } from "@gram/contracts";
 import { Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -8,6 +8,9 @@ import { focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { Shimmer } from "@/motion";
 import { PanelMessage } from "@/panels/panel-message";
+import { RunScriptMenu } from "@/scripts/run-script-menu";
+import { ScriptRunMark, scriptRunLabel } from "@/scripts/script-run-mark";
+import { useThreadProject } from "@/scripts/use-project-scripts";
 
 import { TerminalView } from "./terminal-view";
 import {
@@ -24,6 +27,8 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
   const api = useApi();
   const entry = useTerminalsStore((s) => s.byThread[threadId]);
   const setActive = useTerminalsStore((s) => s.setActive);
+  const setRun = useTerminalsStore((s) => s.setRun);
+  const projectId = useThreadProject(threadId);
   const [problem, setProblem] = useState<string | undefined>();
 
   useEffect(() => {
@@ -87,8 +92,14 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
           aria-label="Terminals"
           className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto"
         >
-          {entry.ids.map((id, index) => {
+          {entry.ids.map((id) => {
             const selected = id === entry.active;
+            const script = entry.scripts?.[id];
+            const run = entry.runs?.[id];
+            // Shells are numbered among themselves; a script's tab is its name.
+            const number =
+              entry.ids.filter((each) => entry.scripts?.[each] === undefined).indexOf(id) + 1;
+            const name = script ?? `Terminal ${number}`;
             return (
               <div
                 key={id}
@@ -101,14 +112,18 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
                   type="button"
                   role="tab"
                   aria-selected={selected}
+                  data-script={script}
+                  data-run={run}
                   onClick={() => setActive(threadId, id)}
-                  className="rounded-md px-2 py-0.5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="flex items-center gap-1 rounded-md px-2 py-0.5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
-                  Terminal {index + 1}
+                  {run !== undefined && <ScriptRunMark run={run} />}
+                  {name}
+                  {run !== undefined && <span className="sr-only">, {scriptRunLabel(run)}</span>}
                 </button>
                 <button
                   type="button"
-                  aria-label={`Close terminal ${index + 1}`}
+                  aria-label={script === undefined ? `Close terminal ${number}` : `Close ${script}`}
                   onClick={() => closeTab(id)}
                   className="rounded-sm p-0.5 outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
@@ -118,6 +133,9 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
             );
           })}
         </div>
+        {projectId !== undefined && (
+          <RunScriptMenu threadId={threadId} projectId={projectId} size="icon-xs" />
+        )}
         <Button
           type="button"
           size="icon-xs"
@@ -137,6 +155,8 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
             terminalId={id}
             shell={entry.shells[id]}
             active={id === entry.active}
+            script={entry.scripts?.[id]}
+            onExit={(exit) => setRun(threadId, id, scriptRunState(exit))}
             onRestart={() => restartTerminal(api, threadId, id).catch(report)}
           />
         ))}

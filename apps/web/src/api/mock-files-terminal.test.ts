@@ -108,9 +108,31 @@ describe("MockTerminals", () => {
     expect(events.at(-1)).toEqual({ type: "exit", code: 0 });
     expect(() => terminals.input(terminalId, "x")).toThrow("exited");
 
+    // As the server does: an exited terminal replays its output, then how it ended.
     const replay: TerminalEvent[] = [];
     await collect(terminals.subscribe(terminalId, new AbortController().signal), replay);
-    expect(replay).toHaveLength(1);
+    expect(replay).toHaveLength(2);
     expect(replay[0]).toMatchObject({ type: "replay", data: expect.stringContaining("echo: ls") });
+    expect(replay[1]).toEqual({ type: "exit", code: 0 });
+    expect(terminals.list("t-1" as ThreadId)).toMatchObject([{ alive: false, exitCode: 0 }]);
+  });
+
+  it("plays a script's run under its command and ends with the code it names", async () => {
+    const terminals = new MockTerminals();
+    const run = { name: "lint", command: "pnpm run lint; exit 2", cwd: `${ROOT}/web` };
+    const opened = terminals.open({ threadId: "t-1" as ThreadId, cols: 80, rows: 24 }, ROOT, run);
+    expect(opened).toMatchObject({ script: "lint", cwd: `${ROOT}/web` });
+    const events: TerminalEvent[] = [];
+    const done = collect(
+      terminals.subscribe(opened.terminalId, new AbortController().signal),
+      events,
+    );
+    await terminals.play(opened.terminalId, run, async () => {});
+    await done;
+    expect(events[0]).toMatchObject({ type: "replay", data: expect.stringContaining(run.command) });
+    expect(events.at(-1)).toEqual({ type: "exit", code: 2 });
+    expect(terminals.list("t-1" as ThreadId)).toMatchObject([
+      { script: "lint", alive: false, exitCode: 2 },
+    ]);
   });
 });

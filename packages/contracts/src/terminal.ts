@@ -5,6 +5,8 @@ export const TerminalOpened = Schema.Struct({
   terminalId: TerminalId,
   cwd: Schema.String,
   shell: Schema.String,
+  /** The project script it runs, by name; absent for a plain shell. */
+  script: Schema.optionalKey(Schema.String),
 });
 export type TerminalOpened = typeof TerminalOpened.Type;
 
@@ -15,6 +17,11 @@ export const TerminalInfo = Schema.Struct({
   shell: Schema.String,
   /** False once the shell has exited. */
   alive: Schema.Boolean,
+  /** The project script it runs, by name; absent for a plain shell. */
+  script: Schema.optionalKey(Schema.String),
+  /** How it ended, once it has. */
+  exitCode: Schema.optionalKey(Schema.Int),
+  signal: Schema.optionalKey(Schema.String),
 });
 export type TerminalInfo = typeof TerminalInfo.Type;
 
