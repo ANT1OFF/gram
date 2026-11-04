@@ -4,11 +4,12 @@ import { slowdown } from "./slowdown";
 
 import { openAdvancedPage } from "./settings-nav";
 import { threadRow } from "./thread-row";
+import { openPanelTab } from "./panel-tab";
 
 test("adds an MCP server from the Connectors panel and removes it again", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Connectors", exact: true }).click();
+  await openPanelTab(panel, "Connectors");
   const connectors = panel.getByTestId("connector");
   await expect(connectors).toHaveCount(7);
 
@@ -37,7 +38,7 @@ test("adds an MCP server from the Connectors panel and removes it again", async 
 test("adds an OAuth server for two agents, then signs in through the agent", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Connectors", exact: true }).click();
+  await openPanelTab(panel, "Connectors");
   await expect(panel.getByTestId("connector")).toHaveCount(7);
 
   await panel.getByRole("button", { name: "Add server…" }).click();
@@ -208,7 +209,7 @@ test("a Claude session loads an added server in place, and restarts after a remo
   await page.goto("/t/t-flaky");
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Connectors", exact: true }).click();
+  await openPanelTab(panel, "Connectors");
   await panel.getByRole("button", { name: "Add server…" }).click();
   const form = panel.getByRole("form", { name: "Add MCP server" });
   await form.getByRole("textbox", { name: "Server name" }).fill("docs");
@@ -280,7 +281,7 @@ test("signing in from Settings restarts the agent's idle sessions", async ({ pag
 test("gives a claude.ai connector's server to Codex, which signs in itself", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Connectors", exact: true }).click();
+  await openPanelTab(panel, "Connectors");
   const kb = panel.getByRole("listitem", { name: "claude.ai Personal Docs" });
   await expect(kb).toContainText("Connected");
 

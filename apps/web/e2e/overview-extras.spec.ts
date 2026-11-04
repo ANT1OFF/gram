@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import type { MockOneThreadSimulation } from "../src/api/mock-asks";
 import { pressFirstWorkspaceKey } from "./thread-row";
+import { openPanelTab } from "./panel-tab";
 
 // The overview sidebar's extras: Pull requests, folded until opened, the way into History, the usage
 // meters and worker slots at its foot, off by default, and Settings → General's Sidebar sections.
@@ -94,7 +95,7 @@ const IN_PANEL = { reviewRequestsPlacement: "panel", openPrsPlacement: "panel" }
 const toPanel = async (page: Page) => {
   await page.keyboard.press("ControlOrMeta+Alt+b");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: /Reviews/ }).click();
+  await openPanelTab(panel, /Reviews/);
   await expect(panel.getByRole("tab", { name: /Reviews/ })).toHaveAttribute(
     "aria-selected",
     "true",

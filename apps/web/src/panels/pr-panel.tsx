@@ -417,6 +417,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         <PrActions
           threadId={threadId}
           detail={detail}
+          merge={mergeState?.kind}
           onBind={bound ? undefined : () => setBindFormOpen(true)}
         />
       </header>

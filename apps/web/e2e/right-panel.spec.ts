@@ -2,9 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { reviewsInPanel } from "./reviews-panel";
 
-// The panel's tabs show their names while the strip has room for every one, then only the open
-// tab's, then icons alone, measured from the strip rather than guessed from a breakpoint. Every
-// state keeps each tab's accessible name and tooltip, and its count.
+// The panel's tabs show their names while the strip has room for every one. Short of that the rarer
+// tabs fold into More, named there, and Diff, PR, Files, Terminal and the open tab keep their
+// names; then only the open tab's; then icons alone. All of it is measured from the row rather
+// than guessed from a breakpoint. Every state keeps each tab's accessible name and tooltip, and its
+// count. On a review, Focus review sits beside the tabs in words that fold to its icon last.
 
 const open = async (page: Page, width: number) => {
   await page.addInitScript((panelWidth) => {
@@ -72,18 +74,80 @@ test("a wide panel names every tab, and the open one stands on a background and 
   expect(idle.underline).toBe("rgba(0, 0, 0, 0)");
 });
 
-test("a narrower panel names only the open tab, and the name follows the open tab", async ({
+test("a narrower panel names Diff, PR, Files and Terminal, the rest named in More", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const panel = await open(page, 420);
+  const panel = await open(page, 520);
+  const list = panel.locator("[data-label-fit]");
+  await expect(list).toHaveAttribute("data-label-fit", "primary");
+  await expect.poll(() => named(page)).toEqual(["diff", "pr", "files", "terminal"]);
+  expect(await overflows(page)).toBe(false);
+
+  // More holds the rest, each by its name; a pick opens it in the strip, named, and More keeps
+  // the others.
+  const more = panel.getByRole("button", { name: "More tabs" });
+  await expect(more).toContainText("More");
+  await more.click();
+  const menu = page.getByTestId("panel-more-menu");
+  await expect(menu.getByRole("menuitem", { name: "Needs you" })).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Connectors" }).click();
+  const connectors = panel.getByRole("tab", { name: "Connectors", exact: true });
+  await expect(connectors).toHaveAttribute("aria-selected", "true");
+  await expect.poll(() => named(page)).toContain("connectors");
+  await more.click();
+  await expect(menu.getByRole("menuitem", { name: "Connectors" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "Needs you" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  expect(await overflows(page)).toBe(false);
+});
+
+test("narrower still, only the open tab keeps its name, and it follows the open tab", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const panel = await open(page, 340);
   const list = panel.locator("[data-label-fit]");
   await expect(list).toHaveAttribute("data-label-fit", "active");
   await expect.poll(() => named(page)).toEqual(["files"]);
   expect(await overflows(page)).toBe(false);
-  // Choosing another tab moves the name with it.
   await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
   await expect.poll(() => named(page)).toEqual(["terminal"]);
+  expect(await overflows(page)).toBe(false);
+});
+
+test("a review at its ordinary width names Diff, PR, Files and Terminal, with Focus review in words beside them", async ({
+  page,
+}) => {
+  // 1728 px leaves the review its widest beside an 800 px chat: 680 px.
+  await page.setViewportSize({ width: 1728, height: 1000 });
+  await page.goto("/t/t-flaky");
+  const panel = page.getByTestId("right-panel");
+  await expect(panel.getByRole("tab", { name: "Diff", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(680);
+  await expect
+    .poll(() => named(page))
+    .toEqual(expect.arrayContaining(["diff", "pr", "files", "terminal"]));
+  const focus = panel.getByRole("button", { name: "Focus review", exact: true });
+  await expect(focus).toHaveAttribute("data-words", "true");
+  await expect(focus).toContainText("Focus review");
+  expect(await overflows(page)).toBe(false);
+  // Beside the strip and its More, not across the row from them.
+  const before = panel.getByTestId("panel-more");
+  await expect(before).toBeVisible();
+  const gap = await focus.evaluate(
+    (button, more) => button.getBoundingClientRect().left - more!.getBoundingClientRect().right,
+    await before.elementHandle(),
+  );
+  expect(gap).toBeLessThan(24);
+
+  // Too narrow for its words, it keeps its icon and its name.
+  await page.setViewportSize({ width: 1180, height: 1000 });
+  await expect(focus).toHaveAttribute("data-words", "false");
+  await expect(focus).toBeVisible();
   expect(await overflows(page)).toBe(false);
 });
 

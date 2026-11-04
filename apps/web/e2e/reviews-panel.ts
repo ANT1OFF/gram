@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { openPanelTab } from "./panel-tab";
 
 /**
  * Places the review requests, the user's open PRs or both in the right panel's Reviews tab before
@@ -42,6 +43,6 @@ export async function reviewsInPanel(
 /** The right panel's Reviews tab, opened. */
 export async function openReviewsTab(page: Page) {
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: /Reviews/ }).click();
+  await openPanelTab(panel, /Reviews/);
   return panel;
 }
