@@ -10,7 +10,7 @@ test("a one-off thread opens on the prompt-first controls, not scrolled down to 
   await page.keyboard.press("ControlOrMeta+KeyT");
   await expect(page).toHaveURL(/\/new$/);
   await expect(page.getByRole("heading", { name: "New", exact: true })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Just me" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "Single agent chat" })).toBeChecked();
   await expect(page.getByTestId("where-chips")).toBeInViewport();
   await expect(page.getByLabel("First prompt")).toBeInViewport();
   await expect(page.getByLabel("Project path")).not.toBeFocused();
@@ -48,7 +48,7 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByTestId("pane-header")).toContainText("Fix flaky retry test");
   await page.keyboard.press("ControlOrMeta+KeyN");
   await expect(page).toHaveURL(/\/new-task$/);
-  await expect(page.getByRole("radio", { name: "Orchestrator" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "Agent team (orchestrator)" })).toBeChecked();
   // The current thread's repo has no workspace yet, so one is made on send, at Full by default.
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(page.getByTestId("task-autonomy")).toHaveAttribute("data-value", "full");
@@ -80,21 +80,69 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(page.getByTestId("task-autonomy")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Send to orchestrator/ })).toBeVisible();
-  await page.getByRole("radio", { name: "Worker" }).click();
+  await page.getByRole("radio", { name: "One worker to PR" }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(page.getByTestId("task-way-note")).toContainText("One worker starts now");
+  await expect(page.getByTestId("task-way-note")).toContainText("The orchestrator directs it");
+  // The workspace's autonomy, in words, with what it allows and a way to change it.
+  const autonomy = page.getByTestId("workspace-autonomy");
+  await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
+    "Workspace: full autonomy",
+  );
+  await expect(autonomy.getByTestId("workspace-autonomy-summary")).toHaveText(
+    "Pushes, opens and merges pull requests without asking.",
+  );
+  await autonomy.getByTestId("workspace-autonomy-trigger").click();
+  const levels = page.getByTestId("workspace-autonomy-menu");
+  await expect(levels.getByRole("radio", { name: "Full" })).toBeChecked();
+  await levels.getByRole("radio", { name: "Publish" }).click();
+  await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
+    "Workspace: publish autonomy",
+  );
+  // Back up to Full asks first, since nothing asks after it.
+  await levels.getByRole("radio", { name: "Full" }).click();
+  await levels.getByRole("button", { name: "Turn on Full" }).click();
+  await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
+    "Workspace: full autonomy",
+  );
+  await page.keyboard.press("Escape");
+  await expect(levels).toBeHidden();
+
+  // Started from here, the worker is the orchestrator's and running, not held as yours.
+  const hold = page.getByRole("switch", { name: "Start under my control" });
+  await expect(hold).not.toBeChecked();
   await page.getByLabel("What needs doing").fill("Fix the retry test on Windows");
   await page.getByRole("button", { name: /Start worker/ }).click();
   await expect(page.getByTestId("pane-header")).toContainText("Fix the retry test on Windows");
   await expect(page.getByTestId("worker-crumbs")).toBeVisible();
-  // You wrote its first input, so it starts yours.
+  await expect(page.getByTestId("message-user").first()).toContainText(
+    "Fix the retry test on Windows",
+  );
+  await expect(page.getByTestId("worker-hold")).toHaveCount(0);
+  await expect(page.getByTestId("worker-banner-held")).toHaveCount(0);
+  // Take over is offered instead (folded into the bar at this width).
+  await expect(page.getByTestId("worker-take-over")).toHaveCount(1);
+
+  // Asked for before submitting, it starts under your control, and says so in those words.
+  await page
+    .getByTestId("overview-sidebar")
+    .getByRole("button", { name: "New", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/new-task\?way=direct$/);
+  await page.getByRole("switch", { name: "Start under my control" }).click();
+  await expect(page.getByTestId("task-way-note")).toContainText("under your control");
+  await page.getByLabel("What needs doing").fill("Rename the queue consumer");
+  await page.getByRole("button", { name: /Start worker/ }).click();
+  await expect(page.getByTestId("pane-header")).toContainText("Rename the queue consumer");
+  await expect(page.getByTestId("worker-banner-held")).toContainText("Under your control");
+  await expect(page.getByTestId("worker-banner-held")).not.toContainText("Paused");
   await expect(page.getByTestId("worker-hold")).toBeVisible();
 
   // New opens on the choice used last.
   await add.click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
-  await expect(page.getByRole("radio", { name: "Worker" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "One worker to PR" })).toBeChecked();
 });
 
 test("Who does it turns a task into a one-off thread and back, keeping what was typed", async ({
@@ -109,14 +157,14 @@ test("Who does it turns a task into a one-off thread and back, keeping what was 
   await menu.getByRole("menuitem", { name: /web/ }).click();
   await expect(page.getByTestId("task-target")).toHaveText("web");
 
-  await page.getByRole("radio", { name: "Just me" }).click();
+  await page.getByRole("radio", { name: "Single agent chat" }).click();
   await expect(page).toHaveURL(/\/new$/);
-  await expect(page.getByRole("radio", { name: "Just me" })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "Single agent chat" })).toBeChecked();
   await expect(page.getByLabel("First prompt")).toHaveValue("Just a quick question");
   await expect(page.getByRole("button", { name: /Create thread/ })).toBeVisible();
 
   // Back to the orchestrator, the folder goes along as the repo to make a workspace for.
-  await page.getByRole("radio", { name: "Orchestrator" }).click();
+  await page.getByRole("radio", { name: "Agent team (orchestrator)" }).click();
   await expect(page).toHaveURL(/\/new-task$/);
   await expect(page.getByTestId("task-target")).toHaveText("web");
   await expect(page.getByLabel("What needs doing")).toHaveValue("Just a quick question");

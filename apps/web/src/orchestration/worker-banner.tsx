@@ -55,7 +55,7 @@ const BANNER =
 
 /**
  * What a worker's crumbs can't say, under the header and only while it applies: the repos a
- * multi-repo worker works in; that the user took it over, what that means and what the header's
+ * multi-repo worker works in; that it is under the user's control, what that means and what the header's
  * Hand back does; and its workspace's pause, which reads apart from a hold: a filled band that
  * names the workspace and resumes all of it.
  */
@@ -103,7 +103,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
         // Hand back itself is the header's, beside the worker's name, where it always stays.
         <div data-testid="worker-banner-held" role="status" className={BANNER}>
           <HandGrab aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 font-medium">Paused by you</span>
+          <span className="shrink-0 font-medium">Under your control</span>
           <span
             className="min-w-0 flex-1 truncate text-muted-foreground"
             title={`${WORKER_HELD_LINE} ${workerHeldEnds(USER_HOLD_IDLE_MS / 60_000)}`}

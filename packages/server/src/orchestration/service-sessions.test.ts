@@ -86,20 +86,30 @@ describe.skipIf(!hasGit)("orchestration service", () => {
             checkout: { kind: "worktree", branch: "feat/fix-the-flaky-retry-test" },
           });
           const brief = yield* waitSent(worker.id, 1);
-          // The user's own words, so it starts theirs.
+          // The user's own words, as its brief: the worker is the orchestrator's, not taken over.
           expect(brief.sent[0]).toEqual({ text: "Fix the flaky retry test\nIt fails on Windows." });
+          yield* settle;
           const outbox = yield* outboxOf(workspaceId);
-          expect(outbox.workers[worker.id]?.userIntervened).toBe(true);
+          expect(outbox.workers[worker.id]?.userIntervened).toBe(false);
           expect(outbox.notes.at(-1)).toContain(
-            `The user started "Fix the flaky retry test" [thread ${worker.id}] in shop themselves`,
+            `The user started "Fix the flaky retry test" [thread ${worker.id}] in shop for you`,
           );
-          // The same words again make a feature of their own.
+          expect(outbox.notes.at(-1)).toContain("It is your worker");
+          // The same words again make a feature of their own; "Start under my control" holds it.
           const again = yield* handlers["workspace.startTask"]({
             target: { workspaceId },
             input: { text: "Fix the flaky retry test" },
-            direct: { projectId: project.id },
+            direct: { projectId: project.id, hold: true },
           });
           expect(again.spawnedBy?.feature).toBe("fix-the-flaky-retry-test-2");
+          yield* waitSent(again.id, 1);
+          yield* settle;
+          const held = yield* outboxOf(workspaceId);
+          expect(held.workers[again.id]?.userIntervened).toBe(true);
+          expect(held.workers[worker.id]?.userIntervened).toBe(false);
+          expect(held.notes.at(-1)).toContain(
+            `The user started "Fix the flaky retry test" [thread ${again.id}] in shop under their own control`,
+          );
 
           const elsewhere = yield* store.ensureProject({ root: world.dir, name: "elsewhere" });
           const refused = yield* handlers["workspace.startTask"]({

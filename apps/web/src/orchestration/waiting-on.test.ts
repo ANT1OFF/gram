@@ -314,7 +314,7 @@ describe("what a worker waits on", () => {
   it("says the user holds it", () => {
     expect(waitingOn(worker("working", { userIntervened: true }))).toMatchObject({
       kind: "held",
-      label: "Paused · by you",
+      label: "Under your control",
     });
   });
 

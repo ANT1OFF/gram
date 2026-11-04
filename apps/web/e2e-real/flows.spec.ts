@@ -217,7 +217,7 @@ test("⌘N's New task makes the repo's workspace, hands its orchestrator the tas
   await expect(transcript.getByText("echo: Write the needle notes")).toBeVisible();
   // You wrote its first input, so it starts yours, with the way to hand it back.
   const hold = page.getByTestId("worker-hold");
-  await expect(hold).toContainText("You hold it");
+  await expect(hold).toContainText("Under your control");
   await expect(hold.getByTestId("worker-hand-back")).toBeVisible();
   expect(worktreeOnBranch("feat/write-the-needle-notes")).not.toBe("");
 });

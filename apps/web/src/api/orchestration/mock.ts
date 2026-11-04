@@ -103,6 +103,7 @@ export function createOrchestrationMock(
           orchestrator,
           input.direct.projectId,
           input.input.text,
+          input.direct.hold === true,
         );
         if (shown.worker !== undefined) world.replaceThread({ ...worker, model: shown.worker });
         await world.send(worker.id, adoptedBy(worker.id));

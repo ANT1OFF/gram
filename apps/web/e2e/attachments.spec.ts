@@ -93,11 +93,11 @@ test("a file attached to a task stays through the switch to a one-off and back, 
   await expect(chip).toHaveAttribute("data-status", "ready");
   const staged = await chip.getAttribute("title");
 
-  await page.getByRole("radio", { name: "Just me" }).click();
+  await page.getByRole("radio", { name: "Single agent chat" }).click();
   await expect(page.getByLabel("First prompt")).toHaveValue("what's in this screenshot?");
   await expect(chip).toHaveAttribute("title", staged!);
 
-  await page.getByRole("radio", { name: "Orchestrator" }).click();
+  await page.getByRole("radio", { name: "Agent team (orchestrator)" }).click();
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(chip).toHaveAttribute("title", staged!);
   await page.getByRole("button", { name: /Start workspace and send/ }).click();

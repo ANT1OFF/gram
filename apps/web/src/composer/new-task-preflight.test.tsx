@@ -153,11 +153,13 @@ describe("worker entry intent", () => {
       target: { value: "Review this synthetic change" },
     });
     fireEvent.click(screen.getByText("Generic entry"));
-    expect(screen.getByRole("radio", { name: "Orchestrator" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByRole("radio", { name: "Agent team (orchestrator)" }).getAttribute("aria-checked"),
+    ).toBe("true");
     fireEvent.click(screen.getByText("Worker entry"));
-    expect(screen.getByRole("radio", { name: "Worker" }).getAttribute("aria-checked")).toBe("true");
+    expect(
+      screen.getByRole("radio", { name: "One worker to PR" }).getAttribute("aria-checked"),
+    ).toBe("true");
     expect((screen.getByLabelText("What needs doing") as HTMLTextAreaElement).value).toBe(
       "Review this synthetic change",
     );

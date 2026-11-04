@@ -189,7 +189,8 @@ export function WorkerNowChip({ thread }: { thread: Thread }) {
 }
 
 /**
- * "You hold it", while the user holds the worker (they typed into it, or started it themselves):
+ * "Under your control", while the user holds the worker (they typed into it, took it over, or
+ * started it under their control):
  * the orchestrator can't message it until they hand it back. Watching it never holds it.
  */
 function HoldChip({
@@ -222,7 +223,7 @@ function HoldChip({
         }
       >
         <HandGrab aria-hidden className="size-3.5 text-muted-foreground" />
-        <span className={cn(compact && "sr-only")}>You took over</span>
+        <span className={cn(compact && "sr-only")}>Under your control</span>
       </Hint>
       <Hint
         label="Let the orchestrator message and direct this worker again"

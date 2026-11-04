@@ -94,6 +94,7 @@ export const orchestrationHandlers = Effect.gen(function* () {
                 projectId: direct.projectId,
                 base: direct.base,
                 input: task,
+                hold: direct.hold === true,
                 ...(current.worker === undefined ? {} : { model: current.worker }),
               }),
             );

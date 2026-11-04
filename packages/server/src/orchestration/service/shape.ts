@@ -561,8 +561,9 @@ export interface OrchestrationShape {
   ): Effect.Effect<Thread, NotFound | InvalidState>;
   /**
    * New task, straight to a worker: one worker of the workspace's orchestrator, started from what
-   * the user wrote in a new worktree of `projectId`, on a feature of its own named from it, and
-   * held as the user's since they wrote its first input. Refused without an orchestrator.
+   * the user wrote in a new worktree of `projectId`, on a feature of its own named from it. It is
+   * the orchestrator's from the start, the user's words its brief rather than a takeover, unless
+   * `hold` starts it under the user's control. Refused without an orchestrator.
    */
   startWorker(
     workspaceId: WorkspaceId,
@@ -572,6 +573,8 @@ export interface OrchestrationShape {
       readonly base?: string | undefined;
       readonly input: UserInput;
       readonly model?: ModelRef;
+      /** "Start under my control": held as the user's from its first input. */
+      readonly hold?: boolean;
     },
   ): Effect.Effect<Thread, NotFound | InvalidState | ThreadNotFound>;
   /** Whether `add_worker_repo` needs a card: only for a project outside the workspace. Reads only. */

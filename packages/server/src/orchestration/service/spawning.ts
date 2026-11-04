@@ -135,6 +135,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     creator,
     checkouts,
     openedInAuto,
+    briefedByUser,
   } = kit;
   const {
     outsideWorkspace,
@@ -233,7 +234,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   const spawnFor = (
     callerId: ThreadId,
     input: SpawnWorkerInput,
-    byUser?: { readonly id: ThreadId; readonly input: UserInput; readonly model?: ModelRef },
+    byUser?: {
+      readonly id: ThreadId;
+      readonly input: UserInput;
+      readonly model?: ModelRef;
+      /** Started under the user's control, as one they took over; else the orchestrator's. */
+      readonly hold?: boolean;
+    },
   ): Effect.Effect<SpawnedWorker, AppToolError> => {
     let recorded: { key: string; id: ThreadId; workspaceId: WorkspaceId } | undefined;
     return underKeysOf(
@@ -622,19 +629,23 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                     ...(input.scope === undefined || input.scope.length === 0
                       ? {}
                       : { scope: input.scope }),
-                    ...(byUser === undefined ? {} : { userIntervened: true, userInputAt: now }),
+                    ...(byUser?.hold === true ? { userIntervened: true, userInputAt: now } : {}),
                   },
                 },
               },
               byUser === undefined
                 ? []
-                : [
-                    `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} themselves, for feature ${slug}. It is theirs until it reports, they hand it back, or it sits idle ${USER_HOLD_IDLE_MS / 60_000} minutes; follow its pull request like your own workers'.`,
-                  ],
+                : byUser.hold === true
+                  ? [
+                      `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} under their own control, for feature ${slug}. It is theirs until it reports, they hand it back, or it sits idle ${USER_HOLD_IDLE_MS / 60_000} minutes; follow its pull request like your own workers'.`,
+                    ]
+                  : [
+                      `The user started "${worker.title}" [thread ${worker.id}] in ${project.name} for you, for feature ${slug}, with their words as its brief. It is your worker: direct it and follow its pull request like your own.`,
+                    ],
             ),
             undefined,
           ]);
-          if (byUser !== undefined) yield* armHold(worker.id, USER_HOLD_IDLE_MS);
+          if (byUser?.hold === true) yield* armHold(worker.id, USER_HOLD_IDLE_MS);
           yield* joinWorkspace(state, caller.id, [project, ...others]);
           if (group !== undefined) yield* joinGroup(workspaceId, slug, group);
           yield* sampleExtras(worker);
@@ -746,6 +757,10 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       const feature = taskFeature(input.input.text, taken);
       // The workspace's standing instructions reach a worker the user starts too.
       const text = withBriefFooter(input.input.text, briefFooterOf(state.charter));
+      const hold = input.hold === true;
+      // Its first input is the user's typing, which would otherwise take it over: set before the
+      // send it starts with is heard, and dropped again if it never starts.
+      if (!hold) briefedByUser.add(input.id);
       const spawned = yield* spawnFor(
         holder,
         {
@@ -758,9 +773,11 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
         {
           id: input.id,
           input: { ...input.input, text },
+          hold,
           ...(input.model === undefined ? {} : { model: input.model }),
         },
       ).pipe(
+        Effect.onError(() => Effect.sync(() => void briefedByUser.delete(input.id))),
         // Worded for the orchestrator, whose code the user has no use for.
         Effect.mapError((e) => new InvalidState({ message: e.message.replace(/^[a-z_]+: /, "") })),
       );

@@ -10,7 +10,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderGit2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
@@ -18,6 +18,7 @@ import { HarnessSupportDetails } from "@/agents/support-details";
 import { agentLabel } from "@/agents/agent-display";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -40,7 +41,6 @@ import {
 import { DictationButton } from "@/dictation/dictation-button";
 import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { PressScale, Spinner } from "@/motion";
-import { AutonomyChip } from "@/orchestration/autonomy-chip";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import {
   defaultTaskTarget,
@@ -56,6 +56,7 @@ import { useServerSettings } from "@/settings-sync/store";
 import { cn } from "@/lib/utils";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { NewFormHeader, WHO_ENTRY, type Who } from "@/new-thread/who-does-it";
+import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -84,8 +85,8 @@ const labelCls = "text-xs font-medium text-muted-foreground";
 /**
  * The New form for the orchestrator (⌘N's `/new-task`) or, with `initialWay` "direct" (⌥⌘N), for
  * one worker to start on at once: what needs doing, and the workspace it goes to. A repo with no
- * workspace gets one on send, at the autonomy picked above the goal. Just me, the one-off thread,
- * is the other draft behind the same header.
+ * workspace gets one on send, at the autonomy picked above the goal. A single agent chat, the
+ * one-off thread, is the other draft behind the same header.
  */
 export function NewTaskDraft({
   initialWay,
@@ -242,6 +243,9 @@ export function NewTaskDraft({
   );
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
+  // "Start under my control": off unless asked for, so a worker started here is its orchestrator's.
+  const [hold, setHold] = useState(false);
+  const holdId = useId();
   const formRef = useRef<HTMLFormElement>(null);
 
   // Arriving here (⌘N, New task) leaves focus on the page it came from: go where typing starts.
@@ -289,6 +293,7 @@ export function NewTaskDraft({
               direct: {
                 projectId: repo.id,
                 ...(chosenWorker === undefined ? {} : { worker: chosenWorker }),
+                ...(hold ? { hold: true } : {}),
               },
             }
           : {}),
@@ -405,10 +410,12 @@ export function NewTaskDraft({
           }
           line={
             target === undefined && settled
-              ? "Gram doesn't know a repository to start a workspace in yet. Pick Just me to open one, or add one under Settings → Workspaces."
+              ? "Gram doesn't know a repository to start a workspace in yet. Pick Single agent chat to open one, or add one under Settings → Workspaces."
               : way === "plan"
                 ? `${makesOne ? `Makes a workspace for ${name}. Its` : `${name}'s`} orchestrator plans it, briefs workers into their own worktrees and follows their pull requests to merged.`
-                : `One worker starts now on a new branch of ${repoName}, in its own worktree, with your words as its brief. ${makesOne ? "The workspace made for it" : "The orchestrator"} follows it like its own.`
+                : hold
+                  ? `One worker starts now on a new branch of ${repoName}, in its own worktree, under your control: you direct it, and ${makesOne ? "the orchestrator of the workspace made for it" : "the orchestrator"} only follows its pull request until you hand it back.`
+                  : `One worker starts now on a new branch of ${repoName}, in its own worktree, with your words as its brief. ${makesOne ? "The workspace made for it" : "The orchestrator"} directs it like its own.`
           }
         />
 
@@ -550,6 +557,28 @@ export function NewTaskDraft({
           </div>
         </div>
 
+        {way === "direct" && (
+          <div data-testid="task-hold" className="flex items-start gap-2">
+            <Switch
+              id={holdId}
+              aria-describedby={`${holdId}-line`}
+              checked={hold}
+              disabled={sending}
+              onCheckedChange={setHold}
+              className="mt-0.5"
+            />
+            <div className="flex min-w-0 flex-col gap-0.5 text-xs">
+              <label htmlFor={holdId} className="font-medium text-foreground">
+                Start under my control
+              </label>
+              <span id={`${holdId}-line`} className="text-muted-foreground">
+                You direct it yourself, and the orchestrator can't message it until you hand it
+                back.
+              </span>
+            </div>
+          </div>
+        )}
+
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}
@@ -638,8 +667,11 @@ export function NewTaskDraft({
               </Button>
             </PressScale>
             {target !== undefined && !makesOne && (
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <AutonomyChip autonomy={autonomyOf(workspace?.charter ?? DEFAULT_CHARTER)} />
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <WorkspaceAutonomy
+                  state={workspace}
+                  autonomy={autonomyOf(workspace?.charter ?? DEFAULT_CHARTER)}
+                />
                 {way === "plan" && budget !== undefined && (
                   <span
                     data-testid="task-workers"
