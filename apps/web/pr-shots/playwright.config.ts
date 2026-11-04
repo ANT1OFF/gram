@@ -19,8 +19,10 @@ export default defineConfig({
   use: {
     ...devices["Desktop Chrome"],
     baseURL: `http://localhost:${port}`,
+    // The tour and flows resize to `--size` (default 1728 × 1095, a real window) once a shot has
+    // opened; every shot captures at 2×, as a Retina screen shows it.
     viewport: { width: 1440, height: 900 },
-    deviceScaleFactor: process.env["GRAM_PR_SHOTS_SET"] ? 1 : 2,
+    deviceScaleFactor: 2,
     locale: "en-US",
     timezoneId: "Europe/Oslo",
     reducedMotion: "reduce",
