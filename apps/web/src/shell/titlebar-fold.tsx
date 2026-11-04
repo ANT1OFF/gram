@@ -266,7 +266,7 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
 }
 
 /** The workspace's own: Workers, Tidy up, Pause, Memory and its settings. */
-function WorkspaceItems({ state }: { state: WorkspaceState }) {
+function WorkspaceItems({ state, opening }: { state: WorkspaceState; opening: number }) {
   const navigate = useNavigate();
   const { count } = useWorkersNow();
   const workspaceId = state.workspace.id;
@@ -286,7 +286,8 @@ function WorkspaceItems({ state }: { state: WorkspaceState }) {
         <Keys id="workers.open" />
       </Menu.Item>
       <TidyItem />
-      <PauseItem key={`pause-${workspaceId}`} state={state} />
+      {/* Each opening of the menu starts Pause unasked, whatever the last one left. */}
+      <PauseItem key={`pause-${workspaceId}-${opening}`} state={state} />
       <Menu.Item
         data-testid="menu-memory"
         className={MENU_ITEM}
@@ -445,8 +446,14 @@ function OverflowMenu({
 }) {
   const state = useViewWorkspace();
   const workspace = orchestration && state !== undefined;
+  // How many times the menu has opened: what it asked last time doesn't carry over.
+  const [opening, setOpening] = useState(0);
   const menu = (
-    <Menu.Root>
+    <Menu.Root
+      onOpenChange={(open) => {
+        if (open) setOpening((n) => n + 1);
+      }}
+    >
       <Hint
         label={"More\nThe thread's, the workspace's and the window's controls"}
         side="bottom"
@@ -484,7 +491,7 @@ function OverflowMenu({
               )}
               {workspace && (
                 <>
-                  <WorkspaceItems key={state.workspace.id} state={state} />
+                  <WorkspaceItems key={state.workspace.id} state={state} opening={opening} />
                   {SEPARATOR}
                 </>
               )}
