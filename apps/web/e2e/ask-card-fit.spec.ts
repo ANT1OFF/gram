@@ -116,10 +116,12 @@ test("in the stack, four long choices all show with their descriptions, and the 
   await allFit(ask.getByTestId("ask-option"), stack);
   await contextOpens(ask.getByTestId("ask-description"), ask.getByTestId("ask-description-more"));
 
-  // The keys still pick by number, and an answer can still be taken back.
+  // The keys still pick by number, ⌘⏎ sends, and an answer can still be taken back.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(SETTLED_MS);
   await page.keyboard.press("4");
+  await expect(ask.getByTestId("ask-option").nth(3)).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText(IN_ORDER[3]!.label);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);

@@ -50,6 +50,12 @@ const questionInDock = async (page: Page) => {
   return item;
 };
 
+/** The Board's Asks dock item for a forwarded question. */
+const boardAsk = (page: Page, id: string) =>
+  page
+    .getByTestId("rail-board")
+    .locator(`[data-testid="ask-item"][data-ask-key^="worker-question:"][data-ask-key$=":${id}"]`);
+
 const steps: readonly Shot[] = [
   {
     name: "new-menu",
@@ -102,18 +108,30 @@ const steps: readonly Shot[] = [
   },
   {
     name: "question",
-    title: "Answer: forwarded question with its choices open",
-    open: tour("09-questions"),
+    title: "Answer: the Board's Answer turns the Asks dock to the question; a choice is picked",
+    open: async (page) => {
+      await tour("09-questions")(page);
+      const option = boardAsk(page, "WQ1")
+        .getByTestId("ask-option")
+        .filter({ hasText: "Drop after three" });
+      await option.click();
+      await expect(option).toHaveAttribute("aria-checked", "true");
+    },
   },
   {
     name: "question-answered",
-    title: "Answer: send the selected choice to the worker",
+    title: "Answer: Send answer sends the picked choice to the worker, with Undo",
     open: async (page) => {
       await tour("09-questions")(page);
-      const question = page.locator('[data-testid="rail-waiting"] [data-question="WQ1"]');
-      await question.getByRole("radio", { name: /^Keep for replay/ }).click();
-      await question.getByRole("button", { name: "Send to the worker" }).click();
-      await expect(question).toHaveCount(0);
+      const item = boardAsk(page, "WQ1");
+      await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+      await item.getByTestId("ask-send").click();
+      await expect(page.getByTestId("rail-board").getByTestId("ask-undo-line")).toContainText(
+        "Keep for replay",
+      );
+      await expect(page.locator('[data-testid="rail-waiting"] [data-question="WQ1"]')).toHaveCount(
+        0,
+      );
     },
   },
   {
@@ -125,16 +143,19 @@ const steps: readonly Shot[] = [
   },
   {
     name: "question-dock-answered",
-    title: "Answer: one choice in the dock sends it to the worker, with Undo",
+    title:
+      "Answer: a choice picked in the dock, then Send answer, sends it to the worker, with Undo",
     open: async (page) => {
       const item = await questionInDock(page);
       await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+      await item.getByTestId("ask-send").click();
       await expect(page.getByTestId("ask-undo-line")).toContainText("Keep for replay");
     },
   },
   {
     name: "question-sheet",
-    title: "Answer: a long question opens in the ask sheet, its answer row in sight",
+    title:
+      "Answer: a long question opens in the ask sheet, its answer row in sight; the dock folds to one row",
     open: async (page) => {
       await page.goto("/t/t-flaky");
       await threadRow(page, "t-flaky").waitFor();
@@ -166,6 +187,10 @@ const steps: readonly Shot[] = [
       await expect(card).toContainText("30 days");
       await card.getByTestId("question-answer").click();
       await expect(page.getByTestId("ask-sheet-answer-row")).toBeInViewport();
+      await expect(page.getByTestId("rail-board").getByTestId("ask-stack")).toHaveAttribute(
+        "data-compact",
+        "true",
+      );
     },
   },
   {

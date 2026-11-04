@@ -66,6 +66,20 @@ export const choiceLayout = (options: readonly AskOption[]): "row" | "list" =>
     ? "list"
     : "row";
 
+/**
+ * How an ask's options answer, the same on every surface. A question's choices are picked, then
+ * sent with Send answer: "pick". An approval's verbs (Allow, Deny, Pause) and an Open act on a
+ * click, as buttons, and an answer they give is held with Undo: "act".
+ */
+export const answerRule = (options: readonly AskOption[]): "pick" | "act" =>
+  options.length > 0 &&
+  options.every(
+    ({ action }) =>
+      action.kind === "answer" || action.kind === "memory" || action.kind === "worker",
+  )
+    ? "pick"
+    : "act";
+
 const describe = (description: string | undefined): string | undefined =>
   description === undefined || description.trim() === "" ? undefined : description.trim();
 
@@ -135,7 +149,7 @@ export interface Ask {
   readonly count: number;
   /** The feature, then who asks. */
   readonly context: string;
-  /** In key order: Enter takes the first, 1 and 2 pick by number. */
+  /** In key order: 1, 2 and on pick by number. */
   readonly options: readonly AskOption[];
   /** Answered in words: the stack shows a reply field instead of options. */
   readonly freeForm?:
@@ -218,7 +232,7 @@ export const askOf = (group: InboxGroup): Ask => {
   if (request.kind === "approval") {
     const pause = limitPauseAsk(request);
     if (pause !== undefined) {
-      // Pausing is the safer answer, so it is the one Enter takes.
+      // Pausing is the safer answer, so it comes first, as 1.
       return {
         ...base,
         icon: "approval",
@@ -348,7 +362,7 @@ export const memoryAskOf = (
     };
   }
   if (options.length === 0) return { ...base, options: [], freeForm: { question: question.text } };
-  // The orchestrator's pick first, so Enter takes what it recommends.
+  // The orchestrator's pick first, read first and tagged Recommended; nothing is picked for the user.
   const ordered = [
     ...options.filter((option) => option.label === question.recommended),
     ...options.filter((option) => option.label !== question.recommended),

@@ -59,7 +59,10 @@ export function useBoardWaiting(state: WorkspaceState) {
   return { questions, workerQuestions, orchestratorId, groups, count };
 }
 
-/** The band's items: the orchestrator's, its open questions answered in place, then each worker's with Done. */
+/**
+ * The band's items: the orchestrator's, its open questions, then each worker's with Done. A question's
+ * Answer turns the Asks dock below to it: the dock is where it is answered, and its card here says so.
+ */
 export function WaitingList({
   state,
   waiting,
@@ -108,6 +111,7 @@ export function WaitingList({
           questions={questions}
           workspaceId={state.workspace.id}
           orchestratorId={orchestratorId}
+          where="dock"
           compact
           className="grid grid-cols-[repeat(auto-fill,minmax(min(22rem,100%),1fr))] items-start gap-x-2"
         />
@@ -116,6 +120,7 @@ export function WaitingList({
         <WorkerQuestionList
           questions={workerQuestions}
           workspaceId={state.workspace.id}
+          where="dock"
           compact
           className="grid grid-cols-[repeat(auto-fill,minmax(min(22rem,100%),1fr))] items-start gap-x-2"
         />

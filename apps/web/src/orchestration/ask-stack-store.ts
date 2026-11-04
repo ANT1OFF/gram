@@ -36,12 +36,18 @@ interface AskStackState {
   readonly replies: Readonly<Record<string, string>>;
   /** The ask a notification's Open asked to show, by key, until a stack showing it takes it. */
   readonly focusKey: string | undefined;
+  /**
+   * The ask each workspace's dock has open, by key: the one answer surface. The Board's band marks
+   * its question as being answered there rather than offering a second form.
+   */
+  readonly current: Readonly<Record<string, string>>;
   /** Holds `send` for `UNDO_MS`, then runs it. */
   readonly hold: (answer: HeldAnswer, send: () => Promise<SendResult>) => void;
   /** Takes back `key`'s held answer, or the newest; `undefined` when none is held any more. */
   readonly undo: (key?: string) => HeldAnswer | undefined;
   readonly setReply: (id: string, text: string) => void;
   readonly focus: (key: string | undefined) => void;
+  readonly setCurrent: (workspaceId: string, key: string | undefined) => void;
 }
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -55,6 +61,7 @@ export const useAskStackStore = create<AskStackState>()((set, get) => ({
   problems: {},
   replies: {},
   focusKey: undefined,
+  current: {},
   hold: (answer, send) => {
     if (timers.has(answer.key)) return;
     set((s) => ({
@@ -101,6 +108,12 @@ export const useAskStackStore = create<AskStackState>()((set, get) => ({
   },
   setReply: (id, text) => set((s) => ({ replies: { ...s.replies, [id]: text } })),
   focus: (focusKey) => set({ focusKey }),
+  setCurrent: (workspaceId, key) =>
+    set((s) => {
+      if (s.current[workspaceId] === key) return s;
+      if (key === undefined) return { current: without(s.current, [workspaceId]) };
+      return { current: { ...s.current, [workspaceId]: key } };
+    }),
 }));
 
 /** Every id an answer from here hides: held, being sent, or sent a moment ago. */

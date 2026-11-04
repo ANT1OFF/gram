@@ -69,7 +69,7 @@ const pending = (page: Page, threadId: string) =>
     threadId,
   );
 
-test("one card at a time: Enter answers it everywhere, and undo brings it back", async ({
+test("one card at a time: 1 then ⌘⏎ answers it everywhere, and undo brings it back", async ({
   page,
 }) => {
   // The undo window runs on the installed clock, so waiting past it takes no real time.
@@ -83,7 +83,16 @@ test("one card at a time: Enter answers it everywhere, and undo brings it back",
 
   await goTo(page, PUSH);
   await expect(card(page).getByTestId("quiet-command")).toHaveText(PUSH);
+  // Enter no longer answers; a number picks and ⌘⏎ sends.
   await page.keyboard.press("Enter");
+  await settle(page);
+  await expect(quiet(page).getByTestId("quiet-undo-line")).toHaveCount(0);
+  await page.keyboard.press("1");
+  await expect(card(page).getByTestId("quiet-option").first()).toHaveAttribute(
+    "data-picked",
+    "true",
+  );
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(quiet(page).getByTestId("quiet-undo-line")).toContainText("Allowed 3");
   await expect(position(page)).toHaveText(`1 of ${before - 1}`);
 
@@ -94,7 +103,8 @@ test("one card at a time: Enter answers it everywhere, and undo brings it back",
 
   // Answered again, it goes out, and the orchestrator's stack doesn't show it either.
   await goTo(page, PUSH);
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("1");
+  await page.keyboard.press("ControlOrMeta+Enter");
   await page.clock.runFor(SENT_MS);
   for (const worker of made.pushers) {
     await expect.poll(() => pending(page, worker)).toEqual([]);

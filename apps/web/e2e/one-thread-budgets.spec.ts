@@ -112,12 +112,14 @@ test("no menu on the home goes over 7 items", async ({ page }) => {
   }
 });
 
-test("an ask takes one key", async ({ page }) => {
+test("an ask takes one pick and one send: a number, then ⌘⏎", async ({ page }) => {
   await start(page);
   const before = await askCount(page);
   expect(before).toBeGreaterThan(1);
   await settle(page);
-  await page.keyboard.press("Enter");
+  // One rule on every surface (Enter alone answers nothing): a number picks, ⌘⏎ sends it.
+  await page.keyboard.press("1");
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect.poll(() => askCount(page)).toBe(before - 1);
 });
 

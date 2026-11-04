@@ -88,6 +88,7 @@ function Questions({ state }: { state: WorkspaceState }) {
           questions={open}
           workspaceId={state.workspace.id}
           orchestratorId={orchestratorId}
+          where="sheet"
         />
       )}
       {closed.length > 0 && (
