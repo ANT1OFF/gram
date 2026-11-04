@@ -37,7 +37,10 @@ const openMemory = async (page: Page) => {
 };
 
 /** Opens one of the Memory view's tabs. */
-const memoryTab = (page: Page, name: "Files" | "Decisions" | "History" | "Update memory") =>
+const memoryTab = (
+  page: Page,
+  name: "Current memory" | "Files" | "Decisions" | "History" | "Draft memory update",
+) =>
   page
     .getByTestId("memory-tabs")
     .getByRole("tab", { name: new RegExp(`^${name}`) })
@@ -103,7 +106,7 @@ const openMemoryWithDreamHarness = async (page: Page) => {
       return observation;
     };
   }, CLAUDE_DREAM_POLICY);
-  await memoryTab(page, "Update memory");
+  await memoryTab(page, "Draft memory update");
   return made;
 };
 
@@ -138,10 +141,21 @@ test("memory files are read, edited within their caps, deleted, and a version is
   const view = page.getByTestId("memory-view");
   await expect(view.getByRole("heading", { level: 1 })).toHaveText("Memory · agent-platform");
 
+  // It opens on Current memory: every file rendered to read, the latest changes first, and Edit
+  // beside each; sizes and caps wait in the file's details.
+  const overview = view.getByTestId("memory-overview");
+  await expect(overview.getByTestId("memory-overview-file")).toHaveCount(6);
+  await expect(overview.getByTestId("memory-recent").getByRole("listitem")).toHaveCount(3);
+  const goals = overview.locator('[data-testid="memory-overview-file"][data-path="goals.md"]');
+  await expect(goals.getByRole("heading", { name: "Goals" })).toBeVisible();
+  await expect(overview).not.toContainText("KB");
+  await goals.getByRole("button", { name: "Edit goals.md" }).click();
+  await expect(view.getByTestId("memory-editor")).toHaveAttribute("data-path", "goals.md");
+
   const files = view.getByTestId("memory-file");
   await expect(files).toHaveCount(6);
   await expect(files.first()).toContainText("decisions.md");
-  await expect(files.first()).toContainText(/\d+ B/);
+  await expect(files.first()).not.toContainText(/\d+ B/);
 
   await view.locator('[data-testid="memory-file"][data-path="goals.md"]').click();
   const editor = view.getByTestId("memory-editor");
@@ -360,7 +374,7 @@ for (const selected of [false, true]) {
         return start(...args);
       };
     });
-    await memoryTab(page, "Update memory");
+    await memoryTab(page, "Draft memory update");
     const dreams = page.getByTestId("dreams");
     await dreams
       .locator('[data-testid="dream-row"][data-status="running"]')
@@ -383,7 +397,9 @@ for (const selected of [false, true]) {
         }),
       ).toBeChecked();
     }
-    await expect(flow).toContainText("Choose an available Dream harness before counting inputs.");
+    await expect(flow).toContainText(
+      "Choose an available agent for memory updates before counting inputs.",
+    );
     await expect(flow.getByTestId("dream-plan-reads")).toHaveCount(0);
     await expect(flow.getByTestId("dream-start-run")).toBeDisabled();
     expect(
@@ -412,7 +428,7 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await expect(rows).toHaveCount(3);
   // One dream runs per workspace at a time: the one that runs links to its thread and can be stopped.
   const running = dreams.locator('[data-testid="dream-row"][data-status="running"]');
-  await expect(running).toContainText("Import");
+  await expect(running).toContainText("From past sessions");
   await expect(running).toContainText("Codex · gpt-5-codex");
   await expect(running.getByTestId("dream-cost")).toHaveCount(0);
   await expect(running.getByTestId("dream-thread")).toHaveText("Watch it run");
@@ -482,9 +498,9 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await expect(flow.getByTestId("dream-harness-mode")).toHaveText(CLAUDE_DREAM_POLICY);
   // The run's adoption mode is beside the actions that start it, and beside Start.
   await expect(dreams.getByTestId("dream-mode-note")).toHaveText(
-    "Memory changes only after you review and adopt this run's output. Agent sandbox and native approvals still apply.",
+    "Memory changes only after you review the draft and adopt it. The agent still keeps to its sandbox and asks before anything it would normally ask about.",
   );
-  await expect(flow.getByTestId("dream-start-mode")).toHaveText("Review: you adopt it");
+  await expect(flow.getByTestId("dream-start-mode")).toHaveText("Waits for your review");
   await expect(flow).toContainText("A dream runs on Claude Code, Codex.");
 
   const started = page.evaluate(
@@ -540,10 +556,10 @@ test("a dream says what it would read and what waits for the next, within a budg
   await expect(flow).toHaveAttribute("data-kind", "dream");
   await expect(flow.getByTestId("dream-budget")).toHaveValue("200");
   await expect(flow.getByTestId("dream-plan-reads")).toHaveText(
-    "No dream has been adopted into this memory yet, so this one reads every thread from its start: 5 threads, 172 new messages, ~196k tokens.",
+    "No update has been adopted into this memory yet, so this one reads every thread from its start: 5 threads, 172 new messages, ~196k tokens.",
   );
   await expect(flow.getByTestId("dream-plan-backlog")).toHaveText(
-    "Backlog: 1 thread (~40k tokens) past the budget of ~200k tokens, left for the next dream.",
+    "Backlog: 1 thread (~40k tokens) past the budget of ~200k tokens, left for the next update.",
   );
   await expect(flow.getByTestId("dream-preview-notes")).toContainText(
     "1 thread left for the next dream",
@@ -586,7 +602,7 @@ test("a dream is adopted only once its conflict has a side, and a moved memory m
   page,
 }) => {
   const made = await openMemory(page);
-  await memoryTab(page, "Update memory");
+  await memoryTab(page, "Draft memory update");
   // Its own thread says where it ended, and Review there lands on the review here.
   const completed = page.locator('[data-testid="dream-row"][data-status="completed"]');
   await expect(completed.getByTestId("dream-status")).toHaveText("Ready to review");
@@ -762,7 +778,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
       };
     };
   }, made.workspaceId);
-  await memoryTab(page, "Update memory");
+  await memoryTab(page, "Draft memory update");
   await page
     .locator('[data-testid="dream-row"][data-status="completed"]')
     .first()
@@ -1009,7 +1025,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
   await expect(memory).toHaveCSS("overflow-y", "auto");
   await expect(memory).not.toHaveClass(/overscroll-contain/);
   await expect(memory).not.toHaveClass(/contain-paint/);
-  // Update memory alone is shorter than the old all-in-one page: a lower window still overflows it.
+  // Draft memory update alone is shorter than the old all-in-one page: a lower window still overflows it.
   await page.setViewportSize({ width: 1280, height: 400 });
   await memory.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
@@ -1032,8 +1048,10 @@ test("a long synthetic dream review stays within the application viewport", asyn
     .getByTestId("dream-review-open")
     .click();
   const inspection = page.getByTestId("dream-review");
-  await expect(inspection).toHaveAttribute("aria-label", "Dream inspection");
-  await expect(inspection.getByRole("heading", { name: "Inspect · Dream" })).toBeVisible();
+  await expect(inspection).toHaveAttribute("aria-label", "Update inspection");
+  await expect(
+    inspection.getByRole("heading", { name: "Inspect · From recent threads" }),
+  ).toBeVisible();
   await expect(inspection.getByTestId("dream-adopt")).toHaveCount(0);
   await expect(inspection.getByTestId("dream-discard")).toBeVisible();
   await expect(memory).toHaveClass(/contain-paint/);
@@ -1052,12 +1070,12 @@ test("a long synthetic dream review stays within the application viewport", asyn
 
 test("a failed dream says why in words and can only be discarded", async ({ page }) => {
   await openMemory(page);
-  await memoryTab(page, "Update memory");
+  await memoryTab(page, "Draft memory update");
   const rows = page.getByTestId("dream-row");
   await expect(rows).toHaveCount(3);
   const failed = page.locator('[data-testid="dream-row"][data-status="failed"]');
   await expect(failed.getByTestId("dream-failure")).toHaveText(
-    "An input file changed while the dream ran, so its output can't be trusted.",
+    "An input file changed while the update was drafted, so its output can't be trusted.",
   );
   await expect(failed.getByTestId("dream-review-open")).toHaveCount(0);
   await failed.getByTestId("dream-row-discard").click();
@@ -1068,7 +1086,7 @@ test("a failed dream says why in words and can only be discarded", async ({ page
   await confirm.getByRole("button", { name: "Cancel" }).click();
   await expect(rows).toHaveCount(3);
   await failed.getByTestId("dream-row-discard").click();
-  await failed.getByRole("button", { name: "Discard dream" }).click();
+  await failed.getByRole("button", { name: "Discard update" }).click();
   await expect(rows).toHaveCount(2, { timeout: 10_000 * slowdown });
 
   // A finished one is discarded from its review, with the same question first.
@@ -1079,7 +1097,7 @@ test("a failed dream says why in words and can only be discarded", async ({ page
   const review = page.getByTestId("dream-review");
   await review.getByTestId("dream-discard").click();
   await expect(review.getByTestId("inline-confirm")).toContainText("Its thread is closed too");
-  await review.getByRole("button", { name: "Discard dream" }).click();
+  await review.getByRole("button", { name: "Discard update" }).click();
   await expect(review).toHaveCount(0, { timeout: 10_000 * slowdown });
   await expect(rows).toHaveCount(1);
   await memoryTab(page, "History");
@@ -1090,7 +1108,7 @@ test("a conflict's two sides are merged by a model, reviewed, and adopted as the
   page,
 }) => {
   const made = await openMemory(page);
-  await memoryTab(page, "Update memory");
+  await memoryTab(page, "Draft memory update");
   await page
     .locator('[data-testid="dream-row"][data-status="completed"]')
     .getByTestId("dream-review-open")

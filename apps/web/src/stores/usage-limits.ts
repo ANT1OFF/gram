@@ -41,6 +41,11 @@ export interface UsageLimit {
   readonly status: UsageLimitEvent["status"];
   /** The agent goes on past the window on credits: a full window here is no stop. */
   readonly credits?: true;
+  /** The agent has credits to go on with, however much of the window is used (Codex). */
+  readonly creditsAvailable?: true;
+  readonly creditsUnlimited?: true;
+  /** The credits left, as the agent gave them. */
+  readonly creditsBalance?: string;
   /** Epoch ms it stops counting: its reset, or `NO_RESET_TTL_MS` after it arrived without one. */
   readonly expiresAt: number;
   /** Epoch ms the latest reading arrived; absent in a reading made up for display. */
@@ -89,6 +94,9 @@ export function withReading(limits: UsageLimits, event: UsageLimitEvent, now: nu
     before.utilization === reading.utilization &&
     before.status === reading.status &&
     before.credits === reading.credits &&
+    before.creditsAvailable === reading.creditsAvailable &&
+    before.creditsUnlimited === reading.creditsUnlimited &&
+    before.creditsBalance === reading.creditsBalance &&
     before.resetsAt === reading.resetsAt &&
     now - before.at < REPEAT_QUIET_MS
   )
@@ -101,6 +109,9 @@ const limitOf = (reading: Omit<LimitRecord, "agent" | "window" | "profileId">): 
   status: reading.status,
   ...(reading.resetsAt === undefined ? {} : { resetsAt: reading.resetsAt }),
   ...(reading.credits === true ? { credits: true as const } : {}),
+  ...(reading.creditsAvailable === true ? { creditsAvailable: true as const } : {}),
+  ...(reading.creditsUnlimited === true ? { creditsUnlimited: true as const } : {}),
+  ...(reading.creditsBalance === undefined ? {} : { creditsBalance: reading.creditsBalance }),
   expiresAt: limitExpiresAt(reading),
   at: reading.at,
   samples: reading.samples,

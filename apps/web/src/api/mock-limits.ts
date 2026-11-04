@@ -34,6 +34,9 @@ export interface MockLimitInput {
   readonly gateway?: boolean;
   /** The agent goes on past the window on credits. */
   readonly credits?: boolean;
+  /** The account has credits to go on with (Codex), and how many are left. */
+  readonly creditsAvailable?: boolean;
+  readonly creditsBalance?: string;
 }
 
 const MINUTE = 60_000;
@@ -120,6 +123,8 @@ export function createLimitsMock(world: MockWorld) {
     ...(input.resetsAt === undefined ? {} : { resetsAt: input.resetsAt }),
     ...(input.gateway === true ? { gateway: true, profileId: "mock-gateway" } : {}),
     ...(input.credits === true ? { credits: true as const } : {}),
+    ...(input.creditsAvailable === true ? { creditsAvailable: true as const } : {}),
+    ...(input.creditsBalance === undefined ? {} : { creditsBalance: input.creditsBalance }),
   });
 
   const records = new Map<string, LimitRecord>();

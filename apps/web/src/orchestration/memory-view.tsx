@@ -34,6 +34,7 @@ import { formatBytes } from "@/thread/orchestration-model";
 
 import { DreamsSection } from "./dreams-section";
 import { InlineConfirm } from "./inline-confirm";
+import { MemoryOverview } from "./memory-overview";
 import {
   memoryCapFor,
   memoryIsEmpty,
@@ -373,13 +374,17 @@ function NewFileForm({
 function Files({
   workspaceId,
   files,
+  selected,
+  onSelect: setSelected,
 }: {
   workspaceId: WorkspaceId;
   files: readonly MemoryFileInfo[];
+  /** The file open in the editor, which Current memory's Edit can choose. */
+  selected: string | undefined;
+  onSelect: (path: string | undefined) => void;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
-  const [selected, setSelected] = useState<string>();
   const [creating, setCreating] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const now = useNow(true, ref, 60_000);
@@ -417,7 +422,7 @@ function Files({
         />
       </ExpandPresence>
       <div className="flex min-w-0 flex-col gap-3 md:flex-row">
-        <ul aria-label="Files" className="flex shrink-0 flex-col gap-0.5 md:w-72">
+        <ul aria-label="Files" className="flex shrink-0 flex-col gap-0.5 md:w-56">
           <PresenceList>
             {files.map((file) => (
               <PresenceItem as="li" key={file.path} glide>
@@ -433,22 +438,17 @@ function Files({
                   )}
                 >
                   <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
-                  <span
-                    data-testid="memory-file-size"
-                    title={`${formatBytes(file.bytes)} of the ${capText(memoryCapFor(file.path))} this file may hold`}
-                    className={cn(
-                      "shrink-0 tabular-nums",
-                      file.bytes > memoryCapFor(file.path)
-                        ? "text-destructive"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {formatBytes(file.bytes)}
-                    <span className="text-muted-foreground/70">
-                      {" "}
-                      / {capText(memoryCapFor(file.path))}
+                  {/* Its size and cap are file details, shown above the editor; only a file
+                      already too large to save says so here. */}
+                  {file.bytes > memoryCapFor(file.path) && (
+                    <span
+                      data-testid="memory-file-size"
+                      title={`${formatBytes(file.bytes)} of the ${capText(memoryCapFor(file.path))} this file may hold`}
+                      className="shrink-0 text-destructive"
+                    >
+                      over cap
                     </span>
-                  </span>
+                  )}
                   <span className="w-12 shrink-0 text-right text-muted-foreground tabular-nums">
                     {agoText(file.modifiedAt, now).replace(" ago", "")}
                   </span>
@@ -586,10 +586,10 @@ function Versions({ workspaceId }: { workspaceId: WorkspaceId }) {
 }
 
 /** The Memory view's tabs. */
-type MemoryTab = "files" | "decisions" | "history" | "update";
+type MemoryTab = "overview" | "files" | "decisions" | "history" | "update";
 
 /**
- * Update memory's mark on its tab: amber while a finished run waits for your review, the working
+ * Draft memory update's mark on its tab: amber while a finished run waits for your review, the working
  * colour while one runs, nothing otherwise.
  */
 function UpdateTabMark({ workspaceId }: { workspaceId: WorkspaceId }) {
@@ -632,8 +632,9 @@ function UpdateTabMark({ workspaceId }: { workspaceId: WorkspaceId }) {
 }
 
 /**
- * A workspace's memory, in four tabs: the files it starts every session from, the questions the
- * orchestrator left open, the versions kept, and the runs (Dreams) that draft updates to it. Reached
+ * A workspace's memory, in five tabs: what it holds now, rendered to read; the files it starts
+ * every session from, to edit; the questions the orchestrator left open; the versions kept; and
+ * the runs (Dreams) that draft updates to it. Reached
  * from the board and from the orchestrator's banner; a page of its own because the right panel's
  * tabs are a contract, and this belongs to a workspace rather than to the thread the panel follows.
  */
@@ -655,14 +656,16 @@ export function MemoryView({
     retry: false,
   });
   const [starting, setStarting] = useState<DreamKind>();
-  // A dream's review opens on Update memory, and `#questions` from the board's chip on Decisions.
+  // A dream's review opens on Draft memory update, and `#questions` from the board's chip on Decisions.
   const [tab, setTab] = useState<MemoryTab>(() =>
     reviewing !== undefined
       ? "update"
       : window.location.hash === "#questions"
         ? "decisions"
-        : "files",
+        : "overview",
   );
+  // The file open in Files, which Current memory's Edit opens there.
+  const [openFile, setOpenFile] = useState<string>();
   const [reviewingSeen, setReviewingSeen] = useState(reviewing);
   if (reviewing !== reviewingSeen) {
     setReviewingSeen(reviewing);
@@ -756,6 +759,9 @@ export function MemoryView({
           data-testid="memory-tabs"
           className="sticky top-0 z-10 bg-thread px-4"
         >
+          <TabsTrigger value="overview" data-testid="memory-tab-overview">
+            Current memory
+          </TabsTrigger>
           <TabsTrigger value="files" data-testid="memory-tab-files">
             Files
             {files.data !== undefined && (
@@ -777,7 +783,7 @@ export function MemoryView({
             History
           </TabsTrigger>
           <TabsTrigger value="update" data-testid="memory-tab-update">
-            Update memory
+            Draft memory update
             <UpdateTabMark workspaceId={workspaceId} />
           </TabsTrigger>
         </TabsList>
@@ -787,8 +793,8 @@ export function MemoryView({
               data-testid="memory-import-offer"
               className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
             >
-              This workspace's memory is empty. An import drafts it from your past sessions in these
-              repos; you see what it would read, and what that costs, before anything runs.
+              This workspace's memory is empty. Draft it from your past sessions in these repos; you
+              see what it would read, and what that costs, before anything runs.
               <button
                 type="button"
                 className="rounded-sm text-foreground underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2 focus-visible:ring-ring"
@@ -797,17 +803,38 @@ export function MemoryView({
                   setTab("update");
                 }}
               >
-                Import history…
+                Draft from past sessions…
               </button>
             </p>
           )}
+          <TabsContent value="overview">
+            {files.error ? (
+              <QueryError error={files.error} feature="Memory" />
+            ) : files.data === undefined ? (
+              <PanelMessage loading>Reading memory…</PanelMessage>
+            ) : (
+              <MemoryOverview
+                workspaceId={workspaceId}
+                files={files.data}
+                onOpen={(path) => {
+                  setOpenFile(path);
+                  setTab("files");
+                }}
+              />
+            )}
+          </TabsContent>
           <TabsContent value="files">
             {files.error ? (
               <QueryError error={files.error} feature="Memory" />
             ) : files.data === undefined ? (
               <PanelMessage loading>Reading memory…</PanelMessage>
             ) : (
-              <Files workspaceId={workspaceId} files={files.data} />
+              <Files
+                workspaceId={workspaceId}
+                files={files.data}
+                selected={openFile}
+                onSelect={setOpenFile}
+              />
             )}
           </TabsContent>
           <TabsContent value="decisions">

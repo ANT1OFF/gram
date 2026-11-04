@@ -8,9 +8,7 @@ test("a model added in Settings is offered on /new, and a removed one is not", a
   await row.getByLabel("Model id").fill("claude-preview[1m]");
   await row.getByLabel("Name").fill("Preview, 1M context");
   await section.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByTestId("custom-models").getByRole("status")).toHaveText(
-    "Custom models saved.",
-  );
+  await expect(page.getByTestId("custom-models").getByRole("status")).toHaveText("Saved");
 
   // A model Claude Code's own settings mention is one click to add; one the agent lists isn't offered.
   const suggestions = page.getByTestId("model-suggestions");
@@ -35,9 +33,7 @@ test("a model added in Settings is offered on /new, and a removed one is not", a
   await saved.getByRole("button", { name: "Custom model 1 actions" }).click();
   await page.getByRole("menuitem", { name: "Remove" }).click();
   await page.getByTestId("custom-models").getByRole("button", { name: "Save" }).click();
-  await expect(page.getByTestId("custom-models").getByRole("status")).toHaveText(
-    "Custom models saved.",
-  );
+  await expect(page.getByTestId("custom-models").getByRole("status")).toHaveText("Saved");
   await page.goto("/new");
   await form.getByRole("combobox", { name: "Model" }).click();
   await expect(page.getByRole("option", { name: "Claude Opus" })).toBeVisible();

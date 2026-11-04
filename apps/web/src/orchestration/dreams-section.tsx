@@ -85,7 +85,7 @@ const DATE = new Intl.DateTimeFormat(undefined, {
  */
 const discardWarning = () =>
   keyLabel(
-    "Discard this dream? What it wrote and its report are deleted, and memory stays as it is. Its thread is closed too, with the folder it ran in, so ⌘⇧T brings back only its conversation to read.",
+    "Discard this update? What it wrote and its report are deleted, and memory stays as it is. Its thread is closed too, with the folder it ran in, so ⌘⇧T brings back only its conversation to read.",
   );
 
 const dateRange = (oldest: number | undefined, newest: number | undefined): string =>
@@ -210,7 +210,7 @@ function StartFlow({
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h3 className="text-sm font-medium">
-            {importing ? "Import history" : "Draft memory updates"}
+            {importing ? "Draft from past sessions" : "Draft memory update"}
           </h3>
           <p className="text-muted-foreground">
             {importing
@@ -312,11 +312,11 @@ function StartFlow({
             <p className="text-muted-foreground">
               {importing
                 ? "Tick a repo and give a limit to count what is there."
-                : "Give a budget to count what this dream would read."}
+                : "Give a budget to count what this update would read."}
             </p>
           ) : preflight.blocked || selectedModel === undefined ? (
             <p className="text-muted-foreground">
-              Choose an available Dream harness before counting inputs.
+              Choose an available agent for memory updates before counting inputs.
             </p>
           ) : (
             <Shimmer>Counting what is there…</Shimmer>
@@ -502,7 +502,7 @@ function StartFlow({
           disabled={startable === undefined}
           onClick={start}
         >
-          {importing ? "Start import" : "Start drafting"}
+          Start drafting
         </Button>
         <span
           data-testid="dream-start-mode"
@@ -513,7 +513,7 @@ function StartFlow({
               : "border-border text-muted-foreground",
           )}
         >
-          {mode === "auto" ? "Auto: adopts a valid result" : "Review: you adopt it"}
+          {mode === "auto" ? "Saved if it checks out" : "Waits for your review"}
         </span>
         <Button size="sm" variant="ghost" onClick={onClose}>
           Cancel
@@ -644,8 +644,8 @@ function FileDiff({
         >
           <legend className="sr-only">Which side of {file.path} to keep</legend>
           <p>
-            The orchestrator wrote to this file after the dream copied it, and the dream changes it
-            too. Adopting takes one of them whole, or a model's merge of both.
+            The orchestrator wrote to this file after the update copied it, and the update changes
+            it too. Adopting takes one of them whole, or a model's merge of both.
           </p>
           <label className="flex items-center gap-2">
             <input
@@ -656,7 +656,7 @@ function FileDiff({
               checked={side === "output"}
               onChange={() => onSide("output")}
             />
-            Take the dream's, and lose what was written since
+            Take the update's, and lose what was written since
           </label>
           <label className="flex items-center gap-2">
             <input
@@ -667,7 +667,7 @@ function FileDiff({
               checked={side === "current"}
               onChange={() => onSide("current")}
             />
-            Keep memory as it is now, and leave the dream's version of this file out
+            Keep memory as it is now, and leave the update's version of this file out
           </label>
           <label
             className={cn("flex items-center gap-2", !canMerge && "text-muted-foreground")}
@@ -696,13 +696,13 @@ function FileDiff({
           <div
             role="radiogroup"
             aria-label={
-              merged && mergeReady ? "Compare the merge with" : "Compare the dream's version with"
+              merged && mergeReady ? "Compare the merge with" : "Compare the update's version with"
             }
             className="flex gap-1 pt-0.5"
           >
             {(
               [
-                ["baseline", "what the dream started from"],
+                ["baseline", "what the update started from"],
                 ["current", "memory now"],
               ] as const
             ).map(([value, label]) => (
@@ -796,7 +796,7 @@ function Review({
   if (review.error) {
     return (
       <section ref={ref} data-testid="dream-review" className={SECTION}>
-        <QueryError error={review.error} feature="The dream's review" />
+        <QueryError error={review.error} feature="The update's review" />
         <Button size="sm" variant="ghost" className="self-start" onClick={onClose}>
           Close
         </Button>
@@ -806,7 +806,7 @@ function Review({
   if (review.data === undefined) {
     return (
       <section ref={ref} data-testid="dream-review" className={SECTION}>
-        <PanelMessage loading>Comparing the dream's output with memory…</PanelMessage>
+        <PanelMessage loading>Comparing the update's output with memory…</PanelMessage>
       </section>
     );
   }
@@ -879,7 +879,7 @@ function Review({
   return (
     <section
       ref={ref}
-      aria-label={data.dream.mode === "auto" ? "Dream inspection" : "Dream review"}
+      aria-label={data.dream.mode === "auto" ? "Update inspection" : "Update review"}
       data-testid="dream-review"
       className={cn(
         SECTION,
@@ -971,7 +971,9 @@ function Review({
               </li>
             ))}
             {files.length === 0 && (
-              <li className="px-2 py-1 text-xs text-muted-foreground">The dream wrote no files.</li>
+              <li className="px-2 py-1 text-xs text-muted-foreground">
+                The update wrote no files.
+              </li>
             )}
             {conflicts.length > 1 && settleable && (
               <li className="px-2 pt-1">
@@ -1041,8 +1043,8 @@ function Review({
       </div>
       <InlineConfirm
         open={discarding}
-        label="Discard this dream?"
-        confirmLabel="Discard dream"
+        label="Discard this update?"
+        confirmLabel="Discard update"
         destructive
         busy={busy}
         onCancel={() => setDiscarding(false)}
@@ -1110,7 +1112,7 @@ function DreamRow({
         <StatePill state={dreamStatus(dream)} testId="dream-status" />
         <span className="font-medium">{dreamKindLabel(dream)}</span>
         <span className="text-muted-foreground">
-          {dream.mode === "auto" ? "Auto" : "Review"} mode
+          {dream.mode === "auto" ? "Saved if it checks out" : "You review it"}
         </span>
         <span className="text-muted-foreground">
           {agentLabel(dream.model.agent)} · {dream.model.model}
@@ -1192,8 +1194,8 @@ function DreamRow({
       ))}
       <InlineConfirm
         open={discarding}
-        label="Discard this dream?"
-        confirmLabel="Discard dream"
+        label="Discard this update?"
+        confirmLabel="Discard update"
         destructive
         busy={busy}
         onCancel={() => setDiscarding(false)}
@@ -1222,9 +1224,7 @@ function ModeChoice({ mode, onChange }: { mode: DreamMode; onChange: (mode: Drea
       data-testid="dream-mode"
       className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
     >
-      <legend className="float-left me-1 text-muted-foreground">
-        Adoption mode · next run only
-      </legend>
+      <legend className="float-left me-1 text-muted-foreground">When this update is ready</legend>
       <label className="flex items-center gap-1.5">
         <input
           type="radio"
@@ -1234,7 +1234,7 @@ function ModeChoice({ mode, onChange }: { mode: DreamMode; onChange: (mode: Drea
           checked={mode === "review"}
           onChange={() => onChange("review")}
         />
-        Review · you adopt the result
+        Let me review it first
       </label>
       <label className="flex items-center gap-1.5">
         <input
@@ -1245,7 +1245,7 @@ function ModeChoice({ mode, onChange }: { mode: DreamMode; onChange: (mode: Drea
           checked={mode === "auto"}
           onChange={() => onChange("auto")}
         />
-        Auto · adopt a valid result
+        Save it if it checks out
       </label>
     </fieldset>
   );
@@ -1298,10 +1298,10 @@ export function DreamsSection({
 
   return (
     <section ref={ref} aria-label="Dreams" data-testid="dreams" className={SECTION}>
-      <h2 className="sr-only">Update memory</h2>
+      <h2 className="sr-only">Draft memory update</h2>
       <p className="text-xs text-muted-foreground">
-        Dreams reread finished threads and draft updates to this workspace&rsquo;s memory. One runs
-        at a time.
+        Dreams: Gram rereads finished threads and drafts an update to this workspace&rsquo;s memory,
+        with a source for each change. One runs at a time.
       </p>
       <div data-testid="dream-actions" className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="flex flex-wrap gap-2">
@@ -1314,7 +1314,7 @@ export function DreamsSection({
             onClick={() => onStartingChange(starting === "dream" ? undefined : "dream")}
           >
             <MoonStar data-icon="inline-start" />
-            Draft memory updates
+            Draft memory update
           </Button>
           <Button
             size="sm"
@@ -1326,7 +1326,7 @@ export function DreamsSection({
             onClick={() => onStartingChange(starting === "import" ? undefined : "import")}
           >
             <Download data-icon="inline-start" />
-            Import history
+            Draft from past sessions
           </Button>
         </span>
         <ModeChoice mode={mode} onChange={setMode} />
@@ -1338,8 +1338,8 @@ export function DreamsSection({
       )}
       <p role="status" data-testid="dream-mode-note" className="text-xs text-muted-foreground">
         {mode === "auto"
-          ? "This run updates this workspace's memory without another review or approval. Changed memory, invalid output or persistence errors stop adoption. Previous versions remain available to restore. Agent sandbox and native approvals still apply."
-          : "Memory changes only after you review and adopt this run's output. Agent sandbox and native approvals still apply."}
+          ? "This update is saved to memory without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore. The agent still keeps to its sandbox and asks before anything it would normally ask about."
+          : "Memory changes only after you review the draft and adopt it. The agent still keeps to its sandbox and asks before anything it would normally ask about."}
       </p>
       {suggestion !== undefined && starting === undefined && (
         <p
@@ -1370,17 +1370,17 @@ export function DreamsSection({
         )}
       </ExpandPresence>
       {dreams.error ? (
-        <QueryError error={dreams.error} feature="Dreams" />
+        <QueryError error={dreams.error} feature="Memory updates" />
       ) : dreams.data === undefined ? (
-        <PanelMessage loading>Loading dreams…</PanelMessage>
+        <PanelMessage loading>Loading memory updates…</PanelMessage>
       ) : dreams.data.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No runs yet. Draft memory updates reads finished threads and drafts changes for you to
-          review.
+          No updates drafted yet. Draft memory update rereads finished threads and drafts changes
+          for you to review.
         </p>
       ) : (
         <div className="flex flex-col gap-2 border-t border-border pt-3">
-          <h3 className="text-xs font-medium text-muted-foreground">Runs and their results</h3>
+          <h3 className="text-xs font-medium text-muted-foreground">Drafted updates</h3>
           <ul className="flex flex-col gap-2">
             <PresenceList>
               {dreams.data.map((dream) => (

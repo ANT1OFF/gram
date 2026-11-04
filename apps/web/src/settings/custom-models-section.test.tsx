@@ -76,7 +76,7 @@ describe("CustomModelsSection", () => {
       }),
     );
     // The save remounts the editor on the stored list, so `section` is a detached node by now.
-    expect((await screen.findByRole("status")).textContent).toBe("Custom models saved.");
+    expect((await screen.findByRole("status")).textContent).toBe("Saved");
   });
 
   it("shows the saved models and removes one", async () => {

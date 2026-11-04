@@ -351,7 +351,7 @@ test("settings navigation reaches optional gateways and persists review bots", a
   await added.getByLabel("Login pattern").fill("copilot[bot]");
   await added.getByLabel("Re-review command").fill("@copilot review");
   await bots.getByRole("button", { name: "Save" }).click();
-  await expect(bots.getByRole("status")).toHaveText("Review bots saved.");
+  await expect(bots.getByRole("status")).toHaveText("Saved");
 
   await page.reload();
   await expect(

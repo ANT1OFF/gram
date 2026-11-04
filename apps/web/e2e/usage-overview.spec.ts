@@ -336,15 +336,15 @@ test.describe("midday reset fixture", () => {
     await expect(codex.getByRole("meter")).toHaveAttribute("aria-valuenow", "85");
     await expect(codex.getByTestId("usage-limit-reset")).toHaveText(/^Resets \d{2}:\d{2}$/);
     await expect(codex.getByTestId("usage-limit-forecast")).toHaveText(
-      /^At this pace you reach 90% around \d{2}:\d{2}$/,
+      /^Estimate at recent pace: 90% around \d{2}:\d{2}$/,
     );
     await expect(codex.getByTestId("usage-limit-reach")).toBeVisible();
     const claudeWeekly = page.getByRole("group", { name: "Claude Code weekly limit" });
     await expect(claudeWeekly).not.toHaveAttribute("data-warn");
     await expect(claudeWeekly.getByTestId("usage-limit-reset")).toHaveText(
-      /^Resets [A-Z][a-z]{2} \d{2}:\d{2}$/,
+      /^Resets [A-Z][a-z]{2}\D*\d{1,2}\D+\d{2}:\d{2}$/,
     );
-    await expect(claudeWeekly.getByTestId("usage-limit-age")).toHaveText("Read 40m ago");
+    await expect(claudeWeekly.getByTestId("usage-limit-age")).toHaveText("Updated 40m ago");
     await pick(page, "Provider", "Codex");
     await expect(cards).toHaveCount(2);
     await expect(page.getByRole("group", { name: "Claude Code 5-hour limit" })).toHaveCount(0);

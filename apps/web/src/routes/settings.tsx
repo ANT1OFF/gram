@@ -130,8 +130,10 @@ function SettingsLayout() {
             ref={resultsRef}
             data-settings-results
             className={cn(
-              "mx-auto flex w-full flex-col gap-10 p-6 @max-2xl/settings:gap-8 @max-2xl/settings:p-4",
-              current?.wide && !searching ? "max-w-5xl" : "max-w-3xl",
+              // Beside the nav rather than centred in the window, so the eye doesn't cross a
+              // blank band between a page's name and its first control.
+              "flex w-full flex-col gap-10 px-8 py-6 @max-2xl/settings:gap-8 @max-2xl/settings:p-4",
+              current?.wide && !searching ? "max-w-5xl" : "max-w-[46rem]",
             )}
           >
             {SETTINGS_PAGES.map((page) => {

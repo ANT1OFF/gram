@@ -165,7 +165,7 @@ export const AGENTS_DEFAULTS = defaults({
     reset: { agents: { idleEvictMinutes: DEFAULT_SETTINGS.agents.idleEvictMinutes } },
   },
   restartOnMcpChange: {
-    label: "Restart on MCP change",
+    label: "Reload on connector change",
     read: restartOnMcpChangeOn,
     reset: { agents: { restartOnMcpChange: restartOnMcpChangeOn(DEFAULT_SETTINGS) } },
   },

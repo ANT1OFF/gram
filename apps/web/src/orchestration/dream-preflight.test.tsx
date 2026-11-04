@@ -81,10 +81,12 @@ describe("Dream selected-harness preflight", () => {
     async (agent) => {
       const model: ModelRef = { agent, model: "synthetic-selected-model" };
       const { start } = setup(model, () => ({}));
-      const review = screen.getByRole("radio", { name: /Review ·/ }) as HTMLInputElement;
+      const review = screen.getByRole("radio", {
+        name: "Let me review it first",
+      }) as HTMLInputElement;
       expect(review.checked).toBe(true);
-      expect(screen.getByText("Adoption mode · next run only")).toBeDefined();
-      fireEvent.click(screen.getByRole("radio", { name: /Auto ·/ }));
+      expect(screen.getByText("When this update is ready")).toBeDefined();
+      fireEvent.click(screen.getByRole("radio", { name: "Save it if it checks out" }));
       expect(screen.getByText(/without another review or approval/)).toBeDefined();
       await waitFor(() =>
         expect(

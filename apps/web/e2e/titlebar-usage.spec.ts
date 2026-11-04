@@ -10,7 +10,7 @@ const seed = (page: Page, flags: Record<string, string>) =>
 
 const WELCOME_UNSEEN = JSON.stringify({ onboarding: { welcomeSeen: false } });
 
-const CLOCK = /^(\d{2}:\d{2}|[A-Z][a-z]{2} \d{2}:\d{2})$/;
+const CLOCK = /^(\d{2}:\d{2}|[A-Z][a-z]{2}\D*\d{1,2}\D+\d{2}:\d{2})$/;
 
 test("the meter shows the tightest limit and opens onto both providers", async ({ page }) => {
   await page.goto("/t/t-flaky");

@@ -113,12 +113,13 @@ export const dreamStatus = (
       : presentDreamStatus(dream.status);
 
 const FAILURE_TEXT: Record<DreamFailure, string> = {
-  input_tampered: "An input file changed while the dream ran, so its output can't be trusted.",
+  input_tampered:
+    "An input file changed while the update was drafted, so its output can't be trusted.",
   over_caps:
     "The output breaks memory's rules: a file is too large, there are too many, or a path isn't allowed.",
-  missing_report: "The dream ended without a review report. Its candidate memory is incomplete.",
-  no_output: "The dream ended without writing any output.",
-  agent_error: "The agent stopped with an error before the dream finished.",
+  missing_report: "The update ended without a review report. Its candidate memory is incomplete.",
+  no_output: "The update ended without writing any output.",
+  agent_error: "The agent stopped with an error before the update was drafted.",
   canceled: "You cancelled it. What it had written so far is kept until you discard it.",
 };
 
@@ -136,14 +137,14 @@ export const dreamFailureText = (
         "Automatic adoption was interrupted. Check current memory and kept versions; output is retained and will not be applied again automatically.",
     }[dream.adoptionFailure];
   if (dream.failure !== undefined) {
-    return known(FAILURE_TEXT, dream.failure) ?? `The dream failed (${dream.failure}).`;
+    return known(FAILURE_TEXT, dream.failure) ?? `The update failed (${dream.failure}).`;
   }
-  if (dream.status === "failed") return "The dream failed, and didn't say why.";
+  if (dream.status === "failed") return "The update failed, and didn't say why.";
   return dream.status === "canceled" ? FAILURE_TEXT.canceled : undefined;
 };
 
 export const dreamKindLabel = (dream: Pick<Dream, "kind">): string =>
-  dream.kind === "import" ? "Import" : "Dream";
+  dream.kind === "import" ? "From past sessions" : "From recent threads";
 
 const dreamRunning = (dream: Pick<Dream, "status">): boolean =>
   dream.status === "running" || dream.status === "pending";
@@ -248,7 +249,7 @@ export const adoptState = (
     .filter((file) => file.status === "conflict" && resolutions[file.path] === undefined)
     .map((file) => file.path);
   if (review.dream.status !== "completed") {
-    return { enabled: false, unresolved, reason: "Only a completed dream can be adopted." };
+    return { enabled: false, unresolved, reason: "Only a completed update can be adopted." };
   }
   if (review.dream.adoptedVersion !== undefined) {
     return {
@@ -293,7 +294,7 @@ export const adoptState = (
     };
   }
   if (review.files.every((file) => file.status === "unchanged")) {
-    return { enabled: false, unresolved, reason: "This dream changes nothing." };
+    return { enabled: false, unresolved, reason: "This update changes nothing." };
   }
   return { enabled: true, unresolved };
 };
@@ -328,7 +329,7 @@ export const diffSides = (
 
 /** A conflict's side, as the file list says it beside the file. */
 export const sideLabel = (side: DreamResolution): string =>
-  side === "output" ? "dream's" : side === "merged" ? "merged" : "current";
+  side === "output" ? "update's" : side === "merged" ? "merged" : "current";
 
 // ---------------------------------------------------------------------------------------------
 // Import preview
@@ -402,11 +403,11 @@ export const planLines = (
   plan: DreamPlan,
 ): { readonly reads: string; readonly backlog: string } => {
   const since = plan.fromStart
-    ? "No dream has been adopted into this memory yet, so this one reads every thread from its start"
-    : `Since the dream you last adopted (memory ${plan.memoryVersion})`;
+    ? "No update has been adopted into this memory yet, so this one reads every thread from its start"
+    : `Since the update you last adopted (memory ${plan.memoryVersion})`;
   const what =
     plan.threads === 0
-      ? "there is nothing new to read; the dream tidies memory alone"
+      ? "there is nothing new to read; the update tidies memory alone"
       : `${plan.threads} ${plan.threads === 1 ? "thread" : "threads"}, ${plan.messages} new ${
           plan.messages === 1 ? "message" : "messages"
         }, ${tokensText(plan.estimatedTokens)}`;
@@ -415,7 +416,7 @@ export const planLines = (
     backlog:
       plan.backlog.threads === 0
         ? `Backlog: nothing; everything new fits the budget of ${tokensText(plan.budgetTokens)}.`
-        : `Backlog: ${threadsText(plan.backlog.threads, plan.backlog.estimatedTokens)} past the budget of ${tokensText(plan.budgetTokens)}, left for the next dream.`,
+        : `Backlog: ${threadsText(plan.backlog.threads, plan.backlog.estimatedTokens)} past the budget of ${tokensText(plan.budgetTokens)}, left for the next update.`,
   };
 };
 
@@ -432,7 +433,7 @@ export const backlogSuggestion = (dreams: readonly Dream[]): string | undefined 
   if (backlog === undefined || backlog.threads === 0) return undefined;
   return `${threadsText(backlog.threads, backlog.estimatedTokens)} ${
     backlog.threads === 1 ? "was" : "were"
-  } past the last dream's budget and wait for the next one.`;
+  } past the last update's budget and wait for the next one.`;
 };
 
 /** A preview as it is held: beside the scope it was counted for, so the two can't come apart. */

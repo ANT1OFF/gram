@@ -46,14 +46,43 @@ test("the popover forecasts a window that is filling, and dates a reading gone q
   // Codex's 5-hour window rose 15 points in the last hour, so it reaches 90% before its reset.
   const codex = popover.getByRole("region", { name: "Codex" });
   await expect(codex.getByTestId("usage-limit-forecast")).toHaveText(
-    new RegExp(`^At this pace you reach 90% around ${CLOCK}$`),
+    new RegExp(`^Estimate at recent pace: 90% around ${CLOCK}$`),
   );
-  await expect(codex.getByTestId("usage-limit-age")).toHaveCount(0);
+  await expect(codex.getByTestId("usage-limit-age")).toHaveText(/^Updated (just now|\d+m ago)$/);
+  await expect(codex.getByTestId("usage-limit-age")).not.toHaveAttribute("data-stale", "true");
 
   // Claude's readings are 40 minutes old, and too slow to forecast.
   const claude = popover.getByRole("region", { name: "Claude Code" });
-  await expect(claude.getByTestId("usage-limit-age")).toHaveText("40m ago");
+  await expect(claude.getByTestId("usage-limit-age")).toHaveText("Updated 40m ago");
+  await expect(claude.getByTestId("usage-limit-age")).toHaveAttribute("data-stale", "true");
   await expect(claude.getByTestId("usage-limit-forecast")).toHaveCount(0);
+});
+
+test("the popover heads its columns and shows the credits an agent reports", async ({ page }) => {
+  await page.goto("/t/t-flaky");
+  await page.waitForFunction(() => window.gramMock !== undefined);
+  await page.evaluate(() =>
+    window.gramMock!.simulateUsageLimit({
+      agent: "codex",
+      window: "five_hour",
+      utilization: 0.4,
+      resetsAt: Date.now() + 2 * 3_600_000,
+      creditsAvailable: true,
+      creditsBalance: "1250",
+    }),
+  );
+  await page.getByTestId("usage-meter").click();
+  const popover = page.getByRole("dialog", { name: "Subscription usage" });
+  await expect(popover.getByTestId("usage-limit-headings")).toHaveText(/Used\s*Resets at/);
+  const codex = popover.getByRole("region", { name: "Codex" });
+  await expect(codex.getByTestId("usage-provider-credits")).toHaveText("On credits · 1,250 left");
+  // A weekly reset days away carries its date, not just a time that could be today's.
+  await expect(
+    popover
+      .getByRole("region", { name: "Claude Code" })
+      .locator('[data-window="weekly"]')
+      .getByTestId("usage-limit-reset"),
+  ).toHaveText(/^[A-Za-z]{3}\D*\d{1,2}\D+\d{2}:\d{2}$/);
 });
 
 test("a workspace sets the share of a limit at which new workers pause", async ({ page }) => {

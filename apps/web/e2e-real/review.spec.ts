@@ -33,7 +33,7 @@ test.beforeAll(async ({ browser }) => {
   await bots.getByLabel("Re-review command", { exact: true }).fill("/agent review");
   await bots.getByRole("switch", { name: "Can approve", exact: true }).check();
   await bots.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText("Review bots saved.", { exact: true })).toBeVisible();
+  await expect(bots.getByRole("status")).toHaveText("Saved");
 });
 
 test.afterAll(async () => {

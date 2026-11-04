@@ -21,7 +21,7 @@ import {
   CREDITS_TEXT,
   limitPercent,
   PROVIDER_SHORT,
-  resetText,
+  resetAtText,
   WINDOW_LABEL,
   windowWord,
 } from "@/usage/limit-format";
@@ -182,10 +182,10 @@ function LimitCard({
       </div>
       <div className="flex justify-between gap-2 text-xs text-muted-foreground tabular-nums">
         <span data-testid="usage-limit-reset">
-          {limit.resetsAt === undefined ? "" : `Resets ${resetText(limit.resetsAt, now)}`}
+          {limit.resetsAt === undefined ? "" : `Resets ${resetAtText(limit.resetsAt, now)}`}
         </span>
         {limitStale(limit, now) && limit.at !== undefined && (
-          <span data-testid="usage-limit-age">Read {agoText(limit.at, now)}</span>
+          <span data-testid="usage-limit-age">Updated {agoText(limit.at, now)}</span>
         )}
       </div>
       {limit.credits === true && (
