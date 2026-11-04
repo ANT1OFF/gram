@@ -58,7 +58,7 @@ const OPEN_AT_LAUNCH = [
 const OVERVIEW_SECTION_LABELS: Readonly<Record<OverviewOptionalSection, string>> = {
   solo: "Solo threads",
   pullRequests: "Pull requests",
-  doneToday: "Done",
+  doneToday: "History",
   usage: "Usage and slots",
 };
 

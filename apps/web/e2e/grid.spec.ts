@@ -18,14 +18,8 @@ test("grid: preset, drag to pane, focus shortcuts, independent sends, maximize, 
   await expect(panes.nth(1)).toHaveAttribute("data-focused", "true");
   await expect(page).toHaveURL(/\/t\/t-release$/);
 
-  // t-dark is marked done: its row is in Done, folded until opened.
-  await page
-    .getByTestId("overview-section-doneToday")
-    .getByRole("heading")
-    .getByRole("button", { name: /^Done/ })
-    .click();
-  await threadRow(page, "t-dark").dragTo(panes.nth(2));
-  await expect(panes.nth(2)).toHaveAttribute("data-thread-id", "t-dark");
+  await threadRow(page, "t-docs").dragTo(panes.nth(2));
+  await expect(panes.nth(2)).toHaveAttribute("data-thread-id", "t-docs");
 
   // ⌘⇧[ focuses the pane before, and the address follows (⌘1–⌘9 switch workspaces, not panes).
   await expect(panes.nth(2)).toHaveAttribute("data-focused", "true");
@@ -62,6 +56,6 @@ test("grid: preset, drag to pane, focus shortcuts, independent sends, maximize, 
   await expect(panes).toHaveCount(4);
   await expect(panes.nth(0)).toHaveAttribute("data-thread-id", "t-deps");
   await expect(panes.nth(1)).toHaveAttribute("data-thread-id", "t-release");
-  await expect(panes.nth(2)).toHaveAttribute("data-thread-id", "t-dark");
+  await expect(panes.nth(2)).toHaveAttribute("data-thread-id", "t-docs");
   await expect(panes.nth(1)).toHaveAttribute("data-focused", "true");
 });

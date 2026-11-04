@@ -118,9 +118,12 @@ test("a worker whose worktree was cleaned up stays readable, and Ask about it on
   page,
 }) => {
   const made = await open(page);
-  await openList(page);
-  const closed = row(page, made.cleanedUp);
-  await expect(closed).toHaveAttribute("data-glyph", "merged");
+  // Finished workers are in History, the cleaned-up ones among them.
+  await page.keyboard.press("ControlOrMeta+Shift+KeyH");
+  const closed = page
+    .getByTestId("history")
+    .locator(`[data-testid="history-row"][data-thread-id="${made.cleanedUp}"]`);
+  await expect(closed).toHaveAttribute("data-outcome", "merged");
   await closed.click();
 
   const view = page.getByTestId("finished-worker");

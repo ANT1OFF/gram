@@ -106,6 +106,7 @@ const closedWorkerOf = (
     ...(lastReport === undefined ? {} : { lastReport }),
     prs: finishedPrs(thread),
     kept: "closed",
+    agent: thread.model.agent,
   };
 };
 

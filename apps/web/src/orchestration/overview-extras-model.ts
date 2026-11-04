@@ -1,13 +1,9 @@
 import type {
   BudgetMeters,
-  FinishedWorker,
   OpenPrRow,
   OrchestratorLedger,
   ReviewRequest,
   ThreadId,
-  ThreadSummary,
-  WorkerLedgerEntry,
-  WorkspaceId,
 } from "@gram/contracts";
 
 import { prFactsOfListPr } from "@/components/pr-facts";
@@ -22,13 +18,9 @@ import {
   type UsageLimit,
   type UsageLimits,
 } from "@/stores/usage-limits";
-import { threadDisplayTitle } from "@/thread/thread-title";
 import { limitPercent, PROVIDER_SHORT, resetText } from "@/usage/limit-format";
 
-import { latestDoneFirst, SOLO_OWNER, type DoneEntry } from "./done-model";
-import { workersByTab, type WorkerLiveFacts, type WorkerRow } from "./workers-model";
-
-// The overview sidebar's extras: its Pull requests and Done sections and the usage meters and
+// The overview sidebar's extras: its Pull requests section and the usage meters and
 // worker slots at its foot. Pure, so the column says what the lists, ⌘J and the title bar's meter
 // say, and is tested without a browser.
 
@@ -97,104 +89,6 @@ export const PR_KIND_LABEL: Record<OverviewPrRow["kind"], string> = {
   review: "Review requests",
   yours: "Your PRs",
 };
-
-/** One workspace's facts for Done. */
-export interface DoneSource {
-  readonly workspaceId: WorkspaceId;
-  readonly name: string;
-  readonly ledger: Pick<OrchestratorLedger, "features"> | undefined;
-  readonly finished: readonly FinishedWorker[] | undefined;
-}
-
-/** A finished chat, a worker or a solo thread, as the overview's Done row has it. */
-export interface DoneRow extends DoneEntry {
-  readonly threadId: ThreadId;
-  /** A worker of a workspace's orchestrator, or a solo thread. */
-  readonly kind: "worker" | "solo";
-  readonly title: string;
-  /** Merged, else done (delivered, archived, cleaned up, or marked done). */
-  readonly merged: boolean;
-  /** `agent-platform · merged api#412`, `Solo threads · done`. */
-  readonly sub: string;
-}
-
-const prRef = (pr: { readonly repo: string; readonly number: number } | undefined) =>
-  pr === undefined ? "" : ` ${prRefText(pr, { compact: true })}`;
-
-/** What became of a finished worker, with its PR: `merged api#412`, `done`, `cleaned up`. */
-const outcome = (
-  row: WorkerRow,
-  entry: WorkerLedgerEntry | undefined,
-  finished: FinishedWorker | undefined,
-): string => {
-  const merged = row.glyph === "merged";
-  if (finished !== undefined) {
-    const pr = finished.prs.find((each) => each.merged === true) ?? finished.prs[0];
-    return merged ? `merged${prRef(pr)}` : `cleaned up${prRef(pr)}`;
-  }
-  const word = merged ? "merged" : row.glyph === "archived" ? "archived" : "done";
-  return `${word}${prRef(entry?.pr)}`;
-};
-
-/** A workspace's finished workers, as ⌘J lists them (`workersByTab`), as Done rows. */
-export const workerDoneRows = (source: DoneSource, facts: WorkerLiveFacts): DoneRow[] => {
-  const tabs = workersByTab(source.ledger, facts, source.finished ?? []);
-  const entries = new Map(
-    source.ledger?.features.flatMap((f) => f.workers.map((w) => [w.threadId, w] as const)),
-  );
-  const finished = new Map(source.finished?.map((w) => [w.threadId, w] as const));
-  const owner = { key: source.workspaceId, label: source.name };
-  return tabs.done.flatMap((feature) =>
-    feature.rows.map((row): DoneRow => ({
-      threadId: row.threadId,
-      kind: "worker",
-      workspaceId: source.workspaceId,
-      owner,
-      title: row.title,
-      merged: row.glyph === "merged",
-      finishedAt: row.finishedAt,
-      sub: `${source.name} · ${outcome(
-        row,
-        row.cleanedUp === true ? undefined : entries.get(row.threadId),
-        row.cleanedUp === true ? finished.get(row.threadId) : undefined,
-      )}`,
-    })),
-  );
-};
-
-/**
- * A solo thread marked done (`doneSoloThreads`, the Solo threads' Done line until Done took them
- * in), at the time it was marked: merged when a merge completed it.
- */
-export const soloDoneRow = (summary: ThreadSummary): DoneRow => {
-  const { thread } = summary;
-  const merged = thread.completedReason === "prMerged";
-  return {
-    threadId: thread.id,
-    kind: "solo",
-    owner: SOLO_OWNER,
-    title: threadDisplayTitle(thread),
-    merged,
-    // `doneSoloThreads` only lists threads marked completed; the last activity is a fallback.
-    finishedAt: thread.completedAt ?? thread.lastActivityAt,
-    sub: `${SOLO_OWNER.label} · ${merged ? "merged" : "done"}`,
-  };
-};
-
-/**
- * Every finished chat in one list, latest first: each workspace's merged, delivered and done
- * workers, archived or closed with their worktree or not, as ⌘J lists them, and the solo threads
- * marked done. No window: all of it, back to the oldest Gram keeps.
- */
-export const doneRows = (
-  sources: readonly DoneSource[],
-  solo: readonly ThreadSummary[],
-  facts: WorkerLiveFacts,
-): DoneRow[] =>
-  [
-    ...sources.flatMap((source) => workerDoneRows(source, facts)),
-    ...solo.map(soloDoneRow),
-  ].toSorted(latestDoneFirst);
 
 /** A provider's 5-hour meter at the overview's foot. */
 export interface FootMeter {

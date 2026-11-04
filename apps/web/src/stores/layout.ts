@@ -433,11 +433,11 @@ export interface OverviewView {
    * `Settings.layout.overviewSections` (`overviewHiddenOf`).
    */
   overviewHidden: readonly OverviewOptionalSection[];
-  /** How Done groups its rows, in the overview and ⌘J alike. */
+  /** How History groups its rows. */
   doneGrouping: DoneGrouping;
 }
 
-/** How Done groups its rows: by when they finished, or by the orchestrator they belong to. */
+/** How History groups its rows: by when they finished, or by the orchestrator they belong to. */
 export type DoneGrouping = "date" | "orchestrator";
 
 const DONE_GROUPINGS: readonly DoneGrouping[] = ["date", "orchestrator"];

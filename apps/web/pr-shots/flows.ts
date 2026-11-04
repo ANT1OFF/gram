@@ -231,7 +231,17 @@ const steps: readonly Shot[] = [
       await expect(page.getByRole("option").first()).toBeVisible();
     },
   },
-  { name: "done", title: "Find old work: Done grouped by date", open: tour("10-done-by-date") },
+  { name: "history", title: "Find old work: History, every past chat", open: tour("10-history") },
+  {
+    name: "history-search",
+    title: "Find old work: History searched by repo, on the Threads chip",
+    open: async (page) => {
+      await tour("10-history")(page);
+      await page.getByTestId("history").getByRole("radio", { name: "Threads" }).click();
+      await page.getByTestId("history-search").fill("api");
+      await expect(page.getByTestId("history-row").first()).toBeVisible();
+    },
+  },
   {
     name: "settings",
     title: "Settings: open General from the keyboard",

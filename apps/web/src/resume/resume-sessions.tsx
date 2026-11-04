@@ -35,7 +35,7 @@ export interface ResumableSessions {
 }
 
 /** Every agent's past sessions for `projectRoot`; rejects only when every listing failed. */
-async function listResumableSessions(
+export async function listResumableSessions(
   api: Api,
   agents: readonly AgentKind[],
   projectRoot: string,
@@ -124,12 +124,15 @@ export async function resumeSession(
   return thread.id;
 }
 
-/** Shows a resumed thread and refreshes `projectRoot`'s listing, which now marks it open. */
-function useShowResumed(projectRoot: string) {
+/**
+ * Shows a resumed thread and, given `projectRoot`, refreshes its listing, which now marks it open.
+ */
+export function useShowResumed(projectRoot?: string) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   return (threadId: string) => {
-    void queryClient.invalidateQueries({ queryKey: sessionsQueryKey(projectRoot) });
+    if (projectRoot !== undefined)
+      void queryClient.invalidateQueries({ queryKey: sessionsQueryKey(projectRoot) });
     useLayoutStore.getState().openThread(threadId as never);
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };

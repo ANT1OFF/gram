@@ -228,15 +228,11 @@ const openNeedsYouSeeded = async (page: Page) => {
   });
 };
 
-/** Opens the overview's Done and brings its last row into view, nothing hovered. */
-const openOverviewDone = async (page: Page) => {
-  const title = page
-    .getByTestId("overview-section-doneToday")
-    .getByRole("heading")
-    .getByRole("button");
-  if ((await title.getAttribute("aria-expanded")) === "false") await title.click();
-  await page.getByTestId("overview-done").last().scrollIntoViewIfNeeded();
-  await page.mouse.move(1200, 400);
+/** Opens History from the overview's foot, its last row in view, nothing hovered. */
+const openHistory = async (page: Page) => {
+  await page.getByTestId("overview-history").click();
+  await page.getByTestId("history-row").first().waitFor();
+  await page.mouse.move(1400, 880);
   await page.waitForTimeout(400);
 };
 
@@ -1817,10 +1813,10 @@ export const SHOTS: readonly Shot[] = [
     title: "A merged worker with nothing to diff, the right panel stored open",
     open: async (page) => {
       const made = await openWorkersScenario(page);
-      await pressWorkersList(page);
+      await page.keyboard.press("ControlOrMeta+Shift+KeyH");
       await page
-        .getByTestId("workers-list")
-        .locator(`[data-thread-id="${made.doneToday}"]`)
+        .getByTestId("history")
+        .locator(`[data-testid="history-row"][data-thread-id="${made.doneToday}"]`)
         .click();
       await expect(page).toHaveURL(new RegExp(`/t/${made.doneToday}$`));
       await page.getByTestId("pane-header").waitFor();
@@ -2389,66 +2385,61 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "overview-sidebar-extras",
-    title: "The overview at 1440 px with Pull requests and Done opened",
+    title: "The overview at 1440 px with Pull requests opened and History at its foot",
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
-      for (const id of ["pullRequests", "doneToday"]) {
-        const title = page
-          .getByTestId(`overview-section-${id}`)
-          .getByRole("heading")
-          .getByRole("button");
-        if ((await title.getAttribute("aria-expanded")) === "false") await title.click();
-      }
-      await page.getByTestId("overview-done").first().waitFor();
-      // Done sits last in the column.
-      await page.getByTestId("overview-done").last().scrollIntoViewIfNeeded();
+      const title = page
+        .getByTestId("overview-section-pullRequests")
+        .getByRole("heading")
+        .getByRole("button");
+      if ((await title.getAttribute("aria-expanded")) === "false") await title.click();
+      await page.getByTestId("overview-history").waitFor();
       // Off the column, so no row shows its hover.
       await page.mouse.move(1200, 400);
       await page.waitForTimeout(400);
     },
   },
   {
-    name: "overview-done-week",
-    title:
-      "The overview's Done opened on a busy week: its days and months, a page of rows, Show more",
+    name: "history-week",
+    title: "History on a busy week: its days and months, a page of rows, Show more",
     open: async (page) => {
       await seedMockSettings(page, { panel: { open: false } });
       await openOrchestratorOf(page, () => window.gramMock!.simulateArchivedGroups());
-      await openOverviewDone(page);
+      await openHistory(page);
     },
-    element: (page) => page.getByTestId("overview-sidebar"),
+    element: (page) => page.getByTestId("history"),
   },
   {
-    name: "overview-done-history",
-    title: "The overview's Done on a long history, Show more pressed twice: its months",
+    name: "history-long",
+    title: "History's Workers on a long history, Show more pressed twice: its months",
     open: async (page) => {
       await seedMockSettings(page, { panel: { open: false } });
       await openOrchestratorOf(page, () => window.gramMock!.simulateLongHistory(120));
-      await openOverviewDone(page);
-      const more = page.getByTestId("overview-done-more");
+      await openHistory(page);
+      await page.getByTestId("history").getByRole("radio", { name: "Workers" }).click();
+      const more = page.getByTestId("history-more");
       await more.click();
       await more.click();
-      await expect(page.getByTestId("overview-done")).toHaveCount(90);
-      await page.getByTestId("overview-done").last().scrollIntoViewIfNeeded();
-      await page.mouse.move(1200, 400);
+      await expect(page.getByTestId("history-row")).toHaveCount(90);
+      await page.getByTestId("history-row").last().scrollIntoViewIfNeeded();
+      await page.mouse.move(1400, 880);
       await page.waitForTimeout(400);
     },
-    element: (page) => page.getByTestId("overview-sidebar"),
+    element: (page) => page.getByTestId("history"),
   },
   {
-    name: "overview-done-orchestrator",
-    title: "The overview's Done grouped by orchestrator, its menu open on the choice",
+    name: "history-orchestrator",
+    title: "History grouped by orchestrator, its menu open on the choice",
     open: async (page) => {
       await seedMockSettings(page, { panel: { open: false } });
       await openOrchestratorOf(page, () => window.gramMock!.simulateArchivedGroups());
-      await openOverviewDone(page);
+      await openHistory(page);
       await page.getByTestId("done-grouping").click();
       await page.getByRole("menuitemradio", { name: "Group by orchestrator" }).click();
       await page.getByTestId("done-grouping").click();
       await page.getByTestId("done-grouping-menu").waitFor();
       await page.waitForTimeout(400);
     },
-    element: (page) => page.getByTestId("overview-sidebar"),
   },
   {
     name: "overview-sidebar-hover",
@@ -2626,22 +2617,6 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
-    name: "workers-list-earlier",
-    title: "⌘J scrolled to Done's oldest group (Earlier before Done took it in), with its search",
-    modes: ["dark"],
-    open: async (page) => {
-      await openWorkersScenario(page);
-      await pressWorkersList(page);
-      // The last group's heading in Done (its days before groups took months in); before that,
-      // the Earlier section.
-      const days = page.getByTestId(/^workers-(group|day)$/);
-      if ((await days.count()) > 0) await days.last().scrollIntoViewIfNeeded();
-      else await page.getByTestId("workers-section-earlier").scrollIntoViewIfNeeded();
-      await page.getByTestId("workers-search").waitFor();
-    },
-    element: (page) => page.getByTestId("workers-list"),
-  },
-  {
     name: "worker-view-live",
     title: "A live worker opened from ⌘J: crumbs, catch-up and Following live",
     open: async (page) => {
@@ -2727,40 +2702,26 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
-    name: "workers-list-done-today",
-    title: "⌘J's Done (Done today before), with a worker whose worktree was cleaned up",
+    name: "history-workers",
+    title: "History's Workers, with a worker whose worktree was cleaned up",
     modes: ["dark"],
     open: async (page) => {
       await openReachingScenario(page);
-      await pressWorkersList(page);
-      await page.getByTestId(/^workers-section-(done|doneToday)$/).scrollIntoViewIfNeeded();
+      await page.keyboard.press("ControlOrMeta+Shift+KeyH");
+      await page.getByTestId("history").getByRole("radio", { name: "Workers" }).click();
+      await page.getByTestId("history-row").first().waitFor();
     },
-    element: (page) => page.getByTestId("workers-list"),
-  },
-  {
-    name: "workers-list-done-orchestrator",
-    title: "⌘J's Done grouped by orchestrator: the workspace, then the solo threads marked done",
-    modes: ["dark"],
-    open: async (page) => {
-      await openWorkersScenario(page);
-      await pressWorkersList(page);
-      const done = page.getByTestId("workers-section-done");
-      await done.getByTestId("done-grouping").click();
-      await page.getByRole("menuitemradio", { name: "Group by orchestrator" }).click();
-      await done.getByTestId("workers-group").last().scrollIntoViewIfNeeded();
-      await page.waitForTimeout(400);
-    },
-    element: (page) => page.getByTestId("workers-list"),
+    element: (page) => page.getByTestId("history"),
   },
   {
     name: "finished-worker",
     title: "A cleaned-up worker, read-only, with Ask about it",
     open: async (page) => {
       const made = await openReachingScenario(page, { reaching: true });
-      await pressWorkersList(page);
+      await page.keyboard.press("ControlOrMeta+Shift+KeyH");
       await page
-        .getByTestId("workers-list")
-        .locator(`[data-thread-id="${made.cleanedUp}"]`)
+        .getByTestId("history")
+        .locator(`[data-testid="history-row"][data-thread-id="${made.cleanedUp}"]`)
         .click();
       await page.getByTestId("finished-worker").waitFor();
     },

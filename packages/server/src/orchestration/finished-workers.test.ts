@@ -134,6 +134,7 @@ describe("finished workers", () => {
               title: "On the reopen list",
               workspaceId: WS,
               spawnedBy: { threadId: "o", feature: "paging" },
+              model: { agent: "codex", model: "default" },
             },
           },
         ]),
@@ -143,7 +144,12 @@ describe("finished workers", () => {
       const first = yield* finished.page(WS);
       // The first page is what `list` returns, with where the next one starts.
       expect(first.workers).toEqual(yield* finished.list(WS));
-      expect(first.workers[0]).toMatchObject({ threadId: closedId, kept: "closed" });
+      // A closed record still says which agent it ran on, for History's row.
+      expect(first.workers[0]).toMatchObject({
+        threadId: closedId,
+        kept: "closed",
+        agent: "codex",
+      });
       expect(first.next).toBeDefined();
 
       const seen = first.workers.map((worker) => worker.threadId);

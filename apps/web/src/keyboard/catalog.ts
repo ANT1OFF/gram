@@ -143,6 +143,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
     group: "Navigation",
   },
   { id: "workers.open", keys: "mod+j", label: "Workers", group: "Navigation" },
+  { id: "history.open", keys: "mod+shift+h", label: "History", group: "Navigation" },
   { id: "view.chat", keys: "mod+alt+1", label: "Chat", group: "Navigation" },
   { id: "view.board", keys: "mod+alt+2", label: "Board", group: "Navigation" },
   { id: "view.needsYou", keys: "mod+alt+3", label: "Needs you", group: "Navigation" },

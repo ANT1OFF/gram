@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { CompletedReason } from "./domain.ts";
+import { AgentKind, CompletedReason } from "./domain.ts";
 import { ThreadId, WorkspaceId } from "./ids.ts";
 import { fileEditsOf } from "./file-edit.ts";
 import { WorkerReport } from "./orchestration.ts";
@@ -47,6 +47,8 @@ export const FinishedWorker = Schema.Struct({
   lastReport: Schema.optionalKey(WorkerReport),
   prs: Schema.Array(FinishedWorkerPr),
   kept: Schema.Literals(["closed", "archived"]),
+  /** The agent it ran on, while its record says; absent once only the transcript archive has it. */
+  agent: Schema.optionalKey(AgentKind),
 });
 export type FinishedWorker = typeof FinishedWorker.Type;
 

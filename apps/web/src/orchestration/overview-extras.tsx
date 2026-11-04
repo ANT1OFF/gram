@@ -1,42 +1,34 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { History } from "lucide-react";
+import { Fragment, useMemo } from "react";
 
 import { useApi } from "@/api/context";
+import { useHistoryStore } from "@/history/history-view";
+import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { openExternalUrl } from "@/api/open-external";
 import { PrMarkIcon } from "@/components/pr-marks";
 import { prMarksOf, prTooltipOf, worstPrMark } from "@/components/pr-marks-model";
-import { useNow } from "@/lib/use-now";
-import { cn } from "@/lib/utils";
 import { useOpenPrRows } from "@/reviews/open-prs";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { LimitBar, useLimitsNow } from "@/shell/usage-meter";
-import { useOpenThread } from "@/shell/thread-switcher";
-import { overviewSectionFolded, useLayoutStore, type DoneGrouping } from "@/stores/layout";
-import { useThreadsStore } from "@/stores/threads";
-import { useSame } from "@/stores/use-same";
+import { cn } from "@/lib/utils";
+import { useLayoutStore } from "@/stores/layout";
 import { limitSpent, useUsageLimits } from "@/stores/usage-limits";
-import { RowMenuItems, rowMenuKeys, threadDragProps } from "@/thread/row-menu";
-import { doneSoloThreads } from "@/views/solo-threads";
 import { useViewWorkspace } from "@/views/view-workspace";
 
-import { DoneGroupingMenu } from "./done-grouping-menu";
-import { DONE_PAGE, doneWhen, doneWhenLong, doneWindow } from "./done-model";
 import {
-  doneRows,
   footMeters,
   overviewPrRows,
   PR_KIND_LABEL,
   prSubLine,
   workerSlots,
-  type DoneRow,
   type OverviewPrRow,
 } from "./overview-extras-model";
-import { ROW, RowMenu, Section, SETTLED, STOP } from "./overview-section";
-import { useFinishedWorkerPages } from "./use-finished-workers";
-import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
+import { ROW, Section, STOP } from "./overview-section";
+import { useOrchestratorLedger } from "./use-orchestration";
 
-// The overview sidebar's extras: Pull requests and Done, folded until opened and gone with nothing
-// in them, and the usage meters and worker slots at its foot, off by default. Each reads what ⌘J
-// and the title bar's meter read, so they all say the same.
+// The overview sidebar's extras: Pull requests, folded until opened and gone with nothing in it, the
+// way into History, and the usage meters and worker slots at its foot, off by default. Each reads
+// what the title bar's meter and History read, so they all say the same.
 
 /**
  * The review requests and the user's open PRs in one-line rows, under a sub-heading each when both
@@ -114,138 +106,29 @@ function PrRow({ row }: { row: OverviewPrRow }) {
 }
 
 /**
- * Every finished chat, the workers of every workspace and the solo threads marked done, latest
- * first, by date or by orchestrator (`groupDone`), one line each; a click opens one. It shows a
- * page of `DONE_PAGE` rows and "Show more" adds the next, paged across the list; older finished
- * workers are read from the server only as the rows reach them. With none, the section stays away.
+ * The way into History, where Done was: one line at the column's foot, out of the scroll so it is
+ * always there, that opens every past chat in one searchable list.
  */
-export function OverviewDone() {
-  const workspaces = useWorkspaces();
-  const ids = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
-  const inWorkspace = useMemo(() => new Set<string>(ids), [ids]);
-  const ledgers = useOrchestratorLedgers(ids);
-  const pages = useFinishedWorkerPages(ids);
-  const { finished, horizons, loadMore, busy } = pages;
-  // Minute resolution is enough for the days and the times rows show.
-  const now = useNow(true, undefined, 60_000);
-  const by = useLayoutStore((s) => s.doneGrouping);
-  const open = useLayoutStore((s) => !overviewSectionFolded(s, "doneToday"));
-  const [limit, setLimit] = useState(DONE_PAGE);
-  const sources = useMemo(
-    () =>
-      workspaces.map((state) => ({
-        workspaceId: state.workspace.id,
-        name: state.workspace.name,
-        ledger: ledgers.get(state.workspace.id),
-        finished: finished.get(state.workspace.id),
-      })),
-    [workspaces, ledgers, finished],
-  );
-  // Only the rows: a thread's change that leaves them reading the same leaves the section still.
-  const rows = useThreadsStore(
-    useSame((s) =>
-      doneRows(sources, doneSoloThreads(Object.values(s.byId), inWorkspace), {
-        byId: s.byId,
-        statusDetail: s.statusDetail,
-        now,
-      }),
-    ),
-  );
-  const shown = useMemo(
-    () => doneWindow(rows, by, now, horizons, limit),
-    [rows, by, now, horizons, limit],
-  );
-  // The page is short only because a workspace's older workers aren't read yet: read the next.
-  // `loadMore` changes as each page lands, so this asks again while the page is still short.
-  const waitsOn = open ? shown.load : undefined;
-  useEffect(() => {
-    if (waitsOn !== undefined && !busy) loadMore(waitsOn);
-  }, [waitsOn, busy, loadMore]);
-  if (rows.length === 0) return null;
+export function OverviewHistory() {
+  const hint = useShortcutHint("history.open");
+  const open = useHistoryStore((s) => s.open);
   return (
-    <Section
-      id="doneToday"
-      title="Done"
-      count={rows.length}
-      action={<DoneGroupingMenu stop={{ [STOP]: "" }} />}
-    >
-      {shown.groups.map((group) => (
-        <Fragment key={group.key}>
-          <h3
-            data-testid="overview-done-group"
-            data-grouping={by}
-            className="px-1.5 pt-1 pb-0.5 text-xs font-medium text-muted-foreground"
-          >
-            {group.label}
-          </h3>
-          {group.rows.map((row) => (
-            <OverviewDoneRow key={row.threadId} row={row} by={by} now={now} />
-          ))}
-        </Fragment>
-      ))}
-      {shown.more && (
-        <button
-          type="button"
-          {...{ [STOP]: "" }}
-          data-testid="overview-done-more"
-          aria-busy={busy || undefined}
-          onClick={() => setLimit((current) => current + DONE_PAGE)}
-          className="rounded-(--radius-sm) px-1.5 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Show more
-        </button>
-      )}
-    </Section>
-  );
-}
-
-/**
- * A finished chat: grey until hovered, which says where it was and what became of it. A solo
- * thread keeps its menu and its drag into a pane, as its row in Solo threads had them.
- */
-function OverviewDoneRow({ row, by, now }: { row: DoneRow; by: DoneGrouping; now: number }) {
-  const openThread = useOpenThread();
-  const when = doneWhen(row.finishedAt, by, now);
-  const button = (
-    <button
-      type="button"
-      {...{ [STOP]: "" }}
-      {...(row.kind === "solo"
-        ? {
-            ...threadDragProps(row.threadId),
-            onKeyDown: rowMenuKeys,
-            "aria-keyshortcuts": "Shift+F10",
-          }
-        : {})}
-      data-testid="overview-done"
-      data-kind={row.kind}
-      data-thread-id={row.threadId}
-      data-workspace-id={row.workspaceId}
-      data-merged={row.merged || undefined}
-      aria-label={`${row.title}, ${row.sub}, ${doneWhenLong(row.finishedAt, now)}`}
-      title={row.sub}
-      onClick={() => openThread(row.threadId)}
-      className={cn(ROW, SETTLED)}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "size-2 justify-self-center rounded-full",
-          row.merged ? "bg-merged" : "bg-muted-foreground/60",
-        )}
-      />
-      <span data-testid="overview-done-title" className="truncate">
-        {row.title}
-      </span>
-      <span data-testid="overview-done-time" className="text-xs text-muted-foreground tabular-nums">
-        {when}
-      </span>
-    </button>
-  );
-  return row.kind === "solo" ? (
-    <RowMenu menu={<RowMenuItems threadId={row.threadId} />}>{button}</RowMenu>
-  ) : (
-    button
+    <div className="shrink-0 border-t border-border px-2 py-1.5">
+      <button
+        type="button"
+        data-testid="overview-history"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-keyshortcuts={hint === "" ? undefined : hint}
+        title={withHint("Finished workers, done and archived threads, past CLI sessions", hint)}
+        onClick={() => useHistoryStore.getState().show()}
+        className="flex h-8 w-full items-center gap-2 rounded-(--radius-sm) px-1.5 text-left text-[13px] text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+      >
+        <History aria-hidden className="size-4 shrink-0" />
+        <span className="flex-1">History</span>
+        {hint !== "" && <kbd className="font-sans text-xs tabular-nums">{hint}</kbd>}
+      </button>
+    </div>
   );
 }
 

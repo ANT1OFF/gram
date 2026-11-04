@@ -165,30 +165,43 @@ for (let group = 0; group < WORKER_GROUPS; group++) {
       ].toSorted();
     }, made.workspaceId);
     expect(ids.length).toBeGreaterThan(3);
-    // The popup can mount before its queries have hydrated. Wait for the entire fixture's
-    // inventory, rather than partitioning a transient subset of rows on a loaded renderer. Done
-    // also lists the solo threads marked done; they are no worker of this workspace.
+    await page.keyboard.press("Escape");
+    await expect(list).toBeHidden();
+    // The popups can mount before their queries have hydrated. Wait for the entire fixture's
+    // inventory, rather than partitioning a transient subset of rows on a loaded renderer: ⌘J has
+    // the workers on now, History's Workers chip the finished ones, and between them every one.
+    const history = page.getByTestId("history");
+    const rowIds = (surface: typeof list) =>
+      surface
+        .getByRole("option")
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-thread-id")!));
+    await button.click();
+    await expect(list.getByRole("option").first()).toBeVisible();
+    const live = await rowIds(list);
+    await page.keyboard.press("Escape");
+    await expect(list).toBeHidden();
+    await page.keyboard.press("ControlOrMeta+Shift+KeyH");
+    await history.getByRole("radio", { name: "Workers" }).click();
+    // History stays open while its pages come in; only its rows are read each time.
     await expect
-      .poll(() =>
-        list
-          .getByRole("option")
-          .and(list.locator(":not([data-solo])"))
-          .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-thread-id")).toSorted()),
-      )
+      .poll(async () => [...new Set([...live, ...(await rowIds(history))])].toSorted())
       .toEqual(ids);
+    await page.keyboard.press("Escape");
+    await expect(history).toBeHidden();
     const selected = ids.filter((_, index) => index % WORKER_GROUPS === group);
     expect(selected.length).toBeGreaterThan(0);
     await test.info().attach("workers-visited", {
       body: JSON.stringify({ all: ids, selected }),
       contentType: "application/json",
     });
-    await page.keyboard.press("Escape");
-    await expect(list).toBeHidden();
     for (const id of selected) {
-      await button.click();
-      const row = list.getByRole("option").and(list.locator(`[data-thread-id="${id}"]`));
+      // On now: the title bar's Workers. Finished: History. Two steps either way.
+      const surface = live.includes(id) ? list : history;
+      if (surface === list) await button.click();
+      else await page.keyboard.press("ControlOrMeta+Shift+KeyH");
+      const row = surface.getByRole("option").and(surface.locator(`[data-thread-id="${id}"]`));
       await row.click();
-      await expect(list).toBeHidden();
+      await expect(surface).toBeHidden();
       await expect(page).toHaveURL(new RegExp(`/t/${id}$`));
       await page.keyboard.press("ControlOrMeta+1");
       await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
