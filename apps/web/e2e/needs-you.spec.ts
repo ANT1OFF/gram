@@ -86,14 +86,16 @@ test("the pill opens every workspace's items, and a row opens its ask in that wo
   await expect(popover(page).getByTestId("needs-you-see-all")).toHaveText(`See all ${count}`);
   // More than it shows, so a strip heads it with every category and its count, in the list's order.
   const categories = popover(page).getByTestId("needs-you-strip").getByTestId("needs-you-category");
-  await expect(categories.nth(0)).toHaveAttribute("data-category", "all");
-  await expect(categories.nth(1)).toHaveAttribute("data-category", "errors");
-  await expect(categories.nth(1)).toHaveAccessibleName("Errors, 2");
-  await expect(categories.nth(2)).toHaveAttribute("data-category", "approvals");
+  await expect(categories.nth(0)).toHaveAttribute("data-category", "errors");
+  await expect(categories.nth(0)).toHaveAccessibleName("Errors, 2");
+  await expect(categories.nth(1)).toHaveAttribute("data-category", "approvals");
+  // All only once one is picked, as the way back.
+  await expect(categories.and(page.locator('[data-category="all"]'))).toHaveCount(0);
   // A pick lists that category alone.
   await categories.and(page.locator('[data-category="approvals"]')).click();
   await expect(sections).toHaveCount(1);
   await expect(popover(page).getByRole("region", { name: "Approvals" })).toBeVisible();
+  await expect(categories.first()).toHaveAttribute("data-category", "all");
   // Each row says its kind, behind a hint, its workspace and its thread.
   const merge = row(popover(page), "gh pr merge 91 --squash");
   await expect(merge.getByTestId("needs-you-where")).toHaveText("billing · Export invoices as CSV");

@@ -4,7 +4,8 @@ import { CATEGORY_LABELS, type NeedsYouCategory, type NeedsYouSection } from "./
 
 // The Needs you category strip: every section with its count on one line above the list, in the
 // list's order (errors and approvals first, drafts last), so a long list never hides a category
-// below the fold. A pick shows that category alone; picking it again, or All, shows everything.
+// below the fold. A pick shows that category alone; picking it again, or All (shown then), shows
+// everything.
 
 export function NeedsYouStrip({
   sections,
@@ -25,7 +26,8 @@ export function NeedsYouStrip({
     label: string;
     count: number;
   }[] = [
-    { key: "all", label: "All", count: total },
+    // All only once a category is picked, as the way back: the strip stays one line.
+    ...(picked === "all" ? [] : [{ key: "all" as const, label: "All", count: total }]),
     ...sections.map((section) => ({
       key: section.key,
       label: CATEGORY_LABELS[section.key],
@@ -37,7 +39,7 @@ export function NeedsYouStrip({
       role="group"
       aria-label="Categories"
       data-testid="needs-you-strip"
-      className={cn("flex flex-wrap items-center gap-1", className)}
+      className={cn("flex flex-wrap items-center gap-0.5", className)}
     >
       {options.map(({ key, label, count }) => {
         const on = picked === key;
@@ -51,7 +53,7 @@ export function NeedsYouStrip({
             data-category={key}
             onClick={() => onPick(on && key !== "all" ? "all" : key)}
             className={cn(
-              "inline-flex h-6 items-center gap-1 rounded-(--radius-sm) px-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "inline-flex h-6 items-center gap-1 rounded-(--radius-sm) px-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
               on
                 ? "bg-accent font-medium text-foreground"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

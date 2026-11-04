@@ -144,6 +144,10 @@ export function Status({ tone, now }: { tone: RailWorker["tone"]; now: string })
   );
 }
 
+/** The PRs its PR cell surely shows: the open ones, as a merged or closed one may be left out. */
+const openPrs = (worker: RailWorker) =>
+  worker.prs.filter((pr) => pr.state !== "merged" && pr.state !== "closed");
+
 /** How soon a status's whole text shows on hover: quick, but not for a pointer passing over. */
 const HINT_MS = 200;
 
@@ -193,7 +197,7 @@ function NowCell({
       >
         <tone.icon aria-hidden className={cn("mt-px size-3.5 shrink-0", tone.tone)} />
         {/* Its PRs are in the cell beside it: each said once. */}
-        <Status tone={worker.tone} now={nowBesidePrs(worker.now, worker.prs)} />
+        <Status tone={worker.tone} now={nowBesidePrs(worker.now, openPrs(worker))} />
       </Hint>
       {overlap !== undefined && (
         <Hint
