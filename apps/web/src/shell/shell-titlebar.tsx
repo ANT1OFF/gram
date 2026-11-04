@@ -25,6 +25,12 @@ import { ViewSwitcher } from "@/views/view-frame";
 import { useViewStore } from "@/views/view-store";
 
 /**
+ * The room before each of the bar's clusters, which groups them; a narrow bar gives it to the title.
+ * By the bar's width, not its fold, so the room it frees can't unfold what it folded.
+ */
+const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
+
+/**
  * The chat column's title bar: the workspace and its views, the thread's header or Board's
  * controls in the slot, then three clusters: the workspace's work, what wants your attention, and
  * the view (a "…" with the rarer toggles, and the panel). Narrow, the lesser buttons fold into "…".
@@ -147,7 +153,7 @@ export function ShellTitlebar({
         role="group"
         aria-label="Attention"
         data-testid="titlebar-attention"
-        className={cn("flex shrink-0 items-center gap-1", !soloBar && "ml-3")}
+        className={cn("flex shrink-0 items-center gap-1", !soloBar && CLUSTER_GAP)}
       >
         {/* Narrow, the title needs the room more than the meter needs its words. */}
         <UsageMeter
@@ -160,7 +166,7 @@ export function ShellTitlebar({
         role="group"
         aria-label="View"
         data-testid="titlebar-view"
-        className="ml-3 flex shrink-0 items-center gap-1"
+        className={cn("flex shrink-0 items-center gap-1", CLUSTER_GAP)}
       >
         {/* Quiet, focus mode and the layout, and what a narrow bar folds: Tidy up, then Workers
             and a worker's own actions. */}
