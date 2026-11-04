@@ -14,14 +14,13 @@ import { useThreadsStore } from "@/stores/threads";
 import { useBoardWaiting } from "./board-waiting";
 import { useRailFacts } from "./feature-sheet";
 import { resetDerivedAsks } from "./needs-you-store";
-import { OverviewDone } from "./overview-extras";
 import { NeedsYouSource } from "./use-needs-you";
 import { useWorkspaces } from "./use-orchestration";
 import { WorkersButton } from "./workers-list";
 
 // The always-mounted views that derive a little from the whole thread map re-render only when what
 // they derive changes, not on every change to any thread: the title bar's Workers button, the
-// overview's Done, the Board's chips and its Waiting on you.
+// Board's chips and its Waiting on you.
 
 const route = vi.hoisted(() => ({ workspaceId: "" }));
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -60,7 +59,6 @@ function Window() {
     <>
       <NeedsYouSource />
       {counted("workers-button", <WorkersButton />)}
-      {counted("done", <OverviewDone />)}
       <Board />
     </>
   );

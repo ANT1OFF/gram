@@ -63,7 +63,7 @@ import { PAUSE_WORD, useWorkerPause, WorkerPauseMark, type WorkerPauseState } fr
 import { keepBeside } from "./beside-store";
 import { PrChip } from "./feature-card";
 import { RAIL_TONES } from "./feature-sheet";
-import { OverviewDone, OverviewFoot, OverviewPullRequests } from "./overview-extras";
+import { OverviewFoot, OverviewHistory, OverviewPullRequests } from "./overview-extras";
 import { ledgerSlotsText } from "./overview-extras-model";
 import {
   foldByKey,
@@ -276,8 +276,8 @@ export function OverviewSidebar() {
         <Orchestrators />
         {!hidden.includes("solo") && <SoloThreads />}
         {!hidden.includes("pullRequests") && <OverviewPullRequests />}
-        {!hidden.includes("doneToday") && <OverviewDone />}
       </div>
+      {!hidden.includes("doneToday") && <OverviewHistory />}
       {!hidden.includes("usage") && <OverviewFoot />}
     </aside>
   );

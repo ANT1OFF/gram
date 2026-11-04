@@ -41,6 +41,7 @@ import {
   useResumeModel,
   type ResumableSessions,
 } from "@/resume/resume-sessions";
+import { useHistoryStore } from "@/history/history-view";
 import { useServerSettings } from "@/settings-sync/store";
 import { projectNameOf } from "@/settings/workspace-settings-model";
 import {
@@ -535,6 +536,13 @@ function PaletteBody({
             notifyError("Couldn't continue the session", errorMessage(error)),
           );
       },
+    },
+    {
+      id: "action:history",
+      label: "History",
+      ...shortcut("history.open"),
+      keywords: "done finished archived parked past old threads workers sessions imported search",
+      run: () => useHistoryStore.getState().show(),
     },
     {
       id: "action:nextNeedsYou",

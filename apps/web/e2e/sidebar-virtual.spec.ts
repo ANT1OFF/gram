@@ -322,7 +322,7 @@ test("with nothing after the list, End lands on its last row though it wasn't dr
     ),
   );
   await seed(page);
-  // No Parked line, and Done turned off: the list's last row is the overview's last stop.
+  // No Parked line, and History turned off: the list's last row is the overview's last stop.
   const parked = await overview(page)
     .getByTestId("overview-parked")
     .locator("[data-thread-id]")
@@ -331,7 +331,7 @@ test("with nothing after the list, End lands on its last row though it wasn't dr
     for (const id of ids) await window.gramMock!.park(id as never, false);
   }, parked);
   await expect(overview(page).getByTestId("overview-parked")).toHaveCount(0);
-  await expect(overview(page).getByTestId("overview-section-doneToday")).toHaveCount(0);
+  await expect(overview(page).getByTestId("overview-history")).toHaveCount(0);
   const listed = Number(
     (await solo(page).getByRole("button").first().getAttribute("aria-label"))?.match(/\d+$/)?.[0],
   );

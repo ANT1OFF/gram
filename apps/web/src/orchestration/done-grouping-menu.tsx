@@ -6,9 +6,9 @@ import { useLayoutStore, type DoneGrouping } from "@/stores/layout";
 
 import { DONE_GROUPINGS } from "./done-model";
 
-// Done's one control: how it groups, by date or by orchestrator. An icon that says the current
+// History's grouping control: by date or by orchestrator. An icon that says the current
 // choice on its hover and offers both in a menu; the choice is the user's, kept in the layout store
-// for the overview's Done and ⌘J's alike.
+// for History.
 
 const ICONS: Readonly<Record<DoneGrouping, LucideIcon>> = {
   date: CalendarDays,

@@ -12,13 +12,7 @@ test("grid: cycle panes, double-click to maximize, drag to swap, close focus, re
   const panes = page.getByTestId("pane");
   await expect(panes).toHaveCount(3);
   await dragAndDrop(page, threadRow(page, "t-release"), panes.nth(1));
-  // t-dark is marked done: its row is in Done, folded until opened.
-  await page
-    .getByTestId("overview-section-doneToday")
-    .getByRole("heading")
-    .getByRole("button", { name: /^Done/ })
-    .click();
-  await dragAndDrop(page, threadRow(page, "t-dark"), panes.nth(2));
+  await dragAndDrop(page, threadRow(page, "t-docs"), panes.nth(2));
   await expect(panes.nth(2)).toHaveAttribute("data-focused", "true");
 
   // ⌘⇧] wraps from the last pane to the first; ⌘⇧[ wraps back.
@@ -27,7 +21,7 @@ test("grid: cycle panes, double-click to maximize, drag to swap, close focus, re
   await expect(page).toHaveURL(/\/t\/t-deps$/);
   await page.keyboard.press("ControlOrMeta+Shift+BracketLeft");
   await expect(panes.nth(2)).toHaveAttribute("data-focused", "true");
-  await expect(page).toHaveURL(/\/t\/t-dark$/);
+  await expect(page).toHaveURL(/\/t\/t-docs$/);
 
   const title = (index: number) => panes.nth(index).getByTestId("pane-header").getByRole("heading");
   await title(1).dblclick();
@@ -37,7 +31,7 @@ test("grid: cycle panes, double-click to maximize, drag to swap, close focus, re
   await expect(page.getByTestId("thread-grid")).toHaveAttribute("data-maximized", "false");
 
   await dragAndDrop(page, panes.nth(0).getByTestId("pane-header"), panes.nth(2));
-  await expect(panes.nth(0)).toHaveAttribute("data-thread-id", "t-dark");
+  await expect(panes.nth(0)).toHaveAttribute("data-thread-id", "t-docs");
   await expect(panes.nth(2)).toHaveAttribute("data-thread-id", "t-deps");
 
   // Closing the focused middle pane focuses a neighbour: the next pane in reading order.
@@ -50,7 +44,7 @@ test("grid: cycle panes, double-click to maximize, drag to swap, close focus, re
   await page.waitForTimeout(800);
   await page.reload();
   await expect(panes).toHaveCount(3);
-  await expect(panes.nth(0)).toHaveAttribute("data-thread-id", "t-dark");
+  await expect(panes.nth(0)).toHaveAttribute("data-thread-id", "t-docs");
   await expect(panes.nth(2)).toHaveAttribute("data-thread-id", "t-deps");
   await expect(page.getByTestId("empty-pane")).toHaveCount(1);
 });

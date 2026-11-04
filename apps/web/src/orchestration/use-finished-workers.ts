@@ -1,6 +1,6 @@
 import type { FinishedWorker, FinishedWorkersPage, WorkspaceId } from "@gram/contracts";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 
@@ -36,20 +36,38 @@ export function useFinishedWorkerPages(ids: readonly WorkspaceId[]): FinishedWor
   const api = useApi();
   const client = useQueryClient();
   const [depth, setDepth] = useState<Readonly<Record<string, number>>>({});
+  // What each workspace last had loaded. A deeper page is a new query, and `placeholderData` only
+  // carries the previous one over when the same observer is reused, which `useQueries` doesn't
+  // promise: without this the list dropped every older row while the next page loaded.
+  const lastLoaded = useRef(new Map<WorkspaceId, Loaded>());
   // Stable while `ids` is, so the maps are new only when a page is: what reads them sits still.
   const combine = useCallback(
-    (all: readonly { data?: Loaded | undefined; isPlaceholderData: boolean }[]) => ({
-      finished: new Map<WorkspaceId, readonly FinishedWorker[] | undefined>(
-        ids.map((id, i) => [id, all[i]?.data?.workers]),
-      ),
-      horizons: new Map<WorkspaceId, number>(
-        ids.flatMap((id, i) => {
-          const next = all[i]?.data?.next;
-          return next === undefined ? [] : [[id, next.at] as const];
-        }),
-      ),
-      loading: new Set(ids.filter((_, i) => all[i]?.isPlaceholderData === true)),
-    }),
+    (all: readonly { data?: Loaded | undefined; isPlaceholderData: boolean }[]) => {
+      const kept = lastLoaded.current;
+      const data = ids.map((id, i) => {
+        const own = all[i]?.data;
+        if (own !== undefined) kept.set(id, own);
+        return own ?? kept.get(id);
+      });
+      return {
+        finished: new Map<WorkspaceId, readonly FinishedWorker[] | undefined>(
+          ids.map((id, i) => [id, data[i]?.workers]),
+        ),
+        horizons: new Map<WorkspaceId, number>(
+          ids.flatMap((id, i) => {
+            const next = data[i]?.next;
+            return next === undefined ? [] : [[id, next.at] as const];
+          }),
+        ),
+        loading: new Set(
+          ids.filter(
+            (_, i) =>
+              all[i]?.isPlaceholderData === true ||
+              (all[i]?.data === undefined && data[i] !== undefined),
+          ),
+        ),
+      };
+    },
     [ids],
   );
   const results = useQueries({

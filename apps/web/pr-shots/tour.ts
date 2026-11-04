@@ -130,9 +130,15 @@ const scenes: readonly Shot[] = [
     },
   },
   {
-    name: "done-by-date",
-    title: "Done: completed workers grouped by date",
-    open: existing("workers-list-done-today"),
+    name: "history",
+    title: "History: every past chat, searchable, with type chips, grouped by date",
+    open: async (page) => {
+      await openScene(page);
+      await page.getByTestId("overview-history").click();
+      await expect(page.getByTestId("history-row").first()).toBeVisible();
+      await page.mouse.move(1400, 880);
+      await page.waitForTimeout(300);
+    },
   },
   {
     name: "quiet",

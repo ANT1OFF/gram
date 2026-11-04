@@ -79,6 +79,7 @@ export async function simulateReaching(
         },
       ],
       kept: "closed",
+      agent: "claude",
     },
     brief,
     reports: [report],

@@ -8,25 +8,19 @@ import {
   CircleDot,
   GitMerge,
   Hand,
+  History,
   Hourglass,
   Search,
   Users,
   type LucideIcon,
 } from "lucide-react";
-import {
-  Fragment,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { create } from "zustand";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { keyLabel } from "@/keyboard/registry";
+import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { useNow } from "@/lib/use-now";
@@ -34,24 +28,16 @@ import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { GlideText, PresenceItem, PresenceList, Spinner, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
-import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
-import { doneSoloThreads } from "@/views/solo-threads";
 
 import { askKeysByThread } from "./ask-model";
 import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
 import { boardWorkspaceFor } from "./board-model";
-import { DoneGroupingMenu } from "./done-grouping-menu";
-import { DONE_PAGE, doneWindow, latestDoneFirst, SOLO_OWNER } from "./done-model";
-import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useWorkspaceStatuses } from "./use-workspace-statuses";
 import {
-  doneFeatures,
-  searchRows,
   searchWorkers,
-  soloWorkerRow,
   tabCount,
   WORKERS_TABS,
   workersByTab,
@@ -169,9 +155,9 @@ export function WorkersButton({ className }: { className?: string }) {
 }
 
 /**
- * ⌘J: every worker of the workspace in front of you, in Now and Done, grouped by feature, and in
- * Done under the day each finished. One click, or ↑↓ and Return, opens a worker in the focused
- * pane; opening it never touches the worker.
+ * ⌘J: every worker of the workspace in front of you that is on now, grouped by feature; the finished
+ * ones are a click away in History. One click, or ↑↓ and Return, opens a worker in the focused pane;
+ * opening it never touches the worker.
  */
 export function WorkersList() {
   const open = useWorkersListStore((s) => s.open);
@@ -214,17 +200,6 @@ function WorkersBody() {
   const ledger = workspaceId === undefined ? undefined : ledgers.get(workspaceId);
   // Minute resolution is enough for the days and the times rows show.
   const now = useNow(true, undefined, 60_000);
-  // Workers closed with their worktree, which the ledger no longer has; read-only when opened.
-  // Read a page at a time, as far back as Done is shown.
-  const workspaces = useWorkspaces();
-  const listed = useMemo(() => (workspaceId === undefined ? [] : [workspaceId]), [workspaceId]);
-  const { finished: finishedOf, horizons, loadMore, busy } = useFinishedWorkerPages(listed);
-  const finished = workspaceId === undefined ? undefined : finishedOf.get(workspaceId);
-  const name = workspaces.find((state) => state.workspace.id === workspaceId)?.workspace.name ?? "";
-  const inWorkspace = useMemo(
-    () => new Set<string>(workspaces.map((state) => state.workspace.id)),
-    [workspaces],
-  );
   // Who an ask in the stack is from, so a row's glyph takes the tone every other view gives it.
   const asks = useWorkspaceAsks();
   const asking = useMemo(
@@ -233,61 +208,35 @@ function WorkersBody() {
     [asks, workspaceId],
   );
   const tabs = useMemo(
-    () => workersByTab(ledger, { byId: summaries, statusDetail, now, asking }, finished),
-    [ledger, summaries, statusDetail, now, asking, finished],
+    () => workersByTab(ledger, { byId: summaries, statusDetail, now, asking }),
+    [ledger, summaries, statusDetail, now, asking],
   );
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const openThread = useOpenThread();
-  const by = useLayoutStore((s) => s.doneGrouping);
-  const [limit, setLimit] = useState(DONE_PAGE);
+  const historyHint = useShortcutHint("history.open");
 
-  // Done, as the overview lists it: the workspace's finished workers and the solo threads marked
-  // done, latest first, grouped by date or by orchestrator, a page at a time.
-  const done = useMemo(() => {
-    const owner = { key: workspaceId ?? "", label: name };
-    return [
-      ...tabs.done
-        .flatMap((feature) => feature.rows)
-        .map((row) => ({ ...row, owner, workspaceId })),
-      ...doneSoloThreads(threads, inWorkspace).map((summary) => ({
-        ...soloWorkerRow(summary, now),
-        owner: SOLO_OWNER,
-      })),
-    ].toSorted(latestDoneFirst);
-  }, [tabs, threads, inWorkspace, workspaceId, name, now]);
-  const found = useMemo(() => searchRows(done, query), [done, query]);
-  const shown = useMemo(
-    () => doneWindow(found, by, now, horizons, limit),
-    [found, by, now, horizons, limit],
-  );
-  const waitsOn = shown.load;
-  useEffect(() => {
-    if (waitsOn !== undefined && !busy) loadMore(waitsOn);
-  }, [waitsOn, busy, loadMore]);
-
-  // One list in two sections, so every worker is a click away once it is open; the search
-  // box filters all of them. Now is by feature; Done by its groups, then feature within each.
-  const sections = WORKERS_TABS.map(({ id, label }) => ({
-    id,
-    label,
-    count: id === "now" ? tabCount(tabs.now) : found.length,
-    groups:
-      id === "now"
-        ? [{ key: "now", label: undefined, features: searchWorkers(tabs.now, query) }]
-        : shown.groups.map((group) => ({
-            key: group.key,
-            label: group.label as string | undefined,
-            features: doneFeatures(group.rows),
-          })),
-  })).filter((section) => section.groups.some((group) => group.features.length > 0));
+  // The workers on now, by feature; the search box filters them. Finished ones are in History.
+  const sections = WORKERS_TABS.filter(({ id }) => id === "now")
+    .map(({ id, label }) => ({
+      id,
+      label,
+      count: tabCount(tabs.now),
+      groups: [
+        {
+          key: "now",
+          label: undefined as string | undefined,
+          features: searchWorkers(tabs.now, query),
+        },
+      ],
+    }))
+    .filter((section) => section.groups.some((group) => group.features.length > 0));
   const rows = sections.flatMap((section) =>
     section.groups.flatMap((group) => group.features.flatMap((feature) => feature.rows)),
   );
   const activeIndex = Math.min(active, rows.length - 1);
 
-  // Opened on a section (the overview's Show all, on Done): its first row active, the section in
-  // view, once it has rows.
+  // Opened on a section: its first row active, the section in view, once it has rows.
   const listRef = useRef<HTMLDivElement>(null);
   const openedOn = useWorkersListStore((s) => s.section);
   const [placed, setPlaced] = useState(false);
@@ -383,19 +332,9 @@ function WorkersBody() {
             <h2 className="flex items-center gap-1 px-2 pt-2 pb-0.5 text-xs font-medium text-foreground">
               {section.label}
               <span className="tabular-nums text-muted-foreground">{section.count}</span>
-              {section.id === "done" && <DoneGroupingMenu className="ml-auto" />}
             </h2>
             {section.groups.map((group) => (
               <Fragment key={group.key}>
-                {group.label !== undefined && (
-                  <h3
-                    data-testid="workers-group"
-                    data-grouping={by}
-                    className="px-2 pt-1.5 pb-0.5 text-xs text-muted-foreground"
-                  >
-                    {group.label}
-                  </h3>
-                )}
                 {group.features.map((feature) => (
                   <div
                     key={feature.feature}
@@ -403,12 +342,9 @@ function WorkersBody() {
                     aria-label={feature.feature}
                     className="mb-1"
                   >
-                    {/* By orchestrator, the solo threads' group is their feature too. */}
-                    {feature.feature !== group.label && (
-                      <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
-                        {feature.feature}
-                      </div>
-                    )}
+                    <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
+                      {feature.feature}
+                    </div>
                     <PresenceList>
                       {feature.rows.map((row) => {
                         index++;
@@ -430,17 +366,6 @@ function WorkersBody() {
                 ))}
               </Fragment>
             ))}
-            {section.id === "done" && shown.more && (
-              <button
-                type="button"
-                data-testid="workers-done-more"
-                aria-busy={busy || undefined}
-                onClick={() => setLimit((current) => current + DONE_PAGE)}
-                className="mx-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Show more
-              </button>
-            )}
           </section>
         ))}
       </div>
@@ -454,6 +379,19 @@ function WorkersBody() {
         <span>
           <kbd className="font-sans">{keyLabel("⌘⏎")}</kbd> keep beside
         </span>
+        <button
+          type="button"
+          data-testid="workers-history"
+          onClick={() => {
+            useWorkersListStore.getState().close();
+            useHistoryStore.getState().show("workers");
+          }}
+          className="ml-auto flex items-center gap-1.5 rounded-(--radius-sm) px-1 text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <History aria-hidden className="size-3" />
+          Finished in History
+          {historyHint !== "" && <kbd className="font-sans">{historyHint}</kbd>}
+        </button>
       </div>
     </div>
   );

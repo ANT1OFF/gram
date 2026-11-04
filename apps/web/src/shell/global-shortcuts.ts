@@ -2,6 +2,7 @@ import type { ThreadId } from "@gram/contracts";
 import { useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
+import { HISTORY_TEST_ID, useHistoryStore } from "@/history/history-view";
 import { paneMoveKeys } from "@/keyboard/catalog";
 import { keyLabel, registerShortcut, useShortcut } from "@/keyboard/registry";
 import { besideToggle, closeBeside, keepBeside } from "@/orchestration/beside-store";
@@ -144,6 +145,18 @@ export function useGlobalShortcuts() {
       inNoDialogBut(WORKERS_LIST_TEST_ID) &&
       (useWorkersListStore.getState().open || boardWorkspace() !== undefined),
     run: () => useWorkersListStore.getState().toggle(),
+  });
+
+  // Every past chat, from anywhere: finished workers, done and archived threads, past sessions.
+  useShortcut({
+    id: "history.open",
+    keys: "mod+shift+h",
+    label: "History",
+    group: "Navigation",
+    // Toggles, so History (a dialog) closes with the same keys; no other dialog lets it open.
+    allowInDialogs: true,
+    when: () => inNoDialogBut(HISTORY_TEST_ID),
+    run: () => useHistoryStore.getState().toggle(),
   });
 
   const openThread = useOpenThread();

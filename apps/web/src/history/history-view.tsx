@@ -1,0 +1,461 @@
+import { Dialog } from "@base-ui/react/dialog";
+import type { WorkspaceId } from "@gram/contracts";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Archive,
+  CircleCheck,
+  CircleMinus,
+  CircleX,
+  GitMerge,
+  History,
+  Search,
+  type LucideIcon,
+} from "lucide-react";
+import { Fragment, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { create } from "zustand";
+
+import { AgentIcon, agentLabel } from "@/agents/agent-display";
+import { useApi } from "@/api/context";
+import { errorMessage } from "@/api/errors";
+import { useAvailableAgents } from "@/composer/agent-fields";
+import { keyLabel } from "@/keyboard/registry";
+import { listIndexForKey } from "@/lib/list-keys";
+import { useNow } from "@/lib/use-now";
+import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
+import { cn } from "@/lib/utils";
+import { DoneGroupingMenu } from "@/orchestration/done-grouping-menu";
+import { DONE_PAGE, doneWhenLong, doneWindow } from "@/orchestration/done-model";
+import { useFinishedWorkerPages } from "@/orchestration/use-finished-workers";
+import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
+import {
+  listResumableSessions,
+  resumeSession,
+  sessionsQueryKey,
+  useResumeModel,
+  useShowResumed,
+} from "@/resume/resume-sessions";
+import { useOpenThread } from "@/shell/thread-switcher";
+import { useLayoutStore } from "@/stores/layout";
+import { useThreadsStore } from "@/stores/threads";
+
+import {
+  HISTORY_FILTERS,
+  historyEntries,
+  historyThreadId,
+  historyWhen,
+  OUTCOME_LABEL,
+  searchHistory,
+  sessionRoots,
+  type HistoryEntry,
+  type HistoryFilter,
+  type HistoryOutcome,
+  type HistorySession,
+} from "./history-model";
+
+/** The History dialog, which its shortcut may close from inside while no other dialog lets it open. */
+export const HISTORY_TEST_ID = "history";
+
+/** The folders whose agents' past sessions History reads, the most recently used first. */
+const SESSION_ROOTS = 8;
+/** The most past sessions read per folder and agent. */
+const SESSIONS_PER_ROOT = 25;
+
+interface HistoryState {
+  readonly open: boolean;
+  /** The chip it shows; kept between opens, so it opens where it was left. */
+  readonly filter: HistoryFilter;
+  toggle: () => void;
+  /** Opens it, on `filter` when given. */
+  show: (filter?: HistoryFilter) => void;
+  close: () => void;
+  setFilter: (filter: HistoryFilter) => void;
+}
+
+/** Whether History is open, and on which chip. */
+export const useHistoryStore = create<HistoryState>()((set) => ({
+  open: false,
+  filter: "all",
+  toggle: () => set((s) => ({ open: !s.open })),
+  show: (filter) => set((s) => ({ open: true, filter: filter ?? s.filter })),
+  close: () => set({ open: false }),
+  setFilter: (filter) => set({ filter }),
+}));
+
+const OUTCOME_GLYPH: Readonly<Record<HistoryOutcome, { icon: LucideIcon; tone: string }>> = {
+  merged: { icon: GitMerge, tone: "text-merged" },
+  delivered: { icon: CircleCheck, tone: "text-success" },
+  stopped: { icon: CircleMinus, tone: "text-muted-foreground" },
+  failed: { icon: CircleX, tone: "text-destructive" },
+  archived: { icon: Archive, tone: "text-muted-foreground" },
+};
+const IMPORTED_GLYPH = { icon: History, tone: "text-muted-foreground" };
+
+const EMPTY: Readonly<Record<HistoryFilter, string>> = {
+  all: "Nothing finished yet",
+  workers: "No finished workers yet",
+  threads: "No finished or archived threads yet",
+  archived: "Nothing archived",
+  imported: "No past CLI sessions to resume",
+};
+
+/**
+ * History: every past chat in one list, searched by title and repo as you type and narrowed by
+ * kind. A click, or ↑↓ and Return, opens a Gram thread where it is, or resumes an agent's past
+ * session into a new one.
+ */
+export function HistoryView() {
+  const open = useHistoryStore((s) => s.open);
+  const close = useHistoryStore((s) => s.close);
+  const opener = useOpener(open);
+  const [picked, setPicked] = useState(false);
+  return (
+    <Dialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) close();
+        else setPicked(false);
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+        <Dialog.Popup
+          data-testid={HISTORY_TEST_ID}
+          data-surface="overlay"
+          aria-label="History"
+          // A thread just opened takes focus in its pane; only a dismissal hands it back.
+          finalFocus={() => (picked ? false : returnFocusTo(opener)())}
+          className="fixed top-[10%] left-1/2 z-50 flex max-h-[76vh] w-[min(46rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+        >
+          {open && <HistoryBody onPicked={() => setPicked(true)} />}
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/** The past sessions no thread shows, of the folders most recently worked in. */
+function usePastSessions(roots: readonly string[]) {
+  const api = useApi();
+  const agents = useAvailableAgents();
+  return useQueries({
+    queries: roots.map((root) => ({
+      // Under the resume list's key, so a resume anywhere makes this stale too.
+      queryKey: [...sessionsQueryKey(root), agents, "history"],
+      queryFn: () => listResumableSessions(api, agents, root, SESSIONS_PER_ROOT),
+      retry: false,
+      staleTime: 60_000,
+    })),
+    combine: (results) => ({
+      sessions: results.flatMap((result, i) =>
+        (result.data?.sessions ?? []).map((session): HistorySession => ({
+          ...session,
+          projectRoot: roots[i]!,
+        })),
+      ),
+      loading: results.some((result) => result.isPending),
+    }),
+  });
+}
+
+function HistoryBody({ onPicked }: { onPicked: () => void }) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  const workspaces = useWorkspaces();
+  const ids = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
+  const ledgers = useOrchestratorLedgers(ids);
+  const { finished, horizons, loadMore, busy } = useFinishedWorkerPages(ids);
+  const byId = useThreadsStore((s) => s.byId);
+  const statusDetail = useThreadsStore((s) => s.statusDetail);
+  const summaries = useMemo(() => Object.values(byId).flatMap((s) => (s ? [s] : [])), [byId]);
+  const { data: projects = [] } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api.listProjects(),
+  });
+  const roots = useMemo(
+    () => sessionRoots(projects, summaries, SESSION_ROOTS),
+    [projects, summaries],
+  );
+  const past = usePastSessions(roots);
+  // Minute resolution is enough for the days and the times rows show.
+  const now = useNow(true, undefined, 60_000);
+  const by = useLayoutStore((s) => s.doneGrouping);
+  const filter = useHistoryStore((s) => s.filter);
+  const setFilter = useHistoryStore((s) => s.setFilter);
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const [limit, setLimit] = useState(DONE_PAGE);
+  const [resuming, setResuming] = useState<string>();
+  const [error, setError] = useState<string>();
+  const openThread = useOpenThread();
+  const showResumed = useShowResumed();
+  const modelFor = useResumeModel();
+
+  const entries = useMemo(
+    () =>
+      historyEntries({
+        workspaces: workspaces.map((state) => ({
+          workspaceId: state.workspace.id,
+          name: state.workspace.name,
+          ledger: ledgers.get(state.workspace.id),
+          finished: finished.get(state.workspace.id),
+        })),
+        summaries,
+        projects,
+        sessions: past.sessions,
+        facts: { byId, statusDetail, now },
+      }),
+    [workspaces, ledgers, finished, summaries, projects, past.sessions, byId, statusDetail, now],
+  );
+  const found = useMemo(() => searchHistory(entries, filter, query), [entries, filter, query]);
+  // Only workers come in pages: the other chips wait on none of them.
+  const paged = filter === "all" || filter === "workers";
+  const shown = useMemo(
+    () => doneWindow(found, by, now, paged ? horizons : new Map<WorkspaceId, number>(), limit),
+    [found, by, now, paged, horizons, limit],
+  );
+  const waitsOn = shown.load;
+  useEffect(() => {
+    if (waitsOn !== undefined && !busy) loadMore(waitsOn);
+  }, [waitsOn, busy, loadMore]);
+  const rows = shown.groups.flatMap((group) => group.rows);
+  const activeIndex = Math.min(active, rows.length - 1);
+
+  const pick = (entry: HistoryEntry | undefined) => {
+    if (entry === undefined || resuming !== undefined) return;
+    const threadId = historyThreadId(entry);
+    if (threadId !== undefined) {
+      onPicked();
+      useHistoryStore.getState().close();
+      openThread(threadId);
+      return;
+    }
+    const session = entry.session;
+    if (session === undefined) return;
+    setResuming(entry.threadId);
+    setError(undefined);
+    resumeSession(api, session, session.projectRoot, modelFor(session.agent))
+      .then((id) => {
+        void queryClient.invalidateQueries({ queryKey: sessionsQueryKey(session.projectRoot) });
+        onPicked();
+        useHistoryStore.getState().close();
+        showResumed(id);
+      })
+      .catch((e: unknown) => setError(`Couldn't resume: ${errorMessage(e)}`))
+      .finally(() => setResuming(undefined));
+  };
+
+  const changeFilter = (next: HistoryFilter) => {
+    setFilter(next);
+    setActive(0);
+    setLimit(DONE_PAGE);
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown" && event.key !== "Enter") return;
+    // Return on a chip picks the chip.
+    if (event.key === "Enter" && (event.target as HTMLElement).dataset["historyFilter"]) return;
+    const next = listIndexForKey(event.key, activeIndex, rows.length);
+    if (next !== undefined) {
+      event.preventDefault();
+      setActive(next);
+    } else if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      pick(rows[activeIndex]);
+    }
+  };
+
+  let index = -1;
+  return (
+    <div className="flex min-h-0 flex-col" onKeyDown={onKeyDown}>
+      <div className="flex items-center gap-2 border-b border-border px-3">
+        <Search aria-hidden className="size-4 text-muted-foreground" />
+        <Dialog.Title className="sr-only">History</Dialog.Title>
+        <input
+          autoFocus
+          data-testid="history-search"
+          aria-label="Search history"
+          placeholder="Search history by title or repo"
+          className="h-11 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setActive(0);
+            setLimit(DONE_PAGE);
+          }}
+        />
+      </div>
+      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+        <div role="radiogroup" aria-label="Show" className="flex flex-wrap items-center gap-1">
+          {HISTORY_FILTERS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={filter === id}
+              data-testid="history-filter"
+              data-history-filter={id}
+              onClick={() => changeFilter(id)}
+              className={cn(
+                "h-7 rounded-(--radius-sm) px-2.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                filter === id && "bg-accent font-medium text-accent-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <DoneGroupingMenu className="ml-auto" />
+      </div>
+      <div
+        role="listbox"
+        aria-label="History"
+        tabIndex={-1}
+        aria-activedescendant={activeIndex < 0 ? undefined : `history-row-${activeIndex}`}
+        className="min-h-0 overflow-y-auto p-1 outline-none"
+      >
+        {rows.length === 0 && (
+          <p
+            data-testid="history-empty"
+            className="px-3 py-8 text-center text-sm text-muted-foreground"
+          >
+            {query.trim() !== ""
+              ? "No matches"
+              : filter === "imported" && past.loading
+                ? "Looking for past sessions…"
+                : EMPTY[filter]}
+          </p>
+        )}
+        {shown.groups.map((group) => (
+          <Fragment key={group.key}>
+            <h3
+              data-testid="history-group"
+              data-grouping={by}
+              className="px-2 pt-2 pb-0.5 text-xs font-medium text-muted-foreground"
+            >
+              {group.label}
+            </h3>
+            {group.rows.map((entry) => {
+              index++;
+              const at = index;
+              return (
+                <HistoryRow
+                  key={entry.threadId}
+                  entry={entry}
+                  index={at}
+                  active={at === activeIndex}
+                  resuming={resuming === entry.threadId}
+                  when={historyWhen(entry.finishedAt, by, now)}
+                  whenLong={doneWhenLong(entry.finishedAt, now)}
+                  onHover={() => setActive(at)}
+                  onOpen={() => pick(entry)}
+                />
+              );
+            })}
+          </Fragment>
+        ))}
+        {shown.more && (
+          <button
+            type="button"
+            data-testid="history-more"
+            aria-busy={busy || undefined}
+            onClick={() => setLimit((current) => current + DONE_PAGE)}
+            className="mx-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Show more
+          </button>
+        )}
+      </div>
+      {error !== undefined && (
+        <p role="alert" className="border-t border-border px-3 py-1.5 text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      <div
+        data-testid="history-keys"
+        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground"
+      >
+        <span>
+          <kbd className="font-sans">↑↓</kbd> move
+        </span>
+        <span>
+          <kbd className="font-sans">{keyLabel("⏎")}</kbd> open or resume
+        </span>
+        <span>
+          <kbd className="font-sans">esc</kbd> close
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function HistoryRow({
+  entry,
+  index,
+  active,
+  resuming,
+  when,
+  whenLong,
+  onHover,
+  onOpen,
+}: {
+  entry: HistoryEntry;
+  index: number;
+  active: boolean;
+  resuming: boolean;
+  when: string;
+  whenLong: string;
+  onHover: () => void;
+  onOpen: () => void;
+}) {
+  const glyph = entry.outcome === undefined ? IMPORTED_GLYPH : OUTCOME_GLYPH[entry.outcome];
+  const word = entry.outcome === undefined ? "resume" : OUTCOME_LABEL[entry.outcome];
+  // A workspace named for its one repo says it once.
+  const where = [entry.place, entry.repo]
+    .filter((part, i, parts) => part !== "" && (i === 0 || part !== parts[0]))
+    .join(" · ");
+  return (
+    <div
+      id={`history-row-${index}`}
+      role="option"
+      aria-selected={active}
+      aria-busy={resuming || undefined}
+      aria-label={`${entry.title}, ${where}, ${word}, ${whenLong}${entry.agent === undefined ? "" : `, ${agentLabel(entry.agent)}`}`}
+      data-testid="history-row"
+      data-thread-id={entry.threadId}
+      data-kind={entry.kind}
+      data-outcome={entry.outcome ?? "imported"}
+      data-archived={entry.archived || undefined}
+      onMouseMove={onHover}
+      onClick={onOpen}
+      className={cn(
+        "flex min-h-9 cursor-default items-center gap-2.5 rounded-md px-2 text-sm",
+        active && "bg-accent text-accent-foreground",
+        resuming && "opacity-60",
+      )}
+    >
+      <glyph.icon aria-hidden className={cn("size-4 shrink-0", glyph.tone)} />
+      <span data-testid="history-title" className="min-w-0 truncate">
+        {entry.title}
+      </span>
+      <span
+        data-testid="history-where"
+        className="min-w-0 shrink truncate text-xs text-muted-foreground"
+      >
+        {where}
+      </span>
+      <span className="ml-auto flex shrink-0 items-center gap-2 pl-3 text-xs text-muted-foreground">
+        {entry.agent !== undefined && <AgentIcon agent={entry.agent} className="size-3.5" />}
+        <span data-testid="history-outcome">{word}</span>
+        <time
+          data-testid="history-time"
+          dateTime={
+            entry.finishedAt === undefined ? undefined : new Date(entry.finishedAt).toISOString()
+          }
+          title={whenLong}
+          className="min-w-10 text-right tabular-nums"
+        >
+          {when}
+        </time>
+      </span>
+    </div>
+  );
+}
