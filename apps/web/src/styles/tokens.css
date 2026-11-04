@@ -107,6 +107,18 @@
  * ------------------------------------------------------------------------------------------- */
 
 :root {
+  /* Elevation (shadow-raised, shadow-overlay, shadow-composer). The look sets the first two. */
+  --elevation-raised: var(--shadow-raised);
+  --elevation-overlay: var(--shadow-overlay);
+  --elevation-composer: var(--shadow-composer);
+
+  /* Selection. The row cursor is where the keyboard or pointer is in a list or menu; a selected
+     choice is the option picked in a group, outlined in the accent so it never reads as focus
+     alone. The focus ring itself is --focus-ring, from the palette. */
+  --row-cursor: var(--surface-hover);
+  --choice-selected: color-mix(in oklab, var(--accent) 10%, transparent);
+  --choice-selected-border: var(--accent);
+
   --chrome-bg: color-mix(in srgb, var(--surface-1) calc(var(--surface-alpha) * 100%), transparent);
 
   --sidebar-bg: var(--chrome-bg);

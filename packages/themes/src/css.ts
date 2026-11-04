@@ -6,6 +6,7 @@ import {
   type Look,
   type LookId,
   type MotionPreset,
+  TYPE_STEPS,
 } from "./looks.ts";
 import {
   ANSI_KEYS,
@@ -29,6 +30,22 @@ export function easingCss(easing: Easing): string {
 }
 
 const round = (v: number, digits = 3) => Number(v.toFixed(digits));
+const rem = (px: number) => `${round(px / 16, 4)}rem`;
+
+/**
+ * The type scale as `--type-<step>-size`, `-line` and, where a step has one, `-weight`; globals.css
+ * maps them to the `text-<step>` utilities. A step without a weight inherits its parent's.
+ */
+function typeVariables(look: Look): CssVariables {
+  const vars: CssVariables = {};
+  for (const step of TYPE_STEPS) {
+    const style = look.type[step];
+    vars[`--type-${step}-size`] = rem(style.size);
+    vars[`--type-${step}-line`] = rem(style.lineHeight);
+    if (style.weight !== undefined) vars[`--type-${step}-weight`] = `${style.weight}`;
+  }
+  return vars;
+}
 
 /**
  * Samples a spring's step response into a CSS `linear()` easing plus the time it takes to settle,
@@ -73,6 +90,8 @@ export function lookVariables(look: Look): CssVariables {
     "--font-display": look.fonts.display,
     "--font-mono": look.fonts.mono,
     "--font-label": look.fonts.label,
+    ...typeVariables(look),
+    "--radius-2xs": `${look.radii["2xs"]}px`,
     "--radius-xs": `${look.radii.xs}px`,
     "--radius-sm": `${look.radii.sm}px`,
     "--radius-md": `${look.radii.md}px`,

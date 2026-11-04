@@ -84,7 +84,7 @@ a turn and retrying an error; they do not qualify native or provider behavior.
 | `bun run check:scaffold`       | Known private identifiers/credential signatures, scaffold/release boundaries; required by AGENTS.md  |
 | `bun run check:docs`           | Tracked authored Markdown local links/anchors, known text boundaries and documented Bun script names |
 | `bun run fmt:check`            | Repository formatting                                                                                |
-| `bun run lint`                 | Exact dependency pins and warning-free lint                                                          |
+| `bun run lint`                 | Exact dependency pins, the design-token drift check and warning-free lint                            |
 | `bun run typecheck`            | All TypeScript project references                                                                    |
 | `bun run check:static`         | Pins/lint/format/types without Vitest                                                                |
 | `bun run test <affected-file>` | Focused Vitest using the pinned Node runner                                                          |
