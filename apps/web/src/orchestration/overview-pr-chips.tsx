@@ -35,10 +35,13 @@ export function WorkerPrChips({
   threadId,
   cardPrs,
   card = true,
+  className = "pr-1.5 pb-1 pl-6",
 }: {
   threadId: ThreadId;
   cardPrs: readonly FeatureCardPr[];
   card?: boolean;
+  /** Where the chips sit: under an overview row's name by default. */
+  className?: string;
 }) {
   // The thread and its git state only, so a worker's activity ticks don't rebuild its chips.
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
@@ -70,7 +73,7 @@ export function WorkerPrChips({
       aria-label="Pull requests"
       data-testid="overview-pr-chips"
       data-thread-id={threadId}
-      className="flex flex-wrap gap-1 pr-1.5 pb-1 pl-6"
+      className={cn("flex flex-wrap gap-1", className)}
     >
       {shown.map((chip) => (
         <PrChipButton key={chip.entry.key} chip={chip} threadId={threadId} card={card} />

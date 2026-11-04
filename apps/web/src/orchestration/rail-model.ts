@@ -38,6 +38,8 @@ export interface RailWorker {
   readonly waiting?: WaitingOn | undefined;
   /** Its first PR, shown beside its name. */
   readonly pr: FeatureCardPr | undefined;
+  /** Every PR its card lists, for the grid's PR cell. */
+  readonly prs: readonly FeatureCardPr[];
   /** Titles of the workers whose changed files meet this one's: advisory, from the card. */
   readonly overlaps: readonly string[];
   readonly overlapFiles: readonly string[];
@@ -248,6 +250,7 @@ export const railRows = (
         tone,
         ...(waiting === undefined ? {} : { waiting }),
         pr: worker.prs[0],
+        prs: worker.prs,
         overlaps: worker.overlapsWith.flatMap((id) => {
           const title = titles.get(id);
           return title === undefined ? [] : [title];
@@ -413,3 +416,17 @@ export const groupFoldKey = (workspaceId: string, group: Pick<RailGroup, "group"
 /** Whether a band is folded, given whether its key is listed. */
 export const groupFolded = (group: Pick<RailGroup, "finished">, listed: boolean): boolean =>
   group.finished ? !listed : listed;
+
+/**
+ * A worker's words beside its PR cell, which already names its PRs: "checks on #142" says
+ * "checks", "#142 to merge" says "to merge", so each PR reads once. A PR the cell doesn't show,
+ * another worker's say, stays named.
+ */
+export const nowBesidePrs = (now: string, prs: readonly { readonly number: number }[]): string =>
+  prs.reduce(
+    (text, pr) =>
+      text
+        .replace(new RegExp(`\\s+(?:on|for) #${pr.number}\\b`, "u"), "")
+        .replace(new RegExp(`(^|·\\s*)#${pr.number}\\s+`, "u"), "$1"),
+    now,
+  );

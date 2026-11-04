@@ -15,6 +15,7 @@ import {
   groupFoldKey,
   groupNames,
   hiddenWorkerCount,
+  nowBesidePrs,
   overlapHint,
   railEntries,
   railRows,
@@ -427,5 +428,17 @@ describe("lines that leave the Board", () => {
     };
     const onlyHeld = { ...card("docs", []), held: [held] };
     expect(railRows([onlyHeld], facts())[0]?.title).toBe("Refresh docs");
+  });
+});
+
+describe("nowBesidePrs", () => {
+  it("leaves out a PR the cell beside it names, and keeps any other", () => {
+    const own = [{ number: 142 }];
+    expect(nowBesidePrs("Waiting · checks on #142", own)).toBe("Waiting · checks");
+    expect(nowBesidePrs("Waiting · #142 to merge", own)).toBe("Waiting · to merge");
+    expect(nowBesidePrs("#142 to merge", own)).toBe("to merge");
+    expect(nowBesidePrs("Waiting · #88 to merge", own)).toBe("Waiting · #88 to merge");
+    expect(nowBesidePrs("checks on #1420", own)).toBe("checks on #1420");
+    expect(nowBesidePrs("running tests", [])).toBe("running tests");
   });
 });

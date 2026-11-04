@@ -13,11 +13,10 @@ import { describe, expect, it } from "vitest";
 import { askOf, memoryAskOf, workerAskOf } from "./ask-model";
 import type { FailureItem } from "./needs-you-model";
 import {
-  filterCounts,
-  filterGroups,
   needsYouGroups,
   needsYouSections,
   sectionOf,
+  sectionsIn,
   stepItem,
   THREADS_GROUP,
   type NeedsYouThread,
@@ -219,7 +218,7 @@ describe("needsYouGroups", () => {
     expect(approve.inStack).toBeUndefined();
     expect(jumpTarget(approve)).toMatchObject({ kind: "card", requestId: "r-solo" });
     expect(threads.items[1]).toMatchObject({ owned: true, title: "Spending limit" });
-    expect(filterCounts(groups)).toEqual({ all: 9, asks: 4, waits: 3, failing: 2 });
+    expect(groups.flatMap((group) => group.items)).toHaveLength(9);
     // Later and a dismiss put them away as any other.
     const away = needsYouGroups({
       ...sources(),
@@ -238,13 +237,13 @@ describe("needsYouGroups", () => {
   });
 });
 
-describe("filters", () => {
-  it("count each family and show only one", () => {
-    const groups = needsYouGroups(sources());
-    expect(filterCounts(groups)).toEqual({ all: 7, asks: 3, waits: 3, failing: 1 });
-    const failing = filterGroups(groups, "failing");
-    expect(failing.map((group) => group.name)).toEqual(["Arb bot"]);
-    expect(filterGroups(groups, "all")).toEqual(groups);
+describe("sectionsIn", () => {
+  it("shows one category, or every one for All or a category with nothing left", () => {
+    const sections = needsYouSections(needsYouGroups(sources()));
+    expect(sectionsIn(sections, "errors").map((section) => section.key)).toEqual(["errors"]);
+    expect(sectionsIn(sections, "all")).toBe(sections);
+    // Nothing to take: the list falls back to all rather than standing empty.
+    expect(sectionsIn(sections, "steps")).toBe(sections);
   });
 });
 
@@ -313,14 +312,15 @@ const sectionOfWait = (kind: WaitItem["kind"]) =>
 describe("needsYouSections", () => {
   it("lists by kind across workspaces, each item saying its workspace", () => {
     const sections = needsYouSections(needsYouGroups(sources()));
+    // What stops work first, drafts last.
     expect(sections.map((section) => section.key)).toEqual([
+      "errors",
       "approvals",
       "questions",
       "reviews",
       "drafts",
-      "errors",
     ]);
-    const [approvals, questions, reviews, drafts, errors] = sections;
+    const [errors, approvals, questions, reviews, drafts] = sections;
     expect(approvals!.items.map((item) => [item.title, item.workspace])).toEqual([
       [expect.any(String), "Gram"],
     ]);
