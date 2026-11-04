@@ -63,7 +63,7 @@ export function StageLine({
 }
 
 const ROW_ACTION =
-  "inline-flex shrink-0 items-center gap-1 rounded-sm text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex shrink-0 items-center gap-1 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * Several features run as one effort: a band over their lines with the state and the stage of the
@@ -143,7 +143,7 @@ export function GroupBand({
             className="size-3 shrink-0 text-status-needs-mark"
           />
         )}
-        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
           {count} {count === 1 ? "feature" : "features"}
         </span>
         {group.stage !== undefined && (

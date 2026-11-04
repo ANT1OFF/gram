@@ -7,8 +7,8 @@ import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { formatWakeTime } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 
-import type { NeedsYouGroup } from "./needs-you-items";
-import { NeedsYouRow, NeedsYouUndo, useNeedsYouActions } from "./needs-you-row";
+import type { NeedsYouItem } from "./needs-you-items";
+import { NeedsYouRow, NeedsYouUndo, SectionHead, useNeedsYouActions } from "./needs-you-row";
 import {
   openNeedsYouPanel,
   useNeedsYouJump,
@@ -18,7 +18,7 @@ import {
 } from "./use-needs-you";
 
 // The Needs you popover (needs-you-home mock, C Hybrid · popover): the newest few items across every
-// workspace, by workspace, each a click from its thread at the turn that asked and answerable in
+// workspace, by kind, each a click from its thread at the turn that asked and answerable in
 // place; See all opens the whole list as the right panel. The pill it hangs from is its trigger.
 
 /** How many rows the popover shows before See all. */
@@ -28,10 +28,10 @@ const POPOVER_ROWS = 6;
  * At most `rows` items, shared out a row at a time across the groups so every workspace that has
  * something shows it, each group's newest first; and how many are left out.
  */
-export const firstRows = (
-  groups: readonly NeedsYouGroup[],
+export const firstRows = <G extends { readonly items: readonly NeedsYouItem[] }>(
+  groups: readonly G[],
   rows: number,
-): { readonly groups: readonly NeedsYouGroup[]; readonly more: number } => {
+): { readonly groups: readonly G[]; readonly more: number } => {
   const taken = groups.map(() => 0);
   const total = groups.reduce((n, group) => n + group.items.length, 0);
   // One row to each group in turn that has one left, until the rows or the items run out.
@@ -84,20 +84,20 @@ export function NeedsYouPopover({
 }
 
 function PopoverBody() {
-  const { groups, later } = useNeedsYouList();
+  const { sections, later } = useNeedsYouList();
   const current = useNeedsYouUi((s) => s.current);
   const jump = useNeedsYouJump();
   const actions = useNeedsYouActions();
   const now = useNow(true, undefined, 60_000);
   const next = useShortcutHint("thread.nextNeedsYou");
-  const shown = firstRows(groups, POPOVER_ROWS);
-  const total = groups.reduce((n, group) => n + group.items.length, 0);
+  const shown = firstRows(sections, POPOVER_ROWS);
+  const total = sections.reduce((n, section) => n + section.items.length, 0);
   return (
     <>
       <div className="flex items-center gap-2 px-2 pt-1.5 pb-1">
         <Popover.Title className="text-[13px] font-semibold">Needs you</Popover.Title>
         {total > 0 && next !== undefined && (
-          <span className="ml-auto text-[11px] text-muted-foreground">{next} next</span>
+          <span className="ml-auto text-xs text-muted-foreground">{next} next</span>
         )}
       </div>
       {total === 0 ? (
@@ -110,13 +110,16 @@ function PopoverBody() {
         </p>
       ) : (
         <div className="min-h-0 overflow-y-auto">
-          {shown.groups.map((group) => (
-            <section key={group.key} aria-label={group.name}>
-              <h3 className="px-2 pt-1.5 pb-0.5 text-[11px] font-semibold text-muted-foreground">
-                {group.name}
-              </h3>
+          {shown.groups.map((section) => (
+            <section
+              key={section.key}
+              aria-label={section.label}
+              data-testid="needs-you-section"
+              data-section={section.key}
+            >
+              <SectionHead label={section.label} count={section.items.length} />
               <ul className="flex flex-col">
-                {group.items.map((item) => (
+                {section.items.map((item) => (
                   <NeedsYouRow
                     key={item.key}
                     item={item}
@@ -134,7 +137,7 @@ function PopoverBody() {
       )}
       <NeedsYouUndo className="pt-1" />
       {(total > 0 || later.length > 0) && (
-        <div className="mt-1 flex items-center gap-2 border-t border-border px-2 pt-1 text-[11px] text-muted-foreground">
+        <div className="mt-1 flex items-center gap-2 border-t border-border px-2 pt-1 text-xs text-muted-foreground">
           <span data-testid="needs-you-popover-foot" className="min-w-0 flex-1 truncate">
             {[
               shown.more > 0 ? `${shown.more} more` : undefined,
@@ -147,7 +150,7 @@ function PopoverBody() {
           </span>
           <Button
             size="xs"
-            variant="ghost"
+            variant="secondary"
             data-testid="needs-you-see-all"
             onClick={openNeedsYouPanel}
           >

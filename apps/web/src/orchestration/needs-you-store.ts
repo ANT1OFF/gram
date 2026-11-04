@@ -24,7 +24,12 @@ import {
   threadNeedsItems,
   type FailureItem,
 } from "./needs-you-model";
-import { needsYouCounts, needsYouGroups, type NeedsYouThread } from "./needs-you-items";
+import {
+  needsYouCounts,
+  needsYouGroups,
+  needsYouSections,
+  type NeedsYouThread,
+} from "./needs-you-items";
 import { workspaceTrees } from "./tree-model";
 import type { NeedsYouList } from "./use-needs-you";
 
@@ -65,7 +70,7 @@ interface DerivedAsksState extends DerivedAsks {
   setQueried(queried: QueriedInputs): void;
 }
 
-const NOTHING: NeedsYouList = { groups: [], items: [], later: [] };
+const NOTHING: NeedsYouList = { groups: [], sections: [], items: [], later: [] };
 const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
 const NO_QUERIED: QueriedInputs = {
   workspaces: [],
@@ -165,6 +170,7 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
     },
   };
   const groups = needsYouGroups({ ...source, away: new Set([...away.keys(), ...hidden]) });
+  const sections = needsYouSections(groups);
   const later = needsYouGroups({ ...source, away: hidden })
     .flatMap((group) => group.items)
     .flatMap((item) => {
@@ -176,7 +182,7 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
     asks,
     withLater,
     soloAsks: asksOf({ groups: soloGroups, hidden: new Set([...answered, ...setAside]) }),
-    needsYou: { groups, items: groups.flatMap((group) => group.items), later },
+    needsYou: { groups, sections, items: sections.flatMap((section) => section.items), later },
     ...(sleeping.wakes === undefined ? {} : { wakes: sleeping.wakes }),
   };
 };

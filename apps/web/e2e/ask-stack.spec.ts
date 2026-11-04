@@ -463,22 +463,19 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   const all = Number(await needsYou.getAttribute("data-count"));
   await expect(needsYou).toContainText(`${all} need you`);
 
-  // The list the pill opens has `all` items, each workspace's section as many as its badge, and
-  // the threads outside any workspace the rest.
+  // The list the pill opens has `all` items, by kind; each workspace's rows as many as its badge,
+  // and the threads outside any workspace the rest.
   await needsYou.click();
   await page.getByTestId("needs-you-see-all").click();
   const panel = page.getByTestId("needs-you-panel");
   await expect(panel.getByTestId("needs-you-item")).toHaveCount(all);
   for (const id of [made.workspaceId, made.other.workspaceId]) {
     await expect(
-      panel
-        .locator(`[data-testid="needs-you-group"][data-workspace="${id}"]`)
-        .getByTestId("needs-you-item"),
+      panel.locator(`[data-testid="needs-you-item"][data-workspace="${id}"]`),
     ).toHaveCount(await badge(id));
   }
   const threads = await panel
-    .locator('[data-testid="needs-you-group"]:not([data-workspace])')
-    .getByTestId("needs-you-item")
+    .locator('[data-testid="needs-you-item"]:not([data-workspace])')
     .count();
   expect(threads).toBeGreaterThanOrEqual(2);
   expect((await badge(made.workspaceId)) + (await badge(made.other.workspaceId)) + threads).toBe(
@@ -506,11 +503,20 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   await workspace(made.workspaceId).getByRole("button").first().click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
   await expect(page.getByTestId("ask-stack")).toBeVisible();
-  // Needs you lists both workspaces' asks, each under its workspace's name, then the threads'.
+  // Needs you lists the asks by kind, each row of a workspace's saying its name.
   await needsYou.click();
   const popover = page.getByTestId("needs-you-popover");
   await expect(popover).toBeVisible();
-  await expect(popover.getByRole("region")).toHaveCount(3);
-  await expect(popover.getByRole("region", { name: "Threads" })).toBeVisible();
+  await expect(popover.getByRole("region", { name: "Approvals" })).toBeVisible();
+  const own = popover.locator(
+    `[data-testid="needs-you-item"][data-workspace="${made.workspaceId}"]`,
+  );
+  await expect(own.first()).toBeVisible();
+  const name = (await workspace(made.workspaceId)
+    .getByTestId("overview-workspace-row")
+    .getAttribute("aria-label"))!.split(",")[0]!;
+  for (const where of await own.getByTestId("needs-you-where").allTextContents()) {
+    expect(where.startsWith(`${name} · `)).toBe(true);
+  }
   await expect(popover.getByTestId("needs-you-see-all")).toHaveText(`See all ${all}`);
 });

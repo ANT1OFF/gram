@@ -271,7 +271,7 @@ export function OverviewSidebar() {
       </div>
       <div
         onKeyDown={overviewKeys}
-        className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto overscroll-contain px-2 pt-1 pb-3 text-[13px]"
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-2 pt-1 pb-3 text-[13px]"
       >
         <NeedsYou />
         <Orchestrators />
@@ -912,7 +912,7 @@ function WorkerCard({
           <PrChip pr={row.pr} threadId={row.threadId} />
         </span>
       )}
-      <p className="mt-0.5 flex gap-3 border-t border-border pt-1.5 text-[11px] text-muted-foreground">
+      <p className="mt-0.5 flex gap-3 border-t border-border pt-1.5 text-xs text-muted-foreground">
         <span>Click · open</span>
         <span>{keyLabel("⌥-click")} · peek</span>
         <span>{keyLabel("⌘-click")} · beside</span>

@@ -21,6 +21,7 @@ import {
   type NeedsYouGroup,
   type NeedsYouCounts,
   type NeedsYouItem,
+  type NeedsYouSection,
 } from "./needs-you-items";
 import { useOpenQuestionsOf } from "./use-board-actions";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
@@ -65,9 +66,11 @@ interface LaterItem {
 }
 
 export interface NeedsYouList {
-  /** What needs the user now, by workspace. */
+  /** What needs the user now, by workspace: what each workspace's count reads. */
   readonly groups: readonly NeedsYouGroup[];
-  /** The same, flat, in the order the groups list them: what the next and previous keys walk. */
+  /** The same by kind (`needsYouSections`): what the popover and the panel list. */
+  readonly sections: readonly NeedsYouSection[];
+  /** The same, flat, in the order the sections list them: what the next and previous keys walk. */
   readonly items: readonly NeedsYouItem[];
   /** What is put away for Later, soonest back first. */
   readonly later: readonly LaterItem[];
@@ -209,6 +212,12 @@ export const jumpTarget = (
   return item.kind === "wait" ? { kind: "tray" } : { kind: "thread" };
 };
 
+/** The thread a jump to `item` opens: the orchestrator whose dock answers it, or its own. */
+export const opensThread = (item: NeedsYouItem): ThreadId | undefined => {
+  const target = jumpTarget(item);
+  return target.kind === "stack" ? (target.threadId ?? item.threadId) : item.threadId;
+};
+
 /**
  * Opens an item's thread at the turn that asked: the transcript message, the card above the
  * composer, or the orchestrator's stack on that ask. The popover closes; the panel stays.
@@ -220,8 +229,7 @@ export function useNeedsYouJump(): (item: NeedsYouItem) => void {
     setCurrent(item.key);
     setPopover(undefined);
     const target = jumpTarget(item);
-    const threadId: ThreadId | undefined =
-      target.kind === "stack" ? (target.threadId ?? item.threadId) : item.threadId;
+    const threadId = opensThread(item);
     if (threadId === undefined) return;
     if (target.kind === "message") useRevealStore.getState().reveal(threadId, target.messageId);
     if (target.kind === "stack") {

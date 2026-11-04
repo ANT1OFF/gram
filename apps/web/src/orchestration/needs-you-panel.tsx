@@ -14,11 +14,17 @@ import {
   NEEDS_YOU_FILTERS,
   type NeedsYouFilter,
 } from "./needs-you-items";
-import { kindOf, NeedsYouRow, NeedsYouUndo, useNeedsYouActions } from "./needs-you-row";
+import {
+  kindOf,
+  NeedsYouRow,
+  NeedsYouUndo,
+  SectionHead,
+  useNeedsYouActions,
+} from "./needs-you-row";
 import { useNeedsYouJump, useNeedsYouList, useNeedsYouUi } from "./use-needs-you";
 
 // The Needs you panel (needs-you-home mock, C Hybrid · panel): the whole list beside the thread, by
-// workspace, filtered by kind, each row with its answers, Later and Dismiss on hover or focus. It
+// kind, each row saying its workspace, filtered by family, each row with its answers, Later and Dismiss on hover or focus. It
 // stays open while each pick opens its thread beside it. The Later list shows what is put away, with
 // when it comes back and Wake.
 
@@ -33,7 +39,7 @@ const FILTER_LABELS: Record<
 };
 
 export function NeedsYouPanel() {
-  const { groups, later } = useNeedsYouList();
+  const { sections, later } = useNeedsYouList();
   const filter = useNeedsYouUi((s) => s.filter);
   const setFilter = useNeedsYouUi((s) => s.setFilter);
   const showLater = useNeedsYouUi((s) => s.later);
@@ -42,8 +48,8 @@ export function NeedsYouPanel() {
   const jump = useNeedsYouJump();
   const actions = useNeedsYouActions();
   const now = useNow(true, undefined, 60_000);
-  const counts = filterCounts(groups);
-  const shown = filterGroups(groups, counts[filter] === 0 ? "all" : filter);
+  const counts = filterCounts(sections);
+  const shown = filterGroups(sections, counts[filter] === 0 ? "all" : filter);
   return (
     <section
       aria-label="Needs you"
@@ -131,13 +137,17 @@ export function NeedsYouPanel() {
                   <li
                     key={item.key}
                     data-testid="needs-you-later-item"
-                    className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-(--radius-md) px-2 py-1 hover:bg-muted/60"
+                    className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-(--radius-md) px-2 py-1.5 hover:bg-muted/60"
                   >
-                    <kind.icon aria-label={kind.label} className="size-4 text-muted-foreground" />
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate text-[13px]">{item.title}</span>
+                    <kind.icon
+                      aria-label={kind.label}
+                      className="mt-0.5 size-4 text-muted-foreground"
+                    />
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="line-clamp-2 text-[13px] break-words">{item.title}</span>
                       <span className="truncate text-xs text-muted-foreground">
-                        {item.where} · back at {formatWakeTime(wakes, now)}
+                        {[item.workspace, item.where].filter(Boolean).join(" · ")} · back at{" "}
+                        {formatWakeTime(wakes, now)}
                       </span>
                     </span>
                     <Button
@@ -160,19 +170,16 @@ export function NeedsYouPanel() {
             more={later.length > 0 ? `${later.length} put away for later` : undefined}
           />
         ) : (
-          shown.map((group) => (
+          shown.map((section) => (
             <section
-              key={group.key}
-              aria-label={group.name}
-              data-testid="needs-you-group"
-              data-workspace={group.workspaceId}
+              key={section.key}
+              aria-label={section.label}
+              data-testid="needs-you-section"
+              data-section={section.key}
             >
-              <h3 className="flex items-center gap-2 px-2 pt-2 pb-0.5 text-[11px] font-semibold text-muted-foreground">
-                <span className="min-w-0 flex-1 truncate">{group.name}</span>
-                <span className="font-normal tabular-nums">{group.items.length}</span>
-              </h3>
+              <SectionHead label={section.label} count={section.items.length} />
               <ul className="flex flex-col">
-                {group.items.map((item) => (
+                {section.items.map((item) => (
                   <NeedsYouRow
                     key={item.key}
                     item={item}
