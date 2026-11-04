@@ -342,7 +342,7 @@ function RecentRepos({
               className="ml-auto flex shrink-0 items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:opacity-0"
             >
               Open
-              <ArrowRight className="size-3" />
+              <ArrowRight className="size-3.5" />
             </span>
             <span className="sr-only">: open as a workspace</span>
           </button>

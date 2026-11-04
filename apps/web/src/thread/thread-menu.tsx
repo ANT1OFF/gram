@@ -61,6 +61,7 @@ export function ThreadMenu({ threadId, label }: { threadId: ThreadId; label?: st
               variant="ghost"
               size={label ? "sm" : "icon-sm"}
               aria-label={label ?? "Thread menu"}
+              title={label ? undefined : "Thread menu"}
             />
           }
           className="shrink-0"

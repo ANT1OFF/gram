@@ -53,7 +53,7 @@ export function ProjectShortcuts({
             onClick={() => onBrowse(shortcut.path)}
             className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            <FolderOpen aria-hidden className="size-3" />
+            <FolderOpen aria-hidden className="size-3.5" />
             {shortcut.label}
           </button>
         ))}
@@ -104,7 +104,7 @@ function Section({
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-1">
       <h3 className="flex items-center gap-1.5 font-caption text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-        <Icon className="size-3" />
+        <Icon className="size-3.5" />
         {title}
       </h3>
       {children.length > 0 ? (

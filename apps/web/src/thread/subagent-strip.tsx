@@ -110,7 +110,7 @@ export function SubagentStrip({
                   />
                 }
               >
-                <Layers aria-hidden className="size-3 shrink-0 text-status-working" />
+                <Layers aria-hidden className="size-3.5 shrink-0 text-status-working" />
                 <span className="shrink-0 font-medium">{rows.length} running</span>
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">
                   {open ? "" : newest.label}
@@ -141,7 +141,7 @@ export function SubagentStrip({
                         )
                       }
                     >
-                      <Icon aria-hidden className="size-3 shrink-0 text-status-working" />
+                      <Icon aria-hidden className="size-3.5 shrink-0 text-status-working" />
                       <span className="sr-only">{KIND_WORD[row.kind]}, running:</span>
                       <span
                         className={cn(
@@ -262,7 +262,7 @@ function CopyButton({ command }: { command: string }) {
         {copied ? (
           <DrawnCheck className="size-3 text-success" />
         ) : (
-          <Copy aria-hidden className="size-3" />
+          <Copy aria-hidden className="size-3.5" />
         )}
       </Swap>
       <span aria-live="polite" className="sr-only">

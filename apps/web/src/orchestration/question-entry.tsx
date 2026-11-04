@@ -227,7 +227,7 @@ export function OpenQuestion({
           data-testid="question-asker"
           className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground"
         >
-          <MessageCircleQuestion aria-hidden className="size-3 shrink-0 text-status-needs-mark" />
+          <MessageCircleQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
           <span className="min-w-0 flex-1 truncate">
             <AskedBy asker={card.asker} />
           </span>

@@ -39,7 +39,7 @@ export function NotificationsBell() {
       render={
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           aria-label={label}
           data-testid="notifications-bell"
           className="relative shrink-0 text-muted-foreground [-webkit-app-region:no-drag]"

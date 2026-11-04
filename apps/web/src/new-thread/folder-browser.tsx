@@ -59,7 +59,7 @@ export function FolderBrowser({ onChoose }: { onChoose: (path: string) => void }
           {folder &&
             breadcrumbs(folder.path, home).map((crumb, i, crumbs) => (
               <Fragment key={crumb.path}>
-                {i > 0 && <ChevronRight aria-hidden className="size-3 shrink-0 text-subtle" />}
+                {i > 0 && <ChevronRight aria-hidden className="size-3.5 shrink-0 text-subtle" />}
                 <button
                   type="button"
                   aria-current={i === crumbs.length - 1 ? "location" : undefined}

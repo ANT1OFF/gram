@@ -1,7 +1,15 @@
 import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Brain, CircleHelp, Columns3, FolderGit2, Hand, Pause, Settings2 } from "lucide-react";
+import {
+  Brain,
+  Columns3,
+  FolderGit2,
+  HandGrab,
+  MessageCircleQuestion,
+  Pause,
+  Settings2,
+} from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
@@ -31,7 +39,9 @@ import { useWorkerPause } from "./worker-pause";
 const LINK =
   "shrink-0 rounded-sm px-1 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 const ACTION = `${LINK} text-foreground/80`;
-const HEADER_LINK = `${LINK} flex items-center py-0.5 text-muted-foreground`;
+/** An icon link in the header: a 28 px square, its background on hover and focus. */
+const HEADER_LINK =
+  "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Opens a thread in this window's grid, or brings forward the window that already shows it. */
 export const goToThread = (threadId: ThreadId, event?: { preventDefault: () => void }) => {
@@ -71,7 +81,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
           role="status"
           className={`${BANNER} bg-muted/60`}
         >
-          <Pause aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <Pause aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="shrink-0 font-medium">Workspace paused</span>
           <span
             className="min-w-0 flex-1 truncate text-muted-foreground"
@@ -92,7 +102,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
       {held && (
         // Hand back itself is the header's, beside the worker's name, where it always stays.
         <div data-testid="worker-banner-held" role="status" className={BANNER}>
-          <Hand aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <HandGrab aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="shrink-0 font-medium">Paused by you</span>
           <span
             className="min-w-0 flex-1 truncate text-muted-foreground"
@@ -107,7 +117,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
           data-testid="worker-banner-repos"
           className="flex min-w-0 items-start gap-1.5 border-b border-border bg-card/40 px-3 py-1 text-xs text-muted-foreground"
         >
-          <FolderGit2 aria-hidden className="mt-0.5 size-3 shrink-0" />
+          <FolderGit2 aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0">
             Works in <span className="text-foreground/80">{repos.primary}</span>
             {repos.others.map((name) => (
@@ -174,11 +184,11 @@ export function OrchestratorChips({
               type="button"
               onClick={() => openBoard(workspaceId, { waiting: true })}
               data-testid="banner-questions"
-              className={`${LINK} flex items-center gap-0.5 text-xs text-status-needs hover:text-status-needs`}
+              className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-status-needs outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
             />
           }
         >
-          <CircleHelp aria-hidden className="size-3.5" />
+          <MessageCircleQuestion aria-hidden className="size-4" />
           <span className="tabular-nums">{questions.length}</span>
           <span className="sr-only"> {noun} to make</span>
         </Hint>
@@ -197,7 +207,7 @@ export function OrchestratorChips({
             />
           }
         >
-          <Columns3 aria-hidden className="size-3.5" />
+          <Columns3 aria-hidden className="size-4" />
         </Hint>
       )}
       <Hint
@@ -212,7 +222,7 @@ export function OrchestratorChips({
           />
         }
       >
-        <Brain aria-hidden className="size-3.5" />
+        <Brain aria-hidden className="size-4" />
       </Hint>
       <Hint
         label="Workspace settings"
@@ -227,7 +237,7 @@ export function OrchestratorChips({
           />
         }
       >
-        <Settings2 aria-hidden className="size-3.5" />
+        <Settings2 aria-hidden className="size-4" />
       </Hint>
     </>
   );
@@ -279,7 +289,7 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
           role="status"
           className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1 text-xs text-foreground"
         >
-          <Pause aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <Pause aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1">
             {pauseText(paused)} since {pauseClock(paused.at)}. While paused, nothing wakes it and it
             can't spawn or message workers. {pauseLeavesRunning(working, paused)}

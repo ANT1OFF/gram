@@ -36,7 +36,7 @@ export function DigestLine({ digests }: { digests: readonly StreamDigest[] }) {
       >
         <ChevronRight
           aria-hidden
-          className="size-3 shrink-0 opacity-60 transition-transform group-hover:opacity-100 group-data-[panel-open]:rotate-90"
+          className="size-3.5 shrink-0 opacity-60 transition-transform group-hover:opacity-100 group-data-[panel-open]:rotate-90"
         />
         <span className="min-w-0 truncate">{said.join(" · ")}</span>
         {words.time !== undefined && (

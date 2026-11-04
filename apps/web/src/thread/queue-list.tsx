@@ -74,7 +74,7 @@ function AttachmentCount({ n }: { n: number }) {
       aria-label={`${n} attachment${n === 1 ? "" : "s"}`}
       className="ml-1.5 inline-flex items-center gap-0.5 align-middle text-xs text-muted-foreground"
     >
-      <Paperclip aria-hidden className="size-3" />
+      <Paperclip aria-hidden className="size-3.5" />
       {n}
     </span>
   );
@@ -89,7 +89,7 @@ function QueuedFrom({ origin }: { origin: MessageOrigin }) {
       data-testid="queue-origin"
       className="mb-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground"
     >
-      <Icon aria-hidden className="size-3 shrink-0" />
+      <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="shrink-0">From</span>
       <Link
         to="/t/$threadId"

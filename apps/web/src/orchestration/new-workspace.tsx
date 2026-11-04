@@ -428,7 +428,7 @@ function ReposField({
                 className="flex size-4 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                 onClick={() => onChange((current) => toggleRepo(current, projectId, false))}
               >
-                <X aria-hidden className="size-3" />
+                <X aria-hidden className="size-3.5" />
               </button>
             </span>
           );

@@ -482,7 +482,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
                       href={run.link}
                       className="shrink-0 text-muted-foreground hover:text-foreground"
                     >
-                      <ExternalLink aria-label={`Open ${run.name}`} className="size-3" />
+                      <ExternalLink aria-label={`Open ${run.name}`} className="size-3.5" />
                     </OutboundLink>
                   )}
                 </div>
@@ -547,7 +547,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
               className="rounded-(--radius-md) border border-border bg-card/40 p-2"
             >
               <p className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <MessageSquare aria-hidden className="size-3" />
+                <MessageSquare aria-hidden className="size-3.5" />
                 <span className="font-medium text-foreground">{comment.author}</span>
                 {comment.kind === "review" && comment.state && (
                   <span>{reviewWord(comment.state) ?? comment.state.toLowerCase()}</span>
@@ -632,7 +632,7 @@ function Section({
           <ChevronRight
             aria-hidden
             className={cn(
-              "size-3 shrink-0 transition-transform duration-(--dur-fast)",
+              "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
               open && "rotate-90",
             )}
           />
@@ -677,7 +677,7 @@ function PrDescription({ body }: { body: string }) {
           <ChevronRight
             aria-hidden
             className={cn(
-              "size-3 shrink-0 transition-transform duration-(--dur-fast)",
+              "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
               open && "rotate-90",
             )}
           />

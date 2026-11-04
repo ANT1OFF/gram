@@ -390,12 +390,12 @@ function WorktreeStatus({ path }: { path: string }) {
   const warning = closeWarning(status.data);
   return warning ? (
     <p data-testid="worktree-warning" className="flex items-start gap-1.5 text-xs">
-      <TriangleAlert aria-hidden className="mt-0.5 size-3 shrink-0 text-warning" />
+      <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
       {warning}
     </p>
   ) : (
     <p data-testid="worktree-clean" className="flex items-center gap-1.5 text-xs">
-      <CircleCheck aria-hidden className="size-3 shrink-0 text-success" />
+      <CircleCheck aria-hidden className="size-3.5 shrink-0 text-success" />
       Clean
     </p>
   );

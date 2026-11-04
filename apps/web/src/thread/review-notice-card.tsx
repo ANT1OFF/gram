@@ -107,7 +107,7 @@ export function ReviewNoticeCard({ notice, text }: { notice: ReviewNotice; text:
               key={name}
               className="flex items-center gap-1 rounded-sm border border-destructive/40 px-1 text-xs text-destructive"
             >
-              <CircleX aria-hidden className="size-3" />
+              <CircleX aria-hidden className="size-3.5" />
               <span>Failing: {name}</span>
             </li>
           ))}
@@ -127,7 +127,7 @@ function NoticeText({ text }: { text: string }) {
       <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
         <ChevronRight
           aria-hidden
-          className="size-3 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-3.5 transition-transform group-data-[panel-open]:rotate-90"
         />
         Text sent to the agent
       </CollapsibleTrigger>

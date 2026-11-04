@@ -464,7 +464,7 @@ function FeatureMenuList({
             size="icon-xs"
             variant="ghost"
             aria-label={`${row.feature} menu`}
-            title="More"
+            title={`${row.feature} menu`}
             className={className}
           />
         }
@@ -486,7 +486,7 @@ function FeatureMenuList({
                     className={cn(MENU_ITEM, "data-[popup-open]:bg-accent")}
                   >
                     {featureMenuLabel(item, state)}
-                    <ChevronRight aria-hidden className="ml-auto size-3" />
+                    <ChevronRight aria-hidden className="ml-auto size-3.5" />
                   </Menu.SubmenuTrigger>
                   <Menu.Portal>
                     <Menu.Positioner side="right" alignOffset={-4} className="isolate z-50">
@@ -613,7 +613,7 @@ function StageSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feat
             onClick={() => editStage(true)}
             className="inline-flex items-center gap-1 rounded-sm text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Pencil aria-hidden className="size-3" />
+            <Pencil aria-hidden className="size-3.5" />
             {stage === undefined ? "Set stage" : "Edit plan"}
           </button>
         )}
@@ -751,7 +751,7 @@ function SheetContent({
                 data-tone={worker.tone}
                 className="flex min-w-0 items-center gap-2 text-xs"
               >
-                <tone.icon aria-label={tone.label} className={cn("size-3 shrink-0", tone.tone)} />
+                <tone.icon aria-label={tone.label} className={cn("size-3.5 shrink-0", tone.tone)} />
                 <button
                   type="button"
                   onClick={(event) => onOpen(worker.threadId, event)}

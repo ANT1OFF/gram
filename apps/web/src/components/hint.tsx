@@ -24,7 +24,13 @@ export function Hint({
   delay?: number | undefined;
 }) {
   return (
-    <Tooltip>
+    // A tooltip is no layer of its own: Escape closes it and still reaches what is under it, a
+    // sheet or a dialog, as it did past a native title.
+    <Tooltip
+      onOpenChange={(_open, details) => {
+        if (details.reason === "escape-key") details.allowPropagation();
+      }}
+    >
       <TooltipTrigger render={render} {...(delay === undefined ? {} : { delay })}>
         {children}
       </TooltipTrigger>

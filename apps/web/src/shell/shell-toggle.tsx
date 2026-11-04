@@ -29,7 +29,7 @@ export function ShellToggle({
       render={
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           aria-label={label}
           aria-pressed={pressed}
           data-testid={testId}

@@ -94,7 +94,7 @@ export function PrLabels({ threadId, detail }: { threadId: ThreadId; detail: PrD
                   onClick={() => void change("remove", label.name)}
                   className="rounded-full p-0.5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                 >
-                  <X aria-hidden className="size-3" />
+                  <X aria-hidden className="size-3.5" />
                 </button>
               </li>
             ))}

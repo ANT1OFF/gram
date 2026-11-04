@@ -482,7 +482,7 @@ function DiffBody({
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs text-muted-foreground">
         {diff.branch && (
           <span className="flex min-w-0 items-center gap-1 font-mono">
-            <GitBranch aria-hidden className="size-3 shrink-0" />
+            <GitBranch aria-hidden className="size-3.5 shrink-0" />
             <span className="truncate">{diff.branch}</span>
           </span>
         )}

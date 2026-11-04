@@ -53,7 +53,7 @@ export function SlashMenu({
                 index > 0 && "mt-1 border-t border-border pt-1.5",
               )}
             >
-              <Cable aria-hidden className="size-3" />
+              <Cable aria-hidden className="size-3.5" />
               Gram
             </li>
           )}
@@ -82,7 +82,7 @@ export function SlashMenu({
             </span>
             {!headed && command.action !== undefined && (
               <span title="Gram does this" className="shrink-0 self-center">
-                <Cable aria-hidden className="size-3 text-muted-foreground" />
+                <Cable aria-hidden className="size-3.5 text-muted-foreground" />
               </span>
             )}
           </li>

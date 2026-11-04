@@ -32,7 +32,7 @@ function SenderAvatar({ agent }: { agent: string | undefined }) {
       className="flex size-5 shrink-0 items-center justify-center rounded-sm border border-border bg-muted text-foreground"
     >
       {agent === undefined ? (
-        <MessagesSquare className="size-3" />
+        <MessagesSquare className="size-3.5" />
       ) : (
         <AgentIcon agent={agent} className="size-3" />
       )}
@@ -70,7 +70,7 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
       {!gone && (
         <ChevronRight
           aria-hidden
-          className="size-3 shrink-0 transition-transform group-hover/origin:translate-x-0.5"
+          className="size-3.5 shrink-0 transition-transform group-hover/origin:translate-x-0.5"
         />
       )}
     </>

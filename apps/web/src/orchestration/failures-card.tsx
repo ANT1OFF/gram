@@ -2,9 +2,9 @@ import type { WorkspaceId } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
+  ChartNoAxesCombined,
   CircleAlert,
   CircleX,
-  Gauge,
   KeyRound,
   ListX,
   RotateCw,
@@ -51,7 +51,7 @@ function useFailures(workspaceId: WorkspaceId): readonly FailureItem[] {
 
 const STEP_ICON: Record<FailureStep["kind"], LucideIcon> = {
   checks: ListX,
-  limit: Gauge,
+  limit: ChartNoAxesCombined,
   signIn: KeyRound,
   retry: RotateCw,
   open: ArrowRight,
@@ -59,7 +59,7 @@ const STEP_ICON: Record<FailureStep["kind"], LucideIcon> = {
 
 const CAUSE_ICON: Record<FailureStep["kind"], LucideIcon> = {
   checks: ListX,
-  limit: Gauge,
+  limit: ChartNoAxesCombined,
   signIn: KeyRound,
   retry: CircleX,
   open: CircleX,

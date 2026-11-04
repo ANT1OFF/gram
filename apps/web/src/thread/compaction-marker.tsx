@@ -179,7 +179,7 @@ export function CompactionMarker({ compaction }: { compaction: CompactionData })
     <>
       <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
       <span className="flex min-w-0 items-center gap-1.5">
-        <FoldVertical aria-hidden className="size-3 shrink-0" />
+        <FoldVertical aria-hidden className="size-3.5 shrink-0" />
         <span className="flex min-w-0 flex-wrap justify-center gap-x-1.5 text-center">
           {parts.map((part, index) => (
             <span key={part} className="whitespace-nowrap">
@@ -190,7 +190,7 @@ export function CompactionMarker({ compaction }: { compaction: CompactionData })
         </span>
         <ChevronRight
           aria-hidden
-          className="size-3 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
         />
       </span>
       <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
@@ -280,7 +280,7 @@ export const idleCompactRequestText = (notice: IdleCompactNotice): string =>
 export function IdleCompactRequest({ notice }: { notice: IdleCompactNotice }) {
   return (
     <p data-testid="idle-compact-request" className={cn("my-1 justify-center", ROW)}>
-      <FoldVertical aria-hidden className="size-3 shrink-0" />
+      <FoldVertical aria-hidden className="size-3.5 shrink-0" />
       <span className="text-center">{idleCompactRequestText(notice)}</span>
     </p>
   );

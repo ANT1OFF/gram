@@ -99,7 +99,7 @@ export function SpeedField({
           icon={
             ghost && (
               <Swap swapKey={value ?? "default"}>
-                <SpeedGlyph speed={value} />
+                <SpeedGlyph speed={value} className="size-4" />
               </Swap>
             )
           }

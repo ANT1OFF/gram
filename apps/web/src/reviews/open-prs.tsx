@@ -427,7 +427,7 @@ function OpenPrRowItem({
             />
           }
         >
-          <MessageSquare aria-hidden className="size-3" />
+          <MessageSquare aria-hidden className="size-3.5" />
         </Hint>
       )}
     </OpenPrsMenu>

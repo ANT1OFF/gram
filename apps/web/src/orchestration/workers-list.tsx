@@ -7,7 +7,7 @@ import {
   CircleCheck,
   CircleDot,
   GitMerge,
-  Hand,
+  HandGrab,
   History,
   Hourglass,
   Search,
@@ -139,7 +139,7 @@ export function WorkersButton({ className }: { className?: string }) {
       render={
         <Button
           variant="ghost"
-          size="xs"
+          size="sm"
           data-testid="workers-button"
           aria-label={label}
           aria-pressed={open}
@@ -148,7 +148,7 @@ export function WorkersButton({ className }: { className?: string }) {
         />
       }
     >
-      <Users aria-hidden />
+      <Users aria-hidden className="size-4" />
       {count > 0 && <span className="tabular-nums">{count}</span>}
     </Hint>
   );
@@ -388,7 +388,7 @@ function WorkersBody() {
           }}
           className="ml-auto flex items-center gap-1.5 rounded-(--radius-sm) px-1 text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <History aria-hidden className="size-3" />
+          <History aria-hidden className="size-3.5" />
           Finished in History
           {historyHint !== "" && <kbd className="font-sans">{historyHint}</kbd>}
         </button>
@@ -433,7 +433,7 @@ function WorkerListRow({
         {row.title}
       </GlideText>
       {row.held && (
-        <Hand aria-label="You took over" className="size-3 shrink-0 text-muted-foreground" />
+        <HandGrab aria-label="You took over" className="size-3.5 shrink-0 text-muted-foreground" />
       )}
       <span className="shrink-0 text-xs text-muted-foreground">{row.repo}</span>
       <span

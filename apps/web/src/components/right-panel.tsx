@@ -2,13 +2,13 @@ import type { ThreadId, ThreadSummary } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import {
   Bell,
+  Eye,
   FileDiff,
   Focus,
   FolderTree,
   GitPullRequest,
   Globe,
   Hand,
-  Inbox,
   Maximize2,
   Minimize2,
   Plug,
@@ -40,7 +40,7 @@ const TABS: { value: RightPanelTab; label: string; icon: LucideIcon }[] = [
   { value: "terminal", label: "Terminal", icon: SquareTerminal },
   { value: "preview", label: "Preview", icon: Globe },
   { value: "connectors", label: "Connectors", icon: Plug },
-  { value: "reviews", label: "Reviews", icon: Inbox },
+  { value: "reviews", label: "Reviews", icon: Eye },
   { value: "notifications", label: "Notifications", icon: Bell },
   { value: "needsYou", label: "Needs you", icon: Hand },
 ];
@@ -155,26 +155,29 @@ export function RightPanel() {
                     : 0;
               const busy = t.value === "terminal" && busyTerminals !== "";
               const label = busy ? `${t.label}: ${busyTerminals}` : t.label;
+              // The tooltip and the accessible name say the same.
+              const name =
+                count > 0
+                  ? `${t.label}, ${count} ${t.value === "notifications" ? "unread" : "waiting"}`
+                  : label;
               return (
                 <Hint
                   key={t.value}
-                  label={label}
+                  label={name}
                   side="bottom"
                   render={
                     <TabsTrigger
                       value={t.value}
                       data-panel-tab={t.value}
-                      aria-label={
-                        count > 0
-                          ? `${t.label}, ${count} ${t.value === "notifications" ? "unread" : "waiting"}`
-                          : label
-                      }
-                      className="relative flex shrink-0 items-center gap-1.5 after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary"
+                      aria-label={name}
+                      // A 28 px tab with its background on hover and focus; the open one is
+                      // named, on a background and underlined, not told apart by colour alone.
+                      className="relative my-1 flex h-7 min-w-7 shrink-0 items-center justify-center gap-1.5 hover:bg-muted focus-visible:bg-muted aria-selected:bg-muted/60 after:absolute after:inset-x-1.5 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary"
                     />
                   }
                 >
                   <span className="relative flex">
-                    <t.icon aria-hidden className="size-3.5" />
+                    <t.icon aria-hidden className="size-4" />
                     {busy && (
                       <span
                         aria-hidden
@@ -237,7 +240,7 @@ function ExpandToggle({ review }: { review: boolean }) {
       render={
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           aria-label={label}
           className="mr-2 shrink-0 text-muted-foreground"
           onClick={() => setExpanded(!expanded)}

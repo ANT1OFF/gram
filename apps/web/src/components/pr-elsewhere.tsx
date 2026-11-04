@@ -71,7 +71,7 @@ export function PrElsewhereChip({
         className,
       )}
     >
-      <GitPullRequestArrow aria-hidden className="size-3 shrink-0" />
+      <GitPullRequestArrow aria-hidden className="size-3.5 shrink-0" />
       <span className="truncate">
         #{elsewhere.number}
         {!compact && ` on ${elsewhere.branch}`}

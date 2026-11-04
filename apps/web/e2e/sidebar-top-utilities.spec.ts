@@ -101,15 +101,13 @@ test("top navigation explains real keyboard focus and preserves routes and modif
     await expect(hint).toContainText(label);
     await page.mouse.move(1000, 1000);
   }
-  // Tab walks the header in order, each action with a visible ring; Usage and Settings say what
-  // they are at once, the others in their title.
+  // Tab walks the header in order, each action with a visible ring, saying what it is at once.
   await sidebar.getByRole("button", { name: "Hide sidebar", exact: true }).focus();
   for (const label of names.slice(1)) {
     await page.keyboard.press("Tab");
     const action = sidebar.getByRole("button", { name: label, exact: true });
     await expect(action).toBeFocused();
-    if (label === "Usage" || label === "Settings") await expect(hint).toContainText(label);
-    else await expect(action).toHaveAttribute("title", new RegExp(`^${label}`));
+    await expect(hint).toHaveText(new RegExp(`^${label}`));
     expect(await action.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe(
       "none",
     );

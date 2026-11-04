@@ -163,7 +163,7 @@ export function AgentFields({
           }}
         >
           <SelectTrigger aria-label="Agent" {...trigger}>
-            <AgentIcon agent={value.agent} className="size-3.5" />
+            <AgentIcon agent={value.agent} className="size-4" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -300,7 +300,7 @@ export function AgentFields({
             icon={
               ghost && (
                 <Swap swapKey={value.variant ?? DEFAULT_EFFORT}>
-                  <EffortGauge variant={value.variant} />
+                  <EffortGauge variant={value.variant} className="size-4" />
                 </Swap>
               )
             }
