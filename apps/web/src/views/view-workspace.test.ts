@@ -11,7 +11,7 @@ const billing = space("ws-billing");
 
 describe("where a jump lands", () => {
   it("a solo thread is in no workspace, though the Board keeps the one last shown", () => {
-    const solo = { workspaceId: undefined };
+    const solo = {};
     expect(viewSolo(solo)).toBe(true);
     expect(viewWorkspace(solo, [gram, billing], "ws-billing")).toBe(billing);
     expect(viewSolo({ workspaceId: "ws-gram" as WorkspaceId })).toBe(false);
@@ -20,7 +20,7 @@ describe("where a jump lands", () => {
   });
 
   it("opens Solo threads for a solo thread and the workspace's line for its worker", () => {
-    expect(viewedSection({ workspaceId: undefined })).toBe("solo");
+    expect(viewedSection({})).toBe("solo");
     expect(
       viewedSection({
         workspaceId: "ws-billing" as WorkspaceId,

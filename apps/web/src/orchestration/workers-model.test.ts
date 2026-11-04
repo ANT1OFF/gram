@@ -110,9 +110,7 @@ describe("a worker answered here", () => {
   it("reads answered and working in the Workers list until the server hears", () => {
     const asking = worker("w1", "refunds", "needsUser", {
       status: "needsInput",
-      pendingRequests: [
-        { id: "r1", kind: "question" } as WorkerLedgerEntry["pendingRequests"][number],
-      ],
+      pendingRequests: [{ kind: "question", ageMin: 1 }],
     });
     const byId = {
       w1: summary("w1", "needsInput", {}, [
