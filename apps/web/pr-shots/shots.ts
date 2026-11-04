@@ -2428,7 +2428,7 @@ export const SHOTS: readonly Shot[] = [
   {
     name: "titlebar-menu",
     title:
-      'The title bar\'s one "…" on an orchestrator: the thread\'s menu, the workspace\'s controls and the window\'s, in words',
+      "The title bar's one \"…\" on an orchestrator: the thread's menu, the workspace's controls and the window's, in words",
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
       await openBarMenu(page);

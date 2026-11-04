@@ -31,7 +31,6 @@ const TRACKED = [
   "WorkerChip",
   "BoardHeader",
   "AskStack",
-  "WorkersButton",
   "OverviewDone",
   "NeedsYouShortcut",
   "NeedsYou",
