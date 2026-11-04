@@ -719,7 +719,11 @@ test("hidden, the title bar's button shows the overview again", async ({ page })
     })
     .toBe(true);
   await expect(show).toHaveAccessibleName("Show sidebar");
-  await expect(show).toHaveAttribute("title", /^Show sidebar\b.*B/);
+  // Its name and shortcut, at once on hover.
+  await show.hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText(
+    /^Show sidebar\b.*B/,
+  );
   await expect.poll(() => storedOverview(page)).toBe("hidden");
 
   await show.click();
@@ -1469,11 +1473,6 @@ test("an orchestrator folds its workers by its chevron or ← and →, keeps the
     "true",
   );
   await expect(other.getByTestId("overview-worker").first()).toBeVisible();
-
-  // ⌘J opens it to reach its first worker.
-  await page.keyboard.press("ControlOrMeta+j");
-  await expect(line).toHaveAttribute("aria-expanded", "true");
-  await expect(workers.first()).toBeFocused();
 });
 
 test("a solo thread at work trades its age for a pulsing dot, and can't be marked done until it rests", async ({

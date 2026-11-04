@@ -1,6 +1,5 @@
 import type { ThreadId } from "@gram/contracts";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import { Moon } from "lucide-react";
 import { useEffect, useId, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -165,24 +164,6 @@ function ViewSegment({
       {checked && <SegmentSlab group={slab} className="bg-muted" />}
       {label}
     </button>
-  );
-}
-
-/** The title bar's way into Quiet. */
-export function QuietToggle({ className }: { className?: string }) {
-  const hint = useShortcutHint("view.quiet");
-  return (
-    <Button
-      variant="ghost"
-      size="icon-xs"
-      aria-label="Quiet"
-      title={withHint("Quiet", hint)}
-      data-testid="quiet-toggle"
-      className={cn("text-muted-foreground", className)}
-      onClick={() => useViewStore.getState().setQuiet(true)}
-    >
-      <Moon />
-    </Button>
   );
 }
 

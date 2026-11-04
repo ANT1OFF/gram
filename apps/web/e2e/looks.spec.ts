@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { layoutButton } from "./layout";
+import { layoutButton, layoutPresets } from "./layout";
 
 // Checks Glass, the only look, renders its structural treatment, the grid holds at every preset, and
 // the overview sidebar and focus mode still lay out. Screenshots for review go to
@@ -54,7 +54,7 @@ for (const [look, mode] of [["glass", "dark"]] as const) {
     await page.keyboard.press("Escape");
 
     const picker = layoutButton(page);
-    const presets = page.getByRole("radiogroup", { name: "Layout" }).getByRole("radio");
+    const presets = layoutPresets(page);
     await picker.click();
     const count = await presets.count();
     expect(count).toBe(6);

@@ -10,7 +10,8 @@ import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useViewStore } from "@/views/view-store";
 
-import { Foldable } from "./titlebar-fold";
+import { Foldable } from "./foldable";
+import { TitlebarOverflow } from "./titlebar-fold";
 import { nextFold, useTitlebarSlot } from "./titlebar-slot";
 import { ThreadGrid } from "./thread-grid";
 
@@ -91,19 +92,31 @@ describe("a thread's header in the title bar", () => {
     expect(screen.queryByTestId("titlebar-folded")).toBeNull();
   });
 
-  it("takes the narrow bar's folded buttons into the thread menu", async () => {
+  it("keeps the window's rarer toggles in the bar's own \"…\", never the thread menu", async () => {
     act(() => useTitlebarSlot.getState().setFold(2));
-    renderWithApi(<ThreadGrid />, api);
+    renderWithApi(
+      <>
+        <ThreadGrid />
+        <TitlebarOverflow orchestration={false} />
+      </>,
+      api,
+    );
     const header = await within(slot).findByTestId("pane-header");
     fireEvent.click(within(header).getByRole("button", { name: "Thread menu" }));
-    // One item in the menu, so it keeps to its cap: the Title bar submenu holds them.
-    fireEvent.click(await screen.findByRole("menuitem", { name: /^Title bar/ }));
+    const menu = await screen.findByTestId("thread-menu");
+    await within(menu).findByRole("menuitem", { name: "More…" });
+    expect(within(menu).queryByRole("menuitem", { name: /^Title bar/ })).toBeNull();
+    expect(screen.queryByTestId("titlebar-folded")).toBeNull();
+    fireEvent.keyDown(menu, { key: "Escape" });
+
+    fireEvent.click(screen.getByRole("button", { name: "More window controls" }));
     const folded = await screen.findByTestId("titlebar-folded");
     expect(within(folded).getByRole("menuitem", { name: /^Quiet/ })).toBeTruthy();
     expect(within(folded).getByRole("menuitem", { name: /^Focus mode/ })).toBeTruthy();
     expect(within(folded).getAllByRole("menuitemradio")).toHaveLength(6);
-    // A solo thread's bar has no Tidy up to fold.
+    // A solo thread's bar has no Tidy up or Workers to fold.
     expect(within(folded).queryByTestId("folded-tidy")).toBeNull();
+    expect(within(folded).queryByTestId("folded-workers")).toBeNull();
   });
 
   it("carries an orchestrator's and a worker's header too", async () => {

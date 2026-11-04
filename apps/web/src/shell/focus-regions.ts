@@ -4,7 +4,7 @@ import {
   virtualCurrent,
   virtualLists,
 } from "@/lib/virtual-rows";
-import { fitShell, overviewFoldKey, useLayoutStore } from "@/stores/layout";
+import { fitShell, useLayoutStore } from "@/stores/layout";
 import { OVERVIEW_ROOT } from "@/views/shell-layout";
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -57,36 +57,6 @@ export function focusSidebar(): Promise<boolean> {
     }
     return stops[0] ?? null;
   });
-}
-
-/**
- * ⌘J with the overview open: the focus goes to its first worker row, the Orchestrators section
- * and its orchestrator opening first if folded. False, touching nothing, where the overview isn't open (hidden or
- * compact) or no worker row shows, so ⌘J opens the Workers list instead.
- */
-export async function focusOverviewWorkers(): Promise<boolean> {
-  const layout = useLayoutStore.getState();
-  if (layout.overviewSidebar === "compact") return false;
-  const fit = fitShell(layout);
-  const overview = document.querySelector<HTMLElement>('[data-testid="overview-sidebar"]');
-  if (fit.sidebar !== "full" || overview === null) return false;
-  // The workspace the window is on first, else the first open one with a worker.
-  const worker =
-    overview.querySelector<HTMLElement>(
-      '[data-testid="overview-workspace"]:has([aria-current]) [data-testid="overview-worker"]',
-    ) ?? overview.querySelector<HTMLElement>('[data-testid="overview-worker"]');
-  // Nothing to jump to: no workers now.
-  if (worker === null) return false;
-  const home = worker.closest<HTMLElement>("[data-workspace-id]");
-  const first = () =>
-    overviewStops(overview).find(
-      (stop) => stop.dataset["testid"] === "overview-worker" && (home?.contains(stop) ?? true),
-    ) ?? null;
-  layout.unfoldOverviewSection("orchestrators");
-  // Its orchestrator unfolds too, when its workers were folded under it.
-  const workspaceId = home?.dataset["workspaceId"];
-  if (workspaceId !== undefined) layout.toggleWorkspaceNode(overviewFoldKey(workspaceId), false);
-  return focusWhenRendered(first);
 }
 
 /** The right panel's selected tab; a hidden panel opens first. */

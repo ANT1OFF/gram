@@ -2,9 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 
 // One bar, everywhere: the title bar carries a thread's header when the grid shows it alone in
 // Chat, an orchestrator's and a worker's as well as a solo thread's, and Board's controls on Board.
-// The branch is the agents' working detail and stays out of it and its thread menu, in More…. Narrow,
-// the bar folds its lesser buttons into "…", then Workers. Mock state lives in memory, so every step after the seed stays
-// in the app.
+// The branch is the agents' working detail and stays out of it and its thread menu, in More…. The
+// bar's right end is three clusters: the workspace's work, attention, and the view, whose "…" holds
+// Quiet, focus mode and the layout. Narrow, the bar folds Tidy up into that "…", then Workers. Mock
+// state lives in memory, so every step after the seed stays in the app.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
@@ -107,10 +108,31 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
     "titlebar-tidy",
     "titlebar-pause",
     "usage-meter",
-    "quiet-toggle",
-    "layout-picker-button",
+    "titlebar-overflow",
   ]) {
     await expect(bar.getByTestId(testId)).toBeVisible();
+  }
+  // Quiet, the layout and focus mode are the "…"'s, not buttons of their own.
+  await expect(bar.getByRole("button", { name: /^Quiet|^Layout|^Focus mode/ })).toHaveCount(0);
+  // The clusters are told apart by the room between them, wider than within one.
+  const box = async (testId: string) => (await bar.getByTestId(testId).boundingBox())!;
+  const work = await box("titlebar-workspace");
+  const attention = await box("titlebar-attention");
+  const view = await box("titlebar-view");
+  expect(attention.x - (work.x + work.width)).toBeGreaterThanOrEqual(12);
+  expect(view.x - (attention.x + attention.width)).toBeGreaterThanOrEqual(12);
+  // Each icon names itself and its shortcut on hover, at once; the switcher says it switches.
+  const tooltip = page.locator('[data-slot="tooltip-content"][data-open]');
+  for (const [control, text] of [
+    [bar.getByTestId("workspace-switcher-button"), /^Switch workspace \(.+1–.+\d\)$/],
+    [bar.getByRole("button", { name: /right panel$/ }), /^(Show|Hide) right panel \(.+\)$/],
+    [bar.getByTestId("workers-button"), /^Workers, \d+ now \(.+J\)$/],
+    [bar.getByTestId("titlebar-overflow"), /^More: Quiet, focus mode, layout$/],
+  ] as const) {
+    await control.hover();
+    await expect(tooltip).toHaveText(text);
+    await page.mouse.move(0, 400);
+    await expect(tooltip).toHaveCount(0);
   }
   await expect(bar.getByRole("button", { name: /^Notifications/ })).toBeVisible();
   await expect(bar.getByRole("button", { name: /right panel$/ })).toBeVisible();
@@ -185,72 +207,77 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await expect(bar.getByTestId("view-switcher")).toHaveCount(0);
 });
 
-test("narrow, the title truncates, the lesser buttons fold into the menu, then Workers, and nothing leaves the bar", async ({
+test('narrow, the title truncates, Tidy up and Workers fold into the bar\'s "…", and nothing leaves the bar', async ({
   page,
 }) => {
-  const made = await start(page, 640);
+  const made = await start(page, 700);
   const bar = titlebar(page);
+  const overflow = bar.getByTestId("titlebar-overflow");
+  const folded = page.getByTestId("titlebar-folded");
 
-  // The orchestrator's folded Tidy up, Quiet, layout and Focus are in its thread menu. Workers, one
-  // of the bar's main controls, folds last: it stays.
+  // At 700 px the orchestrator's bar folds nothing: Quiet, the layout and focus mode are already
+  // the "…"'s.
   await routeTo(page, `/t/${made.orchestratorThreadId}`);
-  await expect(bar).toHaveAttribute("data-fold", "1");
   await expect(bar.getByTestId("pane-header")).toBeVisible();
-  // Folded, they stay laid out unseen, for the bar to measure them back.
-  for (const testId of ["titlebar-tidy", "quiet-toggle", "layout-picker-button"]) {
-    await expect(bar.getByTestId(testId)).toBeHidden();
-  }
+  await expect(bar).not.toHaveAttribute("data-fold");
+  await expect(bar.getByTestId("titlebar-tidy")).toBeVisible();
   await expect(bar.getByRole("button", { name: /^Workers, / })).toBeVisible();
   await expect(bar.getByTestId("titlebar-pause")).toBeVisible();
   await expect(bar.getByTestId("view-switcher")).toBeVisible();
   await fitsTheBar(page);
-  await bar.getByRole("button", { name: "Thread menu" }).click();
-  await page.getByTestId("folded-submenu").click();
-  const folded = page.getByTestId("titlebar-folded");
-  await expect(folded.getByTestId("folded-tidy")).toBeVisible();
+  await overflow.click();
   await expect(folded.getByTestId("folded-layout")).toBeVisible();
+  await expect(folded.getByTestId("folded-tidy")).toHaveCount(0);
   await expect(folded.getByTestId("folded-workers")).toHaveCount(0);
   // Each does what its button did.
   await folded.getByTestId("folded-focus").click();
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-focus-mode", "true");
   await page.keyboard.press("ControlOrMeta+Shift+Period");
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-focus-mode", "false");
+  // The thread menu has none of the bar's.
+  await bar.getByRole("button", { name: "Thread menu" }).click();
+  await expect(page.getByTestId("thread-menu")).toBeVisible();
+  await expect(page.getByTestId("titlebar-folded")).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
-  // Narrower, Workers folds too. Its measuring copy stays laid out, out of reach of role queries.
+  // Narrower, Tidy up and Workers fold too. Their measuring copies stay laid out, out of reach of
+  // role queries.
   await page.setViewportSize({ width: 600, height: 720 });
   await expect(bar).toHaveAttribute("data-fold", "2");
+  await expect(bar.getByTestId("titlebar-tidy")).toBeHidden();
   await expect(bar.getByTestId("workers-button")).toBeHidden();
   await expect(bar.getByRole("button", { name: /^Workers\b/ })).toHaveCount(0);
+  await expect(bar.getByTestId("titlebar-pause")).toBeVisible();
   await fitsTheBar(page);
-  await bar.getByRole("button", { name: "Thread menu" }).click();
-  await page.getByTestId("folded-submenu").click();
+  await overflow.click();
+  await expect(folded.getByTestId("folded-tidy")).toBeVisible();
   await expect(folded.getByTestId("folded-workers")).toBeVisible();
   await folded.getByTestId("folded-workers").click();
   await expect(page.getByTestId("workers-list")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("workers-list")).toBeHidden();
 
-  // A worker keeps its name, a few letters at least; Keep beside and Take over are in the menu.
+  // A worker keeps its name, a few letters at least; Keep beside and Take over are in the "…".
   await routeTo(page, `/t/${made.inReview}`);
   const worker = bar.getByTestId("worker-crumb-worker");
   await expect(worker).toBeVisible();
   expect((await worker.boundingBox())!.width).toBeGreaterThanOrEqual(40);
   await expect(bar.getByTestId("worker-take-over")).toBeHidden();
   await fitsTheBar(page);
-  await bar.getByRole("button", { name: "Thread menu" }).click();
-  await page.getByTestId("folded-submenu").click();
+  await overflow.click();
   await expect(page.getByTestId("menu-take-over")).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.setViewportSize({ width: 640, height: 720 });
 
-  // Board has no thread menu, so the bar has a "…" of its own.
+  // Board's folded Tidy up is in the same "…".
   await page.keyboard.press("ControlOrMeta+Alt+2");
   await expect(bar.getByTestId("board-header")).toBeVisible();
+  await expect(bar).toHaveAttribute("data-fold", "2");
   await fitsTheBar(page);
-  await bar.getByTestId("titlebar-overflow").click();
+  await overflow.click();
   await expect(page.getByTestId("titlebar-overflow-menu").getByTestId("folded-tidy")).toBeVisible();
   await page.keyboard.press("Escape");
   await page.keyboard.press("ControlOrMeta+Alt+1");
+  await page.setViewportSize({ width: 640, height: 720 });
 
   // A solo thread's title truncates first.
   await routeTo(page, "/t/t-flaky");

@@ -66,9 +66,10 @@ test("Chat and Board switch over the same route, and Esc comes back", async ({ p
 
 test("Quiet covers the window until Esc", async ({ page }) => {
   await start(page);
-  // Wide enough that the orchestrator's title bar keeps Quiet out of its folded "…".
+  // Quiet is in the title bar's "…".
   await page.setViewportSize({ width: 1680, height: 900 });
-  await page.getByTestId("quiet-toggle").click();
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("folded-quiet").click();
   await expect(page.getByTestId("quiet-layer")).toBeVisible();
   await expect(page.getByTestId("app-shell")).toHaveAttribute("inert", "");
   await page.keyboard.press("Escape");

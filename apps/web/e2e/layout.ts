@@ -9,14 +9,16 @@ export type LayoutName =
   | "2 columns × 3 rows"
   | "3 columns × 2 rows";
 
-/** The title bar's one layout button, named for the current preset ("Layout: 2×2"). */
-export const layoutButton = (page: Page) => page.getByRole("button", { name: /^Layout: / });
+/** The title bar's "…", which holds the layout presets. */
+export const layoutButton = (page: Page) =>
+  page.getByTestId("shell-titlebar").getByRole("button", { name: "More window controls" });
 
-/** Picks `name` from the title bar's layout picker: opens it, then takes the preset, which closes it. */
+/** The layout presets in the title bar's open "…". */
+export const layoutPresets = (page: Page) =>
+  page.getByTestId("folded-layout").getByRole("menuitemradio");
+
+/** Picks `name` from the title bar's "…": opens it, then takes the preset, which closes it. */
 export async function setLayout(page: Page, name: LayoutName): Promise<void> {
   await layoutButton(page).click();
-  await page
-    .getByRole("radiogroup", { name: "Layout" })
-    .getByRole("radio", { name, exact: true })
-    .click();
+  await page.getByTestId("folded-layout").getByRole("menuitemradio", { name, exact: true }).click();
 }

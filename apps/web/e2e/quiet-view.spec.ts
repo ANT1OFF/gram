@@ -21,7 +21,7 @@ const seed = async (page: Page, settings: object = {}) => {
     },
     [MOCK_SETTINGS_KEY, JSON.stringify(settings)] as const,
   );
-  // Wide enough that the orchestrator's title bar keeps Quiet out of its folded "…".
+  // Quiet is in the title bar's "…".
   await page.setViewportSize({ width: 1680, height: 900 });
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
@@ -34,7 +34,8 @@ const start = async (page: Page) => {
   const made = await page.evaluate(() => window.gramMock!.simulateFailures());
   await openOrchestrator(page, made.orchestratorThreadId);
   await expect(page.getByTestId("ask-stack")).toBeVisible();
-  await page.getByTestId("quiet-toggle").click();
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("folded-quiet").click();
   await expect(quiet(page)).toBeVisible();
   await expect(card(page)).toBeVisible();
   return made;
@@ -164,7 +165,8 @@ const answerAll = (page: Page) =>
 
 test("a solo thread's question is a card too, not 'Nothing needs you'", async ({ page }) => {
   await seed(page);
-  await page.getByTestId("quiet-toggle").click();
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("folded-quiet").click();
   await expect(quiet(page)).toBeVisible();
   await goTo(page, "Which date library should the picker use?");
   await expect(card(page)).toContainText("Solo threads");
@@ -175,7 +177,8 @@ test("nothing asked: the empty field says what is going on", async ({ page }) =>
   await seed(page);
   await expect(page.getByTestId("approval-card")).toBeVisible();
   await answerAll(page);
-  await page.getByTestId("quiet-toggle").click();
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("folded-quiet").click();
   await expect(quiet(page).getByTestId("quiet-empty")).toContainText("Nothing needs you.");
   await expect(quiet(page).getByTestId("quiet-summary")).toHaveText(/workers? (is|are) busy\./);
   await quiet(page).getByTestId("quiet-menu").click();

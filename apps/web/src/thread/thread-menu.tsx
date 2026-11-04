@@ -6,8 +6,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useOpenInEditor, useOpensLocally } from "@/editor/use-open-in-editor";
 import { SwitchOrchestratorDialog, switchOpenLabel } from "@/orchestration/switch-orchestrator";
-import { WorkerMenuItems } from "@/orchestration/worker-header";
-import { FoldedTitlebarSubmenu } from "@/shell/titlebar-fold";
 import { useThreadsStore } from "@/stores/threads";
 
 import { ForkDialog } from "./fork-dialog";
@@ -23,22 +21,10 @@ const ITEM =
  * The pane header's "…" menu: an orchestrator's switch first, then opening the folder in the
  * editor, forking the thread, its own verbs and More…, which has the rest: the branch to copy and
  * push (the agents' working detail, kept out of the bar and its menu), the worker's or
- * orchestrator's links, other windows, revealing the folder, forking into a worktree. With
- * `folded`, a narrow title bar's folded buttons are a "Title bar" submenu before its own verbs.
+ * orchestrator's links, other windows, revealing the folder, forking into a worktree. What a narrow
+ * title bar folds is in the bar's own "…".
  */
-export function ThreadMenu({
-  threadId,
-  label,
-  folded,
-}: {
-  threadId: ThreadId;
-  label?: string;
-  /**
-   * The header is the title bar's, and the bar folded its lesser buttons into this menu; `worker`,
-   * a worker's own actions too.
-   */
-  folded?: { orchestration: boolean; worker: boolean } | undefined;
-}) {
+export function ThreadMenu({ threadId, label }: { threadId: ThreadId; label?: string }) {
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const folder = thread?.checkout.path;
   // Its harness and model, switched from here and from the workspace settings' Models.
@@ -115,13 +101,6 @@ export function ThreadMenu({
                 Fork thread
               </Menu.Item>
               {reason && <p className="px-2 py-1 text-xs text-muted-foreground">{reason}</p>}
-              {folded && (
-                <FoldedTitlebarSubmenu orchestration={folded.orchestration} itemClassName={ITEM}>
-                  {thread && folded.worker && (
-                    <WorkerMenuItems thread={thread} itemClassName={ITEM} />
-                  )}
-                </FoldedTitlebarSubmenu>
-              )}
               <ThreadMenuItems threadId={threadId} itemClassName={ITEM} />
             </Menu.Popup>
           </Menu.Positioner>

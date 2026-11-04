@@ -1,7 +1,7 @@
 import type { ThreadId, ThreadSummary, Workspace } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronsUpDown } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -14,8 +14,10 @@ import {
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
+import { shortcutHint } from "@/keyboard/bindings";
 import { formatKeys, registerShortcut } from "@/keyboard/registry";
 import { effectiveKeys, useBindingsStore } from "@/keyboard/bindings-store";
+import { withHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -138,6 +140,12 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
   const name = current?.workspace.name ?? "Threads";
+  // Its keys, as far as there are workspaces to take them: "⌘1–⌘3".
+  const keyed = Math.min(workspaces.length, WORKSPACE_KEYS.length);
+  const firstKey = shortcutHint("workspace.switch1", overrides);
+  const lastKey = shortcutHint(`workspace.switch${keyed}`, overrides);
+  const switchKeys =
+    keyed === 0 ? "" : keyed === 1 || !firstKey || !lastKey ? firstKey : `${firstKey}–${lastKey}`;
 
   return (
     <TitlebarPopover
@@ -153,6 +161,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
           popup.querySelector<HTMLElement>(`[${ITEM}]`)
         )?.focus()
       }
+      hint={withHint("Switch workspace", switchKeys)}
       trigger={
         <Button
           variant="ghost"
@@ -165,7 +174,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
           )}
         >
           <span className="min-w-0 truncate">{name}</span>
-          <ChevronDown className="size-3 shrink-0 opacity-60" />
+          <ChevronsUpDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         </Button>
       }
     >

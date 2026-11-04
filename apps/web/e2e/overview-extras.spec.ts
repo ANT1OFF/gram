@@ -4,7 +4,7 @@ import type { MockOneThreadSimulation } from "../src/api/mock-asks";
 import { pressFirstWorkspaceKey } from "./thread-row";
 
 // The overview sidebar's extras: Pull requests and Done, folded until opened, the usage meters and
-// worker slots at its foot, off by default, ⌘J's jump into its workers, and Settings → General's
+// worker slots at its foot, off by default, and Settings → General's
 // Sidebar sections. Each is checked against what the right panel's PR lists, ⌘J's list, the title
 // bar's meter and the ledger say. Mock state lives in memory, so every step after the seed stays
 // inside the app, bar the reload the settings are kept across.
@@ -207,9 +207,7 @@ test("Done starts folded and has every finished chat ⌘J's Done has, by date, o
   for (const group of await groups.allTextContents())
     expect(group).toMatch(/^(Today|Yesterday|\w{3} \d{1,2} \w{3}|[A-Z][a-z]+ \d{4})$/);
 
-  // ⌘J's own list, with the overview hidden so ⌘J opens it.
-  await page.keyboard.press("ControlOrMeta+KeyB");
-  await expect(overview(page)).toHaveCount(0);
+  // ⌘J's own list.
   await page.keyboard.press("ControlOrMeta+KeyJ");
   const list = page.getByTestId("workers-list");
   await expect(list).toBeVisible();
@@ -220,7 +218,6 @@ test("Done starts folded and has every finished chat ⌘J's Done has, by date, o
   expect(fromList).toContain(made.doneToday);
   await page.keyboard.press("Escape");
   await expect(list).toBeHidden();
-  await page.keyboard.press("ControlOrMeta+KeyB");
   await expect(overview(page)).toBeVisible();
 
   // No week's window: the overview lists the workspace's finished workers ⌘J lists, older ones too,
@@ -431,32 +428,21 @@ test("the foot, turned on, matches the title bar meter's usage, and its slots th
   await expect(slots.locator("i[data-taken]")).toHaveCount(Math.min(want.live, want.cap));
 });
 
-test("⌘J moves to the overview's first worker when it is open, and opens the list when hidden", async ({
+test("⌘J opens the Workers list whether the overview is open or hidden, and closes it again", async ({
   page,
 }) => {
   await start(page);
   const list = page.getByTestId("workers-list");
-  const first = overview(page).getByTestId("overview-worker").first();
-  await expect(first).toBeVisible();
+  await expect(overview(page).getByTestId("overview-worker").first()).toBeVisible();
 
+  // The overview open: the list, not a jump into the overview's rows.
   await page.getByLabel("Message", { exact: true }).focus();
   await page.keyboard.press("ControlOrMeta+KeyJ");
-  await expect(first).toBeFocused();
+  await expect(list).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+KeyJ");
   await expect(list).toBeHidden();
-  // The arrows go on from there, as the overview's own keys.
-  await page.keyboard.press("ArrowDown");
-  await expect(first).not.toBeFocused();
 
-  // With the Orchestrators section folded, ⌘J opens it first.
-  const orchestrators = sectionTitle(page, "orchestrators");
-  await orchestrators.click();
-  await expect(orchestrators).toHaveAttribute("aria-expanded", "false");
-  await page.getByLabel("Message", { exact: true }).focus();
-  await page.keyboard.press("ControlOrMeta+KeyJ");
-  await expect(orchestrators).toHaveAttribute("aria-expanded", "true");
-  await expect(first).toBeFocused();
-
-  // Hidden, ⌘J opens the Workers list as before, and closes it again.
+  // Hidden, the same list.
   await page.keyboard.press("ControlOrMeta+KeyB");
   await expect(overview(page)).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+KeyJ");

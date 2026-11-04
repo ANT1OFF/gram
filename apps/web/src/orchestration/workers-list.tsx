@@ -24,6 +24,7 @@ import {
 } from "react";
 import { create } from "zustand";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { keyLabel } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
@@ -146,19 +147,24 @@ export function WorkersButton({ className }: { className?: string }) {
   if (workspaceId === undefined) return null;
   const label = count === 0 ? "Workers" : `Workers, ${count} now`;
   return (
-    <Button
-      variant="ghost"
-      size="xs"
-      data-testid="workers-button"
-      aria-label={label}
-      aria-pressed={open}
-      title={withHint(label, hint)}
-      className={cn("text-muted-foreground aria-pressed:text-foreground", className)}
-      onClick={() => useWorkersListStore.getState().toggle()}
+    <Hint
+      label={withHint(label, hint)}
+      side="bottom"
+      render={
+        <Button
+          variant="ghost"
+          size="xs"
+          data-testid="workers-button"
+          aria-label={label}
+          aria-pressed={open}
+          className={cn("text-muted-foreground aria-pressed:text-foreground", className)}
+          onClick={() => useWorkersListStore.getState().toggle()}
+        />
+      }
     >
       <Users aria-hidden />
       {count > 0 && <span className="tabular-nums">{count}</span>}
-    </Button>
+    </Hint>
   );
 }
 

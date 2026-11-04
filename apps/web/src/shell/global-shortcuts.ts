@@ -14,7 +14,7 @@ import { GRID_PRESETS, splitCandidate, useLayoutStore, type FocusDirection } fro
 import { useThreadsStore } from "@/stores/threads";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
 
-import { focusOverviewWorkers, focusPanel, focusSidebar } from "./focus-regions";
+import { focusPanel, focusSidebar } from "./focus-regions";
 import { startNewTask } from "./new-task";
 import { focusPaneComposer, gridShown } from "./pane-focus";
 import { useOpenThread } from "./thread-switcher";
@@ -131,8 +131,8 @@ export function useGlobalShortcuts() {
     },
   });
 
-  // Every worker of the workspace, two steps from anywhere: ⌘J, then the worker. In the
-  // Orchestrator layout with the overview open, its worker rows are where ⌘J lands.
+  // Every worker of the workspace, two steps from anywhere: ⌘J, then the worker. Always the same
+  // list, whatever the sidebar shows; the sidebar's own rows are ⌘⌥S away.
   useShortcut({
     id: "workers.open",
     keys: "mod+j",
@@ -143,13 +143,7 @@ export function useGlobalShortcuts() {
     when: () =>
       inNoDialogBut(WORKERS_LIST_TEST_ID) &&
       (useWorkersListStore.getState().open || boardWorkspace() !== undefined),
-    // With the overview open, a jump into its workers; else, or with none there, the list.
-    run: () => {
-      if (useWorkersListStore.getState().open) return useWorkersListStore.getState().toggle();
-      void focusOverviewWorkers().then((focused) => {
-        if (!focused) useWorkersListStore.getState().toggle();
-      });
-    },
+    run: () => useWorkersListStore.getState().toggle(),
   });
 
   const openThread = useOpenThread();
