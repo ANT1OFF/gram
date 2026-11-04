@@ -25,7 +25,8 @@ import {
   type CustomModelDraft,
 } from "./custom-models";
 import { DraftRow } from "./draft-row";
-import { Field, inputCls, Toggle, WhyDisabled } from "./fields";
+import { Field, inputCls, Toggle } from "./fields";
+import { SaveFooter } from "./save-footer";
 import { SETTINGS_CARD } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
@@ -59,7 +60,7 @@ const asSaved = (drafts: ReadonlyArray<CustomModelDraft>) => {
 /** Settings → Custom models: model ids the pickers offer beyond what each agent lists itself. */
 export function CustomModelsSection() {
   const settings = useServerSettings((s) => s.settings);
-  const [status, setStatus] = useState<string>();
+  const [status, setStatus] = useState(false);
   if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
   const saved = settings.agents.customModels ?? [];
   return (
@@ -79,8 +80,9 @@ function CustomModelsEditor({
   onStatus,
 }: {
   saved: ReadonlyArray<CustomModel>;
-  status: string | undefined;
-  onStatus: (status: string | undefined) => void;
+  /** The last save succeeded and nothing has changed since. */
+  status: boolean;
+  onStatus: (saved: boolean) => void;
 }) {
   const save = useSaveSettings();
   const queryClient = useQueryClient();
@@ -97,7 +99,7 @@ function CustomModelsEditor({
       return set;
     });
   const addDraft = (draft: CustomModelDraft) => {
-    onStatus(undefined);
+    onStatus(false);
     setDrafts((list) => [...list, draft]);
     setOpenKey(draft.key, true);
   };
@@ -122,7 +124,7 @@ function CustomModelsEditor({
   );
 
   const update = (key: string, patch: Partial<CustomModelDraft>) => {
-    onStatus(undefined);
+    onStatus(false);
     setDrafts((list) => list.map((draft) => (draft.key === key ? { ...draft, ...patch } : draft)));
   };
 
@@ -135,7 +137,7 @@ function CustomModelsEditor({
       await save({ agents: { customModels: result.models } });
       // Every model picker reads `models.list`, which it otherwise keeps for five minutes.
       await queryClient.invalidateQueries({ queryKey: ["models"] });
-      onStatus("Custom models saved.");
+      onStatus(true);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -151,7 +153,7 @@ function CustomModelsEditor({
             open={open.has(draft.key) || rows[i] !== undefined}
             onOpenChange={(next) => setOpenKey(draft.key, next)}
             onRemove={() => {
-              onStatus(undefined);
+              onStatus(false);
               setRows([]);
               setDrafts((list) => list.filter((item) => item.key !== draft.key));
             }}
@@ -261,7 +263,7 @@ function CustomModelsEditor({
           </div>
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
+      <SaveFooter dirty={dirty} saved={status} onSave={() => void submit()}>
         <Button
           size="sm"
           variant="outline"
@@ -271,17 +273,7 @@ function CustomModelsEditor({
         >
           Add model
         </Button>
-        <WhyDisabled reason={dirty ? undefined : "Nothing to save: no changes yet."}>
-          <Button size="sm" disabled={!dirty} onClick={() => void submit()}>
-            Save
-          </Button>
-        </WhyDisabled>
-      </div>
-      {status && (
-        <p role="status" className="gram-fade text-muted-foreground">
-          {status}
-        </p>
-      )}
+      </SaveFooter>
       {error && (
         <p role="alert" className="text-destructive">
           {error}

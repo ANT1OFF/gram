@@ -5,7 +5,8 @@ import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { Field, inputCls, Toggle, WhyDisabled } from "./fields";
+import { Field, inputCls, Toggle } from "./fields";
+import { SaveFooter } from "./save-footer";
 import { validateReviewBots, type ReviewBotDraft } from "./review-bots";
 import { useSaveSettings } from "./use-save-settings";
 
@@ -20,7 +21,7 @@ const toDrafts = (bots: ReadonlyArray<ReviewBot>): ReviewBotDraft[] =>
 /** Settings → Review bots: which PR reviewers the app follows and how to ask them for a round. */
 export function ReviewBotsSection() {
   const settings = useServerSettings((s) => s.settings);
-  const [status, setStatus] = useState<string>();
+  const [status, setStatus] = useState(false);
   if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
   const saved = reviewBotsOf(settings);
   return (
@@ -40,8 +41,9 @@ function ReviewBotsEditor({
   onStatus,
 }: {
   saved: ReadonlyArray<ReviewBot>;
-  status: string | undefined;
-  onStatus: (status: string | undefined) => void;
+  /** The last save succeeded and nothing has changed since. */
+  status: boolean;
+  onStatus: (saved: boolean) => void;
 }) {
   const save = useSaveSettings();
   const [drafts, setDrafts] = useState(() => toDrafts(saved));
@@ -51,7 +53,7 @@ function ReviewBotsEditor({
   const dirty = plain(drafts) !== JSON.stringify(saved);
 
   const update = (key: string, patch: Partial<ReviewBotDraft>) => {
-    onStatus(undefined);
+    onStatus(false);
     setDrafts((list) => list.map((draft) => (draft.key === key ? { ...draft, ...patch } : draft)));
   };
 
@@ -62,7 +64,7 @@ function ReviewBotsEditor({
     if (result.bots === undefined) return;
     try {
       await save({ reviewBots: result.bots });
-      onStatus("Review bots saved.");
+      onStatus(true);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -127,7 +129,7 @@ function ReviewBotsEditor({
               variant="ghost"
               className="self-start"
               onClick={() => {
-                onStatus(undefined);
+                onStatus(false);
                 setRows([]);
                 setDrafts((list) => list.filter((item) => item.key !== draft.key));
               }}
@@ -137,12 +139,12 @@ function ReviewBotsEditor({
           </li>
         ))}
       </ul>
-      <div className="flex flex-wrap gap-2">
+      <SaveFooter dirty={dirty} saved={status} onSave={() => void submit()}>
         <Button
           size="sm"
           variant="outline"
           onClick={() => {
-            onStatus(undefined);
+            onStatus(false);
             setDrafts((list) => [
               ...list,
               ...toDrafts([{ loginPattern: "", rereviewCommand: "", canApprove: false }]),
@@ -151,28 +153,18 @@ function ReviewBotsEditor({
         >
           Add bot
         </Button>
-        <WhyDisabled reason={dirty ? undefined : "Nothing to save: no changes yet."}>
-          <Button size="sm" disabled={!dirty} onClick={() => void submit()}>
-            Save
-          </Button>
-        </WhyDisabled>
         <Button
           size="sm"
           variant="ghost"
           onClick={() => {
-            onStatus(undefined);
+            onStatus(false);
             setRows([]);
             setDrafts(toDrafts(DEFAULT_REVIEW_BOTS));
           }}
         >
           Use defaults
         </Button>
-      </div>
-      {status && (
-        <p role="status" className="gram-fade text-muted-foreground">
-          {status}
-        </p>
-      )}
+      </SaveFooter>
       {error && (
         <p role="alert" className="text-destructive">
           {error}

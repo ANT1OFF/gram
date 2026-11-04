@@ -1832,7 +1832,7 @@ describe("dreams", () => {
       adoptState({ dream: dreamRecord({ status: "failed" }), files }, { "c.md": "output" }),
     ).toMatchObject({
       enabled: false,
-      reason: "Only a completed dream can be adopted.",
+      reason: "Only a completed update can be adopted.",
     });
     expect(
       adoptState({ dream: dreamRecord({ adoptedVersion: "0003" }), files: [] }, {}),
@@ -1842,7 +1842,7 @@ describe("dreams", () => {
     });
     expect(
       adoptState({ dream: dreamRecord(), files: [{ path: "z.md", status: "unchanged" }] }, {}),
-    ).toMatchObject({ enabled: false, reason: "This dream changes nothing." });
+    ).toMatchObject({ enabled: false, reason: "This update changes nothing." });
   });
 
   it("counts a merge as a side only once it is done, and merges only two versions", () => {
@@ -1887,7 +1887,7 @@ describe("dreams", () => {
     expect(withAskedMerges(done, new Set(), model)).toEqual(done);
     expect(
       ["output", "current", "merged"].map((side) => sideLabel(side as DreamResolution)),
-    ).toEqual(["dream's", "current", "merged"]);
+    ).toEqual(["update's", "current", "merged"]);
   });
 
   it("orders and sums a review, and picks the sides a diff compares", () => {
@@ -1915,7 +1915,7 @@ describe("dreams", () => {
       discard: true,
     });
     expect(dreamFailureText(dreamRecord({ status: "failed", failure: "input_tampered" }))).toBe(
-      "An input file changed while the dream ran, so its output can't be trusted.",
+      "An input file changed while the update was drafted, so its output can't be trusted.",
     );
     for (const failure of ["over_caps", "no_output", "agent_error", "canceled"] as const) {
       expect(dreamFailureText(dreamRecord({ status: "failed", failure }))).toMatch(/\.$/);
@@ -1931,7 +1931,7 @@ describe("dreams", () => {
     });
     expect(presentDreamStatus("running")).toEqual({ label: "Running", tone: "working" });
     expect(dreamFailureText(dreamRecord({ status: "failed", failure: "quota" as Failure }))).toBe(
-      "The dream failed (quota).",
+      "The update failed (quota).",
     );
     expect(presentFileStatus("conflict")).toEqual({ label: "Conflict", tone: "needs" });
     expect(presentFileStatus("renamed")).toEqual({ label: "renamed", tone: "muted" });
@@ -1942,8 +1942,8 @@ describe("dreams", () => {
         { path: "c.md", status: "conflict" },
       ] as unknown as Parameters<typeof reviewFiles>[0]).map((f) => f.path),
     ).toEqual(["c.md", "r.md", "z.md"]);
-    expect(dreamKindLabel(dreamRecord({ kind: "import" }))).toBe("Import");
-    expect(dreamKindLabel(dreamRecord())).toBe("Dream");
+    expect(dreamKindLabel(dreamRecord({ kind: "import" }))).toBe("From past sessions");
+    expect(dreamKindLabel(dreamRecord())).toBe("From recent threads");
   });
 
   it("sums an import preview, and takes only a per-repo limit the server would", () => {
@@ -2011,20 +2011,20 @@ describe("dreams", () => {
     };
     expect(planLines(plan)).toEqual({
       reads:
-        "Since the dream you last adopted (memory 0007): 3 threads, 1 new message, ~41k tokens.",
+        "Since the update you last adopted (memory 0007): 3 threads, 1 new message, ~41k tokens.",
       backlog:
-        "Backlog: 2 threads (~80k tokens) past the budget of ~200k tokens, left for the next dream.",
+        "Backlog: 2 threads (~80k tokens) past the budget of ~200k tokens, left for the next update.",
     });
     expect(
       planLines({ ...plan, threads: 0, backlog: { threads: 0, messages: 0, estimatedTokens: 0 } }),
     ).toEqual({
       reads:
-        "Since the dream you last adopted (memory 0007): there is nothing new to read; the dream tidies memory alone.",
+        "Since the update you last adopted (memory 0007): there is nothing new to read; the update tidies memory alone.",
       backlog: "Backlog: nothing; everything new fits the budget of ~200k tokens.",
     });
     const adopted = pastDream({ adoptedVersion: "0007", backlog: plan.backlog });
     expect(backlogSuggestion([adopted])).toBe(
-      "2 threads (~80k tokens) were past the last dream's budget and wait for the next one.",
+      "2 threads (~80k tokens) were past the last update's budget and wait for the next one.",
     );
     expect(backlogSuggestion([pastDream({ status: "running" }), adopted])).toBeUndefined();
     expect(

@@ -21,11 +21,12 @@ import {
 } from "@/stores/usage-limits";
 import {
   CREDITS_TEXT,
+  creditsText,
   forecastText,
   limitPercent,
   meterLabel,
   meterText,
-  resetText,
+  resetAtText,
   WINDOW_LABEL,
 } from "@/usage/limit-format";
 
@@ -87,7 +88,7 @@ export function UsageMeter({
         hint="Subscription usage"
         label="Subscription usage"
         testId="usage-limits"
-        className="w-72 p-2.5"
+        className="w-[21rem] p-2.5"
         trigger={
           <button
             type="button"
@@ -118,6 +119,15 @@ function LimitsPopover() {
   const now = useMinuteNow();
   return (
     <div className="grid gap-1.5 text-[13px]">
+      <div
+        aria-hidden
+        data-testid="usage-limit-headings"
+        className={cn(LIMIT_ROW, "text-[11px] text-muted-foreground")}
+      >
+        <span />
+        <span className="col-span-2 text-right">Used</span>
+        <span className="text-right">Resets at</span>
+      </div>
       {LIMIT_PROVIDERS.map((provider) => (
         <ProviderLimits key={provider} provider={provider} now={now} />
       ))}
@@ -126,10 +136,13 @@ function LimitsPopover() {
   );
 }
 
+/** The popover's columns: the window, its bar and share used, and when it resets. */
+const LIMIT_ROW = "grid grid-cols-[3.75rem_1fr_2.25rem_7.25rem] items-center gap-2";
+
 /**
- * A provider's 5-hour and weekly rows, its readings' age once no agent has repeated them for a
- * while, and under a row the forecast when there is pace enough to make one; nothing for a
- * provider with no current reading.
+ * A provider's 5-hour and weekly rows under its name and when it was last updated, its credits
+ * when the agent reports them, and under a row the forecast when there is pace enough to make one;
+ * nothing for a provider with no current reading.
  */
 function ProviderLimits({ provider, now }: { provider: LimitProvider; now: number }) {
   const windows = useUsageLimits((s) => s.limits[provider]);
@@ -138,18 +151,26 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
     return limit === undefined ? [] : [limit];
   });
   if (current.length === 0) return null;
-  const newest = Math.max(...current.map((limit) => limit.at ?? now));
+  const newest = current.reduce((a, b) => ((b.at ?? now) > (a.at ?? now) ? b : a));
   const stale = current.every((limit) => limitStale(limit, now));
+  const credits = creditsText(newest);
   return (
     <section aria-label={agentLabel(provider)} data-provider={provider} className="contents">
       <div className="mt-1 flex items-baseline justify-between gap-2 first:mt-0">
         <h3 className="font-medium">{agentLabel(provider)}</h3>
-        {stale && (
-          <span data-testid="usage-limit-age" className="text-xs text-muted-foreground">
-            {agoText(newest, now)}
-          </span>
-        )}
+        <span
+          data-testid="usage-limit-age"
+          data-stale={stale || undefined}
+          className={cn("text-xs", stale ? "text-warning-text" : "text-muted-foreground")}
+        >
+          Updated {agoText(newest.at ?? now, now)}
+        </span>
       </div>
+      {credits !== undefined && (
+        <p data-testid="usage-provider-credits" className="-mt-1 text-xs text-muted-foreground">
+          {credits}
+        </p>
+      )}
       {LIMIT_WINDOWS.map((window) => {
         const limit = currentLimit(windows?.[window], now);
         const forecast =
@@ -162,7 +183,8 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
               data-testid="usage-limit-row"
               data-window={window}
               className={cn(
-                "grid grid-cols-[3.75rem_1fr_2.25rem_4.75rem] items-center gap-2 text-muted-foreground tabular-nums",
+                LIMIT_ROW,
+                "text-muted-foreground tabular-nums",
                 limit !== undefined && TONE_TEXT[limitTone(limit)],
               )}
             >
@@ -177,8 +199,11 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
                 <>
                   <LimitBar limit={limit} />
                   <span className="text-right">{limitPercent(limit.utilization)}%</span>
-                  <span className="text-right text-xs">
-                    {limit.resetsAt === undefined ? "" : resetText(limit.resetsAt, now)}
+                  <span
+                    data-testid="usage-limit-reset"
+                    className="text-right text-xs whitespace-nowrap"
+                  >
+                    {limit.resetsAt === undefined ? "" : resetAtText(limit.resetsAt, now)}
                   </span>
                 </>
               )}
@@ -191,6 +216,7 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
             {forecast !== undefined && (
               <p data-testid="usage-limit-forecast" className="-mt-1 text-xs text-muted-foreground">
                 {forecastText(forecast)}
+                {stale && " · from an older reading"}
               </p>
             )}
           </Fragment>

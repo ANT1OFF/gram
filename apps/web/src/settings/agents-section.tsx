@@ -133,15 +133,15 @@ export function AgentsSection() {
         saveError={errorOf("idleEvictMinutes")}
       />
       <Toggle
-        label="Restart on MCP change"
-        description="Reload live sessions when Gram adds, removes or signs in to an MCP server."
+        label="Reload on connector change"
+        description="Live sessions reload when Gram adds, removes or signs in to a connector (MCP server)."
         learnMore={
           <p>
             A Claude thread reconnects an added server at once. Otherwise the session restarts once
             idle, on the same conversation.
           </p>
         }
-        keywords={["connectors", "reload", "restart session"]}
+        keywords={["MCP", "connectors", "reload", "restart session"]}
         checked={restartOnMcpChangeOn(settings)}
         onReset={resetOf("restartOnMcpChange")}
         error={errorOf("restartOnMcpChange")}

@@ -10,7 +10,9 @@ import {
   limitShareText,
   limitSummaryText,
   meterLabel,
+  creditsText,
   meterText,
+  resetAtText,
   resetText,
   WINDOW_LABEL,
   windowWord,
@@ -129,6 +131,21 @@ describe("limit formatting", () => {
 
   it("gives a reset a week or more away as its date and time", () => {
     expect(resetText(Date.parse("2026-10-22T09:00:00Z"), NOW, UTC)).toBe("22 Oct, 09:00");
+  });
+
+  it("dates a reset under Resets at unless it is today", () => {
+    expect(resetAtText(Date.parse("2026-10-15T18:00:00Z"), NOW, UTC)).toBe("18:00");
+    expect(resetAtText(Date.parse("2026-10-16T00:15:00Z"), NOW, UTC)).toBe("Fri 16 Oct 00:15");
+    expect(resetAtText(Date.parse("2026-10-22T09:00:00Z"), NOW, UTC)).toBe("Thu 22 Oct 09:00");
+  });
+
+  it("names the account's credits and balance only when the agent reports them", () => {
+    expect(creditsText({})).toBeUndefined();
+    expect(creditsText({ creditsAvailable: true })).toBe("On credits");
+    expect(creditsText({ creditsAvailable: true, creditsBalance: "1250.5" })).toBe(
+      "On credits · 1,250.5 left",
+    );
+    expect(creditsText({ creditsUnlimited: true })).toBe("On credits · unlimited");
   });
 
   it("reads the time in the viewer's zone", () => {

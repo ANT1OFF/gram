@@ -86,7 +86,7 @@ describe("ReviewBotsSection", () => {
         ],
       }),
     );
-    expect((await screen.findByRole("status")).textContent).toBe("Review bots saved.");
+    expect((await screen.findByRole("status")).textContent).toBe("Saved");
   });
 
   it("can remove every bot", async () => {

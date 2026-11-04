@@ -8,6 +8,7 @@ import {
   type LimitProvider,
   type LimitWindow,
   type TightestLimit,
+  type UsageLimit,
 } from "@/stores/usage-limits";
 
 type IntlOptions = { readonly locale?: string; readonly timeZone?: string };
@@ -74,6 +75,39 @@ export function resetText(at: number, now: number, intl: IntlOptions = {}): stri
   return format({ day: "numeric", month: "short", ...CLOCK_TIME });
 }
 
+/**
+ * When a window resets, for a column headed "Resets at": the time alone today, and otherwise the
+ * day and date before it ("Thu 16 Oct 10:00"), so a reset days off is never mistaken for today's.
+ */
+export function resetAtText(at: number, now: number, intl: IntlOptions = {}): string {
+  const zone = intl.timeZone === undefined ? {} : { timeZone: intl.timeZone };
+  const format = (options: Intl.DateTimeFormatOptions, value = at) =>
+    dateTimeFormat(intl.locale, { ...options, ...zone }).format(value);
+  const day = { year: "numeric", month: "numeric", day: "numeric" } as const;
+  const time = formatClockTime(at, intl);
+  if (format(day) === format(day, now)) return time;
+  return `${format({ weekday: "short", day: "numeric", month: "short" })} ${time}`;
+}
+
+/** "1,250": a credit balance as the agent gave it, its whole part grouped by thousands. */
+const creditBalanceText = (balance: string): string =>
+  balance.replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+
+/**
+ * "On credits · 1,250 left": the account's credits, when the agent reports having them (Codex's
+ * `creditsAvailable` and balance); `undefined` when it said nothing of them. A window carried past
+ * its limit on credits says so on its own line (`CREDITS_TEXT`).
+ */
+export const creditsText = (
+  limit: Pick<UsageLimit, "creditsAvailable" | "creditsUnlimited" | "creditsBalance">,
+): string | undefined => {
+  if (limit.creditsUnlimited === true) return "On credits · unlimited";
+  if (limit.creditsAvailable !== true && limit.creditsBalance === undefined) return undefined;
+  return limit.creditsBalance === undefined
+    ? "On credits"
+    : `On credits · ${creditBalanceText(limit.creditsBalance)} left`;
+};
+
 /** What the meter's name says to a screen reader: the tightest limit and its window. */
 export const meterLabel = (tightest: TightestLimit): string =>
   `Subscription usage: ${agentLabel(tightest.provider)} ${windowWord(
@@ -85,11 +119,12 @@ export const meterLabel = (tightest: TightestLimit): string =>
 const FORECAST_ROUND_MS = 5 * 60 * 1000;
 
 /**
- * "At this pace you reach 90% around 16:40": the forecast on a 24-hour clock, to the nearest five
- * minutes, since a pace from an hour's readings is no closer than that.
+ * "Estimate at recent pace: 90% around 16:40": the forecast on a 24-hour clock, to the nearest five
+ * minutes, since a pace from an hour's readings is no closer than that, and named an estimate so
+ * it never reads as certain.
  */
 export const forecastText = (forecast: LimitForecast, intl: IntlOptions = {}): string =>
-  `At this pace you reach ${Math.round(forecast.target * 100)}% around ${formatClockTime(
+  `Estimate at recent pace: ${Math.round(forecast.target * 100)}% around ${formatClockTime(
     Math.round(forecast.at / FORECAST_ROUND_MS) * FORECAST_ROUND_MS,
     intl,
   )}`;

@@ -24,9 +24,7 @@ test("a /model typed into a thread moves its model picker, and is offered in Set
     .getByRole("button", { name: "Add claude-preview[1m]" })
     .click();
   await page.getByTestId("custom-models").getByRole("button", { name: "Save" }).click();
-  await expect(page.getByTestId("custom-models").getByRole("status")).toHaveText(
-    "Custom models saved.",
-  );
+  await expect(page.getByTestId("custom-models").getByRole("status")).toHaveText("Saved");
 
   await page.goto("/new");
   await page

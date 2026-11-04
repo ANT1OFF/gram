@@ -278,7 +278,7 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
             params={{ workspaceId }}
             className="text-foreground/80 underline underline-offset-2 hover:no-underline"
           >
-            Import what your past sessions here worked out
+            Draft it from what your past sessions here worked out
           </Link>
           : you see what it would read first.
         </p>
