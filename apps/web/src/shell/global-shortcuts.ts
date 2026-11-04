@@ -3,6 +3,8 @@ import { useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { HISTORY_TEST_ID, useHistoryStore } from "@/history/history-view";
+import { toggleInbox } from "@/inbox/inbox-store";
+import { INBOX_TEST_ID } from "@/inbox/inbox-view";
 import { paneMoveKeys } from "@/keyboard/catalog";
 import { keyLabel, registerShortcut, useShortcut } from "@/keyboard/registry";
 import { besideToggle, closeBeside, keepBeside } from "@/orchestration/beside-store";
@@ -157,6 +159,27 @@ export function useGlobalShortcuts() {
     allowInDialogs: true,
     when: () => inNoDialogBut(HISTORY_TEST_ID),
     run: () => useHistoryStore.getState().toggle(),
+  });
+
+  // Everything that needs you, from anywhere; ⌘⌥3, the old Needs you key, opens it too. Each
+  // toggles, so the Inbox (a dialog) closes with the same keys; no other dialog lets it open.
+  useShortcut({
+    id: "inbox.open",
+    keys: "mod+shift+i",
+    label: "Inbox",
+    group: "Navigation",
+    allowInDialogs: true,
+    when: () => inNoDialogBut(INBOX_TEST_ID),
+    run: toggleInbox,
+  });
+  useShortcut({
+    id: "view.needsYou",
+    keys: "mod+alt+3",
+    label: "Inbox",
+    group: "Navigation",
+    allowInDialogs: true,
+    when: () => inNoDialogBut(INBOX_TEST_ID),
+    run: toggleInbox,
   });
 
   const openThread = useOpenThread();

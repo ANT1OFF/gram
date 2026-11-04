@@ -8,6 +8,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { formatKeys } from "@/keyboard/registry";
+import { showInboxAsk } from "@/inbox/inbox-store";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { DrawnCheck, Swap } from "@/motion";
@@ -40,7 +41,6 @@ import { UsageMeter } from "@/shell/usage-meter";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
 
-import { useOpenBoard } from "@/orchestration/open-board";
 import type { ViewProps } from "./board-view";
 import {
   dotTone,
@@ -145,7 +145,6 @@ export function QuietView({ workspaceId }: ViewProps) {
   const [peek, setPeek] = useState<WorkspaceId>();
   const api = useApi();
   const queryClient = useQueryClient();
-  const openBoard = useOpenBoard();
   const leaveTo = useLeaveTo();
   const held = useAskStackStore((s) => s.held);
   const problems = useAskStackStore((s) => s.problems);
@@ -182,11 +181,8 @@ export function QuietView({ workspaceId }: ViewProps) {
   const choose = (each: DeckCard, option: AskOption) => {
     const { action } = option;
     if (action.kind === "open") return leaveTo(action.threadId);
-    if (action.kind === "board") {
-      useViewStore.getState().setQuiet(false);
-      openBoard(action.workspaceId, { waiting: true });
-      return;
-    }
+    // Read in full where it is answered: the Inbox, over the window Quiet leaves for.
+    if (action.kind === "board") return showInboxAsk(each.ask.key);
     setPick(undefined);
     send(each.ask, option.done, action);
   };

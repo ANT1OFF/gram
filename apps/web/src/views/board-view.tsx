@@ -23,12 +23,11 @@ import {
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 import { VirtualRows, type RowPlace } from "@/lib/virtual-rows";
-import { drawOn, Expand, GlideItem, GlideList } from "@/motion";
+import { drawOn, GlideItem, GlideList } from "@/motion";
 import { askKeysByThread } from "@/orchestration/ask-model";
-import { showAsk } from "@/orchestration/ask-sheet-store";
-import { AskStack, useWorkspaceAsks } from "@/orchestration/ask-stack";
+import { showInboxAsk } from "@/inbox/inbox-store";
+import { useWorkspaceAsks } from "@/orchestration/ask-stack";
 import { laneCounts, lanesMinWidth, laneTemplate } from "@/orchestration/board-lanes";
-import { useBoardWaiting, WaitingList, WAITING_BAND } from "@/orchestration/board-waiting";
 import { FailuresCard } from "@/orchestration/failures-card";
 import {
   FeatureMenu,
@@ -39,7 +38,6 @@ import {
 } from "@/orchestration/feature-sheet";
 import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { HeldBriefChip } from "@/orchestration/held-brief";
-import { useBoardBand } from "@/orchestration/open-board";
 import {
   boardRows,
   hiddenWorkerCount,
@@ -99,7 +97,7 @@ function WorkerChip({
   const hint = [
     worker.title,
     ...(worker.waiting === undefined ? [] : [worker.waiting.hint]),
-    ...(asking ? ["Click to answer in Asks"] : []),
+    ...(asking ? ["Click to answer in the Inbox"] : []),
   ].join("\n");
   return (
     <GlideItem
@@ -500,7 +498,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   // Show finished: archived workers, and the lines whose work is over, back on the Board.
   const finishedShown = useLayoutStore((s) => s.boardArchivedShown.includes(workspaceId));
   const openWorker = useOpenWorker();
-  // A worker that asks is a click from its ask in the dock below; ⌘-click or ⌥-click still opens it.
+  // A worker that asks is a click from its ask in the Inbox; ⌘-click or ⌥-click still opens it.
   const asks = useWorkspaceAsks().find((w) => w.workspaceId === workspaceId)?.asks;
   const askOf = useMemo(() => {
     const keys = askKeysByThread(asks ?? []);
@@ -516,7 +514,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   const onOpen = (threadId: ThreadId, event: MouseEvent) => {
     const ask = askOf.get(threadId);
     if (ask !== undefined && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      showAsk(workspaceId, ask);
+      showInboxAsk(ask.key);
       return;
     }
     openWorker(threadId, event);
@@ -539,12 +537,6 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   const listed = !grid && width !== undefined && width < lanesMinWidth(counts);
   // Every open editor keeps its group's local draft mounted, even after another row takes focus.
   const [editingGroups, setEditingGroups] = useState<ReadonlySet<string>>(() => new Set());
-  const waiting = useBoardWaiting(state);
-  const bandOpen = useBoardBand((s) => s.open[workspaceId] === true) && waiting.count > 0;
-  const band = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (bandOpen) band.current?.scrollIntoView({ block: "nearest" });
-  }, [bandOpen]);
   const line = (row: RailRow, place?: RowPlace) =>
     grid ? (
       <GridLine
@@ -588,36 +580,15 @@ function RailBoard({ state }: { state: WorkspaceState }) {
       data-testid="rail-board"
       className="flex min-h-0 flex-1 flex-col outline-none"
     >
-      <BoardHeader
-        state={state}
-        hidden={hidden}
-        waiting={waiting.count}
-        waitingOpen={bandOpen}
-        onWaiting={() => useBoardBand.getState().setOpen(workspaceId, !bandOpen)}
-      />
+      <BoardHeader state={state} hidden={hidden} />
       {/* Failures first: above the lines and what waits on you, and never scrolled away. */}
       <FailuresCard workspaceId={workspaceId} className="shrink-0 px-4 pt-2 pb-1" />
-      {/* One scroller for the band and the lines: the band grows to hold what waits on you, its
-          questions' choices whole, and scrolls away with the Board rather than in a box of its own. */}
       <div
         data-testid="rail-scroller"
         data-layout={grid ? "grid" : listed ? "stacked" : "lanes"}
-        // As tall as its lines and no taller, so the Asks dock sits right under them rather than at
-        // the foot of an empty pane; past the pane's height it scrolls.
-        className="min-h-0 flex-[0_1_auto] overflow-y-auto pb-2"
+        className="min-h-0 flex-1 overflow-y-auto pb-2"
         style={{ "--board-lanes": laneTemplate(counts) } as CSSProperties}
       >
-        <Expand open={bandOpen}>
-          <section
-            ref={band}
-            id={WAITING_BAND}
-            data-testid="rail-waiting"
-            aria-label="Waiting on you"
-            className="border-t border-border/60 px-4 py-2"
-          >
-            {waiting.count > 0 && <WaitingList state={state} waiting={waiting} shown={bandOpen} />}
-          </section>
-        </Expand>
         {rows.length > 0 && (grid ? <GridHeads /> : !listed && <LaneHeads counts={counts} />)}
         {rows.length === 0 ? (
           <div
@@ -688,15 +659,11 @@ function RailBoard({ state }: { state: WorkspaceState }) {
           </GlideList>
         )}
       </div>
-      {/* Bounded: an opened stack scrolls in half the pane at most, the lines above still in view. */}
-      <div data-testid="board-asks" className="max-h-[50%] min-h-0 shrink-0 overflow-y-auto pb-3">
-        <AskStack workspaceId={workspaceId} focused />
-      </div>
     </div>
   );
 }
 
-/** The Board: the workspace as feature lines, with the ask stack docked below. */
+/** The Board: the workspace as feature lines; what it needs from you is in the Inbox. */
 export function BoardView({ workspaceId }: ViewProps) {
   // The frame offers Board only with a workspace to show.
   const state = useWorkspaces().find((each) => each.workspace.id === workspaceId);

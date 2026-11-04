@@ -99,7 +99,7 @@ beforeEach(() => {
   setOrchestratorPaused.mockClear();
   asks.setState({ all: [] });
   states.setState({ all: [] });
-  useAskStackStore.setState({ held: [], sent: {}, problems: {}, replies: {}, focusKey: undefined });
+  useAskStackStore.setState({ held: [], sent: {}, problems: {}, replies: {} });
   Object.defineProperty(window, "gram", {
     configurable: true,
     value: {

@@ -121,6 +121,7 @@ function Row({
   onDone,
   onKeep,
   elsewhere = false,
+  defaultExpanded = false,
 }: {
   threadId: ThreadId;
   view: WaitView;
@@ -129,12 +130,14 @@ function Row({
   onDone: (item: WaitItem) => void;
   /** Absent outside the thread's own tray, which alone lists a helper's suggestions. */
   onKeep?: ((item: WaitItem) => void) | undefined;
-  /** Listed outside its thread, on the board: Jump to and Answer open the thread too. */
+  /** Listed outside its thread, in the Inbox: Jump to and Answer open the thread too. */
   elsewhere?: boolean;
+  /** Opens with its body, draft and link shown, as the Inbox's detail pane shows it. */
+  defaultExpanded?: boolean;
 }) {
   const api = useApi();
   const openAt = useOpenWait();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   /**
    * `fallback` when the whole history is in and the reply to copy from isn't, so the item's own text
    * went instead; `failed` when the reply couldn't be loaded, so nothing was copied.

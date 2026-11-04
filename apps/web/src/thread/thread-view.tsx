@@ -28,6 +28,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/composer/composer";
 import { EditBanner } from "@/composer/edit-banner";
+import { InboxLine } from "@/inbox/inbox-line";
 import { useShortcut } from "@/keyboard/registry";
 import { targetBadge } from "@/panels/pr-identity";
 import { turnEndMessages } from "@/panels/turn-diff";
@@ -36,8 +37,6 @@ import { useTitlebarSlot, useTitlebarThread } from "@/shell/titlebar-slot";
 import { useStable } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
 import { AttentionPulse, Swap, TurnCompleteSheen } from "@/motion";
-import { answersInPlace } from "@/orchestration/ask-model";
-import { AskStack } from "@/orchestration/ask-stack";
 import { BriefingPlaceholder } from "@/orchestration/briefing";
 import { orchestratorRowTitle } from "@/orchestration/tree-model";
 import { FinishedWorkerView } from "@/orchestration/finished-worker-view";
@@ -613,12 +612,7 @@ export function ThreadView({
         {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
         <RequestCards
           threadId={threadId}
-          // An orchestrator's ask stack answers the requests it can, so each shows in one place.
-          requests={
-            thread.role === "orchestrator"
-              ? summary.pendingRequests.filter((request) => !answersInPlace(request))
-              : summary.pendingRequests
-          }
+          requests={summary.pendingRequests}
           focused={focused}
           thread={thread}
         />
@@ -631,9 +625,7 @@ export function ThreadView({
       <EditBanner threadId={threadId} />
       <PrStrip threadId={threadId} focused={focused} />
       <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
-      {thread.role === "orchestrator" && (
-        <AskStack workspaceId={thread.workspaceId} composerThreadId={thread.id} focused={focused} />
-      )}
+      {thread.role === "orchestrator" && <InboxLine workspaceId={thread.workspaceId} />}
       <TurnCompleteSheen key={threadId} status={status}>
         <Composer threadId={threadId} focused={focused} />
       </TurnCompleteSheen>

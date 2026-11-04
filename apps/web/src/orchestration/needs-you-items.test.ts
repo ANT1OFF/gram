@@ -21,8 +21,6 @@ import {
   THREADS_GROUP,
   type NeedsYouThread,
 } from "./needs-you-items";
-import { firstRows } from "./needs-you-popover";
-import { optionThumbs } from "./needs-you-row";
 import { jumpTarget } from "./use-needs-you";
 
 const GRAM = "w-gram" as WorkspaceId;
@@ -152,15 +150,18 @@ describe("needsYouGroups", () => {
     const byKind = new Map(gram!.items.map((item) => [item.title, item]));
     const asked = byKind.get(workerQuestion.question)!;
     expect(asked).toMatchObject({ where: "Orchestrator rows collapse", threadId: "t-collapse" });
-    // A worker's question and a worker's request are answered in the workspace's Asks dock too.
-    expect(jumpTarget(asked)).toEqual({ kind: "stack", key: asked.ask!.key, threadId: ORCH });
-    expect(asked.dock).toEqual({ workspaceId: GRAM, orchestratorThreadId: ORCH });
+    // A jump opens the thread that asked, at its card: a worker's question in the worker.
+    expect(jumpTarget(asked)).toEqual({
+      kind: "card",
+      selector: `[data-testid="worker-question-card"][data-question="${asked.ask!.worker!.question.id}"]`,
+    });
     const approve = gram!.items.find((item) => item.kind === "approval")!;
     expect(approve).toMatchObject({ where: "Usage clocks", threadId: "t-clocks" });
-    expect(jumpTarget(approve)).toEqual({ kind: "stack", key: approve.ask!.key, threadId: ORCH });
+    expect(jumpTarget(approve)).toMatchObject({ kind: "card", requestId: approve.ask!.ids[0] });
+    // The orchestrator's own question opens the orchestrator.
     const own = byKind.get(memory.text)!;
-    expect(own).toMatchObject({ where: "Orchestrator", threadId: ORCH, inStack: true });
-    expect(jumpTarget(own)).toEqual({ kind: "stack", key: own.ask!.key, threadId: ORCH });
+    expect(own).toMatchObject({ where: "Orchestrator", threadId: ORCH });
+    expect(jumpTarget(own)).toEqual({ kind: "thread" });
   });
 
   it("opens a wait at the message that added it, or its tray without one", () => {
@@ -215,7 +216,6 @@ describe("needsYouGroups", () => {
     ]);
     const approve = threads.items.at(-1)!;
     expect(approve).toMatchObject({ where: "Solo", command: "bun run check" });
-    expect(approve.inStack).toBeUndefined();
     expect(jumpTarget(approve)).toMatchObject({ kind: "card", requestId: "r-solo" });
     expect(threads.items[1]).toMatchObject({ owned: true, title: "Spending limit" });
     expect(groups.flatMap((group) => group.items)).toHaveLength(9);
@@ -260,48 +260,6 @@ describe("stepItem", () => {
     expect(stepItem(items, items.at(-1)!.key, 1)).toBe(items[0]);
     expect(stepItem(items, items[0]!.key, -1)).toBe(items.at(-1));
     expect(stepItem([], undefined, 1)).toBeUndefined();
-  });
-});
-
-describe("firstRows", () => {
-  it("shares the rows out across the groups and counts the rest", () => {
-    const groups = needsYouGroups(sources());
-    // Every group gets a row before any gets a second.
-    const three = firstRows(groups, 3);
-    expect(three.groups.map((group) => group.items.length)).toEqual([1, 1, 1]);
-    expect(three.more).toBe(4);
-    const five = firstRows(groups, 5);
-    expect(five.groups.map((group) => group.items.length)).toEqual([2, 2, 1]);
-    expect(five.groups[0]!.items).toEqual(groups[0]!.items.slice(0, 2));
-    expect(firstRows(groups, 20).more).toBe(0);
-  });
-});
-
-describe("optionThumbs", () => {
-  it("numbers each pictured quick option as its answer button, the pick first", () => {
-    const pictured = workerAskOf(GRAM, {
-      ...workerQuestion,
-      recommended: "Dot only",
-      options: [
-        { label: "Keep the count", description: "", image: "shots/keep.png" },
-        { label: "Dot only", description: "", image: "shots/dot.png" },
-        { label: "Neither", description: "" },
-      ],
-    });
-    const [item] = needsYouGroups({
-      workspaces: [
-        { workspaceId: GRAM, name: "Gram", orchestratorThreadId: ORCH, asks: [pictured] },
-      ],
-      failures: new Map(),
-      threads: [],
-    })[0]!.items;
-    expect(optionThumbs(item!)).toEqual([
-      { number: 1, label: "Dot only", image: "shots/dot.png" },
-      { number: 2, label: "Keep the count", image: "shots/keep.png" },
-    ]);
-    // Without pictures, none.
-    const plain = needsYouGroups(sources())[0]!.items.find((each) => each.ask?.worker);
-    expect(optionThumbs(plain!)).toEqual([]);
   });
 });
 

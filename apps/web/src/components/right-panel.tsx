@@ -9,7 +9,6 @@ import {
   FolderTree,
   GitPullRequest,
   Globe,
-  Hand,
   Maximize2,
   Minimize2,
   Plug,
@@ -56,7 +55,6 @@ const TABS: PanelTab[] = [
   { value: "connectors", label: "Connectors", icon: Plug },
   { value: "reviews", label: "Reviews", icon: Eye },
   { value: "notifications", label: "Notifications", icon: Bell },
-  { value: "needsYou", label: "Needs you", icon: Hand },
 ];
 
 let tabsLoad: Promise<typeof PanelTabs> | undefined;
@@ -111,9 +109,12 @@ export function RightPanel() {
   const notificationCount = useNotificationHistory(unreadNotifications);
   const reviewCount = useReviewRequests().data?.requests.length ?? 0;
   // The tab is synced between machines and the list's placement is not, so the stored tab can name
-  // a Reviews tab this window doesn't have, or a Preview tab where the shell has no preview.
+  // a Reviews tab this window doesn't have, or a Preview tab where the shell has no preview. Needs
+  // you was a tab before the Inbox took its place.
   const tab =
-    (storedTab === "reviews" && !reviewsHere) || (storedTab === "preview" && !previewHere)
+    (storedTab === "reviews" && !reviewsHere) ||
+    (storedTab === "preview" && !previewHere) ||
+    storedTab === "needsYou"
       ? "diff"
       : storedTab;
   const setTab = useLayoutStore((s) => s.setPanelTab);

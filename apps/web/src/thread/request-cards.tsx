@@ -25,10 +25,12 @@ import {
   useContext,
   useEffect,
   useId,
+  useMemo,
   useState,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { useApi } from "@/api/context";
 import { MessageResponse } from "@/components/ai-elements/message";
@@ -41,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { AttentionPulse, PresenceItem, PresenceList, PressScale } from "@/motion";
 import { Kbd } from "@/orchestration/ask-choices";
 import { answerKey } from "@/orchestration/ask-keys";
+import { answeredAmong, useAskStackStore } from "@/orchestration/ask-stack-store";
 import { useRequestRevealStore } from "@/stores/reveal";
 
 import {
@@ -101,10 +104,13 @@ function CardKbd({ id }: { id: string }) {
   return useContext(CompactContext) ? null : <ShortcutKbd id={id} className="opacity-70" />;
 }
 
-/** Pending requests for a thread, with approvals sharing one paged slot. */
+/**
+ * Pending requests for a thread, with approvals sharing one paged slot. One answered from the
+ * Inbox, and held for its Undo or being sent, is left out: it is answered, and Undo brings it back.
+ */
 export function RequestCards({
   threadId,
-  requests,
+  requests: pending,
   focused,
   thread,
 }: {
@@ -114,6 +120,12 @@ export function RequestCards({
   /** Set for an orchestrator or a worker: a card from a thread nobody watches should stand out. */
   thread?: RoleFields | undefined;
 }) {
+  const answered = useAskStackStore(useShallow((s) => answeredAmong(s, pending)));
+  const requests = useMemo(
+    () =>
+      answered.length === 0 ? pending : pending.filter((request) => !answered.includes(request.id)),
+    [pending, answered],
+  );
   const approvals = requests.filter((request) => request.kind === "approval");
   return (
     <RequestRoleContext value={thread}>

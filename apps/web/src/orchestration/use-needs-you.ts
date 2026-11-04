@@ -1,23 +1,20 @@
-import type { Project, ThreadId } from "@gram/contracts";
+import type { Project } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useLayoutEffect, useMemo } from "react";
-import { create } from "zustand";
 
 import { useApi } from "@/api/context";
+import { toggleInbox, useInboxStore } from "@/inbox/inbox-store";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { useLayoutStore } from "@/stores/layout";
 import { useRequestRevealStore, useRevealStore } from "@/stores/reveal";
 import { useTrayUnfold } from "@/thread/waiting-tray";
 import { useViewStore } from "@/views/view-store";
 
-import { showAsk } from "./ask-sheet-store";
-import { useAskStackStore } from "./ask-stack-store";
 import { useDerivedAsks } from "./needs-you-store";
 import {
   needsYouCounts,
   stepItem,
-  type NeedsYouCategory,
   type NeedsYouGroup,
   type NeedsYouCounts,
   type NeedsYouItem,
@@ -26,44 +23,9 @@ import {
 import { useOpenQuestionsOf } from "./use-board-actions";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
-// The one list of what needs the user (needs-you-items.ts), and the one place it opens: the
-// overview's pill and ⌘⌥3 open the Needs you popover; See all opens it as the right panel; ⌘⇧U
-// and ⌘⇧Y walk it, each step opening its item's thread at the message that asked.
-
-/** Where the popover is anchored: the open overview's pill, or the compact rail's. */
-export type NeedsYouAnchor = "overview" | "rail";
-
-interface NeedsYouUiState {
-  /** The anchor whose popover is open, if any. */
-  readonly popover: NeedsYouAnchor | undefined;
-  /** The item last opened from here, which the next step moves on from. */
-  readonly current: string | undefined;
-  /**
-   * The category the popover's strip picked, which See all carries into the panel and the panel's
-   * strip changes; each popover opens on every category.
-   */
-  readonly category: NeedsYouCategory;
-  /** Whether the panel lists what is put away for Later instead. */
-  readonly later: boolean;
-  setPopover(anchor: NeedsYouAnchor | undefined): void;
-  setCurrent(key: string | undefined): void;
-  setCategory(category: NeedsYouCategory): void;
-  setLater(later: boolean): void;
-}
-
-export const useNeedsYouUi = create<NeedsYouUiState>()((set) => ({
-  popover: undefined,
-  current: undefined,
-  category: "all",
-  later: false,
-  setPopover: (popover) =>
-    set((s) =>
-      popover !== undefined && s.popover === undefined ? { popover, category: "all" } : { popover },
-    ),
-  setCurrent: (current) => set({ current }),
-  setCategory: (category) => set({ category }),
-  setLater: (later) => set({ later }),
-}));
+// The one list of what needs the user (needs-you-items.ts), and the one place it opens: the Inbox
+// (inbox/inbox-view.tsx), from the title bar's Inbox button, the sidebar's pill, ⌘⇧I and ⌘⌥3.
+// ⌘⇧U and ⌘⇧Y walk the list, each step opening its item's thread at the turn that asked.
 
 /** An item put away for Later, with the epoch ms it comes back. */
 interface LaterItem {
@@ -74,7 +36,7 @@ interface LaterItem {
 export interface NeedsYouList {
   /** What needs the user now, by workspace: what each workspace's count reads. */
   readonly groups: readonly NeedsYouGroup[];
-  /** The same by kind (`needsYouSections`): what the popover and the panel list. */
+  /** The same by kind (`needsYouSections`): what the Inbox lists. */
   readonly sections: readonly NeedsYouSection[];
   /** The same, flat, in the order the sections list them: what the next and previous keys walk. */
   readonly items: readonly NeedsYouItem[];
@@ -115,37 +77,6 @@ export function NeedsYouSource(): null {
 
 const NO_PROJECTS: readonly Project[] = [];
 
-/** The selector a rendered pill answers to, by anchor. */
-const ANCHOR_TEST_IDS: Record<NeedsYouAnchor, string> = {
-  overview: "overview-needs-you",
-  rail: "overview-rail-needs-you",
-};
-
-/**
- * Opens Needs you where it can be seen: the popover on whichever pill is on screen, or the right
- * panel when the overview is hidden.
- */
-export const openNeedsYou = () => {
-  useViewStore.getState().setQuiet(false);
-  const shown = (["overview", "rail"] as const).find(
-    (anchor) =>
-      document.querySelector<HTMLElement>(`[data-testid="${ANCHOR_TEST_IDS[anchor]}"]`)
-        ?.offsetParent != null,
-  );
-  if (shown !== undefined) {
-    const { popover, setPopover } = useNeedsYouUi.getState();
-    setPopover(popover === shown ? undefined : shown);
-    return;
-  }
-  useLayoutStore.getState().revealPanel("needsYou");
-};
-
-/** Opens the panel, the whole list beside the thread; the popover closes. */
-export const openNeedsYouPanel = () => {
-  useNeedsYouUi.getState().setPopover(undefined);
-  useLayoutStore.getState().revealPanel("needsYou");
-};
-
 /** How long a card a jump lands on stays ringed. */
 const FLASH_MS = 1_600;
 /** How long a jump looks for a card that isn't drawn yet before it gives up. */
@@ -185,28 +116,16 @@ export const jumpTarget = (
 ):
   | { readonly kind: "message"; readonly messageId: string }
   | { readonly kind: "card"; readonly selector: string; readonly requestId?: string }
-  | {
-      readonly kind: "stack";
-      readonly key: string;
-      /** The orchestrator whose dock answers it, when it isn't the thread that asked. */
-      readonly threadId?: ThreadId;
-    }
   | { readonly kind: "tray" }
   | { readonly kind: "thread" } => {
   if (item.messageId !== undefined) return { kind: "message", messageId: item.messageId };
   const { ask } = item;
-  // Every ask in a workspace is answered in its Asks dock, a worker's as well as the orchestrator's.
-  if (ask !== undefined && item.dock !== undefined) {
-    return { kind: "stack", key: ask.key, threadId: item.dock.orchestratorThreadId };
-  }
   if (ask?.worker !== undefined) {
     return {
       kind: "card",
       selector: `[data-testid="worker-question-card"][data-question="${attr(ask.worker.question.id)}"]`,
     };
   }
-  // The orchestrator's own asks and open questions are answered in its stack.
-  if (ask !== undefined && item.inStack === true) return { kind: "stack", key: ask.key };
   const request = ask?.group?.entries[0]?.request;
   if (request !== undefined) {
     return {
@@ -218,44 +137,29 @@ export const jumpTarget = (
   return item.kind === "wait" ? { kind: "tray" } : { kind: "thread" };
 };
 
-/** The thread a jump to `item` opens: the orchestrator whose dock answers it, or its own. */
-export const opensThread = (item: NeedsYouItem): ThreadId | undefined => {
-  const target = jumpTarget(item);
-  return target.kind === "stack" ? (target.threadId ?? item.threadId) : item.threadId;
-};
-
 /**
- * Opens an item's thread at the turn that asked: the transcript message, the card above the
- * composer, or the orchestrator's stack on that ask. The popover closes; the panel stays.
+ * Opens an item's thread at the turn that asked: the transcript message, or its card above the
+ * composer, ringed. The Inbox closes, so the thread is what is seen.
  */
 export function useNeedsYouJump(): (item: NeedsYouItem) => void {
   const navigate = useNavigate();
   return (item) => {
-    const { setCurrent, setPopover } = useNeedsYouUi.getState();
-    setCurrent(item.key);
-    setPopover(undefined);
+    const inbox = useInboxStore.getState();
+    inbox.select(item.key);
+    inbox.close();
     const target = jumpTarget(item);
-    const threadId = opensThread(item);
+    const threadId = item.threadId;
     if (threadId === undefined) return;
     if (target.kind === "message") useRevealStore.getState().reveal(threadId, target.messageId);
-    if (target.kind === "stack") {
-      if (item.dock !== undefined && item.ask !== undefined)
-        showAsk(item.dock.workspaceId, item.ask);
-      else useAskStackStore.getState().focus(target.key);
-    }
     if (target.kind === "tray") useTrayUnfold.getState().unfold(threadId);
     if (target.kind === "card" && target.requestId !== undefined) {
       useRequestRevealStore.getState().reveal(threadId, target.requestId);
     }
     const view = useViewStore.getState();
     view.setQuiet(false);
-    // The Board docks the same asks: a jump to one there stays on the Board.
-    const pathname = `/t/${threadId}`;
-    const keepBoard = target.kind === "stack" && view.view === "board";
-    if (keepBoard) {
-      if (window.location.pathname !== pathname) view.carryView(pathname);
-    } else if (view.view !== "chat") view.setView("chat");
+    if (view.view !== "chat") view.setView("chat");
     useLayoutStore.getState().openThread(threadId);
+    const pathname = `/t/${threadId}`;
     if (window.location.pathname !== pathname) {
       void navigate({ to: "/t/$threadId", params: { threadId } });
     }
@@ -267,7 +171,7 @@ export function useNeedsYouJump(): (item: NeedsYouItem) => void {
 export function useNeedsYouStep(items: readonly NeedsYouItem[]) {
   const jump = useNeedsYouJump();
   return (by: 1 | -1) => {
-    const next = stepItem(items, useNeedsYouUi.getState().current, by);
+    const next = stepItem(items, useInboxStore.getState().selected, by);
     if (next !== undefined) jump(next);
   };
 }
@@ -288,9 +192,9 @@ export function useNeedsYouCounts(): NeedsYouCounts {
   return useMemo(() => needsYouCounts(groups), [groups]);
 }
 
-/** Needs you's count and its toggle, for the overview's pill, the rail's and ⌘⌥3. */
+/** Needs you's count and the Inbox's toggle, for the title bar's button and the sidebar's pills. */
 export function useNeedsYou() {
   const { total } = useNeedsYouCounts();
-  const hint = useShortcutHint("view.needsYou");
-  return { count: total, open: openNeedsYou, label: "Needs you", hint };
+  const hint = useShortcutHint("inbox.open");
+  return { count: total, open: toggleInbox, label: "Inbox", hint };
 }

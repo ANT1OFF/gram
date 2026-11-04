@@ -77,7 +77,8 @@ function StepIcon({ step }: { step: FailureStep }) {
   return <Icon aria-hidden />;
 }
 
-function FailureRowView({ item, onDismiss }: { item: FailureItem; onDismiss: () => void }) {
+/** One failure with its next step and Dismiss: the Board's card lists them, the Inbox shows one. */
+export function FailureRowView({ item, onDismiss }: { item: FailureItem; onDismiss: () => void }) {
   const open = useOpenThread();
   const navigate = useNavigate();
   const onGateway = useThreadsStore(

@@ -7,11 +7,10 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 
-import { answersInPlace, type Ask } from "./ask-model";
+import type { Ask } from "./ask-model";
 import type { FailureItem } from "./needs-you-model";
 
-// Everything that needs the user, as one list the Needs you popover, its panel and the next and
-// previous keys walk (docs/design/mocks/needs-you-home, direction C): every workspace's asks, its
+// Everything that needs the user, as one list the Inbox shows and the next and previous keys walk (docs/design/mocks/needs-you-home, direction C): every workspace's asks, its
 // standing failures and its threads' Waiting on you items, grouped by workspace, newest first, then
 // the threads outside any workspace with their requests, errors and waits. Each item names the
 // thread it opens and the message it scrolls to. Every answer still goes through its source's own
@@ -42,15 +41,6 @@ export interface NeedsYouItem {
   readonly toolUseId?: string | undefined;
   /** Whether a live thread still owns it; false for a failure whose worker is gone or parked. */
   readonly owned: boolean;
-  /** Answered in its orchestrator's ask stack, which a jump focuses, rather than in a card. */
-  readonly inStack?: boolean | undefined;
-  /**
-   * The Asks dock that answers it: every ask in a workspace with an orchestrator, a worker's
-   * included, is answered there, so a jump opens that orchestrator (or keeps its Board) on it.
-   */
-  readonly dock?:
-    | { readonly workspaceId: WorkspaceId; readonly orchestratorThreadId: ThreadId }
-    | undefined;
   /** Epoch ms it was asked or added, when the source keeps it. */
   readonly at?: number | undefined;
   readonly ask?: Ask | undefined;
@@ -92,20 +82,11 @@ export interface NeedsYouThread {
 export const itemText = (item: Pick<NeedsYouItem, "title" | "command">): string =>
   item.command === undefined ? item.title : `${item.title} ${item.command}`;
 
-/** One item for an ask, opening it in its workspace's Asks dock, or a solo thread's card. */
+/** One item for an ask, opening the thread that asked at its card. */
 const askItem = (
   ask: Ask,
-  workspace: Pick<NeedsYouWorkspace, "orchestratorThreadId"> & {
-    readonly workspaceId?: WorkspaceId | undefined;
-  },
+  workspace: Pick<NeedsYouWorkspace, "orchestratorThreadId">,
 ): NeedsYouItem => {
-  const dock =
-    workspace.workspaceId === undefined || workspace.orchestratorThreadId === undefined
-      ? undefined
-      : {
-          workspaceId: workspace.workspaceId,
-          orchestratorThreadId: workspace.orchestratorThreadId,
-        };
   const base = {
     key: `ask:${ask.key}`,
     ids: ask.ids,
@@ -114,7 +95,6 @@ const askItem = (
     command: ask.command,
     owned: true,
     ask,
-    ...(dock === undefined ? {} : { dock, inStack: true }),
   };
   if (ask.worker !== undefined) {
     const { question } = ask.worker;
@@ -130,21 +110,12 @@ const askItem = (
       ...base,
       where: "Orchestrator",
       threadId: workspace.orchestratorThreadId,
-      inStack: true,
     };
   }
   const first = ask.group?.entries[0];
   const more = (ask.group?.entries.length ?? 1) - 1;
-  // The orchestrator's own requests that answer in place show in its stack, not as cards.
-  const own =
-    workspace.orchestratorThreadId !== undefined &&
-    (ask.group?.entries.every((entry) => entry.threadId === workspace.orchestratorThreadId) ??
-      false) &&
-    first !== undefined &&
-    answersInPlace(first.request);
   return {
     ...base,
-    ...(own ? { inStack: true } : {}),
     where: first === undefined ? "" : more > 0 ? `${first.title} +${more}` : first.title,
     threadId: first?.threadId,
     toolUseId: first?.request.toolUseId,
