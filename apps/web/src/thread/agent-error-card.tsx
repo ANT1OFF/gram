@@ -80,10 +80,32 @@ const retriedLabel = (retried: RetryReceipt): string => {
  * too, to the newest attempt, which is the one that needs action.
  */
 export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
+  // A thread the server no longer has, a finished worker's, has no feed to read attempts from.
+  const live = useThreadsStore((s) => s.byId[threadId] !== undefined);
+  return live ? (
+    <LiveErrorCard threadId={threadId} error={error} />
+  ) : (
+    <ErrorCard threadId={threadId} error={error} attempt={undefined} />
+  );
+}
+
+function LiveErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
+  const attempt = useAttempt(threadId, error);
+  return <ErrorCard threadId={threadId} error={error} attempt={attempt} />;
+}
+
+function ErrorCard({
+  threadId,
+  error,
+  attempt,
+}: {
+  threadId: ThreadId;
+  error: ThreadError;
+  attempt: AttemptFacts | undefined;
+}) {
   const api = useApi();
   const [pending, setPending] = useState(false);
   const [unsent, setUnsent] = useState<string | undefined>();
-  const attempt = useAttempt(threadId, error);
   const retried = attempt?.retried;
   const current = useThreadsStore((s) => {
     const summary = s.byId[threadId];
