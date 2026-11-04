@@ -17,7 +17,7 @@ export function FakeAgentBadge({ className }: { className?: string }) {
         data-testid="fake-agent-badge"
         aria-label={`Fake agent. ${FAKE_AGENT_HINT}`}
         className={cn(
-          "inline-flex shrink-0 items-center gap-1 rounded-sm border border-status-needs/60 px-1.5 text-xs text-status-needs",
+          "inline-flex shrink-0 items-center gap-1 rounded-sm border border-warning/60 px-1.5 text-xs text-warning",
           className,
         )}
       >

@@ -77,7 +77,10 @@
   --color-success-text: var(--success-text);
   --color-warning-text: var(--warning-text);
   --color-info-text: var(--info-text);
+  /* Amber is "needs you" only: status-needs for its words, status-needs-mark for its dots, icons and
+     borders. Bypass is the one deliberate exception, on warning. */
   --color-status-needs: var(--status-needs);
+  --color-status-needs-mark: var(--status-needs-mark);
   --color-status-working: var(--status-working);
   --color-status-idle: var(--status-idle);
   --color-merged: var(--merged);
@@ -127,7 +130,7 @@
   }
   /* The card a Needs you jump lands on (orchestration/use-needs-you.ts), ringed for a moment. */
   [data-needs-you-flash="true"] {
-    outline: 2px solid var(--color-status-needs);
+    outline: 2px solid var(--color-status-needs-mark);
     outline-offset: 2px;
   }
 }

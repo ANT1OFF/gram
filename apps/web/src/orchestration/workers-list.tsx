@@ -101,7 +101,7 @@ export const workerGlideId = (threadId: ThreadId) => `worker-name-${threadId}`;
 const GLYPHS: Readonly<Record<WorkerGlyph, { icon: LucideIcon; tone: string; label: string }>> = {
   working: { icon: Spinner, tone: "text-status-working", label: "Working" },
   waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting" },
-  needsYou: { icon: CircleAlert, tone: "text-status-needs", label: "Needs you" },
+  needsYou: { icon: CircleAlert, tone: "text-status-needs-mark", label: "Needs you" },
   error: { icon: CircleAlert, tone: "text-destructive", label: "Error" },
   idle: { icon: CircleDot, tone: "text-status-idle", label: "Idle" },
   merged: { icon: GitMerge, tone: "text-merged", label: "Merged" },
@@ -488,7 +488,9 @@ function WorkerListRow({
       <GlideText glideId={workerGlideId(row.threadId)} className="min-w-0 truncate">
         {row.title}
       </GlideText>
-      {row.held && <Hand aria-label="You hold it" className="size-3 shrink-0 text-status-needs" />}
+      {row.held && (
+        <Hand aria-label="You hold it" className="size-3 shrink-0 text-muted-foreground" />
+      )}
       <span className="shrink-0 text-xs text-muted-foreground">{row.repo}</span>
       <span
         data-testid="worker-now"

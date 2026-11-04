@@ -34,6 +34,7 @@ export const COLOR_TOKENS = [
   "warning-text",
   "info-text",
   "status-needs",
+  "status-needs-mark",
   "status-working",
   "status-idle",
   "merged",

@@ -174,7 +174,11 @@
 }
 
 .gram-pulse-once[data-tone="needs"] {
-  --pulse: var(--status-needs);
+  --pulse: var(--status-needs-mark);
+}
+
+.gram-pulse-once[data-tone="warning"] {
+  --pulse: var(--warning);
 }
 
 .gram-pulse-once[data-tone="success"] {

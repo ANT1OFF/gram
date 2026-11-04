@@ -18,7 +18,7 @@ import { FindingList, VerdictLabel } from "./review-notice-card";
 const CHECKS: Record<ChecksRollup, { icon: LucideIcon; label: string; tone: string }> = {
   passing: { icon: CircleCheck, label: "Checks passing", tone: "text-success" },
   failing: { icon: CircleX, label: "Checks failing", tone: "text-destructive" },
-  pending: { icon: CircleDashed, label: "Checks running", tone: "text-warning" },
+  pending: { icon: CircleDashed, label: "Checks running", tone: "text-status-working" },
   none: { icon: CircleMinus, label: "No checks", tone: "text-muted-foreground" },
 };
 
@@ -59,7 +59,7 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
       <p className="text-xs text-muted-foreground">
         {plural(report.rounds, "round")} · {plural(report.handled, "finding")} handled
       </p>
-      <FindingList label="Declined" findings={report.declined} tone="text-warning" />
+      <FindingList label="Declined" findings={report.declined} tone="text-muted-foreground" />
       <p data-testid="babysit-not-merged" className="flex items-center gap-1 text-xs font-medium">
         <Hand aria-hidden className="size-3.5" />
         Not merged: merging is up to you

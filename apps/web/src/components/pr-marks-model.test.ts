@@ -120,8 +120,8 @@ describe("review marks", () => {
   it.each([
     ["waiting", UserRoundSearch, "text-muted-foreground"],
     ["approved", UserRoundCheck, "text-success"],
-    ["changes", MessageSquareWarning, "text-warning"],
-    ["threads", MessageSquare, "text-warning"],
+    ["changes", MessageSquareWarning, "text-foreground"],
+    ["threads", MessageSquare, "text-foreground"],
   ] as const satisfies readonly (readonly [ReviewMarkKind, unknown, string])[])(
     "%s",
     (kind, icon, tone) => {
@@ -155,8 +155,8 @@ describe("review marks", () => {
     ["blockers", Bot, "text-destructive"],
     ["approved", BotMessageSquare, "text-success"],
     ["changesRequested", Bot, "text-destructive"],
-    ["findings", Bot, "text-warning"],
-    ["reviewerThreads", MessageSquare, "text-warning"],
+    ["findings", Bot, "text-foreground"],
+    ["reviewerThreads", MessageSquare, "text-foreground"],
   ] as const satisfies readonly (readonly [BotMarkKind, unknown, string])[])(
     "the review bot's %s",
     (kind, icon, tone) => {
@@ -173,9 +173,9 @@ describe("merge marks", () => {
     ["refused", OctagonX, "text-destructive"],
     ["held", CirclePause, "text-muted-foreground"],
     ["waiting", Link2, "text-muted-foreground"],
-    ["behind", ArrowDown, "text-warning"],
-    ["blocked", Ban, "text-warning"],
-    ["unstable", CircleAlert, "text-warning"],
+    ["behind", ArrowDown, "text-muted-foreground"],
+    ["blocked", Ban, "text-foreground"],
+    ["unstable", CircleAlert, "text-foreground"],
     ["armed", Timer, "text-merged"],
     ["mergeable", GitMerge, "text-success"],
   ] as const satisfies readonly (readonly [MergeMarkKind, unknown, string])[])(

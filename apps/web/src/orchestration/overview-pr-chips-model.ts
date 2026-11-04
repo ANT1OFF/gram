@@ -13,7 +13,7 @@ import type { ReviewGlyphKind } from "@/components/review-glyph";
 /** How many chips a row shows before the rest fold into a count. */
 export const MAX_PR_CHIPS = 3;
 
-/** A chip's tint: red for what blocks the merge, amber for what someone has to look at. */
+/** A chip's tint: red for what blocks the merge, an outline for what someone has to look at. */
 export type PrChipTone = "danger" | "warning" | "merged" | "plain";
 
 export interface PrChip {

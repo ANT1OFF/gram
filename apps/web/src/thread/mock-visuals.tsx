@@ -174,7 +174,7 @@ export function OptionGallery({
               <span className="flex min-w-0 items-center gap-1 text-xs">
                 <span className="min-w-0 truncate font-medium">{option.label}</span>
                 {option.label === recommended && (
-                  <span title="Recommended" className="inline-flex shrink-0 text-status-needs">
+                  <span title="Recommended" className="inline-flex shrink-0 text-link">
                     <Star aria-hidden className="size-3 fill-current" />
                     <span className="sr-only">(recommended)</span>
                   </span>

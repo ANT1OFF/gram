@@ -88,7 +88,7 @@ export function BoardHeader({
           aria-label="Waiting on you"
           title="What the orchestrator and its workers left for you: drafts, links, steps, decisions and questions"
           onClick={onWaiting}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-needs/50 bg-status-needs/10 px-2 py-0.5 text-xs text-status-needs outline-none [-webkit-app-region:no-drag] hover:bg-status-needs/20 focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-status-needs/20"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-needs-mark/60 px-2 py-0.5 text-xs text-status-needs outline-none [-webkit-app-region:no-drag] hover:bg-status-needs-mark/10 focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-status-needs-mark/10"
         >
           <Inbox aria-hidden className="size-3" />
           <span className="@max-2xl/titlebar:sr-only">Waiting on you</span>
@@ -106,9 +106,9 @@ export function BoardHeader({
         <p
           role="status"
           data-testid="rail-paused-line"
-          className="mx-4 my-2 flex shrink-0 items-center gap-2 rounded-(--radius-md) border border-status-needs/40 bg-status-needs/5 px-2.5 py-1.5 text-xs"
+          className="mx-4 my-2 flex shrink-0 items-center gap-2 rounded-(--radius-md) border border-border px-2.5 py-1.5 text-xs"
         >
-          <Pause aria-hidden className="size-3.5 shrink-0 text-status-needs" />
+          <Pause aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0">
             {pauseText(paused)} since {pauseClock(paused.at)}.{" "}
             <span className="text-muted-foreground">{pauseLeavesRunning(working, paused)}</span>

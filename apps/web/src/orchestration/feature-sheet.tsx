@@ -68,8 +68,8 @@ import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-mode
 export const RAIL_TONES: Readonly<
   Record<RailTone, { icon: LucideIcon; tone: string; label: string }>
 > = {
-  needs: { icon: CircleAlert, tone: "text-status-needs", label: "Needs you" },
-  attention: { icon: CircleAlert, tone: "text-status-needs", label: "Needs attention" },
+  needs: { icon: CircleAlert, tone: "text-status-needs-mark", label: "Needs you" },
+  attention: { icon: CircleAlert, tone: "text-foreground", label: "Needs attention" },
   error: { icon: CircleAlert, tone: "text-destructive", label: "Failed" },
   working: { icon: Spinner, tone: "text-status-working", label: "Working" },
   waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting" },
@@ -563,7 +563,7 @@ function SheetBody({
         {sheet !== undefined && sheet.needs > 0 && (
           <span
             data-testid="feature-sheet-needs"
-            className="shrink-0 rounded-sm bg-status-needs/15 px-1.5 text-xs text-status-needs tabular-nums"
+            className="shrink-0 rounded-sm border border-status-needs-mark/60 px-1.5 text-xs text-status-needs tabular-nums"
           >
             {sheet.needs} need you
           </span>

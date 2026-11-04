@@ -13,7 +13,7 @@ import { useOpenThread } from "@/shell/thread-switcher";
 import { overviewSectionFolded, useLayoutStore, type DoneGrouping } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useSame } from "@/stores/use-same";
-import { useUsageLimits } from "@/stores/usage-limits";
+import { limitSpent, useUsageLimits } from "@/stores/usage-limits";
 import { RowMenuItems, rowMenuKeys, threadDragProps } from "@/thread/row-menu";
 import { doneSoloThreads } from "@/views/solo-threads";
 import { useViewWorkspace } from "@/views/view-workspace";
@@ -277,7 +277,7 @@ export function OverviewFoot() {
           aria-label={`${meter.name} 5-hour limit ${meter.percent}% used${meter.resets === undefined ? "" : `, resets ${meter.resets}`}`}
           className={cn(
             "grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-2",
-            meter.warns && "text-warning",
+            limitSpent(meter.limit) ? "text-destructive" : meter.warns && "text-warning",
           )}
         >
           <span>{meter.name}</span>

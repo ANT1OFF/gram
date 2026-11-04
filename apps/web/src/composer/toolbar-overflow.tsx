@@ -70,7 +70,7 @@ export function ToolbarOverflow({
                   className={cn(
                     ITEM,
                     "data-[popup-open]:bg-accent",
-                    picker.warning && "text-status-needs",
+                    picker.warning && "text-warning",
                   )}
                   title={picker.warning}
                 >

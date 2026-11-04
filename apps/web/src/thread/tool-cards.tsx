@@ -235,7 +235,7 @@ function BashCard({ part }: { part: ToolPartOf<"Bash"> }) {
           <JsonText text={text} stable={stable} />
         </Pre>
       )}
-      {output?.interrupted && <p className="text-xs text-warning">Interrupted</p>}
+      {output?.interrupted && <p className="text-xs text-muted-foreground">Interrupted</p>}
     </ToolShell>
   );
 }

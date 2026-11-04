@@ -91,7 +91,7 @@ function RecommendedMark({ withWord }: { withWord: boolean }) {
   return (
     <span
       data-testid="ask-recommended"
-      className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-normal text-status-needs"
+      className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-normal text-link"
     >
       <Star aria-hidden className="size-2.5 fill-current" />
       <span className={withWord ? undefined : "sr-only"}>Recommended</span>

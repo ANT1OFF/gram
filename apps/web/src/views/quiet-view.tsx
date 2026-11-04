@@ -60,7 +60,7 @@ const DOT: Readonly<Record<DotTone, string>> = {
   working: "bg-status-working",
   // Busy on CI or a review rather than a turn: the working colour, hollow.
   waiting: "border border-status-working bg-transparent",
-  needs: "bg-status-needs",
+  needs: "bg-status-needs-mark",
   error: "bg-destructive",
   idle: "bg-status-idle/60",
 };
@@ -354,7 +354,7 @@ function QuietCard({
       className="grid gap-3 rounded-lg border border-border bg-card p-5 shadow-sm"
     >
       <header className="flex items-center gap-2 text-[13px] text-muted-foreground">
-        <Icon aria-hidden className="size-4 shrink-0 text-status-needs" />
+        <Icon aria-hidden className="size-4 shrink-0 text-status-needs-mark" />
         <span className="truncate">{card.workspace}</span>
         <span className="flex-1" />
         <span data-testid="quiet-position" className="tabular-nums">

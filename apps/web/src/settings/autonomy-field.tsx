@@ -68,7 +68,7 @@ export function AutonomyField({
               role="alertdialog"
               aria-label="Turn on Full autonomy?"
               data-testid="autonomy-confirm"
-              className="flex flex-col gap-2 rounded-md border border-warning/50 bg-warning/10 p-2.5 text-xs"
+              className="flex flex-col gap-2 rounded-md border border-warning/50 p-2.5 text-xs"
             >
               <p {...{ [LONG_COPY]: "consent" }} className="flex items-start gap-1.5">
                 <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
@@ -122,7 +122,7 @@ export function AutonomyField({
             data-testid="orchestration-gate-warning"
             className="flex items-start gap-1.5 text-xs text-muted-foreground"
           >
-            <ShieldAlert aria-hidden className="mt-px size-3.5 shrink-0 text-status-needs" />
+            <ShieldAlert aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
             <span>{note.line}</span>
           </p>
         )}

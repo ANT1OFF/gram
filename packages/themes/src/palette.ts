@@ -63,6 +63,7 @@ export const SEMANTIC_COLOR_KEYS = [
   "warning-text",
   "info-text",
   "status-needs",
+  "status-needs-mark",
   "status-working",
   "status-idle",
   "merged",
@@ -256,8 +257,12 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     "success-text": sectionText(s.green),
     "warning-text": text(s.yellow),
     "info-text": sectionText(s.cyan),
-    // Statuses label rows, notices and count badges as text, so they're text-grade.
+    // Statuses label rows, notices and count badges as text, so they're text-grade. Amber means
+    // "needs you" and nothing else: status-needs is its text, status-needs-mark its dots, icons and
+    // borders (ui-grade, so it stays a clean amber rather than darkening to text). Working takes
+    // the accent, failing danger, done success or idle, and informational marks stay neutral.
     "status-needs": sectionText(s.yellow),
+    "status-needs-mark": warning,
     "status-working": sectionText(accent),
     "status-idle": sectionText(s.muted),
     merged: text(dark ? GITHUB_MERGED.dark : GITHUB_MERGED.light),

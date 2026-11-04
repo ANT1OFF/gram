@@ -62,7 +62,7 @@ export function ToolGroup({
             · {failed === 1 ? "1 failed" : `${failed} failed`}
           </span>
         )}
-        {cancelled > 0 && <span className="shrink-0 text-warning">· {cancelled} cancelled</span>}
+        {cancelled > 0 && <span className="shrink-0">· {cancelled} cancelled</span>}
         <ChevronRight
           aria-hidden
           className={cn(

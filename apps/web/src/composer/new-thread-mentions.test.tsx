@@ -65,7 +65,7 @@ describe("New thread draft @ mentions", () => {
     expect(screen.getByRole("combobox", { name: "Speed: Fast" })).toBeTruthy();
     const mode = screen.getByRole("combobox", { name: "Mode: Bypass" });
     expect(mode.getAttribute("data-warning")).toBe("true");
-    expect(mode.className).toContain("text-status-needs");
+    expect(mode.className).toContain("text-warning");
     expect(mode.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
   });
 

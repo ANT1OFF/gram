@@ -193,7 +193,7 @@ function WaitAction({ threadId, message }: { threadId: ThreadId; message: GramUI
         />
       }
     >
-      <Inbox aria-hidden className={cn("size-3.5", kept && "text-status-needs")} />
+      <Inbox aria-hidden className={cn("size-3.5", kept && "text-status-needs-mark")} />
     </Hint>
   );
 }

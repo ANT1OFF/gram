@@ -139,7 +139,7 @@ describe("PR_GLYPH_DISPLAY", () => {
     ["open", GitPullRequest, "text-success"],
     // Trouble shows as its own mark from the PR vocabulary, so a closed PR keeps its shape alone.
     ["failing", CircleX, "text-destructive"],
-    ["changes", MessageSquareWarning, "text-warning"],
+    ["changes", MessageSquareWarning, "text-foreground"],
     ["conflicts", GitMergeConflict, "text-destructive"],
     ["draft", GitPullRequestDraft, "text-muted-foreground"],
     ["merged", GitMerge, "text-merged"],

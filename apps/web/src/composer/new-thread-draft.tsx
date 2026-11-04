@@ -481,10 +481,7 @@ function ConfiguredNewThreadDraft() {
                   tip={[`Mode: ${modeLabel}`, modeWarned].filter(Boolean).join("\n")}
                   aria-description={modeWarned}
                   data-warning={modeWarned ? "true" : undefined}
-                  className={cn(
-                    GHOST_TRIGGER,
-                    modeWarned && "text-status-needs hover:text-status-needs",
-                  )}
+                  className={cn(GHOST_TRIGGER, modeWarned && "text-warning hover:text-warning")}
                 />
                 <SelectContent>
                   {MODE_OPTIONS.map((o) => (

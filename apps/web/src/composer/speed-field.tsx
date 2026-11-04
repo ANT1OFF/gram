@@ -114,7 +114,7 @@ export function SpeedField({
         </SelectContent>
       </Select>
       {value === "fast" && !fast && (
-        <p role="status" className="text-xs text-status-needs">
+        <p role="status" className="text-xs text-muted-foreground">
           Fast is not advertised for this model. Select Standard or retry model discovery.
         </p>
       )}

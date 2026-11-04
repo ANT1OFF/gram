@@ -185,7 +185,7 @@ function Row({
       )}
     >
       <Hint label={kindLabel} render={<span className="mt-0.5 flex shrink-0" />}>
-        <KindIcon aria-hidden className="size-3.5 text-status-needs" />
+        <KindIcon aria-hidden className="size-3.5 text-status-needs-mark" />
         <span className="sr-only">{kindLabel}</span>
       </Hint>
       <button
@@ -444,7 +444,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
     <div
       data-testid="waiting-tray"
       data-open={open}
-      className="@container shrink-0 border-b border-border bg-status-needs/[0.07]"
+      className="@container shrink-0 border-b border-border"
     >
       <button
         type="button"
@@ -454,7 +454,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         className="mx-auto flex h-8 w-full max-w-(--thread-max-width) items-center gap-2 px-6 text-xs text-muted-foreground hover:text-foreground @max-sm:px-3"
       >
         <PulseOnce trigger={additions} tone="needs">
-          <Inbox aria-hidden className="size-3.5 text-status-needs" />
+          <Inbox aria-hidden className="size-3.5 text-status-needs-mark" />
         </PulseOnce>
         <span data-testid="waiting-count" className="shrink-0 font-medium text-foreground">
           <span className="@max-sm:hidden">{count} waiting on you</span>
@@ -621,7 +621,7 @@ export function WaitChip({ wait }: { wait: WaitData }) {
     >
       <Inbox
         aria-hidden
-        className={cn("size-3.5 shrink-0", wait.state === "open" && "text-status-needs")}
+        className={cn("size-3.5 shrink-0", wait.state === "open" && "text-status-needs-mark")}
       />
       <span className="min-w-0 truncate">
         Waiting on you:{" "}

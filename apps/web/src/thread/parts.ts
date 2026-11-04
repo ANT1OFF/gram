@@ -77,8 +77,8 @@ export const PHASE_DISPLAY: Record<ToolPhase, { label: string; icon: LucideIcon;
   awaiting: { label: "Needs approval", icon: Clock, tone: "text-status-needs" },
   done: { label: "Done", icon: CircleCheck, tone: "text-success" },
   error: { label: "Error", icon: CircleX, tone: "text-destructive" },
-  cancelled: { label: "Cancelled", icon: CircleSlash, tone: "text-warning" },
-  denied: { label: "Denied", icon: CircleSlash, tone: "text-warning" },
+  cancelled: { label: "Cancelled", icon: CircleSlash, tone: "text-muted-foreground" },
+  denied: { label: "Denied", icon: CircleSlash, tone: "text-muted-foreground" },
 };
 
 export interface SplitMessages {

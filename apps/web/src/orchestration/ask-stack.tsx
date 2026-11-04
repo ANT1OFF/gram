@@ -333,7 +333,7 @@ function AskItem({
       // squeeze it to a letter a line.
       className="flex flex-wrap items-start gap-2.5 px-3.5 pt-1 pb-2.5 outline-none"
     >
-      <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-status-needs" />
+      <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-status-needs-mark" />
       <div className="min-w-0 flex-1 basis-48">
         <p className="text-sm break-words" data-testid="ask-title">
           {ask.lead}

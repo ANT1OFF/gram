@@ -27,7 +27,10 @@ interface PickerProps<V extends string> {
   onChange: (value: V) => void;
   /** Registers the opening shortcut only for the focused pane. */
   focused: boolean;
-  /** Tints the trigger amber and explains why in its tooltip. */
+  /**
+   * Tints the trigger with the warning colour (a caution on a setting, such as Bypass, not "needs
+   * you") and explains why in its tooltip.
+   */
   warning?: string | undefined;
   /** A glyph before the value, such as the agent the model runs on. */
   icon?: ReactNode;
@@ -136,7 +139,7 @@ export function Picker<V extends string>({
           .join("\n")}
         aria-description={description}
         data-warning={warning ? "true" : undefined}
-        className={cn(GHOST_TRIGGER, warning && "text-status-needs hover:text-status-needs")}
+        className={cn(GHOST_TRIGGER, warning && "text-warning hover:text-warning")}
       />
       <SelectContent side="top">
         {options.map((option) => (
