@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openAdvancedPage } from "./settings-nav";
+import { openSettingsPage } from "./settings-nav";
 
 const MOCK_LAUNCH_CHECKS_KEY = "gram.mock.launchChecks";
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
@@ -334,11 +334,11 @@ test("first run can be skipped for good", async ({ page }) => {
 
 test("settings navigation reaches optional gateways and persists review bots", async ({ page }) => {
   await page.goto("/settings");
-  await openAdvancedPage(page, "Gateways");
+  await openSettingsPage(page, "Gateways");
   await expect(page).toHaveURL(/\/settings\/gateways$/);
   await page.goBack();
 
-  await page.getByTestId("settings-subpages").getByRole("link", { name: "Review bots" }).click();
+  await openSettingsPage(page, "Review bots");
   const bots = page.getByTestId("review-bots");
   await expect(bots.getByRole("listitem")).toHaveCount(0);
   await bots.getByRole("button", { name: "Add bot" }).click();
@@ -668,7 +668,7 @@ test("an update that finishes while Settings → Agents is closed shows its outc
   await page.waitForFunction(
     () => JSON.parse(sessionStorage.getItem("gram.mock.updatedClis") ?? "{}").claude === "2.1.274",
   );
-  await sections.getByRole("link", { name: "Agents", exact: true }).click();
+  await sections.getByRole("link", { name: "Agents & models", exact: true }).click();
   await expect(claude.getByTestId("cli-update-panel")).toHaveAttribute("data-state", "succeeded");
   await expect(claude).toContainText("New threads use 2.1.274.");
   await expect(claude).toContainText("they keep 2.1.273 until restarted.");

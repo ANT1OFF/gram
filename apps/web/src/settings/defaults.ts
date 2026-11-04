@@ -130,16 +130,6 @@ export const GENERAL_DEFAULTS = defaults({
     read: (s) => s.agents.followWorktreeMoves,
     reset: { agents: { followWorktreeMoves: DEFAULT_SETTINGS.agents.followWorktreeMoves } },
   },
-  quietWhenIdle: {
-    label: "Quiet when idle",
-    read: (s) => s.layout?.quietWhenIdle === true,
-    reset: { layout: { quietWhenIdle: null } },
-  },
-  notifyAbout: {
-    label: "Notify me about",
-    read: notifyAboutOf,
-    reset: { notifications: { notifyAbout: null } },
-  },
   editor: {
     label: "Open in editor",
     read: (s) => s.editor.command,
@@ -173,6 +163,16 @@ export const AGENTS_DEFAULTS = defaults({
 
 /** Settings → Notifications. Where review requests show is kept on this computer, and isn't here. */
 export const NOTIFICATIONS_DEFAULTS = defaults({
+  quietWhenIdle: {
+    label: "Quiet when idle",
+    read: (s) => s.layout?.quietWhenIdle === true,
+    reset: { layout: { quietWhenIdle: null } },
+  },
+  notifyAbout: {
+    label: "Notify me about",
+    read: notifyAboutOf,
+    reset: { notifications: { notifyAbout: null } },
+  },
   native: {
     label: "Desktop notifications",
     read: (s) => s.notifications.native,

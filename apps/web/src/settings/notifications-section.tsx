@@ -17,6 +17,7 @@ import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 
 import { AwayNotificationRows } from "./away-notification-rows";
+import { InterruptionRows } from "./interruption-rows";
 import { NOTIFICATIONS_DEFAULTS, resetFor } from "./defaults";
 import { NotificationStatusSetting } from "./notification-status-row";
 import { OPTION_GROUP, OptionGroup, SettingRow, Toggle } from "./fields";
@@ -24,13 +25,16 @@ import { ReviewBotReposField } from "./review-bot-repos-field";
 import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
+/** Where review requests and open PRs show until moved: the sidebar. Kept on this computer. */
+const DEFAULT_PLACEMENT = "sidebar";
+
 const SOUNDS = Object.keys(CHIME_SOUNDS) as ChimeSound[];
 const CHOICES: readonly (ChimeSound | undefined)[] = [undefined, ...SOUNDS];
 
 type NotificationsKey = keyof typeof NOTIFICATIONS_DEFAULTS;
 type NotificationsPatch = NonNullable<SettingsPatch["notifications"]>;
 
-/** Settings → Notifications: desktop notifications and the sound that plays with them. */
+/** Settings → Notifications: interruptions, desktop notifications and their sound, review requests. */
 export function NotificationsSection() {
   const settings = useServerSettings((s) => s.settings);
   const notifications = settings?.notifications;
@@ -115,13 +119,14 @@ export function NotificationsSection() {
 
   return (
     <div className="flex flex-col gap-6" data-testid="notification-settings">
+      <InterruptionRows />
       <SettingsGroup
         label="Desktop"
         description="Notifications from your operating system while Gram is in the background."
       >
         <Toggle
           label="Desktop notifications"
-          description="Notify about asks and failures while the window isn't in front."
+          description="Show system notifications while the window isn't in front."
           checked={notifications.native}
           onReset={resetOf("native")}
           error={errorOf("native")}
@@ -195,6 +200,11 @@ export function NotificationsSection() {
           label="Show review requests in"
           description="The sidebar, a Reviews tab in the right panel, or nowhere. Hidden still notifies."
           disabledReason={offReason}
+          onReset={
+            placement === DEFAULT_PLACEMENT || requestsOff
+              ? undefined
+              : () => setPlacement(DEFAULT_PLACEMENT)
+          }
         >
           <OptionGroup
             label="Show review requests in"
@@ -297,6 +307,11 @@ export function NotificationsSection() {
         <SettingRow
           label="Show open PRs in"
           description="Below review requests in the sidebar, the Reviews tab, or nowhere."
+          onReset={
+            openPrsPlacement === DEFAULT_PLACEMENT
+              ? undefined
+              : () => setOpenPrsPlacement(DEFAULT_PLACEMENT)
+          }
         >
           <OptionGroup
             label="Show open PRs in"

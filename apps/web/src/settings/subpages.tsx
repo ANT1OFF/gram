@@ -1,23 +1,30 @@
 import { reviewBotsOf } from "@gram/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { useApi } from "@/api/context";
 import { useServerSettings } from "@/settings-sync/store";
 import { decideUpdateNotice } from "@/updates/launch-check";
 import { useUpdateStore } from "@/updates/store";
 
-import { SETTINGS_CARD } from "./settings-group";
+import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 
-/** One page that opens from a group, as a row: its name, a short value, and the way in. */
+/**
+ * One page that opens from a group, as a row laid out like a setting: its name and what it is for
+ * on the left, a short value and the way in on the right.
+ */
 export function SubpageRow({
   label,
+  description,
   to,
   search,
   summary,
   badge,
 }: {
   label: string;
+  description?: string;
   to: string;
   search?: { highlight: string };
   summary?: ReactNode;
@@ -30,35 +37,57 @@ export function SubpageRow({
       data-testid="settings-subpage-row"
       className="flex min-h-9 items-center gap-3 outline-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset first:rounded-t-lg last:rounded-b-lg"
     >
-      <span className="font-medium">{label}</span>
-      {badge}
-      <span className="ms-auto truncate text-muted-foreground tabular-nums">{summary}</span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5 font-medium">
+          {label}
+          {badge}
+        </span>
+        {description !== undefined && (
+          <span className="text-xs text-muted-foreground">{description}</span>
+        )}
+      </span>
+      <span className="ms-auto shrink-0 text-muted-foreground tabular-nums">{summary}</span>
       <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
     </Link>
   );
 }
 
-/** The rows of a group's pages, in a card. */
-export function SubpageList({ children }: { children: ReactNode }) {
+/** The rows of a group's own pages, in a card under a title, at the end of the group's page. */
+export function SubpageList({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <nav aria-label="More settings" data-testid="settings-subpages" className={SETTINGS_CARD}>
-      {children}
+    <nav aria-label={label} data-testid="settings-subpages" className="flex flex-col gap-2">
+      <h3 className={`${GROUP_TITLE} px-1`}>{label}</h3>
+      <div className={SETTINGS_CARD}>{children}</div>
     </nav>
   );
 }
 
-/** Advanced → Review bots: how many are followed. */
+/** Agents & models → AI helpers: whether the helper model runs. */
+export function AiHelpersSummary() {
+  const on = useServerSettings((s) => s.settings?.helpers?.enabled !== false);
+  return on ? "On" : "Off";
+}
+
+/** Agents & models → Gateways: how many are set up. */
+export function GatewaysSummary() {
+  const api = useApi();
+  const { data } = useQuery({ queryKey: ["profiles"], queryFn: () => api.listProfiles() });
+  if (data === undefined) return null;
+  return data.length === 0 ? "None" : String(data.length);
+}
+
+/** Workspaces & merging → Review bots: how many are followed. */
 export function ReviewBotsSummary() {
   const count = useServerSettings((s) => (s.settings ? reviewBotsOf(s.settings).length : 0));
   return count === 0 ? "None" : String(count);
 }
 
-/** Advanced → Terminal: the shell it starts. */
+/** Appearance → Terminal: the shell it starts. */
 export function TerminalSummary() {
   return useServerSettings((s) => s.settings?.terminal.shell ?? "powershell");
 }
 
-/** Whether a newer release than the pinned one is out, for the dot on Advanced and Updates. */
+/** Whether a newer release than the pinned one is out, for the dot on About. */
 export function useUpdateAvailable(): boolean {
   const pinnedVersion = useServerSettings((s) => s.settings?.updates.pinnedVersion);
   return useUpdateStore(

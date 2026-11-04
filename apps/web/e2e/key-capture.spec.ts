@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openAdvancedPage } from "./settings-nav";
+import { openSettingsPage } from "./settings-nav";
 
 const J = /⌘⇧J|Ctrl\+Shift\+J/;
 
@@ -8,7 +8,7 @@ test("records a shortcut, takes another action's keys, and cancels on Escape", a
   await page.goto("/t/t-deps");
   await expect(page.getByTestId("pane-header")).toBeVisible();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await openAdvancedPage(page, "Keyboard");
+  await openSettingsPage(page, "Keyboard");
   const settings = page.getByTestId("keyboard-settings");
   const dialog = page.getByTestId("key-capture-dialog");
   const status = dialog.getByTestId("key-capture-status");

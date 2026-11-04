@@ -7,6 +7,7 @@ import { renderWithRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { GeneralSection } from "./general-section";
+import { InterruptionRows } from "./interruption-rows";
 
 /** Renders General against `api`, with its settings in the store. */
 async function renderGeneral(api: MockApi) {
@@ -55,9 +56,14 @@ describe("General's launch, overview and notify rows", () => {
     );
   });
 
-  it("saves Notify me about, clearing it back to Asks and failures", async () => {
+  it("saves Notify me about, now under Notifications, clearing it back to Asks and failures", async () => {
     const api = mockApi();
     await renderGeneral(api);
+    // General no longer has it; Notifications → Interruptions does.
+    expect(screen.queryByRole("radiogroup", { name: "Notify me about" })).toBeNull();
+    cleanup();
+    renderWithRouter(<InterruptionRows />, api);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(radio("Notify me about", "Asks and failures").getAttribute("aria-checked")).toBe("true");
 
     fireEvent.click(radio("Notify me about", "Asks only"));

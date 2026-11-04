@@ -1,7 +1,8 @@
 import {
   Bell,
   Bot,
-  Ellipsis,
+  Info,
+  Keyboard,
   Mic,
   Network,
   SlidersHorizontal,
@@ -13,14 +14,7 @@ import type { ComponentType } from "react";
 import { AgentChecks } from "@/launch-checks/tool-checks";
 import { useServerSettings } from "@/settings-sync/store";
 
-import {
-  ReviewBotsSummary,
-  SubpageList,
-  SubpageRow,
-  TerminalSummary,
-  UpdateDot,
-  useUpdateAvailable,
-} from "./advanced-page";
+import { AiHelpersSummary, GatewaysSummary, ReviewBotsSummary, TerminalSummary } from "./subpages";
 import { AiHelpersSection } from "./ai-helpers-section";
 import { AgentsSection } from "./agents-section";
 import { AppearanceSearch } from "./appearance-section";
@@ -34,7 +28,7 @@ import {
   TERMINAL_DEFAULTS,
   type DefaultSetting,
 } from "./defaults";
-import { DiagnosticsSection } from "./diagnostics-section";
+import { DiagnosticsSection, InstallInfo } from "./diagnostics-section";
 import { EditorSection } from "./editor-section";
 import { GENERAL_ANCHORS, GENERAL_SECTIONS, type SettingsAnchor } from "./general-anchors";
 import { GeneralSection } from "./general-section";
@@ -60,7 +54,7 @@ export interface SettingsPage {
   readonly path: SettingsPath;
   /**
    * Which of the groups the page belongs to. The page whose id is the group's is the group
-   * itself; the rest open from it, such as Advanced → Gateways.
+   * itself; the rest open from it, such as Agents & models → Gateways.
    */
   readonly group: SettingsGroupId;
   /** What the page is for, behind the heading's ? and read by Settings search. */
@@ -85,15 +79,16 @@ export interface SettingsPage {
   readonly windowsOnly?: boolean;
 }
 
-/** The groups the nav lists; each is a page of its own, and Advanced opens the rest. */
+/** The groups the nav lists; each is a page of its own, and some open a few more. */
 export type SettingsGroupId =
   | "general"
   | "agents"
   | "workspaces"
   | "appearance"
   | "notifications"
+  | "keyboard"
   | "voice-input"
-  | "advanced";
+  | "about";
 
 export interface SettingsNavGroup {
   readonly id: SettingsGroupId;
@@ -113,12 +108,18 @@ export const SETTINGS_GROUPS: readonly SettingsNavGroup[] = [
     icon: SlidersHorizontal,
     sections: GENERAL_SECTIONS,
   },
-  { id: "agents", label: "Agents", path: "/settings/agents", icon: Bot },
-  { id: "workspaces", label: "Workspaces", path: "/settings/workspaces", icon: Network },
+  { id: "agents", label: "Agents & models", path: "/settings/agents", icon: Bot },
+  {
+    id: "workspaces",
+    label: "Workspaces & merging",
+    path: "/settings/workspaces",
+    icon: Network,
+  },
   { id: "appearance", label: "Appearance", path: "/settings/appearance", icon: Sun },
   { id: "notifications", label: "Notifications", path: "/settings/notifications", icon: Bell },
+  { id: "keyboard", label: "Keyboard", path: "/settings/keyboard", icon: Keyboard },
   { id: "voice-input", label: "Voice", path: "/settings/voice-input", icon: Mic },
-  { id: "advanced", label: "Advanced", path: "/settings/advanced", icon: Ellipsis },
+  { id: "about", label: "About", path: "/settings/about", icon: Info },
 ];
 
 /** The group a page sits in, by the group's id. */
@@ -129,7 +130,13 @@ export const settingsGroupOf = (page: Pick<SettingsPage, "group">): SettingsNavG
 export const isSubpage = (page: Pick<SettingsPage, "id" | "group">): boolean =>
   page.id !== page.group;
 
-type SettingsPath =
+/** The pages that open from `group`, in nav order. */
+export const subpagesOf = (
+  group: SettingsGroupId,
+  pages: readonly SettingsPage[] = SETTINGS_PAGES,
+): readonly SettingsPage[] => pages.filter((page) => page.group === group && isSubpage(page));
+
+export type SettingsPath =
   | "/settings/general"
   | "/settings/notifications"
   | "/settings/terminal"
@@ -143,10 +150,9 @@ type SettingsPath =
   | "/settings/keyboard"
   | "/settings/voice-input"
   | "/settings/storage"
-  | "/settings/updates"
+  | "/settings/about"
   | "/settings/diagnostics"
-  | "/settings/help"
-  | "/settings/advanced";
+  | "/settings/help";
 
 /**
  * Search words for the parts of a page that aren't built from `Field`s, which bring their own label
@@ -242,29 +248,7 @@ export function AgentsPage() {
   );
 }
 
-/** Settings → Advanced: a row for each page that opens from it. */
-export function AdvancedPage() {
-  const updateAvailable = useUpdateAvailable();
-  const pages = SETTINGS_PAGES.filter((page) => page.group === "advanced" && isSubpage(page));
-  return (
-    <SubpageList>
-      {pages.map((page) => {
-        const Summary = page.summary;
-        return (
-          <SubpageRow
-            key={page.id}
-            label={page.label}
-            to={page.path}
-            summary={Summary && <Summary />}
-            badge={page.id === "updates" && updateAvailable ? <UpdateDot /> : undefined}
-          />
-        );
-      })}
-    </SubpageList>
-  );
-}
-
-/** Settings → Updates, wired to the persisted channel, opt-ins and version pin. */
+/** Settings → About → Updates, wired to the persisted channel, opt-ins and version pin. */
 export function UpdatesPage() {
   const updates = useServerSettings((s) => s.settings?.updates);
   const channel = updates?.channel;
@@ -281,6 +265,25 @@ export function UpdatesPage() {
   );
 }
 
+const UPDATE_KEYWORDS = ["version", "release", "upgrade", "pin", "channel", "download", "restart"];
+
+/** Settings → About: which version this is, and its updates. */
+export function AboutPage() {
+  return (
+    <>
+      <InstallInfo />
+      <SettingsGroup
+        label="Updates"
+        card={false}
+        description="Check for new releases, download them and restart into them."
+        keywords={UPDATE_KEYWORDS}
+      >
+        <UpdatesPage />
+      </SettingsGroup>
+    </>
+  );
+}
+
 /** Every tab, in nav order, which is also the order Settings search lists them in. */
 export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
   {
@@ -288,22 +291,88 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     label: "General",
     path: "/settings/general",
     group: "general",
-    description: "Launch, branches, the composer, interruptions, your editor and links.",
+    description: "Launch, branches, the composer, running work, your editor and links.",
+    keywords: ["preferences", "startup", "folders"],
     search: GeneralPage,
     defaults: Object.values(GENERAL_DEFAULTS),
   },
   {
     id: "agents",
-    label: "Agents",
+    label: "Agents & models",
     path: "/settings/agents",
     group: "agents",
     description: "Whether each agent is ready, what a new thread runs on, models the pickers add.",
+    keywords: ["agents", "models", "claude", "codex", "cli"],
     search: AgentsPage,
     defaults: Object.values(AGENTS_DEFAULTS),
   },
   {
+    id: "ai-helpers",
+    label: "AI helpers",
+    path: "/settings/ai-helpers",
+    group: "agents",
+    description: "The model for small background jobs, run on your installed CLI and its login.",
+    keywords: [
+      "helper model",
+      "luna",
+      "haiku",
+      "fallback",
+      "budget",
+      "cost",
+      "usage",
+      "privacy",
+      "titles",
+      "summaries",
+      // "advanced": where this and the other pages it held lived, so the old way there finds them.
+      "advanced",
+    ],
+    search: AiHelpersSection,
+    summary: AiHelpersSummary,
+    defaults: Object.values(AI_HELPERS_DEFAULTS),
+  },
+  {
+    id: "connectors",
+    label: "Connectors",
+    path: "/settings/connectors",
+    group: "agents",
+    description:
+      "Each agent's own MCP servers and sign-ins, read from its config. Gram stores neither.",
+    keywords: [
+      "mcp",
+      "servers",
+      "sign in",
+      "oauth",
+      "tools",
+      "integrations",
+      "plugins",
+      "advanced",
+    ],
+    search: null,
+  },
+  {
+    id: "gateways",
+    label: "Gateways",
+    path: "/settings/gateways",
+    group: "agents",
+    description:
+      "Optional OpenAI-compatible gateways, such as LiteLLM. Local agents use their own accounts.",
+    keywords: [
+      "litellm",
+      "openai",
+      "api key",
+      "provider",
+      "base url",
+      "profile",
+      "proxy",
+      "endpoint",
+      "advanced",
+    ],
+    search: null,
+    summary: GatewaysSummary,
+  },
+  {
     id: "workspaces",
-    label: "Workspaces",
+    label: "Workspaces & merging",
     path: "/settings/workspaces",
     group: "workspaces",
     description: "Repositories one orchestrator works on together, and how far it goes unasked.",
@@ -315,8 +384,48 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "worker",
       "charter",
       "pull requests",
+      "merge",
+      "repositories",
     ],
     search: WorkspacesSettings,
+  },
+  {
+    id: "review-bots",
+    label: "Review bots",
+    path: "/settings/review-bots",
+    group: "workspaces",
+    description:
+      "Reviewers whose rounds and findings show on a PR. Logins match in any case; * is a wildcard.",
+    keywords: [
+      "reviewer",
+      "login",
+      "re-review",
+      "approve",
+      "pull request",
+      "code review",
+      "advanced",
+    ],
+    search: ReviewBotsSection,
+    summary: ReviewBotsSummary,
+  },
+  {
+    id: "storage",
+    label: "Storage",
+    path: "/settings/storage",
+    group: "workspaces",
+    description: "Worktrees across your repos, what they take on disk, and cleanup.",
+    keywords: [
+      "worktrees",
+      "disk",
+      "space",
+      "clean up",
+      "cleanup",
+      "prune",
+      "node_modules",
+      "sweep",
+      "advanced",
+    ],
+    search: null,
   },
   {
     id: "appearance",
@@ -324,17 +433,50 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     path: "/settings/appearance",
     group: "appearance",
     description: "Mode, palette, density, motion, transcript size and width, and fonts.",
+    // Not "dark" or "light": the Mode row answers those itself, and a page word shows every row.
+    keywords: ["theme", "colours", "colors", "look"],
     search: AppearanceSearch,
     wide: true,
+  },
+  {
+    id: "terminal",
+    label: "Terminal",
+    path: "/settings/terminal",
+    group: "appearance",
+    description: "The shell the Terminal tab starts.",
+    keywords: ["shell", "powershell", "pwsh", "cmd", "git bash", "console", "advanced"],
+    search: TerminalSection,
+    summary: TerminalSummary,
+    defaults: Object.values(TERMINAL_DEFAULTS),
+    windowsOnly: true,
   },
   {
     id: "notifications",
     label: "Notifications",
     path: "/settings/notifications",
     group: "notifications",
-    description: "When Gram tells you a thread needs you, and which review requests it lists.",
+    description: "When Gram interrupts you, how, and which review requests it lists.",
+    keywords: ["alerts", "sounds", "interruptions", "quiet", "do not disturb"],
     search: NotificationsSection,
     defaults: Object.values(NOTIFICATIONS_DEFAULTS),
+  },
+  {
+    id: "keyboard",
+    label: "Keyboard",
+    path: "/settings/keyboard",
+    group: "keyboard",
+    description:
+      "Every shortcut, with custom ones and clashes marked. Record new keys or reset them.",
+    keywords: [
+      "shortcuts",
+      "keybindings",
+      "key bindings",
+      "hotkeys",
+      "rebind",
+      "keybindings.json",
+      "advanced",
+    ],
+    search: KeyboardSection,
   },
   {
     id: "voice-input",
@@ -360,102 +502,21 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     search: VoiceInputSection,
   },
   {
-    id: "advanced",
-    label: "Advanced",
-    path: "/settings/advanced",
-    group: "advanced",
-    description: "Gateways, helpers, connectors, storage, keys and the rest.",
-    keywords: ["more"],
-    search: null,
-  },
-  {
-    id: "gateways",
-    label: "Gateways",
-    path: "/settings/gateways",
-    group: "advanced",
-    description:
-      "Optional OpenAI-compatible gateways, such as LiteLLM. Local agents use their own accounts.",
-    keywords: ["litellm", "openai", "api key", "provider", "base url", "profile"],
-    search: null,
-  },
-  {
-    id: "ai-helpers",
-    label: "AI helpers",
-    path: "/settings/ai-helpers",
-    group: "advanced",
-    description: "The model for small background jobs, run on your installed CLI and its login.",
-    keywords: ["helper model", "luna", "haiku", "fallback", "budget", "cost", "usage", "privacy"],
-    search: AiHelpersSection,
-    defaults: Object.values(AI_HELPERS_DEFAULTS),
-  },
-  {
-    id: "connectors",
-    label: "Connectors",
-    path: "/settings/connectors",
-    group: "advanced",
-    description:
-      "Each agent's own MCP servers and sign-ins, read from its config. Gram stores neither.",
-    keywords: ["mcp", "servers", "sign in", "oauth", "tools"],
-    search: null,
-  },
-  {
-    id: "review-bots",
-    label: "Review bots",
-    path: "/settings/review-bots",
-    group: "advanced",
-    description:
-      "Reviewers whose rounds and findings show on a PR. Logins match in any case; * is a wildcard.",
-    keywords: ["reviewer", "login", "re-review", "approve", "pull request"],
-    search: ReviewBotsSection,
-    summary: ReviewBotsSummary,
-  },
-  {
-    id: "storage",
-    label: "Storage",
-    path: "/settings/storage",
-    group: "advanced",
-    description: "Worktrees across your repos, what they take on disk, and cleanup.",
-    keywords: ["worktrees", "disk", "space", "clean up", "prune", "node_modules", "sweep"],
-    search: null,
-  },
-  {
-    id: "keyboard",
-    label: "Keyboard",
-    path: "/settings/keyboard",
-    group: "advanced",
-    description:
-      "Every shortcut, with custom ones and clashes marked. Record new keys or reset them.",
-    keywords: ["shortcuts", "keybindings", "hotkeys", "rebind", "keybindings.json"],
-    search: KeyboardSection,
-  },
-  {
-    id: "terminal",
-    label: "Terminal",
-    path: "/settings/terminal",
-    group: "advanced",
-    description: "The shell the Terminal tab starts.",
-    keywords: ["shell", "powershell", "pwsh", "cmd", "git bash"],
-    search: TerminalSection,
-    summary: TerminalSummary,
-    defaults: Object.values(TERMINAL_DEFAULTS),
-    windowsOnly: true,
-  },
-  {
-    id: "updates",
-    label: "Updates",
-    path: "/settings/updates",
-    group: "advanced",
-    description: "Check for new releases, download them and restart into them.",
-    keywords: ["version", "release", "upgrade", "pin"],
-    search: UpdatesPage,
+    id: "about",
+    label: "About",
+    path: "/settings/about",
+    group: "about",
+    description: "Which version this is, and its updates.",
+    keywords: ["updates", "version", "release", "upgrade", "pin", "advanced"],
+    search: AboutPage,
   },
   {
     id: "diagnostics",
     label: "Diagnostics",
     path: "/settings/diagnostics",
-    group: "advanced",
-    description: "Versions, paths, the tools Gram found, and the logs.",
-    keywords: ["logs", "version", "troubleshooting", "debug", "trace"],
+    group: "about",
+    description: "Where Gram keeps its data, the tools it found, and the logs.",
+    keywords: ["logs", "troubleshooting", "debug", "trace", "support", "bug report", "advanced"],
     search: DiagnosticsSection,
     defaults: Object.values(DIAGNOSTICS_DEFAULTS),
   },
@@ -463,7 +524,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     id: "help",
     label: "What's New",
     path: "/settings/help",
-    group: "advanced",
+    group: "about",
     description: "Each release's highlights, the What's New screen again, and acknowledgements.",
     keywords: [
       "help",
@@ -473,6 +534,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "acknowledgements",
       "licenses",
       "third-party notices",
+      "advanced",
     ],
     search: HelpSection,
   },
@@ -492,7 +554,19 @@ export const SETTINGS_PAGES = settingsPagesFor(
   typeof window === "undefined" ? undefined : window.gram?.platform,
 );
 
+/**
+ * Where an old `/settings/advanced` link goes: the page a `/settings/advanced/<id>` names, by its
+ * id or its old one, else General.
+ */
+export function advancedRedirect(pathname: string): SettingsPath {
+  const id = pathname.replace(/^\/settings\/advanced\/?/, "").split("/")[0] ?? "";
+  return settingsPageById(id === "" ? null : id, ALL_SETTINGS_PAGES)?.path ?? "/settings/general";
+}
+
 const LAST_PAGE_KEY = "gram.settings.page";
+
+/** Pages that were renamed, by their old id, so a remembered one still opens. */
+const RENAMED_PAGES: Readonly<Record<string, string>> = { updates: "about" };
 
 /** The page among `pages` an id names. */
 export function settingsPageById(
@@ -500,7 +574,8 @@ export function settingsPageById(
   pages: readonly SettingsPage[] = SETTINGS_PAGES,
 ): SettingsPage | undefined {
   if (id === null) return undefined;
-  return pages.find((page) => page.id === id);
+  const current = RENAMED_PAGES[id] ?? id;
+  return pages.find((page) => page.id === current);
 }
 
 /** The tab Settings opened on last, where ⌘, lands; General the first time. */

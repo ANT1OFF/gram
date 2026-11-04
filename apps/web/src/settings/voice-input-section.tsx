@@ -288,6 +288,15 @@ export function VoiceInputSection() {
             }
             keywords={["microphone", "instant", "pre-roll", "indicator"]}
             checked={keepMicrophoneReadyOf(settings)}
+            onReset={
+              keepMicrophoneReadyOf(settings)
+                ? () => {
+                    setError(undefined);
+                    microphone.keepReady(false);
+                    save({ voice: { keepMicrophoneReady: false } }).catch(fail);
+                  }
+                : undefined
+            }
             onChange={(next) => {
               setError(undefined);
               // Now, not when a composer next renders: there may be none behind Settings.
@@ -348,6 +357,14 @@ export function VoiceInputSection() {
             learnMore={<p>{PROJECT_NAMES_MORE}</p>}
             keywords={["vocabulary", "names", "symbols", "files", "identifiers", "spelling"]}
             checked={projectNamesOn(settings)}
+            onReset={
+              projectNamesOn(settings)
+                ? undefined
+                : () => {
+                    setError(undefined);
+                    save({ voice: { projectNames: true } }).catch(fail);
+                  }
+            }
             onChange={(next) => {
               setError(undefined);
               save({ voice: { projectNames: next } }).catch(fail);

@@ -16,6 +16,7 @@ import { Route as NewWorkspaceRouteImport } from './routes/new-workspace'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
+import { Route as SettingsAboutRouteImport } from './routes/settings.about'
 import { Route as SettingsAdvancedRouteImport } from './routes/settings.advanced'
 import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
 import { Route as SettingsAiHelpersRouteImport } from './routes/settings.ai-helpers'
@@ -34,6 +35,7 @@ import { Route as SettingsUpdatesRouteImport } from './routes/settings.updates'
 import { Route as SettingsVoiceInputRouteImport } from './routes/settings.voice-input'
 import { Route as SettingsWorkspacesRouteImport } from './routes/settings.workspaces'
 import { Route as TThreadIdRouteImport } from './routes/t/$threadId'
+import { Route as SettingsAdvancedSplatRouteImport } from './routes/settings.advanced.$'
 import { Route as SettingsWorkspacesWorkspaceIdRouteImport } from './routes/settings.workspaces_.$workspaceId'
 import { Route as WWorkspaceIdFilesRouteImport } from './routes/w/$workspaceId.files'
 import { Route as WWorkspaceIdMemoryRouteImport } from './routes/w/$workspaceId.memory'
@@ -71,6 +73,11 @@ const UsageRoute = UsageRouteImport.update({
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAboutRoute = SettingsAboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsAdvancedRoute = SettingsAdvancedRouteImport.update({
@@ -163,6 +170,11 @@ const TThreadIdRoute = TThreadIdRouteImport.update({
   path: '/t/$threadId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsAdvancedSplatRoute = SettingsAdvancedSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => SettingsAdvancedRoute,
+} as any)
 const SettingsWorkspacesWorkspaceIdRoute =
   SettingsWorkspacesWorkspaceIdRouteImport.update({
     id: '/workspaces_/$workspaceId',
@@ -187,7 +199,8 @@ export interface FileRoutesByFullPath {
   '/new-workspace': typeof NewWorkspaceRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
-  '/settings/advanced': typeof SettingsAdvancedRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/ai-helpers': typeof SettingsAiHelpersRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -206,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/t/$threadId': typeof TThreadIdRoute
   '/settings/': typeof SettingsIndexRoute
+  '/settings/advanced/$': typeof SettingsAdvancedSplatRoute
   '/settings/workspaces/$workspaceId': typeof SettingsWorkspacesWorkspaceIdRoute
   '/w/$workspaceId/files': typeof WWorkspaceIdFilesRoute
   '/w/$workspaceId/memory': typeof WWorkspaceIdMemoryRoute
@@ -216,7 +230,8 @@ export interface FileRoutesByTo {
   '/new-task': typeof NewTaskRoute
   '/new-workspace': typeof NewWorkspaceRoute
   '/usage': typeof UsageRoute
-  '/settings/advanced': typeof SettingsAdvancedRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/ai-helpers': typeof SettingsAiHelpersRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -235,6 +250,7 @@ export interface FileRoutesByTo {
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/t/$threadId': typeof TThreadIdRoute
   '/settings': typeof SettingsIndexRoute
+  '/settings/advanced/$': typeof SettingsAdvancedSplatRoute
   '/settings/workspaces/$workspaceId': typeof SettingsWorkspacesWorkspaceIdRoute
   '/w/$workspaceId/files': typeof WWorkspaceIdFilesRoute
   '/w/$workspaceId/memory': typeof WWorkspaceIdMemoryRoute
@@ -247,7 +263,8 @@ export interface FileRoutesById {
   '/new-workspace': typeof NewWorkspaceRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
-  '/settings/advanced': typeof SettingsAdvancedRoute
+  '/settings/about': typeof SettingsAboutRoute
+  '/settings/advanced': typeof SettingsAdvancedRouteWithChildren
   '/settings/agents': typeof SettingsAgentsRoute
   '/settings/ai-helpers': typeof SettingsAiHelpersRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -266,6 +283,7 @@ export interface FileRoutesById {
   '/settings/workspaces': typeof SettingsWorkspacesRoute
   '/t/$threadId': typeof TThreadIdRoute
   '/settings/': typeof SettingsIndexRoute
+  '/settings/advanced/$': typeof SettingsAdvancedSplatRoute
   '/settings/workspaces_/$workspaceId': typeof SettingsWorkspacesWorkspaceIdRoute
   '/w/$workspaceId/files': typeof WWorkspaceIdFilesRoute
   '/w/$workspaceId/memory': typeof WWorkspaceIdMemoryRoute
@@ -279,6 +297,7 @@ export interface FileRouteTypes {
     | '/new-workspace'
     | '/settings'
     | '/usage'
+    | '/settings/about'
     | '/settings/advanced'
     | '/settings/agents'
     | '/settings/ai-helpers'
@@ -298,6 +317,7 @@ export interface FileRouteTypes {
     | '/settings/workspaces'
     | '/t/$threadId'
     | '/settings/'
+    | '/settings/advanced/$'
     | '/settings/workspaces/$workspaceId'
     | '/w/$workspaceId/files'
     | '/w/$workspaceId/memory'
@@ -308,6 +328,7 @@ export interface FileRouteTypes {
     | '/new-task'
     | '/new-workspace'
     | '/usage'
+    | '/settings/about'
     | '/settings/advanced'
     | '/settings/agents'
     | '/settings/ai-helpers'
@@ -327,6 +348,7 @@ export interface FileRouteTypes {
     | '/settings/workspaces'
     | '/t/$threadId'
     | '/settings'
+    | '/settings/advanced/$'
     | '/settings/workspaces/$workspaceId'
     | '/w/$workspaceId/files'
     | '/w/$workspaceId/memory'
@@ -338,6 +360,7 @@ export interface FileRouteTypes {
     | '/new-workspace'
     | '/settings'
     | '/usage'
+    | '/settings/about'
     | '/settings/advanced'
     | '/settings/agents'
     | '/settings/ai-helpers'
@@ -357,6 +380,7 @@ export interface FileRouteTypes {
     | '/settings/workspaces'
     | '/t/$threadId'
     | '/settings/'
+    | '/settings/advanced/$'
     | '/settings/workspaces_/$workspaceId'
     | '/w/$workspaceId/files'
     | '/w/$workspaceId/memory'
@@ -423,6 +447,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/about': {
+      id: '/settings/about'
+      path: '/about'
+      fullPath: '/settings/about'
+      preLoaderRoute: typeof SettingsAboutRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/advanced': {
@@ -551,6 +582,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TThreadIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/advanced/$': {
+      id: '/settings/advanced/$'
+      path: '/$'
+      fullPath: '/settings/advanced/$'
+      preLoaderRoute: typeof SettingsAdvancedSplatRouteImport
+      parentRoute: typeof SettingsAdvancedRoute
+    }
     '/settings/workspaces_/$workspaceId': {
       id: '/settings/workspaces_/$workspaceId'
       path: '/workspaces/$workspaceId'
@@ -575,8 +613,20 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface SettingsAdvancedRouteChildren {
+  SettingsAdvancedSplatRoute: typeof SettingsAdvancedSplatRoute
+}
+
+const SettingsAdvancedRouteChildren: SettingsAdvancedRouteChildren = {
+  SettingsAdvancedSplatRoute: SettingsAdvancedSplatRoute,
+}
+
+const SettingsAdvancedRouteWithChildren =
+  SettingsAdvancedRoute._addFileChildren(SettingsAdvancedRouteChildren)
+
 interface SettingsRouteChildren {
-  SettingsAdvancedRoute: typeof SettingsAdvancedRoute
+  SettingsAboutRoute: typeof SettingsAboutRoute
+  SettingsAdvancedRoute: typeof SettingsAdvancedRouteWithChildren
   SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsAiHelpersRoute: typeof SettingsAiHelpersRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
@@ -598,7 +648,8 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
-  SettingsAdvancedRoute: SettingsAdvancedRoute,
+  SettingsAboutRoute: SettingsAboutRoute,
+  SettingsAdvancedRoute: SettingsAdvancedRouteWithChildren,
   SettingsAgentsRoute: SettingsAgentsRoute,
   SettingsAiHelpersRoute: SettingsAiHelpersRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,

@@ -77,7 +77,7 @@ export interface WorkspaceSheetProps {
 /**
  * Settings → Workspaces → one workspace, or the same in the sheet from its orchestrator: its
  * repositories, how far it goes unasked, its models, how its pull requests merge, and the rest
- * folded under Advanced. Every change saves at once and says so with Undo.
+ * folded under More options. Every change saves at once and says so with Undo.
  */
 export function WorkspaceSettingsPage({
   workspaceId,
@@ -181,7 +181,7 @@ export function WorkspaceSettingsPage({
           onChange={(next) => void changes.saveCharter(next, "Merge policy saved")}
         />
       </SettingsGroup>
-      <Advanced state={state} changes={changes} />
+      <MoreOptions state={state} changes={changes} />
     </div>
   );
 }
@@ -539,15 +539,15 @@ function AutonomySection({ state, changes }: { state: WorkspaceState; changes: C
   );
 }
 
-/** Connectors and automatic Dream: folded until asked for. */
-function Advanced({ state, changes }: { state: WorkspaceState; changes: Changes }) {
+/** Connectors and automatic Dream, the rarely changed ones: folded under More options. */
+function MoreOptions({ state, changes }: { state: WorkspaceState; changes: Changes }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const { workspace } = state;
   const charter = changes.charter ?? state.charter;
   const save = (next: OrchestratorCharter, title: string) => changes.saveCharter(next, title);
   return (
-    <section aria-label="Advanced" className="flex flex-col gap-2">
+    <section aria-label="More options" className="flex flex-col gap-2">
       <button
         type="button"
         aria-expanded={open}
@@ -560,7 +560,7 @@ function Advanced({ state, changes }: { state: WorkspaceState; changes: Changes 
           aria-hidden
           className={cn("size-3.5 transition-transform duration-(--dur-fast)", open && "rotate-90")}
         />
-        Advanced
+        More options
       </button>
       <Expand open={open} id={id}>
         <div className={SETTINGS_CARD}>

@@ -58,7 +58,7 @@ afterEach(cleanup);
 
 describe("AiHelpersSection", () => {
   for (const source of ["claude", "codex"] as const)
-    it(`describes strict Claude and guided Codex in advanced settings for ${source}`, async () => {
+    it(`describes strict Claude and guided Codex in the helper rows for ${source}`, async () => {
       const api = mockApi();
       const helpers = { source };
       await api.updateSettings({ helpers });
@@ -66,7 +66,6 @@ describe("AiHelpersSection", () => {
       const update = vi.spyOn(api, "updateSettings");
       renderWithApi(<AiHelpersSection />, api);
       await picker("Helper source");
-      fireEvent.click(screen.getByText("Advanced · fallback and context"));
       expect(screen.getByText(/Claude is tool-free; Codex uses guided generation/)).toBeTruthy();
       expect(screen.queryByText(/Helpers have no tools/)).toBeNull();
       expect(toggle("Thread titles").disabled).toBe(true);
@@ -91,7 +90,6 @@ describe("AiHelpersSection", () => {
     expect((await picker("Helper context to Claude Code / Anthropic")).textContent).toContain(
       "No context (off)",
     );
-    fireEvent.click(screen.getByText("Advanced · fallback and context"));
     expect((await picker("Helper context to Codex / OpenAI")).textContent).toContain(
       "No context (off)",
     );
@@ -112,7 +110,6 @@ describe("AiHelpersSection", () => {
     expect((await picker("Claude Code / Anthropic helper model")).textContent).toContain(
       "withdrawn-haiku (unavailable)",
     );
-    fireEvent.click(screen.getByText("Advanced · fallback and context"));
     expect((await picker("Local helper fallback")).textContent).toContain("None");
     expect(toggle("Thread titles").disabled).toBe(false);
     expect(toggle("Thread plans").disabled).toBe(true);
@@ -173,7 +170,6 @@ describe("AiHelpersSection", () => {
     renderWithApi(<AiHelpersSection />, api);
     expect((await picker("Helper source")).textContent).toContain("Codex");
     expect((await picker("Codex / OpenAI helper model")).textContent).toContain("GPT-6 Luna");
-    await user.click(screen.getByText("Advanced · fallback and context"));
     expect((await picker("Claude Code / Anthropic helper effort")).textContent).toContain(
       "Low effort",
     );

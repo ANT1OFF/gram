@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { slowdown } from "./slowdown";
 
-import { openAdvancedPage } from "./settings-nav";
+import { openSettingsPage } from "./settings-nav";
 import { threadRow } from "./thread-row";
 import { openPanelTab } from "./panel-tab";
 
@@ -74,7 +74,7 @@ test("Settings → Connectors shows every agent's servers and copies one across"
 }) => {
   await page.clock.install();
   await page.goto("/settings");
-  await openAdvancedPage(page, "Connectors");
+  await openSettingsPage(page, "Connectors");
   await expect(page).toHaveURL(/\/settings\/connectors$/);
   const settings = page.getByTestId("connectors-settings");
   // The folded group keeps its rows in the page, hidden.
@@ -255,7 +255,7 @@ test("signing in from Settings restarts the agent's idle sessions", async ({ pag
   await expect(page).toHaveURL(new RegExp(`/t/${threadId}$`));
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await openAdvancedPage(page, "Connectors");
+  await openSettingsPage(page, "Connectors");
   const settings = page.getByTestId("connectors-settings");
   const example = settings.getByRole("row", { name: "example", exact: true });
   await example.getByRole("button", { name: "Sign in to example in Codex" }).click();
@@ -265,7 +265,7 @@ test("signing in from Settings restarts the agent's idle sessions", async ({ pag
     timeout: 10_000 * slowdown,
   });
 
-  // Connectors, Advanced, then the page Settings opened on.
+  // Connectors, Agents & models, then the page Settings opened on.
   await page.goBack();
   await page.goBack();
   await page.goBack();

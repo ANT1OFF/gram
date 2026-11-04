@@ -22,7 +22,26 @@ const LOG_LEVELS: readonly { value: LogLevel; label: string }[] = [
   { value: "trace", label: "trace" },
 ];
 
-/** Settings → Diagnostics: version and paths, log level, the logs folder and "Copy diagnostics". */
+/**
+ * Settings → About: which version of Gram this is, and on what. Diagnostics has the paths, and
+ * "Copy diagnostics" both.
+ */
+export function InstallInfo() {
+  const { data: info } = useDiagnostics();
+  if (!info) return null;
+  return (
+    <SettingsGroup
+      label="This version"
+      description="Which version of Gram this is, and what it runs on."
+      keywords={["about", "build"]}
+    >
+      <InfoRow label="Version" value={info.version} />
+      <InfoRow label="Platform" value={`${info.platform} ${info.arch}`} />
+    </SettingsGroup>
+  );
+}
+
+/** Settings → About → Diagnostics: paths, log level, the logs folder and "Copy diagnostics". */
 export function DiagnosticsSection() {
   const api = useApi();
   const settings = useServerSettings((s) => s.settings);
@@ -52,11 +71,9 @@ export function DiagnosticsSection() {
     <div className="flex flex-col gap-6" data-testid="diagnostics">
       {info && (
         <SettingsGroup
-          label="This install"
-          description="Which version of Gram this is, and where it keeps its data."
+          label="Data"
+          description="Where Gram keeps its data and its log. About has the version."
         >
-          <InfoRow label="Version" value={info.version} />
-          <InfoRow label="Platform" value={`${info.platform} ${info.arch}`} />
           <InfoRow label="Data folder" value={info.dataDir} />
           {info.logFile && <InfoRow label="Log file" value={info.logFile} />}
         </SettingsGroup>

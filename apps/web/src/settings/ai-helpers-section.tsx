@@ -223,8 +223,10 @@ export function AiHelpersSection() {
         />
         {source === "gateway" && (
           <SettingRow
-            label="Harness"
-            description="Which CLI runs the helper model."
+            label="Runs on"
+            description="Where helper jobs run: a local CLI or your gateway."
+            keywords={["harness", "source", "gateway"]}
+            onReset={resetOf("source")}
             error={errorOf("source")}
           >
             <HelperHarnessPicker

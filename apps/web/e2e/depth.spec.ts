@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { openHeaderMore } from "./more-menu";
 
-import { openAdvancedPage } from "./settings-nav";
+import { openSettingsPage } from "./settings-nav";
 
 test("resumes a past session from /new, then marks it open", async ({ page }) => {
   await page.goto("/new");
@@ -41,7 +41,7 @@ test("applies keybinding overrides, flags a clash and resets one", async ({ page
   await expect(page.getByTestId("right-panel")).toBeHidden();
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await openAdvancedPage(page, "Keyboard");
+  await openSettingsPage(page, "Keyboard");
   const settings = page.getByTestId("keyboard-settings");
   const sidebarRow = settings.getByTestId("binding-sidebar.toggle");
   await expect(sidebarRow).toContainText("custom");

@@ -134,7 +134,7 @@ describe("a workspace charter save", () => {
       automaticDreamStatus: async () => ({ threshold: 10, completed: 0, detail: "Waiting." }),
       setOrchestratorCharter,
     });
-    // Dream sits under Advanced on the workspace's own page.
+    // Dream sits under More options on the workspace's own page.
     fireEvent.click(await screen.findByTestId("workspace-advanced"));
     expect((await dream()).getAttribute("aria-checked")).toBe("false");
 

@@ -13,7 +13,7 @@ import {
 } from "@gram/contracts";
 import { spin } from "@/motion";
 import { Brain, Info, RefreshCw } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useState } from "react";
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import { Picker } from "@/composer/picker";
 import { ModelCombobox } from "@/composer/model-picker";
 import { EFFORT_OPTIONS } from "@/composer/options";
 import { cn } from "@/lib/utils";
+import { AI_HELPERS_DEFAULTS, resetFor } from "./defaults";
 import { LONG_COPY, SettingRow } from "./fields";
 
 const HARNESS_OPTIONS = [
@@ -63,7 +64,11 @@ export function HelperHarnessPicker({
   );
 }
 
-/** One compact harness/model/effort row, with the independent second destination in Advanced. */
+/**
+ * The local helper's rows in the Helper model card: what it runs on, its model and effort, the
+ * context each provider may read, and the other local CLI it falls back to. Consent to share
+ * context is a row per provider, and neither row reads the other's.
+ */
 export function LocalHelperSettings({
   settings,
   status,
@@ -77,33 +82,48 @@ export function LocalHelperSettings({
 }) {
   const source = helperSource(settings);
   const fallback = helperLocalFallback(settings);
-  // Automatic edits the preferred harness here; Advanced retains the independent fallback.
+  // Automatic edits the preferred harness first; the other one is the fallback below.
   const provider = source === "codex" ? "codex" : "claude";
   const other = provider === "claude" ? "codex" : "claude";
   const refreshInfoId = useId();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string>();
+  const resetOf = (key: keyof typeof AI_HELPERS_DEFAULTS) =>
+    resetFor(settings, (patch) => onSave(patch.helpers ?? {}))(AI_HELPERS_DEFAULTS[key]);
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <LocalProviderPicker
+    <>
+      <SettingRow
+        label="Runs on"
+        description="Where helper jobs run: a local CLI or your gateway."
+        keywords={["harness", "source", "local", "subscription"]}
+        onReset={resetOf("source")}
+      >
+        <HelperHarnessPicker
+          source={source}
+          onChange={(nextSource) => onSave({ source: nextSource })}
+        />
+      </SettingRow>
+      <LocalProviderRows
         provider={provider}
         settings={settings}
         discovered={status?.providers?.find((row) => row.provider === provider)}
         onSave={onSave}
-        harness={
-          <HelperHarnessPicker
-            source={source}
-            onChange={(nextSource) => onSave({ source: nextSource })}
-          />
-        }
+        resetOf={resetOf}
+        main
       />
-      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span role="status">
-          {retryError ??
-            (status?.lastOutcome
-              ? `Last attempt: ${status.lastOutcome}`
-              : "Uses the installed CLI and its existing login.")}
-        </span>
+      <SettingRow
+        label="Availability"
+        description="Models come from your installed CLI and its login."
+        keywords={["refresh", "status"]}
+        detail={
+          <p role="status" className="text-xs text-muted-foreground">
+            {retryError ??
+              (status?.lastOutcome
+                ? `Last attempt: ${status.lastOutcome}`
+                : "Uses the installed CLI and its existing login.")}
+          </p>
+        }
+      >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -129,63 +149,67 @@ export function LocalHelperSettings({
             Refresh models and availability
           </TooltipContent>
         </Tooltip>
-      </div>
-      <details className="group text-sm">
-        <summary className="cursor-pointer text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          Advanced · fallback and context
-        </summary>
-        <div className="mt-3 flex flex-col gap-4">
-          <SettingRow
-            label="Local fallback"
-            description="Only the other authorized local harness. Authentication and tool restriction failures stop here."
-          >
-            <Select
-              value={fallback}
-              onValueChange={(value) => {
-                if (value) onSave({ localFallback: value as "automatic" | "none" });
-              }}
-            >
-              <SelectTrigger aria-label="Local helper fallback" className="w-56 max-w-full">
-                <SelectValue>
-                  {fallback === "automatic" ? "Automatic (local only)" : "None"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="automatic">Automatic (local only)</SelectItem>
-                <SelectItem value="none">None</SelectItem>
-              </SelectContent>
-            </Select>
-          </SettingRow>
-          <LocalProviderPicker
-            provider={other}
-            settings={settings}
-            discovered={status?.providers?.find((row) => row.provider === other)}
-            onSave={onSave}
-          />
-          <p {...{ [LONG_COPY]: "privacy notice" }} className="text-xs text-muted-foreground">
-            Claude is tool-free; Codex uses guided generation with residual native tools and CLI
-            host context. Helpers use Standard speed and redact keys from supplied context. Provider
-            data policies and subscription limits apply. Gateway helpers require a separate explicit
-            choice and permission.
-          </p>
-        </div>
-      </details>
-    </div>
+      </SettingRow>
+      <SettingRow
+        label="Fallback"
+        description={`Try ${agentLabel(other)} when ${agentLabel(provider)} fails. Never a gateway.`}
+        keywords={["local fallback", "backup", "second"]}
+        learnMore={<p>Sign-in and tool restriction failures stop here instead of falling back.</p>}
+        onReset={resetOf("localFallback")}
+      >
+        <Select
+          value={fallback}
+          onValueChange={(value) => {
+            if (value) onSave({ localFallback: value as "automatic" | "none" });
+          }}
+        >
+          <SelectTrigger aria-label="Local helper fallback" className="w-56 max-w-full">
+            <SelectValue>
+              {fallback === "automatic" ? "Automatic (local only)" : "None"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="automatic">Automatic (local only)</SelectItem>
+            <SelectItem value="none">None</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      <LocalProviderRows
+        provider={other}
+        settings={settings}
+        discovered={status?.providers?.find((row) => row.provider === other)}
+        onSave={onSave}
+        resetOf={resetOf}
+        main={false}
+      />
+      <p {...{ [LONG_COPY]: "privacy notice" }} className="text-xs text-muted-foreground">
+        Claude is tool-free; Codex uses guided generation with residual native tools and CLI host
+        context. Helpers use Standard speed and redact keys from supplied context. Provider data
+        policies and subscription limits apply. Gateway helpers require a separate explicit choice
+        and permission.
+      </p>
+    </>
   );
 }
 
-function LocalProviderPicker({
+/**
+ * One provider's rows: its model, its effort, and the context it may read. The main one is what
+ * helpers run on; the other is the fallback, named so.
+ */
+function LocalProviderRows({
   provider,
   settings,
   discovered,
   onSave,
-  harness,
+  resetOf,
+  main,
 }: {
   provider: "claude" | "codex";
   settings: Settings;
   discovered: HelperProviderStatus | undefined;
   onSave: (patch: NonNullable<SettingsPatch["helpers"]>) => void;
-  harness?: ReactNode;
+  resetOf: (key: keyof typeof AI_HELPERS_DEFAULTS) => (() => void) | undefined;
+  main: boolean;
 }) {
   const informationId = useId();
   const name = `${agentLabel(provider)} / ${provider === "claude" ? "Anthropic" : "OpenAI"}`;
@@ -233,96 +257,104 @@ function LocalProviderPicker({
   const unavailable =
     discovered?.state === "ready" &&
     (model === undefined || !localHelperEffortSupported(model, effort));
+  const agent = agentLabel(provider);
   return (
-    <div className="flex min-w-0 flex-col gap-3" data-testid={`${provider}-helper-pick`}>
-      <div className="flex flex-wrap items-start gap-x-5 gap-y-3">
-        {harness && (
-          <div className="min-w-0">
-            <p className="mb-1 text-xs text-muted-foreground">Harness</p>
-            {harness}
-          </div>
-        )}
-        <div className="min-w-0 max-w-full">
-          <p className="mb-1 text-xs text-muted-foreground">
-            {harness ? "Model" : `${agentLabel(provider)} fallback model`}
-          </p>
-          <ModelCombobox
-            label={`${name} helper model`}
-            value={saved ?? "automatic"}
-            options={options}
-            onChange={(value) => onSave({ [modelKey]: value === "automatic" ? null : value })}
-            open={modelOpen}
-            onOpenChange={setModelOpen}
-            icon={<AgentIcon agent={provider} className="size-3.5" />}
-            title={`${name} helper model`}
-            description={discovered?.detail}
-            labelled
-            field
-          />
-        </div>
-        <div className="min-w-0">
-          <p className="mb-1 text-xs text-muted-foreground">Effort</p>
-          <Picker
-            label={`${name} helper effort`}
-            shortcutId={`helper.${provider}.effort`}
-            keys=""
-            focused={false}
-            value={savedEffort ?? "automatic"}
-            options={effortOptions}
-            onChange={(value) =>
-              onSave({ [effortKey]: value === "automatic" ? null : (value as ReasoningVariant) })
-            }
-            icon={<Brain aria-hidden className="size-3.5" />}
-          />
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span
-          className={cn(
-            (unavailable || discovered?.state === "restriction" || discovered?.state === "auth") &&
-              "text-warning",
-          )}
-        >
-          {unavailable
-            ? "Saved model or effort unavailable. Choose a listed option or refresh."
-            : discovered?.state === "ready"
-              ? `${agentLabel(provider)} · ${provider === "claude" ? "Tool-free" : "Guided"} · Standard speed`
-              : (discovered?.detail ?? "Checking the installed CLI…")}
-        </span>
-        <Tooltip>
-          <TooltipTrigger
-            aria-label={`${name} helper information`}
-            aria-describedby={informationId}
-            className="shrink-0 rounded p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Info aria-hidden className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipContent id={informationId} role="tooltip">
-            {discovered?.detail ??
-              "Models come from your installed CLI. Listings do not guarantee account access."}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      {provider === "codex" && (
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Guided generation uses your Codex subscription with no environment. Residual native tools
-          and CLI host instructions/skills may still participate.
-        </p>
-      )}
-      {provider === "codex" && discovered?.state === "restriction" && harness && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="w-fit"
-          onClick={() => onSave({ source: "claude" })}
-        >
-          Use {agentLabel("claude")}
-        </Button>
-      )}
+    <>
       <SettingRow
-        label="Context shared"
-        keywords={[name, "context", "privacy"]}
+        label={main ? "Model" : `${agent} fallback model`}
+        description={
+          main ? "The small model helper jobs run on." : "Used only while Fallback is Automatic."
+        }
+        keywords={[name, "helper model"]}
+        onReset={resetOf(modelKey)}
+        detail={
+          <div className="flex flex-col gap-2" data-testid={`${provider}-helper-pick`}>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  (unavailable ||
+                    discovered?.state === "restriction" ||
+                    discovered?.state === "auth") &&
+                    "text-warning",
+                )}
+              >
+                {unavailable
+                  ? "Saved model or effort unavailable. Choose a listed option or refresh."
+                  : discovered?.state === "ready"
+                    ? `${agent} · ${provider === "claude" ? "Tool-free" : "Guided"} · Standard speed`
+                    : (discovered?.detail ?? "Checking the installed CLI…")}
+              </span>
+              <Tooltip>
+                <TooltipTrigger
+                  aria-label={`${name} helper information`}
+                  aria-describedby={informationId}
+                  className="shrink-0 rounded p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Info aria-hidden className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent id={informationId} role="tooltip">
+                  {discovered?.detail ??
+                    "Models come from your installed CLI. Listings do not guarantee account access."}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            {provider === "codex" && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Guided generation uses your Codex subscription with no environment. Residual native
+                tools and CLI host instructions/skills may still participate.
+              </p>
+            )}
+            {provider === "codex" && discovered?.state === "restriction" && main && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-fit"
+                onClick={() => onSave({ source: "claude" })}
+              >
+                Use {agentLabel("claude")}
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <ModelCombobox
+          label={`${name} helper model`}
+          value={saved ?? "automatic"}
+          options={options}
+          onChange={(value) => onSave({ [modelKey]: value === "automatic" ? null : value })}
+          open={modelOpen}
+          onOpenChange={setModelOpen}
+          icon={<AgentIcon agent={provider} className="size-3.5" />}
+          title={`${name} helper model`}
+          description={discovered?.detail}
+          labelled
+          field
+        />
+      </SettingRow>
+      <SettingRow
+        label={main ? "Effort" : `${agent} fallback effort`}
+        description={main ? "How hard the helper model thinks." : "The fallback model's effort."}
+        keywords={[name, "reasoning"]}
+        onReset={resetOf(effortKey)}
+      >
+        <Picker
+          label={`${name} helper effort`}
+          shortcutId={`helper.${provider}.effort`}
+          keys=""
+          focused={false}
+          value={savedEffort ?? "automatic"}
+          options={effortOptions}
+          onChange={(value) =>
+            onSave({ [effortKey]: value === "automatic" ? null : (value as ReasoningVariant) })
+          }
+          icon={<Brain aria-hidden className="size-3.5" />}
+        />
+      </SettingRow>
+      <SettingRow
+        label={`Context for ${agent}`}
+        keywords={[name, "context", "privacy", "consent", "context shared"]}
         description="Permission applies only to this provider. Opening message enables titles; conversation enables all features."
+        onReset={resetOf(scopeKey)}
       >
         <Select
           value={settings.helpers?.[scopeKey] ?? "off"}
@@ -348,6 +380,6 @@ function LocalProviderPicker({
           </SelectContent>
         </Select>
       </SettingRow>
-    </div>
+    </>
   );
 }

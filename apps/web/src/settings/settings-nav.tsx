@@ -12,15 +12,25 @@ import {
 import type { SettingsAnchor } from "./general-anchors";
 import type { SettingsGroupId, SettingsNavGroup } from "./pages";
 
+/** A page that opens from a group, as the nav links it. */
+export interface SettingsNavPage {
+  readonly id: string;
+  readonly label: string;
+  readonly path: string;
+}
+
 /**
- * Settings → the groups, one link each; the open one, or the one the open page opens from, is
- * `aria-current="page"`. In a narrow `@container/settings` it is a bar over the page instead, the
- * list folded into a picker, so the page keeps the width.
+ * Settings → the groups, one link each. The open group's link is `aria-current="page"`, or `"true"`
+ * while one of its own pages is open; those pages are linked under it, the open one current. In a
+ * narrow `@container/settings` it is a bar over the page instead, the list folded into a picker, so
+ * the page keeps the width.
  */
 export function SettingsNav({
   groups,
   current,
   sections,
+  subpages,
+  currentPage,
   badges,
   headingRef,
   search,
@@ -31,6 +41,10 @@ export function SettingsNav({
   current: SettingsGroupId | undefined;
   /** The open page's subsections, linked under its group; none while searching or on a sub-page. */
   sections?: readonly SettingsAnchor[] | undefined;
+  /** The pages that open from the open group, linked under it. */
+  subpages?: readonly SettingsNavPage[] | undefined;
+  /** The open page's id, which may be one of `subpages`. */
+  currentPage?: string | undefined;
   /** Extra content after a group's label, keyed by its id, such as the update dot. */
   badges?: Readonly<Partial<Record<SettingsGroupId, ReactNode>>>;
   /** The "Settings" heading, focusable from script (tabIndex -1). */
@@ -57,13 +71,16 @@ export function SettingsNav({
       <ul className="flex flex-col gap-0.5 text-sm @max-2xl/settings:hidden">
         {groups.map((group) => {
           const Icon = group.icon;
+          const open = group.id === current;
+          const onSubpage =
+            open && subpages !== undefined && subpages.some((page) => page.id === currentPage);
           return (
             <li key={group.id}>
               <Link
                 to={group.path}
-                aria-current={group.id === current ? "page" : undefined}
+                aria-current={open ? (onSubpage ? "true" : "page") : undefined}
                 onClick={onNavigate}
-                className="flex items-center gap-2 rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
+                className="flex items-center gap-2 rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground aria-[current=true]:text-foreground"
               >
                 <Icon aria-hidden className="size-3.5 shrink-0" />
                 {group.label}
@@ -71,8 +88,16 @@ export function SettingsNav({
                   <span className="ms-auto flex items-center">{badges[group.id]}</span>
                 )}
               </Link>
-              {group.id === current && sections !== undefined && sections.length > 0 && (
+              {open && sections !== undefined && sections.length > 0 && (
                 <SectionLinks sections={sections} />
+              )}
+              {open && subpages !== undefined && subpages.length > 0 && (
+                <SubpageLinks
+                  pages={subpages}
+                  current={currentPage}
+                  label={group.label}
+                  onNavigate={onNavigate}
+                />
               )}
             </li>
           );
@@ -118,6 +143,40 @@ function SectionPicker({
         </SelectContent>
       </Select>
     </div>
+  );
+}
+
+/** The pages that open from the open group, under its link; the open one is current. */
+function SubpageLinks({
+  pages,
+  current,
+  label,
+  onNavigate,
+}: {
+  pages: readonly SettingsNavPage[];
+  current: string | undefined;
+  label: string;
+  onNavigate: (() => void) | undefined;
+}) {
+  return (
+    <ul
+      aria-label={`More in ${label}`}
+      data-testid="settings-nav-subpages"
+      className="mt-0.5 mb-1 ms-[1.1875rem] flex flex-col border-s border-border/70 ps-1.5"
+    >
+      {pages.map((page) => (
+        <li key={page.id}>
+          <Link
+            to={page.path}
+            aria-current={page.id === current ? "page" : undefined}
+            onClick={onNavigate}
+            className="block rounded-md px-2 py-0.5 text-[0.8125rem] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
+          >
+            {page.label}
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
