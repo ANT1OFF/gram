@@ -1,7 +1,7 @@
-import type { Thread, ThreadId } from "@gram/contracts";
+import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Brain, CircleHelp, Columns3, FolderGit2, Pause, Settings2 } from "lucide-react";
+import { Brain, CircleHelp, Columns3, FolderGit2, Hand, Pause, Settings2 } from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
@@ -9,7 +9,14 @@ import { Hint } from "@/components/hint";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
-import { pauseClock, pauseLeavesRunning, pauseText } from "@/thread/orchestration-model";
+import {
+  pauseClock,
+  pauseLeavesRunning,
+  pauseText,
+  WORKER_HELD_LINE,
+  workerHeldEnds,
+  workerPauseLine,
+} from "@/thread/orchestration-model";
 
 import { workerRepoNames } from "./board-model";
 import { ContextChip, HandingOff } from "./fresh-session";
@@ -19,6 +26,7 @@ import { midTurnWorkers } from "./tree-model";
 import { useAskedQuestions } from "./ask-stack";
 import { useHandoff, useHandoffStore, useResume } from "./use-board-actions";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
+import { useWorkerPause } from "./worker-pause";
 
 const LINK =
   "shrink-0 rounded-sm px-1 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
@@ -31,22 +39,69 @@ export const goToThread = (threadId: ThreadId, event?: { preventDefault: () => v
   else useLayoutStore.getState().openThread(threadId);
 };
 
+/** A banner line under a header: a glyph, its lead in words, the sentence, and any action. */
+const BANNER =
+  "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-xs text-foreground";
+
 /**
  * What a worker's crumbs can't say, under the header and only while it applies: the repos a
- * multi-repo worker works in. That the user holds it is the header's `HoldChip`.
+ * multi-repo worker works in; that the user took it over, what that means and what the header's
+ * Hand back does; and its workspace's pause, which reads apart from a hold: a filled band that
+ * names the workspace and resumes all of it.
  */
 export function WorkerBanner({ thread }: { thread: Thread }) {
   const workspace = useWorkspaces().find((state) => state.workspace.id === thread.workspaceId);
   const { data: ledger } = useOrchestratorLedger(workspace?.workspace.id);
-  if (thread.spawnedBy === undefined) return null;
-
+  const status = useThreadsStore((s) => s.byId[thread.id]?.status);
   const entry = ledger?.features
     .flatMap((feature) => feature.workers)
     .find((worker) => worker.threadId === thread.id);
+  const held = entry?.userIntervened === true;
+  const pause = useWorkerPause(thread.id, status, held);
+  const resume = useResume(workspace?.workspace.id);
+  if (thread.spawnedBy === undefined) return null;
   const repos = workerRepoNames(thread, entry);
 
   return (
     <>
+      {pause !== undefined && (
+        <div
+          data-testid="worker-banner-workspace-paused"
+          data-pause={pause.state}
+          role="status"
+          className={`${BANNER} bg-muted/60`}
+        >
+          <Pause aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 font-medium">Workspace paused</span>
+          <span
+            className="min-w-0 flex-1 truncate text-muted-foreground"
+            title={workerPauseLine(pause.state, pause.at)}
+          >
+            {workerPauseLine(pause.state, pause.at)}
+          </span>
+          <button
+            type="button"
+            data-testid="worker-banner-resume"
+            className={`${ACTION} font-medium text-foreground`}
+            onClick={() => void resume()}
+          >
+            Resume workspace
+          </button>
+        </div>
+      )}
+      {held && (
+        // Hand back itself is the header's, beside the worker's name, where it always stays.
+        <div data-testid="worker-banner-held" role="status" className={BANNER}>
+          <Hand aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 font-medium">Paused by you</span>
+          <span
+            className="min-w-0 flex-1 truncate text-muted-foreground"
+            title={`${WORKER_HELD_LINE} ${workerHeldEnds(USER_HOLD_IDLE_MS / 60_000)}`}
+          >
+            {WORKER_HELD_LINE}
+          </span>
+        </div>
+      )}
       {repos !== undefined && (
         <p
           data-testid="worker-banner-repos"

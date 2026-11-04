@@ -14,6 +14,7 @@ import {
   pauseConfirmText,
   pauseLeavesRunning,
   workerPauseHint,
+  workerPauseLine,
   pauseText,
   prLabel,
   roleDescription,
@@ -164,6 +165,12 @@ describe("digest words", () => {
     expect(workerPauseHint("stopping", at)).toBe("Pausing since 14:02… finishing the current step");
     expect(workerPauseHint("held", at)).toContain("yours: it keeps going with you");
     expect(workerPauseHint("paused", at)).toContain("continues where it left off");
+    // A worker's band under its workspace's pause: since when, what it does, what resuming does.
+    expect(workerPauseLine("stopping", at)).toBe(
+      "since 14:02 · stops after its current step · resuming lets every worker go on",
+    );
+    expect(workerPauseLine("paused", at)).toContain("waits where it left off");
+    expect(workerPauseLine("held", at)).toBe("since 14:02 · yours, so it keeps going with you");
   });
 
   it("words the handoff divider and a file's size", () => {

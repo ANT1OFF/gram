@@ -299,8 +299,11 @@ const steps: readonly Shot[] = [
     title: "Stop: interrupt the running turn",
     open: async (page) => {
       await shot("send-button-running")(page);
+      // Stopped once the turn has said something, so the frame shows where it stopped.
+      await page.getByText("I'll start by reading the test").waitFor();
       await page.getByRole("button", { name: "Stop", exact: true }).click();
       await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeHidden();
+      await expect(page.getByTestId("stop-receipt")).toContainText(/Stopped by you · \d\d:\d\d/);
     },
   },
   {
@@ -317,6 +320,7 @@ const steps: readonly Shot[] = [
       await page.getByTestId("agent-error").last().getByRole("button", { name: "Retry" }).click();
       await expect(page.getByTestId("message-user").last()).toContainText("Run the e2e suite");
       await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeHidden();
+      await expect(page.getByTestId("agent-error-retried")).toContainText(/Retried · \d\d:\d\d/);
     },
   },
   {
@@ -330,6 +334,40 @@ const steps: readonly Shot[] = [
       await page.getByRole("option", { name: "Extra high effort" }).click();
       await expect(page.getByRole("combobox", { name: "Effort: Extra high effort" })).toBeVisible();
       await expect(page.getByTestId("effort-gauge")).toHaveAttribute("data-level", "xhigh");
+    },
+  },
+  // Later additions go last, so the frames before them keep their numbers between rounds.
+  {
+    name: "retried-failed",
+    title: "Recover: the retry failed too, and the newest attempt is the one that needs action",
+    open: async (page) => {
+      await retryableError(page);
+      await page.evaluate(() =>
+        window.gramMock!.simulateTurnError(
+          "t-docs" as never,
+          {
+            kind: "rateLimit",
+            httpStatus: 429,
+            retryable: true,
+            text: "The gateway is rate limiting requests (HTTP 429). Try again in a moment.",
+          },
+          "Run the e2e suite",
+        ),
+      );
+      await expect(page.locator('[data-testid="agent-error"][data-state="retried"]')).toHaveCount(
+        1,
+      );
+    },
+  },
+  {
+    name: "orchestrator-failing",
+    title: "Failures first: the orchestrator's chat leads with a stopped worker and red CI",
+    open: async (page) => {
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      const made = await page.evaluate(() => window.gramMock!.simulateFailures());
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await expect(page.getByTestId("board-failure")).toHaveCount(2);
     },
   },
 ];

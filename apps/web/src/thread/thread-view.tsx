@@ -44,6 +44,7 @@ import { FinishedWorkerView } from "@/orchestration/finished-worker-view";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { OrchestratorBanner, OrchestratorChips, WorkerBanner } from "@/orchestration/worker-banner";
 import { CatchUpCard } from "@/orchestration/catch-up-card";
+import { FailuresCard } from "@/orchestration/failures-card";
 import { SinceYouLeftCard } from "@/orchestration/since-you-left";
 import { OrchestratorStreamProvider, useOrchestratorStream } from "@/orchestration/stream-context";
 import { StuckCard } from "@/orchestration/stuck-card";
@@ -80,6 +81,7 @@ import { RecapCard } from "./recap-card";
 import { RequestCards } from "./request-cards";
 import { RoleGlyph, useThreadRole } from "./role-chip";
 import { activeStreamingIds } from "./streaming";
+import { StopReceiptLine } from "./stop-receipt";
 import { SubagentStrip } from "./subagent-strip";
 import {
   nextJump,
@@ -543,6 +545,12 @@ export function ThreadView({
       <CatchUpCard thread={thread} />
       <StuckCard thread={thread} />
       <OrchestratorBanner thread={thread} />
+      {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
+        <FailuresCard
+          workspaceId={thread.workspaceId}
+          className="mx-auto w-full max-w-(--thread-max-width) shrink-0 px-6 pt-2 pb-2"
+        />
+      )}
       {finding && (
         <FindBar threadId={threadId} onReveal={reveal} onClose={() => setFinding(false)} />
       )}
@@ -572,6 +580,7 @@ export function ThreadView({
       <div className="mx-auto w-full max-w-(--thread-max-width) shrink-0 px-6">
         {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
         {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
+        <StopReceiptLine threadId={threadId} />
         {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
         <RequestCards
           threadId={threadId}

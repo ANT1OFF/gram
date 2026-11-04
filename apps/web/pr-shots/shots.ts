@@ -1281,6 +1281,17 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "workspace-paused-worker",
+    title: "A worker in a paused workspace: the workspace's band, apart from a hold of its own",
+    open: async (page) => {
+      await openPausedOrchestrator(page);
+      await page.getByTestId("overview-worker").first().click();
+      await page.getByTestId("worker-banner-workspace-paused").waitFor();
+      await page.mouse.move(900, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+  {
     name: "workspace-pause-at-limit",
     title: "Workspace settings: Pause new workers at a share of a limit",
     open: async (page) => {
@@ -1495,7 +1506,8 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "board-failing",
-    title: "Board: the Failing strip above the docked stack, a stopped worker and red CI",
+    title:
+      "Board: the failure card above the lines, a stopped worker and red CI, each with its step",
     open: async (page) => {
       await openOrchestratorOf(page, seedFailures);
       await openBoardView(page);

@@ -254,6 +254,30 @@ export const workerPauseHint = (pause: WorkerPause, at: number): string => {
   }
 };
 
+/**
+ * A worker's banner line under its workspace's pause, after "Workspace paused": since when, what
+ * it means for this worker, and what resuming does.
+ */
+export const workerPauseLine = (pause: WorkerPause, at: number): string => {
+  const since = `since ${pauseClock(at)}`;
+  switch (pause) {
+    case "stopping":
+      return `${since} · stops after its current step · resuming lets every worker go on`;
+    case "held":
+      return `${since} · yours, so it keeps going with you`;
+    case "paused":
+      return `${since} · waits where it left off · resuming lets every worker go on`;
+  }
+};
+
+/** A held worker's banner line, after "Paused by you": why, and what Hand back does. */
+export const WORKER_HELD_LINE =
+  "You took it over, so the orchestrator can't message or direct it. Hand back returns it to the orchestrator.";
+
+/** When a hold ends without Hand back, for the held line's hint. */
+export const workerHeldEnds = (idleMinutes: number): string =>
+  `It also returns by itself at its next report, or ${idleMinutes} minutes after your last message once it's idle.`;
+
 const HANDOFF_REASON: Record<Handoff["reason"], string> = {
   context: "context was filling up",
   compactions: "too many compactions",

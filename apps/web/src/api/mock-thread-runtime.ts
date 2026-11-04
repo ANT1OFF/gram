@@ -52,6 +52,8 @@ export interface ThreadRuntime {
   running: boolean;
   steer: UserInput | undefined;
   interrupted: boolean;
+  /** The gate the turn is held at, which an interrupt lets go as the server's would stop it there. */
+  heldAt?: string | undefined;
   /** `restartSession` came mid-turn: the session restarts once the turn ends. */
   restartAfterTurn: boolean;
 }
