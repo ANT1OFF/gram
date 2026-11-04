@@ -19,7 +19,7 @@ import { threadDisplayTitle } from "@/thread/thread-title";
 
 import { liveWorkerEntry, workerTitle } from "./board-model";
 import { dayLabel } from "./outputs-model";
-import { calmTone, workerTone, type RailTone } from "./rail-model";
+import { ANSWERED, calmTone, workerTone, type RailTone } from "./rail-model";
 import { threadWorking } from "./tree-model";
 import { OVER_STATES, workerShown } from "./worker-shown";
 import { workerActivity, workerWait, type WorkerActivity, type WorkerBusy } from "./wait-model";
@@ -102,6 +102,8 @@ export interface WorkerLiveFacts {
   readonly ownedCi?: ReadonlySet<string>;
   /** Workers with an ask of theirs in the stack. */
   readonly asking?: ReadonlySet<ThreadId>;
+  /** Workers whose asks were answered here, not yet heard from (`useAnsweredWorkers`). */
+  readonly answered?: ReadonlySet<ThreadId>;
   /** How a wait's time reads; the viewer's clock at `now` by default. */
   readonly clock?: WaitClock;
 }
@@ -239,6 +241,8 @@ export interface LiveToneFacts {
   readonly detail: string | undefined;
   /** An ask of its is in the stack. */
   readonly asking: boolean;
+  /** Its asks were answered here and it isn't heard from yet. */
+  readonly answered?: boolean | undefined;
   readonly ownedCi?: ReadonlySet<string> | undefined;
 }
 
@@ -252,11 +256,12 @@ export interface LiveToneFacts {
  */
 export const liveWorkerTone = (
   entry: WorkerLedgerEntry | undefined,
-  { summary, detail, asking, ownedCi }: LiveToneFacts,
+  { summary, detail, asking, answered, ownedCi }: LiveToneFacts,
 ): RailTone => {
   const live = entry === undefined ? undefined : liveWorkerEntry(entry, summary);
   return workerTone({
     asking,
+    answered,
     state: live?.state,
     failed: live?.state === "error",
     status: summary?.status,
@@ -305,7 +310,7 @@ export interface WorkerTones {
 export const workerTones = (
   ledger: Pick<OrchestratorLedger, "features"> | undefined,
   running: readonly ThreadId[],
-  { byId, statusDetail, asking = new Set() }: Omit<WorkerLiveFacts, "now" | "ownedCi">,
+  { byId, statusDetail, asking = new Set(), answered }: Omit<WorkerLiveFacts, "now" | "ownedCi">,
 ): WorkerTones => {
   const busy = new Set(running);
   const entries = new Map<ThreadId, WorkerLedgerEntry | undefined>();
@@ -327,6 +332,7 @@ export const workerTones = (
       summary: byId[threadId],
       detail: statusDetail[threadId],
       asking: asking.has(threadId),
+      answered: answered?.has(threadId),
       ownedCi,
     });
     tones[threadId] = tone;
@@ -342,7 +348,7 @@ export const workerTones = (
  */
 export const workerRow = (
   worker: WorkerLedgerEntry,
-  { byId, statusDetail, now, ownedCi, asking, clock }: WorkerLiveFacts,
+  { byId, statusDetail, now, ownedCi, asking, answered, clock }: WorkerLiveFacts,
 ): WorkerRow => {
   const summary = byId[worker.threadId];
   const live = liveWorkerEntry(worker, summary);
@@ -355,6 +361,7 @@ export const workerRow = (
     summary,
     detail: statusDetail[worker.threadId],
     asking: asking?.has(worker.threadId) === true,
+    answered: answered?.has(worker.threadId),
     ownedCi,
   });
   // Another thread a condition wake waits on is named by its title, as its row names it.
@@ -389,6 +396,9 @@ export const workerRow = (
   });
 
   const [request] = live.pendingRequests;
+  if (request !== undefined && answered?.has(worker.threadId) === true) {
+    return row(undefined, ANSWERED);
+  }
   if (request !== undefined) return row(undefined, requestGist(request, requestCommand(summary)));
   if (live.state === "error") return row(undefined, "stopped on an error");
   if (done) {

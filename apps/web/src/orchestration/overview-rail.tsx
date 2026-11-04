@@ -33,7 +33,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { OVERVIEW_FLYOUT, OVERVIEW_ROOT, toggleOverviewSidebar } from "@/views/shell-layout";
 import { soloThreads } from "@/views/solo-threads";
-import { useViewWorkspace } from "@/views/view-workspace";
+import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
 import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
@@ -181,7 +181,10 @@ const TILE =
 /** One tile per workspace, in the switcher's order, as the open overview's rows. */
 function WorkspaceTiles() {
   const workspaces = useWorkspaces();
-  const current = useViewWorkspace();
+  // A solo thread in view is in no workspace: no tile is marked.
+  const solo = useViewSolo();
+  const viewed = useViewWorkspace();
+  const current = solo ? undefined : viewed;
   const asks = useWorkspaceAsks();
   const own = useThreadsStore(
     useShallow((s) =>
@@ -303,6 +306,7 @@ function SoloTile() {
     [workspaces],
   );
   const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids)));
+  const here = useViewSolo();
   return (
     <Flyout
       testId="solo"
@@ -314,6 +318,7 @@ function SoloTile() {
           {...STOP}
           data-testid="overview-tile"
           data-tile="solo"
+          aria-current={here || undefined}
           aria-label={`Solo threads, ${solo.length}`}
           className={TILE}
         />

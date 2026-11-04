@@ -13,7 +13,7 @@ import {
   planText,
 } from "@gram/contracts";
 
-import { calmTone, workerTone, type RailTone } from "./rail-model";
+import { ANSWERED, calmTone, workerTone, type RailTone } from "./rail-model";
 import { OVER_STATES, workerShown } from "./worker-shown";
 import type { WorkspaceStatus } from "./tree-model";
 import type { WorkerActivity } from "./wait-model";
@@ -26,6 +26,39 @@ import type { WaitingOn } from "./waiting-on";
 
 /** What a row's now line says while its worker waits on an ask. */
 export const ASKS_YOU = "asks you";
+
+/**
+ * `cards` with the workers answered from here (`useAnsweredWorkers`) said as answered: the server
+ * still has them waiting until the answer reaches the worker, a few seconds after Send (Undo holds
+ * it), so their now line says the answer is on its way and their state no longer asks.
+ */
+export const answeredCards = (
+  cards: readonly FeatureCard[],
+  answered: ReadonlySet<ThreadId>,
+): readonly FeatureCard[] => {
+  if (answered.size === 0) return cards;
+  let changed = false;
+  const next = cards.map((card) => {
+    if (!card.workers.some((worker) => answered.has(worker.threadId))) return card;
+    changed = true;
+    return {
+      ...card,
+      workers: card.workers.map((worker) =>
+        answered.has(worker.threadId)
+          ? {
+              ...worker,
+              now: ANSWERED,
+              state:
+                worker.state === "needsUser" || worker.state === "question"
+                  ? ("working" as const)
+                  : worker.state,
+            }
+          : worker,
+      ),
+    };
+  });
+  return changed ? next : cards;
+};
 
 /** A worker's last report, as far as its step line reads it. */
 export interface ReportNext {
@@ -267,12 +300,14 @@ export interface RowLive {
  * the ledger is read, its card's by `workerTone`.
  */
 export const rowTone = (
-  row: Pick<OverviewWorkerRow, "askKey" | "state" | "failed" | "activity" | "tone">,
+  row: Pick<OverviewWorkerRow, "askKey" | "state" | "failed" | "activity" | "tone"> &
+    Partial<Pick<OverviewWorkerRow, "now">>,
   live: RowLive,
 ): RailTone =>
   row.tone ??
   workerTone({
     asking: row.askKey !== undefined,
+    answered: row.now === ANSWERED,
     state: row.state,
     failed: row.failed,
     status: live.status,

@@ -19,6 +19,22 @@ export function viewWorkspace(
   return find(thread?.workspaceId) ?? find(last) ?? workspaces[0];
 }
 
+/**
+ * Whether the thread in view is a solo thread, outside every workspace. The window still has a
+ * workspace for its Board (`viewWorkspace`), but where the thread is shown it is in none: the
+ * header says Solo and no workspace's line is marked as the one the window is on.
+ */
+export const viewSolo = (thread: Pick<Thread, "workspaceId"> | undefined): boolean =>
+  thread !== undefined && thread.workspaceId === undefined;
+
+/** `viewSolo` for the window's route. */
+export function useViewSolo(): boolean {
+  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  return useThreadsStore((s) =>
+    viewSolo(threadId === undefined ? undefined : s.byId[threadId]?.thread),
+  );
+}
+
 /** `viewWorkspace` for the window's route. The switcher and Board read this one. */
 export function useViewWorkspace(): WorkspaceState | undefined {
   const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;

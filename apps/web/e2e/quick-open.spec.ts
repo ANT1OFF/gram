@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { layoutButton } from "./layout";
+import { openOrchestrator } from "./thread-row";
 
 test("layout preset keys, an empty pane's quick open, and a project's new thread", async ({
   page,
@@ -58,4 +59,58 @@ test("layout preset keys, an empty pane's quick open, and a project's new thread
   await expect(palette).toBeHidden();
   await expect(page).toHaveURL(/\/new$/);
   await expect(page.getByRole("combobox", { name: "Project path" })).toHaveValue(/docs/);
+});
+
+test("a ⌘K jump to a solo thread says Solo in the header, opens Solo threads and marks its row", async ({
+  page,
+}) => {
+  // The realistic morning on its "Gram" orchestrator, Solo threads folded as a working window's.
+  await page.addInitScript(() => {
+    sessionStorage.setItem("gram.mock.orchestration", "realistic");
+    localStorage.setItem(
+      "gram.layout",
+      JSON.stringify({ version: 1, state: { overviewFolded: ["solo"] } }),
+    );
+  });
+  await page.goto("/");
+  await page.getByTestId("app-shell").waitFor();
+  const made = await page.evaluate(async () => {
+    const started = await window.gramMock!.startedRealistic();
+    if (started === undefined)
+      throw new Error("the mock did not start with the realistic scenario");
+    return started;
+  });
+  await openOrchestrator(page, made.orchestratorThreadId);
+  const switcher = page.getByTestId("workspace-switcher-button");
+  await expect(switcher).toHaveText("Gram");
+  const sidebar = page.getByTestId("overview-sidebar");
+  const soloTitle = sidebar.getByTestId("overview-section-solo").getByRole("button").first();
+  await expect(soloTitle).toHaveAttribute("aria-expanded", "false");
+  const gram = sidebar.locator(
+    `[data-workspace-id="${made.workspaceId}"] [data-testid="overview-workspace-row"]`,
+  );
+  await expect(gram).toHaveAttribute("aria-current", "true");
+
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByTestId("command-palette").getByRole("combobox").fill("Bump dependencies");
+  await page.getByRole("option", { name: /Bump dependencies/ }).click();
+  await expect(page).toHaveURL(/\/t\/t-deps$/);
+
+  // Where it landed: the header names Solo, its section opens, and its row is the marked one.
+  await expect(switcher).toHaveText("Solo");
+  await expect(soloTitle).toHaveAttribute("aria-expanded", "true");
+  const row = sidebar.locator('[data-testid="overview-solo"][data-thread-id="t-deps"]');
+  await expect(row).toBeVisible();
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(gram).not.toHaveAttribute("aria-current");
+  await expect(sidebar.locator('[aria-current="true"]')).toHaveCount(1);
+
+  // Folding it again while there keeps it folded; jumping back to a worker marks its workspace.
+  await soloTitle.click();
+  await expect(soloTitle).toHaveAttribute("aria-expanded", "false");
+  await page.waitForTimeout(300);
+  await expect(soloTitle).toHaveAttribute("aria-expanded", "false");
+  await openOrchestrator(page, made.orchestratorThreadId);
+  await expect(switcher).toHaveText("Gram");
+  await expect(gram).toHaveAttribute("aria-current", "true");
 });

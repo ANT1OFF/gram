@@ -2,9 +2,11 @@ import type {
   MemoryQuestion,
   OrchestratorLedger,
   Project,
+  ThreadId,
   WorkspaceId,
   WorkspaceState,
 } from "@gram/contracts";
+import { useMemo } from "react";
 import { create } from "zustand";
 
 import { keepSame } from "@/lib/same-data";
@@ -13,7 +15,7 @@ import { useAttentionStore } from "@/sidebar/attention";
 import { needsYou as threadNeedsYou, splitForTree } from "@/sidebar/grouping";
 import { useThreadsStore, whenServerEventsSettle } from "@/stores/threads";
 
-import { asksOf, type Ask } from "./ask-model";
+import { askKeysByThread, asksOf, type Ask } from "./ask-model";
 import type { WorkspaceAsks } from "./ask-stack";
 import { hiddenIds, useAskStackStore } from "./ask-stack-store";
 import { asleep, snoozesOf } from "./inbox-set-aside";
@@ -63,6 +65,12 @@ export interface DerivedAsks {
   /** The asks of threads outside any workspace, less what is put away for Later. */
   readonly soloAsks: readonly Ask[];
   readonly needsYou: NeedsYouList;
+  /**
+   * The workers whose asks were all answered from here (held for Undo, being sent, or sent a
+   * moment ago) and that have none left: what the server still says they wait on is already
+   * answered, so their rows, chips and cards say so as the stack and the count do.
+   */
+  readonly answered: readonly ThreadId[];
 }
 
 interface DerivedAsksState extends DerivedAsks {
@@ -72,6 +80,7 @@ interface DerivedAsksState extends DerivedAsks {
 
 const NOTHING: NeedsYouList = { groups: [], sections: [], items: [], later: [] };
 const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
+const NO_THREADS: readonly ThreadId[] = [];
 const NO_QUERIED: QueriedInputs = {
   workspaces: [],
   questions: new Map(),
@@ -127,6 +136,12 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
   };
   const asks = asksLess(setAside);
   const withLater = asksLess(cleared);
+  const answeredWorkers = (() => {
+    if (answered.size === 0) return NO_THREADS;
+    const left = new Set(asks.flatMap((w) => [...askKeysByThread(w.asks).keys()]));
+    const before = sources.flatMap(({ source }) => asksOf({ ...source, hidden: setAside }));
+    return [...askKeysByThread(before).keys()].filter((id) => !left.has(id)).toSorted();
+  })();
 
   // Needs you: the asks with Later's, every standing failure and every thread's waits, less what
   // is answered or dismissed, with what is put away for Later apart.
@@ -183,6 +198,7 @@ const deriveAsks = (queried: QueriedInputs, now: number): DerivedAsks & { wakes?
     withLater,
     soloAsks: asksOf({ groups: soloGroups, hidden: new Set([...answered, ...setAside]) }),
     needsYou: { groups, sections, items: sections.flatMap((section) => section.items), later },
+    answered: answeredWorkers,
     ...(sleeping.wakes === undefined ? {} : { wakes: sleeping.wakes }),
   };
 };
@@ -207,15 +223,17 @@ export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
     const withLater = keepSame(current.withLater, next.withLater);
     const soloAsks = keepSame(current.soloAsks, next.soloAsks);
     const needsYou = keepSame(current.needsYou, next.needsYou);
+    const answered = keepSame(current.answered, next.answered);
     if (
       asks === current.asks &&
       withLater === current.withLater &&
       soloAsks === current.soloAsks &&
-      needsYou === current.needsYou
+      needsYou === current.needsYou &&
+      answered === current.answered
     ) {
       return;
     }
-    set({ asks, withLater, soloAsks, needsYou });
+    set({ asks, withLater, soloAsks, needsYou, answered });
   };
   // Run from the input stores' listeners: a derivation that fails is logged, never thrown at
   // whoever changed the store, and never keeps that store's later listeners from hearing of it.
@@ -247,6 +265,7 @@ export const useDerivedAsks = create<DerivedAsksState>()((set, get) => {
     withLater: [],
     soloAsks: [],
     needsYou: NOTHING,
+    answered: NO_THREADS,
     setQueried(next) {
       queried = next;
       sourced = true;
@@ -268,5 +287,17 @@ export const resetDerivedAsks = () => {
   sourced = false;
   clearTimeout(wake);
   wake = undefined;
-  useDerivedAsks.setState({ asks: [], withLater: [], soloAsks: [], needsYou: NOTHING });
+  useDerivedAsks.setState({
+    asks: [],
+    withLater: [],
+    soloAsks: [],
+    needsYou: NOTHING,
+    answered: NO_THREADS,
+  });
 };
+
+/** The workers answered from here and not yet heard from (`DerivedAsks.answered`), as a set. */
+export function useAnsweredWorkers(): ReadonlySet<ThreadId> {
+  const from = useDerivedAsks((s) => s.answered);
+  return useMemo(() => new Set(from), [from]);
+}

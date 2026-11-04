@@ -520,3 +520,51 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   }
   await expect(popover.getByTestId("needs-you-see-all")).toHaveText(`See all ${all}`);
 });
+
+test("Send answer turns the worker's row, card and chip to answered with the count, not asks you", async ({
+  page,
+}) => {
+  // The realistic morning: one worker in billing-api asks how long a refund webhook retries.
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
+  await page.goto("/");
+  await page.getByTestId("app-shell").waitFor();
+  const made = await page.evaluate(async () => {
+    const started = await window.gramMock!.startedRealistic();
+    if (started === undefined)
+      throw new Error("the mock did not start with the realistic scenario");
+    const workspace = (await window.gramMock!.listWorkspaces()).find(
+      (state) => state.workspace.id === started.askingWorkspaceId,
+    )!.workspace;
+    return { asking: started.asking, orchestrator: workspace.orchestratorThreadId! };
+  });
+  await openOrchestrator(page, made.orchestrator);
+  const row = page.locator(`[data-testid="overview-worker"][data-thread-id="${made.asking}"]`);
+  const card = page
+    .getByTestId("feature-card")
+    .filter({ has: page.locator(`[data-thread-id="${made.asking}"]`) })
+    .or(page.getByTestId("feature-card").filter({ hasText: "Idempotent refund" }));
+  await expect(row.getByTestId("overview-worker-now")).toHaveText("asks you");
+  await expect(card.getByTestId("feature-card-now")).toHaveText("asks you");
+  const pill = page.getByTestId("overview-needs-you");
+  const before = Number((await pill.textContent())?.match(/\d+/)?.[0]);
+
+  const item = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
+  await item.getByTestId("ask-option").filter({ hasText: "72 hours" }).click();
+  await item.getByTestId("ask-send").click();
+
+  // Inside Undo's window, before the answer has even gone out: every view says so with the count.
+  await expect(pill).toContainText(String(before - 1));
+  await expect(row.getByTestId("overview-worker-now")).toHaveText("answered · resuming");
+  await expect(row).not.toHaveAttribute("data-asking");
+  await expect(row.getByTestId("overview-worker-dot")).not.toHaveAttribute("data-tone", "needs");
+  await expect(card.getByTestId("feature-card-now")).toHaveText("answered · resuming");
+  await page.getByRole("radio", { name: /^Board\b/ }).click();
+  const chip = page.locator(`[data-testid="rail-worker"][data-thread-id="${made.asking}"]`);
+  await expect(chip).toBeVisible();
+  await expect(chip).not.toHaveAttribute("data-tone", "needs");
+  await expect(chip).not.toHaveAttribute("data-asking");
+  await expect(chip.getByTestId("rail-now")).not.toHaveText("asks you");
+  // Sent, the worker runs again: nothing goes back to asking.
+  await expect(chip).toHaveAttribute("data-tone", "working", { timeout: 15_000 });
+  await expect(page.getByTestId("overview-sidebar")).not.toContainText("asks you");
+});

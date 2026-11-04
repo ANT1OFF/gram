@@ -13,6 +13,8 @@ import { useApi } from "@/api/context";
 import type { Api } from "@/api/types";
 
 import { createLedgerWatch, type LedgerWatch } from "./ledger-watch";
+import { useAnsweredWorkers } from "./needs-you-store";
+import { answeredCards } from "./overview-model";
 
 // A workspace's live feature cards (contracts `feature-cards.ts`), kept current by one
 // `watchFeatureCards` stream per workspace however many views show them: the orchestrator's stream,
@@ -61,8 +63,13 @@ export function useFeatureCards(workspaceId: WorkspaceId | undefined): readonly 
     retry: false,
   });
   const cards = data?.cards ?? NO_CARDS;
+  // A worker answered here reads as answered on every card, as the stack and the count have it.
+  const answered = useAnsweredWorkers();
   // A card left with no worker and no held brief (one dropped before it spawned) is drawn nowhere.
-  return useMemo(() => (cards.every(cardShown) ? cards : cards.filter(cardShown)), [cards]);
+  return useMemo(
+    () => answeredCards(cards.every(cardShown) ? cards : cards.filter(cardShown), answered),
+    [cards, answered],
+  );
 }
 
 /**

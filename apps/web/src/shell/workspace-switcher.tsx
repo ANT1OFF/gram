@@ -30,7 +30,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { soloThreads } from "@/views/solo-threads";
 import { useViewStore } from "@/views/view-store";
-import { useViewWorkspace } from "@/views/view-workspace";
+import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
 import { TitlebarPopover } from "./titlebar-popover";
 
@@ -109,7 +109,10 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
   const api = useApi();
   const navigate = useNavigate();
   const workspaces = useWorkspaces();
-  const current = useViewWorkspace();
+  // A solo thread in view is in no workspace, whichever one the Board would show.
+  const inSolo = useViewSolo();
+  const viewed = useViewWorkspace();
+  const current = inSolo ? undefined : viewed;
   const byId = useThreadsStore((s) => s.byId);
   const overrides = useBindingsStore((s) => s.overrides);
   const switchTo = useSwitchWorkspace();
@@ -139,7 +142,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     useLayoutStore.getState().openThread(threadId);
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
-  const name = current?.workspace.name ?? "Threads";
+  const name = inSolo ? "Solo" : (current?.workspace.name ?? "Threads");
   // Its keys, as far as there are workspaces to take them: "⌘1–⌘3".
   const keyed = Math.min(workspaces.length, WORKSPACE_KEYS.length);
   const firstKey = shortcutHint("workspace.switch1", overrides);

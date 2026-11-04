@@ -33,6 +33,7 @@ import { useSame } from "@/stores/use-same";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 import { useViewStore } from "@/views/view-store";
 
+import { useAnsweredWorkers } from "./needs-you-store";
 import { startOrchestratorMessage } from "./ask-about";
 import { useWorkspaceAsks } from "./ask-stack";
 import { PrChip } from "./feature-card";
@@ -133,6 +134,8 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
       ),
     [all, workspaceId],
   );
+  // Who was answered here and isn't heard from yet: no longer asking, on its way back to work.
+  const answered = useAnsweredWorkers();
   // Each live worker's tone, by the selector the sidebar, ⌘J and Quiet read too.
   const tones = useThreadsStore(
     useSame(
@@ -142,7 +145,7 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
           workspaceId === undefined
             ? []
             : workingWorkerThreads(s.byId, s.statusDetail, workspaceId).map((t) => t.thread.id),
-          { byId: s.byId, statusDetail: s.statusDetail, asking },
+          { byId: s.byId, statusDetail: s.statusDetail, asking, answered },
         ).tones,
     ),
   );
@@ -151,6 +154,7 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
   return useMemo(
     () => ({
       asking,
+      answered,
       ongoing,
       activity,
       tones,
@@ -163,7 +167,7 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
           ? statuses[threadId]
           : useThreadsStore.getState().byId[threadId]?.status,
     }),
-    [asking, ongoing, activity, tones, over, running, waiting, statuses],
+    [asking, answered, ongoing, activity, tones, over, running, waiting, statuses],
   );
 }
 

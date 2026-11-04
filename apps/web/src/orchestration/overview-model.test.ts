@@ -1,7 +1,9 @@
 import type { FeatureCard, FeatureCardWorker, ThreadId, WorkspaceId } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
+import { ANSWERED } from "./rail-model";
 import {
+  answeredCards,
   ASKS_YOU,
   foldByKey,
   foldedSummaryText,
@@ -50,6 +52,39 @@ const card = (feature: string, workers: FeatureCardWorker[], updatedAt = 1): Fea
 });
 
 const pr = { repo: "acme/api", number: 212, state: "open" as const, checks: "passing" as const };
+
+describe("answeredCards", () => {
+  it("says a worker answered here as answered on its card, its state no longer asking", () => {
+    const cards = [
+      card("refunds", [
+        worker("refund", { state: "needsUser", now: "asks you" }),
+        worker("other", { state: "needsUser", now: "asks you" }),
+      ]),
+      card("footer", [worker("footer", { state: "merged", now: "merged as #312" })]),
+    ];
+    const next = answeredCards(cards, new Set(["refund" as ThreadId]));
+    expect(next[0]!.workers.map((each) => [each.now, each.state])).toEqual([
+      [ANSWERED, "working"],
+      ["asks you", "needsUser"],
+    ]);
+    // A card none of whose workers was answered is the same card.
+    expect(next[1]).toBe(cards[1]);
+    expect(answeredCards(cards, new Set())).toBe(cards);
+  });
+
+  it("is what the sidebar's row says and how its dot reads once answered", () => {
+    const [feature] = overviewFeatures(
+      answeredCards(
+        [card("refunds", [worker("refund", { state: "needsUser", now: "asks you" })])],
+        new Set(["refund" as ThreadId]),
+      ),
+      new Map(),
+    );
+    const row = feature!.rows[0]!;
+    expect(row.now).toBe(ANSWERED);
+    expect(rowTone(row, { status: "needsInput", working: false })).toBe("working");
+  });
+});
 
 describe("overviewFeatures", () => {
   it("lists each card's live workers in the card's order, with the card's station, now line and PR", () => {

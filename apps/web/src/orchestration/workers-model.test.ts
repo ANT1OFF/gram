@@ -38,6 +38,7 @@ import {
   type WorkerLiveFacts,
   type WorkerRow,
 } from "./workers-model";
+import { ANSWERED } from "./rail-model";
 
 // Wednesday 15 October 2026, 14:40 local time.
 const NOW = new Date(2026, 9, 15, 14, 40).getTime();
@@ -103,6 +104,28 @@ const closed = (id: string, closedAt: number, merged: boolean): FinishedWorker =
     ? [{ repo: "example/api", number: 428, url: "https://x/428", merged: true as const }]
     : [],
   kept: "closed",
+});
+
+describe("a worker answered here", () => {
+  it("reads answered and working in the Workers list until the server hears", () => {
+    const asking = worker("w1", "refunds", "needsUser", {
+      status: "needsInput",
+      pendingRequests: [
+        { id: "r1", kind: "question" } as WorkerLedgerEntry["pendingRequests"][number],
+      ],
+    });
+    const byId = {
+      w1: summary("w1", "needsInput", {}, [
+        { id: "r1", kind: "question", questions: [] } as unknown as PendingRequest,
+      ]),
+    };
+    const before = workerRow(asking, facts(byId));
+    expect(before.now).toBe("asks you");
+    expect(before.tone).toBe("needs");
+    const after = workerRow(asking, { ...facts(byId), answered: new Set(["w1" as ThreadId]) });
+    expect(after.now).toBe(ANSWERED);
+    expect(after.tone).toBe("working");
+  });
 });
 
 describe("the now line", () => {
