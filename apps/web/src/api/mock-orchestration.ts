@@ -72,6 +72,7 @@ import {
 import { simulateWaits } from "./mock-board-waits";
 import { simulateQuietBusy, simulateQuietWorkspaces, simulateWaitingOn } from "./mock-quiet";
 import { simulateReadme } from "./mock-readme";
+import { simulateRealistic, type MockRealisticDeps } from "./mock-realistic";
 import { simulateRelease } from "./mock-release";
 import { simulate } from "./mock-orchestration-report";
 import { ledgerEntry, slugOf, groupByFeature } from "./mock-ledger";
@@ -1610,6 +1611,11 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     /** `simulateFinished` (`mock-board.ts`). */
     simulateFinished(board: MockBoardSimulation) {
       return simulateFinished(scenes, board);
+    },
+
+    /** `simulateRealistic` (`mock-realistic.ts`). */
+    simulateRealistic(deps: MockRealisticDeps) {
+      return simulateRealistic(scenes, deps);
     },
 
     /**

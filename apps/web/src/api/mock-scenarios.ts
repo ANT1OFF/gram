@@ -34,6 +34,8 @@ import {
 import type { MockReachingSimulation } from "./mock-reaching";
 import type { MockWorkersSimulation } from "./mock-workers";
 import { resolveMockFolder } from "./mock-fs";
+import { registerMockTurnFiles } from "./mock-git";
+import type { MockRealisticSimulation } from "./mock-realistic";
 import { PROJECTS } from "./mock-scripts";
 
 // Dev and e2e scenarios MockApi tells over the orchestration mock and the other domain mocks: the
@@ -208,7 +210,10 @@ export async function simulateWorkerQuestions(
   core: MockCoreScenes,
 ): Promise<MockBoardSimulation & { readonly questions: readonly WorkerQuestion[] }> {
   const board = await core.orchestration.simulateBoard(PROJECTS.map((project) => project.id));
-  return { ...board, questions: core.orchestration.simulateWorkerQuestions(board) };
+  return {
+    ...board,
+    questions: core.orchestration.simulateWorkerQuestions(board),
+  };
 }
 
 /**
@@ -240,7 +245,10 @@ export async function simulateWorkerWaits(
   core: MockCoreScenes,
 ): Promise<MockFinishedSimulation & { readonly waits: MockWaitsSimulation }> {
   const finished = await core.mock.simulateFinishedWork();
-  return { ...finished, waits: await core.orchestration.simulateWaits(finished) };
+  return {
+    ...finished,
+    waits: await core.orchestration.simulateWaits(finished),
+  };
 }
 
 /**
@@ -251,7 +259,10 @@ export async function simulateReleaseGroup(
   core: MockCoreScenes,
 ): Promise<MockFinishedSimulation & { readonly release: MockReleaseSimulation }> {
   const finished = await core.mock.simulateFinishedWork();
-  return { ...finished, release: await core.orchestration.simulateRelease(finished) };
+  return {
+    ...finished,
+    release: await core.orchestration.simulateRelease(finished),
+  };
 }
 
 /**
@@ -360,7 +371,12 @@ export function simulateRecap(
     git = MOCK_DEPS_GIT,
     plan = MOCK_DEPS_PLAN,
     delayMs = 0,
-  }: { recap?: ThreadRecap; git?: GitState; plan?: ThreadPlan; delayMs?: number } = {},
+  }: {
+    recap?: ThreadRecap;
+    git?: GitState;
+    plan?: ThreadPlan;
+    delayMs?: number;
+  } = {},
 ) {
   const runtime = core.runtime(threadId);
   runtime.summary = { ...runtime.summary, git, plan };
@@ -393,3 +409,54 @@ export function replacePrLists(
 export function simulateOpenPr(core: MockCoreScenes, pr: OwnPr) {
   core.reviewRequests.simulateOwn(pr);
 }
+
+/** The folders the realistic scenario's `gram` and `infra` workspaces work in. */
+const REALISTIC_FOLDERS = {
+  gram: "/Users/dev/Documents/code/gram",
+  infra: "/Users/dev/Documents/code/infra",
+} as const;
+
+/**
+ * Dev and screenshot hook: the realistic scenario (`mock-realistic.ts`), an ordinary working
+ * morning with four orchestrators, five live workers and one ask, as a real window shows it.
+ */
+export async function simulateRealistic(core: MockCoreScenes): Promise<MockRealisticSimulation> {
+  const gram = await core.projectsMock.api.addProject(REALISTIC_FOLDERS.gram);
+  const infra = await core.projectsMock.api.addProject(REALISTIC_FOLDERS.infra);
+  const [api, web, docs] = PROJECTS;
+  const made = await core.orchestration.simulateRealistic({
+    projects: { gram: gram.id, docs: docs!.id, api: api!.id, web: web!.id, infra: infra.id },
+    turnFiles: registerMockTurnFiles,
+  });
+  // What each live worker is doing stays on its summary, as the server keeps it, so a window that
+  // loads after the scenario started reads the same line as one that watched it start.
+  for (const { threadId, activity } of made.running) {
+    const runtime = core.runtime(threadId);
+    runtime.summary = { ...runtime.summary, activity };
+    core.setStatus(runtime, "running", activity);
+  }
+  // The seeded memory's open questions were settled on an earlier day: the one ask is the worker's.
+  for (const id of ["Q1", "Q3"]) {
+    core.dreams.editQuestions(made.workspaceId, (current) =>
+      closeQuestion(
+        current,
+        { id, answer: "Settled in an earlier session.", how: "decided" },
+        questionDate(Date.now()),
+      ),
+    );
+  }
+  return made;
+}
+
+/**
+ * The seeded threads as the realistic scenario starts with them: nothing asks, since its one ask is
+ * a worker's. The seeded question and plan are left answered, as a user's earlier day would.
+ */
+export const calmSeeds = <T extends { status: string; pendingRequests: readonly unknown[] }>(
+  summaries: readonly T[],
+): T[] =>
+  summaries.map((summary) =>
+    summary.pendingRequests.length === 0
+      ? summary
+      : { ...summary, status: "idle", pendingRequests: [] },
+  );

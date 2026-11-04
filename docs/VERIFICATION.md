@@ -38,8 +38,12 @@ With the installed Playwright Chromium, capture the main surfaces in realistic m
 bun run --filter @gram/web pr:shots --set tour
 ```
 
-The tour is after-only and writes 1440 × 900 PNGs in dark and light to the gitignored
-`apps/web/pr-shots/out/`, with an ordered `tour.md` index explaining each frame.
+The tour is after-only and writes PNGs in dark and light to the gitignored
+`apps/web/pr-shots/out/`, with an ordered `tour.md` index explaining each frame. Frames are
+1728 × 1095 CSS px at 2×, the size of a real window; `--size 1440x900` captures the older size.
+They show the realistic mock scenario (`apps/web/src/api/mock-realistic.ts`): four orchestrators,
+a few live workers, merged work and one ask, as a working day looks. Frames named `stress-` stage
+the fixture scenes that pile every state on at once; they test layout, not the normal view.
 Every run replaces that output directory. `--set tour --list` lists the frames;
 `--set tour --shot 03-board --mode dark` captures one for iteration. The source list is
 [tour.ts](../apps/web/pr-shots/tour.ts). Read the index in order and inspect every frame for
@@ -59,7 +63,8 @@ questions and an approval; use the sidebar, Board/Chat switcher, Needs you, ⌘J
 Linux/Windows), History (⌘⇧H), ⌘K and Settings to explore.
 
 To populate an orchestrator workspace in the mock browser, run
-`await window.gramMock.simulateOneThread()` in its developer console, then click the new
+`sessionStorage.setItem("gram.mock.orchestration", "realistic")` and reload for the realistic
+scenario, or run `await window.gramMock.simulateOneThread()` in its developer console, then click the new
 `agent-platform` workspace in the sidebar. For Quiet's busy workspace, run
 `await window.gramMock.simulateQuietBusy()` and click `casefiles`, then Quiet. Memory in an
 orchestrator's header opens the seeded memory files and Dreams. Navigate by clicking after

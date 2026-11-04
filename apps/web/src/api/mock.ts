@@ -175,7 +175,10 @@ import {
   simulateReviewRequest,
   replacePrLists,
   simulateOpenPr,
+  simulateRealistic,
+  calmSeeds,
 } from "./mock-scenarios";
+import type { MockRealisticSimulation } from "./mock-realistic";
 import {
   IDENTITY,
   MOCK_CAPABILITIES,
@@ -194,6 +197,7 @@ import {
   mockSessionExpired,
   mockStartsFresh,
   mockStartsWithBoard,
+  mockStartsRealistic,
 } from "./mock-overrides";
 import { mockDiff, mockGitState, mockPrDetail } from "./mock-git";
 import { searchMessages } from "./mock-search";
@@ -325,7 +329,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     this.#closed = createMockClosedThreads(options.persist === true);
     this.#composer = createComposerMock(this.world, options.persist === true);
     const closedEarlier = this.#closed.ids();
-    for (const summary of mockStartsFresh() ? [] : seedSummaries()) {
+    const seeds = mockStartsFresh() ? [] : seedSummaries();
+    for (const summary of mockStartsRealistic() ? calmSeeds(seeds) : seeds) {
       if (closedEarlier.has(summary.thread.id)) continue;
       // `t-flaky`'s worktree has uncommitted work, so closing it with removal needs a force.
       const git = mockGitState(
@@ -491,7 +496,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       ...orchestration,
       // A workspace the mock starts with is listed once it is there, as a relaunch would find it.
       listWorkspaces: async () => {
-        await this.#startingBoard;
+        await this.#starting;
         return orchestration.listWorkspaces();
       },
       ...this.#reviewRequests.api,
@@ -1575,10 +1580,15 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     },
   });
 
-  /** The board's workspace when the e2e flag asks the mock to start with it; settled otherwise. */
-  readonly #startingBoard: Promise<unknown> = mockStartsWithBoard()
+  /**
+   * The board's workspace, or the realistic scenario's, when the flag asks the mock to start with
+   * it; settled otherwise.
+   */
+  readonly #starting: Promise<unknown> = mockStartsWithBoard()
     ? Promise.resolve().then(() => this.simulateOrchestration("board"))
-    : Promise.resolve();
+    : mockStartsRealistic()
+      ? Promise.resolve().then(() => this.simulateRealistic())
+      : Promise.resolve();
 
   readonly #dreams = createMockDreams({
     workspace: (workspaceId) =>
@@ -1693,6 +1703,17 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   /** `simulateOneThread` (`mock-scenarios.ts`). */
   async simulateOneThread(): Promise<MockOneThreadSimulation> {
     return simulateOneThread(this.#scenes);
+  }
+
+  /** `simulateRealistic` (`mock-scenarios.ts`). */
+  async simulateRealistic(): Promise<MockRealisticSimulation> {
+    return simulateRealistic(this.#scenes);
+  }
+
+  /** The realistic scenario the mock started with (`gram.mock.orchestration` is `realistic`). */
+  async startedRealistic(): Promise<MockRealisticSimulation | undefined> {
+    const made = await this.#starting;
+    return mockStartsRealistic() ? (made as MockRealisticSimulation) : undefined;
   }
 
   /** `simulateReachingWorkers` (`mock-scenarios.ts`). */

@@ -19,8 +19,11 @@ const config = join("pr-shots", "playwright.config.ts");
 const HELP = `bun run --filter @gram/web pr:shots [flags]
 
   --shot <name>     a shot from pr-shots/shots.ts; repeat or comma-separate (default: all)
-  --set tour        ordered 1440 × 900 UI tour; after-only, writes tour.md and numbered PNGs
+  --set tour        ordered UI tour over the realistic mock scenario; after-only, writes tour.md
+                    and numbered PNGs (stress-test frames are named stress-…)
   --set flows       key interaction steps; after-only, dark by default, writes out/flows/
+  --size <WxH>      the tour's and flows' window in CSS px, captured at 2× (default: 1728x1095,
+                    a real window; 1440x900 is the older size)
   --path <route>    an ad-hoc shot of a route that only needs loading, e.g. /settings/agents
   --mode <mode>     dark or light (default: both)
   --base <ref>      what "before" is the merge base with (default: origin/main)
@@ -203,6 +206,7 @@ async function main() {
       set: { type: "string" },
       path: { type: "string", multiple: true, default: [] },
       mode: { type: "string", multiple: true, default: [] },
+      size: { type: "string" },
       base: { type: "string", default: "origin/main" },
       "after-only": { type: "boolean", default: false },
       list: { type: "boolean", default: false },
@@ -216,6 +220,9 @@ async function main() {
   const flows = values.set === "flows";
   if (flows) outDir = join(outDir, "flows");
   if (namedSet && values.path.length > 0) throw new Error("--set cannot be combined with --path");
+  if (values.size !== undefined && !namedSet) throw new Error("--size goes with --set");
+  const size = values.size ?? "1728x1095";
+  if (!/^\d{3,4}x\d{3,4}$/.test(size)) throw new Error(`--size is <width>x<height>, not "${size}"`);
   const modes = split(values.mode);
   const bad = modes.find((mode) => mode !== "dark" && mode !== "light");
   if (bad) throw new Error(`--mode is dark or light, not "${bad}"`);
@@ -224,6 +231,7 @@ async function main() {
     GRAM_PR_SHOTS_ONLY: split(values.shot).join(","),
     GRAM_PR_SHOTS_PATHS: split(values.path).join(","),
     GRAM_PR_SHOTS_MODES: modes.length === 0 && flows ? "dark" : modes.join(","),
+    GRAM_PR_SHOTS_SIZE: namedSet ? size : "",
   };
   if (values.list) return playwright(["--list"], env);
 
@@ -254,7 +262,8 @@ async function main() {
     const lines = [
       flows ? "# Gram flow screenshots" : "# Gram UI tour",
       "",
-      "1440 × 900. Synthetic mock states; no live agents.",
+      `${size.replace("x", " × ")} CSS px at 2×. Synthetic mock states over the realistic scenario; no live agents.`,
+      "Frames named `stress-` pile every state on at once to test the layout; they are not the normal view.",
       "",
     ];
     for (const shot of after) {

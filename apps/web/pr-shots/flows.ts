@@ -2,7 +2,7 @@ import { expect, type Page } from "@playwright/test";
 
 import { openOrchestrator, threadRow } from "../e2e/thread-row";
 import { elapse, FLAKY_DONE_MS, SHOTS, seedMockSettings, type Shot } from "./shots";
-import { TOUR } from "./tour";
+import { openRealistic, openRealisticOrchestrator, SET_SIZE, TOUR, stageRealistic } from "./tour";
 
 const from = (shots: readonly Shot[], name: string): Shot["open"] => {
   const shot = shots.find((candidate) => candidate.name === name);
@@ -31,30 +31,43 @@ const retryableError = async (page: Page) => {
   await expect(page.getByTestId("agent-error").last()).toBeVisible();
 };
 
-/** From the Needs you pill, a forwarded question's row: its ask turned to in the orchestrator's dock. */
+/** From the Needs you pill, the refund worker's question: its ask turned to in its orchestrator's dock. */
 const questionInDock = async (page: Page) => {
-  await page.goto("/t/t-flaky");
-  await page.getByLabel("Message", { exact: true }).waitFor();
-  const made = await page.evaluate(() => window.gramMock!.simulateWorkerQuestions());
+  await openRealisticOrchestrator(page);
   await page.getByTestId("overview-needs-you").click();
   await page
     .getByTestId("needs-you-popover")
     .getByTestId("needs-you-item")
-    .filter({ hasText: "Should the retry queue drop a job" })
+    .filter({ hasText: "A refund webhook that keeps failing" })
     .getByTestId("needs-you-open")
     .click();
-  const item = page.locator(
-    `[data-testid="ask-item"][data-ask-key="worker-question:${made.workspaceId}:WQ1"]`,
-  );
+  const item = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
   await expect(item).toBeFocused();
   return item;
 };
 
-/** The Board's Asks dock item for a forwarded question. */
-const boardAsk = (page: Page, id: string) =>
-  page
-    .getByTestId("rail-board")
-    .locator(`[data-testid="ask-item"][data-ask-key^="worker-question:"][data-ask-key$=":${id}"]`);
+/** The billing-api orchestrator, its one ask in the Asks dock. */
+const questionInBilling = async (page: Page) => {
+  const made = await openRealistic(page);
+  const orchestrator = await page.evaluate(
+    async (id) =>
+      (await window.gramMock!.listWorkspaces()).find((w) => w.workspace.id === id)!.workspace
+        .orchestratorThreadId!,
+    made.askingWorkspaceId,
+  );
+  await openOrchestrator(page, orchestrator);
+  const item = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
+  await item.getByTestId("ask-option").first().waitFor();
+  return item;
+};
+
+/** ⌘K over the realistic orchestrator, searching for a solo thread. */
+const jumpSearch = async (page: Page) => {
+  await openRealisticOrchestrator(page);
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.getByTestId("command-palette").getByRole("combobox").fill("Bump dependencies");
+  await expect(page.getByRole("option", { name: /Bump dependencies/ })).toBeVisible();
+};
 
 const steps: readonly Shot[] = [
   {
@@ -108,30 +121,25 @@ const steps: readonly Shot[] = [
   },
   {
     name: "question",
-    title: "Answer: the Board's Answer turns the Asks dock to the question; a choice is picked",
+    title: "Answer: a worker's question in its orchestrator's Asks dock; a choice is picked",
     open: async (page) => {
-      await tour("09-questions")(page);
-      const option = boardAsk(page, "WQ1")
-        .getByTestId("ask-option")
-        .filter({ hasText: "Drop after three" });
+      const item = await questionInBilling(page);
+      const option = item.getByTestId("ask-option").filter({ hasText: "72 hours" });
       await option.click();
       await expect(option).toHaveAttribute("aria-checked", "true");
     },
   },
   {
     name: "question-answered",
-    title: "Answer: Send answer sends the picked choice to the worker, with Undo",
+    title: "Answer: Send answer sends the picked choice to the worker",
     open: async (page) => {
-      await tour("09-questions")(page);
-      const item = boardAsk(page, "WQ1");
-      await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+      const item = await questionInBilling(page);
+      await item.getByTestId("ask-option").filter({ hasText: "72 hours" }).click();
       await item.getByTestId("ask-send").click();
-      await expect(page.getByTestId("rail-board").getByTestId("ask-undo-line")).toContainText(
-        "Keep for replay",
-      );
-      await expect(page.locator('[data-testid="rail-waiting"] [data-question="WQ1"]')).toHaveCount(
-        0,
-      );
+      await expect(
+        page.getByTestId("ask-item").filter({ hasText: "A refund webhook" }),
+      ).toHaveCount(0);
+      await page.waitForTimeout(600);
     },
   },
   {
@@ -143,19 +151,21 @@ const steps: readonly Shot[] = [
   },
   {
     name: "question-dock-answered",
-    title:
-      "Answer: a choice picked in the dock, then Send answer, sends it to the worker, with Undo",
+    title: "Answer: a choice picked in the dock, then Send answer, sends it to the worker",
     open: async (page) => {
       const item = await questionInDock(page);
-      await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+      await item.getByTestId("ask-option").filter({ hasText: "72 hours" }).click();
       await item.getByTestId("ask-send").click();
-      await expect(page.getByTestId("ask-undo-line")).toContainText("Keep for replay");
+      await expect(
+        page.getByTestId("ask-item").filter({ hasText: "A refund webhook" }),
+      ).toHaveCount(0);
+      await page.waitForTimeout(600);
     },
   },
   {
-    name: "question-sheet",
+    name: "stress-question-sheet",
     title:
-      "Answer: a long question opens in the ask sheet, its answer row in sight; the dock folds to one row",
+      "Stress test: a long question opens in the ask sheet among many asks; the dock folds to one row",
     open: async (page) => {
       await page.goto("/t/t-flaky");
       await threadRow(page, "t-flaky").waitFor();
@@ -218,18 +228,13 @@ const steps: readonly Shot[] = [
   {
     name: "jump-search",
     title: "Jump: ⌘K search for another thread",
-    open: async (page) => {
-      await shot("palette-go-to")(page);
-      await page.getByTestId("command-palette").getByRole("combobox").fill("Bump dependencies");
-      await expect(page.getByRole("option", { name: /Bump dependencies/ })).toBeVisible();
-    },
+    open: jumpSearch,
   },
   {
     name: "jumped",
     title: "Jump: select the matching thread",
     open: async (page) => {
-      await shot("palette-go-to")(page);
-      await page.getByTestId("command-palette").getByRole("combobox").fill("Bump dependencies");
+      await jumpSearch(page);
       await page.getByRole("option", { name: /Bump dependencies/ }).click();
       await expect(page).toHaveURL(/\/t\/t-deps$/);
     },
@@ -237,7 +242,12 @@ const steps: readonly Shot[] = [
   {
     name: "workspaces",
     title: "Switch: workspace switcher and solo threads entry",
-    open: shot("views-switcher"),
+    open: async (page) => {
+      await openRealisticOrchestrator(page);
+      await page.getByTestId("workspace-switcher-button").click();
+      await page.getByTestId("solo-threads").waitFor();
+      await page.waitForTimeout(400);
+    },
   },
   { name: "model", title: "Change: composer model picker", open: tour("05-composer-model") },
   {
@@ -360,8 +370,9 @@ const steps: readonly Shot[] = [
     },
   },
   {
-    name: "orchestrator-failing",
-    title: "Failures first: the orchestrator's chat leads with a stopped worker and red CI",
+    name: "stress-orchestrator-failing",
+    title:
+      "Stress test: failures first, the orchestrator's chat leads with a stopped worker and red CI",
     open: async (page) => {
       await page.goto("/t/t-flaky");
       await threadRow(page, "t-flaky").waitFor();
@@ -386,13 +397,18 @@ const steps: readonly Shot[] = [
   },
 ];
 
+/**
+ * Numbered steps at `SET_SIZE`, over the realistic scenario but for the `stress-` steps, which
+ * stage the fixture scenes that pile every state on at once.
+ */
 export const FLOW_SHOTS: readonly Shot[] = steps.map((step, index) => ({
   name: `${String(index + 1).padStart(2, "0")}-${step.name}`,
   title: step.title,
   open: async (page) => {
+    if (!step.name.startsWith("stress-")) await stageRealistic(page);
     await step.open(page);
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize(SET_SIZE);
     await expect(page.getByTestId("app-shell")).toBeVisible();
-    await page.mouse.move(1438, 898);
+    await page.mouse.move(SET_SIZE.width - 2, SET_SIZE.height - 2);
   },
 }));

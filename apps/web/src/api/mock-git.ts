@@ -274,10 +274,25 @@ export function mockDiff(
   return { ...diff, files: diff.files.flatMap((file) => withoutWhitespaceChanges(file) ?? []) };
 }
 
+/** Files a scenario's finished turns changed, by `thread:turn` (`registerMockTurnFiles`). */
+const scenarioTurnFiles = new Map<string, readonly DiffFile[]>();
+
+/** A scenario's finished turn changed `files`, for its "N files changed" card and Undo. */
+export function registerMockTurnFiles(
+  threadId: ThreadId,
+  turnId: TurnId,
+  files: readonly DiffFile[],
+): void {
+  scenarioTurnFiles.set(`${threadId}:${turnId}`, files);
+}
+
 function mockDiffOf(threadId: ThreadId, scope: DiffScope): Diff {
   if (threadId === "t-grpc") return { repo: false };
   if (scope.kind === "turn") {
-    const files = threadId === "t-deps" && scope.turnId === MOCK_DEPS_TURN ? DEPS_TURN_FILES : [];
+    const files =
+      threadId === "t-deps" && scope.turnId === MOCK_DEPS_TURN
+        ? DEPS_TURN_FILES
+        : [...(scenarioTurnFiles.get(`${threadId}:${scope.turnId}`) ?? [])];
     return { repo: true, branch: "main", files };
   }
   if (threadId === "t-docs") {
