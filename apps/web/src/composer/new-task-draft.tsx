@@ -2,7 +2,6 @@ import {
   DEFAULT_CHARTER,
   autonomyOf,
   sendKeyOf,
-  type Autonomy,
   type DraftId,
   type ProjectId,
   type StartTaskInput,
@@ -11,7 +10,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderGit2 } from "lucide-react";
-import { createElement, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { HarnessPreflightNote, useHarnessPreflight } from "@/agents/feature-preflight";
@@ -41,7 +40,7 @@ import {
 import { DictationButton } from "@/dictation/dictation-button";
 import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { PressScale, Spinner } from "@/motion";
-import { AUTONOMY_ICON, AutonomyChip } from "@/orchestration/autonomy-chip";
+import { AutonomyChip } from "@/orchestration/autonomy-chip";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import {
   defaultTaskTarget,
@@ -54,8 +53,9 @@ import {
 import { TaskTargetPicker } from "@/orchestration/task-target-picker";
 import { useOrchestratorLedger, useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { useServerSettings } from "@/settings-sync/store";
-import { AUTONOMY_LEVELS, autonomyLevel } from "@/settings/workspace-settings-model";
 import { cn } from "@/lib/utils";
+import { AutonomyChoice } from "@/new-thread/autonomy-choice";
+import { NewFormHeader, WHO_ENTRY, type Who } from "@/new-thread/who-does-it";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -75,16 +75,17 @@ import { enterSends } from "./send-key";
 import { useAttachments } from "./use-attachments";
 import { useMentions } from "./use-mentions";
 import { useModelsSettled } from "./models";
+import { SLAB, SLAB_TEXTAREA } from "./styles";
 import { shownWorkerChoice, workerChoiceKey } from "./worker-choice";
 import { WorkerFields } from "./worker-fields";
 
 const labelCls = "text-xs font-medium text-muted-foreground";
 
 /**
- * ⌘N's `/new-task` draft: what needs doing, for a workspace's orchestrator to plan or, with
- * `initialWay` "direct" (⌥⌘N), for one worker to start on at once. The sidebar's New menu picks the
- * way and can name the workspace. A repo with no workspace gets one on send. The one-off thread is
- * the other draft, one pick of the target away.
+ * The New form for the orchestrator (⌘N's `/new-task`) or, with `initialWay` "direct" (⌥⌘N), for
+ * one worker to start on at once: what needs doing, and the workspace it goes to. A repo with no
+ * workspace gets one on send, at the autonomy picked above the goal. Just me, the one-off thread,
+ * is the other draft behind the same header.
  */
 export function NewTaskDraft({
   initialWay,
@@ -115,11 +116,9 @@ export function NewTaskDraft({
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
 
   const way: TaskWay = initialWay ?? "plan";
-  // A pick in the target picker holds until the menu starts another way or workspace.
-  const [picked, setPicked] = useRoutePick<TaskTarget>(
-    `${way}:${initialWorkspace ?? ""}`,
-    pendingTaskTarget,
-  );
+  // A pick in the "in" chip holds until a shortcut or the palette names another workspace.
+  // Switching who does it keeps the workspace in the route, and so the pick.
+  const [picked, setPicked] = useRoutePick<TaskTarget>(initialWorkspace ?? "", pendingTaskTarget);
   useEffect(dropTaskTarget, []);
   const named: TaskTarget | undefined =
     initialWorkspace !== undefined &&
@@ -325,7 +324,21 @@ export function NewTaskDraft({
     if (attachments.uploading) return;
     carryDraft({ text: prompt, draftId, attachments: attachments.ready });
     prefillDraftProject(repos[0]?.root);
+    useTaskDraftStore.getState().rememberEntry("oneOff");
     void navigate({ to: "/new" });
+  };
+
+  // The orchestrator and a worker are this draft on another way; the workspace and what was typed stay.
+  const pickWho = (who: Who) => {
+    if (who === "me") return toOneOff();
+    useTaskDraftStore.getState().rememberEntry(WHO_ENTRY[who]);
+    void navigate({
+      to: "/new-task",
+      search: {
+        ...(who === "worker" ? { way: "direct" as const } : {}),
+        ...(initialWorkspace === undefined ? {} : { workspace: initialWorkspace }),
+      },
+    });
   };
 
   const submitLabel =
@@ -337,6 +350,7 @@ export function NewTaskDraft({
         ? "Start workspace and worker"
         : "Start worker";
   const budget = ledger?.budget;
+  const repoName = repo?.name ?? name;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -349,75 +363,67 @@ export function NewTaskDraft({
           void send();
         }}
       >
-        <h1 className="font-heading text-base font-medium">
-          {way === "direct" ? "New worker" : "New task"}
-        </h1>
-
-        <TaskTargetPicker
-          value={target}
-          way={way}
+        <NewFormHeader
+          who={way === "direct" ? "worker" : "orchestrator"}
+          onWho={pickWho}
           disabled={attachments.uploading}
-          workspaces={workspaces}
-          projects={projects}
-          onPick={(next) => {
-            if (next.kind === "oneOff") return toOneOff();
-            if (next.kind === "newWorkspace") return toNewWorkspace();
-            setPicked(next);
-            setRepoId(undefined);
-          }}
+          where={
+            <>
+              <TaskTargetPicker
+                value={target}
+                disabled={attachments.uploading}
+                workspaces={workspaces}
+                projects={projects}
+                onPick={(next) => {
+                  if (next.kind === "newWorkspace") return toNewWorkspace();
+                  setPicked(next);
+                  setRepoId(undefined);
+                }}
+              />
+              {way === "direct" && repo !== undefined && repos.length > 1 && (
+                <Select
+                  value={repo.id}
+                  items={repos.map((each) => ({ value: each.id, label: each.name }))}
+                  onValueChange={(value) => {
+                    if (value !== null) setRepoId(value as ProjectId);
+                  }}
+                >
+                  <SelectTrigger size="sm" aria-label="Repo" className="h-7 text-xs">
+                    <FolderGit2 aria-hidden />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {repos.map((each) => (
+                      <SelectItem key={each.id} value={each.id}>
+                        {each.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </>
+          }
+          line={
+            target === undefined && settled
+              ? "Gram doesn't know a repository to start a workspace in yet. Pick Just me to open one, or add one under Settings → Workspaces."
+              : way === "plan"
+                ? `${makesOne ? `Makes a workspace for ${name}. Its` : `${name}'s`} orchestrator plans it, briefs workers into their own worktrees and follows their pull requests to merged.`
+                : `One worker starts now on a new branch of ${repoName}, in its own worktree, with your words as its brief. ${makesOne ? "The workspace made for it" : "The orchestrator"} follows it like its own.`
+          }
         />
 
-        {target === undefined && settled ? (
-          <p className="text-sm text-muted-foreground">
-            Gram doesn't know a repository to start a workspace in yet. Open one in a one-off thread
-            first, or add one under Settings → Workspaces.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {way === "direct" && repo !== undefined && (
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                in
-                {repos.length > 1 ? (
-                  <Select
-                    value={repo.id}
-                    items={repos.map((each) => ({ value: each.id, label: each.name }))}
-                    onValueChange={(value) => {
-                      if (value !== null) setRepoId(value as ProjectId);
-                    }}
-                  >
-                    <SelectTrigger size="sm" aria-label="Repo">
-                      <FolderGit2 aria-hidden />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {repos.map((each) => (
-                        <SelectItem key={each.id} value={each.id}>
-                          {each.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <span className="flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-sm text-foreground">
-                    <FolderGit2 aria-hidden className="size-3.5" />
-                    {repo.name}
-                  </span>
-                )}
-                on a new branch, with its own worktree
-              </div>
-            )}
-            <p data-testid="task-way-note" className="text-xs text-muted-foreground">
-              {way === "plan"
-                ? `${makesOne ? `Makes a workspace for ${name}. Its` : `${name}'s`} orchestrator reads this, cuts it into features, briefs workers into their own worktrees and follows their pull requests to merged.`
-                : `Starts one worker now, with your words as its brief, in a new worktree of ${repo?.name ?? name}. ${makesOne ? "The workspace made for it" : "The orchestrator"} hears about it in its next digest and follows it like its own.`}
-            </p>
-          </div>
+        {makesOne && (
+          <AutonomyChoice
+            label="Autonomy of the new workspace"
+            value={pickedAutonomy ?? autonomyOf(DEFAULT_CHARTER)}
+            onChange={(next) => useTaskDraftStore.getState().rememberAutonomy(next)}
+          />
         )}
 
         <div className="flex flex-col gap-2">
           <span className={labelCls}>What needs doing</span>
           <div
-            className="relative rounded-lg border border-input bg-card focus-within:border-ring"
+            className={SLAB}
             onKeyDownCapture={dictation.onKeyDownCapture}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
@@ -444,7 +450,7 @@ export function NewTaskDraft({
                   ref={mirrorRef}
                   text={prompt}
                   partial={dictation.partial}
-                  className="px-3 py-2"
+                  className="px-4 pt-3 pb-1"
                 />
               )}
               <textarea
@@ -457,8 +463,8 @@ export function NewTaskDraft({
                   mentions.open ? `${mentions.id}-${mentions.activeIndex}` : undefined
                 }
                 aria-autocomplete="list"
-                rows={5}
-                className="relative block w-full resize-y bg-transparent px-3 py-2 text-sm leading-relaxed outline-none"
+                rows={4}
+                className={cn(SLAB_TEXTAREA, "relative min-h-28")}
                 // Cleared from the start of dictation, so the first words don't land on it.
                 placeholder={
                   dictation.active
@@ -614,12 +620,6 @@ export function NewTaskDraft({
             imageInput={imagePreflight.result.support}
             threadId={way === "direct" ? undefined : selection.data?.orchestratorThreadId}
           />
-          {makesOne && (
-            <NewWorkspaceAutonomy
-              value={pickedAutonomy ?? autonomyOf(DEFAULT_CHARTER)}
-              onChange={(next) => useTaskDraftStore.getState().rememberAutonomy(next)}
-            />
-          )}
           <div className="flex flex-wrap items-center gap-3">
             <PressScale>
               <Button type="submit" disabled={!valid || sending}>
@@ -642,74 +642,8 @@ export function NewTaskDraft({
               </span>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            A quick question, or something to try by hand? A{" "}
-            <button
-              type="button"
-              className="text-foreground underline-offset-2 hover:underline"
-              onClick={toOneOff}
-            >
-              one-off thread
-            </button>{" "}
-            <ShortcutKbd id="thread.newInProject" /> is one agent in one folder, with no
-            orchestrator turn to pay for.
-          </p>
         </div>
       </form>
-    </div>
-  );
-}
-
-/**
- * The autonomy of the workspace this draft makes, said in full beside the button that makes it, as
- * the new-workspace sheet does: the default may be the least supervised level, and sending is the only
- * other step on this path. Picking another is remembered for the next workspace a draft makes.
- */
-function NewWorkspaceAutonomy({
-  value,
-  onChange,
-}: {
-  value: Autonomy;
-  onChange: (autonomy: Autonomy) => void;
-}) {
-  const level = autonomyLevel(value);
-  return (
-    <div
-      data-testid="task-autonomy"
-      className={cn(
-        "flex flex-wrap items-start gap-2 rounded-md border px-3 py-2 text-xs",
-        level.warn ? "border-warning/50 text-foreground" : "border-border text-muted-foreground",
-      )}
-    >
-      {createElement(AUTONOMY_ICON[value], {
-        "aria-hidden": true,
-        className: cn(
-          "mt-0.5 size-4 shrink-0",
-          level.warn ? "text-warning" : "text-muted-foreground",
-        ),
-      })}
-      <span className="min-w-0 flex-[1_1_16rem]">
-        <span className="font-medium">The new workspace runs at {level.label} autonomy.</span>{" "}
-        {level.description}
-      </span>
-      <Select
-        value={value}
-        items={AUTONOMY_LEVELS.map((each) => ({ value: each.value, label: each.label }))}
-        onValueChange={(next) => {
-          if (next !== null) onChange(next as Autonomy);
-        }}
-      >
-        <SelectTrigger size="sm" aria-label="Autonomy of the new workspace">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {AUTONOMY_LEVELS.map((each) => (
-            <SelectItem key={each.value} value={each.value}>
-              {each.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   );
 }

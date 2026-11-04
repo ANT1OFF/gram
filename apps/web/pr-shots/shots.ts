@@ -664,14 +664,24 @@ const openDirectTask = async (page: Page, width: number) => {
   await page.waitForTimeout(600);
 };
 
-/** The overview's New menu over the board scenario's workspace, opened from the header's `+`. */
+/**
+ * The New form over the board scenario's workspace, opened from the header's `+`, with its "in"
+ * chip's menu open (before: the four-row New menu, which the base shows instead).
+ */
 const openNewEntry = async (page: Page) => {
   await openOverviewDensity(page, 280);
   await page.setViewportSize({ width: 1440, height: 860 });
   await page.getByTestId("new-entry").click();
-  await page.getByTestId("new-entry-menu").waitFor();
-  await page.getByTestId("new-entry-task").hover();
-  await page.getByTestId("new-entry-task-to").waitFor();
+  const menu = page.getByTestId("new-entry-menu");
+  const target = page.getByTestId("task-target");
+  await expect(menu.or(target)).toBeVisible();
+  if (await target.isVisible()) {
+    await target.click();
+    await page.getByTestId("task-target-menu").waitFor();
+  } else {
+    await page.getByTestId("new-entry-task").hover();
+    await page.getByTestId("new-entry-task-to").waitFor();
+  }
   await page.waitForTimeout(400);
 };
 
@@ -688,7 +698,7 @@ const NEW_ENTRY_LANDINGS: readonly Shot[] = (
   ] as const
 ).map(([name, what, path]) => ({
   name,
-  title: `The New menu's landing: ${what} (${path})`,
+  title: `New, preset to ${what} (${path})`,
   open: async (page) => {
     await openOverviewDensity(page, 280);
     await page.setViewportSize({ width: 1440, height: 860 });
@@ -789,7 +799,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "new-entry-menu",
-    title: "The header's New menu, with the task's Send to submenu open",
+    title: "The header's New: the one New form, with its workspace chip open",
     open: openNewEntry,
   },
   ...NEW_ENTRY_LANDINGS,
@@ -2562,6 +2572,8 @@ export const SHOTS: readonly Shot[] = [
           }),
         ),
       );
+      // A true first run: no threads yet, so nothing in the sidebar can need anyone.
+      await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto("/");
       await page.getByTestId("welcome").waitFor();

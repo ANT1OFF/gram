@@ -4,6 +4,8 @@ import {
   type CheckoutRequest,
   type DraftId,
   type PermissionMode,
+  type Project,
+  type WorkspaceState,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -28,7 +30,9 @@ import { folderProblem } from "@/new-thread/fs-errors";
 import { ProjectPicker } from "@/new-thread/project-picker";
 import { useFolderStatus, useIsGitRepo } from "@/new-thread/use-folder";
 import { FolderPicker, WhereChips } from "@/new-thread/where-chips";
-import { TaskTargetPicker } from "@/orchestration/task-target-picker";
+import { NewFormHeader, WHO_ENTRY, type Who } from "@/new-thread/who-does-it";
+import { useTaskDraftStore } from "@/orchestration/task-draft-store";
+import type { TaskTarget } from "@/orchestration/task-model";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { ContinueLatest, ResumeSessions } from "@/resume/resume-sessions";
 import {
@@ -74,6 +78,25 @@ import {
 } from "./worktree-fields";
 
 type CheckoutKind = CheckoutRequest["kind"];
+
+/**
+ * Where the task draft goes from this folder: its own one-repo workspace, else one it is part of,
+ * else the repo, to make a workspace for. Nothing for a folder Gram doesn't know yet.
+ */
+export function folderTarget(
+  project: Project | undefined,
+  workspaces: readonly WorkspaceState[],
+): TaskTarget | undefined {
+  if (project === undefined) return undefined;
+  const having = workspaces.filter((state) => state.workspace.projectIds.includes(project.id));
+  const mine =
+    having.find((state) => state.workspace.projectIds.length === 1) ??
+    having.find((state) => state.workspace.homeProjectId === project.id) ??
+    having[0];
+  return mine === undefined
+    ? { kind: "repo", projectId: project.id }
+    : { kind: "workspace", workspaceId: mine.workspace.id };
+}
 
 const CHECKOUTS: { value: CheckoutKind; label: string }[] = [
   { value: "current", label: "Current checkout" },
@@ -301,6 +324,16 @@ function ConfiguredNewThreadDraft() {
     }
   };
 
+  // The orchestrator and a worker are the task draft; what was typed goes along, and so does the
+  // folder, as its workspace or as a repo to make one for.
+  const pickWho = (who: Who) => {
+    if (who === "me" || attachments.uploading) return;
+    carryDraft({ text: prompt, draftId, attachments: attachments.ready });
+    prefillTaskTarget(folderTarget(project, workspaces));
+    useTaskDraftStore.getState().rememberEntry(WHO_ENTRY[who]);
+    void navigate({ to: "/new-task", search: who === "worker" ? { way: "direct" } : {} });
+  };
+
   const browse = () =>
     focusIfConnected(formRef.current?.querySelector('[aria-label="Project path"]'));
 
@@ -322,42 +355,29 @@ function ConfiguredNewThreadDraft() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <form
         ref={formRef}
-        className="mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-8 px-6 pb-10"
+        className="mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-8 p-6 pb-10"
         aria-label="New thread"
         onSubmit={(event) => {
           event.preventDefault();
           void create();
         }}
       >
-        {/* The hero: the question, and a prompt box shaped like the composer it becomes. */}
-        <section className="flex min-h-[min(34rem,72vh)] flex-col justify-center gap-4 pt-8">
-          <div className="flex justify-center">
-            <TaskTargetPicker
-              value={{ kind: "oneOff" }}
-              disabled={attachments.uploading}
-              workspaces={workspaces}
-              projects={projects}
-              onPick={(target) => {
-                if (target.kind === "oneOff") return;
-                carryDraft({ text: prompt, draftId, attachments: attachments.ready });
-                if (target.kind === "newWorkspace") return void navigate({ to: "/new-workspace" });
-                prefillTaskTarget(target);
-                void navigate({ to: "/new-task" });
-              }}
-            />
-          </div>
-
-          <h1 className="text-center font-heading text-2xl font-normal tracking-tight text-balance sm:text-3xl">
-            What should we build in{" "}
-            <FolderPicker
-              inline
-              folder={projectRoot}
-              projects={recents}
-              onPickFolder={setTypedRoot}
-              onBrowse={browse}
-            />
-            ?
-          </h1>
+        {/* The New form's header, and a prompt box shaped like the composer it becomes. */}
+        <section className="flex flex-col gap-4">
+          <NewFormHeader
+            who="me"
+            onWho={pickWho}
+            disabled={attachments.uploading}
+            where={
+              <FolderPicker
+                folder={projectRoot}
+                projects={recents}
+                onPickFolder={setTypedRoot}
+                onBrowse={browse}
+              />
+            }
+            line="You and one agent in one folder: no workspace, and no orchestrator turn to pay for."
+          />
 
           <div
             ref={slabRef}

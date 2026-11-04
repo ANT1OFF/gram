@@ -3,11 +3,11 @@ import { expect, test } from "@playwright/test";
 import { openOverviewDensity } from "./overview-density";
 import { seedTheme } from "./seed-theme";
 
-// The overview header's `+` opens the New menu: a task for a workspace's orchestrator, a worker in
-// one, a one-off thread, or a new workspace, each landing on its own first screen. Its place in the
-// header at each width is in sidebar-top-utilities.spec.ts.
+// The overview header's `+` opens the one New form: Who does it (the orchestrator, a worker, or
+// Just me), where it goes, and the goal. Its place in the header at each width is in
+// sidebar-top-utilities.spec.ts.
 
-test("New explains itself, works from the keyboard, lands each pick and opens on the last one", async ({
+test("New is one form: Who does it, an in chip with New workspace, and the shortcuts preset it", async ({
   page,
 }) => {
   await seedTheme(page, { palette: "minimal-ocean", mode: "dark", motion: "off" });
@@ -18,74 +18,60 @@ test("New explains itself, works from the keyboard, lands each pick and opens on
   }));
   const sidebar = page.getByTestId("overview-sidebar");
   const add = sidebar.getByRole("button", { name: "New", exact: true });
-  await expect(add).toHaveAttribute("title", "New task, worker, one-off thread or workspace");
-  await expect(add).toHaveAttribute("aria-haspopup", "menu");
+  await expect(add).not.toHaveAttribute("aria-haspopup");
   await sidebar.getByRole("button", { name: "Compact overview", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(add).toBeFocused();
   expect(await add.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
 
-  // Enter opens it on the task row; each row says where it goes and its shortcut.
+  // Enter opens the form on the orchestrator, aimed at the workspace on screen.
   await page.keyboard.press("Enter");
-  const menu = page.getByTestId("new-entry-menu");
-  await expect(menu).toBeVisible();
-  const task = page.getByTestId("new-entry-task");
-  await expect(task).toHaveAttribute("data-highlighted", "");
-  await expect(task).toContainText(/Task for .+'s orchestrator|New task/);
-  await expect(page.getByTestId("new-entry-worker")).toContainText(/Worker in .+|New worker/);
-  await expect(page.getByTestId("new-entry-oneOff")).toContainText("One-off thread");
-  await expect(page.getByTestId("new-entry-workspace")).toContainText("New workspace…");
-  await expect(menu.getByRole("separator")).toHaveCount(1);
-
-  // → opens Send to on the worker row, ← comes back, and a workspace there is the target.
-  await page.keyboard.press("ArrowDown");
-  await expect(page.getByTestId("new-entry-worker")).toHaveAttribute("data-highlighted", "");
-  await page.keyboard.press("ArrowRight");
-  const sendTo = page.getByTestId("new-entry-worker-to");
-  await expect(sendTo).toBeVisible();
-  await expect(sendTo).toContainText("Send to");
-  await page.keyboard.press("ArrowLeft");
-  await expect(sendTo).toBeHidden();
-  await page.keyboard.press("ArrowRight");
-  await expect(sendTo.getByRole("menuitem", { name: "agent-platform" })).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(
-    new RegExp(`/new-task\\?way=direct&workspace=${board.workspaceId}$`),
-  );
+  await expect(page).toHaveURL(/\/new-task$/);
   const draft = page.getByRole("form", { name: "New task" });
-  await expect(draft.getByRole("heading", { name: "New worker" })).toBeVisible();
-  await expect(draft.getByTestId("task-target")).toHaveText("Worker in agent-platform");
-  await expect(draft.getByRole("radiogroup")).toHaveCount(0);
-  await draft.getByLabel("What needs doing").fill("Synthetic draft kept for review");
+  await expect(draft.getByRole("heading", { name: "New", exact: true })).toBeVisible();
+  const who = draft.getByRole("radiogroup", { name: "Who does it" });
+  await expect(who.getByRole("radio")).toHaveText(["Orchestrator", "Worker", "Just me"]);
+  await expect(who.getByRole("radio", { name: "Orchestrator" })).toBeChecked();
+  await expect(draft.getByTestId("task-target")).toHaveText("agent-platform");
 
-  // Opened again, the menu starts on the worker row, so Enter repeats it and keeps the draft.
-  await add.click();
-  await expect(page.getByTestId("new-entry-worker")).toHaveAttribute("data-highlighted", "");
-  await page.keyboard.press("Enter");
-  await expect(menu).toBeHidden();
-  await expect(draft.getByRole("heading", { name: "New worker" })).toBeVisible();
+  // Worker keeps the goal and the workspace.
+  await draft.getByLabel("What needs doing").fill("Synthetic draft kept for review");
+  await who.getByRole("radio", { name: "Worker" }).click();
+  await expect(page).toHaveURL(/\/new-task\?way=direct$/);
+  await expect(draft.getByTestId("task-target")).toHaveText("agent-platform");
   await expect(draft.getByLabel("What needs doing")).toHaveValue("Synthetic draft kept for review");
 
-  // ⌘N is still the task, ⌥⌘N the worker.
+  // The in chip lists the workspaces and New workspace.
+  await draft.getByTestId("task-target").click();
+  const menu = page.getByTestId("task-target-menu");
+  await expect(menu.getByRole("menuitem", { name: /agent-platform/ })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "New workspace" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Opened again, New starts on the worker, the choice used last.
+  await add.click();
+  await expect(page).toHaveURL(/\/new-task\?way=direct$/);
+  await expect(who.getByRole("radio", { name: "Worker" })).toBeChecked();
+
+  // ⌘N is still the orchestrator, ⌥⌘N the worker, ⌘T Just me.
   await page.keyboard.press("ControlOrMeta+n");
   await expect(page).toHaveURL(/\/new-task$/);
-  await expect(draft.getByRole("heading", { name: "New task" })).toBeVisible();
+  await expect(who.getByRole("radio", { name: "Orchestrator" })).toBeChecked();
   await page.keyboard.press("ControlOrMeta+Alt+n");
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
-  await expect(draft.getByRole("heading", { name: "New worker" })).toBeVisible();
-
-  // The other two rows land on their own first screens.
-  await add.click();
-  await page.getByTestId("new-entry-oneOff").click();
+  await expect(who.getByRole("radio", { name: "Worker" })).toBeChecked();
+  await page.keyboard.press("ControlOrMeta+t");
   await expect(page).toHaveURL(/\/new$/);
-  await add.click();
-  await expect(page.getByTestId("new-entry-oneOff")).toHaveAttribute("data-highlighted", "");
-  await page.getByTestId("new-entry-workspace").click();
-  await expect(page).toHaveURL(/\/new-workspace$/);
-  await add.click();
-  await page.keyboard.press("Escape");
-  await expect(menu).toBeHidden();
-  await expect(add).toBeFocused();
+  await expect(
+    page.getByRole("radiogroup", { name: "Who does it" }).getByRole("radio", { name: "Just me" }),
+  ).toBeChecked();
+
+  // A workspace named by the route is the target.
+  await page.evaluate((id) => {
+    history.pushState({}, "", `/new-task?way=direct&workspace=${id}`);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, board.workspaceId);
+  await expect(draft.getByTestId("task-target")).toHaveText("agent-platform");
 
   const after = await page.evaluate(async () => ({
     threads: window.gramMock!.world.threads().length,
@@ -119,9 +105,9 @@ test("worker draft keeps the selected unavailable provider blocked without creat
     .getByTestId("overview-sidebar")
     .getByRole("button", { name: "New", exact: true })
     .click();
-  await page.getByTestId("new-entry-worker").click();
   const draft = page.getByRole("form", { name: "New task" });
-  await expect(draft.getByRole("heading", { name: "New worker" })).toBeVisible();
+  await draft.getByRole("radio", { name: "Worker" }).click();
+  await expect(draft.getByRole("radio", { name: "Worker" })).toBeChecked();
   await draft.getByLabel("What needs doing").fill("Synthetic refusal fixture");
   await expect(
     draft.getByText("Synthetic provider is signed out; log in explicitly.").first(),

@@ -237,7 +237,7 @@ test("a dismissed problem shows again when the check result changes", async ({ p
   await expect(banner).not.toContainText("gh isn't installed");
 });
 
-test("first run is one screen: pick a repository, with only failing tools beside it", async ({
+test("first run is one screen: how Gram works, the agents, a repository and past sessions", async ({
   page,
 }) => {
   // Only Codex, signed in: set here, never the machine's own CLIs.
@@ -255,13 +255,32 @@ test("first run is one screen: pick a repository, with only failing tools beside
       localAgentsInUse: ["codex"],
     }),
   });
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
   await page.goto("/");
   const welcome = page.getByTestId("welcome");
+  await expect(welcome.getByRole("heading", { name: "How Gram works" })).toBeVisible();
+  await expect(
+    welcome.getByRole("list", { name: "How Gram works" }).getByRole("listitem"),
+  ).toHaveText([
+    /^You give tasks/,
+    /^An orchestrator plans them and briefs workers/,
+    /^Workers run Claude Code or Codex/,
+  ]);
   await expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeVisible();
-  // Codex alone is enough: Claude Code missing is nothing to fix, and tools that work say nothing.
+  // Codex alone is enough: Claude Code missing is shown, but is nothing to fix.
   await expect(welcome.getByRole("button", { name: /^web/ })).toBeVisible();
-  await expect(welcome.getByRole("list", { name: "Tools" })).toHaveCount(0);
+  const agents = welcome.getByRole("list", { name: "Agents" }).getByRole("listitem");
+  await expect(agents).toHaveCount(2);
+  await expect(agents.nth(0)).toHaveAttribute("data-state", "optional");
+  await expect(agents.nth(0)).toContainText("Not installed");
+  await expect(agents.nth(1)).toHaveAttribute("data-state", "ready");
+  await expect(agents.nth(1)).toContainText("Signed in");
   await expect(welcome.getByRole("button", { name: "Check again" })).toHaveCount(0);
+  // A true first run: nothing in the sidebar can need anyone yet.
+  await expect(page.getByTestId("overview-needs-you")).toHaveCount(0);
+  // Past CLI sessions can be picked up from here, as ⌘K's Resume past session lists them.
+  await welcome.getByRole("button", { name: "Import past CLI sessions" }).click();
+  await expect(welcome.getByTestId("resume-sessions")).toBeVisible();
   await expect(page.getByTestId("launch-checks-banner")).toBeHidden();
   await expect(page.getByText("Select a thread, or start a new one.")).toHaveCount(0);
   await expect(welcome.getByRole("form", { name: "Connect the AI gateway" })).toHaveCount(0);

@@ -158,7 +158,7 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
         .getAllByRole("radio")
         .filter((radio) => radio.getAttribute("aria-checked") === "true")
         .map((radio) => ({
-          name: radio.textContent,
+          name: radio.getAttribute("aria-label"),
           slab: radio.querySelector('[data-testid="segment-slab"]')?.className ?? "",
         }));
     // The sheet is a card, and the slab's fill is a card's too: the track and hairline show it.

@@ -28,7 +28,7 @@ import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { focusIfConnected } from "@/lib/use-return-focus";
 import { Expand, PressScale, Spinner } from "@/motion";
 import { AddRepository, type AddRepositoryHandle } from "@/new-thread/add-repository";
-import { AutonomyField } from "@/settings/autonomy-field";
+import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { Field, inputCls } from "@/settings/fields";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { projectNameOf, withAutonomy } from "@/settings/workspace-settings-model";
@@ -329,6 +329,16 @@ function SheetForm({
         repositoryRef={repositoryRef}
         onPendingChange={setPending}
       />
+      <AutonomyChoice
+        testId="autonomy"
+        value={autonomyOf(charter)}
+        onChange={(autonomy) =>
+          setDraft((current) => ({
+            ...current,
+            charter: withAutonomy(charterOf(current, starting), autonomy),
+          }))
+        }
+      />
       <Field label="What should it work on?" htmlFor={taskId}>
         <textarea
           ref={focusTask}
@@ -344,17 +354,6 @@ function SheetForm({
           }}
         />
       </Field>
-      <AutonomyField
-        value={autonomyOf(charter)}
-        disabled={false}
-        error={undefined}
-        onChange={(autonomy) =>
-          setDraft((current) => ({
-            ...current,
-            charter: withAutonomy(charterOf(current, starting), autonomy),
-          }))
-        }
-      />
       {issue !== undefined && (
         <p role="alert" className="text-destructive">
           {issue}
