@@ -53,7 +53,7 @@ export function StopReceiptLine({ threadId }: { threadId: ThreadId }) {
     >
       <span aria-hidden className="h-px flex-1 bg-border" />
       <span className="flex items-center gap-1.5">
-        <Square aria-hidden className="size-2.5 fill-current" />
+        <Square aria-hidden className="size-3 fill-current" />
         <span data-testid="stop-receipt-label" className="text-foreground">
           {stopLabel(receipt)}
         </span>
