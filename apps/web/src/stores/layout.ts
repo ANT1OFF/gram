@@ -37,6 +37,13 @@ export const PANEL_WIDTH: WidthBounds = { min: 240, max: 4096, default: 352 };
  * the conversation get room to read. A drag there is kept apart from the other tabs' `panelWidth`.
  */
 export const REVIEW_WIDTH_SHARE = 0.55;
+/**
+ * The chat a review leaves when it sizes itself: the transcript's reading width
+ * (`--thread-max-width`, 48rem) and its gutters, so the review takes only the room the transcript
+ * leaves empty, and the title bar keeps its chips and crumbs. A drag goes past it, down to
+ * `CHAT_MIN_WIDTH`.
+ */
+export const REVIEW_CHAT_WIDTH = 800;
 /** What's left of the chat beside a review in focus: a strip that brings the conversation back. */
 export const REVIEW_STRIP_WIDTH = 48;
 /** The narrowest the chat (or grid) gets while the panel beside it is dragged wider. */
@@ -71,23 +78,31 @@ const PANEL_TABS: readonly RightPanelTab[] = [
 export const isReviewTab = (tab: RightPanelTab): boolean => tab === "diff" || tab === "pr";
 
 /**
- * The panel is sized as a review: a review tab beside a thread's chat. Beside a board or an
- * orchestrator's chat (`chatBusy`), which need the room themselves, it keeps the other tabs' width.
+ * The panel is sized as a review: a review tab beside a thread's chat. Beside a board, a grid of
+ * panes or an orchestrator's chat (`chatBusy`), which need the room themselves, it keeps the other
+ * tabs' width.
  */
 export const reviewSized = (state: Pick<LayoutState, "panelTab" | "chatBusy">): boolean =>
   isReviewTab(state.panelTab) && state.chatBusy !== true;
 
 /**
- * The width the panel asks for on its tab, before the window has its say: a review's own width
- * (the remembered drag, else `REVIEW_WIDTH_SHARE` of the window, never narrower than the other
- * tabs'), or `panelWidth`.
+ * The width the panel asks for on its tab beside a `sidebarWidth` overview, before the window has
+ * its say: a review's own width (the remembered drag, else `REVIEW_WIDTH_SHARE` of the window as far
+ * as it leaves the chat `REVIEW_CHAT_WIDTH`, never narrower than the other tabs'), or `panelWidth`.
  */
 export const panelWidthFor = (
   state: Pick<LayoutState, "panelTab" | "panelWidth" | "reviewWidth" | "windowWidth" | "chatBusy">,
+  sidebarWidth: number,
 ): number =>
   reviewSized(state)
     ? (state.reviewWidth ??
-      Math.max(state.panelWidth, Math.round(state.windowWidth * REVIEW_WIDTH_SHARE)))
+      Math.max(
+        state.panelWidth,
+        Math.min(
+          Math.round(state.windowWidth * REVIEW_WIDTH_SHARE),
+          state.windowWidth - sidebarWidth - REVIEW_CHAT_WIDTH,
+        ),
+      ))
     : state.panelWidth;
 
 export const clampWidth = (width: number, bounds: WidthBounds): number =>
@@ -114,8 +129,8 @@ interface ShellContext {
   /** Which page the route is, so `panelPeek` is cleared on leaving it; see `shellPage`. */
   page: string;
   /**
-   * The chat's place holds a board or an orchestrator's chat, which need their room: a review beside
-   * them keeps the usual width.
+   * The chat's place holds a board, a grid or an orchestrator's chat, which need their room: a
+   * review beside them keeps the usual width.
    */
   chatBusy?: boolean | undefined;
 }
@@ -230,7 +245,7 @@ export function fitShell(input: ShellFitInput): ShellFit {
   }
   const panelWidth =
     panel === "side"
-      ? clampWidth(panelWidthFor(input), panelBounds(input.windowWidth, sidebarWidth))
+      ? clampWidth(panelWidthFor(input, sidebarWidth), panelBounds(input.windowWidth, sidebarWidth))
       : panel === "over"
         ? beside
         : 0;

@@ -10,6 +10,7 @@ import {
   overviewShown,
   panelBounds,
   PANEL_WIDTH,
+  REVIEW_CHAT_WIDTH,
   REVIEW_STRIP_WIDTH,
   REVIEW_WIDTH_SHARE,
   sanitizeBoardFilters,
@@ -111,22 +112,26 @@ describe("fitShell", () => {
 describe("review width", () => {
   it("opens the Diff and PR tabs at a share of the window, the others at their own width", () => {
     for (const panelTab of ["diff", "pr"] as const) {
-      expect(fit({ panelTab, windowWidth: 1600 })).toMatchObject({
+      expect(fit({ panelTab, windowWidth: 2400 })).toMatchObject({
         panel: "side",
-        panelWidth: Math.round(1600 * REVIEW_WIDTH_SHARE),
+        panelWidth: Math.round(2400 * REVIEW_WIDTH_SHARE),
         sidebarWidth: SIDEBAR_WIDTH.default,
       });
     }
-    expect(fit({ panelTab: "terminal", windowWidth: 1600 }).panelWidth).toBe(PANEL_WIDTH.default);
-    // Never narrower than the other tabs, and never past the chat's minimum.
+    expect(fit({ panelTab: "terminal", windowWidth: 2400 }).panelWidth).toBe(PANEL_WIDTH.default);
+    // As far as it leaves the chat its room, and never narrower than the other tabs.
+    expect(fit({ panelTab: "diff", windowWidth: 1600 }).panelWidth).toBe(
+      1600 - SIDEBAR_WIDTH.default - REVIEW_CHAT_WIDTH,
+    );
     expect(fit({ panelTab: "diff", windowWidth: 1600, panelWidth: 950 }).panelWidth).toBe(950);
-    expect(fit({ panelTab: "diff", windowWidth: 1000 }).panelWidth).toBe(550);
-    expect(fit({ panelTab: "diff", windowWidth: 1000, overviewSidebar: "open" }).panelWidth).toBe(
-      1000 - SIDEBAR_WIDTH.default - CHAT_MIN_WIDTH,
+    expect(fit({ panelTab: "diff", windowWidth: 1000 }).panelWidth).toBe(PANEL_WIDTH.default);
+    // A drag goes past the chat's room, down to its minimum.
+    expect(fit({ panelTab: "diff", windowWidth: 1600, reviewWidth: 1200 }).panelWidth).toBe(
+      1600 - SIDEBAR_WIDTH.default - CHAT_MIN_WIDTH,
     );
   });
 
-  it("keeps the usual width beside a board or an orchestrator, which need the room themselves", () => {
+  it("keeps the usual width beside a board, a grid or an orchestrator, which need the room", () => {
     expect(fit({ panelTab: "diff", windowWidth: 1600, chatBusy: true }).panelWidth).toBe(
       PANEL_WIDTH.default,
     );

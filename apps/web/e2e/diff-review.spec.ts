@@ -29,11 +29,8 @@ test("the file tree jumps to a file, and n / p step through its hunks", async ({
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("diff-panel");
-  // The review opens wide enough for the tree beside the files.
-  await expect(panel.getByTestId("diff-file").first()).toBeVisible();
-  await expect(panel.getByRole("tree", { name: "Changed files" })).toBeVisible();
   // A narrow panel leaves the files to their list; the tree takes its place beside it once wider.
-  await dragPanelEdge(page, 420);
+  await expect(panel.getByTestId("diff-file").first()).toBeVisible();
   await expect(panel.getByRole("tree")).toHaveCount(0);
   await dragPanelEdge(page, -420);
   const tree = panel.getByRole("tree", { name: "Changed files" });
@@ -81,11 +78,9 @@ test("split view shows old and new side by side once the panel is wide enough", 
   await page.goto("/t/t-docs");
   const panel = page.getByTestId("diff-panel");
   await expect(panel.getByTestId("patch")).toBeVisible();
-  // Narrower than the review opens.
-  await dragPanelEdge(page, 320);
 
   await panel.getByRole("radio", { name: "Split" }).click();
-  // The panel is too narrow: unified it stays, and the toggle says why.
+  // The default panel is too narrow: unified it stays, and the toggle says why.
   await expect(panel).toHaveAttribute("data-layout", "unified");
   await expect(panel.getByRole("radio", { name: "Split" })).toHaveAttribute("title", /wider/);
 

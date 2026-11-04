@@ -128,6 +128,8 @@ test("a worker's crumbs lead to its feature and its siblings, and the switcher u
   await page.keyboard.press("ControlOrMeta+KeyJ");
   await row(page, made.asking).click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.asking}$`));
+  // Beside the Files tab: a review opens wider and leaves the chat, and its title bar, 800 px.
+  await page.getByTestId("right-panel").getByRole("tab", { name: "Files", exact: true }).click();
 
   await page.getByTestId("worker-crumb-worker").click();
   await expect(list(page)).toBeVisible();

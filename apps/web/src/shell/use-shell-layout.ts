@@ -47,7 +47,9 @@ export function useShellLayout() {
   const orchestrator = useThreadsStore(
     (s) => threadId !== undefined && s.byId[threadId]?.thread.role === "orchestrator",
   );
-  const chatBusy = board || orchestrator;
+  // A grid of panes shares the chat's place among its threads, so it needs the room too.
+  const grid = useLayoutStore((s) => s.grid.preset !== "1" && !s.grid.maximized);
+  const chatBusy = board || orchestrator || grid;
   const page = useLocation({
     select: (location) => shellPage(location.pathname),
   });
@@ -82,7 +84,10 @@ export function useShellLayout() {
   const left = fit.sidebarWidth;
   const bounds = panelBounds(windowWidth, left);
   const shownWidth = clampWidth(
-    panelWidthFor({ panelTab, panelWidth, reviewWidth, windowWidth, chatBusy }),
+    panelWidthFor(
+      { panelTab, panelWidth, reviewWidth, windowWidth, chatBusy },
+      unfocused.sidebarWidth,
+    ),
     panelBounds(windowWidth, unfocused.sidebarWidth),
   );
   return {

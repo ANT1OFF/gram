@@ -22,6 +22,9 @@ for (const width of [880, 1440]) {
       .getByRole("button", { name: /^Hide #412 / })
       .click();
     await expect(page.getByTestId("pr-row")).toHaveCount(0);
+    // Measured beside the Files tab's 352 px: a review opens wider, leaving the chat 800 px, and
+    // the title bar then folds chips out of sight sooner (review-width.spec.ts).
+    await panel.getByRole("tab", { name: "Files", exact: true }).click();
 
     const header = page.getByTestId("pane-header").first();
     const overflow = await header.evaluate((el) => el.scrollWidth - el.clientWidth);

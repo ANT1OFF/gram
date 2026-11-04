@@ -22,29 +22,33 @@ async function dragHandle(page: Page, dx: number) {
 test("the Diff and PR tabs open wide, keep their own width, and give it back for other tabs", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.setViewportSize({ width: 2400, height: 900 });
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
   await expect(tab(page, "Diff")).toHaveAttribute("aria-selected", "true");
   // 55% of the window, beside the 248 px overview.
-  await expect.poll(() => widthOf(panel)).toBe(880);
+  await expect.poll(() => widthOf(panel)).toBe(1320);
+  // In a narrower window, as far as it leaves the chat 800 px.
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await expect.poll(() => widthOf(panel)).toBe(1600 - 248 - 800);
+  await page.setViewportSize({ width: 2400, height: 900 });
 
   await tab(page, "Files").click();
   await expect.poll(() => widthOf(panel)).toBe(352);
   await tab(page, "PR").click();
-  await expect.poll(() => widthOf(panel)).toBe(880);
+  await expect.poll(() => widthOf(panel)).toBe(1320);
 
   // A drag on a review is the review's; the other tabs keep theirs.
   await dragHandle(page, 100);
-  await expect.poll(() => widthOf(panel)).toBe(780);
+  await expect.poll(() => widthOf(panel)).toBe(1220);
   await tab(page, "Terminal").click();
   await expect.poll(() => widthOf(panel)).toBe(352);
   await tab(page, "Diff").click();
-  await expect.poll(() => widthOf(panel)).toBe(780);
+  await expect.poll(() => widthOf(panel)).toBe(1220);
 
   // Remembered across a reload.
   await page.reload();
-  await expect.poll(() => widthOf(page.getByTestId("right-panel"))).toBe(780);
+  await expect.poll(() => widthOf(page.getByTestId("right-panel"))).toBe(1220);
 });
 
 test("Focus review takes the window but for a strip of the chat, and Esc gives it back", async ({
@@ -55,7 +59,7 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
   const shell = page.getByTestId("app-shell");
   const panel = page.getByTestId("right-panel");
   const chat = page.locator("main");
-  await expect.poll(() => widthOf(panel)).toBe(792);
+  await expect.poll(() => widthOf(panel)).toBe(1440 - 248 - 800);
   const chatWidth = await widthOf(chat);
 
   await panel.getByRole("button", { name: "Focus review" }).click();
@@ -73,7 +77,7 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
   await page.mouse.move(700, 600);
   await page.keyboard.press("Escape");
   await expect(shell).toHaveAttribute("data-review-focus", "false");
-  await expect.poll(() => widthOf(panel)).toBe(792);
+  await expect.poll(() => widthOf(panel)).toBe(1440 - 248 - 800);
   await expect(chat).not.toHaveAttribute("inert");
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
 
