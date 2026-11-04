@@ -174,6 +174,8 @@ export const ComposerSettings = Schema.Struct({
 export type ComposerSettings = typeof ComposerSettings.Type;
 
 export const AgentSettings = Schema.Struct({
+  /** Keep the system awake during open turns. Absent means on; the display may still sleep. */
+  keepAwake: Schema.optionalKey(Schema.Boolean),
   defaultModel: Schema.optionalKey(ModelRef),
   /** Absent until a model is added; read through `customModelsOf`. */
   customModels: Schema.optionalKey(Schema.Array(CustomModel)),
@@ -591,6 +593,9 @@ export const Settings = Schema.Struct({
 });
 export type Settings = typeof Settings.Type;
 
+/** System sleep prevention during agent turns, on by default. */
+export const keepAwakeOn = (settings: Settings): boolean => settings.agents.keepAwake !== false;
+
 /**
  * The only MCP servers a Claude orchestrator keeps beside Gram's own, trimmed and without
  * blanks; empty when the user lists none, which leaves it the default (`mcpListsFor`).
@@ -872,6 +877,7 @@ export const SettingsPatch = Schema.Struct({
       defaultMode: Schema.optionalKey(AgentSettings.fields.defaultMode),
       idleEvictMinutes: Schema.optionalKey(AgentSettings.fields.idleEvictMinutes),
       followWorktreeMoves: Schema.optionalKey(AgentSettings.fields.followWorktreeMoves),
+      keepAwake: clearable(Schema.Boolean),
       restartOnMcpChange: Schema.optionalKey(Schema.Boolean),
       /** Replaces the whole list. */
       workerModels: clearable(Schema.Array(WorkerModel)),
