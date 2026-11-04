@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 import { useChangeCount } from "./swap";
 
-export type PulseTone = "needs" | "success" | "merged" | "primary";
+export type PulseTone = "needs" | "warning" | "success" | "merged" | "primary";
 
 /**
  * Marks the moment something changed for the better or started needing you: one ring that widens and

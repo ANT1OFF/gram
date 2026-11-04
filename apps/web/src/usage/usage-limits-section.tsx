@@ -8,6 +8,7 @@ import {
   currentLimit,
   LIMIT_PROVIDERS,
   LIMIT_WINDOWS,
+  limitSpent,
   limitStale,
   limitWarns,
   useUsageLimits,
@@ -126,13 +127,15 @@ function LimitCard({
     );
   const percent = limitPercent(limit.utilization);
   const warns = limitWarns(limit);
+  const spent = limitSpent(limit);
   const forecast =
     limit.at === undefined || limit.samples === undefined
       ? undefined
       : limitForecast({ ...limit, at: limit.at, samples: limit.samples }, now);
   const reach = forecast === undefined ? percent : Math.round(forecast.target * 100);
-  // The provider's colour, unless the window is near its limit: then the warning colour says so.
-  const colour = warns ? "var(--warning)" : PROVIDER_COLOR[provider];
+  // The provider's colour, unless the window is near its limit: then the warning colour says so,
+  // and red once it is spent with no credits.
+  const colour = spent ? "var(--danger)" : warns ? "var(--warning)" : PROVIDER_COLOR[provider];
   return (
     <div
       role="group"
@@ -147,7 +150,10 @@ function LimitCard({
         <CardTitle provider={provider} window={window} />
         <p
           data-testid="usage-limit-percent"
-          className={cn("ml-auto text-2xl leading-none font-medium", warns && "text-warning")}
+          className={cn(
+            "ml-auto text-2xl leading-none font-medium",
+            spent ? "text-destructive" : warns && "text-warning",
+          )}
         >
           {percent}
           <span className="ml-px text-sm font-normal text-muted-foreground">%</span>

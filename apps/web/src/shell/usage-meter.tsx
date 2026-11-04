@@ -10,6 +10,7 @@ import {
   LIMIT_PROVIDERS,
   LIMIT_WINDOWS,
   limitStale,
+  limitTone,
   limitWarns,
   nextLimitChange,
   tightestLimit,
@@ -72,10 +73,16 @@ export function UsageMeter({
   const tightest = tightestLimit(limits, now);
   if (tightest === undefined) return null;
   const warns = limitWarns(tightest.limit);
+  const tone = limitTone(tightest.limit);
   const stale = limitStale(tightest.limit, now);
 
   return (
-    <PulseOnce trigger={warns} when={warns} tone="needs" className={cn("rounded-full", className)}>
+    <PulseOnce
+      trigger={warns}
+      when={warns}
+      tone="warning"
+      className={cn("rounded-full", className)}
+    >
       <TitlebarPopover
         label="Subscription usage"
         testId="usage-limits"
@@ -85,12 +92,13 @@ export function UsageMeter({
             type="button"
             data-testid="usage-meter"
             data-warn={warns || undefined}
+            data-spent={tone === "spent" || undefined}
             data-stale={stale || undefined}
             aria-label={meterLabel(tightest)}
             title="Subscription usage"
             className={cn(
               "flex h-6 items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted",
-              warns && "text-warning hover:text-warning",
+              TONE_TEXT[tone],
               stale && "opacity-70",
             )}
           >
@@ -155,7 +163,7 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
               data-window={window}
               className={cn(
                 "grid grid-cols-[3.75rem_1fr_2.25rem_4.75rem] items-center gap-2 text-muted-foreground tabular-nums",
-                limit !== undefined && limitWarns(limit) && "text-warning",
+                limit !== undefined && TONE_TEXT[limitTone(limit)],
               )}
             >
               <span>{WINDOW_LABEL[window]}</span>
@@ -192,7 +200,20 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
   );
 }
 
-/** A thin track whose fill glides to each new reading; warning-coloured from 80%. */
+/** A reading's words by its tone (`limitTone`): neutral, then amber from 80%, red once spent. */
+const TONE_TEXT = {
+  neutral: undefined,
+  warning: "text-warning hover:text-warning",
+  spent: "text-destructive hover:text-destructive",
+} as const;
+
+const TONE_FILL = {
+  neutral: "bg-muted-foreground",
+  warning: "bg-warning",
+  spent: "bg-destructive",
+} as const;
+
+/** A thin track whose fill glides to each new reading; amber from 80%, red once spent. */
 export function LimitBar({ limit, className }: { limit: UsageLimit; className?: string }) {
   const percent = limitPercent(limit.utilization);
   return (
@@ -204,7 +225,7 @@ export function LimitBar({ limit, className }: { limit: UsageLimit; className?: 
         data-testid="usage-meter-fill"
         className={cn(
           "block h-full rounded-full transition-[width] duration-(--dur-move-base) ease-(--ease-spring)",
-          limitWarns(limit) ? "bg-warning" : "bg-muted-foreground",
+          TONE_FILL[limitTone(limit)],
         )}
         style={{ width: `${percent}%` }}
       />

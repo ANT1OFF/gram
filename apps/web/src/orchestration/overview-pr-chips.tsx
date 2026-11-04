@@ -21,7 +21,8 @@ import { useOrchestratorLedger } from "./use-orchestration";
 
 const TONE: Record<PrChipTone, string> = {
   danger: "bg-destructive/12 text-destructive",
-  warning: "bg-status-needs/12 text-status-needs",
+  // Something for someone to look at: outlined, not amber, which is for what needs you.
+  warning: "bg-transparent text-foreground ring-1 ring-border-strong ring-inset",
   merged: "bg-transparent text-merged",
   plain: "bg-sidebar-row-hover text-muted-foreground",
 };

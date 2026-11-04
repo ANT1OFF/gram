@@ -86,7 +86,7 @@ export function KeyboardSection() {
                 <BindingItem key={row.id} id={row.id} label={row.label}>
                   <span className="min-w-0 flex-1 truncate">{row.label}</span>
                   {row.conflicts.length > 0 && (
-                    <span className="flex items-center gap-1 text-xs text-status-needs">
+                    <span className="flex items-center gap-1 text-xs text-warning">
                       <AlertTriangle aria-hidden className="size-3.5" />
                       Same keys as {row.conflicts.join(", ")}
                     </span>

@@ -363,7 +363,7 @@ export function NeedsYouRow({
                 ? "text-destructive"
                 : item.kind === "wait"
                   ? "text-muted-foreground"
-                  : "text-status-needs",
+                  : "text-status-needs-mark",
             )}
           />
         }

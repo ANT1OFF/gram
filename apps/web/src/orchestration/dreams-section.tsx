@@ -656,7 +656,7 @@ function FileDiff({
       {conflict && (
         <fieldset
           data-testid="dream-conflict"
-          className="flex flex-col gap-1.5 rounded-(--radius-md) border border-status-needs/50 bg-card p-2 text-xs"
+          className="flex flex-col gap-1.5 rounded-(--radius-md) border border-status-needs-mark/60 bg-card p-2 text-xs"
         >
           <legend className="sr-only">Which side of {file.path} to keep</legend>
           <p>
@@ -933,7 +933,7 @@ function Review({
           <p
             role="alert"
             data-testid="dream-review-refreshed"
-            className="flex items-start gap-1.5 rounded-(--radius-sm) border border-warning/50 bg-warning/10 px-2 py-1.5 text-xs"
+            className="flex items-start gap-1.5 rounded-(--radius-sm) border border-warning/50 px-2 py-1.5 text-xs"
           >
             <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
             <span>

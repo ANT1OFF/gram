@@ -143,8 +143,8 @@ export type ReviewMarkKind = "waiting" | "approved" | "changes" | "threads";
 export const REVIEW_DISPLAY: Record<ReviewMarkKind, PrMarkDisplay> = {
   waiting: { icon: UserRoundSearch, tone: "text-muted-foreground" },
   approved: { icon: UserRoundCheck, tone: "text-success" },
-  changes: { icon: MessageSquareWarning, tone: "text-warning" },
-  threads: { icon: MessageSquare, tone: "text-warning" },
+  changes: { icon: MessageSquareWarning, tone: "text-foreground" },
+  threads: { icon: MessageSquare, tone: "text-foreground" },
 };
 
 export interface ReviewSource {
@@ -227,7 +227,7 @@ export const BOT_DISPLAY: Record<BotMarkKind, PrMarkDisplay> = {
   blockers: { icon: Bot, tone: "text-destructive" },
   approved: { icon: BotMessageSquare, tone: "text-success" },
   changesRequested: { icon: Bot, tone: "text-destructive" },
-  findings: { icon: Bot, tone: "text-warning" },
+  findings: { icon: Bot, tone: "text-foreground" },
   reviewerThreads: REVIEW_DISPLAY.threads,
 };
 
@@ -259,9 +259,9 @@ export const MERGE_DISPLAY: Record<MergeMarkKind, PrMarkDisplay> = {
   refused: { icon: OctagonX, tone: "text-destructive" },
   held: { icon: CirclePause, tone: "text-muted-foreground" },
   waiting: { icon: Link2, tone: "text-muted-foreground" },
-  behind: { icon: ArrowDown, tone: "text-warning" },
-  blocked: { icon: Ban, tone: "text-warning" },
-  unstable: { icon: CircleAlert, tone: "text-warning" },
+  behind: { icon: ArrowDown, tone: "text-muted-foreground" },
+  blocked: { icon: Ban, tone: "text-foreground" },
+  unstable: { icon: CircleAlert, tone: "text-foreground" },
   armed: { icon: Timer, tone: "text-merged" },
   mergeable: { icon: GitMerge, tone: "text-success" },
 };

@@ -164,16 +164,28 @@ export const railTone = (worker: FeatureCardWorker, facts: RailFacts): RailTone 
     activity: facts.activity?.[worker.threadId],
   });
 
-/** A tone as a status dot: one colour per tone wherever a worker's dot is drawn. */
+/**
+ * A tone as a status dot: one colour per tone wherever a worker's dot is drawn. Amber is for what
+ * needs you and nothing else; a worker stalled on its own next step (attention) is a neutral ring.
+ */
 export const TONE_DOT: Readonly<Record<RailTone, string>> = {
-  needs: "bg-status-needs",
-  attention: "bg-status-needs",
+  needs: "bg-status-needs-mark",
+  attention: "border border-foreground bg-transparent",
   error: "bg-destructive",
   working: "bg-status-working",
   // Busy on CI or a review rather than a turn: the working colour, hollow.
   waiting: "border border-status-working bg-transparent",
   idle: "bg-status-idle",
   merged: "bg-merged",
+};
+
+/**
+ * A worker's dot under its orchestrator in the sidebar. The orchestrator's count is the one amber
+ * marker on its line, so a worker that needs you is a solid neutral dot and its words say why.
+ */
+export const NESTED_TONE_DOT: Readonly<Record<RailTone, string>> = {
+  ...TONE_DOT,
+  needs: "bg-foreground",
 };
 
 const emptyCells = (): Record<FeatureStation, RailWorker[]> => ({

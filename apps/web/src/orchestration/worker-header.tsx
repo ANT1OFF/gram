@@ -209,7 +209,7 @@ function HoldChip({
     <span
       data-testid={ghost ? undefined : "worker-hold"}
       role="status"
-      className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-status-needs/40 bg-status-needs/10 pl-1 text-xs text-foreground"
+      className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border pl-1 text-xs text-foreground"
     >
       <Hint
         label={`The orchestrator can't message it until you hand it back. It comes back by itself at its next report, or ${USER_HOLD_IDLE_MS / 60_000} minutes after your last message once idle.`}
@@ -221,13 +221,13 @@ function HoldChip({
           />
         }
       >
-        <Hand aria-hidden className="size-3 text-status-needs" />
+        <Hand aria-hidden className="size-3 text-muted-foreground" />
         <span className={cn(compact && "sr-only")}>You hold it</span>
       </Hint>
       <button
         type="button"
         data-testid={ghost ? undefined : "worker-hand-back"}
-        className="rounded-r-sm border-l border-status-needs/40 px-1 font-medium outline-none hover:bg-status-needs/20 focus-visible:ring-2 focus-visible:ring-ring"
+        className="rounded-r-sm border-l border-border px-1 font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
         onClick={release}
       >
         Hand back

@@ -193,6 +193,20 @@ export function latestReadingAt(limits: UsageLimits): number {
 export const limitWarns = (limit: UsageLimit): boolean =>
   limit.status === "rejected" || limit.utilization >= LIMIT_WARN_AT;
 
+/**
+ * Whether a window is spent with nothing to carry on: refused or full, and no credits behind it.
+ * The meter turns red for it; a full window on credits stays a warning.
+ */
+export const limitSpent = (limit: UsageLimit): boolean =>
+  limit.credits !== true && (limit.status === "rejected" || limit.utilization >= 1);
+
+/**
+ * A reading's colour: neutral below 80% of the window, the warning amber from there, red once it is
+ * spent with no credits (`limitSpent`).
+ */
+export const limitTone = (limit: UsageLimit): "neutral" | "warning" | "spent" =>
+  limitSpent(limit) ? "spent" : limitWarns(limit) ? "warning" : "neutral";
+
 /** Whether no agent has repeated `limit` for `LIMIT_STALE_MS`, so its age is worth showing. */
 export const limitStale = (limit: UsageLimit, now: number): boolean =>
   limit.at !== undefined && now - limit.at >= LIMIT_STALE_MS;

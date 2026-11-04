@@ -30,7 +30,7 @@ export type SectionHue =
  * nor `fg-muted` is: the neutral hues count in `status-idle`.
  */
 const HUE_TOKENS: Record<SectionHue, { icon: string; count: string }> = {
-  needs: { icon: "var(--status-needs)", count: "var(--status-needs)" },
+  needs: { icon: "var(--status-needs-mark)", count: "var(--status-needs)" },
   working: { icon: "var(--status-working)", count: "var(--status-working)" },
   idle: { icon: "var(--status-idle)", count: "var(--status-idle)" },
   settled: { icon: "var(--success-text)", count: "var(--success-text)" },

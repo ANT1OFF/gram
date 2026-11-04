@@ -28,13 +28,13 @@ export function AttentionPulse({ active, trigger = 0, className, children }: Att
         <>
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-status-needs"
+            className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-status-needs-mark"
           />
           {level !== "off" && (
             <m.span
               key={trigger}
               aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-[inherit] ring-2 ring-status-needs"
+              className="pointer-events-none absolute inset-0 rounded-[inherit] ring-2 ring-status-needs-mark"
               initial={{ opacity: 0.9, scale: 1 }}
               animate={level === "full" ? { opacity: 0, scale: 1.035 } : { opacity: 0 }}
               transition={{

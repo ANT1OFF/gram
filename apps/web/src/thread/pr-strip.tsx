@@ -69,13 +69,13 @@ const POPUP =
 const CHECKS_TONE: Record<ChecksRollup, string> = {
   passing: "text-success",
   failing: "text-destructive",
-  pending: "text-warning",
+  pending: "text-status-working",
   none: "text-muted-foreground",
 };
 
 const BUCKET_DISPLAY: Record<CheckBucketKind, { icon: LucideIcon; tone: string }> = {
   failed: { icon: CircleX, tone: "text-destructive" },
-  running: { icon: RingSpinner, tone: "text-warning" },
+  running: { icon: RingSpinner, tone: "text-status-working" },
   passed: { icon: CircleCheck, tone: "text-success" },
   skipped: { icon: Circle, tone: "text-muted-foreground" },
 };

@@ -424,7 +424,7 @@ const LINE_ICON: Record<StreamLine["kind"], { icon: LucideIcon; className: strin
   delivered: { icon: CircleCheck, className: "text-success" },
   failed: { icon: CircleX, className: "text-destructive" },
   ask: { icon: CircleAlert, className: "text-status-needs" },
-  paused: { icon: CirclePause, className: "text-status-needs" },
+  paused: { icon: CirclePause, className: "text-muted-foreground" },
 };
 
 /** One event that spoke: "rate-headers · Rate limit merged api#431 14:12". */

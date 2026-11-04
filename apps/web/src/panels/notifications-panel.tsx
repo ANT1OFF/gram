@@ -51,7 +51,7 @@ export function NotificationsBell() {
       {unread > 0 && (
         <span
           aria-hidden
-          className="absolute -top-0.5 -right-0.5 rounded-full bg-status-needs px-1 text-[9px] leading-3 text-background tabular-nums"
+          className="absolute -top-0.5 -right-0.5 rounded-full bg-primary px-1 text-[9px] leading-3 text-primary-foreground tabular-nums"
         >
           {unread}
         </span>
@@ -156,7 +156,7 @@ export function NotificationsPanel() {
                     <kind.icon aria-hidden className={cn("size-3.5 shrink-0", kind.tone)} />
                     <span>{kind.label}</span>
                     {!entry.read && (
-                      <span className="size-1.5 rounded-full bg-status-needs" aria-label="Unread" />
+                      <span className="size-1.5 rounded-full bg-primary" aria-label="Unread" />
                     )}
                     <time
                       className="ml-auto tabular-nums"

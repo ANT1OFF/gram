@@ -193,7 +193,7 @@ function WorkspaceRow({
               {paused !== undefined ? (
                 <span
                   data-testid="workspace-paused"
-                  className="inline-flex items-center gap-1 text-xs text-status-needs"
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground"
                 >
                   <CirclePause aria-hidden className="size-3" />
                   Paused

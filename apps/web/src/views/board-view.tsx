@@ -85,7 +85,7 @@ function WorkerChip({
       // The name's button stretches over the whole chip; the PR and the overlap sit above it.
       className={cn(
         "relative flex w-full max-w-52 min-w-0 flex-col gap-0.5 rounded-(--radius-md) border border-border bg-card px-2 py-1 text-xs focus-within:ring-2 focus-within:ring-ring hover:border-ring/60",
-        worker.tone === "needs" && "border-status-needs/50 bg-status-needs/10",
+        worker.tone === "needs" && "border-status-needs-mark/60",
       )}
     >
       <button
@@ -137,7 +137,7 @@ function WorkerChip({
             render={
               <span
                 data-testid="rail-overlap"
-                className="relative flex shrink-0 items-center text-status-needs"
+                className="relative flex shrink-0 items-center text-muted-foreground"
               />
             }
           >
@@ -234,7 +234,7 @@ function FeatureLine({
             <CircleAlert
               aria-label="Needs you"
               data-testid="rail-needs"
-              className="size-3 shrink-0 text-status-needs"
+              className="size-3 shrink-0 text-status-needs-mark"
             />
           )}
           <FeatureMenu

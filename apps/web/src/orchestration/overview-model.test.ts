@@ -337,9 +337,14 @@ describe("a workspace's line", () => {
     expect(overviewState(undefined, false)).toBe("idle");
   });
 
-  it("has one dot whatever its workers: the ask colour, held, working, else idle", () => {
+  it("has one dot whatever its workers, never amber: held, working, else idle", () => {
+    // Its count is the line's one amber marker, so an ask leaves the dot to what it does.
     expect(orchestratorLine("working", { working: 2, asks: 1 })).toEqual({
-      dot: "bg-status-needs",
+      dot: "bg-status-working",
+      pulse: false,
+    });
+    expect(orchestratorLine("idle", { working: 0, asks: 1 })).toEqual({
+      dot: "bg-status-idle",
       pulse: false,
     });
     expect(orchestratorLine("working", { working: 2, asks: 0 })).toEqual({

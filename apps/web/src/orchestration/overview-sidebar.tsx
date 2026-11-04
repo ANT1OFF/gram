@@ -88,7 +88,7 @@ import {
 import { ROW, RowMenu, Section, SETTLED, STOP } from "./overview-section";
 import { WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
-import { TONE_DOT, type RailTone } from "./rail-model";
+import { NESTED_TONE_DOT, type RailTone } from "./rail-model";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
 import { NeedsYouPopover } from "./needs-you-popover";
@@ -356,14 +356,14 @@ function NeedsYou() {
           aria-label={withHint(words, hint)}
           title={withHint(label, hint)}
           className={cn(
-            "flex w-full shrink-0 items-center gap-2 rounded-(--radius-md) px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "flex w-full shrink-0 items-center gap-2 rounded-(--radius-md) border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
             count > 0
-              ? "bg-status-needs/10 font-medium text-status-needs hover:bg-status-needs/15"
-              : "text-muted-foreground hover:bg-sidebar-row-hover",
+              ? "border-status-needs-mark/60 font-medium text-status-needs hover:bg-status-needs-mark/10"
+              : "border-transparent text-muted-foreground hover:bg-sidebar-row-hover",
           )}
         >
           {count > 0 && (
-            <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs" />
+            <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs-mark" />
           )}
           <span className="min-w-0 flex-1 truncate">{words}</span>
         </button>
@@ -529,7 +529,7 @@ function WorkspaceRow({
               {asks > 0 && (
                 <span
                   data-testid="overview-workspace-asks"
-                  className="min-w-4.5 rounded-full bg-status-needs/12 px-1.5 text-center text-[11px] leading-4.5 font-semibold text-status-needs tabular-nums"
+                  className="min-w-4.5 rounded-full border border-status-needs-mark/70 px-1.5 text-center text-[11px] leading-4 font-semibold text-status-needs tabular-nums"
                 >
                   {asks}
                 </span>
@@ -661,7 +661,7 @@ export function WorkerRow({
   const asking = row.askKey !== undefined;
   // One tone for its dot, its words and its count on the orchestrator's line, as the Board has it.
   const tone = rowTone(row, { status, working: busy });
-  const dot = TONE_DOT[tone];
+  const dot = NESTED_TONE_DOT[tone];
   const working = tone === "working";
   const waiting = rowWaiting(row, tone);
   // Ages to the minute.
@@ -786,7 +786,7 @@ function WorkerNow({ row, asking }: { row: OverviewWorkerRow; asking: boolean })
       swapKey={row.now}
       className={cn(
         "col-span-2 col-start-2 min-w-0 truncate text-xs",
-        asking ? "text-status-needs" : row.failed ? "text-destructive" : "text-muted-foreground",
+        asking ? "text-foreground" : row.failed ? "text-destructive" : "text-muted-foreground",
       )}
     >
       <span data-testid="overview-worker-now" className="truncate">
@@ -875,11 +875,7 @@ function WorkerCard({
           data-testid="overview-worker-card-now"
           className={cn(
             "min-w-0 truncate",
-            asking
-              ? "text-status-needs"
-              : row.failed
-                ? "text-destructive"
-                : "text-muted-foreground",
+            asking ? "text-foreground" : row.failed ? "text-destructive" : "text-muted-foreground",
           )}
         >
           {waiting?.label ?? row.now}
@@ -898,7 +894,7 @@ function WorkerCard({
       {pause !== undefined && (
         <p
           data-testid="overview-worker-card-paused"
-          className="flex items-center gap-1.5 text-xs text-status-needs"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground"
         >
           <WorkerPauseMark pause={pause} />
           {workerPauseHint(pause.state, pause.at)}
@@ -1249,7 +1245,8 @@ export function SoloRow({
           data-working={display.working || undefined}
           className={cn(
             "size-2 justify-self-center rounded-full bg-current",
-            display.tone,
+            // A dot is a mark, not words: needs-you takes its clean ui-grade amber.
+            display.tone === "text-status-needs" ? "text-status-needs-mark" : display.tone,
             display.working && "gram-working",
           )}
         />

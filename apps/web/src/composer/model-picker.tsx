@@ -90,7 +90,7 @@ export function ModelCombobox({
           field
             ? "flex h-8 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-muted"
             : "flex h-7 w-fit items-center gap-1.5 rounded-[min(var(--radius-md),10px)] border border-transparent bg-transparent px-2 text-xs font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none select-none hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[popup-open]:bg-accent",
-          warning && "text-status-needs hover:text-status-needs",
+          warning && "text-warning hover:text-warning",
         )}
       >
         {icon}
@@ -190,7 +190,10 @@ export function ModelCombobox({
                             >
                               <Star
                                 aria-hidden
-                                className={cn("size-3.5", starred && "fill-current text-warning")}
+                                className={cn(
+                                  "size-3.5",
+                                  starred && "fill-current text-foreground",
+                                )}
                               />
                             </button>
                           )}

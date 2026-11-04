@@ -72,7 +72,7 @@ function Questions({ state }: { state: WorkspaceState }) {
       className={SECTION}
     >
       <h2 className={HEADING}>
-        <CircleHelp aria-hidden className="size-4 text-status-needs" />
+        <CircleHelp aria-hidden className="size-4 text-status-needs-mark" />
         Decisions to make
         <span className="font-normal text-muted-foreground tabular-nums">
           <NumberTicker value={open.length} />

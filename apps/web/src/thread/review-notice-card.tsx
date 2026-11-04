@@ -114,7 +114,7 @@ export function ReviewNoticeCard({ notice, text }: { notice: ReviewNotice; text:
         </ul>
       )}
       <FindingList label="Blockers" findings={notice.blockers} tone="text-destructive" />
-      <FindingList label="Suggestions" findings={notice.suggestions} tone="text-warning" />
+      <FindingList label="Suggestions" findings={notice.suggestions} tone="text-muted-foreground" />
       <NoticeText text={text} />
     </article>
   );

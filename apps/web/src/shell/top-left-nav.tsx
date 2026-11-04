@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { UpdatePill } from "@/updates/update-pill";
 import { cn } from "@/lib/utils";
-import { limitWarns, tightestLimit, useUsageLimits } from "@/stores/usage-limits";
+import { limitSpent, limitWarns, tightestLimit, useUsageLimits } from "@/stores/usage-limits";
 import { limitSummaryText } from "@/usage/limit-format";
 
 import { useLimitsNow } from "./usage-meter";
@@ -26,6 +26,7 @@ export function TopLeftNav({ className }: { className?: string }) {
   const now = useLimitsNow(limits);
   const tightest = tightestLimit(limits, now);
   const warns = tightest !== undefined && limitWarns(tightest.limit);
+  const spent = tightest !== undefined && limitSpent(tightest.limit);
   const reading = tightest === undefined ? undefined : limitSummaryText(tightest);
   return (
     <div
@@ -55,7 +56,10 @@ export function TopLeftNav({ className }: { className?: string }) {
           <span
             aria-hidden
             data-testid="top-left-usage-dot"
-            className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-warning"
+            className={cn(
+              "absolute top-0.5 right-0.5 size-1.5 rounded-full",
+              spent ? "bg-destructive" : "bg-warning",
+            )}
           />
         )}
       </Hint>

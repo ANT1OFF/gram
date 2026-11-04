@@ -71,10 +71,7 @@ export function ForkDialog({
               : "The new thread gets the whole conversation, in a new worktree."}
           </Dialog.Description>
           {notice && (
-            <p
-              role="status"
-              className="rounded-md border border-status-needs/40 bg-status-needs/10 px-2 py-1.5 text-xs"
-            >
+            <p role="status" className="rounded-md border border-warning/50 px-2 py-1.5 text-xs">
               {notice}
             </p>
           )}

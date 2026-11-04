@@ -222,7 +222,7 @@ function Header({
         {paused !== undefined && (
           <span
             data-testid="workspace-paused"
-            className="inline-flex items-center gap-1 text-xs text-status-needs"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
           >
             <CirclePause aria-hidden className="size-3" />
             Paused
@@ -266,7 +266,7 @@ function Header({
         </div>
       </div>
       {paused !== undefined && (
-        <p data-testid="workspace-pause-reason" className="text-xs text-status-needs">
+        <p data-testid="workspace-pause-reason" className="text-xs text-muted-foreground">
           {pauseText(paused)}. Nothing new starts until you resume.
         </p>
       )}

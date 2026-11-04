@@ -46,7 +46,9 @@ function IdChip({ id, muted = false }: { id: string; muted?: boolean }) {
     <span
       className={cn(
         "mt-0.5 shrink-0 rounded-sm border px-1 font-mono text-[11px]",
-        muted ? "border-border text-muted-foreground" : "border-status-needs/50 text-status-needs",
+        muted
+          ? "border-border text-muted-foreground"
+          : "border-status-needs-mark/60 text-status-needs",
       )}
     >
       {id}
@@ -179,7 +181,7 @@ export function OpenQuestion({
       data-question={card.id}
       className={cn(
         "flex flex-col gap-1",
-        compact && "rounded-(--radius-md) border border-status-needs/50 bg-card p-2",
+        compact && "rounded-(--radius-md) border border-status-needs-mark/60 bg-card p-2",
       )}
     >
       {card.asker !== undefined && (
@@ -187,7 +189,7 @@ export function OpenQuestion({
           data-testid="question-asker"
           className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground"
         >
-          <MessageCircleQuestion aria-hidden className="size-3 shrink-0 text-status-needs" />
+          <MessageCircleQuestion aria-hidden className="size-3 shrink-0 text-status-needs-mark" />
           <span className="min-w-0 flex-1 truncate">
             <AskedBy asker={card.asker} />
           </span>
@@ -452,7 +454,7 @@ export function WorkerQuestionHistory({ question }: { question: WorkerQuestion }
         }
       : question.stage === "dismissed"
         ? { icon: CircleX, className: "text-muted-foreground" }
-        : { icon: MessageCircleQuestion, className: "text-status-needs" };
+        : { icon: MessageCircleQuestion, className: "text-status-needs-mark" };
   const Icon = look.icon;
   const status = questionStatusLine(question);
   const outcome = questionOutcome(question);

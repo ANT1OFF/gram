@@ -1,7 +1,6 @@
 import type { ThreadId, ThreadStatus } from "@gram/contracts";
 import { Pause } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { useThreadsStore } from "@/stores/threads";
 import { workerPauseHint, workerPauseOf, type WorkerPause } from "@/thread/orchestration-model";
 
@@ -42,10 +41,7 @@ export function WorkerPauseMark({ pause }: { pause: WorkerPauseState }) {
       data-testid="overview-worker-paused"
       data-pause={pause.state}
       title={workerPauseHint(pause.state, pause.at)}
-      className={cn(
-        "flex shrink-0 items-center",
-        pause.state === "paused" ? "text-muted-foreground" : "text-status-needs",
-      )}
+      className="flex shrink-0 items-center text-muted-foreground"
     >
       <Pause aria-hidden className="size-3" />
     </span>

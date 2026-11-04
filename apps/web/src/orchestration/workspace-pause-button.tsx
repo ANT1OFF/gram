@@ -74,12 +74,12 @@ function WorkspacePauseButton({
             data-paused=""
             aria-label={label}
             disabled={busy}
-            className={cn("tabular-nums", compact && "text-status-needs", className)}
+            className={cn("tabular-nums", className)}
             onClick={() => run(false)}
           />
         }
       >
-        <Play data-icon="inline-start" className="text-status-needs" />
+        <Play data-icon="inline-start" />
         {compact ? `Paused ${pauseClock(paused.at)}` : "Resume"}
       </Hint>
     );

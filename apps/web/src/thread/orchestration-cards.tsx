@@ -271,7 +271,7 @@ function WorkerRow({ worker }: { worker: WorkerLedgerEntry }) {
           <PrLink url={worker.pr.url}>{prLabel(worker.pr)}</PrLink>
         )}
       </td>
-      <td className={cn("py-1", flags.length > 0 ? "text-status-needs" : "text-muted-foreground")}>
+      <td className={cn("py-1", flags.length > 0 ? "text-foreground" : "text-muted-foreground")}>
         {flags.length === 0 ? "–" : flags.join(", ")}
       </td>
     </tr>
@@ -416,7 +416,7 @@ export function DigestDetails({ digest, text }: { digest: OrchestrationDigest; t
       {digest.paused !== undefined && (
         <p
           data-testid="digest-paused"
-          className="flex items-center gap-1 rounded-sm border border-status-needs/50 px-2 py-1 text-xs text-status-needs"
+          className="flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs text-foreground"
         >
           <CirclePause aria-hidden className="size-3.5 shrink-0" />
           {pauseText(digest.paused)}. Nothing is spawned or sent until you resume it.
@@ -493,7 +493,7 @@ export function DigestDetails({ digest, text }: { digest: OrchestrationDigest; t
         data-testid="digest-budget"
         className={cn(
           "text-xs tabular-nums",
-          budgetSpent(digest.budget) ? "text-status-needs" : "text-muted-foreground",
+          budgetSpent(digest.budget) ? "font-medium text-foreground" : "text-muted-foreground",
         )}
       >
         {budgetLine(digest.budget)}
@@ -689,7 +689,7 @@ export function WorkerQuestionCard({
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <MessageCircleQuestion
           aria-hidden
-          className={cn("size-3.5", open ? "text-status-needs" : "text-muted-foreground")}
+          className={cn("size-3.5", open ? "text-status-needs-mark" : "text-muted-foreground")}
         />
         <h3 className="font-medium">
           {inWorker ? (

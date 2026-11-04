@@ -29,7 +29,7 @@ export function ConnectionBanner() {
       role="status"
       aria-live="polite"
       data-testid="connection-banner"
-      className="flex items-center gap-2 border-b border-warning/40 bg-warning/10 px-3 py-1.5 text-sm"
+      className="flex items-center gap-2 border-b border-warning/40 px-3 py-1.5 text-sm"
     >
       {notice === undefined ? (
         <>

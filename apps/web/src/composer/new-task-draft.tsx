@@ -578,7 +578,7 @@ export function NewTaskDraft({
             </p>
           )}
           {shownWorker?.unavailable !== undefined && (
-            <p role="alert" className="text-xs text-status-needs">
+            <p role="alert" className="text-xs text-destructive">
               {agentLabel(shownWorker.model.agent)} {shownWorker.model.model} can't run here:{" "}
               {shownWorker.unavailable}. Pick another worker model.
             </p>
@@ -678,16 +678,14 @@ function NewWorkspaceAutonomy({
       data-testid="task-autonomy"
       className={cn(
         "flex flex-wrap items-start gap-2 rounded-md border px-3 py-2 text-xs",
-        level.warn
-          ? "border-status-needs/50 text-foreground"
-          : "border-border text-muted-foreground",
+        level.warn ? "border-warning/50 text-foreground" : "border-border text-muted-foreground",
       )}
     >
       {createElement(AUTONOMY_ICON[value], {
         "aria-hidden": true,
         className: cn(
           "mt-0.5 size-4 shrink-0",
-          level.warn ? "text-status-needs" : "text-muted-foreground",
+          level.warn ? "text-warning" : "text-muted-foreground",
         ),
       })}
       <span className="min-w-0 flex-[1_1_16rem]">

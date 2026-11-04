@@ -222,9 +222,9 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
         <div
           data-testid="orchestrator-banner-paused"
           role="status"
-          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-status-needs/40 bg-status-needs/10 px-3 py-1 text-xs text-foreground"
+          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1 text-xs text-foreground"
         >
-          <Pause aria-hidden className="size-3 shrink-0 text-status-needs" />
+          <Pause aria-hidden className="size-3 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1">
             {pauseText(paused)} since {pauseClock(paused.at)}. While paused, nothing wakes it and it
             can't spawn or message workers. {pauseLeavesRunning(working, paused)}

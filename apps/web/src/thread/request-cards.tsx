@@ -236,7 +236,7 @@ function CardShell({
       data-compact={compact}
       aria-label={typeof title === "string" ? title : undefined}
       className={cn(
-        "border border-status-needs/50 bg-card text-sm",
+        "border border-status-needs-mark/70 bg-card text-sm",
         compact
           ? "rounded-(--radius-md) p-2"
           : // Above the composer, the card keeps to a share of the pane: its body scrolls and its
@@ -632,7 +632,7 @@ export function ApprovalCard({
     <CardShell
       testId="approval-card"
       requestId={request.id}
-      icon={<ShieldQuestion aria-hidden className="size-4 text-status-needs" />}
+      icon={<ShieldQuestion aria-hidden className="size-4 text-status-needs-mark" />}
       title={
         pause !== undefined
           ? pause.lead
@@ -771,7 +771,7 @@ export function QuestionCard({
     <CardShell
       testId="question-card"
       requestId={request.id}
-      icon={<MessageCircleQuestion aria-hidden className="size-4 text-status-needs" />}
+      icon={<MessageCircleQuestion aria-hidden className="size-4 text-status-needs-mark" />}
       title="The agent has a question"
       footer={
         <>
@@ -900,7 +900,7 @@ export function ChoiceList({
               <span
                 data-testid="choice-recommended"
                 title="Recommended"
-                className="ml-1 inline-flex align-[-1px] text-status-needs"
+                className="ml-1 inline-flex align-[-1px] text-link"
               >
                 <Star aria-hidden className="size-3 fill-current" />
                 <span className="sr-only">(recommended)</span>
@@ -959,7 +959,7 @@ export function PlanCard({ threadId, request }: { threadId: ThreadId; request: P
     <CardShell
       testId="plan-card"
       requestId={request.id}
-      icon={<ListChecks aria-hidden className="size-4 text-status-needs" />}
+      icon={<ListChecks aria-hidden className="size-4 text-status-needs-mark" />}
       title="Review the plan"
       footer={
         stage === "review" ? (

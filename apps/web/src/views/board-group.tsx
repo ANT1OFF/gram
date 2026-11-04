@@ -140,7 +140,7 @@ export function GroupBand({
           <CircleAlert
             aria-label="Needs you"
             data-testid="rail-needs"
-            className="size-3 shrink-0 text-status-needs"
+            className="size-3 shrink-0 text-status-needs-mark"
           />
         )}
         <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">

@@ -225,7 +225,7 @@ export function PrBadge({
         (!bare || cue !== undefined) && "border border-border px-1",
         cue !== undefined && "border-dashed",
         cue === "followed" && "border-muted-foreground",
-        cue === "elsewhere" && "border-warning",
+        cue === "elsewhere" && "border-foreground",
         className,
       )}
     >
@@ -302,7 +302,7 @@ export function PrBadgeMarks({
         <ArrowRight
           role="img"
           aria-label={`bound to #${thread?.boundPr?.number}`}
-          className="size-3 text-warning"
+          className="size-3 text-foreground"
         />
       )}
       {git.workElsewhere && (
@@ -320,7 +320,7 @@ export function PrBadgeMarks({
 const BABYSIT_DISPLAY: Record<BabysitPhase, { icon: LucideIcon; tone: string }> = {
   watching: { icon: Shield, tone: "text-muted-foreground" },
   done: { icon: ShieldCheck, tone: "text-success" },
-  stopped: { icon: ShieldAlert, tone: "text-status-needs" },
+  stopped: { icon: ShieldAlert, tone: "text-status-needs-mark" },
 };
 
 /** A shield beside the PR number while babysit mode is on; its label carries the phase. */

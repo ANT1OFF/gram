@@ -32,7 +32,7 @@ it("as a glyph alone names the mode on hover and keeps its warning tint", async 
   render(mode("bypassPermissions", false));
   const trigger = screen.getByRole("combobox", { name: "Mode: Bypass" });
   expect(trigger.getAttribute("data-warning")).toBe("true");
-  expect(trigger.className).toContain("text-status-needs");
+  expect(trigger.className).toContain("text-warning");
   expect(trigger.querySelector("[data-testid=mode-glyph]")).not.toBeNull();
   expect(trigger.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
   // The tooltip names the value and still says why it warns.

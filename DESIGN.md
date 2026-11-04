@@ -17,6 +17,19 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   `fg-muted`, `fg-subtle`, borders `border-subtle` and `border-strong`, one `accent` for the
   primary action and the current place, and status colours (`danger`, `success`, `warning`,
   `info`, `status-needs`, `status-working`, `merged`) only where they mean that status.
+- **One meaning per status colour.**
+  - Amber is "needs you" (an approval, a question, an ask) and nothing else: `status-needs` for its
+    words, `status-needs-mark` for its dots, icons and borders. It outlines on a neutral fill,
+    never a tinted one.
+  - Working and running take `status-working` (the accent), failing `danger`, done `success` or
+    muted, and merged `merged`.
+  - Informational marks (a PR waiting on review, a paused workspace, a held brief) stay neutral
+    or outlined.
+  - An orchestrator's sidebar line carries at most one amber marker, its count; its workers'
+    rows say "asks you" in plain text.
+  - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
+    purpose), Full autonomy, a key clash, and the usage meter from 80% of a limit (red once
+    spent with no credits).
 - **Radii are soft:** 8 to 16 px (`radius-xs` to `radius-xl`); the composer is rounder (22 px).
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
   Lists, menus and the sidebar share one row shape.
