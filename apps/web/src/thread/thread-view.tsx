@@ -382,7 +382,7 @@ export function ThreadView({
         {/* The title truncates before any chip goes, and the chips drop whole rather than clip:
               they wrap, the fixed height hides every line after the first, and what wraps is
               inert. What drops is in the thread menu or the PR row too. The cap keeps the title
-              at least 40% of the room. */}
+              the larger share of the room. */}
         <div
           // In the title bar, the room the bar folds its lesser buttons to keep: a few letters of
           // the title, or the orchestrator's glyph and a chip when the switcher has its name.
@@ -412,7 +412,7 @@ export function ThreadView({
               // shares with the window's controls, the title keeps the larger share, and narrow
               // the chips go: the PR row, the right panel and the thread menu have the rest.
               inTitlebar && "[-webkit-app-region:no-drag]",
-              inTitlebar && titleShown && "max-w-[40%] @max-sm:max-w-[30%]",
+              inTitlebar && titleShown && "max-w-[45%] @max-sm:max-w-[30%]",
               // An orchestrator's title is the switcher's, so its chips have the room.
               inTitlebar && !titleShown && "max-w-none shrink",
               // Wrapped, the first line is as tall as the row, so its chips stay centred on it.

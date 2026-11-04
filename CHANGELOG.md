@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.8.0](https://github.com/ANT1OFF/gram/compare/v1.7.0...v1.8.0) (2026-11-04)
+
+
+### Features
+
+* answer every ask from the Asks dock ([#125](https://github.com/ANT1OFF/gram/issues/125)) ([51e1b6c](https://github.com/ANT1OFF/gram/commit/51e1b6cac6b7fd80d802517c60bfa1b78379da75))
+* calmer title bar with grouped controls and an overflow menu ([#123](https://github.com/ANT1OFF/gram/issues/123)) ([ceb74c0](https://github.com/ANT1OFF/gram/commit/ceb74c03969de0df3fb354c792f2dd161105e9f1))
+* compact Board lanes and a grouped Needs-you list ([#133](https://github.com/ANT1OFF/gram/issues/133)) ([f401f75](https://github.com/ANT1OFF/gram/commit/f401f751677a603494e99cc4a46bcad841ae19ec))
+* consistent icon set, hit areas and tooltips ([#140](https://github.com/ANT1OFF/gram/issues/140)) ([6013dd3](https://github.com/ANT1OFF/gram/commit/6013dd3e66324933c2f1caf46c4c382505e4225a))
+* failures first, with stop and retry receipts ([#135](https://github.com/ANT1OFF/gram/issues/135)) ([08804ca](https://github.com/ANT1OFF/gram/commit/08804ca7dfc95a6bb67315f6b25883bfaf1f1e44))
+* focused settings layout and an outcome-first Memory page ([#142](https://github.com/ANT1OFF/gram/issues/142)) ([582b269](https://github.com/ANT1OFF/gram/commit/582b2695fba726a758108b9aae2ce953e85e80d8))
+* keep the computer awake while agents run ([#124](https://github.com/ANT1OFF/gram/issues/124)) ([8d787f9](https://github.com/ANT1OFF/gram/commit/8d787f93142bf2b8dc4a9a8f600e1d81ae327650))
+* model picker search and favourites ([#129](https://github.com/ANT1OFF/gram/issues/129)) ([1507fd6](https://github.com/ANT1OFF/gram/commit/1507fd645135e44f1ced6b4d9270e7d2fce03480))
+* one answer surface and one answer rule for every ask ([#134](https://github.com/ANT1OFF/gram/issues/134)) ([f3d56e8](https://github.com/ANT1OFF/gram/commit/f3d56e8baef5b94f69f8c30ebc78521fa05dbd1f))
+* one History view with search and filters ([#132](https://github.com/ANT1OFF/gram/issues/132)) ([3f03994](https://github.com/ANT1OFF/gram/commit/3f03994a0c57040a6a321d14f678d3b80f613c36))
+* one meaning per status colour; amber for needs-you only ([#121](https://github.com/ANT1OFF/gram/issues/121)) ([7d325a2](https://github.com/ANT1OFF/gram/commit/7d325a2b3ffe89b17d809370ed56d9404f48d20c))
+* one New form and a first run that explains Gram ([#127](https://github.com/ANT1OFF/gram/issues/127)) ([f975903](https://github.com/ANT1OFF/gram/commit/f975903d433f2b56b8922436168aab45d17eef65))
+* plain role, mode and autonomy explanations; first-run setup actions ([#131](https://github.com/ANT1OFF/gram/issues/131)) ([60add02](https://github.com/ANT1OFF/gram/commit/60add020185201c352ec9fcf08555fe8df885312))
+* project scripts as one-click actions ([#139](https://github.com/ANT1OFF/gram/issues/139)) ([2c5ed2a](https://github.com/ANT1OFF/gram/commit/2c5ed2a2ec4685f13491100c612f57f7d7fc834c))
+* roomier review panel with focus mode, wrap and ignore-whitespace ([#138](https://github.com/ANT1OFF/gram/issues/138)) ([4eff08a](https://github.com/ANT1OFF/gram/commit/4eff08ac06be8b7b882615b01095168251f8bb91))
+* settings rows with descriptions and plain-language labels ([#126](https://github.com/ANT1OFF/gram/issues/126)) ([8924852](https://github.com/ANT1OFF/gram/commit/8924852072baa3a09934d9995712e70f1d641e37))
+* show Codex credits to the orchestrator ([#118](https://github.com/ANT1OFF/gram/issues/118)) ([edbcd7f](https://github.com/ANT1OFF/gram/commit/edbcd7ff0d6757c5d7fad7d66e977240023a320f))
+* transcript text size and width settings ([#136](https://github.com/ANT1OFF/gram/issues/136)) ([579dff0](https://github.com/ANT1OFF/gram/commit/579dff02864972cf50c7eb8cd5b858164bdc9dd5))
+* undo a turn's file edits from the turn footer ([#128](https://github.com/ANT1OFF/gram/issues/128)) ([987e1d2](https://github.com/ANT1OFF/gram/commit/987e1d25656f3fcee19696924c6e8cd005aa9137))
+
+
+### Bug Fixes
+
+* header Run script leaves every chip room at 1440 px ([#141](https://github.com/ANT1OFF/gram/issues/141)) ([b0eefe5](https://github.com/ANT1OFF/gram/commit/b0eefe5593fc0c0646a071dcdbe6ebfe36afc172))
+* transcript timers, stray gutter glyph and composer feedback ([#122](https://github.com/ANT1OFF/gram/issues/122)) ([549e46b](https://github.com/ANT1OFF/gram/commit/549e46bd1f7a8aeca6df2890b7b2d617dd48ecc9))
+
 ## [1.7.0](https://github.com/ANT1OFF/gram/compare/v1.6.0...v1.7.0) (2026-11-03)
 
 
