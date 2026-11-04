@@ -138,15 +138,15 @@ describe("parseGitDiff", () => {
   });
 });
 
-describe("withoutWhitespaceChanges", () => {
-  const file = (diff: string, status: DiffFile["status"] = "modified"): DiffFile => ({
-    path: "a.ts",
-    status,
-    added: 0,
-    removed: 0,
-    diff,
-  });
+const file = (diff: string, status: DiffFile["status"] = "modified"): DiffFile => ({
+  path: "a.ts",
+  status,
+  added: 0,
+  removed: 0,
+  diff,
+});
 
+describe("withoutWhitespaceChanges", () => {
   it("turns reindented lines into context and keeps real changes", () => {
     const [kept] = withoutWhitespaceChanges([
       file("@@ -1,3 +1,3 @@\n-a\n+b\n-  c(1)\n+    c(1)\n d\n"),

@@ -212,10 +212,9 @@ export const withoutWhitespaceChanges = (files: ReadonlyArray<DiffFile>): Array<
       const out: Array<string> = [];
       // A run of one sign, with the `\ No newline` note git puts after its last line.
       const take = (sign: string, at: number) => {
-        let end = at;
-        while (lines[end]?.startsWith(sign)) end++;
-        if (end > at && lines[end]?.startsWith("\\")) end++;
-        return end;
+        const stop = lines.findIndex((line, k) => k >= at && !line.startsWith(sign));
+        const end = stop === -1 ? lines.length : stop;
+        return end > at && lines[end]?.startsWith("\\") === true ? end + 1 : end;
       };
       for (let i = 0; i < lines.length;) {
         const removedEnd = take("-", i);
