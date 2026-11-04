@@ -1,6 +1,6 @@
 import type { GramUIMessage, ThreadError, ThreadId, ThreadStatus, TurnId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
-import { ArrowDown, CircleX, RotateCw } from "lucide-react";
+import { ArrowDown, CircleX, Clock, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -10,9 +10,13 @@ import { formatClockTime } from "@/lib/time";
 import { feedMessages, useThreadFeed } from "@/stores/feeds";
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
+import { useUsageLimits } from "@/stores/usage-limits";
+import { useNow } from "@/lib/use-now";
+import { resetText } from "@/usage/limit-format";
 
 import { attemptsOf, errorKey, type AttemptFacts, type RetryReceipt } from "./attempt-model";
 import { failureLabel } from "./failure-kinds";
+import { retryKey, retryTimeOf, useRetrySchedule } from "./retry-time";
 
 /** Failures a gateway profile's settings can fix: its key, its models, or its spending limit. */
 const GATEWAY_FIXES: ReadonlySet<ThreadError["kind"]> = new Set([
@@ -111,15 +115,25 @@ function ErrorCard({
     const summary = s.byId[threadId];
     return summary?.thread.lastError?.at === error.at && SETTLED.has(summary.status);
   });
-  const onGateway = useThreadsStore((s) => s.byId[threadId]?.thread.model?.profileId !== undefined);
+  const model = useThreadsStore((s) => s.byId[threadId]?.thread.model);
+  const onGateway = model?.profileId !== undefined;
+  const limited = error.kind === "rateLimit";
+  // A minute's tick is enough: the time is shown to the minute, and only matters once it passes.
+  const now = useNow(limited && current && retried === undefined, undefined, 60_000);
+  const limits = useUsageLimits((s) => s.limits);
+  const retryAt = limited ? retryTimeOf(error, model, limits, now) : undefined;
+  const key = retryKey(threadId, error);
+  const due = useRetrySchedule((s) => s.due[key]);
 
-  // Read, not subscribed: the turn's own message is in the feed before its error is.
+  // Read, not subscribed: the turn's own message is in the feed before its error is. A limit the
+  // provider gave a reset for is worth sending again then, even where sending now would only repeat.
   const text =
-    error.retryable && current && retried === undefined
+    (error.retryable || retryAt !== undefined) && current && retried === undefined
       ? retryText(feedMessages(threadId), error.turnId)
       : undefined;
 
   const retry = async (again: string) => {
+    useRetrySchedule.getState().cancel(key);
     setPending(true);
     setUnsent(undefined);
     try {
@@ -168,6 +182,17 @@ function ErrorCard({
   }
 
   const repeat = attempt !== undefined && attempt.attempt > 1;
+  /**
+   * "Retry then": sends the turn's message again once the reset passes, if it is still the thread's
+   * last error with nothing running by then. Read when it fires, not now: the user may have sent
+   * something else in the meantime.
+   */
+  const retryThen = (again: string, at: number) =>
+    useRetrySchedule.getState().schedule(key, at, () => {
+      const summary = useThreadsStore.getState().byId[threadId];
+      if (summary?.thread.lastError?.at !== error.at || !SETTLED.has(summary.status)) return;
+      void retry(again);
+    });
   return (
     <div
       role="alert"
@@ -187,6 +212,18 @@ function ErrorCard({
           )}
         </p>
         <p className="break-words">{error.text}</p>
+        {limited && current && retried === undefined && (
+          <RetryTime
+            at={retryAt}
+            now={now}
+            due={due}
+            canRetry={text !== undefined && !pending}
+            onRetryThen={() =>
+              text !== undefined && retryAt !== undefined && retryThen(text, retryAt)
+            }
+            onCancel={() => useRetrySchedule.getState().cancel(key)}
+          />
+        )}
         {onGateway && GATEWAY_FIXES.has(error.kind) && (
           <Link
             to="/settings/gateways"
@@ -202,12 +239,96 @@ function ErrorCard({
           </p>
         )}
       </div>
-      {text !== undefined && (
+      {text !== undefined && (error.retryable || retryAt === undefined || retryAt <= now) && (
         <Button size="xs" variant="outline" onClick={() => void retry(text)} disabled={pending}>
           <RotateCw aria-hidden />
-          Retry
+          {retryAt !== undefined && retryAt > now ? "Retry now" : "Retry"}
         </Button>
       )}
+    </div>
+  );
+}
+
+/**
+ * Under a rate limit, when to try again: "Try again at 11:15" with "Retry then" when the provider
+ * reported the reset, and a plain "no time" when it didn't, never a guess. Usage has the readings
+ * behind it either way.
+ */
+function RetryTime({
+  at,
+  now,
+  due,
+  canRetry,
+  onRetryThen,
+  onCancel,
+}: {
+  at: number | undefined;
+  now: number;
+  /** When a retry set with "Retry then" goes, epoch ms. */
+  due: number | undefined;
+  canRetry: boolean;
+  onRetryThen: () => void;
+  onCancel: () => void;
+}) {
+  const usage = (
+    <Link
+      to="/usage"
+      data-testid="agent-error-usage"
+      className="text-link underline-offset-2 hover:underline"
+    >
+      Usage
+    </Link>
+  );
+  if (at === undefined || at <= now) {
+    return (
+      <p
+        data-testid="agent-error-retry-time"
+        data-known="false"
+        className="mt-1 text-xs text-muted-foreground"
+      >
+        {at === undefined
+          ? "The provider gave no retry time, so when this clears isn't known."
+          : "The provider's reset time has passed."}{" "}
+        {usage}
+      </p>
+    );
+  }
+  const time = resetText(at, now);
+  return (
+    <div
+      data-testid="agent-error-retry-time"
+      data-known="true"
+      className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+    >
+      <span className="inline-flex items-center gap-1 font-medium text-foreground">
+        <Clock aria-hidden className="size-3.5 text-muted-foreground" />
+        Try again at {time}
+      </span>
+      <span className="text-muted-foreground">when the provider's limit resets</span>
+      {due === undefined ? (
+        canRetry && (
+          <Button
+            size="xs"
+            variant="outline"
+            data-testid="agent-error-retry-then"
+            onClick={onRetryThen}
+          >
+            <RotateCw aria-hidden />
+            Retry then
+          </Button>
+        )
+      ) : (
+        <span
+          data-testid="agent-error-retry-scheduled"
+          className="inline-flex items-center gap-1.5"
+        >
+          <span className="text-muted-foreground">Retrying at {time} while Gram is open</span>
+          <Button size="xs" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        </span>
+      )}
+      {usage}
     </div>
   );
 }

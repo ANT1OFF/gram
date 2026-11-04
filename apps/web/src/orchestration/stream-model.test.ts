@@ -9,7 +9,7 @@ import type {
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { digestLineWords, planStream, spawnedFeatures } from "./stream-model";
+import { digestLineWords, planStream, spawnedFeatures, updateWords } from "./stream-model";
 
 const W = "w-1" as WorkspaceId;
 const A = "t-a" as ThreadId;
@@ -105,6 +105,14 @@ const entry = (id: string, at: number | undefined, data: OrchestrationDigest) =>
   at,
 });
 
+/** A stream line of `kind`, for an update's header. */
+const line = (kind: "merged" | "ask" | "failed", key: string) => ({
+  key,
+  kind,
+  feature: "f",
+  words: kind,
+});
+
 describe("the calm stream", () => {
   it("folds digests with nothing between them into one quiet line, on the last of them", () => {
     const messages = [
@@ -136,15 +144,17 @@ describe("the calm stream", () => {
     expect(plan.extras.get("d2")?.digests.map((each) => each.digest.generation)).toEqual([2]);
   });
 
-  it("keeps a folded digest that speaks at its place, its line told on the last of the run", () => {
+  it("gathers a run of digests into one update on the last, its cards and lines with it", () => {
     const features = [feature("rate-headers")];
     const plan = planStream(
       [digestMessage("d1", 1, digest(1, { features })), digestMessage("d2", 2, digest(2))],
       [card("rate-headers")],
     );
-    expect(plan.messages.map((message) => message.id)).toEqual(["d1", "d2"]);
-    expect(plan.extras.get("d1")).toEqual({ lines: [], cards: ["rate-headers"], digests: [] });
-    expect(plan.extras.get("d2")?.digests).toHaveLength(2);
+    // One update, on the last of the run: nothing of d1 is lost, it moves there.
+    expect(plan.messages.map((message) => message.id)).toEqual(["d2"]);
+    expect(plan.extras.get("d1")).toBeUndefined();
+    expect(plan.extras.get("d2")?.cards).toEqual(["rate-headers"]);
+    expect(plan.extras.get("d2")?.digests.map((each) => each.message.id)).toEqual(["d1", "d2"]);
   });
 
   it("says a digest line in a few words, its reports first, then its changes", () => {
@@ -238,7 +248,7 @@ describe("the calm stream", () => {
       [],
     );
     expect(plan.extras.get("d1")?.lines).toMatchObject([
-      { kind: "merged", threadId: A, pr: { number: 431 } },
+      { line: { kind: "merged", threadId: A, pr: { number: 431 } }, at: 2 },
     ]);
   });
 
@@ -251,5 +261,28 @@ describe("the calm stream", () => {
   it("reads spawn_worker calls by any provider's tool name", () => {
     expect(spawnedFeatures(spawning("s", 1, "paging"))).toEqual(["paging"]);
     expect(spawnedFeatures(said("x", 1))).toEqual([]);
+  });
+
+  it("heads an update with its counts, what needs you first, and its newest time", () => {
+    const words = updateWords(
+      [
+        { line: line("merged", "a"), at: 10 },
+        { line: line("merged", "b"), at: 10 },
+        { line: line("merged", "c"), at: 12 },
+        { line: line("ask", "d"), at: 14 },
+      ],
+      [entry("d1", 10, digest(1)), entry("d2", 14, digest(2))],
+      clock,
+    );
+    expect(words.counts.map((count) => count.text)).toEqual(["1 waiting on you", "3 merged"]);
+    expect(words.time).toBe("t14");
+    expect(words.needsYou).toBe(true);
+    const calm = updateWords(
+      [{ line: line("merged", "a"), at: 3 }],
+      [entry("d", 3, digest(1))],
+      clock,
+    );
+    expect(calm.needsYou).toBe(false);
+    expect(calm.counts.map((count) => count.text)).toEqual(["1 merged"]);
   });
 });

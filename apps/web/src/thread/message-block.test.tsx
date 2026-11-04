@@ -18,6 +18,7 @@ import type * as Feeds from "@/stores/feeds";
 import { createMessageFold } from "@/stores/message-fold";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { useUsageLimits } from "@/stores/usage-limits";
 
 import {
   CompactingLine,
@@ -26,6 +27,7 @@ import {
   compactionParts,
 } from "./compaction-marker";
 import { filePath, MessageBlock } from "./message-block";
+import { useRetrySchedule } from "./retry-time";
 import { sessionRestartLabel } from "./session-restart-marker";
 import { PrRefsContext } from "./pr-ref-link";
 import { EMPTY_PR_REF_INDEX, prRefIndexOf, type PrRefIndex } from "./pr-refs";
@@ -428,7 +430,11 @@ describe("MessageBlock tool images", () => {
       );
       render(message, readAttachment);
       expect(screen.getByRole("img").getAttribute("src")).toBe(`data:image/png;base64,${PNG}`);
-      await userEvent.click(screen.getByRole("button", { name: /^mcp__synthetic/ }));
+      // The row says what the call did in words; its raw tool id is in the details.
+      await userEvent.click(screen.getByRole("button", { name: /^View image · synthetic/ }));
+      expect(screen.getByTestId("tool-raw-name").textContent).toContain(
+        "mcp__synthetic__view_image",
+      );
       expect(screen.getByTestId("tool-card").textContent).toContain("Image details");
       expect(screen.getByTestId("tool-card").textContent).not.toContain(PNG);
       expect(JSON.stringify(message)).toContain(PNG);
@@ -1014,6 +1020,63 @@ describe("MessageBlock agent errors", () => {
     expect(newest?.dataset["state"]).toBe("failed");
     expect(newest?.textContent).toContain("attempt 2 failed too · needs action");
     expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
+  });
+
+  it("says plainly when the provider gave no retry time, with Usage beside it", () => {
+    show(vi.fn(), error);
+    const time = screen.getByTestId("agent-error-retry-time");
+    expect(time.dataset["known"]).toBe("false");
+    expect(time.textContent).toContain("The provider gave no retry time");
+    expect(screen.getByTestId("agent-error-usage").getAttribute("href")).toBe("/usage");
+    expect(screen.queryByTestId("agent-error-retry-then")).toBeNull();
+  });
+
+  it("names the provider's reset as the time to try again, and retries then on request", async () => {
+    const resetsAt = Date.now() + 60 * 60 * 1000;
+    useUsageLimits.setState({
+      limits: {
+        claude: { fiveHour: { utilization: 1, status: "rejected", resetsAt, expiresAt: resetsAt } },
+      },
+    });
+    const limit = { ...error, retryable: false, text: "The usage limit is reached (HTTP 429)." };
+    const send = vi.fn(async () => ({ queued: false }));
+    feed.set(E, [sent, { ...failed, parts: [{ ...failed.parts[0], data: limit } as never] }]);
+    useThreadsStore.setState({
+      byId: {
+        [E]: {
+          status: "error",
+          thread: {
+            id: E,
+            lastError: limit,
+            model: { agent: "claude", model: "opus" },
+            checkout: { kind: "main", path: "/r" },
+          },
+        },
+      },
+    } as never);
+    renderWithApi(
+      <MessageBlock
+        threadId={E}
+        message={{ ...failed, parts: [{ ...failed.parts[0], data: limit } as never] }}
+        streamingIds={new Set()}
+        subagents={new Map()}
+        subagentUsage={new Map()}
+      />,
+      { send } as never,
+    );
+    const time = screen.getByTestId("agent-error-retry-time");
+    expect(time.dataset["known"]).toBe("true");
+    expect(time.textContent).toMatch(/Try again at (\w{3} )?\d\d:\d\d/);
+    // Sending now would only repeat the refusal: no Retry, only Retry then.
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    fireEvent.click(screen.getByTestId("agent-error-retry-then"));
+    expect(screen.getByTestId("agent-error-retry-scheduled").textContent).toContain("Retrying at");
+    expect(Object.keys(useRetrySchedule.getState().due)).toEqual([`${E}:${limit.at}`]);
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(useRetrySchedule.getState().due).toEqual({});
+    expect(screen.getByTestId("agent-error-retry-then")).toBeTruthy();
+    useUsageLimits.setState({ limits: {} });
   });
 
   it("offers no retry once a later turn has moved on, or for a refusal that would only repeat", () => {

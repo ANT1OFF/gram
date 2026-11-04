@@ -1,9 +1,9 @@
 import type { FeatureCard, GramUIMessage, Thread, ThreadId } from "@gram/contracts";
 import { createContext, use, useMemo, type ReactNode } from "react";
 
-import { DigestLine } from "./digest-line";
-import { FeatureCardView, StreamLineView } from "./feature-card";
+import { FeatureCardView } from "./feature-card";
 import { planStream, type StreamPlan } from "./stream-model";
+import { UpdateBlock } from "./update-block";
 import { useFeatureCards } from "./use-feature-cards";
 
 /** A worker's name as orchestrator messages link it. */
@@ -78,36 +78,25 @@ export function OrchestratorStreamProvider({
   return <OrchestratorStreamContext value={stream}>{children}</OrchestratorStreamContext>;
 }
 
-/** The lines and cards that go with one message of the orchestrator's stream; nothing elsewhere. */
-export function StreamExtrasView({
-  messageId,
-  at,
-}: {
-  messageId: string;
-  /** When the message arrived, for its lines' times. */
-  at?: number | undefined;
-}) {
+/**
+ * The update and cards that go with one message of the orchestrator's stream; nothing elsewhere.
+ * A run of digests is one update block, its live cards beneath it.
+ */
+export function StreamExtrasView({ messageId }: { messageId: string }) {
   const stream = useOrchestratorStreamContext();
   const extras = stream?.plan.extras.get(messageId);
   if (stream === undefined || extras === undefined) return null;
   const titleOf = (threadId: ThreadId) =>
     stream.workers.find((worker) => worker.threadId === threadId)?.title;
   return (
-    <div data-testid="stream-extras" className="flex flex-col gap-1">
-      {extras.lines.length > 0 && (
-        <div className="flex max-w-2xl flex-col">
-          {extras.lines.map((line) => (
-            <StreamLineView key={line.key} line={line} at={at} />
-          ))}
-        </div>
-      )}
+    <div data-testid="stream-extras" className="flex flex-col gap-1.5">
+      <UpdateBlock lines={extras.lines} digests={extras.digests} />
       {extras.cards.map((feature) => {
         const card = stream.cards.get(feature);
         return card === undefined ? null : (
           <FeatureCardView key={feature} card={card} workerTitle={titleOf} />
         );
       })}
-      {extras.digests.length > 0 && <DigestLine digests={extras.digests} />}
     </div>
   );
 }

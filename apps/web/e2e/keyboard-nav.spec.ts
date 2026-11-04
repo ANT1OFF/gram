@@ -147,11 +147,15 @@ test("keyboard only: actions palette, ? overlay, rename, pickers, refresh, send 
   await expect(page.getByLabel("What needs doing")).toBeFocused();
 });
 
-test("keyboard only: ⌥⏎ allows a pending approval always", async ({ page }) => {
+test("keyboard only: ⌥⏎ shows the rule, and a second ⌥⏎ allows it always", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const card = page.getByTestId("approval-card");
   await expect(card).toBeVisible();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  // The first press only shows what would be saved, and where.
+  await page.keyboard.press("Alt+Enter");
+  await expect(card.getByTestId("approval-always-rule")).toBeVisible();
+  await expect(card).toBeVisible();
   await page.keyboard.press("Alt+Enter");
   await expect(card).toBeHidden();
 });

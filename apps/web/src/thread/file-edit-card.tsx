@@ -86,14 +86,14 @@ export function FileEditCard({ part }: { part: AnyToolPart }) {
       <div
         data-testid="file-edit"
         data-tool-call-id={part.toolCallId}
-        className="mb-2 py-0.5 text-sm text-muted-foreground"
+        className="py-0.5 text-sm text-muted-foreground"
       >
         {phase === "pending" || phase === "running" ? "Editing…" : (error ?? "Edit")}
       </div>
     );
   }
   return (
-    <div className="mb-2" data-tool-call-id={part.toolCallId}>
+    <div data-tool-call-id={part.toolCallId}>
       {edits.map((edit, index) => (
         <FileEditRow
           // A patch names each file once.

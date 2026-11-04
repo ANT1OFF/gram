@@ -19,6 +19,7 @@ import {
   type ToolPhase,
 } from "./parts";
 import { formatElapsed } from "./subagent-strip-model";
+import { toolLabel } from "./tool-labels";
 
 /** Tool calls that keep their own card: a subagent's card carries its whole transcript. */
 const UNGROUPED = new Set(["Task", "Agent"]);
@@ -228,11 +229,13 @@ export function toolDetail(part: AnyToolPart): string | undefined {
 }
 
 export function stepLabel(part: AnyToolPart): string {
-  const name = part.title ?? toolNameOf(part);
+  const name = toolLabel(toolNameOf(part), "running", part.title).label;
   const detail = toolDetail(part);
   if (detail === undefined) return name;
-  // A Bash description already reads as a sentence; everything else needs the tool's name.
-  return toolInputField(part.input, "description") === detail
+  // A Bash description, or what an agent said its browser input is for, already reads as a
+  // sentence; everything else needs the tool's name.
+  return toolInputField(part.input, "description") === detail ||
+    toolInputField(part.input, "actionSummary") === detail
     ? detail
     : `${name} ${detail.split("\n")[0]}`;
 }
@@ -240,23 +243,39 @@ export function stepLabel(part: AnyToolPart): string {
 export interface RunState {
   /** The call still in flight, which the collapsed line names instead of the summary. */
   active: AnyToolPart | undefined;
+  /** The call held at the user's approval card, which the collapsed line names first. */
+  waiting: AnyToolPart | undefined;
   failed: number;
   cancelled: number;
   /** A call is waiting on the user, so the run starts open. */
   awaiting: boolean;
 }
 
-export function runState(run: readonly AnyToolPart[]): RunState {
-  const phases = run.map((part) =>
-    toolPhase(
+const NO_CALLS: ReadonlySet<string> = new Set();
+
+/**
+ * Where a run stands. `pendingApprovals` holds the call ids the user's approval cards are about: a
+ * call the agent started and still asks about waits, rather than runs.
+ */
+export function runState(
+  run: readonly AnyToolPart[],
+  pendingApprovals: ReadonlySet<string> = NO_CALLS,
+): RunState {
+  const phases = run.map((part) => {
+    const phase = toolPhase(
       part.state,
       part.state === "output-error" ? part.errorText : undefined,
       part.state === "output-available" && part.preliminary === true,
-    ),
-  );
+    );
+    return (phase === "running" || phase === "pending") && pendingApprovals.has(part.toolCallId)
+      ? "awaiting"
+      : phase;
+  });
   const activeIndex = phases.findLastIndex((phase) => phase === "running" || phase === "pending");
+  const waitingIndex = phases.findIndex((phase) => phase === "awaiting");
   return {
     active: activeIndex === -1 ? undefined : run[activeIndex],
+    waiting: waitingIndex === -1 ? undefined : run[waitingIndex],
     failed: phases.filter((phase) => phase === "error").length,
     cancelled: phases.filter((phase) => phase === "cancelled").length,
     awaiting: phases.includes("awaiting"),

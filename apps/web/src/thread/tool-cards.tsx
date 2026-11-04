@@ -15,6 +15,7 @@ import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Expand, isMarkPhase, StatusMark, Swap } from "@/motion";
 
+import { useAwaitingTools, withApproval } from "./awaiting-tools";
 import {
   basename,
   PHASE_DISPLAY,
@@ -22,7 +23,9 @@ import {
   toolPhase,
   type AnyToolPart,
   type ToolPartOf,
+  type ToolPhase,
 } from "./parts";
+import { toolLabel, type ToolLabel } from "./tool-labels";
 import { FileEditCard } from "./file-edit-card";
 import { ToolImages } from "./tool-images";
 import { toolDetail } from "./tool-group-model";
@@ -93,11 +96,15 @@ function ToolShell({
   summary,
   meta,
   phase: phaseOverride,
+  label: labelOf,
   defaultOpen = false,
   children,
 }: {
   part: AnyToolPart;
+  /** The tool's name, as the row's `data-tool` keeps it; also its words unless `label` gives some. */
   name: string;
+  /** The row's words for the call in a phase, with the raw tool id its details show instead. */
+  label?: (phase: ToolPhase) => ToolLabel;
   summary?: ReactNode;
   meta?: ReactNode;
   /** Overrides what `part.state` implies, e.g. for a background subagent that is still running. */
@@ -105,14 +112,19 @@ function ToolShell({
   defaultOpen?: boolean;
   children?: ReactNode;
 }) {
-  const phase =
+  const awaiting = useAwaitingTools();
+  const phase = withApproval(
     phaseOverride ??
-    toolPhase(
-      part.state,
-      part.state === "output-error" ? part.errorText : undefined,
-      part.state === "output-available" && part.preliminary === true,
-    );
+      toolPhase(
+        part.state,
+        part.state === "output-error" ? part.errorText : undefined,
+        part.state === "output-available" && part.preliminary === true,
+      ),
+    part.toolCallId,
+    awaiting,
+  );
   const display = PHASE_DISPLAY[phase];
+  const words = labelOf?.(phase) ?? { label: name, raw: undefined };
   const [open, setOpen] = useState(defaultOpen);
   // A closed body is inert and zero-height, so it isn't rendered until first opened: a long
   // transcript would otherwise lay out every tool's full output. It stays mounted once opened, so
@@ -126,7 +138,7 @@ function ToolShell({
         setOpen(next);
         if (next) setOpened(true);
       }}
-      className="group/tool mb-2 rounded-(--radius-md) border-border bg-card/40"
+      className="group/tool mb-0 rounded-(--radius-md) border-border bg-card/40"
       data-testid="tool-card"
       data-tool={name}
       data-tool-call-id={part.toolCallId}
@@ -146,7 +158,7 @@ function ToolShell({
             )}
           </Swap>
         </span>
-        <span className="shrink-0 font-medium">{name}</span>
+        <span className="shrink-0 font-medium">{words.label}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
           {summary}
         </span>
@@ -170,6 +182,11 @@ function ToolShell({
       <Expand open={open} id={bodyId}>
         {opened && (
           <div className="space-y-2 border-t border-border p-3 text-sm">
+            {words.raw !== undefined && (
+              <p data-testid="tool-raw-name" className="text-xs text-muted-foreground">
+                Tool <code className="font-mono text-foreground">{words.raw}</code>
+              </p>
+            )}
             {children}
             <ToolImages part={part} size="large" className="flex flex-wrap items-start gap-2" />
             {part.state === "output-error" && (
@@ -510,6 +527,7 @@ function GenericCard({ part, children }: { part: AnyToolPart; children?: ReactNo
     <ToolShell
       part={part}
       name={part.title ?? toolNameOf(part)}
+      label={(phase) => toolLabel(toolNameOf(part), phase, part.title)}
       summary={nativeWeb ? nativeWebSummary(part.input) : toolDetail(part)}
     >
       {children}

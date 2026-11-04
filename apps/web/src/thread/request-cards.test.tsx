@@ -342,28 +342,123 @@ describe("ApprovalCard", () => {
   });
 
   it.each([
+    [[{ key: "Enter", code: "Enter" }], { decision: "allow", scope: "once" }],
+    // ⌥⏎ shows what "always" would save; only a second ⌥⏎ saves it.
     [
-      { key: "Enter", code: "Enter" },
-      { decision: "allow", scope: "once" },
-    ],
-    [
-      { key: "Enter", code: "Enter", altKey: true },
+      [
+        { key: "Enter", code: "Enter", altKey: true },
+        { key: "Enter", code: "Enter", altKey: true },
+      ],
       { decision: "allow", scope: "always" },
     ],
-    [
-      { key: "Escape", code: "Escape" },
-      { decision: "deny", scope: "once" },
-    ],
-  ])("answers from the keyboard (%o)", async (keys, expected) => {
+    [[{ key: "Escape", code: "Escape" }], { decision: "deny", scope: "once" }],
+  ])("answers from the keyboard (%o)", async (presses, expected) => {
     const { api, respond } = fakeApi();
     render(
       <ApiProvider api={api}>
         <ApprovalCard threadId={T} request={approval} active />
       </ApiProvider>,
     );
-    fireEvent.keyDown(window, keys);
+    for (const keys of presses) fireEvent.keyDown(window, keys);
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r1", { kind: "approval", ...expected }),
+    );
+  });
+
+  it("takes one ⌥⏎ press as one step: a held key opens the preview and never saves it", () => {
+    const { api, respond } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={approval} active />
+      </ApiProvider>,
+    );
+    const altEnter = { key: "Enter", code: "Enter", altKey: true };
+    fireEvent.keyDown(window, altEnter);
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { ...altEnter, repeat: true });
+    expect(screen.getByTestId("approval-always-rules")).toBeTruthy();
+    expect(respond).not.toHaveBeenCalled();
+  });
+
+  it("never lets a held ⌥⏎ answer the approval queued after the one it saved", async () => {
+    const { api, respond } = fakeApi();
+    const next = { ...approval, id: "r-next" as RequestId, input: { command: "rm -rf build" } };
+    const cards = (requests: readonly PendingRequest[]) => (
+      <ApiProvider api={api}>
+        <RequestCards threadId={T} requests={requests} focused />
+      </ApiProvider>
+    );
+    const view = render(cards([approval, next]));
+    const altEnter = { key: "Enter", code: "Enter", altKey: true };
+    // Two separate presses save the first card's rule...
+    fireEvent.keyDown(window, altEnter);
+    fireEvent.keyDown(window, altEnter);
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith(T, "r1", {
+        kind: "approval",
+        decision: "allow",
+        scope: "always",
+      }),
+    );
+    // ...and the key, still held as the answered card leaves, touches nothing after it.
+    view.rerender(cards([next]));
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { ...altEnter, repeat: true });
+    expect(screen.queryByTestId("approval-always-rules")).toBeNull();
+    expect(respond).toHaveBeenCalledTimes(1);
+  });
+
+  it("names its buttons Allow once and Always allow…, and keeps Deny one click", () => {
+    const { api } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={approval} active={false} />
+      </ApiProvider>,
+    );
+    expect(screen.getByTestId("approval-allow").textContent).toContain("Allow once");
+    expect(screen.getByTestId("approval-always").textContent).toContain("Always allow…");
+    expect(screen.getByTestId("approval-deny").textContent).toContain("Deny");
+  });
+
+  it("shows the exact rule and its reach before saving an always, and saves only on confirm", async () => {
+    const { api, respond } = fakeApi();
+    const request = {
+      ...approval,
+      suggestions: [
+        {
+          type: "addRules" as const,
+          rules: [{ toolName: "Bash", ruleContent: "git push:*" }],
+          behavior: "allow" as const,
+          destination: "localSettings" as const,
+        },
+      ],
+    };
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={request} active={false} />
+      </ApiProvider>,
+    );
+    expect(screen.queryByTestId("approval-always-rules")).toBeNull();
+    fireEvent.click(screen.getByTestId("approval-always"));
+    // Nothing is answered by the first press: it shows what would be kept, and where.
+    expect(respond).not.toHaveBeenCalled();
+    const rule = screen.getByTestId("approval-always-rule");
+    expect(rule.textContent).toContain("Bash(git push:*)");
+    // Claude keeps a local rule at the repository root, shared by every worktree: never "this folder".
+    expect(rule.getAttribute("data-reach")).toBe("repository");
+    expect(rule.textContent).toContain("This repository");
+    expect(rule.textContent).toContain("all its worktrees");
+    expect(rule.textContent).toContain(".claude/settings.local.json at the repository root");
+    // Back leaves it unsaved; Deny is still one click.
+    fireEvent.click(screen.getByTestId("approval-always-back"));
+    expect(screen.queryByTestId("approval-always-rules")).toBeNull();
+    fireEvent.click(screen.getByTestId("approval-always"));
+    expect(screen.getByTestId("approval-always").textContent).toContain("Save and allow");
+    fireEvent.click(screen.getByTestId("approval-always"));
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith(T, "r1", {
+        kind: "approval",
+        decision: "allow",
+        scope: "always",
+      }),
     );
   });
 
@@ -395,7 +490,14 @@ describe("ApprovalCard", () => {
         <ApprovalCard threadId={T} request={browse} active={false} />
       </ApiProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Always for docs\.example\.com/ }));
+    fireEvent.click(screen.getByTestId("approval-always"));
+    // The host and where it is kept show before anything is saved.
+    expect(respond).not.toHaveBeenCalled();
+    const rule = screen.getByTestId("approval-always-rule");
+    expect(rule.textContent).toContain("docs.example.com");
+    expect(rule.getAttribute("data-reach")).toBe("everywhere");
+    expect(rule.textContent).toContain("Agent may browse");
+    fireEvent.click(screen.getByTestId("approval-always"));
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r1", {
         kind: "approval",

@@ -23,6 +23,7 @@ import { digestOf } from "@/orchestration/stream-model";
 import { useThreadsStore } from "@/stores/threads";
 import { isFoldOpen, useTurnFolds } from "@/stores/turn-folds";
 
+import { AwaitingToolsProvider } from "./awaiting-tools";
 import { CompactingLine } from "./compaction-marker";
 import { MessageBlock } from "./message-block";
 import { isToolPart, type Chapter } from "./parts";
@@ -209,6 +210,12 @@ export function Transcript({
   const scrollbarPointer = useRef<{ id: number; y: number }>(undefined);
   const touchPosition = useRef<{ id: number; y: number }>(undefined);
   const lastScrollTop = useRef(0);
+  /**
+   * A press that began in the transcript and hasn't ended. Pressing pauses following, which shows
+   * the jump pill at the bottom; under the pointer mid-press it would take the release, and the
+   * click on whatever was pressed (a tool row's toggle at the end, say) would be lost.
+   */
+  const [pressing, setPressing] = useState(false);
   const inProgress = useThreadsStore((s) => TURN_IN_PROGRESS.has(s.byId[threadId]?.status ?? ""));
   const compaction = useThreadsStore((s) => s.byId[threadId]?.compaction);
   // Measured: in a narrow pane the line wraps, and the room under the last row must grow with it.
@@ -597,13 +604,17 @@ export function Transcript({
         <FollowingLive
           following={isFollowing}
           streaming={streamingIds.size > 0}
+          pressing={pressing}
           onJump={jumpToLatest}
         />
       ) : (
         !isFollowing &&
         messages.length > 0 && (
           <Button
-            className="absolute left-1/2 bottom-6 z-10 -translate-x-1/2"
+            className={cn(
+              "absolute left-1/2 bottom-6 z-10 -translate-x-1/2",
+              pressing && "pointer-events-none",
+            )}
             variant="secondary"
             size="sm"
             onClick={jumpToLatest}
@@ -669,6 +680,14 @@ export function Transcript({
           manualGesture.current = undefined;
         }}
         onPointerDown={(event) => {
+          setPressing(true);
+          const release = () => {
+            setPressing(false);
+            window.removeEventListener("pointerup", release, true);
+            window.removeEventListener("pointercancel", release, true);
+          };
+          window.addEventListener("pointerup", release, true);
+          window.addEventListener("pointercancel", release, true);
           interruptJump();
           scrollbarPointer.current = undefined;
           const el = event.currentTarget;
@@ -754,72 +773,74 @@ export function Transcript({
         ) : (
           <PrRefsProvider threadId={threadId}>
             <FileRefsProvider threadId={threadId}>
-              <div
-                className="relative mx-auto w-full max-w-(--thread-max-width)"
-                style={{ height: virtualizer.getTotalSize() }}
-              >
-                {earlier ? (
-                  <div
-                    className="absolute top-0 left-0 flex w-full items-center justify-center"
-                    style={{ height: EARLIER_ROW }}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={loadingEarlier}
-                      onClick={() => onLoadEarlier?.(true)}
-                    >
-                      {loadingEarlier
-                        ? "Loading earlier messages…"
-                        : earlierFailed
-                          ? "Couldn't load earlier messages. Try again"
-                          : "Show earlier messages"}
-                    </Button>
-                  </div>
-                ) : null}
-                {virtualizer.getVirtualItems().map((item) => {
-                  const id = messages[item.index]!.id;
-                  const closed = closedFold(id);
-                  return (
+              <AwaitingToolsProvider threadId={threadId}>
+                <div
+                  className="relative mx-auto w-full max-w-(--thread-max-width)"
+                  style={{ height: virtualizer.getTotalSize() }}
+                >
+                  {earlier ? (
                     <div
-                      key={item.key}
-                      data-index={item.index}
-                      data-message-id={id}
-                      data-flash={flashId === id ? "true" : undefined}
-                      ref={virtualizer.measureElement}
-                      tabIndex={-1}
-                      className={cn(
-                        "absolute top-0 left-0 w-full rounded-(--radius-md) px-6 outline-none transition-[background-color,box-shadow] duration-(--dur-fast) [contain:content] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-[flash=true]:bg-highlight/10 data-[flash=true]:ring-2 data-[flash=true]:ring-highlight/50 data-[flash=true]:ring-inset",
-                        closed?.empty !== true && "py-2",
-                      )}
-                      style={{ transform: `translateY(${item.start}px)` }}
+                      className="absolute top-0 left-0 flex w-full items-center justify-center"
+                      style={{ height: EARLIER_ROW }}
                     >
-                      <Row
-                        threadId={threadId}
-                        message={messages[item.index]!}
-                        streamingIds={streamingIds}
-                        subagents={subagents}
-                        subagentUsage={subagentUsage}
-                        animate={animate}
-                        turnEnd={turnEndOf(id)}
-                        turnUndos={turnUndos}
-                        fold={folds.get(id)}
-                        foldOpen={closed === undefined}
-                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={loadingEarlier}
+                        onClick={() => onLoadEarlier?.(true)}
+                      >
+                        {loadingEarlier
+                          ? "Loading earlier messages…"
+                          : earlierFailed
+                            ? "Couldn't load earlier messages. Try again"
+                            : "Show earlier messages"}
+                      </Button>
                     </div>
-                  );
-                })}
-                {compaction !== undefined && (
-                  <div
-                    ref={measureCompacting}
-                    // `flow-root` keeps the line's own margins inside what is measured.
-                    className="absolute left-0 flow-root w-full px-6"
-                    style={{ top: virtualizer.getTotalSize() - endRoom }}
-                  >
-                    <CompactingLine compaction={compaction} />
-                  </div>
-                )}
-              </div>
+                  ) : null}
+                  {virtualizer.getVirtualItems().map((item) => {
+                    const id = messages[item.index]!.id;
+                    const closed = closedFold(id);
+                    return (
+                      <div
+                        key={item.key}
+                        data-index={item.index}
+                        data-message-id={id}
+                        data-flash={flashId === id ? "true" : undefined}
+                        ref={virtualizer.measureElement}
+                        tabIndex={-1}
+                        className={cn(
+                          "absolute top-0 left-0 w-full rounded-(--radius-md) px-6 outline-none transition-[background-color,box-shadow] duration-(--dur-fast) [contain:content] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-[flash=true]:bg-highlight/10 data-[flash=true]:ring-2 data-[flash=true]:ring-highlight/50 data-[flash=true]:ring-inset",
+                          closed?.empty !== true && "py-1.5",
+                        )}
+                        style={{ transform: `translateY(${item.start}px)` }}
+                      >
+                        <Row
+                          threadId={threadId}
+                          message={messages[item.index]!}
+                          streamingIds={streamingIds}
+                          subagents={subagents}
+                          subagentUsage={subagentUsage}
+                          animate={animate}
+                          turnEnd={turnEndOf(id)}
+                          turnUndos={turnUndos}
+                          fold={folds.get(id)}
+                          foldOpen={closed === undefined}
+                        />
+                      </div>
+                    );
+                  })}
+                  {compaction !== undefined && (
+                    <div
+                      ref={measureCompacting}
+                      // `flow-root` keeps the line's own margins inside what is measured.
+                      className="absolute left-0 flow-root w-full px-6"
+                      style={{ top: virtualizer.getTotalSize() - endRoom }}
+                    >
+                      <CompactingLine compaction={compaction} />
+                    </div>
+                  )}
+                </div>
+              </AwaitingToolsProvider>
             </FileRefsProvider>
           </PrRefsProvider>
         )}
@@ -890,7 +911,7 @@ function Row({
           foldOpen={foldOpen}
         />
       )}
-      <StreamExtrasView messageId={message.id} at={message.metadata?.createdAt} />
+      <StreamExtrasView messageId={message.id} />
     </div>
   );
 }
@@ -903,10 +924,13 @@ function Row({
 function FollowingLive({
   following,
   streaming,
+  pressing,
   onJump,
 }: {
   following: boolean;
   streaming: boolean;
+  /** A press in the transcript is under way: the pill lets its release through. */
+  pressing: boolean;
   onJump: () => void;
 }) {
   const dot = (
@@ -931,6 +955,7 @@ function FollowingLive({
       className={cn(
         pill,
         "text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+        pressing && "pointer-events-none",
       )}
       onClick={onJump}
     >

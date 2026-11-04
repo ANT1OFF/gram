@@ -86,7 +86,7 @@ export function MessageActions({
       <div
         data-testid="message-actions"
         className={cn(
-          "flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
+          "-mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
           isUser ? "justify-end" : "justify-start",
         )}
       >
@@ -104,7 +104,7 @@ export function MessageActions({
     <div
       data-testid="message-actions"
       className={cn(
-        "flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 has-data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100",
+        "-mt-1 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-(--dur-fast) group-hover:opacity-100 focus-within:opacity-100 has-data-[popup-open]:opacity-100 [@media(hover:none)]:opacity-100",
         isUser ? "justify-end" : "justify-start",
       )}
     >
