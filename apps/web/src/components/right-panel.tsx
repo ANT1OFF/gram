@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { loadMarkdown } from "@/components/ai-elements/markdown-loader";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { cn } from "@/lib/utils";
 import { useNotificationHistory, unreadNotifications } from "@/stores/notifications";
 import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
 import { useReviewRequests } from "@/reviews/review-requests";
@@ -135,8 +136,12 @@ export function RightPanel() {
         className="min-h-0 flex-1"
       >
         <div className="flex items-center border-b border-border">
-          <TabsList ref={tabList} className="min-w-0 flex-1 overflow-x-auto border-b-0">
-            {/* An icon each, and the name only on the open one: all names don't fit a narrow panel. */}
+          <TabsList
+            ref={tabList}
+            className="@container/panel-tabs min-w-0 flex-1 overflow-x-auto border-b-0"
+          >
+            {/* An icon each and its name on hover, the open one named and underlined in the accent:
+                every name fits only a panel opened very wide. */}
             {TABS.filter(
               (t) =>
                 (t.value !== "reviews" || reviewsHere) && (t.value !== "preview" || previewHere),
@@ -163,7 +168,7 @@ export function RightPanel() {
                           ? `${t.label}, ${count} ${t.value === "notifications" ? "unread" : "waiting"}`
                           : label
                       }
-                      className="flex shrink-0 items-center gap-1.5"
+                      className="relative flex shrink-0 items-center gap-1.5 after:absolute after:inset-x-1.5 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary"
                     />
                   }
                 >
@@ -177,7 +182,9 @@ export function RightPanel() {
                       />
                     )}
                   </span>
-                  {t.value === tab && <span>{t.label}</span>}
+                  <span className={cn(t.value !== tab && "hidden @min-[60rem]/panel-tabs:inline")}>
+                    {t.label}
+                  </span>
                   {count > 0 && (
                     <span
                       data-testid={

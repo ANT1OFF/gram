@@ -3,8 +3,8 @@ import { expect, test } from "@playwright/test";
 // With the overview's 60 px rail (the overview under 1280 px) and the right panel open, an 880 px
 // window leaves the pane about 470 px. The header used to run past the pane, and the right panel
 // covered its Thread menu. A thread's header is the title bar's now, sharing it with the window's
-// controls: at 880 px and at 1440 px, with the full overview and the panel, it is too narrow for
-// every chip, so chips wrap out of sight.
+// controls: at 880 px it is too narrow for every chip, so chips wrap out of sight; at 1440 px, with
+// the full overview and the panel, the calmer bar leaves them all room.
 for (const width of [880, 1440]) {
   test(`the pane header stays inside the pane, so the right panel never covers its menu (${width} px)`, async ({
     page,
@@ -39,8 +39,8 @@ for (const width of [880, 1440]) {
     });
     expect(
       rows.some((r) => r.wrapped),
-      "a chip wrapped at this width",
-    ).toBe(true);
+      width === 880 ? "a chip wrapped at this width" : "every chip fits at this width",
+    ).toBe(width === 880);
     expect(rows.every((r) => r.wrapped === r.inert)).toBe(true);
     for (let i = 0; i < 12; i++) await page.keyboard.press("Tab");
     expect(await chips.evaluate((row) => row.scrollTop)).toBe(0);

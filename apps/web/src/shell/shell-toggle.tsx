@@ -1,9 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 
-/** One of the title bar's icon toggles, its shortcut in its tooltip. */
+/** One of the title bar's icon toggles, its name and shortcut in its tooltip. */
 export function ShellToggle({
   icon: Icon,
   label,
@@ -22,17 +23,22 @@ export function ShellToggle({
 }) {
   const hint = useShortcutHint(shortcutId);
   return (
-    <Button
-      variant="ghost"
-      size="icon-xs"
-      aria-label={label}
-      aria-pressed={pressed}
-      data-testid={testId}
-      title={withHint(label, hint)}
-      className="text-muted-foreground [-webkit-app-region:no-drag] aria-pressed:text-foreground"
-      onClick={onClick}
+    <Hint
+      label={withHint(label, hint)}
+      side="bottom"
+      render={
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={label}
+          aria-pressed={pressed}
+          data-testid={testId}
+          className="text-muted-foreground [-webkit-app-region:no-drag] aria-pressed:text-foreground"
+          onClick={onClick}
+        />
+      }
     >
       <Icon />
-    </Button>
+    </Hint>
   );
 }

@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { layoutButton } from "./layout";
+
 test("layout preset keys, an empty pane's quick open, and a project's new thread", async ({
   page,
 }) => {
@@ -39,7 +41,12 @@ test("layout preset keys, an empty pane's quick open, and a project's new thread
 
   await page.keyboard.press("Control+Shift+Digit4");
   await expect(grid).toHaveAttribute("data-preset", "2x2");
-  await expect(page.getByRole("button", { name: "Layout: 2×2", exact: true })).toBeVisible();
+  // The title bar's "…" marks it as the layout.
+  await layoutButton(page).click();
+  await expect(
+    page.getByTestId("folded-layout").getByRole("menuitemradio", { name: "2×2", exact: true }),
+  ).toBeChecked();
+  await page.keyboard.press("Escape");
 
   // Project picks in the palette now open a new thread on that project's path.
   await page.keyboard.press("ControlOrMeta+k");

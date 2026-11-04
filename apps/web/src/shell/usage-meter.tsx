@@ -84,6 +84,7 @@ export function UsageMeter({
       className={cn("rounded-full", className)}
     >
       <TitlebarPopover
+        hint="Subscription usage"
         label="Subscription usage"
         testId="usage-limits"
         className="w-72 p-2.5"
@@ -95,7 +96,6 @@ export function UsageMeter({
             data-spent={tone === "spent" || undefined}
             data-stale={stale || undefined}
             aria-label={meterLabel(tightest)}
-            title="Subscription usage"
             className={cn(
               "flex h-6 items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted",
               TONE_TEXT[tone],

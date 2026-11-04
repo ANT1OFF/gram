@@ -146,8 +146,9 @@ describe("context menu caps", () => {
     }
   });
 
-  it("keeps a folded title bar's thread menu to the cap, for a worker with a branch to push", async () => {
-    // The worst case: a worker whose branch has commits to push, with the bar folded all the way.
+  it("keeps a worker's thread menu to the cap with a branch to push, the bar folded all the way", async () => {
+    // The worst case: a worker whose branch has commits to push. What the bar folds is the bar's
+    // own "…", never this menu's.
     const { byId } = useThreadsStore.getState();
     const worker = byId[busiest]!;
     act(() =>
@@ -162,10 +163,7 @@ describe("context menu caps", () => {
       }),
     );
     act(() => useTitlebarSlot.getState().setFold(FOLD_ALL));
-    const view = renderWithApi(
-      <ThreadMenu threadId={busiest} folded={{ orchestration: true, worker: true }} />,
-      api,
-    );
+    const view = renderWithApi(<ThreadMenu threadId={busiest} />, api);
     fireEvent.click(screen.getByRole("button", { name: "Thread menu" }));
     const menu = await screen.findByTestId("thread-menu");
     await within(menu).findByRole("menuitem", { name: "More…" });
@@ -174,7 +172,7 @@ describe("context menu caps", () => {
       .filter((item) => item.closest('[role="menu"]') === menu)
       .map(labelOf);
     expectCapped("folded worker header", items);
-    expect(items).toContain("Title bar");
+    expect(items).not.toContain("Title bar");
     // The branch and its push are the agents' working detail: More… has them.
     expect(items.join(" ")).not.toMatch(/feat\/retry|Push|Publish/);
     view.unmount();

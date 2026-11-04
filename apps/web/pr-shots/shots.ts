@@ -279,7 +279,8 @@ const openQuietBusy = async (page: Page): Promise<string> => {
     sessionStorage.setItem("gram.shots.workspace", made.workspaceId);
     return made;
   });
-  await page.getByTestId("quiet-toggle").click();
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("folded-quiet").click();
   await page.getByTestId("quiet-empty").waitFor();
   return page.evaluate(() => sessionStorage.getItem("gram.shots.workspace") ?? "");
 };
@@ -358,7 +359,8 @@ const openReadmeQuiet = async (page: Page, width: number, height: number) => {
   await openOrchestrator(page, made.orchestratorThreadId);
   await page.getByLabel("Message", { exact: true }).waitFor();
   await page.setViewportSize({ width, height });
-  await page.getByTestId("quiet-toggle").click();
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("folded-quiet").click();
   await page.getByTestId("quiet-empty").waitFor();
   await page.mouse.move(width - 4, height - 4);
   await page.waitForTimeout(800);
@@ -991,7 +993,8 @@ export const SHOTS: readonly Shot[] = [
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto("/t/t-deps");
       await page.getByLabel("Message", { exact: true }).waitFor();
-      await page.getByTestId("quiet-toggle").click();
+      await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("folded-quiet").click();
       await page.getByTestId("quiet-view").waitFor();
       await page.waitForTimeout(800);
     },
@@ -2096,7 +2099,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "titlebar-folded-worker-menu",
-    title: "A folded title bar's thread menu on a worker with a branch, at 1280 px",
+    title: 'A folded title bar\'s "…" on a worker with a branch, at 1280 px',
     open: async (page) => {
       await openOrchestratorOf(page, async () => {
         const mock = window.gramMock!;
@@ -2112,8 +2115,8 @@ export const SHOTS: readonly Shot[] = [
       }, `/t/${worker}`);
       const bar = page.getByTestId("shell-titlebar");
       await expect(bar).toHaveAttribute("data-folded", "true");
-      await bar.getByRole("button", { name: "Thread menu" }).click();
-      await page.getByTestId("thread-menu").getByRole("menuitem", { name: "More…" }).waitFor();
+      await bar.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("titlebar-overflow-menu").waitFor();
       await page.waitForTimeout(400);
     },
   },
@@ -2141,11 +2144,11 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "titlebar-layout",
-    title: "The layout picker open, its six presets in one popover",
+    title: 'The title bar\'s "…" open: Quiet, focus mode and the six layout presets',
     open: async (page) => {
       await openThread(page);
-      await page.getByRole("button", { name: /^Layout: / }).click();
-      await page.getByRole("radiogroup", { name: "Layout" }).waitFor();
+      await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("folded-layout").waitFor();
       await page.waitForTimeout(400);
     },
   },
@@ -2398,11 +2401,11 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "views-layout-picker",
-    title: "The layout picker open: the six presets",
+    title: 'The title bar\'s "…" open: Quiet, focus mode and the six layout presets',
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateAsks());
-      await page.getByRole("button", { name: /^Layout: / }).click();
-      await page.getByRole("radiogroup", { name: "Layout" }).waitFor();
+      await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("folded-layout").waitFor();
       await page.waitForTimeout(400);
     },
   },

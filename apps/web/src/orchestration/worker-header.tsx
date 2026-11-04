@@ -12,7 +12,7 @@ import { GlideText, Swap } from "@/motion";
 import { useThreadsStore } from "@/stores/threads";
 import { RoleGlyph } from "@/thread/role-chip";
 import { useOpenThread } from "@/shell/thread-switcher";
-import { Foldable } from "@/shell/titlebar-fold";
+import { Foldable } from "@/shell/foldable";
 import { FOLD_ALL, useTitlebarSlot } from "@/shell/titlebar-slot";
 import { useThreadActions } from "@/thread/use-thread-actions";
 
@@ -272,7 +272,7 @@ function useWorkerActions(thread: Thread) {
  * chat (⌘\), and Take over holds it for you, by the same path a message you type into it takes,
  * until you hand it back. While you hold it, the hold chip and its Hand back stand in Take over's
  * place. Watching it, here or beside the chat, never holds it. In a title bar folded all the way,
- * Keep beside and Take over are the thread menu's (`WorkerMenuItems`) and the hold chip is a glyph
+ * Keep beside and Take over are the bar's "…" items (`WorkerMenuItems`) and the hold chip is a glyph
  * and its Hand back.
  */
 export function WorkerActions({
@@ -339,7 +339,7 @@ export function WorkerActions({
   );
 }
 
-/** Keep beside and Take over as the thread menu's items, while a narrow title bar folds them. */
+/** Keep beside and Take over as the title bar's "…" items, while a narrow bar folds them. */
 export function WorkerMenuItems({
   thread,
   itemClassName,

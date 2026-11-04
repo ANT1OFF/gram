@@ -1,10 +1,4 @@
-import {
-  Focus,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
-} from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -13,9 +7,9 @@ import { WorkersButton } from "@/orchestration/workers-list";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { NotificationsBell } from "@/panels/notifications-panel";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
-import { LayoutPicker } from "@/shell/layout-picker";
 import { ShellToggle } from "@/shell/shell-toggle";
-import { Foldable, TitlebarOverflow } from "@/shell/titlebar-fold";
+import { Foldable } from "@/shell/foldable";
+import { TitlebarOverflow } from "@/shell/titlebar-fold";
 import {
   useSoloRoute,
   useTitlebarFold,
@@ -27,13 +21,19 @@ import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
-import { QuietToggle, ViewSwitcher } from "@/views/view-frame";
+import { ViewSwitcher } from "@/views/view-frame";
 import { useViewStore } from "@/views/view-store";
 
 /**
+ * The room before each of the bar's clusters, which groups them; a narrow bar gives it to the title.
+ * By the bar's width, not its fold, so the room it frees can't unfold what it folded.
+ */
+const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
+
+/**
  * The chat column's title bar: the workspace and its views, the thread's header or Board's
- * controls in the slot, then the workspace's controls and the shell's toggles. Narrow, the lesser
- * buttons fold into "…".
+ * controls in the slot, then three clusters: the workspace's work, what wants your attention, and
+ * the view (a "…" with the rarer toggles, and the panel). Narrow, the lesser buttons fold into "…".
  */
 export function ShellTitlebar({
   sidebarShown,
@@ -50,9 +50,7 @@ export function ShellTitlebar({
   /** `panel.side` puts the panel on the left. */
   panelLeft: boolean;
 }) {
-  const focusMode = useLayoutStore((s) => s.focusMode);
   const togglePanel = useLayoutStore((s) => s.togglePanel);
-  const toggleFocusMode = useLayoutStore((s) => s.toggleFocusMode);
   // One bar: a thread alone in Chat puts its header here, and Board its controls.
   const barThread = useTitlebarThread() !== undefined;
   const board = useViewStore((s) => s.view === "board");
@@ -130,10 +128,17 @@ export function ShellTitlebar({
           className="mx-1 h-4 w-px shrink-0 bg-border"
         />
       )}
-      {/* The workspace's workers, tidy-up and pause are Board's and the orchestrator's: a
-          solo thread is none of their work, and ⌘J, the palette and Board still reach them. */}
+      {/* Three clusters, the room between them doing the grouping: the workspace's work, what
+          wants your attention, and the window's view. */}
+      {/* The workspace's workers, tidy-up and pause are Board's and the orchestrator's: a solo
+          thread is none of their work, and ⌘J, the palette and Board still reach them. */}
       {!soloBar && (
-        <>
+        <div
+          role="group"
+          aria-label="Workspace"
+          data-testid="titlebar-workspace"
+          className="flex shrink-0 items-center gap-1"
+        >
           {/* Workers is one of the bar's main controls: it folds last. */}
           <Foldable level={2} gap={4}>
             <WorkersButton className="[-webkit-app-region:no-drag]" />
@@ -142,45 +147,46 @@ export function ShellTitlebar({
             <TitlebarTidyUp className="[-webkit-app-region:no-drag]" />
           </Foldable>
           <TitlebarPause className="[-webkit-app-region:no-drag]" />
-        </>
+        </div>
       )}
-      {/* Narrow, the title needs the room more than the meter needs its words. */}
-      <UsageMeter
-        className="mr-1 [-webkit-app-region:no-drag]"
-        textClassName="@max-2xl/titlebar:hidden"
-      />
-      <NotificationsBell />
-      {/* Narrow, these and Tidy up, then Workers, are in "…": the thread's menu, or the bar's
-          own without one. */}
-      {folded && !barThread && (
-        <TitlebarOverflow orchestration={!soloBar} className="[-webkit-app-region:no-drag]" />
-      )}
-      <Foldable level={1} gap={4} className="gap-1">
-        <QuietToggle className="[-webkit-app-region:no-drag]" />
-        <LayoutPicker className="[-webkit-app-region:no-drag]" />
-        <ShellToggle
-          icon={Focus}
-          label={focusMode ? "Leave focus mode" : "Focus mode"}
-          shortcutId="focus.toggle"
-          pressed={focusMode}
-          onClick={toggleFocusMode}
+      <div
+        role="group"
+        aria-label="Attention"
+        data-testid="titlebar-attention"
+        className={cn("flex shrink-0 items-center gap-1", !soloBar && CLUSTER_GAP)}
+      >
+        {/* Narrow, the title needs the room more than the meter needs its words. */}
+        <UsageMeter
+          className="[-webkit-app-region:no-drag]"
+          textClassName="@max-2xl/titlebar:hidden"
         />
-      </Foldable>
-      <ShellToggle
-        icon={
-          panelShown
-            ? panelLeft
-              ? PanelLeftClose
-              : PanelRightClose
-            : panelLeft
-              ? PanelLeftOpen
-              : PanelRightOpen
-        }
-        label={panelShown ? "Hide right panel" : "Show right panel"}
-        shortcutId="panel.toggle"
-        pressed={panelShown}
-        onClick={togglePanel}
-      />
+        <NotificationsBell />
+      </div>
+      <div
+        role="group"
+        aria-label="View"
+        data-testid="titlebar-view"
+        className={cn("flex shrink-0 items-center gap-1", CLUSTER_GAP)}
+      >
+        {/* Quiet, focus mode and the layout, and what a narrow bar folds: Tidy up, then Workers
+            and a worker's own actions. */}
+        <TitlebarOverflow orchestration={!soloBar} className="[-webkit-app-region:no-drag]" />
+        <ShellToggle
+          icon={
+            panelShown
+              ? panelLeft
+                ? PanelLeftClose
+                : PanelRightClose
+              : panelLeft
+                ? PanelLeftOpen
+                : PanelRightOpen
+          }
+          label={panelShown ? "Hide right panel" : "Show right panel"}
+          shortcutId="panel.toggle"
+          pressed={panelShown}
+          onClick={togglePanel}
+        />
+      </div>
     </div>
   );
 }

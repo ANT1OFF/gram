@@ -32,7 +32,7 @@ import { useShortcut } from "@/keyboard/registry";
 import { targetBadge } from "@/panels/pr-identity";
 import { turnEndMessages } from "@/panels/turn-diff";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
-import { FOLD_ALL, useSoloRoute, useTitlebarSlot, useTitlebarThread } from "@/shell/titlebar-slot";
+import { useTitlebarSlot, useTitlebarThread } from "@/shell/titlebar-slot";
 import { useStable } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
 import { AttentionPulse, Swap, TurnCompleteSheen } from "@/motion";
@@ -126,8 +126,6 @@ export function ThreadView({
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const titlebarThread = useTitlebarThread();
   const titlebarSlot = useTitlebarSlot((s) => s.slot);
-  const titlebarFold = useTitlebarSlot((s) => s.fold);
-  const soloRoute = useSoloRoute();
   const detail = useThreadsStore((s) => s.statusDetail[threadId]);
   const ready = useThreadsStore((s) => s.ready);
   const phase = useThreadFeed(threadId, (s) => s.phase);
@@ -512,15 +510,7 @@ export function ThreadView({
           earlierFailed={earlierFailed}
           onLoadEarlier={() => void pageEarlier(true)}
         />
-        {/* A narrow title bar's folded buttons are this menu's while the header is the bar's. */}
-        <ThreadMenu
-          threadId={threadId}
-          folded={
-            inTitlebar && titlebarFold > 0
-              ? { orchestration: !soloRoute, worker: titlebarFold >= FOLD_ALL }
-              : undefined
-          }
-        />
+        <ThreadMenu threadId={threadId} />
         {actions}
       </header>
     </AttentionPulse>

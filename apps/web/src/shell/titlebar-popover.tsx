@@ -1,6 +1,7 @@
 import { Popover } from "@base-ui/react/popover";
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Expand, useMotionLevel } from "@/motion";
 
@@ -10,6 +11,7 @@ import { Expand, useMotionLevel } from "@/motion";
  */
 export function TitlebarPopover({
   trigger,
+  hint,
   label,
   testId,
   className,
@@ -21,6 +23,8 @@ export function TitlebarPopover({
 }: {
   /** The button that opens it, with its own name, classes and test id. */
   trigger: ReactElement;
+  /** The trigger's tooltip, shown at once on hover and focus. */
+  hint?: string;
   /** The popup's accessible name. */
   label: string;
   testId?: string;
@@ -41,7 +45,17 @@ export function TitlebarPopover({
   };
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger render={trigger} />
+      {hint === undefined ? (
+        <Popover.Trigger render={trigger} />
+      ) : (
+        // The tooltip's parts by hand: a `Hint` would hand the trigger its own (empty) children.
+        <Tooltip>
+          <TooltipTrigger render={<Popover.Trigger render={trigger} />} />
+          <TooltipContent side="bottom" className="whitespace-pre-line">
+            {hint}
+          </TooltipContent>
+        </Tooltip>
+      )}
       <Popover.Portal>
         <Popover.Positioner side="bottom" align={align} sideOffset={6} className="isolate z-50">
           <Popover.Popup
