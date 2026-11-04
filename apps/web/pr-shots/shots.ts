@@ -2426,6 +2426,16 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("shell-titlebar"),
   },
   {
+    name: "titlebar-menu",
+    title:
+      'The title bar\'s one "…" on an orchestrator: the thread\'s menu, the workspace\'s controls and the window\'s, in words',
+    open: async (page) => {
+      await openOverviewHome(page, 1440, { panel: false });
+      await openBarMenu(page);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "titlebar-folded-worker-menu",
     title: 'A folded title bar\'s "…" on a worker with a branch, at 1280 px',
     open: async (page) => {
