@@ -79,12 +79,16 @@ test("the pill opens every workspace's items, and a row opens its ask in that wo
   const count = 11;
   await expect(pill(page)).toHaveAttribute("data-count", String(count));
   await openPopover(page);
-  // Grouped by workspace: the board's and billing's.
-  await expect(popover(page).getByRole("region", { name: "billing" })).toBeVisible();
+  // Grouped by kind, approvals first, each row saying its workspace.
+  await expect(popover(page).getByTestId("needs-you-section").first()).toHaveAttribute(
+    "data-section",
+    "approvals",
+  );
+  await expect(popover(page).getByRole("region", { name: "Approvals" })).toBeVisible();
   await expect(popover(page).getByTestId("needs-you-see-all")).toHaveText(`See all ${count}`);
-  // Each row says its kind, behind a hint, and its thread.
+  // Each row says its kind, behind a hint, its workspace and its thread.
   const merge = row(popover(page), "gh pr merge 91 --squash");
-  await expect(merge).toContainText("Export invoices as CSV");
+  await expect(merge.getByTestId("needs-you-where")).toHaveText("billing · Export invoices as CSV");
   await expect(merge.getByRole("img", { name: "Approval" })).toBeVisible();
 
   // A worker's request is answered in its workspace's Asks dock, on its orchestrator, like the rest.
@@ -167,14 +171,18 @@ test("a wait's Done resolves it, and a jump lands on the message that added it",
 test("⌘⇧U and ⌘⇧Y step through what needs you, each at its thread", async ({ page }) => {
   await start(page);
   await seeAll(page);
-  const threads = await panel(page)
-    .getByTestId("needs-you-item")
-    .evaluateAll((rows) => rows.map((each) => each.getAttribute("data-thread-id")));
+  const rows = panel(page).getByTestId("needs-you-item");
+  const threads = await rows.evaluateAll((all) =>
+    all.map((each) => each.getAttribute("data-thread-id")),
+  );
+  // Where each step lands: an ask in a workspace's dock opens its orchestrator, the rest their own.
+  const opens = await rows.evaluateAll((all) => all.map((each) => each.getAttribute("data-opens")));
   expect(threads.length).toBeGreaterThan(2);
-  const at = (index: number) => new RegExp(`/t/${threads[index]}$`);
+  const at = (index: number) => new RegExp(`/t/${opens[index]}$`);
 
   await page.keyboard.press("ControlOrMeta+Shift+U");
   await expect(page).toHaveURL(at(0));
+
   const current = panel(page).locator('[data-testid="needs-you-item"][data-current="true"]');
   await expect(current).toHaveAttribute("data-thread-id", threads[0]!);
   await page.keyboard.press("ControlOrMeta+Shift+U");
@@ -257,7 +265,7 @@ test("with nothing waiting, the popover and the panel say so", async ({ page }) 
   await expect(popover(page).getByTestId("needs-you-empty")).toBeVisible();
 });
 
-test("a worker's question opens at its ask in the orchestrator's dock, answered in one click", async ({
+test("a worker's question opens at its ask in the orchestrator's dock: pick, then Send answer", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
@@ -274,8 +282,10 @@ test("a worker's question opens at its ask in the orchestrator's dock, answered 
     .and(page.locator(`[data-ask-key="worker-question:${made.workspaceId}:WQ1"]`));
   await expect(item).toBeInViewport();
   await expect(item).toBeFocused();
-  // Step 2: its choice, the orchestrator's pick first, answers it straight to the worker.
+  // Step 2: its choice, the orchestrator's pick first, then Send answer: straight to the worker.
   await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+  await expect(page.getByTestId("ask-undo-line")).toHaveCount(0);
+  await item.getByTestId("ask-send").click();
   await expect(page.getByTestId("ask-undo-line")).toContainText("Keep for replay");
 });
 

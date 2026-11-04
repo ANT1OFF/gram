@@ -11,9 +11,10 @@ import { formatKeys } from "@/keyboard/registry";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { DrawnCheck, Swap } from "@/motion";
-import { clock, plainKeysReach, SETTLE_MS } from "@/orchestration/ask-keys";
-import { AskChoices, Kbd, MoreText, plainHint } from "@/orchestration/ask-choices";
+import { CHOICE, clock, plainKeysReach, SETTLE_MS, types } from "@/orchestration/ask-keys";
+import { AskChoices, Kbd, MoreText, plainHint, SendAnswer } from "@/orchestration/ask-choices";
 import {
+  answerRule,
   askKeysByThread,
   choiceLayout,
   replyAnswer,
@@ -127,8 +128,9 @@ const soloSource = (asks: readonly Ask[]): DeckSource => ({
 
 /**
  * Quiet: an empty field, one strip at the bottom with a dot per worker, and, when something needs
- * you, one card at a time. ⏎ takes the first answer, 1 and 2 pick, → sends a card to the back and
- * O opens its thread; never while typing in its reply. Answers hold through the ask stack's store,
+ * you, one card at a time. The answer rule is the dock's: 1–9 pick a choice and ⌘⏎ sends it (an
+ * approval's verbs act on a click), → sends a card to the back and O opens its thread; never while
+ * typing in its reply. Answers hold through the ask stack's store,
  * so what is answered here is gone from every view, and ⌘Z or Undo brings it back while it waits.
  */
 export function QuietView({ workspaceId }: ViewProps) {
@@ -152,6 +154,9 @@ export function QuietView({ workspaceId }: ViewProps) {
   const replyRef = useRef<HTMLInputElement | null>(null);
 
   const card = deck[0];
+  // The choice picked on the top card and not sent yet.
+  const [pick, setPick] = useState<{ key: string; index: number }>();
+  const picked = card !== undefined && pick?.key === card.ask.key ? pick.index : undefined;
   // When the top card last changed by itself, and when Quiet last answered: a key in either's wake
   // is a slip, not a decision.
   const stepped = useRef<string | undefined>(undefined);
@@ -182,6 +187,7 @@ export function QuietView({ workspaceId }: ViewProps) {
       openBoard(action.workspaceId, { waiting: true });
       return;
     }
+    setPick(undefined);
     send(each.ask, option.done, action);
   };
   const reply = (ask: Ask, text: string) => {
@@ -206,7 +212,10 @@ export function QuietView({ workspaceId }: ViewProps) {
     const root = rootRef.current;
     if (root === null) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (!plainKeysReach(target, root)) return;
+    // A choice just clicked keeps focus, and the card's keys with it; its reply field types.
+    const own =
+      target !== null && !types(target) && target.closest(CHOICE) !== null && root.contains(target);
+    if (!own && !plainKeysReach(target, root)) return;
     const take = () => {
       event.preventDefault();
       event.stopPropagation();
@@ -216,11 +225,15 @@ export function QuietView({ workspaceId }: ViewProps) {
       if (undo()) take();
       return;
     }
-    if (mod || event.altKey || event.shiftKey || event.repeat || card === undefined) return;
+    if (event.altKey || event.shiftKey || event.repeat || card === undefined) return;
+    const sending = mod && event.key === "Enter";
+    if (mod && !sending) return;
     const key = event.key.toLowerCase();
-    const pick =
-      event.key === "Enter" ? 0 : /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : undefined;
-    if (pick === undefined && key !== "o" && event.key !== "ArrowRight") return;
+    const number = !mod && /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : undefined;
+    const toReply = !mod && event.key === "Enter" && card.ask.freeForm !== undefined;
+    if (!sending && !toReply && number === undefined && key !== "o" && event.key !== "ArrowRight") {
+      return;
+    }
     const now = clock();
     if (now - answeredAt.current < SETTLE_MS || now - topSince.current < SETTLE_MS) {
       take();
@@ -237,16 +250,17 @@ export function QuietView({ workspaceId }: ViewProps) {
       leaveTo(card.threadId);
       return;
     }
-    if (pick === undefined) return;
-    if (pick === 0 && card.ask.freeForm !== undefined) {
+    if (toReply) {
       take();
       replyRef.current?.focus();
       return;
     }
-    const option = card.ask.options[pick];
-    if (option === undefined) return;
+    const at = number ?? picked;
+    const option = at === undefined ? undefined : card.ask.options[at];
+    if (option === undefined || at === undefined) return;
     take();
-    choose(card, option);
+    if (sending) choose(card, option);
+    else setPick({ key: card.ask.key, index: at });
   });
   useEffect(() => {
     const listener = (event: KeyboardEvent) => onKey(event);
@@ -284,6 +298,8 @@ export function QuietView({ workspaceId }: ViewProps) {
               card={card}
               total={deck.length}
               problem={problem}
+              picked={picked}
+              onPick={(index) => setPick({ key: card.ask.key, index })}
               onChoose={(option) => choose(card, option)}
               onReply={(text) => reply(card.ask, text)}
               onLater={deck.length > 1 ? () => sendBack(card.ask.key) : undefined}
@@ -331,6 +347,8 @@ function QuietCard({
   card,
   total,
   problem,
+  picked,
+  onPick,
   onChoose,
   onReply,
   onLater,
@@ -340,6 +358,8 @@ function QuietCard({
   card: DeckCard;
   total: number;
   problem: string | undefined;
+  picked: number | undefined;
+  onPick: (index: number) => void;
   onChoose: (option: AskOption) => void;
   onReply: (text: string) => void;
   onLater: (() => void) | undefined;
@@ -348,7 +368,12 @@ function QuietCard({
 }) {
   const { ask } = card;
   const Icon = ICON[ask.icon];
-  const listed = choiceLayout(ask.options) === "list";
+  const rule = answerRule(ask.options);
+  // A question's choices sit above the footer with Send answer; a short row of verbs sits in it.
+  const listed = rule === "pick" || choiceLayout(ask.options) === "list";
+  const pickedOption = picked === undefined ? undefined : ask.options[picked];
+  const hintOf = (index: number) =>
+    rule === "act" && index === picked ? formatKeys("mod+enter") : plainHint(index);
   return (
     <section
       data-testid="quiet-card"
@@ -409,17 +434,31 @@ function QuietCard({
       {listed && (
         <AskChoices
           options={ask.options}
-          hintOf={plainHint}
+          hintOf={hintOf}
           onChoose={onChoose}
+          picked={picked}
+          onPick={onPick}
           testId="quiet-option"
           size="default"
         />
       )}
       <footer className="flex flex-wrap items-center gap-1">
+        {rule === "pick" && (
+          <SendAnswer
+            testId="quiet-send"
+            disabled={pickedOption === undefined}
+            title={pickedOption === undefined ? "Pick a choice first" : undefined}
+            hint={formatKeys("mod+enter")}
+            onSend={() => {
+              if (pickedOption !== undefined) onChoose(pickedOption);
+            }}
+          />
+        )}
         {!listed && (
           <AskChoices
             options={ask.options}
-            hintOf={plainHint}
+            hintOf={hintOf}
+            picked={picked}
             onChoose={onChoose}
             testId="quiet-option"
             size="default"

@@ -244,19 +244,22 @@ test("an answer picks a choice or says it in words, closes the question, and rea
   );
   await expect(closed.locator('[data-question="Q4"]')).toContainText("Decided by the orchestrator");
 
-  // Choices are offered as the agent's own question card offers them, the recommended one marked.
+  // Answer opens the ask sheet, the one place it is answered: its choices as the agent's own
+  // question card offers them, the recommended one tagged and not picked.
   const q1 = questions.first();
   await q1.getByRole("button", { name: "Answer" }).click();
-  await expect(q1.getByRole("radio")).toHaveCount(4);
-  await expect(q1.getByTestId("choice-recommended")).toHaveAttribute("title", "Recommended");
-  // The form unfolds inert for a frame, and text filled into it then goes nowhere; a form with
-  // choices takes no focus to wait on, so wait for the inert to lift.
-  await expect(q1.locator("[inert]")).toHaveCount(0);
+  const sheet = page.getByTestId("ask-sheet");
+  await expect(sheet).toBeVisible();
+  await expect(q1.getByRole("radio")).toHaveCount(0);
+  await expect(sheet.getByRole("radio")).toHaveCount(4);
+  await expect(sheet.getByTestId("choice-recommended")).toHaveText("Recommended");
+  await expect(sheet.getByRole("radio", { name: /Retry with backoff/ })).not.toBeChecked();
   // "Other…" is one of the radios: typing picks it, and picking an option after stops sending it.
-  await q1.getByRole("textbox").fill("Drop it");
-  await expect(q1.getByRole("radio", { name: "Other", exact: true })).toBeChecked();
-  await q1.getByRole("radio", { name: /Retry with backoff/ }).check();
-  await q1.getByRole("button", { name: "Send to the orchestrator" }).click();
+  await sheet.getByRole("textbox").fill("Drop it");
+  await expect(sheet.getByRole("radio", { name: "Other", exact: true })).toBeChecked();
+  await sheet.getByRole("radio", { name: /Retry with backoff/ }).check();
+  await sheet.getByRole("button", { name: "Send answer" }).click();
+  await expect(sheet).toBeHidden();
   await expect(questions).toHaveCount(1);
   await expect(closed.locator('[data-question="Q1"]')).toHaveAttribute(
     "data-closed-as",
@@ -264,11 +267,11 @@ test("an answer picks a choice or says it in words, closes the question, and rea
   );
   await expect(closed.locator('[data-question="Q1"]')).toContainText("Retry with backoff");
 
-  // One without choices is answered in words.
+  // One without choices is answered in words, in the sheet too.
   await questions.first().getByRole("button", { name: "Answer" }).click();
-  await expect(questions.first().getByRole("textbox")).toBeFocused();
-  await questions.first().getByRole("textbox").fill("Yes, a merged PR is enough there.");
-  await questions.first().getByRole("button", { name: "Send to the orchestrator" }).click();
+  await expect(sheet.getByRole("textbox")).toBeFocused();
+  await sheet.getByRole("textbox").fill("Yes, a merged PR is enough there.");
+  await sheet.getByRole("button", { name: "Send answer" }).click();
   await expect(section).toContainText("None.");
 
   // Each arrives as an ordinary message quoting the question's id, and says it is closed.
@@ -286,7 +289,7 @@ test("an answer picks a choice or says it in words, closes the question, and rea
   );
 });
 
-test("the board answers open questions in its Waiting on you, which the banner unfolds, and the orchestrator asks the rest", async ({
+test("the board lists open questions in its Waiting on you, which the banner unfolds, and its dock answers them", async ({
   page,
 }) => {
   const made = await openMemory(page);
@@ -311,10 +314,15 @@ test("the board answers open questions in its Waiting on you, which the banner u
   await expect(chip).toHaveAttribute("aria-expanded", "true");
   const q3 = band.locator('[data-question="Q3"]');
   await q3.getByRole("button", { name: "Answer" }).click();
-  // The form mounts folded, and inert, for a frame before it opens; it is focused once it can be typed in.
-  await expect(q3.getByRole("textbox")).toBeFocused();
-  await q3.getByRole("textbox").fill("Yes.");
-  await q3.getByRole("button", { name: "Send to the orchestrator" }).click();
+  // No second form: the Board's dock turns to it, and the band says it is there.
+  await expect(q3.getByTestId("question-answering")).toHaveText("In Asks");
+  await expect(q3.getByRole("textbox")).toHaveCount(0);
+  const item = page
+    .getByTestId("rail-board")
+    .locator(`[data-testid="ask-item"][data-ask-key="memory:${made.workspaceId}:Q3"]`);
+  await expect(item).toBeFocused();
+  await item.getByTestId("ask-reply-input").fill("Yes.");
+  await item.getByTestId("ask-reply-send").click();
   await expect(band.getByTestId("memory-question")).toHaveCount(1);
   await expect(chip).toHaveAttribute("data-count", "1");
 
@@ -322,7 +330,11 @@ test("the board answers open questions in its Waiting on you, which the banner u
   // doesn't repeat it.
   await pickChat(page);
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("ask-stack").getByTestId("ask-title")).toContainText("429");
+  // The dock moved on to the next ask after Q3; Q1 is still among them.
+  const stack = page.getByTestId("ask-stack");
+  await stack.getByTestId("ask-expand").click();
+  await expect(stack.getByTestId("ask-title").filter({ hasText: "429" })).toHaveCount(1);
+  await expect(stack.locator('[data-ask-key$=":Q3"]')).toHaveCount(0);
   await expect(page.getByTestId("waiting-questions")).toHaveCount(0);
   await expect(page.getByTestId("banner-questions")).toHaveText("1 decision to make");
 });

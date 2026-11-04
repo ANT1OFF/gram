@@ -38,10 +38,11 @@ import { useDraftStore } from "@/stores/drafts";
 import { useLayoutStore } from "@/stores/layout";
 import { OptionGallery } from "@/thread/mock-visuals";
 
-import { clock, inOverlay, plainKeysReach, SETTLE_MS } from "./ask-keys";
-import { AskChoices, Kbd, MoreText, plainHint } from "./ask-choices";
+import { clock, inOverlay, plainKeysReach, SETTLE_MS, types } from "./ask-keys";
+import { AskChoices, Kbd, MoreText, plainHint, SendAnswer } from "./ask-choices";
 import { holdAnswer, type SendAction } from "./ask-answer";
 import {
+  answerRule,
   replyAnswer,
   replyChips,
   stepIndex,
@@ -50,7 +51,7 @@ import {
   choiceLayout,
   type AskOption,
 } from "./ask-model";
-import { openAskSheet } from "./ask-sheet-store";
+import { answersInSheet, openAskSheet, useAskSheet } from "./ask-sheet-store";
 import { useAskStackStore } from "./ask-stack-store";
 import { useDerivedAsks } from "./needs-you-store";
 
@@ -122,11 +123,14 @@ export function ReplyField({
   current,
   onSend,
   inputRef,
+  hint,
 }: {
   ask: Ask;
   current: boolean;
   onSend: (text: string) => void;
   inputRef: (element: HTMLInputElement | null) => void;
+  /** The key Send answer takes, when keys reach it: ⏎ in the field. */
+  hint?: string | undefined;
 }) {
   const api = useApi();
   const id = ask.ids[0] ?? ask.key;
@@ -199,9 +203,12 @@ export function ReplyField({
           placeholder="Reply"
           className="h-7 min-w-0 flex-1 rounded-(--radius-md) border border-border bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
         />
-        <Button size="sm" type="submit" data-testid="ask-reply-send" disabled={text.trim() === ""}>
-          Send
-        </Button>
+        <SendAnswer
+          type="submit"
+          testId="ask-reply-send"
+          disabled={text.trim() === ""}
+          hint={current ? hint : undefined}
+        />
       </form>
     </div>
   );
@@ -293,9 +300,11 @@ type KeyHints = "plain" | "composer" | undefined;
 
 const hintOf = (hints: KeyHints, index: number): string | undefined => {
   if (hints === undefined || index > 8) return undefined;
-  if (hints === "plain") return plainHint(index);
-  return index === 0 ? formatKeys("mod+enter") : formatKeys(`alt+${index + 1}`);
+  return hints === "plain" ? plainHint(index) : formatKeys(`alt+${index + 1}`);
 };
+
+/** What sends the picked choice: ⌘⏎, in the open and in an empty composer alike. */
+const SEND_KEYS = "mod+enter";
 
 function AskItem({
   ask,
@@ -303,6 +312,8 @@ function AskItem({
   hints,
   arrived,
   problem,
+  picked,
+  onPick,
   onChoose,
   onReply,
   replyRef,
@@ -312,6 +323,9 @@ function AskItem({
   hints: KeyHints;
   arrived: boolean;
   problem: string | undefined;
+  /** The choice picked and not sent yet. */
+  picked: number | undefined;
+  onPick: (index: number) => void;
   onChoose: (option: AskOption) => void;
   onReply: (text: string) => void;
   replyRef: (element: HTMLInputElement | null) => void;
@@ -320,6 +334,9 @@ function AskItem({
   const spring = usePresetTransition("gentle");
   const Icon = ICON[ask.icon];
   const rise = arrived && level === "full";
+  const pick = answerRule(ask.options) === "pick";
+  const sendHint = current && hints !== undefined ? formatKeys(SEND_KEYS) : undefined;
+  const pickedOption = picked === undefined ? undefined : ask.options[picked];
   return (
     <m.div
       initial={rise ? { y: 14 } : false}
@@ -378,7 +395,13 @@ function AskItem({
         )}
         <AskDetails ask={ask} />
         {ask.freeForm !== undefined && (
-          <ReplyField ask={ask} current={current} onSend={onReply} inputRef={replyRef} />
+          <ReplyField
+            ask={ask}
+            current={current}
+            onSend={onReply}
+            inputRef={replyRef}
+            hint={hints === undefined ? undefined : "⏎"}
+          />
         )}
         {problem !== undefined && (
           <p role="alert" data-testid="ask-problem" className="mt-1 text-xs text-destructive">
@@ -399,15 +422,39 @@ function AskItem({
       {ask.options.length > 0 && (
         <AskChoices
           options={ask.options}
-          hintOf={(index) => (current ? hintOf(hints, index) : undefined)}
+          hintOf={(index) =>
+            !current
+              ? undefined
+              : // A verb picked by its key is sent by ⌘⏎: its hint says so.
+                !pick && index === picked && sendHint !== undefined
+                ? sendHint
+                : hintOf(hints, index)
+          }
           onChoose={onChoose}
+          picked={picked}
+          onPick={onPick}
           testId="ask-option"
           rest="ghost"
-          // A row sits to the right of the question while it fits; a list goes under it, as wide.
+          // Choices go under the question, with Send answer after them; a row of verbs sits to
+          // the right of the question while it fits.
           className={
-            choiceLayout(ask.options) === "row" ? "ml-auto justify-end" : "basis-full pl-6.5"
+            pick || choiceLayout(ask.options) === "list"
+              ? "basis-full pl-6.5"
+              : "ml-auto justify-end"
           }
-        />
+        >
+          {pick && (
+            <SendAnswer
+              testId="ask-send"
+              disabled={pickedOption === undefined}
+              title={pickedOption === undefined ? "Pick a choice first" : undefined}
+              hint={sendHint}
+              onSend={() => {
+                if (pickedOption !== undefined) onChoose(pickedOption);
+              }}
+            />
+          )}
+        </AskChoices>
       )}
     </m.div>
   );
@@ -458,10 +505,14 @@ const composerHolds = (pane: Element, threadId: ThreadId | undefined): boolean =
 
 /**
  * Every ask waiting in the orchestrator's workspace, docked above its composer: the top one open,
- * the rest behind its stepper. Equal approvals are one ask, and the orchestrator's own requests and open
- * questions are asks too. With focus on nothing that types, ⏎ takes the first option, 1 and 2
- * pick and → steps; in the composer ⌘⏎, ⌥1 and ⌥2 do, so typing is never taken. An answer waits
- * `UNDO_MS` before it goes out.
+ * the rest behind its stepper. Equal approvals are one ask, and the orchestrator's own requests and
+ * open questions are asks too. One answer rule, as everywhere: a question's choice is picked (a
+ * click, or 1–9 with focus on nothing that types, ⌥1–9 in the composer), then sent with Send answer
+ * or ⌘⏎; an approval's verbs act on a click. An answer waits `UNDO_MS` before it goes out.
+ *
+ * It is the one answer surface while nothing else answers: with the ask sheet open on one of its
+ * asks, or a request card in the thread above answering one, it folds to a single "N more waiting"
+ * row, and leaves the thread's own cards' asks out of its list.
  */
 export function AskStack({
   workspaceId,
@@ -486,23 +537,81 @@ export function AskStack({
     key: undefined,
     index: 0,
   });
+  // The choice picked on each ask and not sent yet.
+  const [picks, setPicks] = useState<Readonly<Record<string, number>>>({});
+  const setPick = (key: string, index: number | undefined) =>
+    setPicks((was) => {
+      if (was[key] === index) return was;
+      const next = { ...was };
+      if (index === undefined) delete next[key];
+      else next[key] = index;
+      return next;
+    });
 
   const here = all.find((w) => w.workspaceId === workspaceId);
-  const asks = here?.asks ?? [];
+  const every = here?.asks ?? NO_ASKS;
   const elsewhere = all.filter((w) => w.workspaceId !== workspaceId && w.asks.length > 0);
+  // What the thread above answers in its own request cards (a plan, a request to read in full):
+  // each ask in one place, so those are left out here.
+  const inline = useMemo(
+    () =>
+      composerThreadId === undefined
+        ? NO_KEYS
+        : new Set(
+            every
+              .filter(
+                (ask) =>
+                  answersInSheet(ask) &&
+                  ask.group?.entries.some((entry) => entry.threadId === composerThreadId) === true,
+              )
+              .map((ask) => ask.key),
+          ),
+    [every, composerThreadId],
+  );
+  const asks = useMemo(
+    () => (inline.size === 0 ? every : every.filter((ask) => !inline.has(ask.key))),
+    [every, inline],
+  );
+  // The ask the sheet has open, when it is one of this workspace's.
+  const sheetId = useAskSheet((s) =>
+    s.target !== undefined && s.target.workspaceId === workspaceId ? s.target.id : undefined,
+  );
+  const sheetKey =
+    sheetId === undefined ? undefined : every.find((ask) => ask.ids.includes(sheetId))?.key;
+  // Folded while something else answers: the sheet, or the thread's own card. "Show" unfolds it
+  // until what folded it changes.
+  const foldedBy =
+    sheetKey !== undefined
+      ? `sheet:${sheetKey}`
+      : inline.size > 0
+        ? `inline:${[...inline].join()}`
+        : undefined;
+  const [shownDespite, setShownDespite] = useState<string>();
+  const compact = foldedBy !== undefined && shownDespite !== foldedBy;
+  const waiting = asks.filter((ask) => ask.key !== sheetKey);
 
   // A notification's Open: show that ask. Its keys still wait out the settle time.
   const focusKey = useAskStackStore((s) => s.focusKey);
   const focusAt = focusKey === undefined ? -1 : asks.findIndex((ask) => ask.key === focusKey);
   if (focusAt >= 0 && cursor.key !== focusKey) setCursor({ key: focusKey, index: focusAt });
+  // A jump to an ask here unfolds the stack; the one the sheet opens leaves it folded under it.
+  if (focusAt >= 0 && foldedBy !== undefined && focusKey !== sheetKey && compact) {
+    setShownDespite(foldedBy);
+  }
   useEffect(() => {
-    if (focusKey === undefined || cursor.key !== focusKey) return;
+    if (focusKey === undefined) return;
+    // One the thread's own card answers is shown there, not here.
+    if (inline.has(focusKey)) {
+      useAskStackStore.getState().focus(undefined);
+      return;
+    }
+    if (cursor.key !== focusKey) return;
     useAskStackStore.getState().focus(undefined);
     // Shown where it can be seen: a stack laid out under another view leaves it to the one on top.
     const root = rootRef.current;
     if (root === null || root.closest("[inert]") !== null) return;
     ringAsk(root, focusKey);
-  }, [focusKey, cursor.key]);
+  }, [focusKey, cursor.key, inline]);
 
   const found = asks.findIndex((ask) => ask.key === cursor.key);
   const index = found >= 0 ? found : Math.min(cursor.index, Math.max(0, asks.length - 1));
@@ -510,6 +619,22 @@ export function AskStack({
   if (currentAsk !== undefined && (currentAsk.key !== cursor.key || index !== cursor.index)) {
     setCursor({ key: currentAsk.key, index });
   }
+
+  // The ask this dock has open, for the Board's band to mark: while the stack is the one surface.
+  const shownKey = compact ? undefined : currentAsk?.key;
+  useEffect(() => {
+    if (!focused || workspaceId === undefined) return;
+    if (rootRef.current?.closest("[inert]") != null) return;
+    useAskStackStore.getState().setCurrent(workspaceId, shownKey);
+  }, [focused, workspaceId, shownKey]);
+  useEffect(
+    () => () => {
+      if (workspaceId !== undefined && rootRef.current?.closest("[inert]") == null) {
+        useAskStackStore.getState().setCurrent(workspaceId, undefined);
+      }
+    },
+    [workspaceId],
+  );
 
   // When the top ask last changed by itself (answered elsewhere, or a new one), and when this
   // stack last answered: a key in either's wake is a slip, not a decision.
@@ -561,6 +686,7 @@ export function AskStack({
       if (action.kind === "open") open(action.threadId);
       return;
     }
+    setPick(ask.key, undefined);
     send(ask, option.done, action);
   };
   const reply = (ask: Ask, text: string) => {
@@ -582,8 +708,13 @@ export function AskStack({
   useEffect(() => {
     if (!focused) return;
     const update = () => {
-      // Focus on the stack's own buttons keeps the hints: a click must not move what it pressed.
-      if (rootRef.current?.contains(document.activeElement)) return;
+      // Focus on the stack's own buttons keeps the hints: a click must not move what it pressed. A
+      // jump that lands focus on an ask brings the plain keys' hints, which reach it there.
+      const active = document.activeElement;
+      if (active !== null && rootRef.current?.contains(active)) {
+        if (!types(active)) setHints((was) => was ?? "plain");
+        return;
+      }
       const pane = rootRef.current?.closest(SCOPE);
       setHints(pane == null ? undefined : focusReach(document.activeElement, pane));
     };
@@ -604,7 +735,10 @@ export function AskStack({
     if (rootRef.current?.closest("[inert]") != null) return;
     const pane = rootRef.current?.closest(SCOPE);
     if (pane == null) return;
-    const reach = focusReach(event.target instanceof Element ? event.target : null, pane);
+    const target = event.target instanceof Element ? event.target : null;
+    // A choice just clicked keeps focus, and the stack's keys with it; its reply field types.
+    const own = target !== null && rootRef.current?.contains(target) === true;
+    const reach = own ? (types(target) ? undefined : "plain") : focusReach(target, pane);
     if (reach === undefined) return;
     const mod = event.metaKey || event.ctrlKey;
     const take = () => {
@@ -617,43 +751,37 @@ export function AskStack({
       if (undo()) take();
       return;
     }
-    if (currentAsk === undefined) return;
-    // The pick: plain in the open, with a modifier in the composer.
+    // Folded, something else answers: its keys are its own.
+    if (compact || currentAsk === undefined) return;
+    // The pick: plain in the open, with ⌥ in the composer. The send: ⌘⏎ in both.
     let pick: number | undefined;
+    let sending = false;
     if (reach === "plain" && !mod && !event.altKey && !event.shiftKey) {
-      if (event.key === "Enter") pick = 0;
-      else if (/^[1-9]$/.test(event.key)) pick = Number(event.key) - 1;
-      else if (event.key === "ArrowRight" && asks.length > 1) {
+      if (/^[1-9]$/.test(event.key)) pick = Number(event.key) - 1;
+      else if (event.key === "Enter" && !own && currentAsk.freeForm !== undefined) {
+        take();
+        replyRefs.current.get(currentAsk.key)?.focus();
+        return;
+      } else if (event.key === "ArrowRight" && asks.length > 1) {
         take();
         step(1);
         return;
       }
-    } else if (reach === "composer" && !event.shiftKey) {
-      if (mod && !event.altKey && event.key === "Enter" && !composerHolds(pane, composerThreadId)) {
-        pick = 0;
-      } else if (event.altKey && !mod && /^Digit[1-9]$/.test(event.code)) {
-        pick = Number(event.code.slice(5)) - 1;
-      }
+    } else if (!event.shiftKey && !event.altKey && mod && event.key === "Enter") {
+      sending = reach === "plain" || !composerHolds(pane, composerThreadId);
+    } else if (reach === "composer" && !event.shiftKey && event.altKey && !mod) {
+      if (/^Digit[1-9]$/.test(event.code)) pick = Number(event.code.slice(5)) - 1;
     }
-    if (pick === undefined) return;
-    // A request card the orchestrator's thread still shows answers Enter itself: one key, one place.
-    if (pick === 0 && reach === "plain" && pane.querySelector('[data-testid="approval-card"]')) {
-      return;
-    }
-    const now = clock();
-    if (now - answeredAt.current < SETTLE_MS || now - topSince.current < SETTLE_MS) {
-      take();
-      return;
-    }
-    if (pick === 0 && currentAsk.freeForm !== undefined) {
-      take();
-      replyRefs.current.get(currentAsk.key)?.focus();
-      return;
-    }
-    const option = currentAsk.options[pick];
-    if (option === undefined) return;
+    if (pick === undefined && !sending) return;
+    const picked = pick ?? picks[currentAsk.key];
+    const option = picked === undefined ? undefined : currentAsk.options[picked];
+    // Nothing picked to send: an empty composer's ⌘⏎ stays its own.
+    if (option === undefined || picked === undefined) return;
     take();
-    choose(currentAsk, option);
+    const now = clock();
+    if (now - answeredAt.current < SETTLE_MS || now - topSince.current < SETTLE_MS) return;
+    if (sending) choose(currentAsk, option);
+    else setPick(currentAsk.key, picked);
   });
   useEffect(() => {
     if (!focused) return;
@@ -663,9 +791,10 @@ export function AskStack({
   }, [focused]);
 
   const last = held.at(-1);
-  const shown = expanded ? asks : currentAsk === undefined ? [] : [currentAsk];
-  const visible = asks.length > 0 || elsewhere.length > 0 || last !== undefined;
-  const keyHints = focused && asks.length > 0 ? hints : undefined;
+  const shown = compact ? [] : expanded ? asks : currentAsk === undefined ? [] : [currentAsk];
+  const visible =
+    (compact ? waiting.length > 0 : asks.length > 0) || elsewhere.length > 0 || last !== undefined;
+  const keyHints = focused && asks.length > 0 && !compact ? hints : undefined;
   const problemOf = (ask: Ask) =>
     ask.ids.map((id) => problems[id]).find((problem) => problem !== undefined);
 
@@ -683,6 +812,7 @@ export function AskStack({
             aria-label="Asks"
             data-count={asks.length}
             data-expanded={expanded || undefined}
+            data-compact={compact || undefined}
             className="w-full overflow-clip rounded-(--composer-radius) border border-(--composer-outline) bg-card"
           >
             <header className="flex items-center gap-2 py-1.5 pr-2 pl-3.5 text-xs text-muted-foreground">
@@ -690,6 +820,11 @@ export function AskStack({
               {/* No count of its own: the stepper says how many, and the workspace's badge counts
                   them with everything else that needs you (`needsYouCounts`). */}
               <span className="font-medium text-foreground">Asks</span>
+              {compact && waiting.length > 0 && (
+                <span data-testid="ask-stack-waiting" className="truncate">
+                  {waiting.length} more waiting
+                </span>
+              )}
               {last !== undefined && (
                 <span
                   key={last.key}
@@ -727,7 +862,18 @@ export function AskStack({
                   Also in {w.name}
                 </button>
               ))}
-              {!expanded && asks.length > 1 && (
+              {compact && waiting.length > 0 && (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  data-testid="ask-stack-show"
+                  aria-label={`Show ${waiting.length} more waiting`}
+                  onClick={() => setShownDespite(foldedBy)}
+                >
+                  Show
+                </Button>
+              )}
+              {!compact && !expanded && asks.length > 1 && (
                 <span className="flex items-center">
                   <Button
                     size="icon-xs"
@@ -753,7 +899,7 @@ export function AskStack({
                   {keyHints === "plain" && <Kbd>→</Kbd>}
                 </span>
               )}
-              {asks.length > 1 && (
+              {!compact && asks.length > 1 && (
                 <Button
                   size="icon-xs"
                   variant="ghost"
@@ -788,6 +934,8 @@ export function AskStack({
                       hints={keyHints}
                       arrived={arrivals.has(ask.key)}
                       problem={problemOf(ask)}
+                      picked={picks[ask.key]}
+                      onPick={(at) => setPick(ask.key, at)}
                       onChoose={(option) => choose(ask, option)}
                       onReply={(text) => reply(ask, text)}
                       replyRef={(element) => {
@@ -805,3 +953,6 @@ export function AskStack({
     </div>
   );
 }
+
+const NO_ASKS: readonly Ask[] = [];
+const NO_KEYS: ReadonlySet<string> = new Set();

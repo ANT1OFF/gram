@@ -1,20 +1,30 @@
-import { Star } from "lucide-react";
+import { Send } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-import { Hint } from "@/components/hint";
+import { RecommendedTag } from "@/components/recommended-tag";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { choiceLayout, type AskOption } from "./ask-model";
+import { answerRule, choiceLayout, type AskOption } from "./ask-model";
 
 // An ask's options and its longer words, as the ask stack and Quiet show them: every
 // option whole, whatever its length or number, and words past their lines one click away.
 
 /** The key that answers, beside what it answers. */
-export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
+export function Kbd({
+  children,
+  className,
+  hidden = false,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** Kept out of the accessible name of what it sits in: a button's or a label's. */
+  hidden?: boolean;
+}) {
   return (
     <kbd
       data-testid="ask-kbd"
+      aria-hidden={hidden || undefined}
       className={cn(
         "rounded-sm border border-border/70 px-1 font-mono text-[10px] leading-4 text-muted-foreground",
         className,
@@ -25,9 +35,9 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
   );
 }
 
-/** The plain key that picks the option at `index`: ⏎ for the first, then its number. */
+/** The plain key that picks the option at `index`: its number. */
 export const plainHint = (index: number): string | undefined =>
-  index > 8 ? undefined : index === 0 ? "⏎" : String(index + 1);
+  index > 8 ? undefined : String(index + 1);
 
 const CLAMP = { 2: "line-clamp-2", 3: "line-clamp-3" } as const;
 
@@ -86,64 +96,206 @@ export function MoreText({
   );
 }
 
-/** The asker's pick, marked beside its label. */
-function RecommendedMark({ withWord }: { withWord: boolean }) {
+/** A choice's radio mark: a ring, filled with the accent once it is picked. */
+function RadioMark({ checked }: { checked: boolean }) {
   return (
     <span
-      data-testid="ask-recommended"
-      className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-normal text-link"
+      aria-hidden
+      className={cn(
+        "mt-[3px] grid size-3.5 shrink-0 place-items-center rounded-full border transition-colors duration-(--dur-fast)",
+        checked ? "border-primary" : "border-muted-foreground/60",
+      )}
     >
-      <Star aria-hidden className="size-2.5 fill-current" />
-      <span className={withWord ? undefined : "sr-only"}>Recommended</span>
+      {checked && <span className="size-1.5 rounded-full bg-primary" />}
     </span>
   );
 }
 
 /**
- * An ask's options: a few short ones as a wrapping row of buttons, the first one primary; many,
- * long or described ones as a list, one a line with its description under it. `hintOf` gives the
- * key that picks each, when keys reach the ask.
+ * Send answer: what sends a picked choice, on every surface. `hint` is the key that presses it
+ * (⌘⏎), shown when keys reach it.
+ */
+export function SendAnswer({
+  disabled,
+  hint,
+  onSend,
+  testId,
+  size = "sm",
+  label = "Send answer",
+  title,
+  type = "button",
+}: {
+  disabled: boolean;
+  hint?: string | undefined;
+  onSend?: (() => void) | undefined;
+  testId: string;
+  size?: "xs" | "sm" | "default";
+  label?: string;
+  title?: string | undefined;
+  type?: "button" | "submit";
+}) {
+  return (
+    <Button
+      type={type}
+      size={size}
+      data-testid={testId}
+      data-send-answer
+      disabled={disabled}
+      title={title}
+      onClick={onSend}
+    >
+      <Send data-icon="inline-start" />
+      {label}
+      {hint !== undefined && (
+        <Kbd hidden className="border-primary-foreground/30 text-primary-foreground/80">
+          {hint}
+        </Kbd>
+      )}
+    </Button>
+  );
+}
+
+/**
+ * An ask's options, by its answer rule (`answerRule`). A question's choices are radios: a click or
+ * a number key picks one (`picked`), and Send answer, beside them, sends it. An approval's verbs
+ * are buttons that act on a click. A few short ones sit in a wrapping row; many, long or described
+ * ones in a list, one a line with its description under it. `hintOf` gives the key that picks
+ * each, when keys reach the ask. The asker's own pick carries a Recommended tag, never a look of
+ * being chosen.
  */
 export function AskChoices({
   options,
   hintOf,
   onChoose,
+  picked,
+  onPick,
   testId,
   size = "sm",
   rest = "outline",
   className,
+  children,
 }: {
   options: readonly AskOption[];
   hintOf: (index: number) => string | undefined;
+  /** What a click on a verb does: it acts. */
   onChoose: (option: AskOption) => void;
+  /** The picked choice's index, for a question. */
+  picked?: number | undefined;
+  /** What a click on a choice does: it picks. */
+  onPick?: ((index: number) => void) | undefined;
   testId: string;
   size?: "sm" | "default";
-  /** How the options after the first look in a row. */
+  /** How the verbs after the first look in a row. */
   rest?: "ghost" | "outline";
   className?: string;
+  /** What follows the choices in their row or under their list: Send answer. */
+  children?: ReactNode;
 }) {
   if (options.length === 0) return null;
   const layout = choiceLayout(options);
+  if (answerRule(options) === "pick" && onPick !== undefined) {
+    return (
+      <div
+        data-testid="ask-choices"
+        data-layout={layout}
+        data-rule="pick"
+        className={cn(
+          "@container min-w-0",
+          layout === "row" && "flex flex-wrap items-center gap-1",
+          className,
+        )}
+      >
+        <div
+          role="radiogroup"
+          aria-label="Choices"
+          className={cn(
+            layout === "row"
+              ? "flex flex-wrap items-center gap-1"
+              : // Two to a line where there is room for both, so a wide stack stays short.
+                "grid gap-1 @2xl:grid-cols-2",
+          )}
+        >
+          {options.map((option, index) => {
+            const hint = hintOf(index);
+            const checked = picked === index;
+            return (
+              <button
+                key={option.label}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                data-testid={testId}
+                data-choice-index={index}
+                data-picked={checked || undefined}
+                data-recommended={option.recommended || undefined}
+                onClick={() => onPick(index)}
+                className={cn(
+                  "flex min-w-0 items-start gap-2 rounded-(--radius-md) border text-left outline-none transition-colors duration-(--dur-fast) focus-visible:ring-2 focus-visible:ring-ring",
+                  layout === "row" ? "px-2" : "w-full px-2.5",
+                  size === "sm" ? "py-1" : "py-1.5",
+                  checked ? "border-primary bg-primary/8" : "border-border/70 hover:bg-muted",
+                )}
+              >
+                <RadioMark checked={checked} />
+                <span className="grid min-w-0 flex-1 gap-0.5">
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                    <span
+                      className={cn(
+                        "font-medium break-words",
+                        size === "sm" ? "text-[0.8rem]" : "text-sm",
+                      )}
+                    >
+                      {option.label}
+                    </span>
+                    {option.recommended === true && <RecommendedTag />}
+                  </span>
+                  {option.description !== undefined && (
+                    <span
+                      data-testid="ask-choice-description"
+                      className="text-xs break-words text-muted-foreground"
+                    >
+                      {option.description}
+                    </span>
+                  )}
+                </span>
+                {hint !== undefined && <Kbd className="mt-0.5 shrink-0">{hint}</Kbd>}
+              </button>
+            );
+          })}
+        </div>
+        {layout === "row"
+          ? children
+          : children !== undefined && (
+              <div className="mt-1.5 flex items-center gap-2">{children}</div>
+            )}
+      </div>
+    );
+  }
   if (layout === "row") {
     return (
       <div
         data-testid="ask-choices"
         data-layout="row"
+        data-rule="act"
         className={cn("flex min-w-0 flex-wrap items-center gap-1", className)}
       >
         {options.map((option, index) => {
           const hint = hintOf(index);
-          const props = {
-            size,
-            variant: index === 0 ? ("default" as const) : rest,
-            "data-testid": testId,
-            "data-recommended": option.recommended || undefined,
-            onClick: () => onChoose(option),
-          };
-          const label = (
-            <>
+          return (
+            <Button
+              key={option.label}
+              size={size}
+              variant={index === 0 ? "default" : rest}
+              data-testid={testId}
+              data-choice-index={index}
+              data-picked={picked === index || undefined}
+              data-recommended={option.recommended || undefined}
+              aria-pressed={picked === undefined ? undefined : picked === index}
+              onClick={() => onChoose(option)}
+              className={cn(picked === index && "ring-2 ring-ring")}
+            >
               {option.label}
-              {option.recommended === true && <RecommendedMark withWord={false} />}
+              {option.recommended === true && <RecommendedTag />}
               {hint !== undefined && (
                 <Kbd
                   className={cn(
@@ -153,19 +305,10 @@ export function AskChoices({
                   {hint}
                 </Kbd>
               )}
-            </>
-          );
-          // Too little room in a row for the word: the star says it on hover and focus.
-          return option.recommended === true ? (
-            <Hint key={option.label} label="Recommended" render={<Button {...props} />}>
-              {label}
-            </Hint>
-          ) : (
-            <Button key={option.label} {...props}>
-              {label}
             </Button>
           );
         })}
+        {children}
       </div>
     );
   }
@@ -173,9 +316,9 @@ export function AskChoices({
     <div
       data-testid="ask-choices"
       data-layout="list"
+      data-rule="act"
       className={cn("@container min-w-0", className)}
     >
-      {/* Two to a line where there is room for both, so a wide stack stays short. */}
       <div role="group" aria-label="Choices" className="grid gap-1 @2xl:grid-cols-2">
         {options.map((option, index) => {
           const hint = hintOf(index);
@@ -184,15 +327,15 @@ export function AskChoices({
               key={option.label}
               type="button"
               data-testid={testId}
+              data-choice-index={index}
+              data-picked={picked === index || undefined}
               data-recommended={option.recommended || undefined}
+              aria-pressed={picked === undefined ? undefined : picked === index}
               onClick={() => onChoose(option)}
               className={cn(
-                "flex w-full min-w-0 items-start gap-2 rounded-(--radius-md) border px-2.5 text-left outline-none transition-colors duration-(--dur-fast) focus-visible:ring-2 focus-visible:ring-ring",
+                "flex w-full min-w-0 items-start gap-2 rounded-(--radius-md) border border-border/70 px-2.5 text-left outline-none transition-colors duration-(--dur-fast) hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
                 size === "sm" ? "py-1" : "py-1.5",
-                // The one ⏎ takes stands out a little; the rest sit quiet until hovered.
-                index === 0
-                  ? "border-primary/45 bg-primary/8 hover:bg-primary/14"
-                  : "border-border/70 hover:bg-muted",
+                picked === index && "ring-2 ring-ring",
               )}
             >
               <span className="grid min-w-0 flex-1 gap-0.5">
@@ -205,7 +348,7 @@ export function AskChoices({
                   >
                     {option.label}
                   </span>
-                  {option.recommended === true && <RecommendedMark withWord />}
+                  {option.recommended === true && <RecommendedTag />}
                 </span>
                 {option.description !== undefined && (
                   <span
@@ -221,6 +364,7 @@ export function AskChoices({
           );
         })}
       </div>
+      {children}
     </div>
   );
 }

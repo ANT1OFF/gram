@@ -33,6 +33,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **Radii are soft:** 8 to 16 px (`radius-xs` to `radius-xl`); the composer is rounder (22 px).
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
   Lists, menus and the sidebar share one row shape.
+- **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
+  around a list's rows and headings, 16 px between sections and at a pane's edges.
+- **Titles and metadata:** a title at 13 to 14 px in `fg`, its metadata (where it is from, its
+  state, a time or a count) at 12 px in `fg-muted`, never smaller. A title wraps to two lines
+  before it is cut short.
 - **Icons: Lucide** at a 1.75 stroke, 16 px in rows and buttons, never as decoration and never
   emoji.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses

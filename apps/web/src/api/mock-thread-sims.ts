@@ -154,7 +154,7 @@ export function simulateTurnError(
   core.putMessage(runtime, {
     id: `${turnId}-user`,
     role: "user",
-    metadata: { turnId },
+    metadata: { turnId, createdAt: at },
     parts: [{ type: "text", text }],
   });
   const lastError: ThreadError = { ...error, turnId, at };

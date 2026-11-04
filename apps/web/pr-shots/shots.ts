@@ -1281,6 +1281,17 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "workspace-paused-worker",
+    title: "A worker in a paused workspace: the workspace's band, apart from a hold of its own",
+    open: async (page) => {
+      await openPausedOrchestrator(page);
+      await page.getByTestId("overview-worker").first().click();
+      await page.getByTestId("worker-banner-workspace-paused").waitFor();
+      await page.mouse.move(900, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+  {
     name: "workspace-pause-at-limit",
     title: "Workspace settings: Pause new workers at a share of a limit",
     open: async (page) => {
@@ -1495,7 +1506,8 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "board-failing",
-    title: "Board: the Failing strip above the docked stack, a stopped worker and red CI",
+    title:
+      "Board: the failure card above the lines, a stopped worker and red CI, each with its step",
     open: async (page) => {
       await openOrchestratorOf(page, seedFailures);
       await openBoardView(page);
@@ -2135,6 +2147,33 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await page.goto("/settings/appearance");
       await page.locator("[data-settings-results] h2").first().waitFor();
+    },
+  },
+  {
+    name: "settings-appearance-reading",
+    title: "Settings → Appearance → Reading: transcript text size and width over a live sample",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 2400 });
+      await seedMockSettings(page, { reading: { textSize: 16, width: "wide" } });
+      await page.goto("/settings/appearance");
+      await page.getByRole("heading", { name: "Fonts", exact: true }).waitFor();
+    },
+    element: (page) => page.getByRole("region", { name: "Reading" }),
+  },
+  {
+    name: "thread-reading-small-narrow",
+    title: "A thread with the transcript at 13px in the Narrow column",
+    open: async (page) => {
+      await seedMockSettings(page, { reading: { textSize: 13, width: "narrow" } });
+      await openThread(page);
+    },
+  },
+  {
+    name: "thread-reading-large-wide",
+    title: "A thread with the transcript at 18px in the Wide column",
+    open: async (page) => {
+      await seedMockSettings(page, { reading: { textSize: 18, width: "wide" } });
+      await openThread(page);
     },
   },
   {

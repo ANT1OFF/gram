@@ -101,7 +101,7 @@ const pending = (page: Page, threadId: string) =>
     threadId,
   );
 
-test("each ask shows once with what its Allow covers, and Enter allows all three after the undo window", async ({
+test("each ask shows once with what its Allow covers, and 1 then ⌘⏎ allows all three after the undo window", async ({
   page,
 }) => {
   const made = await start(page);
@@ -132,7 +132,17 @@ test("each ask shows once with what its Allow covers, and Enter allows all three
 
   await blur(page);
   const before = Number(await count(page).getAttribute("data-count"));
+  // Enter no longer answers: a number picks, and ⌘⏎ sends what is picked.
   await page.keyboard.press("Enter");
+  await page.waitForTimeout(SETTLED_MS);
+  await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
+  await page.keyboard.press("1");
+  await expect(top.getByTestId("ask-option").first()).toHaveAttribute("data-picked", "true");
+  await expect(top.getByTestId("ask-option").first().getByTestId("ask-kbd")).toHaveText(
+    /^(⌘|Ctrl)/,
+  );
+  await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
   await expect(stack.getByTestId("drawn-check")).toBeVisible();
   await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
@@ -153,7 +163,7 @@ test("each ask shows once with what its Allow covers, and Enter allows all three
   await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
 });
 
-test("typing in the composer is never taken: plain keys type, modifiers answer", async ({
+test("typing in the composer is never taken: plain keys type, ⌥ picks and ⌘⏎ sends", async ({
   page,
 }) => {
   await start(page);
@@ -162,8 +172,8 @@ test("typing in the composer is never taken: plain keys type, modifiers answer",
   const before = await count(page).getAttribute("data-count");
   await composer.focus();
   await page.waitForTimeout(SETTLED_MS);
-  // The hints say what answers from here.
-  await expect(currentAsk(page).getByTestId("ask-kbd").first()).toHaveText(/^(⌘|Ctrl)/);
+  // The hints say what picks from here.
+  await expect(currentAsk(page).getByTestId("ask-kbd").first()).toHaveText(/^(⌥|Alt)/);
   await page.keyboard.type("2 tests fail");
   await expect(composer).toHaveValue("2 tests fail");
   await composer.fill("");
@@ -175,16 +185,28 @@ test("typing in the composer is never taken: plain keys type, modifiers answer",
   await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
   await expect(count(page)).toHaveAttribute("data-count", before!);
 
-  // ⌥2 picks the second option, and ⌘⏎ the first, from the empty composer.
+  // ⌥2 picks the second option and ⌘⏎ sends it, from the empty composer.
   await goTo(page, "pip and uv");
   await composer.focus();
   await page.waitForTimeout(SETTLED_MS);
+  await expect(currentAsk(page).getByTestId("ask-send")).toBeDisabled();
   await page.keyboard.press("Alt+Digit2");
-  await expect(stack.getByTestId("ask-undo-line")).toContainText("Keep both");
+  await expect(currentAsk(page).getByTestId("ask-option").nth(1)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
   await expect(composer).toHaveValue("");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(stack.getByTestId("ask-undo-line")).toContainText("Keep both");
   await page.keyboard.press("ControlOrMeta+z");
   await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
   await page.waitForTimeout(SETTLED_MS);
+  // Back, nothing is picked: ⌘⏎ sends nothing until something is.
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.waitForTimeout(SETTLED_MS);
+  await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
+  await page.keyboard.press("Alt+Digit1");
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("uv only");
 });
@@ -217,7 +239,9 @@ test("Enter with only an attachment in the composer sends the draft, not an answ
   expect(await sentAnswers(page)).toEqual([]);
 });
 
-test("→ and the arrows step; 1 and 2 pick an option and send exactly it", async ({ page }) => {
+test("→ and the arrows step; 1 and 2 pick an option and Send answer sends exactly it", async ({
+  page,
+}) => {
   const made = await start(page);
   const stack = page.getByTestId("ask-stack");
   await goTo(page, "registry page");
@@ -234,6 +258,20 @@ test("→ and the arrows step; 1 and 2 pick an option and send exactly it", asyn
   await expect(currentAsk(page).getByTestId("ask-option")).toHaveText([/uv only/, /Keep both/]);
   await blur(page);
   await page.keyboard.press("2");
+  await expect(currentAsk(page).getByTestId("ask-option").nth(1)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
+  // A click picks too, and only picks: Send answer sends.
+  await currentAsk(page).getByTestId("ask-option").first().click();
+  await expect(currentAsk(page).getByTestId("ask-option").first()).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
+  await page.keyboard.press("2");
+  await currentAsk(page).getByTestId("ask-send").click();
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Keep both");
   // In real time: a clock jump here leaves the expanded stack unable to collapse below, which
   // nothing in the product does, so this one wait stays real.
@@ -266,7 +304,8 @@ test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async
   await goTo(page, "git push");
   const before = await count(page).getAttribute("data-count");
   await blur(page);
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("1");
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
   await page.keyboard.press("ControlOrMeta+z");
   await expect(count(page)).toHaveAttribute("data-count", before!);
@@ -276,8 +315,8 @@ test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async
     "git push -u origin feat/mail-trigger",
   );
 
-  await page.waitForTimeout(SETTLED_MS);
-  await page.keyboard.press("2");
+  // An approval's verb acts on a click, and Undo follows it.
+  await currentAsk(page).getByTestId("ask-option").nth(1).click();
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Denied 3");
   await stack.getByTestId("ask-undo").click();
   await expect(count(page)).toHaveAttribute("data-count", before!);
@@ -296,17 +335,18 @@ test("a second key right after an answer, or after the top ask changed by itself
   await goTo(page, "git push");
   const before = Number(await count(page).getAttribute("data-count"));
   await blur(page);
-  // The second Enter would open the next ask's reply field: on the first one's heels, it doesn't.
-  await page.keyboard.press("Enter");
-  await page.keyboard.press("Enter");
+  // The second key would pick on the next ask: on the first answer's heels, it doesn't.
+  await page.keyboard.press("1");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await page.keyboard.press("1");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
   await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
-  await expect(currentAsk(page).getByTestId("ask-reply-input")).not.toBeFocused();
+  await expect(currentAsk(page).locator("[data-picked]")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(count(page)).toHaveAttribute("data-count", String(before));
 
-  // Closed somewhere else, the question gives way to the push, and an Enter on its heels doesn't
-  // allow the push it never saw.
+  // Closed somewhere else, the question gives way to the push, and a pick and a send on its heels
+  // don't allow the push it never saw.
   await goTo(page, "preview deploy");
   await blur(page);
   const landed = await page.evaluate(async (workspaceId) => {
@@ -318,7 +358,10 @@ test("a second key right after an answer, or after the top ask changed by itself
     for (let waited = 0; waited < 5_000 && !title().includes("git push"); waited += 10) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true }));
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }),
+    );
     return title();
   }, made.workspaceId);
   expect(landed).toContain("git push");
@@ -327,15 +370,20 @@ test("a second key right after an answer, or after the top ask changed by itself
   expect(await pending(page, made.pushers[0])).toHaveLength(1);
 });
 
-test("the orchestrator's own questions are asks, and Enter takes its pick", async ({ page }) => {
+test("the orchestrator's own questions are asks: its pick is tagged, never picked for you", async ({
+  page,
+}) => {
   await start(page);
   const stack = page.getByTestId("ask-stack");
   await goTo(page, "429");
-  await expect(currentAsk(page).getByTestId("ask-option").first()).toContainText(
-    "Retry with backoff",
-  );
+  const first = currentAsk(page).getByTestId("ask-option").first();
+  await expect(first).toContainText("Retry with backoff");
+  await expect(first.getByTestId("ask-recommended")).toHaveText("Recommended");
+  await expect(first).toHaveAttribute("aria-checked", "false");
   await blur(page);
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("1");
+  await expect(first).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(stack.getByTestId("ask-undo-line")).toContainText("Retry with backoff");
   await page.clock.runFor(SENT_MS);
   await expect
@@ -415,22 +463,19 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   const all = Number(await needsYou.getAttribute("data-count"));
   await expect(needsYou).toContainText(`${all} need you`);
 
-  // The list the pill opens has `all` items, each workspace's section as many as its badge, and
-  // the threads outside any workspace the rest.
+  // The list the pill opens has `all` items, by kind; each workspace's rows as many as its badge,
+  // and the threads outside any workspace the rest.
   await needsYou.click();
   await page.getByTestId("needs-you-see-all").click();
   const panel = page.getByTestId("needs-you-panel");
   await expect(panel.getByTestId("needs-you-item")).toHaveCount(all);
   for (const id of [made.workspaceId, made.other.workspaceId]) {
     await expect(
-      panel
-        .locator(`[data-testid="needs-you-group"][data-workspace="${id}"]`)
-        .getByTestId("needs-you-item"),
+      panel.locator(`[data-testid="needs-you-item"][data-workspace="${id}"]`),
     ).toHaveCount(await badge(id));
   }
   const threads = await panel
-    .locator('[data-testid="needs-you-group"]:not([data-workspace])')
-    .getByTestId("needs-you-item")
+    .locator('[data-testid="needs-you-item"]:not([data-workspace])')
     .count();
   expect(threads).toBeGreaterThanOrEqual(2);
   expect((await badge(made.workspaceId)) + (await badge(made.other.workspaceId)) + threads).toBe(
@@ -458,11 +503,20 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   await workspace(made.workspaceId).getByRole("button").first().click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
   await expect(page.getByTestId("ask-stack")).toBeVisible();
-  // Needs you lists both workspaces' asks, each under its workspace's name, then the threads'.
+  // Needs you lists the asks by kind, each row of a workspace's saying its name.
   await needsYou.click();
   const popover = page.getByTestId("needs-you-popover");
   await expect(popover).toBeVisible();
-  await expect(popover.getByRole("region")).toHaveCount(3);
-  await expect(popover.getByRole("region", { name: "Threads" })).toBeVisible();
+  await expect(popover.getByRole("region", { name: "Approvals" })).toBeVisible();
+  const own = popover.locator(
+    `[data-testid="needs-you-item"][data-workspace="${made.workspaceId}"]`,
+  );
+  await expect(own.first()).toBeVisible();
+  const name = (await workspace(made.workspaceId)
+    .getByTestId("overview-workspace-row")
+    .getAttribute("aria-label"))!.split(",")[0]!;
+  for (const where of await own.getByTestId("needs-you-where").allTextContents()) {
+    expect(where.startsWith(`${name} · `)).toBe(true);
+  }
   await expect(popover.getByTestId("needs-you-see-all")).toHaveText(`See all ${all}`);
 });

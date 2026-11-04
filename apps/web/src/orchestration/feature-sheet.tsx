@@ -642,7 +642,7 @@ function StageSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feat
 }
 
 /**
- * The feature's worker questions: those forwarded to the user, answerable here too, then the rest
+ * The feature's worker questions: those forwarded to the user, answered in the ask sheet, then the rest
  * with who answered and when (docs/design/worker-questions.md).
  */
 function QuestionsSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feature: string }) {
@@ -659,7 +659,7 @@ function QuestionsSection({ workspaceId, feature }: { workspaceId: WorkspaceId; 
     >
       <h3 className={SHEET_LABEL}>Questions</h3>
       {forwarded.length > 0 && (
-        <WorkerQuestionList questions={forwarded} workspaceId={workspaceId} compact />
+        <WorkerQuestionList questions={forwarded} workspaceId={workspaceId} where="sheet" compact />
       )}
       {rest.length > 0 && (
         <ul className="flex flex-col gap-2">

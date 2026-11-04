@@ -96,14 +96,28 @@ export function ToolbarOverflow({
                             value={option.value}
                             disabled={option.disabled}
                             closeOnClick
+                            aria-label={option.label}
+                            aria-description={option.description}
                             className={ITEM}
                           >
-                            <span className="flex size-3.5 items-center justify-center">
+                            <span className="flex size-3.5 items-center justify-center self-start pt-0.5">
                               <Menu.RadioItemIndicator>
                                 <CheckIcon aria-hidden />
                               </Menu.RadioItemIndicator>
                             </span>
-                            {option.label}
+                            {option.description === undefined ? (
+                              option.label
+                            ) : (
+                              <span className="flex min-w-0 flex-col gap-0.5 py-0.5">
+                                {option.label}
+                                <span
+                                  aria-hidden
+                                  className="max-w-64 text-xs whitespace-normal text-muted-foreground"
+                                >
+                                  {option.description}
+                                </span>
+                              </span>
+                            )}
                           </Menu.RadioItem>
                         ))}
                       </Menu.RadioGroup>

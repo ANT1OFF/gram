@@ -11,12 +11,33 @@ import {
 
 import type { PickerOption } from "./picker";
 
+/**
+ * The modes the composer offers, each with what it lets the agent do without asking in one line,
+ * read in the open list (the trigger stays a glyph). Codex runs the asking modes in its sandbox;
+ * Bypass lifts it.
+ */
 export const MODE_OPTIONS: readonly PickerOption<PermissionMode>[] = [
-  { value: "default", label: "Ask" },
-  { value: "acceptEdits", label: "Accept edits" },
-  { value: "plan", label: "Plan" },
-  { value: "auto", label: "Auto" },
-  { value: "bypassPermissions", label: "Bypass" },
+  { value: "default", label: "Ask", description: "Asks before each file edit and command." },
+  {
+    value: "acceptEdits",
+    label: "Accept edits",
+    description: "Edits files without asking. Asks before running a command.",
+  },
+  {
+    value: "plan",
+    label: "Plan",
+    description: "Reads and plans only. Changes nothing until you approve the plan.",
+  },
+  {
+    value: "auto",
+    label: "Auto",
+    description: "Edits and runs commands on its own. Risky steps are checked first.",
+  },
+  {
+    value: "bypassPermissions",
+    label: "Bypass",
+    description: "Never asks. Edits files and runs any command, risky ones too.",
+  },
 ];
 
 /** Each mode's glyph on the mode picker; `dontAsk` is never offered there but can be a thread's. */

@@ -323,7 +323,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     label: "Appearance",
     path: "/settings/appearance",
     group: "appearance",
-    description: "Mode, palette, density, motion and fonts, with a live preview.",
+    description: "Mode, palette, density, motion, transcript size and width, and fonts.",
     search: AppearanceSearch,
     wide: true,
   },

@@ -26,5 +26,44 @@ export const plainKeysReach = (target: Element | null, area: Element): boolean =
   );
 };
 
+/** Whether `target` types: its keys are its own. */
+export const types = (target: Element): boolean => target.closest(TYPES) !== null;
+
 /** Whether `target` sits in an overlay (a dialog, menu or listbox), which keeps every key. */
 export const inOverlay = (target: Element): boolean => target.closest(OVERLAYS) !== null;
+
+/** What marks a choice that a number key picks, in order: `data-choice-index`. */
+export const CHOICE = "[data-choice-index]";
+/** What marks the button ⌘⏎ presses: the one Send answer of an answer form. */
+export const SEND_ANSWER = "[data-send-answer]";
+
+/**
+ * The one answer rule, for a form drawn in `root` (the ask sheet, a question card): a number key
+ * picks that choice, while focus is on nothing that types; ⌘⏎ (Ctrl+⏎) presses Send answer, from
+ * anywhere in it. Returns whether the key was taken.
+ */
+export const answerKey = (
+  event: Pick<
+    KeyboardEvent,
+    "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "isComposing" | "defaultPrevented"
+  > & { readonly target: EventTarget | null },
+  root: Element,
+): boolean => {
+  if (event.defaultPrevented || event.isComposing) return false;
+  const mod = event.metaKey || event.ctrlKey;
+  if (mod && !event.altKey && !event.shiftKey && event.key === "Enter") {
+    const send = root.querySelector<HTMLButtonElement>(SEND_ANSWER);
+    if (send === null || send.disabled) return false;
+    send.click();
+    return true;
+  }
+  if (mod || event.altKey || event.shiftKey || !/^[1-9]$/.test(event.key)) return false;
+  const target = event.target instanceof Element ? event.target : null;
+  // A choice's own radio or checkbox has focus after a click: it types nothing, so keys still pick.
+  if (target !== null && types(target) && !target.matches(CHOICE)) return false;
+  const choice = root.querySelectorAll<HTMLElement>(CHOICE)[Number(event.key) - 1];
+  if (choice === undefined) return false;
+  choice.click();
+  choice.focus({ preventScroll: true });
+  return true;
+};

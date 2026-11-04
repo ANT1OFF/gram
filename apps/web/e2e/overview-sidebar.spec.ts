@@ -478,8 +478,8 @@ test("Needs you counts the asks across every workspace, and lists them by worksp
   const popover = page.getByTestId("needs-you-popover");
   await expect(popover).toBeVisible();
   await expect(needs).toHaveAttribute("aria-expanded", "true");
-  await expect(popover.getByRole("region")).toHaveCount(3);
-  await expect(popover.getByRole("region", { name: "Threads" })).toBeVisible();
+  // By kind: the approvals the threads and workspaces ask lead.
+  await expect(popover.getByRole("region", { name: "Approvals" })).toBeVisible();
   await expect(popover.getByTestId("needs-you-item")).toHaveCount(Math.min(count, 6));
   // Esc closes it, and the focus goes back to the pill.
   await page.keyboard.press("Escape");

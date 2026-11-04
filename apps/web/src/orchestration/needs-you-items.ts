@@ -40,6 +40,9 @@ export interface NeedsYouItem {
   readonly command?: string | undefined;
   /** The thread it belongs to, by title; "Orchestrator" for the workspace's own questions. */
   readonly where: string;
+  /** The workspace it is in, by name, and its id; none for the threads outside any. */
+  readonly workspace?: string | undefined;
+  readonly workspaceId?: WorkspaceId | undefined;
   /** What Open goes to; absent when no thread is left to open. */
   readonly threadId: ThreadId | undefined;
   /** The message Open scrolls to, when the source knows it. */
@@ -244,7 +247,9 @@ export const needsYouGroups = ({
         ...w.asks.map((ask) => askItem(ask, w)),
         ...(failures.get(w.workspaceId) ?? []).map((failure) => failureItem(failure, live)),
         ...waitsIn((id) => id === w.workspaceId),
-      ].filter(keep),
+      ]
+        .filter(keep)
+        .map((item) => ({ ...item, workspace: w.name, workspaceId: w.workspaceId })),
     ),
   }));
   groups.push({
@@ -261,6 +266,78 @@ export const needsYouGroups = ({
     ),
   });
   return groups.filter((group) => group.items.length > 0);
+};
+
+/** The kinds of request Needs you lists apart, in the order it lists them. */
+export type NeedsYouSectionKey =
+  | "approvals"
+  | "questions"
+  | "reviews"
+  | "drafts"
+  | "steps"
+  | "errors";
+
+const SECTION_LABELS: Readonly<Record<NeedsYouSectionKey, string>> = {
+  approvals: "Approvals",
+  questions: "Questions",
+  reviews: "Reviews",
+  drafts: "Drafts",
+  steps: "Steps to take",
+  errors: "Errors",
+};
+
+const SECTION_ORDER: readonly NeedsYouSectionKey[] = [
+  "approvals",
+  "questions",
+  "reviews",
+  "drafts",
+  "steps",
+  "errors",
+];
+
+/** The section an item is listed in: what the user is asked to do with it. */
+export const sectionOf = (item: Pick<NeedsYouItem, "kind" | "wait">): NeedsYouSectionKey => {
+  switch (item.kind) {
+    case "approval":
+    case "plan":
+      return "approvals";
+    case "question":
+      return "questions";
+    case "failure":
+      return "errors";
+    case "wait":
+      switch (item.wait?.view.kind) {
+        case "review":
+          return "reviews";
+        case "draft":
+          return "drafts";
+        case "decision":
+          return "questions";
+        default:
+          return "steps";
+      }
+  }
+};
+
+/** One kind's section of Needs you: its items across every workspace, each saying its own. */
+export interface NeedsYouSection {
+  readonly key: NeedsYouSectionKey;
+  readonly label: string;
+  readonly items: readonly NeedsYouItem[];
+}
+
+/**
+ * The list by what it asks of the user: approvals, questions, reviews, drafts, steps to take, then
+ * errors, each across every workspace in the groups' order (newest first within each workspace).
+ * Empty sections are left out. This is the order the list shows and the next key walks.
+ */
+export const needsYouSections = (groups: readonly NeedsYouGroup[]): NeedsYouSection[] => {
+  const items = groups.flatMap((group) => group.items);
+  return SECTION_ORDER.map((key) => ({
+    key,
+    label: SECTION_LABELS[key],
+    items: items.filter((item) => sectionOf(item) === key),
+  })).filter((section) => section.items.length > 0);
 };
 
 /** Every needs-you count the window shows, from the one list (`needsYouCounts`). */
@@ -286,11 +363,16 @@ export const needsYouCounts = (groups: readonly NeedsYouGroup[]): NeedsYouCounts
   return { total, byWorkspace };
 };
 
+/** Anything that lists items: a workspace's group, or a kind's section. */
+interface Listing {
+  readonly items: readonly NeedsYouItem[];
+}
+
 /** `groups` with only the items `filter` shows, empty groups left out. */
-export const filterGroups = (
-  groups: readonly NeedsYouGroup[],
+export const filterGroups = <G extends Listing>(
+  groups: readonly G[],
   filter: NeedsYouFilter,
-): NeedsYouGroup[] =>
+): G[] =>
   filter === "all"
     ? [...groups]
     : groups
@@ -302,7 +384,7 @@ export const filterGroups = (
 
 /** How many of each family, for the filter's counts. */
 export const filterCounts = (
-  groups: readonly NeedsYouGroup[],
+  groups: readonly Listing[],
 ): Readonly<Record<NeedsYouFilter, number>> => {
   const counts = { all: 0, asks: 0, waits: 0, failing: 0 };
   for (const item of groups.flatMap((group) => group.items)) {

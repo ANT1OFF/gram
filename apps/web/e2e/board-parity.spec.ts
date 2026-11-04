@@ -291,7 +291,7 @@ test("a finished group folds to one line, and a group's plan is set from its ban
   await expect(cleanup.getByTestId("rail-group-stage-chip")).toContainText("released");
 });
 
-test("the Failing strip lists a stopped worker and red CI, opens one, and dismisses with Undo", async ({
+test("the failure card lists a stopped worker and red CI above the lines, names each step, opens one, and dismisses with Undo", async ({
   page,
 }) => {
   const made = await start(page, () => window.gramMock!.simulateFailures());
@@ -300,10 +300,23 @@ test("the Failing strip lists a stopped worker and red CI, opens one, and dismis
     strip.locator(`[data-testid="board-failure"][data-thread-id="${threadId}"]`);
   await expect(failure(made.stopped)).toHaveAttribute("data-kind", "error");
   await expect(failure(made.failing)).toHaveAttribute("data-kind", "checks");
-  await expect(failure(made.failing)).toContainText("checks failing");
-  // Above the docked stack.
+  // The cause, the worker and its PR, and a named step, in words beside the icon.
+  await expect(failure(made.failing).getByTestId("board-failure-cause")).toHaveText(
+    "Checks failing",
+  );
+  await expect(failure(made.failing).getByTestId("board-failure-pr")).toHaveText(/^#\d+$/);
+  await expect(failure(made.failing).getByTestId("board-failure-action")).toHaveText(
+    "Open failing check",
+  );
+  await expect(failure(made.stopped).getByTestId("board-failure-cause")).toHaveText(
+    "Spending limit",
+  );
+  await expect(failure(made.stopped).getByTestId("board-failure-action")).toHaveText("View limit");
+  // Failures first: above the lines and the docked stack.
   const stripBox = await strip.boundingBox();
+  const firstLine = await board(page).getByTestId("rail-row").first().boundingBox();
   const stackBox = await board(page).getByTestId("ask-stack").boundingBox();
+  expect(stripBox!.y + stripBox!.height).toBeLessThanOrEqual(firstLine!.y);
   expect(stripBox!.y).toBeLessThan(stackBox!.y);
 
   // Dismiss holds behind the stack's Undo; Undo brings it back.

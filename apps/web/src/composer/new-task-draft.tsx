@@ -517,6 +517,9 @@ export function NewTaskDraft({
               <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
                 {shownWorker !== undefined && (
                   <div role="group" aria-label="Worker" className="contents">
+                    <span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
+                      Worker
+                    </span>
                     <WorkerFields
                       choices={workerChoices}
                       shown={shownWorker}
@@ -554,12 +557,18 @@ export function NewTaskDraft({
         )}
 
         <div className="flex flex-col gap-3">
-          <p className="text-xs text-muted-foreground">
-            {orchestratorModel === undefined
-              ? "Checking the task's selected harness…"
-              : `Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${orchestratorModel.model}`}
-          </p>
-          {orchestratorModel !== undefined && (
+          {orchestratorModel === undefined ? (
+            <p className="text-xs text-muted-foreground">Checking the task's selected harness…</p>
+          ) : (
+            way === "plan" && (
+              <p className="text-xs text-muted-foreground">
+                {`Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${orchestratorModel.model}`}
+              </p>
+            )
+          )}
+          {/* A direct worker's workspace still opens its orchestrator, so one that can't run
+              blocks starting: shown then, and only then. */}
+          {orchestratorModel !== undefined && (way === "plan" || preflight.blocked) && (
             <HarnessPreflightNote
               result={preflight.result}
               checking={preflight.checking}
@@ -631,7 +640,7 @@ export function NewTaskDraft({
             {target !== undefined && !makesOne && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <AutonomyChip autonomy={autonomyOf(workspace?.charter ?? DEFAULT_CHARTER)} />
-                {budget !== undefined && (
+                {way === "plan" && budget !== undefined && (
                   <span
                     data-testid="task-workers"
                     className="rounded-sm border border-border px-1 tabular-nums"

@@ -176,10 +176,10 @@ test("search finds settings on every page, grouped by page", async ({ page }) =>
   await pageHeading("Appearance").getByRole("link").click();
   await expect(page).toHaveURL(/\/settings\/appearance\?highlight=font/);
   await expect(search).toHaveValue("");
-  const size = page
-    .locator("[data-setting-spotlight]")
-    .filter({ has: page.getByLabel("Terminal font size") });
-  await expect(size).toBeInViewport();
+  // Transcript text size answers "font size" too, and comes first on the page, so it is in view.
+  const spotlit = page.locator("[data-setting-spotlight]");
+  await expect(spotlit.filter({ hasText: "Transcript text size" })).toBeInViewport();
+  await expect(spotlit.filter({ has: page.getByLabel("Terminal font size") })).toHaveCount(1);
   await page.mouse.click(1, 1);
   await expect(page.locator("[data-setting-spotlight]")).toHaveCount(0);
 

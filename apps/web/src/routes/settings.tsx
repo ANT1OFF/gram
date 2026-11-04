@@ -131,7 +131,7 @@ function SettingsLayout() {
             data-settings-results
             className={cn(
               "mx-auto flex w-full flex-col gap-10 p-6 @max-2xl/settings:gap-8 @max-2xl/settings:p-4",
-              current?.wide && !searching ? "max-w-5xl" : "max-w-(--thread-max-width)",
+              current?.wide && !searching ? "max-w-5xl" : "max-w-3xl",
             )}
           >
             {SETTINGS_PAGES.map((page) => {

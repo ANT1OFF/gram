@@ -13,6 +13,7 @@ import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { Dialog } from "@/thread/dialog-shell";
 import { RequestCards, SheetRequestCards } from "@/thread/request-cards";
 
+import { answerKey } from "./ask-keys";
 import type { Ask } from "./ask-model";
 import { useAskSheet } from "./ask-sheet-store";
 import { useOpenThread, useWorkspaceAsks } from "./ask-stack";
@@ -21,8 +22,8 @@ import { OpenQuestion, useMemoryQuestionAnswer, useWorkerQuestionActions } from 
 
 // The ask sheet (ask-sheet-store.ts): one ask from the Asks dock, read in full and answered, over
 // the right of the window. Its text scrolls; its answer row sticks to the bottom edge, so a choice
-// or a Send is never below the fold. It answers through the ask's own path, as its card would, and
-// closes once the ask is gone.
+// or Send answer is never below the fold. It answers through the ask's own path, as its card would,
+// and closes once the ask is gone. While it is open the dock folds to one "N more waiting" row.
 
 const TEST_ID = "ask-sheet";
 
@@ -122,12 +123,19 @@ export function AskSheet() {
           data-ask={ask?.key}
           aria-labelledby={titleId}
           finalFocus={returnFocusTo(opener)}
+          // The answer rule, as in the dock: a number picks, ⌘⏎ sends.
+          onKeyDown={(event) => {
+            if (answerKey(event.nativeEvent, event.currentTarget)) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
           className="fixed inset-y-2 end-2 z-50 flex w-[min(32rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0"
         >
           {ask !== undefined && kind !== undefined && (
             <>
               <header className="flex shrink-0 items-start gap-2 border-b border-border px-4 py-3">
-                <kind.icon aria-hidden className="mt-0.5 size-4 shrink-0 text-status-needs" />
+                <kind.icon aria-hidden className="mt-0.5 size-4 shrink-0 text-status-needs-mark" />
                 <div className="min-w-0 flex-1">
                   <Dialog.Title id={titleId} className="text-[15px] font-medium">
                     {kind.label}

@@ -116,7 +116,8 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "questions",
-    title: "Questions: forwarded worker questions with an answer choice open",
+    title:
+      "Questions: a forwarded question's Answer turns the Asks dock to it, the one place it is answered",
     open: async (page) => {
       await page.goto("/t/t-flaky");
       await threadRow(page, "t-flaky").waitFor();
@@ -126,7 +127,13 @@ const scenes: readonly Shot[] = [
       await page.getByTestId("rail-waiting-chip").click();
       const question = page.locator('[data-testid="rail-waiting"] [data-question="WQ1"]');
       await question.getByRole("button", { name: "Answer" }).click();
-      await expect(question.getByRole("radio", { name: /^Keep for replay/ })).toBeVisible();
+      await expect(question.getByTestId("question-answering")).toBeVisible();
+      const item = page
+        .getByTestId("rail-board")
+        .locator(
+          `[data-testid="ask-item"][data-ask-key="worker-question:${made.workspaceId}:WQ1"]`,
+        );
+      await expect(item.getByTestId("ask-option").first()).toBeVisible();
     },
   },
   {

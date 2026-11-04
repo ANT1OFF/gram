@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Expand } from "@/motion";
+import { AuthorityExplainer } from "@/new-thread/authority-explainer";
 
 import { Field, LONG_COPY, OptionGroup } from "./fields";
 import {
@@ -46,9 +47,19 @@ export function AutonomyField({
           {note !== undefined && <p>{note.detail}</p>}
         </>
       }
-      keywords={["supervised", "publish", "full", "push", "merge", "pull request", "gate"]}
+      keywords={[
+        "supervised",
+        "publish",
+        "full",
+        "push",
+        "merge",
+        "pull request",
+        "gate",
+        "permissions",
+      ]}
     >
       <div data-testid="autonomy" data-value={value} className="flex flex-col gap-2">
+        <AuthorityExplainer />
         <OptionGroup
           label="Autonomy"
           options={AUTONOMY_LEVELS}

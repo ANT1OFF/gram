@@ -274,8 +274,10 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await expect(agents.nth(0)).toHaveAttribute("data-state", "optional");
   await expect(agents.nth(0)).toContainText("Not installed");
   await expect(agents.nth(1)).toHaveAttribute("data-state", "ready");
-  await expect(agents.nth(1)).toContainText("Signed in");
-  await expect(welcome.getByRole("button", { name: "Check again" })).toHaveCount(0);
+  await expect(agents.nth(0).getByRole("link", { name: /^Install Claude Code/ })).toBeVisible();
+  await expect(agents.nth(0).getByRole("button", { name: "Check again" })).toBeVisible();
+  await expect(agents.nth(1)).toContainText("Ready");
+  await expect(agents.nth(1).getByRole("button", { name: "Check again" })).toHaveCount(0);
   // A true first run: nothing in the sidebar can need anyone yet.
   await expect(page.getByTestId("overview-needs-you")).toHaveCount(0);
   // Past CLI sessions can be picked up from here, as ⌘K's Resume past session lists them.

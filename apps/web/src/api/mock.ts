@@ -704,7 +704,10 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
           // Only a page that opted in holds; dev use and unit tests run straight through.
           if (typeof window === "undefined" || window.gramMockHoldGates !== true) break;
           if (this.#released.delete(step.name)) break;
+          runtime.heldAt = step.name;
           await new Promise<void>((resolve) => this.#gates.set(step.name, resolve));
+          runtime.heldAt = undefined;
+          if (runtime.steer || runtime.interrupted) throw new Interrupted();
           break;
         case "status":
           this.#setStatus(runtime, step.status, step.detail, step.compaction);
@@ -853,6 +856,8 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async #continue(threadId: ThreadId, steps: Step[]) {
     const runtime = this.#runtime(threadId);
+    // The error a turn that completes clears: one an earlier turn left, not one made meanwhile.
+    const earlier = runtime.summary.thread.lastError;
     runtime.running = true;
     try {
       await this.#runSteps(runtime, steps);
@@ -867,6 +872,17 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     runtime.steer = undefined;
     runtime.interrupted = false;
     this.#stampTurnEnd(runtime, steer || interrupted ? "interrupted" : "completed");
+    // As the server: a turn that completes clears the error an earlier one left.
+    if (
+      !steer &&
+      !interrupted &&
+      earlier !== undefined &&
+      runtime.summary.thread.lastError === earlier
+    ) {
+      const { lastError: _, ...thread } = runtime.summary.thread;
+      runtime.summary = { ...runtime.summary, thread };
+      this.#emit({ type: "thread.upsert", thread });
+    }
     this.#setStatus(runtime, "idle");
     this.#update(runtime, { lastActivityAt: Date.now() });
     if (runtime.restartAfterTurn) {
@@ -1124,7 +1140,10 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async interrupt(threadId: ThreadId) {
     const runtime = this.#runtime(threadId);
-    if (runtime.running) runtime.interrupted = true;
+    if (!runtime.running) return;
+    runtime.interrupted = true;
+    // A turn held at a gate stops there, as a real turn stops wherever it is.
+    if (runtime.heldAt !== undefined) this.release(runtime.heldAt);
   }
 
   /**

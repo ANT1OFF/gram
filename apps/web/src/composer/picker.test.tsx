@@ -41,10 +41,14 @@ it("as a glyph alone names the mode on hover and keeps its warning tint", async 
   await user.hover(trigger);
   const tip = await screen.findByText(/^Mode: Bypass/);
   expect(tip.textContent).toContain("tools run without asking for approval");
-  // The open list spells out every mode.
+  // The open list spells out every mode, each with what it lets the agent do.
   await user.click(trigger);
-  for (const option of MODE_OPTIONS)
-    expect(screen.getByRole("option", { name: option.label })).toBeTruthy();
+  for (const option of MODE_OPTIONS) {
+    expect(option.description).toBeTruthy();
+    const row = screen.getByRole("option", { name: option.label });
+    expect(row.getAttribute("aria-description")).toBe(option.description);
+    expect(row.textContent).toContain(option.description);
+  }
 });
 
 it("with its label shows the value and keeps the plain name", () => {

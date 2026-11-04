@@ -16,6 +16,8 @@ import {
   filterCounts,
   filterGroups,
   needsYouGroups,
+  needsYouSections,
+  sectionOf,
   stepItem,
   THREADS_GROUP,
   type NeedsYouThread,
@@ -301,5 +303,45 @@ describe("optionThumbs", () => {
     // Without pictures, none.
     const plain = needsYouGroups(sources())[0]!.items.find((each) => each.ask?.worker);
     expect(optionThumbs(plain!)).toEqual([]);
+  });
+});
+
+/** The section a wait of `kind` is listed in. */
+const sectionOfWait = (kind: WaitItem["kind"]) =>
+  sectionOf({ kind: "wait", wait: { item: wait("w", 1, { kind }), view: { kind } as never } });
+
+describe("needsYouSections", () => {
+  it("lists by kind across workspaces, each item saying its workspace", () => {
+    const sections = needsYouSections(needsYouGroups(sources()));
+    expect(sections.map((section) => section.key)).toEqual([
+      "approvals",
+      "questions",
+      "reviews",
+      "drafts",
+      "errors",
+    ]);
+    const [approvals, questions, reviews, drafts, errors] = sections;
+    expect(approvals!.items.map((item) => [item.title, item.workspace])).toEqual([
+      [expect.any(String), "Gram"],
+    ]);
+    // The worker's and the orchestrator's questions, both Gram's.
+    expect(questions!.items.map((item) => item.workspace)).toEqual(["Gram", "Gram"]);
+    expect(reviews!.items.map((item) => item.ids)).toEqual([[expect.stringContaining("w-1")]]);
+    // Drafts from Arb's worker and from the thread outside any workspace, which names none.
+    expect(drafts!.items.map((item) => item.workspace)).toEqual(
+      expect.arrayContaining(["Arb bot", undefined]),
+    );
+    expect(errors!.items.map((item) => [item.kind, item.workspaceId])).toEqual([["failure", ARB]]);
+    // Every item is in one section, and none is lost.
+    expect(sections.flatMap((section) => section.items)).toHaveLength(
+      needsYouGroups(sources()).flatMap((group) => group.items).length,
+    );
+  });
+
+  it("puts a decision with the questions and a step to take apart", () => {
+    expect(sectionOfWait("decision")).toBe("questions");
+    expect(sectionOfWait("action")).toBe("steps");
+    expect(sectionOfWait("review")).toBe("reviews");
+    expect(sectionOfWait("draft")).toBe("drafts");
   });
 });

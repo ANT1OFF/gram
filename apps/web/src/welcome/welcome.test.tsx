@@ -86,7 +86,11 @@ describe("first run", () => {
       "listitem",
     );
     expect(agents.map((item) => item.getAttribute("data-state"))).toEqual(["ready", "ready"]);
+    expect(agents.map((item) => within(item).queryByText("Ready") !== null)).toEqual([true, true]);
     expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(welcome.queryByRole("link", { name: /^Install/ })).toBeNull();
+    // Each repository row says what clicking it does.
+    expect(welcome.getByRole("button", { name: /^api/ }).textContent).toContain("Open");
     expect(welcome.getByRole("button", { name: "Import past CLI sessions" })).toBeTruthy();
     expect(welcome.getByRole("button", { name: "Other folder" })).toBeTruthy();
     expect(welcome.getByRole("button", { name: "Clone from GitHub" })).toBeTruthy();
@@ -147,13 +151,35 @@ describe("first run", () => {
     // Both agents, each with its state; git only when it is missing.
     expect(agents.map((item) => item.getAttribute("data-tool"))).toEqual(["claude", "codex"]);
     expect(agents[1]?.getAttribute("data-state")).toBe("ready");
-    expect(agents[1]?.textContent).toContain("Signed in");
+    expect(agents[1]?.textContent).toContain("Ready");
     const claude = agents[0];
     expect(claude?.getAttribute("data-state")).toBe("attention");
     expect(claude?.textContent).toContain("Run claude in a terminal to sign in.");
     fireEvent.click(welcome.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalledWith(true));
     expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("gives a CLI that isn't installed a link to its install docs and a re-check", async () => {
+    const { api, render } = load(withOnboarding({}), {
+      ...ALL_READY,
+      tools: ALL_READY.tools.filter((tool) => tool.tool !== "claude"),
+      claudeSignIn: "unknown",
+    });
+    render();
+    const welcome = within(await screen.findByTestId("welcome"));
+    const agents = within(await welcome.findByRole("list", { name: "Agents" })).getAllByRole(
+      "listitem",
+    );
+    const [claude, codex] = agents;
+    expect(claude?.getAttribute("data-state")).toBe("optional");
+    expect(claude?.textContent).toContain("Not installed");
+    const install = within(claude!).getByRole("link", { name: /^Install Claude Code/ });
+    expect(install.getAttribute("href")).toBe("https://docs.claude.com/en/docs/claude-code/setup");
+    expect(codex?.textContent).toContain("Ready");
+    expect(within(codex!).queryByRole("link")).toBeNull();
+    fireEvent.click(within(claude!).getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(api.launchChecks).toHaveBeenCalledWith(true));
   });
 
   it("shows nothing after the first run", async () => {

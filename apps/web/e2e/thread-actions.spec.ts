@@ -131,3 +131,43 @@ test("asks before a restart that would cut a turn off, then waits for it or inte
   await expect(page.getByTestId("approval-card")).toHaveCount(0);
   await expect(markers).toHaveCount(1);
 });
+
+test("Stop leaves a receipt at the turn's end, and Continue picks the turn up", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.gramMockHoldGates = true;
+  });
+  await page.goto("/t/t-flaky");
+  await page.getByText("I'll start by reading the test").waitFor();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  const receipt = page.getByTestId("stop-receipt");
+  await expect(receipt.getByTestId("stop-receipt-label")).toHaveText(
+    /^Stopped by you · \d\d:\d\d$/,
+  );
+  // The reply it stopped on stays above it.
+  await expect(page.getByText("I'll start by reading the test")).toBeVisible();
+  await receipt.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByTestId("message-user").last()).toContainText("Continue");
+  await expect(receipt).toHaveCount(0);
+});
+
+test("a retry that went through turns the failed card into a receipt linking the new attempt", async ({
+  page,
+}) => {
+  await page.goto("/t/t-docs");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await page.evaluate(() =>
+    window.gramMock!.simulateTurnError(
+      "t-docs" as never,
+      { kind: "rateLimit", retryable: true, text: "Rate limited (HTTP 429)." },
+      "Run the e2e suite",
+    ),
+  );
+  const card = page.getByTestId("agent-error").last();
+  await card.getByRole("button", { name: "Retry" }).click();
+  await expect(card).toHaveAttribute("data-state", "retried");
+  await expect(card.getByTestId("agent-error-retried")).toHaveText(/Retried · \d\d:\d\d$/);
+  await expect(card.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await expect(card.getByTestId("agent-error-attempt")).toHaveText("View new attempt");
+});
