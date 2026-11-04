@@ -165,7 +165,7 @@ export function OverviewFoot() {
         >
           <span>{meter.name}</span>
           <LimitBar limit={meter.limit} />
-          <span data-testid="overview-usage-text">
+          <span data-testid="overview-usage-text" className="whitespace-nowrap">
             {meter.percent}%{meter.resets === undefined ? "" : ` · ${meter.resets}`}
           </span>
         </div>
