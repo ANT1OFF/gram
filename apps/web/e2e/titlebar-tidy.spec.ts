@@ -45,14 +45,16 @@ test("Tidy up in the title bar says why it can't go while there is nobody to ask
       homeProjectId: project!.id,
     });
   });
-  await expect(titlebar(page).getByTestId("workspace-switcher-button")).toContainText(
-    "no-orchestrator",
-  );
+  const switcher = titlebar(page).getByTestId("workspace-switcher-button");
+  await expect(switcher).toHaveAttribute("data-workspaces", "1");
+  // In Chat on a solo thread the window is in no workspace; Board shows the workspace's.
+  await expect(switcher).toHaveText("Solo");
   // A solo thread's one bar leaves the workspace's tidy-up to Board, where the bar has it again.
   await expect(titlebar(page).getByTestId("pane-header")).toBeVisible();
   await expect(titlebar(page).getByTestId("titlebar-tidy")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Alt+2");
   await expect(titlebar(page).getByTestId("view-switcher")).toBeVisible();
+  await expect(switcher).toHaveText("no-orchestrator");
   const idle = titlebar(page).getByTestId("titlebar-tidy");
   await expect(idle).toHaveAttribute("aria-disabled", "true");
   await expect(idle).toHaveAccessibleName("Tidy up (No orchestrator yet: open it first)");

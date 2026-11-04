@@ -5,6 +5,8 @@ import { readLast } from "@/orchestration/home";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useThreadsStore } from "@/stores/threads";
 
+import { useViewStore } from "./view-store";
+
 /**
  * The workspace the window is on: the one of the thread in view, else the one whose orchestrator
  * was shown last, else the first. `undefined` without workspaces.
@@ -27,12 +29,17 @@ export function viewWorkspace(
 export const viewSolo = (thread: Pick<Thread, "workspaceId"> | undefined): boolean =>
   thread !== undefined && thread.workspaceId === undefined;
 
-/** `viewSolo` for the window's route. */
+/**
+ * `viewSolo` for the window's route, in Chat: Board and Quiet show a workspace whatever thread the
+ * route has, so over them the window is on that workspace.
+ */
 export function useViewSolo(): boolean {
   const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
-  return useThreadsStore((s) =>
+  const chat = useViewStore((s) => s.view === "chat");
+  const solo = useThreadsStore((s) =>
     viewSolo(threadId === undefined ? undefined : s.byId[threadId]?.thread),
   );
+  return chat && solo;
 }
 
 /** `viewWorkspace` for the window's route. The switcher and Board read this one. */

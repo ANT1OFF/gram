@@ -171,6 +171,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
           size="xs"
           aria-label={`Workspace: ${name}`}
           data-testid="workspace-switcher-button"
+          data-workspaces={workspaces.length}
           className={cn(
             "max-w-48 gap-1 px-2 text-[13px] font-medium data-popup-open:bg-muted",
             className,

@@ -386,9 +386,10 @@ test("a question whose options carry screenshots shows them on its row, numbered
   // The orchestrator's pick first, numbered as the stack numbers it, a picture each.
   await expect(thumbs.first()).toHaveAttribute("data-option", "C Hybrid");
   await expect(thumbs.first()).toContainText("1");
+  // Its answer carries the same number, with the option's words.
   await expect(
     question.locator('[data-testid="needs-you-answer"][data-option="C Hybrid"]'),
-  ).toHaveText("1");
+  ).toHaveText(/^1\s*C Hybrid$/);
   await expect(thumbs.first().locator("img")).toBeVisible();
   // A click enlarges it, as the stack's gallery does.
   await thumbs.first().locator("button").first().click();

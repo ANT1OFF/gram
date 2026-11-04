@@ -245,17 +245,22 @@ export const viewedSection = (
 };
 
 /**
- * Opens what the thread in view lists under, once each time the view moves to a thread: a jump to
- * a solo thread opens Solo threads, and one to a worker its workspace's line, so its row shows where
- * it is, marked as the one in view. Folding it again while there keeps it folded.
+ * Opens what the thread in view lists under, once each time the view moves to another thread: a
+ * jump to a solo thread opens Solo threads, and one to a worker its workspace's line, so its row
+ * shows where it is, marked as the one in view. The thread the window opens on moves nothing, so a
+ * section folded there stays folded across a reload, and so does one folded again while there.
  */
 function useRevealViewed() {
   const viewed = useParams({ strict: false }).threadId as ThreadId | undefined;
   const section = useThreadsStore((s) =>
     viewedSection(viewed === undefined ? undefined : s.byId[viewed]?.thread),
   );
+  // The thread last revealed, or the one the window opened on.
+  const revealed = useRef(viewed);
   useEffect(() => {
-    if (viewed === undefined || section === undefined) return;
+    // A thread not loaded yet is revealed once it is.
+    if (viewed === undefined || section === undefined || revealed.current === viewed) return;
+    revealed.current = viewed;
     const layout = useLayoutStore.getState();
     if (section === "solo") layout.unfoldOverviewSection("solo");
     else layout.toggleWorkspaceNode(overviewFoldKey(section), false);

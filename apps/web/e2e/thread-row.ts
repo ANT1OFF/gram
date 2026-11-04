@@ -40,8 +40,11 @@ export async function openOrchestrator(page: Page, orchestratorThreadId: string)
  * goes nowhere.
  */
 export async function pressFirstWorkspaceKey(page: Page): Promise<void> {
-  await expect(page.getByTestId("workspace-switcher-button")).not.toHaveAccessibleName(
-    "Workspace: Threads",
+  // Once a workspace is listed, ⌘1 has one to go to. On a solo thread the switcher says Solo
+  // whether or not there are any, so its name can't say.
+  await expect(page.getByTestId("workspace-switcher-button")).not.toHaveAttribute(
+    "data-workspaces",
+    "0",
   );
   await page.keyboard.press("ControlOrMeta+1");
 }
