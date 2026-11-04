@@ -96,7 +96,7 @@ export function createMockExtraPrs(host: MockExtraPrsHost) {
       if (!promoted) throw new MockInvalidState(`${repo}#${number} isn't followed by this thread`);
       if (thread.babysit) {
         throw new MockInvalidState(
-          "Babysit mode is tied to the current pull request; turn it off first.",
+          "Watch PR is tied to the current pull request; turn it off first.",
         );
       }
       const demoted = thread.boundPr

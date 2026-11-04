@@ -105,7 +105,7 @@ describe("prGlyphOf", () => {
   it("says what an armed or held merge waits on, as its merge marks do", () => {
     const armed = { ...open, mergeState: "BLOCKED", intent: {} };
     expect(prGlyphOf(armed)).toEqual({ kind: "open", word: "Merges when ready" });
-    expect(prGlyphOf({ ...armed, intent: { hold: "release" } }).word).toBe("Held");
+    expect(prGlyphOf({ ...armed, intent: { hold: "release" } }).word).toBe("Paused");
   });
 });
 

@@ -47,7 +47,7 @@ export function PauseAtLimitField({
     <div data-testid="pause-at-limit" data-value={value}>
       <SettingRow
         label="Pause new workers at"
-        {...(tightest === undefined ? {} : { description: `${meterText(tightest)} now` })}
+        description={`Stop starting workers near your usage limit.${tightest === undefined ? "" : ` ${meterText(tightest)} now.`}`}
         keywords={["usage", "limit", "subscription", "pause", "workers"]}
       >
         <OptionGroup

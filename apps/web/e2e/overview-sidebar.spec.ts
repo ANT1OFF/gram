@@ -78,7 +78,7 @@ const unparked = (page: Page) =>
 const parkedLine = (page: Page) =>
   overview(page)
     .getByTestId("overview-parked")
-    .getByRole("button", { name: /^Parked/ });
+    .getByRole("button", { name: /^Archived/ });
 const storedLayout = (page: Page) =>
   page.evaluate(
     (key) =>
@@ -568,7 +568,7 @@ test("a parked solo thread waits behind the folded Parked line, and Park on a ro
   await expect(parkedLine(page)).toHaveAttribute("aria-expanded", "false");
   const before = await parkedRows.count();
   expect(before).toBeGreaterThan(0);
-  await expect(parkedLine(page)).toHaveText(new RegExp(`^Parked\\s*${before}$`));
+  await expect(parkedLine(page)).toHaveText(new RegExp(`^Archived\\s*${before}$`));
   await expect(threadRow(page, "t-grpc")).toBeHidden();
 
   // A click opens the line onto its rows, and a row opens its thread.
@@ -583,15 +583,15 @@ test("a parked solo thread waits behind the folded Parked line, and Park on a ro
   // Park from a solo row's menu moves it under the line, and Unpark brings it back.
   await expect(unparked(page).and(isRow("t-flaky"))).toBeVisible();
   await threadRow(page, "t-flaky").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Park", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
   await expect(parked.locator('[data-thread-id="t-flaky"]')).toBeVisible();
   await expect(unparked(page).and(isRow("t-flaky"))).toHaveCount(0);
-  await expect(parkedLine(page)).toHaveAccessibleName(`Parked, ${before + 1}`);
+  await expect(parkedLine(page)).toHaveAccessibleName(`Archived, ${before + 1}`);
   await threadRow(page, "t-flaky").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Unpark", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Unarchive", exact: true }).click();
   await expect(unparked(page).and(isRow("t-flaky"))).toBeVisible();
   await expect(parked.locator('[data-thread-id="t-flaky"]')).toHaveCount(0);
-  await expect(parkedLine(page)).toHaveAccessibleName(`Parked, ${before}`);
+  await expect(parkedLine(page)).toHaveAccessibleName(`Archived, ${before}`);
 });
 
 test("a solo or worker row's menu opens on a right-click or Shift+F10, held workers adding Hand back", async ({
@@ -602,7 +602,7 @@ test("a solo or worker row's menu opens on a right-click or Shift+F10, held work
   /** The verbs every thread row's menu has. */
   const verbs = async () => {
     await expect(menu.getByRole("menuitem", { name: /^Rename…/ })).toBeVisible();
-    await expect(menu.getByRole("menuitem", { name: "Park", exact: true })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Archive", exact: true })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: /^Close thread…/ })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "More…" })).toBeVisible();
   };
@@ -830,7 +830,7 @@ test("Settings → General's Overview sidebar row picks the mode the window lays
     "true",
   );
   await expect(page.getByTestId("general-settings")).toContainText(
-    "Automatic is open from 1280 px, compact below.",
+    "Automatic is open from 1280 px wide and compact below.",
   );
   await row.getByRole("radio", { name: "Hidden" }).click();
   await expect(overview(page)).toHaveCount(0);

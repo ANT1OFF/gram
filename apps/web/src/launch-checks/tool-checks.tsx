@@ -79,6 +79,7 @@ export function ToolChecks() {
   return (
     <SettingsGroup
       label="Tools"
+      description="Other programs Gram uses, such as git and gh, and whether each was found."
       testId="tool-checks"
       action={<RecheckButton checking={checking} onClick={() => void run()} />}
     >
@@ -125,6 +126,7 @@ export function AgentChecks() {
   return (
     <SettingsGroup
       label="Agents"
+      description="Whether each agent CLI is installed and signed in on this computer."
       keywords={["installed", "version", "signed in", "sign in", "upgrade"]}
       testId="agent-checks"
       action={<RecheckButton checking={checking} onClick={() => void run()} />}

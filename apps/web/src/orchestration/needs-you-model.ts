@@ -225,7 +225,7 @@ export const threadNeedsItems = (
             attention.key,
           ]
         : thread.babysit?.phase === "stopped"
-          ? ["babysit", "Babysit stopped", `babysit:${thread.lastActivityAt}`]
+          ? ["babysit", "Watch PR stopped", `babysit:${thread.lastActivityAt}`]
           : ["thread", "Needs you", `${summary.status}:${thread.lastActivityAt}`];
     const id = `failure:${kind}:${thread.id}:${occurrence}`;
     if (hidden.has(id)) return [];

@@ -99,7 +99,7 @@ describe("needsYouCount", () => {
     expect(sectionOf(babysat)).toBe("needsYou");
     showing(babysat, summary("g", "idle"));
     expect(needsYouCount()).toBe(1);
-    expect(useDerivedAsks.getState().needsYou.items[0]?.title).toBe("Babysit stopped");
+    expect(useDerivedAsks.getState().needsYou.items[0]?.title).toBe("Watch PR stopped");
   });
 
   it("lists a solo thread whose PR's red build is unseen, so the pill says what the title says", () => {

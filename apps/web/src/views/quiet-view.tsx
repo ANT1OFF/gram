@@ -275,6 +275,9 @@ export function QuietView({ workspaceId }: ViewProps) {
               <p data-testid="quiet-summary" className="text-[15px] text-muted-foreground">
                 {quietSummary(strip)}
               </p>
+              <p data-testid="quiet-about" className="mt-2 text-xs text-muted-foreground">
+                Quiet shows only what needs you, one card at a time. Esc leaves it.
+              </p>
             </div>
           ) : (
             <QuietCard

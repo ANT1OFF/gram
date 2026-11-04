@@ -306,7 +306,7 @@ test("the palette starts a workspace through New task", async ({ page }) => {
 test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ page }) => {
   await page.goto("/settings/workspaces");
   const section = page.getByTestId("workspace-settings");
-  await expect(section).toContainText("spends tokens while you aren't watching");
+  await expect(section).toContainText("Gram sets no spending or time limits");
   await expect(section).toContainText("No workspaces yet.");
   // Continuing cut-off workers after a restart is off until it is turned on.
   const resume = section.getByRole("switch", { name: "Resume workers on restart" });
@@ -664,7 +664,7 @@ test("the overview lists a workspace's workers under it, and a worker's thread n
   await expect(crumbs.getByTestId("worker-crumb-feature")).toHaveText("mail-trigger");
   const held = page.getByTestId("worker-hold");
   // A narrow bar keeps the hold's glyph and Hand back, its words for the tooltip and screen readers.
-  await expect(held).toContainText("You hold it");
+  await expect(held).toContainText("You took over");
   await held.getByTestId("worker-hold-words").hover();
   await expect(page.locator(`[data-slot="tooltip-content"]`)).toContainText(
     "The orchestrator can't message it until you hand it back",
@@ -1768,11 +1768,11 @@ test("parking an orchestrator pauses its workspace, and one confirm removes a wo
   // and unparked the same way.
   await openOrchestrator(page, made.orchestratorThreadId);
   let menu = await openThreadMenu(page);
-  await menu.getByRole("menuitem", { name: "Park", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Archive", exact: true }).click();
   await expect.poll(paused).toBe("parked");
   await expect(line).toHaveAccessibleName(/^api, paused · /);
   menu = await openThreadMenu(page);
-  await menu.getByRole("menuitem", { name: "Unpark", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Unarchive", exact: true }).click();
   await expect.poll(paused).toBe(null);
   await expect(line).toHaveAccessibleName(/^api, idle · /);
 

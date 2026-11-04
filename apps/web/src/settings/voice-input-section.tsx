@@ -39,7 +39,12 @@ import { SETTINGS_CARD, SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 import { VoiceCleanupRows } from "./voice-cleanup-rows";
 import { VoiceVocabularyField } from "./voice-vocabulary-field";
-import { PROJECT_NAMES_HELP, YOUR_WORDS_HELP } from "./voice-vocabulary-model";
+import {
+  PROJECT_NAMES_HELP,
+  PROJECT_NAMES_MORE,
+  YOUR_WORDS_HELP,
+  YOUR_WORDS_MORE,
+} from "./voice-vocabulary-model";
 import {
   accurateFits,
   combinedProgress,
@@ -47,7 +52,9 @@ import {
   formatSize,
   installedBytes,
   LOCAL_HINTS_HELP,
+  LOCAL_HINTS_MORE,
   MODE_HELP,
+  MODE_MORE,
   MODE_OPTIONS,
   progressOf,
   removeModels,
@@ -236,6 +243,7 @@ export function VoiceInputSection() {
           <SettingRow
             label="Vocabulary hints"
             description={LOCAL_HINTS_HELP}
+            learnMore={<p>{LOCAL_HINTS_MORE}</p>}
             keywords={["hints", "vocabulary", "prompt", "names"]}
           />
         )}
@@ -330,13 +338,14 @@ export function VoiceInputSection() {
       {on && (
         <SettingsGroup
           label="Vocabulary"
-          description="Names and words dictation spells your way after it hears them. Nothing here leaves this computer."
+          description="Names and words dictation spells your way. Nothing here leaves this computer."
           keywords={["vocabulary", "dictionary", "spelling"]}
           testId="voice-vocabulary"
         >
           <Toggle
             label="Use this project's names"
             description={PROJECT_NAMES_HELP}
+            learnMore={<p>{PROJECT_NAMES_MORE}</p>}
             keywords={["vocabulary", "names", "symbols", "files", "identifiers", "spelling"]}
             checked={projectNamesOn(settings)}
             onChange={(next) => {
@@ -347,6 +356,7 @@ export function VoiceInputSection() {
           <SettingRow
             label="Your words"
             description={YOUR_WORDS_HELP}
+            learnMore={<p>{YOUR_WORDS_MORE}</p>}
             keywords={["vocabulary", "sounds like", "spelling", "dictionary", "words"]}
             detail={
               <VoiceVocabularyField
@@ -474,6 +484,7 @@ function ModeRow({
     <SettingRow
       label="Transcription"
       description={MODE_HELP[mode]}
+      learnMore={MODE_MORE[mode] === undefined ? undefined : <p>{MODE_MORE[mode]}</p>}
       keywords={["accuracy", "accurate", "live", "punctuation", "parakeet"]}
     >
       <OptionGroup
@@ -565,7 +576,11 @@ function AccurateModelsRow({
       );
     case "absent":
       return (
-        <SettingRow label={label} description={`${names} aren't downloaded. ${memory} ${fallback}`}>
+        <SettingRow
+          label={label}
+          description={`${names} aren't downloaded. ${fallback}`}
+          learnMore={<p>{memory}</p>}
+        >
           <Button
             size="sm"
             variant="outline"
@@ -591,6 +606,7 @@ function AccurateModelsRow({
       return (
         <SettingRow
           label={label}
+          description="The download didn't finish."
           detail={
             <Alert variant="destructive" data-testid="voice-accurate-failed">
               <TriangleAlert aria-hidden />
@@ -736,6 +752,7 @@ function ModelRow({
       return (
         <SettingRow
           label={label}
+          description="The download didn't finish."
           detail={
             <Alert variant="destructive" data-testid="voice-model-failed">
               <TriangleAlert aria-hidden />
@@ -849,7 +866,8 @@ function SoundsRow({
     <SettingRow
       label="Sounds"
       htmlFor={id}
-      description="A tone when dictation starts listening and another when it stops. A tap or a discarded press makes none."
+      description="A tone when dictation starts listening, and another when it stops."
+      learnMore={<p>A tap or a discarded press makes none.</p>}
       keywords={["tone", "beep", "volume", "audio", "chime"]}
     >
       {on && (

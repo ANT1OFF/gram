@@ -113,7 +113,7 @@ export function HeldBriefChip({
       </span>
       {/* A station is narrow: "until 18:00" on a line of its own, Release now under it. */}
       <span className="pl-4.5 text-[11px] whitespace-nowrap text-muted-foreground">
-        <span className="sr-only">Held brief: </span>
+        <span className="sr-only">Paused brief: </span>
         <span data-testid="held-until" className="tabular-nums">
           {heldStateText(held, now, { short: true })}
         </span>

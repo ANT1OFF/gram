@@ -93,6 +93,7 @@ function TitlebarMenuItems({
       )}
       <Menu.Item
         data-testid="folded-quiet"
+        title="Show only what needs you, one card at a time"
         className={itemClassName}
         onClick={() => useViewStore.getState().setQuiet(true)}
       >

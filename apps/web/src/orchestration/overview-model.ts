@@ -372,16 +372,20 @@ export const overviewState = (
  * A workspace's summary in the compact rail: "2 working · 1 ask", the parts it has; its state word
  * when it has neither, and the word alone while it is paused or parked.
  */
+/** A state as a word on screen: a parked workspace is one whose orchestrator was archived. */
+export const stateWord = (state: OverviewState): string =>
+  state === "parked" ? "archived" : state;
+
 export const overviewSummary = (
   state: OverviewState,
   { working, asks }: { readonly working: number; readonly asks: number },
 ): string => {
   const parts = [
-    ...(state === "paused" || state === "parked" ? [state] : []),
+    ...(state === "paused" || state === "parked" ? [stateWord(state)] : []),
     ...(working > 0 ? [`${working} working`] : []),
     ...(asks > 0 ? [`${asks} ${asks === 1 ? "ask" : "asks"}`] : []),
   ];
-  return parts.length > 0 ? parts.join(" · ") : state;
+  return parts.length > 0 ? parts.join(" · ") : stateWord(state);
 };
 
 /** An orchestrator's line, folded or open: its dot, and whether it pulses. */
@@ -443,7 +447,7 @@ export const orchestratorHover = (
   slots: string | undefined,
 ): string =>
   [
-    ...(state === "working" && summary.working > 0 ? [] : [state]),
+    ...(state === "working" && summary.working > 0 ? [] : [stateWord(state)]),
     foldedSummaryText(summary),
     ...(slots === undefined ? [] : [`Worker slots ${slots}`]),
   ].join(" · ");

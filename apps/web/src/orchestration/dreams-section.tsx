@@ -1294,8 +1294,8 @@ export function DreamsSection({
         </span>
       </h2>
       <p className="text-xs text-muted-foreground">
-        A dream drafts memory from past transcripts. Choose Review or Auto for each run. Auto adopts
-        valid successful output automatically. One runs at a time.
+        A dream rereads past threads and drafts updates to this workspace&rsquo;s memory. Review
+        each run yourself, or let Auto adopt a valid result. One runs at a time.
       </p>
       {suggestion !== undefined && starting === undefined && (
         <p
@@ -1329,7 +1329,9 @@ export function DreamsSection({
       ) : dreams.data === undefined ? (
         <PanelMessage loading>Loading dreams…</PanelMessage>
       ) : dreams.data.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No dreams yet.</p>
+        <p className="text-xs text-muted-foreground">
+          No dreams yet. Dream now reads finished threads and drafts memory for you to review.
+        </p>
       ) : (
         <ul className="flex flex-col gap-2">
           <PresenceList>

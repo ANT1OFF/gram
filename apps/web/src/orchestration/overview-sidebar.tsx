@@ -69,6 +69,7 @@ import {
   foldByKey,
   nowLineShown,
   orchestratorHover,
+  stateWord,
   orchestratorLine,
   overviewFeatures,
   overviewItems,
@@ -529,7 +530,7 @@ function WorkspaceRow({
                   data-testid="overview-workspace-state"
                   className="text-xs whitespace-nowrap text-muted-foreground"
                 >
-                  {word}
+                  {stateWord(word)}
                 </span>
               )}
               {asks > 0 && (
@@ -1031,7 +1032,7 @@ function SoloList({
 }
 
 const FOLDED = {
-  parked: { label: "Parked", hint: undefined as string | undefined },
+  parked: { label: "Archived", hint: undefined as string | undefined },
 } as const;
 
 /**

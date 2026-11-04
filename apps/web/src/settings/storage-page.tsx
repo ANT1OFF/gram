@@ -29,7 +29,8 @@ import { Dialog, DialogShell } from "@/thread/dialog-shell";
 import { formatBytes } from "@/thread/orchestration-model";
 
 import { NumberField, OptionGroup, Toggle } from "./fields";
-import { SETTINGS_CARD } from "./settings-group";
+import { SettingDescription } from "./help-tip";
+import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 import {
   bulkTargets,
   GROUP_HINTS,
@@ -477,7 +478,13 @@ function AutomaticCleanup() {
   return (
     <Toggle
       label="Clean up finished threads"
-      description="Removes clean, pushed worktrees once the PR merges or after the days below, and archived workers with no PR a day after archiving."
+      description="Remove worktrees that are merged, or idle past the days below."
+      learnMore={
+        <p>
+          Only clean, pushed worktrees go, once their PR merges or after the days below. An archived
+          worker with no PR goes a day after it was archived.
+        </p>
+      }
       keywords={["sweep", "disk", "space", "node_modules", "worktrees", "garbage", "merged"]}
       checked={sweep !== undefined}
       error={error}
@@ -487,12 +494,14 @@ function AutomaticCleanup() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <NumberField
               label="Free node_modules after (days)"
+              description="Delete installed packages from an idle worktree."
               value={sweep.freeAfterDays}
               min={1}
               onCommit={(worktreeSweepFreeDays) => saveSweep({ worktreeSweepFreeDays })}
             />
             <NumberField
               label="Remove after (days)"
+              description="Remove an idle worktree with nothing unpushed."
               keywords={["worktree"]}
               value={sweep.removeAfterDays}
               min={1}
@@ -540,10 +549,7 @@ function GroupSection({
               open && "rotate-90",
             )}
           />
-          <h3
-            id={id}
-            className="font-caption text-xs font-medium tracking-wide text-muted-foreground uppercase"
-          >
+          <h3 id={id} className={GROUP_TITLE}>
             {label}
           </h3>
           <span className="text-xs text-muted-foreground tabular-nums">
@@ -556,9 +562,11 @@ function GroupSection({
           </Button>
         )}
       </div>
+      <div className="-mt-1.5 ps-6 pe-1">
+        <SettingDescription>{GROUP_HINTS[group]}</SettingDescription>
+      </div>
       {open && (
         <>
-          <p className="px-1 text-xs text-muted-foreground">{GROUP_HINTS[group]}</p>
           {entries.length > 0 && (
             <ul className={SETTINGS_CARD} aria-label={label}>
               {entries.map((entry) => (

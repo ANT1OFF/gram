@@ -165,10 +165,10 @@ function ShowCostToggle() {
   const save = useSaveSettings();
   const [error, setError] = useState<string>();
   return (
-    <SettingsGroup label="Cost">
+    <SettingsGroup label="Cost" description="Whether threads show what they cost in dollars.">
       <Toggle
         label="Show dollar cost"
-        description="Gateway threads only."
+        description="Shown on threads that run through a gateway."
         keywords={["dollars", "price", "spend", "usd", "api key"]}
         checked={checked}
         error={error}

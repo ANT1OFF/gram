@@ -20,6 +20,7 @@ import { useId, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ExpandPresence, PresenceItem, PresenceList } from "@/motion";
@@ -35,6 +36,7 @@ import { openAskSheet } from "./ask-sheet-store";
 import {
   fitsInPlace,
   memoryQuestionCard,
+  questionKind,
   questionOutcome,
   workerQuestionCard,
   type QuestionCard,
@@ -44,18 +46,24 @@ import { useFocusOnOpen } from "./use-focus-on-open";
 const INPUT =
   "rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
-function IdChip({ id, muted = false }: { id: string; muted?: boolean }) {
+/**
+ * A question's id, muted beside its text: a handle to refer to it by, not a label. Its hover and its
+ * accessible name say what kind of question it is.
+ */
+function IdChip({ id }: { id: string }) {
+  const kind = questionKind(id);
   return (
-    <span
-      className={cn(
-        "mt-0.5 shrink-0 rounded-sm border px-1 font-mono text-[11px]",
-        muted
-          ? "border-border text-muted-foreground"
-          : "border-status-needs-mark/60 text-status-needs",
-      )}
+    <Hint
+      label={`${kind} ${id}`}
+      render={
+        <span
+          aria-label={`${kind} ${id}`}
+          className="mt-0.5 shrink-0 rounded-sm border border-border px-1 font-mono text-[11px] text-muted-foreground"
+        />
+      }
     >
       {id}
-    </span>
+    </Hint>
   );
 }
 
@@ -538,7 +546,7 @@ export function WorkerQuestionHistory({ question }: { question: WorkerQuestion }
       <span title={status} className="mt-0.5 inline-flex shrink-0">
         <Icon aria-hidden className={cn("size-3.5", look.className)} />
       </span>
-      <IdChip id={question.id} muted />
+      <IdChip id={question.id} />
       <div className="min-w-0 flex-1">
         <p className="text-sm break-words text-muted-foreground">{question.question}</p>
         {outcome !== undefined && <p className="text-xs break-words">{outcome}</p>}
@@ -589,7 +597,7 @@ export function ClosedQuestion({ question }: { question: MemoryQuestion }) {
         <Icon aria-hidden className={cn("size-3.5", look.className)} />
         <span className="sr-only">{look.label}</span>
       </span>
-      {question.id !== undefined && <IdChip id={question.id} muted />}
+      {question.id !== undefined && <IdChip id={question.id} />}
       <div className="min-w-0 flex-1">
         <p className="text-sm break-words text-muted-foreground">{question.text}</p>
         {question.answer !== undefined && <p className="text-xs break-words">{question.answer}</p>}

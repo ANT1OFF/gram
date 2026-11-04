@@ -160,7 +160,7 @@ export function useScopeCommands(
         },
         {
           id: `scope:park:${id}`,
-          label: thread.parked ? "Unpark thread" : "Park thread",
+          label: thread.parked ? "Unarchive thread" : "Archive thread",
           run: actions.togglePark,
         },
         ...(actions.toggleDone === undefined || actions.doneHeld

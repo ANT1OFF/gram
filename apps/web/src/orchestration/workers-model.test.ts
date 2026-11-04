@@ -178,7 +178,7 @@ describe("the now line", () => {
         "asked a question",
       ],
       [worker("stuck", "f", "blocked", { reportStands: true }), "blocked"],
-      [worker("held", "f", "working", { userIntervened: true }), "Held · by you"],
+      [worker("held", "f", "working", { userIntervened: true }), "Paused · by you"],
       [worker("brief", "f", "briefed"), "briefed"],
       [worker("err", "f", "error"), "stopped on an error"],
       [worker("gone", "f", "archived"), "archived"],

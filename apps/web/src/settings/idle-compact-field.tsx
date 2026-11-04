@@ -45,7 +45,7 @@ export function IdleCompactField({
       <div id={IDLE_COMPACT_ANCHOR} data-testid="idle-compact" data-enabled={enabled}>
         <Toggle
           label="Compact idle threads"
-          description="Before their prompt cache expires. Claude only: a thread over 150K tokens left idle is compacted 55 minutes after its last request, never while you have a draft for it."
+          description="Shrink an idle Claude thread before its prompt cache expires."
           keywords={["compact", "compaction", "cache", "idle", "context", "tokens"]}
           checked={enabled}
           disabled={disabled}
@@ -57,7 +57,19 @@ export function IdleCompactField({
                 : "Idle compaction off",
             )
           }
-          learnMore="The agent then carries on from its own summary of the conversation, so details the summary leaves out are gone for it; the transcript keeps everything, and a marker says when it happened."
+          learnMore={
+            <>
+              <p>
+                A thread over 150K tokens left idle is compacted 55 minutes after its last request,
+                never while you have a draft for it.
+              </p>
+              <p>
+                The agent then carries on from its own summary of the conversation, so details the
+                summary leaves out are gone for it; the transcript keeps everything, and a marker
+                says when it happened.
+              </p>
+            </>
+          }
         />
       </div>
       <div data-testid="idle-compact-workers">

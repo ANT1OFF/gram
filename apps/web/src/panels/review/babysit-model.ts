@@ -21,16 +21,19 @@ export function babysitStatusText(babysit: BabysitState): string {
   }
 }
 
-/** The PR badge's babysit label, e.g. "Babysitting · round 2 of 6" or "Babysit stopped: PR closed". */
+/**
+ * The PR badge's label for babysit mode, which the UI calls Watch PR: e.g. "Watching PR · round 2 of
+ * 6" or "Watch PR stopped: PR closed".
+ */
 export function babysitBadgeLabel(babysit: BabysitState): string {
   switch (babysit.phase) {
     case "watching":
-      return `Babysitting · round ${babysit.rounds} of ${babysit.budget.rounds}`;
+      return `Watching PR · round ${babysit.rounds} of ${babysit.budget.rounds}`;
     case "done":
-      return "Babysit done · ready to merge";
+      return "Watch PR done · ready to merge";
     case "stopped":
       return babysit.stopReason
-        ? `Babysit stopped: ${STOP_REASON_TEXT[babysit.stopReason]}`
-        : "Babysit stopped";
+        ? `Watch PR stopped: ${STOP_REASON_TEXT[babysit.stopReason]}`
+        : "Watch PR stopped";
   }
 }

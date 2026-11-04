@@ -58,7 +58,7 @@ describe("ThreadMenu thread actions", () => {
     await waitFor(() => expect(pin).toHaveBeenCalledWith(FLAKY, true));
 
     await openMenu();
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Park" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
     await waitFor(() => expect(park).toHaveBeenCalledWith(FLAKY, true));
   });
 

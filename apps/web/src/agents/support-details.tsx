@@ -36,7 +36,7 @@ export function HarnessSupportDetails({
   return (
     <details className="text-xs text-muted-foreground" data-testid="harness-support-details">
       <summary className="cursor-pointer">
-        Harness capabilities
+        What this agent supports
         {observation.version === undefined ? "" : ` · CLI ${observation.version}`}
       </summary>
       <dl className="mt-2 grid gap-2">

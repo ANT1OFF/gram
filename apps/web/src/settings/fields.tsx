@@ -9,9 +9,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 
-import { HelpTip } from "./help-tip";
+import { HelpTip, SettingDescription } from "./help-tip";
 import { isLongError } from "./long-error";
 import { parseNumberDraft } from "./number-draft";
+import { SavedMark, touchHandlers } from "./saved-mark";
 import { useSettingSearch } from "./search-scope";
 
 export const inputCls =
@@ -21,53 +22,52 @@ export const inputCls =
 export const rowInputCls = cn(inputCls, "w-64 max-w-full");
 
 /**
- * A setting is a label of four words or fewer and its control; what it does shows on the label's
- * hover or focus. `settings-copy.test.tsx` fails a page with a longer label or line. Text that has to be
+ * A setting is a label of four words or fewer, one short line under it that says what it does, and
+ * its control. `settings-copy.test.tsx` fails a page with a longer label or line. Text that has to be
  * read whole, such as a consent or a legal notice, carries this attribute, set to why, and is left
  * out of that count.
  */
 export const LONG_COPY = "data-long-copy";
 
 /**
- * A label's help: the one-line description and what it leaves out, together. Absent when there is
- * neither.
+ * A setting's name, its ⓘ for what the description leaves out, what sits beside them, such as the
+ * reset and "Saved", and the one line of description under them.
  */
-function rowHelp(description: string | undefined, learnMore: ReactNode): ReactNode {
-  if (learnMore === undefined || learnMore === null) return description;
-  return (
-    <>
-      {description !== undefined && <p>{description}</p>}
-      {learnMore}
-    </>
-  );
-}
-
-/** The name of a setting, which shows its help on hover or focus. */
 function RowLabel({
   label,
   htmlFor,
-  help,
+  description,
+  learnMore,
+  children,
 }: {
   label: string;
   htmlFor: string | undefined;
-  help: ReactNode;
+  description: string | undefined;
+  learnMore: ReactNode;
+  /** After the name, on its line. */
+  children?: ReactNode;
 }) {
   return (
-    <HelpTip label={label} help={help}>
-      {htmlFor === undefined ? (
-        <span data-setting-label="" className="font-medium">
-          {label}
-        </span>
-      ) : (
-        <label data-setting-label="" htmlFor={htmlFor} className="font-medium">
-          {label}
-        </label>
-      )}
-    </HelpTip>
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-h-5 items-center gap-1">
+        {htmlFor === undefined ? (
+          <span data-setting-label="" className="font-medium">
+            {label}
+          </span>
+        ) : (
+          <label data-setting-label="" htmlFor={htmlFor} className="font-medium">
+            {label}
+          </label>
+        )}
+        <HelpTip label={label} help={learnMore} />
+        {children}
+      </div>
+      {description !== undefined && <SettingDescription>{description}</SettingDescription>}
+    </div>
   );
 }
 
-/** A labelled setting in a form: its name, which explains it on hover or focus, then the control below. */
+/** A labelled setting in a form: its name and one line of description, then the control below. */
 export function Field({
   label,
   description,
@@ -83,17 +83,20 @@ export function Field({
   keywords?: readonly string[];
   /** The control's id, when it's a single form element the label should name. */
   htmlFor?: string;
-  /** What the one line leaves out, in the same help. */
+  /** What the one line leaves out, behind the ⓘ beside the name. */
   learnMore?: ReactNode;
   /** On the label's line, at its end. */
   action?: ReactNode;
   children: ReactNode;
 }) {
   const search = useSettingSearch({ label, description, keywords });
+  const row = useId();
   return (
-    <div {...search} data-setting="" className="flex flex-col gap-1.5">
-      <div className="flex min-h-5 items-center gap-1">
-        <RowLabel label={label} htmlFor={htmlFor} help={rowHelp(description, learnMore)} />
+    <div {...search} {...touchHandlers(row)} data-setting="" className="flex flex-col gap-1.5">
+      <div className="flex items-start gap-1">
+        <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
+          <SavedMark row={row} />
+        </RowLabel>
         {action !== undefined && <div className="ms-auto flex items-center">{action}</div>}
       </div>
       {children}
@@ -102,10 +105,10 @@ export function Field({
 }
 
 /**
- * One setting on one line of a `SettingsGroup` card: its name on the left, which explains it on
- * hover or focus, its control on the right, dropping below when the two don't fit side by side. `onReset` is
+ * One setting on one line of a `SettingsGroup` card: its name and one line of description on the
+ * left, its control on the right, dropping below when the two don't fit side by side. `onReset` is
  * passed only while the value differs from its default, so the reset icon it shows also marks what
- * was changed.
+ * was changed. A change stored from the row says "Saved" beside its name for a moment.
  */
 export function SettingRow({
   label,
@@ -125,7 +128,7 @@ export function SettingRow({
   keywords?: readonly string[];
   /** The control's id, when it's a single form element the label should name. */
   htmlFor?: string;
-  /** What the one line leaves out, in the same help. */
+  /** What the one line leaves out, behind the ⓘ beside the name. */
   learnMore?: ReactNode;
   /** Puts the default back; absent while the value is the default. */
   onReset?: (() => void) | undefined;
@@ -138,12 +141,20 @@ export function SettingRow({
   children?: ReactNode;
 }) {
   const search = useSettingSearch({ label, description, keywords });
+  const row = useId();
   return (
-    <div {...search} data-setting="" className="@container/row flex flex-col gap-2">
+    <div
+      {...search}
+      {...touchHandlers(row)}
+      data-setting=""
+      className="@container/row flex flex-col gap-2"
+    >
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <div className="flex min-w-0 flex-[1_1_10rem] items-center gap-1">
-          <RowLabel label={label} htmlFor={htmlFor} help={rowHelp(description, learnMore)} />
-          {onReset && <ResetButton label={label} onReset={onReset} />}
+        <div className="flex min-w-0 flex-[1_1_14rem]">
+          <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
+            {onReset && <ResetButton label={label} onReset={onReset} />}
+            <SavedMark row={row} />
+          </RowLabel>
         </div>
         {children !== undefined && (
           <div className="ms-auto flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">

@@ -20,7 +20,7 @@ export function VoiceCleanupRows({
     <>
       <Toggle
         label="Remove filler words"
-        description={`Drops "um", "uh", "erm" and the like from what you dictate. Real words such as "like" stay.`}
+        description={`Drops "um", "uh", "erm" and the like. Real words such as "like" stay.`}
         keywords={["filler", "um", "uh", "clean up", "hesitation"]}
         checked={cleanup.fillers}
         onChange={(next) => onChange({ removeFillers: next })}

@@ -117,6 +117,7 @@ export function WorkspaceSettingsPage({
       <AutonomySection state={state} changes={changes} />
       <SettingsGroup
         label="Models"
+        description="Which models the orchestrator and its workers run on."
         keywords={["roster", "worker models", "orchestrator model", "brief footer"]}
       >
         {orchestrator !== undefined && (
@@ -142,7 +143,11 @@ export function WorkspaceSettingsPage({
           onChange={(next, title) => void changes.saveCharter(next, title)}
         />
       </SettingsGroup>
-      <SettingsGroup label="Reviews & merging" keywords={["merge", "review", "solo", "bot"]}>
+      <SettingsGroup
+        label="Reviews & merging"
+        description="What has to happen before a worker's pull request may merge."
+        keywords={["merge", "review", "solo", "bot"]}
+      >
         <MergeReviewPolicyField
           charter={changes.charter ?? state.charter}
           disabled={changes.busy}
@@ -319,7 +324,11 @@ function Basics({
   };
 
   return (
-    <SettingsGroup label="Basics" keywords={["name", "repositories", "home repository"]}>
+    <SettingsGroup
+      label="Basics"
+      description="The workspace's name and the repositories it covers."
+      keywords={["name", "repositories", "home repository"]}
+    >
       <NameField state={state} changes={changes} />
       <Field label="Repositories" description="Where the orchestrator may start workers.">
         <RepositoryChecklist
@@ -410,7 +419,7 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
     }
   };
   return (
-    <Field label="Name" htmlFor={id}>
+    <Field label="Name" description="Shown in the sidebar and the title bar." htmlFor={id}>
       <input
         id={id}
         className={inputCls}
@@ -448,6 +457,7 @@ function AutonomySection({ state, changes }: { state: WorkspaceState; changes: C
   return (
     <SettingsGroup
       label="Autonomy"
+      description="How far the orchestrator and its workers go on their own."
       keywords={["worker mode", "workers at once", "permission", "usage limit"]}
     >
       <AutonomyField

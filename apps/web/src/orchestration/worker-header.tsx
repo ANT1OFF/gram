@@ -222,16 +222,22 @@ function HoldChip({
         }
       >
         <Hand aria-hidden className="size-3 text-muted-foreground" />
-        <span className={cn(compact && "sr-only")}>You hold it</span>
+        <span className={cn(compact && "sr-only")}>You took over</span>
       </Hint>
-      <button
-        type="button"
-        data-testid={ghost ? undefined : "worker-hand-back"}
-        className="rounded-r-sm border-l border-border px-1 font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={release}
+      <Hint
+        label="Let the orchestrator message and direct this worker again"
+        side="bottom"
+        render={
+          <button
+            type="button"
+            data-testid={ghost ? undefined : "worker-hand-back"}
+            className="rounded-r-sm border-l border-border px-1 font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={release}
+          />
+        }
       >
         Hand back
-      </button>
+      </Hint>
     </span>
   );
 }
@@ -310,7 +316,7 @@ export function WorkerActions({
       ) : (
         actions.takeOver !== undefined && (
           <Hint
-            label="Hold it for you, as typing to it would"
+            label="Stop the orchestrator messaging this worker, so you can direct it yourself"
             side="bottom"
             render={
               <button

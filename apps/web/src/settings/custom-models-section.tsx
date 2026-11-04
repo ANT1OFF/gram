@@ -173,7 +173,7 @@ function CustomModelsEditor({
               </>
             }
           >
-            <Field label="Agent">
+            <Field label="Agent" description="Which CLI runs this model.">
               <Select
                 value={draft.agent}
                 items={AGENT_ITEMS}

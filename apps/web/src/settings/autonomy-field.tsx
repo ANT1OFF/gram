@@ -39,6 +39,7 @@ export function AutonomyField({
   return (
     <Field
       label="Autonomy"
+      description="What the orchestrator may do without asking you."
       learnMore={
         <>
           <p>{level.detail}</p>

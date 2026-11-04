@@ -174,7 +174,7 @@ export const workerFlags = (
 
 const PAUSE_REASON: Record<PauseReason, string> = {
   user: "Paused by you",
-  parked: "Paused while the orchestrator is parked",
+  parked: "Paused while the orchestrator is archived",
   deliveryFailed: "Paused: a digest could not be delivered",
 };
 

@@ -48,7 +48,11 @@ import {
   presentFileStatus,
   reviewSummary,
 } from "@/orchestration/memory-model";
-import { questionOutcome, workerQuestionCard } from "@/orchestration/question-card-model";
+import {
+  questionKind,
+  questionOutcome,
+  workerQuestionCard,
+} from "@/orchestration/question-card-model";
 import { OpenQuestion, useWorkerQuestionActions } from "@/orchestration/question-entry";
 import { StageChip } from "@/orchestration/stage-stepper";
 import { OutboundLink } from "@/panels/outbound-link";
@@ -680,7 +684,7 @@ export function WorkerQuestionCard({
   const status = questionStatusLine(question);
   return (
     <article
-      aria-label={`Question ${question.id}`}
+      aria-label={`${questionKind(question.id)} ${question.id}`}
       data-testid="worker-question-card"
       data-question={question.id}
       data-stage={question.stage}
@@ -693,13 +697,14 @@ export function WorkerQuestionCard({
         />
         <h3 className="font-medium">
           {inWorker ? (
-            <>Asked {question.id}</>
+            <>Asked a question</>
           ) : (
             <>
-              {question.id} from{" "}
+              {questionKind(question.id)} from{" "}
               <ThreadLink threadId={question.threadId}>{question.title}</ThreadLink>
             </>
-          )}
+          )}{" "}
+          <span className="font-mono font-normal text-muted-foreground">{question.id}</span>
         </h3>
         <span data-testid="question-status" className="ml-auto text-muted-foreground tabular-nums">
           {status}

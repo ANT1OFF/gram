@@ -61,7 +61,7 @@ export function CheckoutInUseNotice({
             ? "Gram opens one thread per worktree."
             : `Two threads in one ${place} can clobber each other's changes.`}
           {repo && " A new worktree gives this thread its own checkout."}
-          {users.some((user) => user.parked) && " Parked threads still use their checkout."}
+          {users.some((user) => user.parked) && " Archived threads still use their checkout."}
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {users.map((user) => (
@@ -72,7 +72,7 @@ export function CheckoutInUseNotice({
               variant="outline"
               onClick={() => open(user.threadId)}
             >
-              Open “{user.title}”{user.parked ? " (parked)" : ""}
+              Open “{user.title}”{user.parked ? " (archived)" : ""}
             </Button>
           ))}
           {repo && onUseNewWorktree && (

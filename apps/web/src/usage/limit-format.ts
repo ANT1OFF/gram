@@ -98,9 +98,9 @@ export const forecastText = (forecast: LimitForecast, intl: IntlOptions = {}): s
 const untilText = (until: number, now: number, intl: IntlOptions = {}): string =>
   `until ${resetText(until, now, intl)}`;
 
-/** "Held until 18:00": a held brief's line. */
+/** "Paused until 18:00": a held brief's line. */
 export const heldUntilText = (until: number, now: number, intl: IntlOptions = {}): string =>
-  `Held ${untilText(until, now, intl)}`;
+  `Paused ${untilText(until, now, intl)}`;
 
 type HeldWhen = Pick<HeldBrief, "until" | "waitsForSlot" | "retryAt">;
 

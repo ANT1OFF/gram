@@ -115,10 +115,13 @@ export function NotificationsSection() {
 
   return (
     <div className="flex flex-col gap-6" data-testid="notification-settings">
-      <SettingsGroup label="Desktop">
+      <SettingsGroup
+        label="Desktop"
+        description="Notifications from your operating system while Gram is in the background."
+      >
         <Toggle
           label="Desktop notifications"
-          description="Notify about asks and failures while the window isn't focused."
+          description="Notify about asks and failures while the window isn't in front."
           checked={notifications.native}
           onReset={resetOf("native")}
           error={errorOf("native")}
