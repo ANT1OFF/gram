@@ -1,8 +1,11 @@
-import { History } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useParams } from "@tanstack/react-router";
+import { History, Search } from "lucide-react";
 import { Fragment, useMemo } from "react";
 
 import { useApi } from "@/api/context";
-import { useHistoryStore } from "@/history/history-view";
+import { recentDone, recentWhen, OUTCOME_LABEL, type RecentDone } from "@/history/history-model";
+import { OUTCOME_GLYPH, useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { openExternalUrl } from "@/api/open-external";
 import { PrMarkIcon } from "@/components/pr-marks";
@@ -11,7 +14,12 @@ import { useOpenPrRows } from "@/reviews/open-prs";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { LimitBar, useLimitsNow } from "@/shell/usage-meter";
 import { cn } from "@/lib/utils";
+import { useNow } from "@/lib/use-now";
+import { useOpenThread } from "@/shell/thread-switcher";
 import { useLayoutStore } from "@/stores/layout";
+import { useThreadsStore } from "@/stores/threads";
+import { useSame } from "@/stores/use-same";
+import { RowMenuItems, rowMenuKeys, threadDragProps } from "@/thread/row-menu";
 import { limitSpent, useUsageLimits } from "@/stores/usage-limits";
 import { useViewWorkspace } from "@/views/view-workspace";
 
@@ -23,8 +31,9 @@ import {
   workerSlots,
   type OverviewPrRow,
 } from "./overview-extras-model";
-import { ROW, Section, STOP } from "./overview-section";
-import { useOrchestratorLedger } from "./use-orchestration";
+import { ROW, RowMenu, Section, STOP } from "./overview-section";
+import { useFinishedWorkerPages } from "./use-finished-workers";
+import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
 // The overview sidebar's extras: Pull requests, folded until opened and gone with nothing in it, the
 // way into History, and the usage meters and worker slots at its foot, off by default. Each reads
@@ -106,8 +115,114 @@ function PrRow({ row }: { row: OverviewPrRow }) {
 }
 
 /**
- * The way into History, where Done was: one line at the column's foot, out of the scroll so it is
- * always there, that opens every past chat in one searchable list.
+ * Search, written out under the Needs you pill so it is found without knowing its shortcut: it
+ * opens the command palette, which finds threads, workers and commands.
+ */
+export function OverviewSearch() {
+  const hint = useShortcutHint("palette.open");
+  const open = useLayoutStore((s) => s.paletteOpen);
+  return (
+    <button
+      type="button"
+      data-testid="overview-search"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-keyshortcuts={hint === "" ? undefined : hint}
+      title={withHint("Search threads, workers and commands", hint)}
+      onClick={() => useLayoutStore.getState().openPalette()}
+      className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--radius-sm) px-2.5 text-left text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+    >
+      <Search aria-hidden className="size-3.5 shrink-0" />
+      <span className="flex-1">Search</span>
+      {hint !== "" && <kbd className="font-sans text-xs tabular-nums">{hint}</kbd>}
+    </button>
+  );
+}
+
+/**
+ * Done: the few chats that finished last, each one muted line with no status under it, so they
+ * never compete with the live rows above. History, at the column's foot, has the rest.
+ */
+export function OverviewDone() {
+  const api = useApi();
+  const workspaces = useWorkspaces();
+  const ids = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
+  const ledgers = useOrchestratorLedgers(ids);
+  const { finished } = useFinishedWorkerPages(ids);
+  const { data: projects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api.listProjects(),
+  });
+  // Minute resolution is enough for the times rows show.
+  const now = useNow(true, undefined, 60_000);
+  const rows = useThreadsStore(
+    useSame((s) =>
+      recentDone({
+        workspaces: workspaces.map((state) => ({
+          workspaceId: state.workspace.id,
+          name: state.workspace.name,
+          ledger: ledgers.get(state.workspace.id),
+          finished: finished.get(state.workspace.id),
+        })),
+        summaries: Object.values(s.byId).flatMap((each) => (each ? [each] : [])),
+        projects: projects ?? NO_PROJECTS,
+        facts: { byId: s.byId, statusDetail: s.statusDetail, now },
+      }),
+    ),
+  );
+  if (rows.length === 0) return null;
+  return (
+    <Section id="doneToday" title="Done" count={rows.length}>
+      {rows.map((row) => (
+        <DoneRow key={row.threadId} row={row} now={now} />
+      ))}
+    </Section>
+  );
+}
+
+const NO_PROJECTS: readonly never[] = [];
+
+/** A finished chat: its outcome's glyph, its title and when, all muted until hovered. */
+function DoneRow({ row, now }: { row: RecentDone; now: number }) {
+  const openThread = useOpenThread();
+  const viewed = useParams({ strict: false }).threadId === row.threadId;
+  const glyph = row.outcome === undefined ? undefined : OUTCOME_GLYPH[row.outcome];
+  const word = row.outcome === undefined ? "finished" : OUTCOME_LABEL[row.outcome];
+  const when = recentWhen(row.finishedAt, now);
+  const Icon = glyph?.icon;
+  return (
+    <RowMenu menu={<RowMenuItems threadId={row.threadId} />}>
+      <button
+        type="button"
+        {...{ [STOP]: "" }}
+        {...threadDragProps(row.threadId)}
+        data-testid="overview-done"
+        data-thread-id={row.threadId}
+        data-outcome={row.outcome}
+        aria-current={viewed || undefined}
+        aria-label={`${row.title}, ${row.place}, ${word}${when === "" ? "" : `, ${when}`}`}
+        title={`${row.place} · ${word}`}
+        aria-keyshortcuts="Shift+F10"
+        onClick={() => openThread(row.threadId)}
+        onKeyDown={rowMenuKeys}
+        className={cn(
+          ROW,
+          "text-muted-foreground hover:text-foreground aria-current:bg-sidebar-row-active aria-current:text-foreground",
+        )}
+      >
+        <span aria-hidden className="flex justify-self-center">
+          {Icon !== undefined && <Icon className="size-3.5" />}
+        </span>
+        <span className="truncate">{row.title}</span>
+        <span className="text-xs tabular-nums">{when}</span>
+      </button>
+    </RowMenu>
+  );
+}
+
+/**
+ * The way into History: one line at the column's foot, under Done's few rows and out of the scroll
+ * so it is always there, that opens every past chat in one searchable list.
  */
 export function OverviewHistory() {
   const hint = useShortcutHint("history.open");
@@ -125,7 +240,7 @@ export function OverviewHistory() {
         className="flex h-8 w-full items-center gap-2 rounded-(--radius-sm) px-1.5 text-left text-[13px] text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
       >
         <History aria-hidden className="size-4 shrink-0" />
-        <span className="flex-1">History</span>
+        <span className="flex-1">Open History</span>
         {hint !== "" && <kbd className="font-sans text-xs tabular-nums">{hint}</kbd>}
       </button>
     </div>

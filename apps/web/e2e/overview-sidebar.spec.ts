@@ -432,11 +432,19 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
     overview(page).getByTestId(`overview-section-${id}`).getByRole("button", { name });
   const orchestrators = head("orchestrators", /Orchestrators/);
   const soloHead = head("solo", /Solo threads/);
-  // Pull requests comes after Solo threads, folded by default; History is at the column's foot,
-  // out of the list.
+  // Pull requests comes after Solo threads, folded by default, then Done's few rows, open; Open
+  // History is at the column's foot, out of the list.
   const prsHead = head("pullRequests", /Pull requests/);
+  const doneHead = head("doneToday", /Done/);
   await expect(prsHead).toHaveAttribute("aria-expanded", "false");
-  await expect(overview(page).getByTestId("overview-history")).toBeVisible();
+  await expect(doneHead).toHaveAttribute("aria-expanded", "true");
+  await expect(overview(page).getByTestId("overview-history")).toHaveText(/Open History/);
+  // End reaches Done's last row while it is open, its title once folded.
+  await doneHead.focus();
+  await page.keyboard.press("End");
+  await expect(overview(page).getByTestId("overview-done").last()).toBeFocused();
+  await doneHead.click();
+  await expect(doneHead).toHaveAttribute("aria-expanded", "false");
   await orchestrators.click();
   await expect(orchestrators).toHaveAttribute("aria-expanded", "false");
   await overview(page).getByTestId("overview-needs-you").focus();
@@ -445,9 +453,11 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   await expect(soloHead).toBeFocused();
   await page.keyboard.press("End");
+  await expect(doneHead).toBeFocused();
+  await page.keyboard.press("ArrowUp");
   await expect(prsHead).toBeFocused();
   // The folded Parked line is a stop of its own, the rows hidden under it are not. Solo threads
-  // marked done are in History, so no Done line follows it.
+  // marked done are in Done, so no line of their own follows it.
   await page.keyboard.press("ArrowUp");
   await expect(parkedLine(page)).toBeFocused();
   await page.keyboard.press("ArrowUp");
@@ -456,6 +466,8 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   await page.keyboard.press("Home");
   await soloHead.click();
   await page.keyboard.press("End");
+  await expect(doneHead).toBeFocused();
+  await page.keyboard.press("ArrowUp");
   await expect(prsHead).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(soloHead).toBeFocused();

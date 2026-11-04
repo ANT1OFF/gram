@@ -64,7 +64,13 @@ import { PAUSE_WORD, useWorkerPause, WorkerPauseMark, type WorkerPauseState } fr
 import { keepBeside } from "./beside-store";
 import { PrChip } from "./feature-card";
 import { RAIL_TONES } from "./feature-sheet";
-import { OverviewFoot, OverviewHistory, OverviewPullRequests } from "./overview-extras";
+import {
+  OverviewDone,
+  OverviewFoot,
+  OverviewHistory,
+  OverviewPullRequests,
+  OverviewSearch,
+} from "./overview-extras";
 import { ledgerSlotsText } from "./overview-extras-model";
 import {
   foldByKey,
@@ -274,10 +280,15 @@ export function OverviewSidebar() {
         onKeyDown={overviewKeys}
         className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-2 pt-1 pb-3 text-[13px]"
       >
-        <NeedsYou />
+        {/* What needs you, and the way to find anything else, as one block at the top. */}
+        <div className="flex flex-col gap-1">
+          <NeedsYou />
+          <OverviewSearch />
+        </div>
         <Orchestrators />
         {!hidden.includes("solo") && <SoloThreads />}
         {!hidden.includes("pullRequests") && <OverviewPullRequests />}
+        {!hidden.includes("doneToday") && <OverviewDone />}
       </div>
       {!hidden.includes("doneToday") && <OverviewHistory />}
       {!hidden.includes("usage") && <OverviewFoot />}
@@ -469,6 +480,12 @@ function WorkspaceRow({
   const hover = waiting === undefined ? summary : `${summary}\nOrchestrator: ${waiting.hint}`;
   const line = orchestratorLine(word, { working, asks });
   const name = state.workspace.name;
+  // Nothing under it, not even its orchestrator at work: one line, its name and "idle".
+  const orchestratorBusy = useThreadsStore(
+    (s) => workingOrchestrator(s, state.workspace) !== undefined,
+  );
+  const empty =
+    live === 0 && (ledger?.held?.length ?? 0) === 0 && !orchestratorBusy && word === "idle";
   // ← folds and → unfolds, as a tree row's do, and Shift+F10 opens its menu; anything else is the
   // overview's.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -524,7 +541,17 @@ function WorkspaceRow({
                 line.pulse && "gram-working",
               )}
             />
-            <span className="truncate font-medium">{name}</span>
+            <span className="flex min-w-0 items-baseline gap-1.5">
+              <span className="truncate font-medium">{name}</span>
+              {empty && (
+                <span
+                  data-testid="overview-workspace-idle"
+                  className="shrink-0 text-xs text-muted-foreground"
+                >
+                  · idle
+                </span>
+              )}
+            </span>
             <span className="flex items-center gap-1.5">
               {stateWordShown(word) && (
                 <span
@@ -576,16 +603,16 @@ function WorkspaceRow({
       </ContextMenu>
       <div id={bodyId} hidden={folded} className="flex flex-col">
         {/* The current one's are there folded too, for ⌘J to open it on its first worker. */}
-        {(here || !folded) && <WorkspaceBody workspaceId={id} />}
+        {(here || !folded) && <WorkspaceBody workspaceId={id} empty={empty} />}
       </div>
     </div>
   );
 }
 
 /** An open workspace's features and their live workers, from its cards. */
-function WorkspaceBody({ workspaceId }: { workspaceId: WorkspaceId }) {
+function WorkspaceBody({ workspaceId, empty }: { workspaceId: WorkspaceId; empty: boolean }) {
   const features = useOverviewFeatures(workspaceId);
-  return <WorkspaceFeatures workspaceId={workspaceId} features={features} />;
+  return <WorkspaceFeatures workspaceId={workspaceId} features={features} empty={empty} />;
 }
 
 /** The agent the workspace's orchestrator runs, which its workers' rows leave out when they share it. */
@@ -604,13 +631,17 @@ export const useOrchestratorAgent = (workspaceId: WorkspaceId): string | undefin
 function WorkspaceFeatures({
   workspaceId,
   features,
+  empty,
 }: {
   workspaceId: WorkspaceId;
   features: readonly OverviewFeature[];
+  /** Its line already says "idle": nothing more under it. */
+  empty: boolean;
 }) {
   const orchestratorAgent = useOrchestratorAgent(workspaceId);
   const items = useMemo(() => overviewItems(features), [features]);
   if (items.length === 0) {
+    if (empty) return null;
     return (
       <OrchestratorAtWork workspaceId={workspaceId} className="pb-1 pl-6">
         No workers now.
@@ -711,7 +742,9 @@ export function WorkerRow({
     onClick,
     onKeyDown: rowMenuKeys,
     ...threadDragProps(row.threadId),
-    className: cn(ROW, settled && SETTLED),
+    // Its title may take two lines, so a long one with an ask under it still reads whole; the dot
+    // and marks sit on its first line.
+    className: cn(ROW, "items-start", settled && SETTLED),
   };
   const body = (
     <>
@@ -720,12 +753,15 @@ export function WorkerRow({
         data-testid="overview-worker-dot"
         data-tone={tone}
         data-working={working || undefined}
-        className={cn("size-2 justify-self-center rounded-full", dot, working && "gram-working")}
+        className={cn(DOT_ON_FIRST_LINE, "rounded-full", dot, working && "gram-working")}
       />
-      <span data-testid="overview-worker-title" className="truncate text-foreground">
+      <span
+        data-testid="overview-worker-title"
+        className="line-clamp-2 [overflow-wrap:anywhere] text-foreground"
+      >
         {row.title}
       </span>
-      <span className="flex items-center gap-1.5 text-muted-foreground">
+      <span className="flex h-lh items-center gap-1.5 text-muted-foreground">
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
         {agent !== undefined && agent !== orchestratorAgent && (
           <AgentIcon agent={agent} className="size-3" />
@@ -738,7 +774,7 @@ export function WorkerRow({
       ) : waiting !== undefined ? (
         <WaitingLine waiting={waiting} testId="overview-worker-waiting" />
       ) : (
-        <WorkerNow row={row} asking={asking} />
+        <WorkerNow row={row} asking={asking} tone={tone} />
       )}
     </>
   );
@@ -790,9 +826,32 @@ export function WorkerRow({
   );
 }
 
-/** A worker's card now line under its title, when it says more than the row's dot. */
-function WorkerNow({ row, asking }: { row: OverviewWorkerRow; asking: boolean }) {
-  if (!nowLineShown(row)) return null;
+/** A row's 8 px dot, centred on its title's first line however many lines the title takes. */
+const DOT_ON_FIRST_LINE = "size-2 self-start justify-self-center mt-[calc((1lh-0.5rem)/2)]";
+
+/**
+ * A worker's card now line under its title, when it says more than the row's dot; else its tone in
+ * a word, so every live row keeps the same status line under its title.
+ */
+function WorkerNow({
+  row,
+  asking,
+  tone,
+}: {
+  row: OverviewWorkerRow;
+  asking: boolean;
+  tone: RailTone;
+}) {
+  if (!nowLineShown(row)) {
+    return (
+      <span
+        data-testid="overview-worker-state"
+        className="col-span-2 col-start-2 min-w-0 truncate text-xs text-muted-foreground"
+      >
+        {RAIL_TONES[tone].label}
+      </span>
+    );
+  }
   return (
     <Swap
       swapKey={row.now}
@@ -811,7 +870,7 @@ function WorkerNow({ row, asking }: { row: OverviewWorkerRow; asking: boolean })
 /** What a worker at work is doing, in one line; with no step to say, its now line. */
 function WorkerStep({ row }: { row: OverviewWorkerRow }) {
   const step = useWorkLine(row.threadId, row.report);
-  if (step === undefined) return <WorkerNow row={row} asking={false} />;
+  if (step === undefined) return <WorkerNow row={row} asking={false} tone="working" />;
   // The plan's step count only on hover: the row says what it does.
   const shown = steplessLine(step);
   return (
@@ -1233,8 +1292,12 @@ export function SoloRow({
   const detail = useThreadsStore((s) => s.statusDetail[thread.id]);
   const display = threadStatusOf(summary, detail);
   const title = threadDisplayTitle(thread);
-  const active = display.working ? `Last activity ${formatClockTime(thread.lastActivityAt)}` : "";
+  const lastActive = display.working
+    ? `Last activity ${formatClockTime(thread.lastActivityAt)}`
+    : "";
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
+  // At work or needing you, its title may take two lines; at rest, one.
+  const active = display.working || display.tone === "text-status-needs";
   return (
     <RowMenu menu={<RowMenuItems threadId={thread.id} />}>
       <button
@@ -1245,27 +1308,32 @@ export function SoloRow({
         data-thread-id={thread.id}
         aria-current={viewed || undefined}
         data-settled={faded || undefined}
-        aria-label={`${title}, ${display.label}${active === "" ? "" : `, ${active}`}`}
-        title={active === "" ? undefined : active}
+        aria-label={`${title}, ${display.label}${lastActive === "" ? "" : `, ${lastActive}`}`}
+        title={lastActive === "" ? undefined : lastActive}
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(thread.id)}
         onKeyDown={rowMenuKeys}
-        className={cn(ROW, "aria-current:bg-sidebar-row-active", faded && SETTLED)}
+        className={cn(ROW, "items-start aria-current:bg-sidebar-row-active", faded && SETTLED)}
       >
         <span
           aria-hidden
           data-working={display.working || undefined}
           className={cn(
-            "size-2 justify-self-center rounded-full bg-current",
+            DOT_ON_FIRST_LINE,
+            "rounded-full bg-current",
             // A dot is a mark, not words: needs-you takes its clean ui-grade amber.
             display.tone === "text-status-needs" ? "text-status-needs-mark" : display.tone,
             display.working && "gram-working",
           )}
         />
-        <span className="truncate">{title}</span>
+        <span className={active ? "line-clamp-2 [overflow-wrap:anywhere]" : "truncate"}>
+          {title}
+        </span>
         {!display.working && (
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {formatRelative(thread.lastActivityAt, now)}
+          <span className="flex h-lh items-center">
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {formatRelative(thread.lastActivityAt, now)}
+            </span>
           </span>
         )}
       </button>
