@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 import { slowdown } from "./slowdown";
+import { openPanelTab } from "./panel-tab";
 
 test("lists a thread's connectors, and reconnects, signs in to and toggles them", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
-  await panel.getByRole("tab", { name: "Connectors", exact: true }).click();
+  await openPanelTab(panel, "Connectors");
 
   const connectors = panel.getByTestId("connector");
   await expect(connectors).toHaveCount(7);
@@ -50,27 +51,26 @@ test("starts a cold thread's session as its Connectors tab opens, once, and list
   await page.goto("/t/t-grpc");
   await page.waitForFunction(() => window.gramMock !== undefined);
   const panel = page.getByTestId("right-panel");
-  const connectorsTab = panel.getByRole("tab", { name: "Connectors", exact: true });
   const filesTab = panel.getByRole("tab", { name: "Files", exact: true });
   const tab = panel.getByTestId("connectors-panel");
   const starts = () => page.evaluate(() => window.gramMock!.sessionStarts);
 
   // An archived thread stays as it is: the config is shown, and nothing starts.
-  await connectorsTab.click();
+  await openPanelTab(panel, "Connectors");
   await expect(tab).toContainText("Unarchive the thread to see its connectors live.");
   await expect(tab.getByTestId("connectors-snapshot")).toContainText("as of");
   expect(await starts()).toEqual([]);
 
   await filesTab.click();
   await page.evaluate(() => window.gramMock!.park("t-grpc" as never, false));
-  await connectorsTab.click();
+  await openPanelTab(panel, "Connectors");
   await expect(tab).toContainText("Starting the session…");
   await expect(tab.getByTestId("connector")).toHaveCount(7);
   expect(await starts()).toEqual(["t-grpc"]);
 
   // Flipping away and back starts nothing more.
   await filesTab.click();
-  await connectorsTab.click();
+  await openPanelTab(panel, "Connectors");
   await expect(tab.getByTestId("connector")).toHaveCount(7);
   expect(await starts()).toEqual(["t-grpc"]);
 });

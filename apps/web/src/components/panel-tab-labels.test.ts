@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { tabLabelFit, tabNamed, type TabWidths } from "./panel-tab-labels";
+import { tabFolds, tabLabelFit, tabNamed, type TabWidths } from "./panel-tab-labels";
 
 // Five 32 px tabs, 4 px apart: 176 px bare. Their names add 30 px each, 150 px in all. The first
 // two are primary and the third is open, so the primary tier names three: 90 px.
@@ -11,9 +11,15 @@ const tabs: TabWidths[] = [0, 1, 2, 3, 4].map((i) => ({
   primary: i < 2,
 }));
 
+/** The names and the action's words at `available` px, with 50 px of words. */
+const fit = (available: number) => {
+  const { tabs: named, action } = tabLabelFit(available, 4, tabs, 50);
+  return { tabs: named, action };
+};
+
 describe("tabLabelFit", () => {
   it("names every tab while they all fit", () => {
-    expect(tabLabelFit(327, 4, tabs)).toEqual({ tabs: "all", action: false });
+    expect(tabLabelFit(327, 4, tabs)).toEqual({ tabs: "all", action: false, fold: false });
   });
 
   it("names the primary tabs and the open one once every name no longer fits", () => {
@@ -38,12 +44,44 @@ describe("tabLabelFit", () => {
 
   it("keeps an action's words before any name but the open tab's", () => {
     // 50 px of words: every name with them needs 377 px.
-    expect(tabLabelFit(377, 4, tabs, 50)).toEqual({ tabs: "all", action: true });
-    expect(tabLabelFit(376, 4, tabs, 50)).toEqual({ tabs: "primary", action: true });
-    expect(tabLabelFit(316, 4, tabs, 50)).toEqual({ tabs: "active", action: true });
+    expect(fit(377)).toEqual({ tabs: "all", action: true });
+    expect(fit(376)).toEqual({ tabs: "primary", action: true });
+    expect(fit(316)).toEqual({ tabs: "active", action: true });
     // Short of the open name and the words, the words fold first, then the other names.
-    expect(tabLabelFit(256, 4, tabs, 50)).toEqual({ tabs: "active", action: false });
-    expect(tabLabelFit(206, 4, tabs, 50)).toEqual({ tabs: "none", action: false });
+    expect(fit(256)).toEqual({ tabs: "active", action: false });
+    expect(fit(206)).toEqual({ tabs: "none", action: false });
+  });
+});
+
+describe("folding into More", () => {
+  // The last two tabs are rare and closed: folded, a 40 px More takes their 68 px.
+  it("never folds while every name fits", () => {
+    expect(tabLabelFit(327, 4, tabs, 0, 40).fold).toBe(false);
+  });
+
+  it("folds the rarer tabs once not every name fits, if More takes less room", () => {
+    // Primary, folded: three tabs (104 px with gaps) and their 90 px of names, then More.
+    expect(tabLabelFit(326, 4, tabs, 0, 40)).toEqual({
+      tabs: "primary",
+      action: false,
+      fold: true,
+    });
+    expect(tabLabelFit(235, 4, tabs, 0, 40)).toEqual({
+      tabs: "primary",
+      action: false,
+      fold: true,
+    });
+    // A More wider than what it would hold stays away.
+    expect(tabLabelFit(326, 4, tabs, 0, 200).fold).toBe(false);
+  });
+
+  it("keeps the open tab and a pinned one out of More, and never folds a primary one", () => {
+    expect(tabFolds({ primary: false, active: false })).toBe(true);
+    expect(tabFolds({ primary: false, active: true })).toBe(false);
+    expect(tabFolds({ primary: false, active: false, pinned: true })).toBe(false);
+    expect(tabFolds({ primary: true, active: false })).toBe(false);
+    const pinned = tabs.map((t) => ({ ...t, pinned: true }));
+    expect(tabLabelFit(326, 4, pinned, 0, 40).fold).toBe(false);
   });
 });
 

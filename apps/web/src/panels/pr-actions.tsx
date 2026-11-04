@@ -2,6 +2,7 @@ import type { MergeStrategy, PrDetail, ThreadId } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Menu } from "@base-ui/react/menu";
 import {
+  Ban,
   Copy,
   Ellipsis,
   GitMerge,
@@ -10,7 +11,7 @@ import {
   Link2,
   RefreshCcw,
 } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { useApi } from "@/api/context";
 import type { MergeMarkKind } from "@/components/pr-marks-model";
@@ -33,6 +34,32 @@ const ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground [&_svg]:size-3.5 [&_svg]:shrink-0";
 
 /**
+ * Why merging an open PR wouldn't go through yet, as GitHub's merge state and the PR's reviews and
+ * checks say, "Blocked: changes requested, 1 failing check"; `undefined` when nothing stands in
+ * the way that the panel knows of.
+ */
+export function mergeBlockedReason(
+  detail: Pick<PrDetail, "reviewDecision" | "checkRuns">,
+  merge: MergeMarkKind | undefined,
+): string | undefined {
+  const parts: string[] = [];
+  if (merge === "conflicts") parts.push("conflicts");
+  if (detail.reviewDecision === "CHANGES_REQUESTED") parts.push("changes requested");
+  const failing = detail.checkRuns.filter(
+    (run) => run.status === "failing" && run.conclusion?.toUpperCase() !== "CANCELLED",
+  ).length;
+  if (failing > 0) parts.push(failing === 1 ? "1 failing check" : `${failing} failing checks`);
+  if (parts.length === 0 && merge === "blocked") {
+    parts.push(
+      detail.reviewDecision === "REVIEW_REQUIRED"
+        ? "review required"
+        : "required reviews or checks are missing",
+    );
+  }
+  return parts.length === 0 ? undefined : `Blocked: ${parts.join(", ")}`;
+}
+
+/**
  * The PR's one main action (Merge, Ready for review or Reopen) and a "…" menu with the rest: draft,
  * binding another PR, copying the link and closing. Merging and closing confirm first.
  */
@@ -40,13 +67,17 @@ export function PrActions({
   threadId,
   detail,
   onBind,
+  merge,
 }: {
   threadId: ThreadId;
   detail: PrDetail;
   /** Opens the form that binds the thread to another PR; no menu item without it. */
   onBind?: (() => void) | undefined;
+  /** Where GitHub says the merge stands, from the thread's PR badge. */
+  merge?: MergeMarkKind | undefined;
 }) {
   const api = useApi();
+  const reasonId = useId();
   const queryClient = useQueryClient();
   const action = useReviewAction();
   const [confirming, setConfirming] = useState<"merge" | "close">();
@@ -65,6 +96,7 @@ export function PrActions({
     });
 
   const open = detail.state === "OPEN";
+  const blocked = open && !detail.isDraft ? mergeBlockedReason(detail, merge) : undefined;
   const more = (
     <Menu.Root>
       <Menu.Trigger
@@ -148,7 +180,16 @@ export function PrActions({
                 Ready for review
               </Button>
             ) : (
-              <Button size="xs" disabled={action.pending} onClick={() => setConfirming("merge")}>
+              // Blocked, Merge steps back to a secondary button and says why; it still opens, for
+              // auto-merge or a merge the panel can't foresee GitHub allowing.
+              <Button
+                size="xs"
+                variant={blocked === undefined ? "default" : "outline"}
+                aria-describedby={blocked === undefined ? undefined : reasonId}
+                data-blocked={blocked !== undefined}
+                disabled={action.pending}
+                onClick={() => setConfirming("merge")}
+              >
                 <GitMerge aria-hidden />
                 Merge…
               </Button>
@@ -156,6 +197,16 @@ export function PrActions({
           </div>
         )}
         {more}
+        {blocked !== undefined && (
+          <span
+            id={reasonId}
+            data-testid="pr-merge-blocked"
+            className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+          >
+            <Ban aria-hidden className="size-3.5 shrink-0" />
+            {blocked}
+          </span>
+        )}
       </div>
       {confirming === undefined && <Notice notice={action.notice} />}
       {confirming === "merge" && (

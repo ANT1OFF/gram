@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mockPrDetail } from "@/api/mock-git";
 
-import { PrActions } from "./pr-actions";
+import { mergeBlockedReason, PrActions } from "./pr-actions";
 import { renderWithApi } from "./test-utils";
 
 const T = "t-flaky" as ThreadId;
@@ -134,5 +134,65 @@ describe("PrActions", () => {
     expect(items.map((item) => item.textContent)).toEqual(["Bind another PR…", "Copy PR link"]);
     fireEvent.click(items[0]!);
     expect(onBind).toHaveBeenCalled();
+  });
+});
+
+describe("mergeBlockedReason", () => {
+  const failing = { name: "test", status: "failing", conclusion: "FAILURE", link: "" } as const;
+  const passing = { name: "lint", status: "passing", conclusion: "SUCCESS", link: "" } as const;
+
+  it("says what blocks the merge: conflicts, changes requested and failing checks", () => {
+    expect(
+      mergeBlockedReason(
+        { reviewDecision: "CHANGES_REQUESTED", checkRuns: [failing, passing] },
+        "blocked",
+      ),
+    ).toBe("Blocked: changes requested, 1 failing check");
+    expect(
+      mergeBlockedReason({ reviewDecision: "", checkRuns: [failing, failing] }, "conflicts"),
+    ).toBe("Blocked: conflicts, 2 failing checks");
+  });
+
+  it("names a missing review when GitHub blocks for nothing else the panel sees", () => {
+    expect(
+      mergeBlockedReason({ reviewDecision: "REVIEW_REQUIRED", checkRuns: [] }, "blocked"),
+    ).toBe("Blocked: review required");
+    expect(mergeBlockedReason({ reviewDecision: "", checkRuns: [passing] }, "blocked")).toBe(
+      "Blocked: required reviews or checks are missing",
+    );
+  });
+
+  it("leaves a mergeable PR, and a cancelled check, unblocked", () => {
+    const cancelled = { ...failing, conclusion: "CANCELLED" } as const;
+    expect(
+      mergeBlockedReason({ reviewDecision: "APPROVED", checkRuns: [passing] }, "mergeable"),
+    ).toBe(undefined);
+    expect(mergeBlockedReason({ reviewDecision: "", checkRuns: [cancelled] }, undefined)).toBe(
+      undefined,
+    );
+  });
+});
+
+describe("PrActions when blocked", () => {
+  it("steps Merge back to a secondary button described by the reason, and still opens it", async () => {
+    renderWithApi(<PrActions threadId={T} detail={detail()} merge="blocked" />, {
+      prMergeOptions: options(),
+    });
+    const merge = screen.getByRole("button", { name: "Merge…" });
+    expect(merge.dataset["blocked"]).toBe("true");
+    const reason = screen.getByTestId("pr-merge-blocked");
+    expect(reason.textContent).toBe("Blocked: changes requested, 1 failing check");
+    expect(merge.getAttribute("aria-describedby")).toBe(reason.id);
+    fireEvent.click(merge);
+    await screen.findByTestId("pr-merge-dialog");
+  });
+
+  it("keeps Merge primary for a PR nothing blocks", () => {
+    const clear = { ...detail(), reviewDecision: "APPROVED", checkRuns: [] };
+    renderWithApi(<PrActions threadId={T} detail={clear} merge="mergeable" />, {
+      prMergeOptions: options(),
+    });
+    expect(screen.getByRole("button", { name: "Merge…" }).dataset["blocked"]).toBe("false");
+    expect(screen.queryByTestId("pr-merge-blocked")).toBeNull();
   });
 });

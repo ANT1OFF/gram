@@ -4,6 +4,7 @@ import { openOrchestrator, pressFirstWorkspaceKey, threadRow } from "../e2e/thre
 import { seedNativeUpdate } from "../e2e/native-update-fixture";
 import { seedDesktopShell } from "../e2e/desktop-shell-fixture";
 import { openOverviewDensity } from "../e2e/overview-density";
+import { openPanelTab } from "../e2e/panel-tab";
 
 // The screens `bun run --filter @gram/web pr:shots` can capture for a PR's before/after images.
 // The working tree's list drives both runs: the base checkout serves the app, these drive it. So a
@@ -2129,7 +2130,7 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await page.goto("/t/t-deps");
       const panel = page.getByTestId("right-panel");
-      await panel.getByRole("tab", { name: "Connectors", exact: true }).click();
+      await openPanelTab(panel, "Connectors");
       // Before: the bare empty state. After: the reason, over the agent's configured servers.
       await panel
         .getByText("Start the thread to see its connectors.")
