@@ -116,12 +116,12 @@ export function LocalHelperSettings({
         description="Models come from your installed CLI and its login."
         keywords={["refresh", "status"]}
         detail={
-          <p role="status" className="text-xs text-muted-foreground">
-            {retryError ??
-              (status?.lastOutcome
-                ? `Last attempt: ${status.lastOutcome}`
-                : "Uses the installed CLI and its existing login.")}
-          </p>
+          // The last attempt, or why a refresh failed; nothing to add before either.
+          retryError !== undefined || status?.lastOutcome !== undefined ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              {retryError ?? `Last attempt: ${status?.lastOutcome}`}
+            </p>
+          ) : undefined
         }
       >
         <Tooltip>

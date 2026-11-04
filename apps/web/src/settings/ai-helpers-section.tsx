@@ -214,7 +214,7 @@ export function AiHelpersSection() {
       >
         <Toggle
           label="Use the helper model"
-          description="Titles, plans, recaps and reply suggestions through your chosen harness."
+          description="Titles, plans, recaps and reply suggestions, made in the background."
           keywords={["ai", "helper", "llm", "off switch", "privacy"]}
           checked={on}
           onReset={resetOf("enabled")}
