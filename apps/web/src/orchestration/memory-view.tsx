@@ -14,8 +14,6 @@ import {
   BookOpenText,
   CircleHelp,
   FilePlus2,
-  FileText,
-  History,
   Network,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -24,6 +22,7 @@ import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { agoText } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -35,15 +34,24 @@ import { formatBytes } from "@/thread/orchestration-model";
 
 import { DreamsSection } from "./dreams-section";
 import { InlineConfirm } from "./inline-confirm";
-import { memoryIsEmpty, memoryPathProblem, memorySize, QUESTIONS_FILE } from "./memory-model";
+import {
+  memoryCapFor,
+  memoryIsEmpty,
+  memoryPathProblem,
+  memorySize,
+  QUESTIONS_FILE,
+} from "./memory-model";
 import { useOpenBoard } from "./open-board";
 import { ClosedQuestion, OpenQuestionList } from "./question-entry";
 import { useQuestions } from "./use-board-actions";
 import { useFocusOnOpen } from "./use-focus-on-open";
 import { useWorkspacesQuery } from "./use-orchestration";
 
-const SECTION = "flex flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3";
-const HEADING = "flex items-center gap-1.5 text-sm font-medium";
+const SECTION = "flex flex-col gap-3 rounded-(--radius-md) border border-border bg-card/40 p-3";
+/** A tab's one line on what it is for, beside its action. */
+const LEAD = "min-w-0 flex-1 text-xs text-muted-foreground";
+/** A size beside its cap, the cap as short as it reads: 32 KB, not 32.0 KB. */
+const capText = (cap: number): string => `${cap / 1024} KB`;
 const INPUT =
   "rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
@@ -71,19 +79,28 @@ function Questions({ state }: { state: WorkspaceState }) {
       data-testid="memory-questions"
       className={SECTION}
     >
-      <h2 className={HEADING}>
-        <CircleHelp aria-hidden className="size-4 text-status-needs-mark" />
-        Decisions to make
-        <span className="font-normal text-muted-foreground tabular-nums">
-          <NumberTicker value={open.length} />
-        </span>
-      </h2>
-      {open.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          None. The orchestrator asks with <code>ask_user</code>, keeps its questions in{" "}
-          {QUESTIONS_FILE}, and open ones show here.
-        </p>
-      ) : (
+      <h2 className="sr-only">Decisions to make</h2>
+      <p className={LEAD}>
+        {open.length === 0 ? (
+          <>
+            None. The orchestrator asks with <code>ask_user</code>, keeps its questions in{" "}
+            {QUESTIONS_FILE}, and open ones show here.
+          </>
+        ) : (
+          <>
+            <CircleHelp
+              aria-hidden
+              className="me-1 inline size-3.5 align-[-2px] text-status-needs-mark"
+            />
+            The orchestrator is waiting on{" "}
+            <span className="tabular-nums">
+              <NumberTicker value={open.length} />
+            </span>{" "}
+            {open.length === 1 ? "answer" : "answers"} from you. Each goes straight to it.
+          </>
+        )}
+      </p>
+      {open.length > 0 && (
         <OpenQuestionList
           questions={open}
           workspaceId={state.workspace.id}
@@ -284,7 +301,7 @@ function FileEditor({
         }
       >
         Delete {path} from memory? The orchestrator stops seeing it at once. The last adopted
-        version still has it, under Versions.
+        version still has it, under History.
       </InlineConfirm>
     </div>
   );
@@ -371,14 +388,14 @@ function Files({
 
   return (
     <section ref={ref} aria-label="Memory files" data-testid="memory-files" className={SECTION}>
-      <h2 className={HEADING}>
-        <FileText aria-hidden className="size-4 text-muted-foreground" />
-        Files
-        <span className="font-normal text-muted-foreground tabular-nums">{files.length}</span>
+      <h2 className="sr-only">Files</h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className={LEAD}>
+          What the orchestrator starts every session from. It writes here as it learns; so can you.
+        </p>
         <Button
           size="xs"
           variant="outline"
-          className="ml-auto"
           data-testid="memory-new"
           aria-expanded={creating}
           onClick={() => setCreating(!creating)}
@@ -386,11 +403,7 @@ function Files({
           <FilePlus2 data-icon="inline-start" />
           New file
         </Button>
-      </h2>
-      <p className="text-xs text-muted-foreground">
-        What the orchestrator starts every session from. It writes here as it learns; so can you.
-        Files hold at most 32 KB, and MEMORY.md, the index it always reads, 8 KB.
-      </p>
+      </div>
       <ExpandPresence open={creating}>
         <NewFileForm
           existing={paths}
@@ -404,7 +417,7 @@ function Files({
         />
       </ExpandPresence>
       <div className="flex min-w-0 flex-col gap-3 md:flex-row">
-        <ul aria-label="Files" className="flex shrink-0 flex-col gap-0.5 md:w-64">
+        <ul aria-label="Files" className="flex shrink-0 flex-col gap-0.5 md:w-72">
           <PresenceList>
             {files.map((file) => (
               <PresenceItem as="li" key={file.path} glide>
@@ -420,8 +433,21 @@ function Files({
                   )}
                 >
                   <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
-                  <span className="shrink-0 text-muted-foreground tabular-nums">
+                  <span
+                    data-testid="memory-file-size"
+                    title={`${formatBytes(file.bytes)} of the ${capText(memoryCapFor(file.path))} this file may hold`}
+                    className={cn(
+                      "shrink-0 tabular-nums",
+                      file.bytes > memoryCapFor(file.path)
+                        ? "text-destructive"
+                        : "text-muted-foreground",
+                    )}
+                  >
                     {formatBytes(file.bytes)}
+                    <span className="text-muted-foreground/70">
+                      {" "}
+                      / {capText(memoryCapFor(file.path))}
+                    </span>
                   </span>
                   <span className="w-12 shrink-0 text-right text-muted-foreground tabular-nums">
                     {agoText(file.modifiedAt, now).replace(" ago", "")}
@@ -536,13 +562,10 @@ function Versions({ workspaceId }: { workspaceId: WorkspaceId }) {
   });
   return (
     <section ref={ref} aria-label="Versions" data-testid="memory-versions" className={SECTION}>
-      <h2 className={HEADING}>
-        <History aria-hidden className="size-4 text-muted-foreground" />
-        Versions
-      </h2>
-      <p className="text-xs text-muted-foreground">
-        Adopting a dream makes a new version. The last few are kept, so an adoption you regret is
-        one Restore away.
+      <h2 className="sr-only">Versions</h2>
+      <p className={LEAD}>
+        Each adopted update makes a new version of memory. The last few are kept, so an update you
+        regret is one Restore away.
       </p>
       {versions.error ? (
         <QueryError error={versions.error} feature="Memory versions" />
@@ -562,9 +585,55 @@ function Versions({ workspaceId }: { workspaceId: WorkspaceId }) {
   );
 }
 
+/** The Memory view's tabs. */
+type MemoryTab = "files" | "decisions" | "history" | "update";
+
 /**
- * A workspace's memory: the questions the orchestrator left open, the
- * files it starts every session from, the versions kept, and the dreams that rewrite them. Reached
+ * Update memory's mark on its tab: amber while a finished run waits for your review, the working
+ * colour while one runs, nothing otherwise.
+ */
+function UpdateTabMark({ workspaceId }: { workspaceId: WorkspaceId }) {
+  const api = useApi();
+  const dreams = useQuery({
+    queryKey: ["dreams", workspaceId, "list"],
+    queryFn: () => api.listDreams(workspaceId),
+    retry: false,
+  });
+  const list = dreams.data ?? [];
+  const waiting = list.filter(
+    (dream) =>
+      dream.status === "completed" &&
+      dream.adoptedVersion === undefined &&
+      // An Auto run waits on nobody, unless its adoption stopped and handed it to you.
+      (dream.mode !== "auto" || dream.adoptionFailure !== undefined),
+  ).length;
+  const running = list.some((dream) => dream.status === "running" || dream.status === "pending");
+  if (waiting > 0) {
+    return (
+      <span
+        data-testid="memory-tab-update-waiting"
+        className="ms-1.5 inline-flex items-center gap-1 font-normal text-status-needs tabular-nums"
+      >
+        <span aria-hidden className="size-1.5 rounded-full bg-status-needs-mark" />
+        {waiting}
+        <span className="sr-only"> to review</span>
+      </span>
+    );
+  }
+  if (running) {
+    return (
+      <span
+        aria-label="running"
+        className="ms-1.5 inline-block size-1.5 rounded-full bg-status-working"
+      />
+    );
+  }
+  return null;
+}
+
+/**
+ * A workspace's memory, in four tabs: the files it starts every session from, the questions the
+ * orchestrator left open, the versions kept, and the runs (Dreams) that draft updates to it. Reached
  * from the board and from the orchestrator's banner; a page of its own because the right panel's
  * tabs are a contract, and this belongs to a workspace rather than to the thread the panel follows.
  */
@@ -586,7 +655,21 @@ export function MemoryView({
     retry: false,
   });
   const [starting, setStarting] = useState<DreamKind>();
-  // `#questions` from the board's chip: the section exists only once the workspace has loaded.
+  // A dream's review opens on Update memory, and `#questions` from the board's chip on Decisions.
+  const [tab, setTab] = useState<MemoryTab>(() =>
+    reviewing !== undefined
+      ? "update"
+      : window.location.hash === "#questions"
+        ? "decisions"
+        : "files",
+  );
+  const [reviewingSeen, setReviewingSeen] = useState(reviewing);
+  if (reviewing !== reviewingSeen) {
+    setReviewingSeen(reviewing);
+    if (reviewing !== undefined) setTab("update");
+  }
+  const openQuestions = useQuestions(workspaceId).filter((question) => question.open).length;
+  // The section exists only once the workspace has loaded.
   const ready = state !== undefined;
   useEffect(() => {
     if (ready && window.location.hash === "#questions") {
@@ -662,39 +745,87 @@ export function MemoryView({
           </Button>
         </div>
       </header>
-      <div className="flex flex-col gap-3 p-4">
-        {empty && starting === undefined && (
-          <p
-            data-testid="memory-import-offer"
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
-          >
-            This workspace's memory is empty. An import drafts it from your past sessions in these
-            repos; you see what it would read, and what that costs, before anything runs.
-            <button
-              type="button"
-              className="rounded-sm text-foreground underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setStarting("import")}
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value as MemoryTab)}
+        // Its own height, so the tab bar stays stuck over the whole of a long tab.
+        className="flex-none"
+      >
+        <TabsList
+          aria-label="Memory"
+          data-testid="memory-tabs"
+          className="sticky top-0 z-10 bg-thread px-4"
+        >
+          <TabsTrigger value="files" data-testid="memory-tab-files">
+            Files
+            {files.data !== undefined && (
+              <span className="ms-1 font-normal text-muted-foreground tabular-nums">
+                {files.data.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="decisions" data-testid="memory-tab-decisions">
+            Decisions
+            {openQuestions > 0 && (
+              <span className="ms-1.5 inline-flex items-center gap-1 font-normal text-status-needs tabular-nums">
+                <span aria-hidden className="size-1.5 rounded-full bg-status-needs-mark" />
+                {openQuestions}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="history" data-testid="memory-tab-history">
+            History
+          </TabsTrigger>
+          <TabsTrigger value="update" data-testid="memory-tab-update">
+            Update memory
+            <UpdateTabMark workspaceId={workspaceId} />
+          </TabsTrigger>
+        </TabsList>
+        <div className="flex flex-col gap-3 p-4">
+          {empty && starting === undefined && tab !== "update" && (
+            <p
+              data-testid="memory-import-offer"
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
             >
-              Import history…
-            </button>
-          </p>
-        )}
-        <Questions state={state} />
-        {files.error ? (
-          <QueryError error={files.error} feature="Memory" />
-        ) : files.data === undefined ? (
-          <PanelMessage loading>Reading memory…</PanelMessage>
-        ) : (
-          <Files workspaceId={workspaceId} files={files.data} />
-        )}
-        <Versions workspaceId={workspaceId} />
-        <DreamsSection
-          state={state}
-          reviewing={reviewing}
-          starting={starting}
-          onStartingChange={setStarting}
-        />
-      </div>
+              This workspace's memory is empty. An import drafts it from your past sessions in these
+              repos; you see what it would read, and what that costs, before anything runs.
+              <button
+                type="button"
+                className="rounded-sm text-foreground underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  setStarting("import");
+                  setTab("update");
+                }}
+              >
+                Import history…
+              </button>
+            </p>
+          )}
+          <TabsContent value="files">
+            {files.error ? (
+              <QueryError error={files.error} feature="Memory" />
+            ) : files.data === undefined ? (
+              <PanelMessage loading>Reading memory…</PanelMessage>
+            ) : (
+              <Files workspaceId={workspaceId} files={files.data} />
+            )}
+          </TabsContent>
+          <TabsContent value="decisions">
+            <Questions state={state} />
+          </TabsContent>
+          <TabsContent value="history">
+            <Versions workspaceId={workspaceId} />
+          </TabsContent>
+          <TabsContent value="update">
+            <DreamsSection
+              state={state}
+              reviewing={reviewing}
+              starting={starting}
+              onStartingChange={setStarting}
+            />
+          </TabsContent>
+        </div>
+      </Tabs>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { ReactNode, Ref } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 
 import {
   Select,
@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import type { SettingsAnchor } from "./general-anchors";
 import type { SettingsGroupId, SettingsNavGroup } from "./pages";
 
 /**
@@ -19,6 +20,7 @@ import type { SettingsGroupId, SettingsNavGroup } from "./pages";
 export function SettingsNav({
   groups,
   current,
+  sections,
   badges,
   headingRef,
   search,
@@ -27,6 +29,8 @@ export function SettingsNav({
   groups: readonly SettingsNavGroup[];
   /** The open group's id. */
   current: SettingsGroupId | undefined;
+  /** The open page's subsections, linked under its group; none while searching or on a sub-page. */
+  sections?: readonly SettingsAnchor[] | undefined;
   /** Extra content after a group's label, keyed by its id, such as the update dot. */
   badges?: Readonly<Partial<Record<SettingsGroupId, ReactNode>>>;
   /** The "Settings" heading, focusable from script (tabIndex -1). */
@@ -67,6 +71,9 @@ export function SettingsNav({
                   <span className="ms-auto flex items-center">{badges[group.id]}</span>
                 )}
               </Link>
+              {group.id === current && sections !== undefined && sections.length > 0 && (
+                <SectionLinks sections={sections} />
+              )}
             </li>
           );
         })}
@@ -112,4 +119,95 @@ function SectionPicker({
       </Select>
     </div>
   );
+}
+
+/**
+ * The open page's subsections under its link: a click scrolls to one, and the one at the top of
+ * the page is marked as you scroll.
+ */
+function SectionLinks({ sections }: { sections: readonly SettingsAnchor[] }) {
+  const [active, pick] = useActiveSection(sections);
+  return (
+    <ul
+      aria-label="On this page"
+      data-testid="settings-page-sections"
+      className="mt-0.5 mb-1 ms-[1.1875rem] flex flex-col border-s border-border/70 ps-1.5"
+    >
+      {sections.map((section) => (
+        <li key={section.id}>
+          <a
+            href={`#${section.id}`}
+            aria-current={section.id === active ? "location" : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              document.getElementById(section.id)?.scrollIntoView({ block: "start" });
+              pick(section.id);
+            }}
+            className="block rounded-md px-2 py-0.5 text-[0.8125rem] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=location]:text-foreground"
+          >
+            {section.label}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** How far below the scroller's top a subsection's top may be and still count as reached. */
+const REACHED = 48;
+
+/** The nearest ancestor that scrolls vertically, which is the page's own scroller. */
+const scrollerOf = (element: HTMLElement): HTMLElement | undefined => {
+  for (let at = element.parentElement; at !== null; at = at.parentElement) {
+    const overflow = getComputedStyle(at).overflowY;
+    if (overflow === "auto" || overflow === "scroll") return at;
+  }
+  return undefined;
+};
+
+/**
+ * The subsection whose top was last scrolled up to the top of the page, read on any scroll since
+ * the page's scroller is the layout's and its groups may arrive after the nav. One picked from the
+ * nav stays marked until the next scroll of its own, as the page's foot may stop short of it.
+ */
+function useActiveSection(
+  sections: readonly SettingsAnchor[],
+): [string | undefined, (id: string) => void] {
+  const [active, setActive] = useState(sections[0]?.id);
+  const picked = useRef<{ id: string; at: number }>(undefined);
+  useEffect(() => {
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const targets = sections
+        .map((section) => document.getElementById(section.id))
+        .filter((target): target is HTMLElement => target !== null);
+      const first = targets[0];
+      if (first === undefined) return;
+      const top = scrollerOf(first)?.getBoundingClientRect().top ?? 0;
+      let current = first.id;
+      for (const target of targets) {
+        if (target.getBoundingClientRect().top <= top + REACHED) current = target.id;
+      }
+      setActive(current);
+    };
+    const schedule = () => {
+      // The scroll a pick itself makes lands within a frame or two; a later one is the user's.
+      const pick = picked.current;
+      if (pick !== undefined && performance.now() - pick.at < 250) return;
+      picked.current = undefined;
+      if (frame === 0) frame = requestAnimationFrame(read);
+    };
+    document.addEventListener("scroll", schedule, { capture: true, passive: true });
+    frame = requestAnimationFrame(read);
+    return () => {
+      document.removeEventListener("scroll", schedule, { capture: true });
+      cancelAnimationFrame(frame);
+    };
+  }, [sections]);
+  const pick = useCallback((id: string) => {
+    picked.current = { id, at: performance.now() };
+    setActive(id);
+  }, []);
+  return [active, pick];
 }

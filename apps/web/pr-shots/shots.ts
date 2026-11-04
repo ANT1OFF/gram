@@ -924,7 +924,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "settings-window",
-    title: "Settings → General → Window in the macOS shell, Open at login waiting for approval",
+    title: "Settings → General → Launch in the macOS shell, Open at login waiting for approval",
     open: async (page) => {
       await seedDesktopShell(page, {
         keepInTray: true,
@@ -935,7 +935,7 @@ export const SHOTS: readonly Shot[] = [
       await page.getByRole("switch", { name: "Show in menu bar" }).waitFor();
       await page.waitForTimeout(300);
     },
-    element: (page) => page.getByRole("region", { name: "Window" }),
+    element: (page) => page.getByRole("region", { name: "Launch" }),
   },
   {
     name: "settings-notification-delivery",

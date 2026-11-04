@@ -36,6 +36,13 @@ const openMemory = async (page: Page) => {
   return made;
 };
 
+/** Opens one of the Memory view's tabs. */
+const memoryTab = (page: Page, name: "Files" | "Decisions" | "History" | "Update memory") =>
+  page
+    .getByTestId("memory-tabs")
+    .getByRole("tab", { name: new RegExp(`^${name}`) })
+    .click();
+
 /** Explicit synthetic account/CLI state; this never grants Dream feature support. */
 const seedDreamAccount = (page: Page, selected: boolean) =>
   page.addInitScript((hasDefault) => {
@@ -96,6 +103,7 @@ const openMemoryWithDreamHarness = async (page: Page) => {
       return observation;
     };
   }, CLAUDE_DREAM_POLICY);
+  await memoryTab(page, "Update memory");
   return made;
 };
 
@@ -193,7 +201,8 @@ test("memory files are read, edited within their caps, deleted, and a version is
   await expect(files).toHaveCount(5);
   await expect(view.getByTestId("memory-editor")).toHaveCount(0);
 
-  // Versions: the adopted one is marked, and restoring another asks first.
+  // Versions, under History: the adopted one is marked, and restoring another asks first.
+  await memoryTab(page, "History");
   const versions = view.getByTestId("memory-version");
   await expect(versions).toHaveCount(2);
   await expect(versions.first()).toHaveAttribute("data-version", "0002");
@@ -205,8 +214,10 @@ test("memory files are read, edited within their caps, deleted, and a version is
   );
   await versions.last().getByRole("button", { name: "Restore 0001" }).click();
   await expect(versions.last().getByTestId("memory-version-current")).toBeVisible();
+  await memoryTab(page, "Files");
   await expect(files).toHaveCount(3);
   // The questions lived in the version that is no longer current.
+  await memoryTab(page, "Decisions");
   await expect(view.getByTestId("memory-questions")).toContainText("None.");
 });
 
@@ -214,6 +225,7 @@ test("an answer picks a choice or says it in words, closes the question, and rea
   page,
 }) => {
   const made = await openMemory(page);
+  await memoryTab(page, "Decisions");
   const section = page.getByTestId("memory-questions");
   const questions = section.getByTestId("memory-question");
   await expect(questions).toHaveCount(2);
@@ -348,6 +360,7 @@ for (const selected of [false, true]) {
         return start(...args);
       };
     });
+    await memoryTab(page, "Update memory");
     const dreams = page.getByTestId("dreams");
     await dreams
       .locator('[data-testid="dream-row"][data-status="running"]')
@@ -467,9 +480,11 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await flow.getByTestId("dream-own-model").check();
   await expect(flow.getByTestId("dream-model")).toContainText("Claude");
   await expect(flow.getByTestId("dream-harness-mode")).toHaveText(CLAUDE_DREAM_POLICY);
-  await expect(flow).toContainText(
+  // The run's adoption mode is beside the actions that start it, and beside Start.
+  await expect(dreams.getByTestId("dream-mode-note")).toHaveText(
     "Memory changes only after you review and adopt this run's output. Agent sandbox and native approvals still apply.",
   );
+  await expect(flow.getByTestId("dream-start-mode")).toHaveText("Review: you adopt it");
   await expect(flow).toContainText("A dream runs on Claude Code, Codex.");
 
   const started = page.evaluate(
@@ -571,6 +586,7 @@ test("a dream is adopted only once its conflict has a side, and a moved memory m
   page,
 }) => {
   const made = await openMemory(page);
+  await memoryTab(page, "Update memory");
   // Its own thread says where it ended, and Review there lands on the review here.
   const completed = page.locator('[data-testid="dream-row"][data-status="completed"]');
   await expect(completed.getByTestId("dream-status")).toHaveText("Ready to review");
@@ -655,13 +671,15 @@ test("a dream is adopted only once its conflict has a side, and a moved memory m
   });
   await expect(review).toHaveCount(0, { timeout: 10_000 * slowdown });
   await expect(page).toHaveURL(new RegExp(`/w/${made.workspaceId}/memory$`));
+  await expect(completed.getByTestId("dream-status")).toHaveText("Adopted as 0003");
+  await memoryTab(page, "History");
   const versions = page.getByTestId("memory-version");
   await expect(versions.first()).toHaveAttribute("data-version", "0003");
   await expect(versions.first().getByTestId("memory-version-current")).toBeVisible();
+  await memoryTab(page, "Files");
   await expect(
     page.locator('[data-testid="memory-file"][data-path="conventions.md"]'),
   ).toBeVisible();
-  await expect(completed.getByTestId("dream-status")).toHaveText("Adopted as 0003");
 });
 
 test("a long synthetic dream review stays within the application viewport", async ({ page }) => {
@@ -744,6 +762,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
       };
     };
   }, made.workspaceId);
+  await memoryTab(page, "Update memory");
   await page
     .locator('[data-testid="dream-row"][data-status="completed"]')
     .first()
@@ -990,10 +1009,13 @@ test("a long synthetic dream review stays within the application viewport", asyn
   await expect(memory).toHaveCSS("overflow-y", "auto");
   await expect(memory).not.toHaveClass(/overscroll-contain/);
   await expect(memory).not.toHaveClass(/contain-paint/);
+  // Update memory alone is shorter than the old all-in-one page: a lower window still overflows it.
+  await page.setViewportSize({ width: 1280, height: 400 });
   await memory.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
   expect(await memory.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.setViewportSize({ width: 1280, height: 600 });
 
   // The merged auto mode uses this same layout shell for read-only Inspect actions.
   await page.evaluate(() => {
@@ -1030,6 +1052,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
 
 test("a failed dream says why in words and can only be discarded", async ({ page }) => {
   await openMemory(page);
+  await memoryTab(page, "Update memory");
   const rows = page.getByTestId("dream-row");
   await expect(rows).toHaveCount(3);
   const failed = page.locator('[data-testid="dream-row"][data-status="failed"]');
@@ -1059,6 +1082,7 @@ test("a failed dream says why in words and can only be discarded", async ({ page
   await review.getByRole("button", { name: "Discard dream" }).click();
   await expect(review).toHaveCount(0, { timeout: 10_000 * slowdown });
   await expect(rows).toHaveCount(1);
+  await memoryTab(page, "History");
   await expect(page.getByTestId("memory-version")).toHaveCount(2);
 });
 
@@ -1066,6 +1090,7 @@ test("a conflict's two sides are merged by a model, reviewed, and adopted as the
   page,
 }) => {
   const made = await openMemory(page);
+  await memoryTab(page, "Update memory");
   await page
     .locator('[data-testid="dream-row"][data-status="completed"]')
     .getByTestId("dream-review-open")

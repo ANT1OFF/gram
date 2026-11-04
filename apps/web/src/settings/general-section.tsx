@@ -26,6 +26,7 @@ import { branchPrefixSetting } from "./branch-prefix";
 import { GENERAL_DEFAULTS, resetFor } from "./defaults";
 import { OptionGroup, rowInputCls, SettingRow, Toggle } from "./fields";
 import { claimTouchedRow, markSaved, markTouchedSaved } from "./saved-mark";
+import { GENERAL_ANCHORS } from "./general-anchors";
 import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
@@ -108,8 +109,9 @@ export function GeneralSection() {
   return (
     <div className="flex flex-col gap-6" data-testid="general-settings">
       <SettingsGroup
-        label="Launch and layout"
-        description="What Gram opens at launch, and how the left sidebar looks."
+        label="Launch"
+        anchor={GENERAL_ANCHORS.launch}
+        description="What Gram opens at launch, how it starts, and how the left sidebar looks."
       >
         <SettingRow
           label="Open at launch"
@@ -193,22 +195,14 @@ export function GeneralSection() {
             }}
           />
         </SettingRow>
+        <LaunchAtLoginSetting />
+        <KeepInTraySetting />
       </SettingsGroup>
       <SettingsGroup
-        label="Threads"
-        description="Where new threads start, how branches are named, and staying awake while they run."
+        label="Branches"
+        anchor={GENERAL_ANCHORS.branches}
+        description="Where new threads and clones start, and how their branches are named."
       >
-        <Toggle
-          label="Keep computer awake while agents run"
-          description="Stops the system from sleeping while a turn is running; the display can still sleep."
-          keywords={["sleep", "power", "awake", "agents"]}
-          checked={keepAwakeOn(settings)}
-          onReset={resetOf("keepAwake")}
-          error={errorOf("keepAwake")}
-          onChange={(keepAwake) =>
-            applyTo("keepAwake")({ agents: { keepAwake: keepAwake ? null : false } })
-          }
-        />
         <FolderField
           // A saved value from elsewhere resets the draft.
           key={`default:${settings.agents.defaultFolder ?? ""}`}
@@ -249,19 +243,10 @@ export function GeneralSection() {
             onChange={(branchPrefix) => applyTo("branchPrefix")({ agents: { branchPrefix } })}
           />
         </SettingRow>
-        <Toggle
-          label="Follow worktree moves"
-          description="When an agent switches worktree, the panels follow it."
-          checked={settings.agents.followWorktreeMoves}
-          onReset={resetOf("followWorktreeMoves")}
-          error={errorOf("followWorktreeMoves")}
-          onChange={(followWorktreeMoves) =>
-            applyTo("followWorktreeMoves")({ agents: { followWorktreeMoves } })
-          }
-        />
       </SettingsGroup>
       <SettingsGroup
-        label="Composer and panels"
+        label="Composer"
+        anchor={GENERAL_ANCHORS.composer}
         description="How you send a message, and where the side panel sits."
       >
         <SettingRow
@@ -293,6 +278,7 @@ export function GeneralSection() {
       </SettingsGroup>
       <SettingsGroup
         label="Interruptions"
+        anchor={GENERAL_ANCHORS.interruptions}
         description="How much Gram asks for your attention while you work elsewhere."
       >
         <Toggle
@@ -328,20 +314,34 @@ export function GeneralSection() {
           />
         </SettingRow>
       </SettingsGroup>
-      <WindowSettings />
+      <SettingsGroup
+        label="Running work"
+        anchor={GENERAL_ANCHORS.running}
+        description="What happens while agents run: staying awake, and following their worktree."
+      >
+        <Toggle
+          label="Keep computer awake while agents run"
+          description="Stops the system from sleeping while a turn is running; the display can still sleep."
+          keywords={["sleep", "power", "awake", "agents"]}
+          checked={keepAwakeOn(settings)}
+          onReset={resetOf("keepAwake")}
+          error={errorOf("keepAwake")}
+          onChange={(keepAwake) =>
+            applyTo("keepAwake")({ agents: { keepAwake: keepAwake ? null : false } })
+          }
+        />
+        <Toggle
+          label="Follow worktree moves"
+          description="When an agent switches worktree, the panels follow it."
+          checked={settings.agents.followWorktreeMoves}
+          onReset={resetOf("followWorktreeMoves")}
+          error={errorOf("followWorktreeMoves")}
+          onChange={(followWorktreeMoves) =>
+            applyTo("followWorktreeMoves")({ agents: { followWorktreeMoves } })
+          }
+        />
+      </SettingsGroup>
     </div>
-  );
-}
-
-/** The desktop shell's own settings; nothing in a browser or a shell that keeps neither. */
-function WindowSettings() {
-  const bridge = window.gram;
-  if (bridge?.keepInTray === undefined && bridge?.launchAtLogin === undefined) return null;
-  return (
-    <SettingsGroup label="Window" description="How Gram starts and keeps running.">
-      <LaunchAtLoginSetting />
-      <KeepInTraySetting />
-    </SettingsGroup>
   );
 }
 

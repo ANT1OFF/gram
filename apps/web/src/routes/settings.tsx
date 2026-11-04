@@ -102,6 +102,11 @@ function SettingsLayout() {
         <SettingsNav
           groups={SETTINGS_GROUPS}
           current={current === undefined ? undefined : current.group}
+          sections={
+            searching || subpage || current === undefined || isSubpage(current)
+              ? undefined
+              : settingsGroupOf(current).sections
+          }
           headingRef={headingRef}
           search={
             <SettingsSearchBox

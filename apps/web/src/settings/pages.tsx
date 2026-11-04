@@ -36,6 +36,7 @@ import {
 } from "./defaults";
 import { DiagnosticsSection } from "./diagnostics-section";
 import { EditorSection } from "./editor-section";
+import { GENERAL_ANCHORS, GENERAL_SECTIONS, type SettingsAnchor } from "./general-anchors";
 import { GeneralSection } from "./general-section";
 import { HelpSection } from "./help-section";
 import { KeyboardSection } from "./keyboard-section";
@@ -99,11 +100,19 @@ export interface SettingsNavGroup {
   readonly label: string;
   readonly path: SettingsPath;
   readonly icon: LucideIcon;
+  /** The page's own subsections, linked under it in the nav while it is open. */
+  readonly sections?: readonly SettingsAnchor[];
 }
 
 /** The nav, in order. */
 export const SETTINGS_GROUPS: readonly SettingsNavGroup[] = [
-  { id: "general", label: "General", path: "/settings/general", icon: SlidersHorizontal },
+  {
+    id: "general",
+    label: "General",
+    path: "/settings/general",
+    icon: SlidersHorizontal,
+    sections: GENERAL_SECTIONS,
+  },
   { id: "agents", label: "Agents", path: "/settings/agents", icon: Bot },
   { id: "workspaces", label: "Workspaces", path: "/settings/workspaces", icon: Network },
   { id: "appearance", label: "Appearance", path: "/settings/appearance", icon: Sun },
@@ -161,6 +170,7 @@ export function GeneralPage() {
       </SearchScope>
       <SettingsGroup
         label="Open in editor"
+        anchor={GENERAL_ANCHORS.editor}
         description="The editor Open in editor launches: a preset, or your own command."
         keywords={EDITOR_KEYWORDS}
       >
@@ -168,6 +178,7 @@ export function GeneralPage() {
       </SettingsGroup>
       <SettingsGroup
         label="Trusted links"
+        anchor={GENERAL_ANCHORS.links}
         card={false}
         description="Links to these hosts open in your browser without asking."
         learnMore={
@@ -277,7 +288,7 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     label: "General",
     path: "/settings/general",
     group: "general",
-    description: "New threads, sending, your editor, and links that open without asking.",
+    description: "Launch, branches, the composer, interruptions, your editor and links.",
     search: GeneralPage,
     defaults: Object.values(GENERAL_DEFAULTS),
   },

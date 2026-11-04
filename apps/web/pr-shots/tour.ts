@@ -177,11 +177,12 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "dreams",
-    title: "Dreams: seeded running, completed, and failed memory work",
+    title:
+      "Memory → Update memory: the Dreams action, its mode, and seeded running, completed and failed runs",
     open: async (page) => {
       await openMemory(page);
+      await page.getByTestId("memory-tab-update").click();
       await expect(page.getByTestId("dream-row")).toHaveCount(3);
-      await page.getByTestId("dreams").scrollIntoViewIfNeeded();
     },
   },
   {

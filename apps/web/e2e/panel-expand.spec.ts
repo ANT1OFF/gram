@@ -170,6 +170,8 @@ test("expanding works in a grid and with the panel on the left", async ({ page }
     .getByRole("radio", { name: "Left", exact: true })
     .click();
   await expect(shell).toHaveAttribute("data-panel-side", "left");
+  // Settings keeps the overview's column for its Back strip; the threads are a step out.
+  await page.getByTestId("settings-back").click();
   await threadRow(page, "t-deps").click();
   await expect(panel).toBeVisible();
   // Settings had no use for the panel, so it slides back in.

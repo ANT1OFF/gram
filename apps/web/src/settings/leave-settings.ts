@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, type UseNavigateResult } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { useShortcut } from "@/keyboard/registry";
@@ -19,6 +19,13 @@ export function useRememberSettingsReturn() {
   }, [pathname, href]);
 }
 
+/** Leaves Settings for where you came from, with the focus back in its composer. */
+export function leaveSettings(navigate: UseNavigateResult<string>): void {
+  void navigate({ href: returnTo }).then(() =>
+    focusPaneComposer(useLayoutStore.getState().grid.focused),
+  );
+}
+
 /**
  * Settings' keyboard entry and exit: focus starts on the returned heading, and Esc from any page goes
  * back to where you came from. A field being typed in, a select or a dialog keeps its own Esc.
@@ -34,11 +41,7 @@ export function useSettingsKeyboard() {
     keys: "escape",
     label: "Leave settings",
     group: "App",
-    run: () => {
-      void navigate({ href: returnTo }).then(() =>
-        focusPaneComposer(useLayoutStore.getState().grid.focused),
-      );
-    },
+    run: () => leaveSettings(navigate),
   });
   return headingRef;
 }
