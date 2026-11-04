@@ -8,6 +8,7 @@ import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
+import { RunScriptMenuItems } from "@/scripts/run-script-menu";
 import { useWorkersListStore } from "@/orchestration/workers-list";
 import { GRID_PRESETS, PRESET_LABELS, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -71,8 +72,20 @@ function TitlebarMenuItems({
     all && carried !== undefined ? s.byId[carried]?.thread : undefined,
   );
   const tidy = orchestration && state !== undefined && fold > 0;
+  // The thread in the bar, folded at all: its header's Run script is this menu's.
+  const scripted = useThreadsStore((s) => {
+    const thread = fold > 0 && carried !== undefined ? s.byId[carried]?.thread : undefined;
+    return thread !== undefined && thread.role !== "orchestrator" ? thread : undefined;
+  });
   return (
     <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
+      {scripted !== undefined && (
+        <RunScriptMenuItems
+          threadId={scripted.id}
+          projectId={scripted.projectId}
+          itemClassName={itemClassName}
+        />
+      )}
       {worker?.spawnedBy !== undefined && (
         <WorkerMenuItems thread={worker} itemClassName={itemClassName} />
       )}
