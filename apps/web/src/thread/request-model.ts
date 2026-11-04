@@ -269,7 +269,7 @@ const DESTINATION: Readonly<
   },
   userSettings: {
     reach: "everywhere",
-    scope: "every project on this machine that uses this Claude login, inside Gram and out",
+    scope: "every project on this machine that uses this Claude configuration, inside Gram and out",
     kept: "Claude Code user settings",
   },
 };
