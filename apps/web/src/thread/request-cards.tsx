@@ -675,6 +675,9 @@ export function ApprovalCard({
       label: "Always allow…",
       group: "Thread",
       when: () => canAlways,
+      // Once per press, for both steps: a held ⌥⏎ opens the preview and nothing more, so saving
+      // takes a second, separate press, and a held key never reaches the next card in the queue.
+      once: true,
       run: always,
     },
     active && pause === undefined,
@@ -810,9 +813,9 @@ export function ApprovalCard({
 
 const REACH_WORD: Record<AlwaysRule["reach"], string> = {
   thread: "This thread",
-  folder: "This folder",
+  repository: "This repository",
   project: "This project",
-  everywhere: "Every workspace",
+  everywhere: "Everywhere",
 };
 
 /**

@@ -58,9 +58,10 @@ describe("alwaysRules", () => {
       {
         rule: "Bash(git push:*)",
         behavior: "Allow",
-        reach: "folder",
-        scope: "every thread working in it, for you only",
-        kept: ".claude/settings.local.json",
+        reach: "repository",
+        scope:
+          "the main checkout and all its worktrees, for you only, after this worktree is gone too",
+        kept: ".claude/settings.local.json at the repository root",
       },
     ]);
     expect(alwaysRules(bash("session"))[0]).toMatchObject({ reach: "thread", kept: undefined });

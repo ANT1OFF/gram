@@ -130,7 +130,9 @@ for (const width of [1440, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`image-read-card-${width}.png`) });
 
     const inline = page.locator('[data-tool-call-id="inline-image"]');
-    await inline.getByRole("button", { name: /^mcp__synthetic/ }).click();
+    // The row names the call in words; its raw tool id is in the details.
+    await inline.getByRole("button", { name: /^View image · synthetic/ }).click();
+    await expect(inline.getByTestId("tool-raw-name")).toContainText("mcp__synthetic__view_image");
     await expect(inline).toContainText("Saved image metadata");
     await expect(inline).not.toContainText(MOCK_TOOL_IMAGE.base64);
     const inlineImage = inline.getByRole("img");

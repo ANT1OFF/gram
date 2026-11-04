@@ -39,8 +39,10 @@ configured pass.
   Actions your autonomy level holds back wait on an approval card, and changes to Gram's own
   settings always do. The call's tool row reads "Waiting for your approval" until you answer.
   **Allow once** saves nothing; **Always allow…** first shows the exact rule the agent offered
-  and how far it reaches (this thread, the working folder, the project or every workspace),
-  and saves only when you confirm. Codex cards offer no "always", as they carry no rule.
+  and its widest reach as Claude Code applies it: this thread's session, the repository with all
+  its worktrees (`.claude/settings.local.json` at the repository root), the project's shared
+  settings, or every project on the machine. It saves only on a separate confirming press, and a
+  held key never answers a second card. Codex cards offer no "always", as they carry no rule.
 - **The Board.** A workspace's features, workers and pull requests on one surface, with each pull
   request's checks, reviews and merge readiness, read through the GitHub CLI.
 - **Needs you.** Questions, approvals, plans, errors and waits from every workspace and solo

@@ -17,14 +17,22 @@ test("a call held at its approval waits, then runs and finishes once allowed", a
   await card.getByTestId("approval-always").click();
   const rule = card.getByTestId("approval-always-rule");
   await expect(rule).toContainText("Bash(git push origin fix/flaky-retry)");
-  await expect(rule).toHaveAttribute("data-reach", "folder");
-  await expect(rule).toContainText(".claude/settings.local.json");
+  await expect(rule).toHaveAttribute("data-reach", "repository");
+  await expect(rule).toContainText("all its worktrees");
+  await expect(rule).toContainText(".claude/settings.local.json at the repository root");
   await card.getByTestId("approval-always-back").click();
   await expect(rule).toHaveCount(0);
 
   await card.getByTestId("approval-allow").click();
   await expect(card).toHaveCount(0);
-  await expect(row).not.toContainText("Waiting for your approval");
-  // Its outcome: the check that marks it done, the push's output in its details.
-  await expect(row.locator('[title="Done"]')).toBeVisible({ timeout: 15_000 });
+  // Allowed, it runs and settles; the finished turn may fold it away, so open the fold to read it.
+  const transcript = page.getByTestId("transcript");
+  await expect(transcript).not.toContainText("Waiting for your approval");
+  const fold = page.getByTestId("turn-fold").last();
+  await expect(fold).toHaveAttribute("data-state", /worked|failed|stopped/, { timeout: 15_000 });
+  if ((await fold.getAttribute("aria-expanded")) === "false") await fold.click();
+  const done = page.locator('[data-testid="tool-card"][data-tool="Bash"]').filter({
+    hasText: "git push origin fix/flaky-retry",
+  });
+  await expect(done.last().locator('[title="Done"]')).toBeVisible();
 });

@@ -833,8 +833,8 @@ test("an earlier rail page preserves later composer focus and text", async ({ pa
 test("the current marker distinguishes the actual bottom from a 50 px reading edge", async ({
   page,
 }) => {
-  // A transcript 739 px tall puts the reading edge 50 px up well inside turn 6's prompt.
-  await open(page, 8, "dark", 960);
+  // A transcript 679 px tall puts the reading edge, 50 px up, well inside turn 6's prompt.
+  await open(page, 8, "dark", 900);
   const transcript = page.getByTestId("transcript");
   const current = page.getByTestId("conversation-rail").locator('[aria-current="location"]');
   await expect(current).toHaveAttribute("data-outline-anchor", "nav-u7");

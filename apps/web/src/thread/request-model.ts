@@ -222,7 +222,7 @@ export const approvalDetails = (request: ApprovalRequest): ApprovalDetails => {
 };
 
 /** How far a saved "always" reaches, from narrowest to widest. */
-export type AlwaysReach = "thread" | "folder" | "project" | "everywhere";
+export type AlwaysReach = "thread" | "repository" | "project" | "everywhere";
 
 /** One thing an "Always allow" saves: the rule as its agent stores it, and where. */
 export interface AlwaysRule {
@@ -239,10 +239,18 @@ export interface AlwaysRule {
 
 /**
  * Claude Code's settings destinations, as an "always" answer writes them (`resolveRequest` in
- * `packages/agents/src/claude/permissions.ts` passes the suggestion's own destination through).
- * `localSettings` and `projectSettings` live in the session's working folder, so every thread
- * working in that folder gets the rule; `userSettings` reaches every workspace on that Claude
- * login; `session` and `cliArg` end with the thread's session.
+ * `packages/agents/src/claude/permissions.ts` passes the suggestion's own destination through),
+ * each stated at the widest reach Claude Code gives it (code.claude.com/docs/en/settings and
+ * /worktrees), never narrower:
+ * - `session`, `cliArg`: held by the session alone, gone when it ends.
+ * - `localSettings`: since Claude Code v2.1.211, `.claude/settings.local.json` at the repository's
+ *   root, the main checkout's root for a worktree, so the rule applies in the main checkout and
+ *   every worktree of the repository and outlives the worktree that saved it. It stays in the
+ *   working folder only in narrower cases (outside git, Windows, a home-directory repository).
+ * - `projectSettings`: `.claude/settings.json` in the session's working folder, read by everyone
+ *   working there, and by everyone with the repository once the file is committed.
+ * - `userSettings`: the Claude config's `settings.json` (`~/.claude`, or `CLAUDE_CONFIG_DIR`),
+ *   which every project on this machine using that config reads, inside Gram and out.
  */
 const DESTINATION: Readonly<
   Record<PermissionUpdateDestination, { reach: AlwaysReach; scope: string; kept?: string }>
@@ -250,18 +258,18 @@ const DESTINATION: Readonly<
   session: { reach: "thread", scope: "until its agent session ends" },
   cliArg: { reach: "thread", scope: "until its agent session ends" },
   localSettings: {
-    reach: "folder",
-    scope: "every thread working in it, for you only",
-    kept: ".claude/settings.local.json",
+    reach: "repository",
+    scope: "the main checkout and all its worktrees, for you only, after this worktree is gone too",
+    kept: ".claude/settings.local.json at the repository root",
   },
   projectSettings: {
     reach: "project",
-    scope: "everyone using its repository",
+    scope: "everyone working in this folder, and everyone with the repository once it is committed",
     kept: ".claude/settings.json",
   },
   userSettings: {
     reach: "everywhere",
-    scope: "every thread on this Claude login",
+    scope: "every project on this machine that uses this Claude login, inside Gram and out",
     kept: "Claude Code user settings",
   },
 };

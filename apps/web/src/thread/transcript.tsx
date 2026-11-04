@@ -210,6 +210,12 @@ export function Transcript({
   const scrollbarPointer = useRef<{ id: number; y: number }>(undefined);
   const touchPosition = useRef<{ id: number; y: number }>(undefined);
   const lastScrollTop = useRef(0);
+  /**
+   * A press that began in the transcript and hasn't ended. Pressing pauses following, which shows
+   * the jump pill at the bottom; under the pointer mid-press it would take the release, and the
+   * click on whatever was pressed (a tool row's toggle at the end, say) would be lost.
+   */
+  const [pressing, setPressing] = useState(false);
   const inProgress = useThreadsStore((s) => TURN_IN_PROGRESS.has(s.byId[threadId]?.status ?? ""));
   const compaction = useThreadsStore((s) => s.byId[threadId]?.compaction);
   // Measured: in a narrow pane the line wraps, and the room under the last row must grow with it.
@@ -598,13 +604,17 @@ export function Transcript({
         <FollowingLive
           following={isFollowing}
           streaming={streamingIds.size > 0}
+          pressing={pressing}
           onJump={jumpToLatest}
         />
       ) : (
         !isFollowing &&
         messages.length > 0 && (
           <Button
-            className="absolute left-1/2 bottom-6 z-10 -translate-x-1/2"
+            className={cn(
+              "absolute left-1/2 bottom-6 z-10 -translate-x-1/2",
+              pressing && "pointer-events-none",
+            )}
             variant="secondary"
             size="sm"
             onClick={jumpToLatest}
@@ -670,6 +680,14 @@ export function Transcript({
           manualGesture.current = undefined;
         }}
         onPointerDown={(event) => {
+          setPressing(true);
+          const release = () => {
+            setPressing(false);
+            window.removeEventListener("pointerup", release, true);
+            window.removeEventListener("pointercancel", release, true);
+          };
+          window.addEventListener("pointerup", release, true);
+          window.addEventListener("pointercancel", release, true);
           interruptJump();
           scrollbarPointer.current = undefined;
           const el = event.currentTarget;
@@ -906,10 +924,13 @@ function Row({
 function FollowingLive({
   following,
   streaming,
+  pressing,
   onJump,
 }: {
   following: boolean;
   streaming: boolean;
+  /** A press in the transcript is under way: the pill lets its release through. */
+  pressing: boolean;
   onJump: () => void;
 }) {
   const dot = (
@@ -934,6 +955,7 @@ function FollowingLive({
       className={cn(
         pill,
         "text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+        pressing && "pointer-events-none",
       )}
       onClick={onJump}
     >

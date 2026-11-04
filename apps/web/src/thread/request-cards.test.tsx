@@ -365,6 +365,47 @@ describe("ApprovalCard", () => {
     );
   });
 
+  it("takes one ⌥⏎ press as one step: a held key opens the preview and never saves it", () => {
+    const { api, respond } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={approval} active />
+      </ApiProvider>,
+    );
+    const altEnter = { key: "Enter", code: "Enter", altKey: true };
+    fireEvent.keyDown(window, altEnter);
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { ...altEnter, repeat: true });
+    expect(screen.getByTestId("approval-always-rules")).toBeTruthy();
+    expect(respond).not.toHaveBeenCalled();
+  });
+
+  it("never lets a held ⌥⏎ answer the approval queued after the one it saved", async () => {
+    const { api, respond } = fakeApi();
+    const next = { ...approval, id: "r-next" as RequestId, input: { command: "rm -rf build" } };
+    const cards = (requests: readonly PendingRequest[]) => (
+      <ApiProvider api={api}>
+        <RequestCards threadId={T} requests={requests} focused />
+      </ApiProvider>
+    );
+    const view = render(cards([approval, next]));
+    const altEnter = { key: "Enter", code: "Enter", altKey: true };
+    // Two separate presses save the first card's rule...
+    fireEvent.keyDown(window, altEnter);
+    fireEvent.keyDown(window, altEnter);
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith(T, "r1", {
+        kind: "approval",
+        decision: "allow",
+        scope: "always",
+      }),
+    );
+    // ...and the key, still held as the answered card leaves, touches nothing after it.
+    view.rerender(cards([next]));
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { ...altEnter, repeat: true });
+    expect(screen.queryByTestId("approval-always-rules")).toBeNull();
+    expect(respond).toHaveBeenCalledTimes(1);
+  });
+
   it("names its buttons Allow once and Always allow…, and keeps Deny one click", () => {
     const { api } = fakeApi();
     render(
@@ -401,8 +442,11 @@ describe("ApprovalCard", () => {
     expect(respond).not.toHaveBeenCalled();
     const rule = screen.getByTestId("approval-always-rule");
     expect(rule.textContent).toContain("Bash(git push:*)");
-    expect(rule.getAttribute("data-reach")).toBe("folder");
-    expect(rule.textContent).toContain(".claude/settings.local.json");
+    // Claude keeps a local rule at the repository root, shared by every worktree: never "this folder".
+    expect(rule.getAttribute("data-reach")).toBe("repository");
+    expect(rule.textContent).toContain("This repository");
+    expect(rule.textContent).toContain("all its worktrees");
+    expect(rule.textContent).toContain(".claude/settings.local.json at the repository root");
     // Back leaves it unsaved; Deny is still one click.
     fireEvent.click(screen.getByTestId("approval-always-back"));
     expect(screen.queryByTestId("approval-always-rules")).toBeNull();
