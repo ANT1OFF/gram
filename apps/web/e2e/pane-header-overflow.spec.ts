@@ -56,7 +56,8 @@ for (const width of [880, 1440]) {
     for (let i = 0; i < 12; i++) await page.keyboard.press("Tab");
     expect(await chips.evaluate((row) => row.scrollTop)).toBe(0);
 
-    const menu = page.getByRole("button", { name: "Thread menu" }).first();
+    // The thread's menu is the title bar's one "…".
+    const menu = page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow");
     const main = await page.locator("main").boundingBox();
     const box = await menu.boundingBox();
     expect(main && box).toBeTruthy();
@@ -66,7 +67,7 @@ for (const width of [880, 1440]) {
     await menu.click({ trial: true, timeout: 2000 });
     await menu.click();
     // The push is the branch's, which More… has.
-    await page.getByTestId("thread-menu").getByRole("menuitem", { name: "More…" }).click();
+    await page.getByTestId("titlebar-menu-thread").getByRole("menuitem", { name: "More…" }).click();
     await expect(
       page.getByTestId("command-palette").getByRole("option", { name: "Push 2 commits" }),
     ).toBeVisible();

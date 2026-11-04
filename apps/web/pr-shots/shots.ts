@@ -880,6 +880,18 @@ const PANEL_TAB_SHOTS: readonly Shot[] = [
   panelTabsShot("panel-tabs-narrow", "The right panel's tabs on Files at 240 px", "files", 240),
 ];
 
+/** The title bar's one "…", open. */
+async function openBarMenu(page: Page): Promise<void> {
+  await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
+  await page.getByTestId("titlebar-overflow-menu").waitFor();
+}
+
+/** The workspace's settings sheet, from the title bar's "…". */
+async function openWorkspaceSettingsFromBar(page: Page): Promise<void> {
+  await openBarMenu(page);
+  await page.getByTestId("menu-workspace-settings").click();
+}
+
 export const SHOTS: readonly Shot[] = [
   ...PANEL_TAB_SHOTS,
   ...UPDATE_PILL_SHOTS,
@@ -1066,12 +1078,12 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "workspace-sheet",
-    title: "Workspace settings from the orchestrator's header",
+    title: 'Workspace settings from the title bar\'s "…"',
     modes: ["dark"],
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
-      // A link to the settings page before; a sheet over the orchestrator after.
-      await page.getByLabel("Workspace settings", { exact: true }).click();
+      // A sheet over the orchestrator.
+      await openWorkspaceSettingsFromBar(page);
       await page.getByTestId("workspace-page").waitFor();
       await page.waitForTimeout(600);
     },
@@ -1133,13 +1145,14 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "project-scripts-header",
-    title: "A thread's header once its project has scripts: Run script beside the thread menu",
+    title: "A thread's scripts once its project has some: Run script in the title bar's \"…\"",
     open: async (page) => {
       await seedProjectScripts(page);
-      await page.getByTestId("pane-header").getByRole("button", { name: "Thread menu" }).waitFor();
+      await openBarMenu(page);
+      await page.getByTestId("folded-scripts").waitFor();
       await page.waitForTimeout(600);
     },
-    element: (page) => page.getByTestId("pane-header"),
+    element: (page) => page.getByTestId("titlebar-overflow-menu"),
   },
   {
     name: "project-scripts-suggestions",
@@ -1380,11 +1393,12 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "workspace-pause-confirm",
-    title: "Pause beside Tidy up in the title bar, asking first while work is mid-turn",
+    title: 'Pause beside Tidy up in the title bar\'s "…", asking first while work is mid-turn',
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
-      await page.getByTestId("titlebar-pause").click();
-      await page.getByTestId("titlebar-pause-confirm").waitFor();
+      await openBarMenu(page);
+      await page.getByTestId("folded-pause").click();
+      await page.getByTestId("folded-pause-confirm").waitFor();
       await page.waitForTimeout(600);
     },
   },
@@ -1422,7 +1436,7 @@ export const SHOTS: readonly Shot[] = [
     title: "Workspace settings: Pause new workers at a share of a limit",
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
-      await page.getByLabel("Workspace settings", { exact: true }).click();
+      await openWorkspaceSettingsFromBar(page);
       await page.getByTestId("workspace-page").waitFor();
       // Where the row sits: under Workers at once.
       await page.getByText("Workers at once", { exact: true }).first().scrollIntoViewIfNeeded();
@@ -1434,7 +1448,7 @@ export const SHOTS: readonly Shot[] = [
     title: "Workspace settings: Models, with routing at a limit and the worker brief footer",
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
-      await page.getByLabel("Workspace settings", { exact: true }).click();
+      await openWorkspaceSettingsFromBar(page);
       await page.getByTestId("workspace-page").waitFor();
       await page.getByRole("region", { name: "Models" }).waitFor();
       await page.waitForTimeout(600);
@@ -1456,7 +1470,7 @@ export const SHOTS: readonly Shot[] = [
     title: "Workspace settings: Compact idle threads (on by default)",
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
-      await page.getByLabel("Workspace settings", { exact: true }).click();
+      await openWorkspaceSettingsFromBar(page);
       await page.getByTestId("workspace-page").waitFor();
       // Where the new rows sit, under Pause new workers at; the base shows that row last.
       await page
@@ -2391,7 +2405,7 @@ export const SHOTS: readonly Shot[] = [
           origin: "example/api",
         });
       });
-      await page.getByRole("button", { name: "Thread menu" }).first().click();
+      await openBarMenu(page);
       await page.getByRole("menuitem", { name: /Close thread/ }).click();
       await page.getByTestId("close-thread-dialog").waitFor();
     },
@@ -2476,10 +2490,11 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "one-thread-workers",
-    title: "The title bar's Workers button open on the proof's workers",
+    title: "Workers, from the title bar's \"…\", open on the proof's workers",
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOneThread());
-      await page.getByTestId("workers-button").click();
+      await openBarMenu(page);
+      await page.getByTestId("folded-workers").click();
       await page.getByTestId("workers-list").waitFor();
       await page.waitForTimeout(400);
     },
@@ -2682,12 +2697,12 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "orchestrator-menu-switch",
-    title: "The orchestrator's ⋯ menu with Switch orchestrator… (before: the header's Switch pill)",
+    title: "The title bar's \"…\" with the orchestrator's Switch orchestrator… first",
     modes: ["dark"],
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
-      await page.getByTestId("pane-header").getByRole("button", { name: "Thread menu" }).click();
-      await page.getByTestId("thread-menu").waitFor();
+      await openBarMenu(page);
+      await page.getByTestId("titlebar-menu-thread").waitFor();
       await page.waitForTimeout(400);
     },
   },

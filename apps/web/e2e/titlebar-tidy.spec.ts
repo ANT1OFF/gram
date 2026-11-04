@@ -3,9 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { slowdown } from "./slowdown";
 import { pressFirstWorkspaceKey } from "./thread-row";
 
-// Tidy up in the title bar, for the workspace the window is on: the board's button, kept where the
-// workspace name, Chat · Board and the Workers count are, which a solo thread's one bar leaves out.
-// Mock state lives in memory, so every step after the seed stays inside the app.
+// Tidy up in the title bar's "…", for the workspace the window is on: the board's button, in words,
+// beside Workers and Pause, which a solo thread's "…" leaves out. Mock state lives in memory, so
+// every step after the seed stays inside the app.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
@@ -32,6 +32,13 @@ const start = async (page: Page) => {
 
 const titlebar = (page: Page) => page.getByTestId("shell-titlebar");
 
+/** Opens the title bar's "…" and resolves with its Tidy up. */
+const openTidy = async (page: Page) => {
+  await titlebar(page).getByTestId("titlebar-overflow").click();
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeVisible();
+  return page.getByTestId("titlebar-overflow-menu").getByTestId("folded-tidy");
+};
+
 test("Tidy up in the title bar says why it can't go while there is nobody to ask", async ({
   page,
 }) => {
@@ -49,15 +56,19 @@ test("Tidy up in the title bar says why it can't go while there is nobody to ask
   await expect(switcher).toHaveAttribute("data-workspaces", "1");
   // In Chat on a solo thread the window is in no workspace; Board shows the workspace's.
   await expect(switcher).toHaveText("Solo");
-  // A solo thread's one bar leaves the workspace's tidy-up to Board, where the bar has it again.
+  // A solo thread's one bar leaves the workspace's tidy-up to Board, where the "…" has it again.
   await expect(titlebar(page).getByTestId("pane-header")).toBeVisible();
-  await expect(titlebar(page).getByTestId("titlebar-tidy")).toHaveCount(0);
+  await titlebar(page).getByTestId("titlebar-overflow").click();
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeVisible();
+  await expect(page.getByTestId("folded-tidy")).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await page.keyboard.press("ControlOrMeta+Alt+2");
   await expect(titlebar(page).getByTestId("view-switcher")).toBeVisible();
   await expect(switcher).toHaveText("no-orchestrator");
-  const idle = titlebar(page).getByTestId("titlebar-tidy");
+  const idle = await openTidy(page);
   await expect(idle).toHaveAttribute("aria-disabled", "true");
-  await expect(idle).toHaveAccessibleName("Tidy up (No orchestrator yet: open it first)");
+  // A disabled item shows no tooltip, so it says why in words.
+  await expect(idle).toContainText("No orchestrator yet: open it first");
   await idle.click({ force: true });
   await expect(idle).not.toHaveAttribute("data-sent", /.*/);
 });
@@ -69,14 +80,9 @@ test("Tidy up in the title bar asks the orchestrator, as the board's does", asyn
   const made = await page.evaluate(() => window.gramMock!.simulateOneThread());
   await pressFirstWorkspaceKey(page);
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  const tidy = titlebar(page).getByTestId("titlebar-tidy");
+  const tidy = await openTidy(page);
   await expect(tidy).toHaveAccessibleName("Tidy up");
   await expect(tidy).not.toHaveAttribute("aria-disabled", "true");
-
-  // A glyph whose words are its tooltip, as on the board.
-  await tidy.hover();
-  const hint = page.locator('[data-slot="tooltip-content"]');
-  await expect(hint).toContainText("archive what's done, fix groups, stages and plans");
   // Past the arrivals' motion, so both shots are still frames.
   await page.waitForTimeout(800);
   for (const colorScheme of ["dark", "light"] as const) {
@@ -88,16 +94,25 @@ test("Tidy up in the title bar asks the orchestrator, as the board's does", asyn
   }
 
   await tidy.click();
-  await expect(tidy).toHaveAttribute("data-sent", /^(sent|queued)$/);
-  // A cooldown while it shows: a second press doesn't queue a second sweep.
-  await expect(tidy).toHaveAttribute("aria-disabled", "true");
-  await tidy.click({ force: true });
-  await expect(
-    titlebar(page).getByRole("status").filter({ hasText: "Asked: the orchestrator" }),
-  ).toHaveCount(1);
-  await expect(tidy).not.toHaveAttribute("data-sent", /.*/, { timeout: 5_000 * slowdown });
-  await expect(tidy).not.toHaveAttribute("aria-disabled", "true");
-
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeHidden();
+  // Reopened, it says it asked, and rests: a second press doesn't queue a second sweep.
+  const asked = await openTidy(page);
+  await expect(asked).toHaveAttribute("data-sent", /^(sent|queued)$/);
+  await expect(asked).toHaveText("Asked to tidy up");
+  await expect(asked).toHaveAttribute("aria-disabled", "true");
+  await asked.click({ force: true });
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeHidden();
+  // The cooldown passes whether the menu is open or not.
+  await expect(async () => {
+    const again = await openTidy(page);
+    try {
+      await expect(again).not.toHaveAttribute("data-sent", /.*/, { timeout: 500 });
+      await expect(again).not.toHaveAttribute("aria-disabled", "true", { timeout: 500 });
+    } finally {
+      await page.keyboard.press("Escape");
+    }
+  }).toPass({ timeout: 6_000 * slowdown });
   // The same message the board sends, once: an ordinary message of the user's in the thread.
   await expect(page.getByText(/^Please tidy up this workspace now/)).toHaveCount(1);
 });

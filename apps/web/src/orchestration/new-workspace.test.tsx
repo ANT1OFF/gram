@@ -160,20 +160,25 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
         .map((radio) => ({
           name: radio.getAttribute("aria-label"),
           slab: radio.querySelector('[data-testid="segment-slab"]')?.className ?? "",
+          check: radio.querySelector('[data-testid="choice-check"]') !== null,
         }));
-    // The sheet is a card, and the slab's fill is a card's too: the track and hairline show it.
+    // The one selected style: an accent-tinted fill and edge on the track, and a check, so the
+    // pick never shows by colour alone.
     expect(within(autonomy).getByRole("radiogroup").className).toContain("bg-accent");
     const [initial] = marked();
     expect(marked()).toHaveLength(1);
     expect(initial!.name).toBe(
       autonomyLevel(autonomy.getAttribute("data-value") as Autonomy).label,
     );
-    expect(initial!.slab).toContain("ring-1");
+    expect(initial!.slab).toContain("choice-selected");
+    expect(initial!.check).toBe(true);
     expect(within(autonomy).getAllByTestId("segment-slab")).toHaveLength(1);
+    expect(within(autonomy).getAllByTestId("choice-check")).toHaveLength(1);
 
     fireEvent.click(within(autonomy).getByRole("radio", { name: "Publish" }));
     await waitFor(() => expect(marked().map(({ name }) => name)).toEqual(["Publish"]));
-    expect(marked()[0]!.slab).toContain("ring-1");
+    expect(marked()[0]!.slab).toContain("choice-selected");
+    expect(marked()[0]!.check).toBe(true);
   });
 
   it("asks for a repository first, adds one from the list and removes it with its chip", async () => {

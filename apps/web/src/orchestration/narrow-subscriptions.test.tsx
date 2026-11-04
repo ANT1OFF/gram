@@ -15,11 +15,11 @@ import { useRailFacts } from "./feature-sheet";
 import { resetDerivedAsks } from "./needs-you-store";
 import { NeedsYouSource, useNeedsYouCounts } from "./use-needs-you";
 import { useWorkspaces } from "./use-orchestration";
-import { WorkersButton } from "./workers-list";
+import { useWorkersNow } from "./workers-list";
 
 // The always-mounted views that derive a little from the whole thread map re-render only when what
-// they derive changes, not on every change to any thread: the title bar's Workers button, the
-// Board's chips and its count of what waits on you.
+// they derive changes, not on every change to any thread: the Workers count the title bar's "…"
+// shows, the Board's chips and its count of what waits on you.
 
 const route = vi.hoisted(() => ({ workspaceId: "" }));
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -52,12 +52,18 @@ function Board() {
   return state === undefined ? null : <BoardReads state={state} />;
 }
 
+/** What the title bar's "…" reads for its Workers item. */
+function WorkersCount() {
+  const { workspaceId, count } = useWorkersNow();
+  return workspaceId === undefined ? null : <span data-testid="workers-count">{count}</span>;
+}
+
 function Window() {
   useServerEvents();
   return (
     <>
       <NeedsYouSource />
-      {counted("workers-button", <WorkersButton />)}
+      {counted("workers-count", <WorkersCount />)}
       <Board />
     </>
   );
@@ -98,7 +104,7 @@ const settled = () => new Promise((resolve) => setTimeout(resolve, 150));
 describe("always-mounted views", () => {
   it("sit out a working worker's activity line and its other changes", async () => {
     const view = renderWithApi(<Window />, api);
-    await waitFor(() => expect(view.getByTestId("workers-button")).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId("workers-count")).toBeTruthy());
     await waitFor(() => expect(view.getByTestId("board")).toBeTruthy());
     api.simulateStatus(worker, "running", "Reading a.ts");
     await waitFor(() =>

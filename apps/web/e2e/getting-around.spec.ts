@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openThreadMenu } from "./more-menu";
 
 import { openOrchestrator, threadRow } from "./thread-row";
 
@@ -59,10 +60,9 @@ test("Esc on a worker never takes a menu's, a field's or an approval's Esc", asy
   const made = await openWorker(page);
 
   // An open menu closes, and that is all.
-  await page.getByRole("button", { name: "Thread menu" }).first().click();
-  await expect(page.getByTestId("thread-menu")).toBeVisible();
+  const menu = await openThreadMenu(page);
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("thread-menu")).toBeHidden();
+  await expect(menu).toBeHidden();
   await expect(page).toHaveURL(url(made.asking));
 
   // The composer keeps Esc, with a draft or without one.

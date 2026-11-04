@@ -56,7 +56,7 @@ import {
 } from "@/views/shell-layout";
 import { parkedSoloThreads, soloThreads } from "@/views/solo-threads";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
-import { useFirstRun } from "@/welcome/welcome";
+import { useBeforeSetup } from "@/welcome/welcome";
 
 import { useAnsweredWorkers } from "./needs-you-store";
 import { askKeysByThread } from "./ask-model";
@@ -278,9 +278,8 @@ export function OverviewSidebar() {
   useRevealViewed();
   // The optional sections Settings → General turned off.
   const hidden = useLayoutStore((s) => s.overviewHidden);
-  // Before a first workspace the welcome is the one thing to look at: no pull requests or usage
-  // beside it.
-  const firstRun = useFirstRun();
+  // Before any setup the welcome is the one thing to look at: no pull requests or usage beside it.
+  const beforeSetup = useBeforeSetup();
   return (
     <aside
       aria-label="Overview"
@@ -329,11 +328,11 @@ export function OverviewSidebar() {
         </div>
         <Orchestrators />
         {!hidden.includes("solo") && <SoloThreads />}
-        {!firstRun && !hidden.includes("pullRequests") && <OverviewPullRequests />}
+        {!beforeSetup && !hidden.includes("pullRequests") && <OverviewPullRequests />}
         {!hidden.includes("doneToday") && <OverviewDone />}
       </div>
       {!hidden.includes("doneToday") && <OverviewHistory />}
-      {!firstRun && !hidden.includes("usage") && <OverviewFoot />}
+      {!beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
     </aside>
   );
 }
@@ -400,9 +399,7 @@ function NeedsYou() {
   const { count, label, hint, open } = useNeedsYou();
   // A true first run, with no thread yet, has nothing to need you: the welcome is the one thing
   // to look at, without a count beside it.
-  const firstRun = useFirstRun();
-  const empty = useThreadsStore((s) => Object.keys(s.byId).length === 0);
-  if (firstRun && empty) return null;
+  if (useBeforeSetup()) return null;
   const words = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
   // Nothing waiting, it stays as quiet grey words, so the column doesn't jump.
   return (

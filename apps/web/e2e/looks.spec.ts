@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { layoutButton, layoutPresets } from "./layout";
+import { layoutPresets, openLayout } from "./layout";
 
 // Checks Glass, the only look, renders its structural treatment, the grid holds at every preset, and
 // the overview sidebar and focus mode still lay out. Screenshots for review go to
@@ -53,13 +53,12 @@ for (const [look, mode] of [["glass", "dark"]] as const) {
     await shot(page, `${look}-${mode}-palette`);
     await page.keyboard.press("Escape");
 
-    const picker = layoutButton(page);
     const presets = layoutPresets(page);
-    await picker.click();
+    await openLayout(page);
     const count = await presets.count();
     expect(count).toBe(6);
     for (let i = 0; i < count; i++) {
-      if (i > 0) await picker.click();
+      if (i > 0) await openLayout(page);
       await presets.nth(i).click();
       await expect(page.getByTestId("pane").first()).toBeVisible();
       const overflow = await page.evaluate(
@@ -72,7 +71,7 @@ for (const [look, mode] of [["glass", "dark"]] as const) {
       expect(narrow, `preset ${i} has a collapsed pane`).toBe(0);
     }
     await shot(page, `${look}-${mode}-grid-3c2r`);
-    await picker.click();
+    await openLayout(page);
     await presets.nth(0).click();
 
     // Hidden, the overview leaves a Show sidebar button in the title bar.

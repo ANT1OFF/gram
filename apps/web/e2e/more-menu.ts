@@ -1,13 +1,33 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-/** The pane header's ⋯ menu, then its More…: ⌘K on the thread's own commands. */
+/**
+ * The thread's ⋯ menu, then its More…: ⌘K on the thread's own commands. A pane in a grid has the
+ * menu in its header; the thread alone in the window has it in the title bar's one "…".
+ */
 export async function openHeaderMore(page: Page): Promise<Locator> {
   const palette = page.getByTestId("command-palette");
   await expect(palette).toBeHidden();
-  await page.getByRole("button", { name: "Thread menu" }).first().click();
-  await page.getByTestId("thread-menu").getByRole("menuitem", { name: "More…" }).click();
+  await (await openThreadMenu(page)).getByRole("menuitem", { name: "More…" }).click();
   await expect(palette.getByTestId("palette-scope")).toBeVisible();
   return palette;
+}
+
+/**
+ * Opens the thread's menu, resolving with what holds its items: a grid pane's header menu, or the
+ * thread's group in the title bar's "…" for the thread alone in the window.
+ */
+export async function openThreadMenu(page: Page): Promise<Locator> {
+  const paneMenu = page.getByTestId("pane").getByRole("button", { name: "Thread menu" });
+  if ((await paneMenu.count()) > 0) {
+    await paneMenu.first().click();
+    const menu = page.getByTestId("thread-menu");
+    await expect(menu).toBeVisible();
+    return menu;
+  }
+  await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
+  const group = page.getByTestId("titlebar-menu-thread");
+  await expect(group).toBeVisible();
+  return group;
 }
 
 /**

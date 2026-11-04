@@ -19,7 +19,7 @@ import {
   Settings2,
   Users,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,9 @@ import { FOLD_ALL, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
 const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
 
+const TIDY_HINT =
+  "Ask the orchestrator to archive what's done, fix groups, stages and plans, close settled questions and refresh its memory";
+
 /** An item's shortcut, right-aligned as the palette shows it. */
 function Keys({ id }: { id: string }) {
   const hint = useShortcutHint(id);
@@ -70,12 +73,16 @@ function Submenu({
   icon,
   current,
   testId,
+  popupTestId,
+  popupLabel = label,
   children,
 }: {
   label: string;
   icon: ReactNode;
   current?: ReactNode;
   testId: string;
+  popupTestId?: string;
+  popupLabel?: string;
   children: ReactNode;
 }) {
   return (
@@ -96,7 +103,11 @@ function Submenu({
           alignOffset={-4}
           className="isolate z-50 outline-none"
         >
-          <Menu.Popup aria-label={label} className={cn(MENU_POPUP, "max-h-80 overflow-y-auto")}>
+          <Menu.Popup
+            data-testid={popupTestId}
+            aria-label={popupLabel}
+            className={cn(MENU_POPUP, "max-h-80 overflow-y-auto")}
+          >
             {children}
           </Menu.Popup>
         </Menu.Positioner>
@@ -115,6 +126,8 @@ function ContentsSubmenu({ threadId }: { threadId: ThreadId }) {
     <Submenu
       label="Contents"
       testId="menu-contents"
+      popupTestId="toc"
+      popupLabel="Loaded conversation"
       icon={<BookOpen aria-hidden />}
       current={outline.chapters.length === 0 ? undefined : outline.chapters.length}
     >
@@ -145,18 +158,56 @@ function ContentsSubmenu({ threadId }: { threadId: ThreadId }) {
   );
 }
 
-function TidyItem({ state }: { state: WorkspaceState }) {
+/**
+ * The workspace's Tidy up, held by the bar rather than the menu, so what was just sent outlasts
+ * the menu closing: reopened, it still says it asked, and rests until it may ask again.
+ */
+const TidyContext = createContext<ReturnType<typeof useTidyUp> | undefined>(undefined);
+
+export function TidyScope({ state, children }: { state: WorkspaceState; children: ReactNode }) {
   const tidy = useTidyUp(state);
+  // The menu has closed by the time it goes: a toast says so, as the palette's Tidy up does.
+  useEffect(() => {
+    if (tidy.sent === undefined) return;
+    useThreadsStore.getState().applyEvent({
+      type: "notify",
+      kind: "info",
+      title: "Asked the orchestrator to tidy up",
+      body:
+        tidy.sent === "queued"
+          ? "It starts once its current turn ends."
+          : "It summarises what it changed when it is done.",
+    });
+  }, [tidy.sent]);
+  return <TidyContext value={tidy}>{children}</TidyContext>;
+}
+
+export function TidyItem() {
+  const tidy = useContext(TidyContext);
+  if (tidy === undefined) return null;
   return (
     <Menu.Item
       data-testid="folded-tidy"
+      data-sent={tidy.sent}
       disabled={tidy.blocked !== undefined || tidy.resting}
-      title={tidy.blocked}
+      title={TIDY_HINT}
       className={MENU_ITEM}
       onClick={() => void tidy.send()}
     >
       <BroomSparkles aria-hidden />
-      {tidy.sent === undefined ? "Tidy up" : "Asked to tidy up"}
+      {/* A disabled item shows no tooltip, so it says why it is off. */}
+      {tidy.blocked === undefined ? (
+        tidy.sent === undefined ? (
+          "Tidy up"
+        ) : (
+          "Asked to tidy up"
+        )
+      ) : (
+        <span className="flex min-w-0 flex-col">
+          Tidy up
+          <span className="text-xs text-muted-foreground">{tidy.blocked}</span>
+        </span>
+      )}
     </Menu.Item>
   );
 }
@@ -165,7 +216,7 @@ function TidyItem({ state }: { state: WorkspaceState }) {
  * Pause or Resume the workspace. A pause that would stop work mid-flight asks first, in the menu:
  * the item says what it stops and the next click pauses.
  */
-function PauseItem({ state }: { state: WorkspaceState }) {
+export function PauseItem({ state }: { state: WorkspaceState }) {
   const { busy, confirm, run } = useWorkspacePause(state);
   const [confirming, setConfirming] = useState(false);
   if (state.paused !== undefined) {
@@ -234,7 +285,7 @@ function WorkspaceItems({ state }: { state: WorkspaceState }) {
         )}
         <Keys id="workers.open" />
       </Menu.Item>
-      <TidyItem key={workspaceId} state={state} />
+      <TidyItem />
       <PauseItem key={`pause-${workspaceId}`} state={state} />
       <Menu.Item
         data-testid="menu-memory"
@@ -394,7 +445,7 @@ function OverflowMenu({
 }) {
   const state = useViewWorkspace();
   const workspace = orchestration && state !== undefined;
-  return (
+  const menu = (
     <Menu.Root>
       <Hint
         label={"More\nThe thread's, the workspace's and the window's controls"}
@@ -443,6 +494,14 @@ function OverflowMenu({
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
+  );
+  return workspace ? (
+    // A workspace switch starts the next one's Tidy up fresh, not resting on the last one's send.
+    <TidyScope key={state.workspace.id} state={state}>
+      {menu}
+    </TidyScope>
+  ) : (
+    menu
   );
 }
 

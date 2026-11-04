@@ -39,6 +39,7 @@ import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { ResumeSessions } from "@/resume/resume-sessions";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
+import { useThreadsStore } from "@/stores/threads";
 
 import { toolRows, type ToolState } from "./tools";
 
@@ -61,6 +62,17 @@ export function useFirstRun(): boolean {
     useWelcome.setState({ open: !settings.onboarding.welcomeSeen });
   }, [settings]);
   return open === true && settled && workspaces.length === 0;
+}
+
+/**
+ * Before any setup: the first run, with no thread yet. What only means something once there is
+ * work (pull requests, usage, what needs you) stays away, so the welcome is the one thing to look
+ * at.
+ */
+export function useBeforeSetup(): boolean {
+  const firstRun = useFirstRun();
+  const empty = useThreadsStore((s) => Object.keys(s.byId).length === 0);
+  return firstRun && empty;
 }
 
 /**

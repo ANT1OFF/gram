@@ -70,7 +70,7 @@ describe("first run", () => {
     expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeTruthy();
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalled());
     await vi.mocked(api.launchChecks).mock.results[0]!.value;
-    expect(await welcome.findByRole("button", { name: /^api/ })).toBeTruthy();
+    expect(await welcome.findByRole("radio", { name: /^api/ })).toBeTruthy();
     expect(welcome.getByRole("heading", { name: "How Gram works" })).toBeTruthy();
     expect(
       within(welcome.getByRole("list", { name: "How Gram works" }))
@@ -89,10 +89,16 @@ describe("first run", () => {
     expect(agents.map((item) => within(item).queryByText("Ready") !== null)).toEqual([true, true]);
     expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
     expect(welcome.queryByRole("link", { name: /^Install/ })).toBeNull();
-    // Each repository row says what clicking it does.
-    expect(welcome.getByRole("button", { name: /^api/ }).textContent).toContain("Open");
+    // The most recent repository is picked, so the one primary action opens it; picking another
+    // moves the check and the button with it.
+    expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("true");
+    expect(welcome.getByTestId("welcome-open").textContent).toContain("Open api");
+    fireEvent.click(welcome.getByRole("radio", { name: /^web/ }));
+    expect(welcome.getByRole("radio", { name: /^web/ }).getAttribute("aria-checked")).toBe("true");
+    expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("false");
+    expect(welcome.getByTestId("welcome-open").textContent).toContain("Open web");
     expect(welcome.getByRole("button", { name: "Import past CLI sessions" })).toBeTruthy();
-    expect(welcome.getByRole("button", { name: "Other folder" })).toBeTruthy();
+    expect(welcome.getByRole("button", { name: "Open a folder…" })).toBeTruthy();
     expect(welcome.getByRole("button", { name: "Clone from GitHub" })).toBeTruthy();
     // Looking at it records nothing, and a first run never asks for a gateway key.
     expect(updateSettings).not.toHaveBeenCalled();
@@ -104,7 +110,10 @@ describe("first run", () => {
     const { render, updateSettings } = load(withOnboarding({}));
     render();
     const welcome = within(await screen.findByTestId("welcome"));
-    fireEvent.click(await welcome.findByRole("button", { name: /^api/ }));
+    // A pick alone opens nothing; Open does.
+    fireEvent.click(await welcome.findByRole("radio", { name: /^api/ }));
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.click(welcome.getByTestId("welcome-open"));
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/new-workspace", search: { repo: "p-api" } }),
     );
@@ -118,13 +127,27 @@ describe("first run", () => {
     const add = vi.spyOn(api, "addProject");
     render();
     const welcome = within(await screen.findByTestId("welcome"));
-    const infra = await welcome.findByRole("button", { name: /^infra/ });
-    fireEvent.click(infra);
+    // A double-click opens the row it is on.
+    const infra = await welcome.findByRole("radio", { name: /^infra/ });
+    fireEvent.doubleClick(infra);
     await waitFor(() => expect(add).toHaveBeenCalledWith("/Users/dev/Documents/code/infra"));
     const project = await add.mock.results[0]!.value;
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/new-workspace", search: { repo: project.id } }),
     );
+  });
+
+  it("makes Open a folder… the primary action when there is no repository to pick", async () => {
+    const { api, render } = load(withOnboarding({}));
+    vi.spyOn(api, "listRepositories").mockResolvedValue({ repos: [] });
+    render();
+    const welcome = within(await screen.findByTestId("welcome"));
+    const folder = await welcome.findByRole("button", { name: "Open a folder…" });
+    await waitFor(() => expect(api.listRepositories).toHaveBeenCalled());
+    expect(welcome.queryByRole("radiogroup", { name: "Repositories" })).toBeNull();
+    expect(welcome.queryByTestId("welcome-open")).toBeNull();
+    // The default button variant is the primary one; beside a picked repository it is outlined.
+    expect(folder.className).toContain("bg-primary");
   });
 
   it("is skipped for good", async () => {

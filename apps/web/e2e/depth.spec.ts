@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openHeaderMore } from "./more-menu";
+import { openHeaderMore, openThreadMenu } from "./more-menu";
 
 import { openSettingsPage } from "./settings-nav";
 
@@ -82,8 +82,11 @@ test("opens a previewed file, a diff row and the thread folder in the editor", a
     .click();
   await expect.poll(opened).toEqual([RETRY, DIFF_ROW]);
 
-  await page.getByRole("button", { name: "Thread menu" }).first().click();
-  await page.getByRole("menuitem", { name: "Open folder in editor" }).click();
+  await (
+    await openThreadMenu(page)
+  )
+    .getByRole("menuitem", { name: "Open folder in editor" })
+    .click();
   await expect.poll(opened).toEqual([RETRY, DIFF_ROW, WORKTREE]);
 });
 

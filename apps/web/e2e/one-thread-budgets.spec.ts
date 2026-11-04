@@ -151,8 +151,9 @@ for (let group = 0; group < WORKER_GROUPS; group++) {
     await seedTheme(page, { palette: "neutral-dark", mode: "dark", motion: "off" });
     await page.clock.setFixedTime(new Date("2026-06-15T12:00:00Z"));
     const made = await start(page);
-    const button = page.getByTestId("workers-button");
-    await expect(button).toHaveAccessibleName(/^Workers, \d+ now$/);
+    await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
+    const button = page.getByTestId("folded-workers");
+    await expect(button).toHaveText(/^Workers\d+ now/);
     await button.click();
     const list = page.getByTestId("workers-list");
     await expect(list).toBeVisible();

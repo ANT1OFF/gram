@@ -16,7 +16,7 @@ import {
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
-import { useFirstRun } from "@/welcome/welcome";
+import { useBeforeSetup } from "@/welcome/welcome";
 import { useLayoutStore } from "@/stores/layout";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
 import { ViewSwitcher } from "@/views/view-frame";
@@ -50,7 +50,7 @@ export function ShellTitlebar({
   panelLeft: boolean;
 }) {
   const togglePanel = useLayoutStore((s) => s.togglePanel);
-  const firstRun = useFirstRun();
+  const beforeSetup = useBeforeSetup();
   // One bar: a thread alone in Chat puts its header here, and Board its controls.
   const barThread = useTitlebarThread() !== undefined;
   const board = useViewStore((s) => s.view === "board");
@@ -138,9 +138,9 @@ export function ShellTitlebar({
         className="flex shrink-0 items-center gap-0.5"
       >
         {!soloBar && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
-        {/* Before a first workspace there is no usage of Gram's to meter. Narrow, the title needs
-            the room more than the meter needs its words. */}
-        {!firstRun && (
+        {/* Before any setup there is no work of Gram's to meter. Narrow, the title needs the room
+            more than the meter needs its words. */}
+        {!beforeSetup && (
           <UsageMeter
             className="[-webkit-app-region:no-drag]"
             textClassName="@max-2xl/titlebar:hidden"

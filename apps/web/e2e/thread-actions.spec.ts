@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openHeaderMore, openMore } from "./more-menu";
+import { openHeaderMore, openMore, openThreadMenu } from "./more-menu";
 import { threadRow } from "./thread-row";
 
 test("renames and parks from the row menu, and closes with the worktree checklist", async ({
@@ -24,8 +24,7 @@ test("renames and parks from the row menu, and closes with the worktree checklis
   await expect(parked).toContainText("Bump deps, carefully");
   await expect(threadRow(page, "t-deps")).toBeVisible();
 
-  await page.getByRole("button", { name: "Thread menu" }).first().click();
-  await page.getByRole("menuitem", { name: /Close thread/ }).click();
+  await (await openThreadMenu(page)).getByRole("menuitem", { name: /Close thread/ }).click();
   const close = page.getByTestId("close-thread-dialog");
   await expect(close).toContainText("5 uncommitted changes");
   await close.getByRole("checkbox", { name: /Also delete the worktree/ }).check();

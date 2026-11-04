@@ -49,13 +49,16 @@ test("the header tidies up, pauses and resumes, and shows archived work on askin
   page,
 }) => {
   const made = await start(page, () => window.gramMock!.simulateFinishedWork());
-  // Wide enough that the bar keeps Tidy up out of its folded "…".
   await page.setViewportSize({ width: 1680, height: 900 });
   const header = bar(page);
+  const more = header.getByTestId("titlebar-overflow");
 
-  // Tidy up sends its one message to the orchestrator.
-  await header.getByTestId("titlebar-tidy").click();
-  await expect(header.getByTestId("titlebar-tidy")).toHaveAttribute("data-sent", /^(sent|queued)$/);
+  // Tidy up, in the bar's "…", sends its one message to the orchestrator.
+  await more.click();
+  await page.getByTestId("folded-tidy").click();
+  await more.click();
+  await expect(page.getByTestId("folded-tidy")).toHaveAttribute("data-sent", /^(sent|queued)$/);
+  await page.keyboard.press("Escape");
   await page
     .getByTestId("view-switcher")
     .getByRole("radio", { name: /^Chat\b/ })
@@ -64,16 +67,21 @@ test("the header tidies up, pauses and resumes, and shows archived work on askin
   await pickBoard(page);
 
   // Pause says so in a line, and Resume takes it away. Work is mid-turn, so it asks first.
-  // The bar's Pause is a glyph, its word its name; the paused line is Board's, under the bar.
+  // Pause is in the bar's "…"; paused, the bar says since when, and a click resumes it. The
+  // paused line is Board's, under the bar.
   const pause = header.getByTestId("titlebar-pause");
-  await expect(pause).toHaveAccessibleName(/^Pause/);
-  await pause.click();
-  await page.getByTestId("titlebar-pause-confirm-pause").click();
+  await expect(pause).toHaveCount(0);
+  await more.click();
+  await page.getByTestId("folded-pause").click();
+  await page.getByTestId("folded-pause-confirmed").click();
   await expect(board(page).getByTestId("rail-paused-line")).toContainText("Paused by you");
   await expect(pause).toHaveAccessibleName(/Resume orchestration$/);
   await pause.click();
   await expect(board(page).getByTestId("rail-paused-line")).toHaveCount(0);
-  await expect(pause).toHaveAccessibleName(/^Pause/);
+  await expect(pause).toHaveCount(0);
+  await more.click();
+  await expect(page.getByTestId("folded-pause")).toHaveText(/^Pause workspace/);
+  await page.keyboard.press("Escape");
 
   // Archived workers are off their lines until asked for, and the choice is kept per workspace.
   const toggle = header.getByTestId("rail-show-archived");
