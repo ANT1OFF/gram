@@ -40,7 +40,7 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
           className="flex items-center gap-1 font-medium text-link underline-offset-4 hover:underline"
         >
           #{report.number} ready to merge
-          <ExternalLink aria-hidden className="size-3" />
+          <ExternalLink aria-hidden className="size-3.5" />
         </OutboundLink>
         <span className="font-mono text-xs text-muted-foreground">
           {report.headRefOid.slice(0, 7)}

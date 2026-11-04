@@ -140,7 +140,7 @@ export function GroupBand({
           <CircleAlert
             aria-label="Needs you"
             data-testid="rail-needs"
-            className="size-3 shrink-0 text-status-needs-mark"
+            className="size-3.5 shrink-0 text-status-needs-mark"
           />
         )}
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -164,7 +164,7 @@ export function GroupBand({
             onClick={() => onEditingChange(!editing)}
             className={ROW_ACTION}
           >
-            <Pencil aria-hidden className="size-3" />
+            <Pencil aria-hidden className="size-3.5" />
             {group.stage === undefined ? "Set stage" : "Edit plan"}
           </button>
         )}

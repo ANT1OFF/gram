@@ -56,7 +56,7 @@ export function Section({
             <ChevronDown
               aria-hidden
               className={cn(
-                "size-3 shrink-0 transition-transform duration-(--dur-fast)",
+                "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
                 folded && "-rotate-90",
               )}
             />

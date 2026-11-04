@@ -62,7 +62,7 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
     [detail.messages],
   );
   const separator = (
-    <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground/60" />
+    <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground/60" />
   );
 
   return (
@@ -187,9 +187,9 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
               className="inline-flex items-center gap-1 text-xs text-foreground/80 hover:text-foreground"
             >
               {pr.merged === true ? (
-                <GitMerge aria-hidden className="size-3 text-merged" />
+                <GitMerge aria-hidden className="size-3.5 text-merged" />
               ) : (
-                <GitPullRequest aria-hidden className="size-3 text-muted-foreground" />
+                <GitPullRequest aria-hidden className="size-3.5 text-muted-foreground" />
               )}
               {pr.repo.split("/").pop()}#{pr.number}
             </OutboundLink>
@@ -208,7 +208,7 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
       {files.length > 0 && (
         <div data-testid="finished-files" className="text-xs">
           <div className="flex items-center gap-1 text-muted-foreground">
-            <FileDiff aria-hidden className="size-3" />
+            <FileDiff aria-hidden className="size-3.5" />
             {files.length} {files.length === 1 ? "file" : "files"} changed
           </div>
           <ul className="mt-1 flex flex-col gap-0.5 font-mono">

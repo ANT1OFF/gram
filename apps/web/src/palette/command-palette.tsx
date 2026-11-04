@@ -990,7 +990,7 @@ function PaletteBody({
               onClick={() => enterScope(undefined)}
               className="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
             >
-              <X aria-hidden className="size-3" />
+              <X aria-hidden className="size-3.5" />
             </button>
           </span>
         )}

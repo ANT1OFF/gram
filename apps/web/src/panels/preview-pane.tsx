@@ -16,7 +16,7 @@ import {
   Circle,
   ExternalLink,
   Globe,
-  Hand,
+  HandGrab,
   RotateCw,
   ScanSearch,
 } from "lucide-react";
@@ -438,7 +438,7 @@ function AgentActivity({
           data-testid="preview-recording"
           className="flex shrink-0 items-center gap-1 text-destructive"
         >
-          <Circle aria-hidden className="size-2.5 fill-current" />
+          <Circle aria-hidden className="size-3.5 fill-current" />
           Recording
         </span>
       )}
@@ -511,11 +511,11 @@ function DriverButton({
   return (
     <span data-testid="preview-driver" data-driver="user" className="contents">
       <ToolButton
-        label="You have control. Hand the page back to the agent"
+        label="You have control. HandGrab the page back to the agent"
         disabled={onHandBack === undefined}
         onClick={() => onHandBack?.()}
       >
-        <Hand />
+        <HandGrab />
       </ToolButton>
     </span>
   );

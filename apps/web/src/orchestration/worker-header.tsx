@@ -1,7 +1,7 @@
 import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { Menu } from "@base-ui/react/menu";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, Hand, PanelRight } from "lucide-react";
+import { ChevronRight, HandGrab, PanelRight } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { focusOtherWindow } from "@/desktop/open-thread";
@@ -73,7 +73,7 @@ function useWorkerFacts(thread: Thread) {
 
 /** The › between crumbs, dropped with the crumb before it. */
 const crumbSeparator = (drop?: string) => (
-  <ChevronRight aria-hidden className={cn("size-3 shrink-0 text-muted-foreground/60", drop)} />
+  <ChevronRight aria-hidden className={cn("size-3.5 shrink-0 text-muted-foreground/60", drop)} />
 );
 
 /**
@@ -221,7 +221,7 @@ function HoldChip({
           />
         }
       >
-        <Hand aria-hidden className="size-3 text-muted-foreground" />
+        <HandGrab aria-hidden className="size-3.5 text-muted-foreground" />
         <span className={cn(compact && "sr-only")}>You took over</span>
       </Hint>
       <Hint
@@ -236,7 +236,7 @@ function HoldChip({
           />
         }
       >
-        Hand back
+        HandGrab back
       </Hint>
     </span>
   );
@@ -276,10 +276,10 @@ function useWorkerActions(thread: Thread) {
 /**
  * A worker's own actions at the end of its header: Keep beside docks it next to its orchestrator's
  * chat (⌘\), and Take over holds it for you, by the same path a message you type into it takes,
- * until you hand it back. While you hold it, the hold chip and its Hand back stand in Take over's
+ * until you hand it back. While you hold it, the hold chip and its HandGrab back stand in Take over's
  * place. Watching it, here or beside the chat, never holds it. In a title bar folded all the way,
  * Keep beside and Take over are the bar's "…" items (`WorkerMenuItems`) and the hold chip is a glyph
- * and its Hand back.
+ * and its HandGrab back.
  */
 export function WorkerActions({
   thread,
@@ -307,7 +307,7 @@ export function WorkerActions({
             />
           }
         >
-          <PanelRight aria-hidden className="size-3" />
+          <PanelRight aria-hidden className="size-3.5" />
           <span className={inTitlebar ? "sr-only" : "@max-md:sr-only"}>Keep beside</span>
         </Hint>
       )}
@@ -373,7 +373,7 @@ export function WorkerMenuItems({
           className={itemClassName}
           onClick={actions.takeOver}
         >
-          <Hand aria-hidden className="size-3.5" />
+          <HandGrab aria-hidden className="size-3.5" />
           Take over
         </Menu.Item>
       )}

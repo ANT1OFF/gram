@@ -30,7 +30,7 @@ export function NewEntryMenu() {
   return (
     <Button
       variant="ghost"
-      size="icon-xs"
+      size="icon-sm"
       aria-label="New"
       data-testid="new-entry"
       data-entry={entry}

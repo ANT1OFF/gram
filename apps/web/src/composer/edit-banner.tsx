@@ -20,7 +20,7 @@ export function EditBanner({ threadId }: { threadId: ThreadId }) {
       data-testid="edit-banner"
       className="mx-auto flex w-full max-w-(--thread-max-width) items-center gap-2 px-6 pt-2 text-xs text-muted-foreground"
     >
-      <Pencil aria-hidden className="size-3 shrink-0" />
+      <Pencil aria-hidden className="size-3.5 shrink-0" />
       <span>
         Editing an earlier message. Sending removes it and everything after
         {editing.files ? ", and restores files" : ""}.

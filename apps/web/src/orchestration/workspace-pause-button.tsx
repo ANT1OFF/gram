@@ -18,7 +18,7 @@ import { setWorkspacePaused } from "./pause-workspace";
 import { midTurnWorkers, orchestratorOf } from "./tree-model";
 
 const PAUSE_HINT =
-  "Pause the workspace: the orchestrator and its workers finish the step they're on and stop, and nothing wakes them until you resume";
+  "Pause\nThe orchestrator and its workers finish the step they're on and stop, and nothing wakes them until you resume";
 
 /**
  * Pause or Resume the workspace's orchestration, one click each. A pause with work mid-flight asks
@@ -87,7 +87,7 @@ function WorkspacePauseButton({
 
   const trigger = (
     <Button
-      size={compact ? "icon-xs" : "sm"}
+      size={compact ? "icon-sm" : "sm"}
       variant="ghost"
       data-testid={testId}
       aria-label="Pause"

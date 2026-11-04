@@ -133,7 +133,7 @@ function MessageAttachment({
     <li data-testid="message-attachment" title={path} className="max-w-full">
       {src === undefined ? (
         <span className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-xs">
-          <Paperclip aria-hidden className="size-3" />
+          <Paperclip aria-hidden className="size-3.5" />
           {name}
         </span>
       ) : (

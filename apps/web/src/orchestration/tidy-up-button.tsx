@@ -10,7 +10,7 @@ import { useViewWorkspace } from "@/views/view-workspace";
 import { useTidyUp } from "./use-board-actions";
 
 const TIDY_HINT =
-  "Tidy up: ask the orchestrator to archive what's done, fix groups, stages and plans, close settled questions and refresh its memory";
+  "Tidy up\nAsk the orchestrator to archive what's done, fix groups, stages and plans, close settled questions and refresh its memory";
 
 /** Asks the orchestrator to tidy its board and memory, after whatever it is doing now. */
 function TidyUpButton({
@@ -78,7 +78,7 @@ export function TitlebarTidyUp({ className }: { className?: string }) {
       key={state.workspace.id}
       state={state}
       testId="titlebar-tidy"
-      size="icon-xs"
+      size="icon-sm"
       className={className}
     />
   );

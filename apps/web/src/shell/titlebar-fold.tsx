@@ -156,7 +156,7 @@ export function TitlebarOverflow({
   return (
     <Menu.Root>
       <Hint
-        label="More: Quiet, focus mode, layout"
+        label={"More window controls\nQuiet, focus mode and layout"}
         side="bottom"
         render={
           <Menu.Trigger
@@ -164,7 +164,7 @@ export function TitlebarOverflow({
             render={
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 aria-label="More window controls"
                 className={cn(
                   "text-muted-foreground data-popup-open:bg-muted data-popup-open:text-foreground",

@@ -22,6 +22,7 @@ import {
 import { useShallow } from "zustand/react/shallow";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { keyLabel } from "@/keyboard/registry";
@@ -243,10 +244,10 @@ export function OverviewSidebar() {
       {/* The title bar's height. Hide sidebar leads, after macOS's window buttons, in the spot the
           title bar's Show sidebar takes while it is hidden, so the toggle never moves. Too narrow
           for them all beside the buttons, the rest wrap to a row below rather than clip. */}
-      <div className="flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-2 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
+      <div className="flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-0.5 px-2 py-1.5 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           aria-label="Hide sidebar"
           data-testid="overview-hide"
           title={withHint("Hide sidebar", hideHint)}
@@ -258,7 +259,7 @@ export function OverviewSidebar() {
         <TopLeftNav />
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           aria-label="Compact overview"
           data-testid="overview-compact"
           title="Compact overview"
@@ -546,15 +547,19 @@ function WorkspaceRow({
               <WaitingLine waiting={waiting} testId="overview-orchestrator-waiting" />
             )}
           </button>
-          <button
-            type="button"
-            data-testid="overview-workspace-fold"
-            aria-expanded={!folded}
-            aria-controls={bodyId}
-            aria-label={folded ? `Show ${name}'s workers` : `Hide ${name}'s workers`}
-            title={folded ? "Show workers" : "Hide workers"}
-            onClick={() => fold(!folded)}
-            className="grid size-6 shrink-0 cursor-default place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          <Hint
+            label={folded ? `Show ${name}'s workers` : `Hide ${name}'s workers`}
+            render={
+              <button
+                type="button"
+                data-testid="overview-workspace-fold"
+                aria-expanded={!folded}
+                aria-controls={bodyId}
+                aria-label={folded ? `Show ${name}'s workers` : `Hide ${name}'s workers`}
+                onClick={() => fold(!folded)}
+                className="grid size-7 shrink-0 cursor-default place-items-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            }
           >
             <ChevronDown
               aria-hidden
@@ -563,7 +568,7 @@ function WorkspaceRow({
                 folded && "-rotate-90",
               )}
             />
-          </button>
+          </Hint>
         </ContextMenuTrigger>
         <ContextMenuContent data-testid="overview-workspace-menu">
           <WorkspaceMenuItems state={state} />
@@ -936,7 +941,7 @@ function WaitingLine({ waiting, testId }: { waiting: WaitingOn; testId: string }
         data-kind={waiting.kind}
         className="flex min-w-0 items-center gap-1"
       >
-        <Hourglass aria-hidden className="size-3 shrink-0" />
+        <Hourglass aria-hidden className="size-3.5 shrink-0" />
         <span className="truncate">{waiting.label}</span>
       </span>
     </Swap>
@@ -952,7 +957,7 @@ function WaitingList({ waiting }: { waiting: WaitingOn }) {
     >
       {waiting.reasons.map((reason, i) => (
         <li key={i} data-kind={reason.kind} className="flex min-w-0 gap-1.5">
-          <Hourglass aria-hidden className="mt-0.5 size-3 shrink-0" />
+          <Hourglass aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0">{reason.detail}</span>
         </li>
       ))}
@@ -1070,7 +1075,7 @@ function FoldedThreads({
         <ChevronDown
           aria-hidden
           className={cn(
-            "size-3 shrink-0 transition-transform duration-(--dur-fast)",
+            "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
             !open && "-rotate-90",
           )}
         />

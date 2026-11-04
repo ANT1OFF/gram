@@ -101,7 +101,7 @@ export function StageStepper({
           title={model.current}
           className="inline-flex w-fit max-w-full items-center gap-1 rounded-sm border border-border px-1 text-[11px] text-foreground/80"
         >
-          <Milestone aria-hidden className="size-3 shrink-0" />
+          <Milestone aria-hidden className="size-3.5 shrink-0" />
           <span className="truncate">{model.current}</span>
         </span>
       ) : compact ? (
@@ -193,7 +193,7 @@ export function StageStepper({
                   <Icon
                     aria-hidden
                     className={cn(
-                      "relative size-3 shrink-0",
+                      "relative size-3.5 shrink-0",
                       step.status === "current" && "text-primary",
                     )}
                   />
@@ -218,7 +218,7 @@ export function StageStepper({
             model.stale ? "text-warning" : "text-muted-foreground",
           )}
         >
-          {model.stale && <Clock aria-hidden className="mt-0.5 size-3 shrink-0" />}
+          {model.stale && <Clock aria-hidden className="mt-0.5 size-3.5 shrink-0" />}
           <span className="min-w-0 break-words">{model.attribution}</span>
           {model.stale && <span className="sr-only">, which may be out of date</span>}
         </span>
@@ -265,9 +265,9 @@ export function StageChip({
       )}
     >
       {model.stale ? (
-        <Clock aria-hidden className="size-2.5 shrink-0 text-warning" />
+        <Clock aria-hidden className="size-3.5 shrink-0 text-warning" />
       ) : (
-        <Milestone aria-hidden className="size-2.5 shrink-0" />
+        <Milestone aria-hidden className="size-3.5 shrink-0" />
       )}
       {/* Keyed by the stage, so a new one fades in where the old one stood. */}
       <span

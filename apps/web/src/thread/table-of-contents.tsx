@@ -64,7 +64,7 @@ export function TableOfContents({
           />
         }
       >
-        <BookOpen aria-hidden className="size-3.5" />
+        <BookOpen aria-hidden className="size-4" />
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
@@ -241,7 +241,7 @@ export function ConversationRail({
                 />
               }
             >
-              <ChevronUp aria-hidden className="size-3" />
+              <ChevronUp aria-hidden className="size-3.5" />
             </Hint>
           )}
           <RailChapters chapters={chapters} currentId={currentId} onJump={jump} railRef={railRef} />

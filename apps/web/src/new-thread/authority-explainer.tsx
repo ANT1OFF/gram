@@ -1,4 +1,4 @@
-import { GitMerge, Terminal, type LucideIcon } from "lucide-react";
+import { GitMerge, SquareTerminal, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  */
 const ROWS: readonly { icon: LucideIcon; term: string; line: string }[] = [
   {
-    icon: Terminal,
+    icon: SquareTerminal,
     term: "Agent permissions",
     line: "what agents may run and edit locally (set per thread).",
   },

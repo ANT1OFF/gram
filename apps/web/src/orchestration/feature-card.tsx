@@ -386,7 +386,7 @@ export function FeatureCardView({
         <ul data-testid="feature-card-overlap" className="flex flex-col gap-0.5 text-xs">
           {overlaps.map(({ key, a, b, files }) => (
             <li key={key} className="flex min-w-0 items-center gap-1 text-status-needs">
-              <CircleAlert aria-hidden className="size-3 shrink-0" />
+              <CircleAlert aria-hidden className="size-3.5 shrink-0" />
               <WorkerLink threadId={a.threadId} className="text-status-needs">
                 {a.title}
               </WorkerLink>
@@ -402,7 +402,7 @@ export function FeatureCardView({
               key={`${worker.threadId} ${other}`}
               className="flex min-w-0 items-center gap-1 text-status-needs"
             >
-              <CircleAlert aria-hidden className="size-3 shrink-0" />
+              <CircleAlert aria-hidden className="size-3.5 shrink-0" />
               <WorkerLink threadId={worker.threadId} className="text-status-needs">
                 {worker.title}
               </WorkerLink>

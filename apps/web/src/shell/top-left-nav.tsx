@@ -33,7 +33,7 @@ export function TopLeftNav({ className }: { className?: string }) {
       role="group"
       aria-label="Navigation"
       data-testid="top-left-nav"
-      className={cn("flex items-center gap-1", className)}
+      className={cn("flex items-center gap-0.5", className)}
     >
       <UpdatePill size="xs" />
       <Hint
@@ -42,7 +42,7 @@ export function TopLeftNav({ className }: { className?: string }) {
         render={
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             aria-label="Usage"
             data-warn={warns || undefined}
             className={NAV}
@@ -69,7 +69,7 @@ export function TopLeftNav({ className }: { className?: string }) {
         render={
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             aria-label="Settings"
             className={NAV}
             render={<Link to="/settings" />}

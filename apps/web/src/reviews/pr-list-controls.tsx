@@ -70,7 +70,7 @@ export function PrListControls({
     <div className="px-2 pb-1" data-testid="pr-list-controls">
       <div className="flex min-w-0 items-center gap-1">
         <label className="flex min-w-0 flex-1 items-center gap-1 rounded-sm border border-border px-1.5 focus-within:ring-2 focus-within:ring-ring">
-          <Search aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             aria-label={`Search ${label}`}
             placeholder="Search PRs…"
@@ -147,7 +147,7 @@ export function PrListControls({
               />
             }
           >
-            <X aria-hidden className="size-3" />
+            <X aria-hidden className="size-3.5" />
           </Hint>
         </div>
       )}

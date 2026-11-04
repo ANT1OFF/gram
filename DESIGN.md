@@ -38,8 +38,18 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **Titles and metadata:** a title at 13 to 14 px in `fg`, its metadata (where it is from, its
   state, a time or a count) at 12 px in `fg-muted`, never smaller. A title wraps to two lines
   before it is cut short.
-- **Icons: Lucide** at a 1.75 stroke, 16 px in rows and buttons, never as decoration and never
-  emoji.
+- **Icons: Lucide** at a 1.75 stroke, never as decoration and never emoji. Two sizes: 16 px in
+  chrome (the title bar, the sidebar's header, the panel's tabs and the composer's toolbar) and
+  14 px inline (rows, chips, cards, menus and docks).
+  - An icon button is at least 28 px square (`icon-sm` for chrome, `icon-xs` inline), with a
+    background on hover and focus. Its tooltip names it and its shortcut at once, and its
+    accessible name says the same; a `title` on an icon `Button` becomes that tooltip.
+  - The open tab, view or toggle shows a background or an underline, never colour alone.
+  - One meaning per glyph, and one glyph per meaning: Needs you is `Hand`, Waiting on you
+    `Inbox`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval
+    `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
+    `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
+    Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
 

@@ -11,7 +11,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Inbox,
+  Hand,
   ListChecks,
   MessageCircleQuestion,
   ShieldQuestion,
@@ -284,7 +284,7 @@ export function AskDetails({ ask, open = false }: { ask: Ask; open?: boolean }) 
       >
         <ChevronRight
           aria-hidden
-          className="size-3 shrink-0 transition-transform duration-(--dur-fast) group-data-[panel-open]:rotate-90"
+          className="size-3.5 shrink-0 transition-transform duration-(--dur-fast) group-data-[panel-open]:rotate-90"
         />
         Details
       </CollapsibleTrigger>
@@ -816,7 +816,7 @@ export function AskStack({
             className="w-full overflow-clip rounded-(--composer-radius) border border-(--composer-outline) bg-card"
           >
             <header className="flex items-center gap-2 py-1.5 pr-2 pl-3.5 text-xs text-muted-foreground">
-              <Inbox aria-hidden className="size-3.5 shrink-0" />
+              <Hand aria-hidden className="size-3.5 shrink-0" />
               {/* No count of its own: the stepper says how many, and the workspace's badge counts
                   them with everything else that needs you (`needsYouCounts`). */}
               <span className="font-medium text-foreground">Asks</span>

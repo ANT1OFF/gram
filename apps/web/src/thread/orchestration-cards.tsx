@@ -112,7 +112,7 @@ export function StatePill({
       className={cn("inline-flex shrink-0 items-center gap-1 text-xs", tone.className, className)}
     >
       <Swap swapKey={state.label}>
-        <tone.icon aria-hidden className="size-3" />
+        <tone.icon aria-hidden className="size-3.5" />
       </Swap>
       {iconOnly ? <span className="sr-only">{state.label}</span> : state.label}
     </span>
@@ -137,7 +137,7 @@ function Disclosure({
       <CollapsibleTrigger className={TRIGGER}>
         <ChevronRight
           aria-hidden
-          className="size-3 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
         />
         {label}
       </CollapsibleTrigger>
@@ -168,7 +168,7 @@ function PrLink({ url, children }: { url: string | undefined; children: ReactNod
       className="inline-flex w-fit items-center gap-1 font-mono text-xs text-link underline-offset-4 hover:underline"
     >
       {children}
-      <ExternalLink aria-hidden className="size-3" />
+      <ExternalLink aria-hidden className="size-3.5" />
     </OutboundLink>
   );
 }
@@ -338,7 +338,7 @@ function LedgerTable({
             <tr className="border-t border-border bg-muted/30">
               <th scope="rowgroup" colSpan={5} className="px-1 py-1 font-medium">
                 <span className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Layers aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+                  <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                   {group.group}
                   <StatePill state={presentState(group.state)} />
                   {group.stage !== undefined && (

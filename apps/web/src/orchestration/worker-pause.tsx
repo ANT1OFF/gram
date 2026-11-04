@@ -43,7 +43,7 @@ export function WorkerPauseMark({ pause }: { pause: WorkerPauseState }) {
       title={workerPauseHint(pause.state, pause.at)}
       className="flex shrink-0 items-center text-muted-foreground"
     >
-      <Pause aria-hidden className="size-3" />
+      <Pause aria-hidden className="size-3.5" />
     </span>
   );
 }

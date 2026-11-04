@@ -323,7 +323,7 @@ export function AddConnectorForm({
               onClick={() => toggleTarget(target)}
               className="flex items-center gap-1 rounded-sm border border-border px-2 py-0.5 text-muted-foreground aria-checked:border-ring aria-checked:bg-accent aria-checked:text-foreground"
             >
-              {targets.includes(target) && <Check aria-hidden className="size-3" />}
+              {targets.includes(target) && <Check aria-hidden className="size-3.5" />}
               {MCP_TARGET_LABEL[target]}
             </button>
           ))}

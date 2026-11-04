@@ -63,7 +63,7 @@ export function AttachmentChips({
               )}
               onClick={() => onRemove(item.key)}
             >
-              <X className="size-3" />
+              <X className="size-3.5" />
             </button>
           );
           return item.previewUrl ? (
@@ -106,7 +106,7 @@ export function AttachmentChips({
                 failed ? "border-destructive text-destructive" : "border-border",
               )}
             >
-              <Paperclip aria-hidden className="size-3" />
+              <Paperclip aria-hidden className="size-3.5" />
               {item.name}
               {item.status === "uploading" && <Spinner aria-label="Uploading" className="size-3" />}
               {remove}
