@@ -20,6 +20,7 @@ import { spawn, type IPty } from "node-pty";
 import { resolveFolder } from "../fs/folders.ts";
 import { BATCH_WINDOW_MS, coalesce } from "./batch.ts";
 import { SCROLLBACK_LIMIT, Scrollback } from "./scrollback.ts";
+import { scriptShellArgs } from "../scripts/project-scripts.ts";
 import { resolveShell, shellCommand, signalName, terminalEnv } from "./shell.ts";
 import { ptyInvocation } from "./shell-check.ts";
 import { ensureSpawnHelperExecutable } from "./spawn-helper.ts";
@@ -32,6 +33,10 @@ interface OpenTerminal {
   readonly cols: number;
   readonly rows: number;
   readonly shell?: string;
+  /** Runs this one shell line instead of an interactive shell; the terminal ends with it. */
+  readonly command?: string;
+  /** The project script `command` comes from, by name, for the tab. */
+  readonly script?: string;
 }
 
 export interface TerminalsDeps {
@@ -161,7 +166,11 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
         const resolved = resolveShell(shell.file, process.platform, process.env["PATH"] ?? "");
         if (!resolved.found) return yield* new InvalidState({ message: resolved.message });
         const env = terminalEnv(process.env, yield* deps.path, process.platform);
-        const invocation = ptyInvocation(resolved.file, shell.args, process.platform, process.env);
+        const args =
+          request.command === undefined
+            ? shell.args
+            : scriptShellArgs(shell, request.command, process.platform);
+        const invocation = ptyInvocation(resolved.file, args, process.platform, process.env);
         // Checked after the awaits above, right before the spawn, so a hold taken meanwhile counts.
         if (request.threadId !== undefined && deps.held?.(request.threadId) === true) {
           return yield* new InvalidState({ message: HELD });
@@ -189,6 +198,7 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
             ...(request.threadId === undefined ? {} : { threadId: request.threadId }),
             cwd,
             shell: shell.file,
+            ...(request.script === undefined ? {} : { script: request.script }),
           },
           pty,
           scrollback: new Scrollback(limit),
@@ -196,6 +206,9 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
           exit: undefined,
           exited: exited.promise,
         };
+        // The line a script runs, dimmed, so its output reads under the command that made it.
+        if (request.command !== undefined)
+          terminal.scrollback.append(`\x1b[2m$ ${request.command}\x1b[0m\r\n`);
         pty.onData((data) => {
           terminal.scrollback.append(data);
           for (const listener of terminal.listeners) listener({ type: "data", data });
@@ -213,7 +226,12 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
         });
         terminals.set(terminalId, terminal);
         if (request.threadId !== undefined) deps.roots?.add(request.threadId, pty.pid, terminalId);
-        return { terminalId, cwd, shell: shell.file };
+        return {
+          terminalId,
+          cwd,
+          shell: shell.file,
+          ...(request.script === undefined ? {} : { script: request.script }),
+        };
       });
 
     const waitForExit = (terminal: Terminal) =>
@@ -287,7 +305,12 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
       Effect.sync(() =>
         [...terminals.values()]
           .filter((t) => threadId === undefined || t.info.threadId === threadId)
-          .map((t) => ({ ...t.info, alive: t.exit === undefined })),
+          .map((t) => ({
+            ...t.info,
+            alive: t.exit === undefined,
+            ...(t.exit?.code === undefined ? {} : { exitCode: t.exit.code }),
+            ...(t.exit?.signal === undefined ? {} : { signal: t.exit.signal }),
+          })),
       );
 
     const snapshot: Terminals["snapshot"] = (threadId) =>

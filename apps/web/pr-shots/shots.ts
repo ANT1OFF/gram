@@ -808,6 +808,21 @@ const TURN_FOOTER_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** t-flaky's project with three saved scripts, the last failing, then the thread open. */
+const seedProjectScripts = async (page: Page) => {
+  await page.goto("/t/t-flaky");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  await page.evaluate(async () => {
+    const mock = window.gramMock!;
+    const projectId = mock.world.summary("t-flaky" as never).thread.projectId;
+    await mock.saveProjectScripts(projectId, [
+      { name: "dev", command: "pnpm run dev" },
+      { name: "test", command: "pnpm run test", shortcut: "mod+alt+t" },
+      { name: "lint", command: "pnpm run lint --max-warnings 0; exit 1", cwd: "src" },
+    ]);
+  });
+};
+
 export const SHOTS: readonly Shot[] = [
   ...UPDATE_PILL_SHOTS,
   ...TURN_FOOTER_SHOTS,
@@ -1054,6 +1069,55 @@ export const SHOTS: readonly Shot[] = [
         .getByRole("alert")
         .or(panel.getByRole("status"))
         .waitFor();
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("right-panel"),
+  },
+  {
+    name: "project-scripts-header",
+    title: "A thread's header: Run script beside the thread menu",
+    open: async (page) => {
+      await page.goto("/t/t-flaky");
+      await page.getByTestId("pane-header").waitFor();
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByTestId("pane-header"),
+  },
+  {
+    name: "project-scripts-suggestions",
+    title: "Project scripts on first use: package.json's scripts offered with Add",
+    open: async (page) => {
+      await page.goto("/t/t-flaky");
+      await page.getByTestId("pane-header").getByRole("button", { name: "Run script" }).click();
+      await page.getByRole("menuitem", { name: "Add project script…" }).click();
+      await page.getByTestId("script-suggestion").first().waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "project-scripts-menu",
+    title: "Run script: the project's scripts, their commands and keys",
+    open: async (page) => {
+      await seedProjectScripts(page);
+      await page.getByTestId("pane-header").getByRole("button", { name: "Run script" }).click();
+      await page.getByTestId("run-script-item").first().hover();
+      await page.waitForTimeout(500);
+    },
+  },
+  {
+    name: "project-scripts-terminal",
+    title: "Script runs in terminal tabs named after them: finished green, failed red",
+    open: async (page) => {
+      await seedProjectScripts(page);
+      const menu = page.getByTestId("pane-header").getByRole("button", { name: "Run script" });
+      for (const name of ["test", "lint"]) {
+        await menu.click();
+        await page.getByTestId("run-script-item").filter({ hasText: name }).first().click();
+        await page
+          .locator(`[role="tab"][data-script="${name}"]:not([data-run="running"])`)
+          .waitFor();
+      }
       await page.waitForTimeout(400);
     },
     element: (page) => page.getByTestId("right-panel"),

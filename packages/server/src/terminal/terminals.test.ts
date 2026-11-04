@@ -444,3 +444,33 @@ describe("Windows shell profiles", () => {
     },
   );
 });
+
+describe.skipIf(!ptyProbe.available || isWindows)("a script's terminal", () => {
+  it.live(
+    "runs the one command, shows it first, and ends with its exit code",
+    () =>
+      Effect.gen(function* () {
+        const { folder, terminals } = yield* setup;
+        const opened = yield* terminals.open({
+          threadId: THREAD,
+          cols: 80,
+          rows: 24,
+          shell: SHELL,
+          command: "echo sc-$((6*7)); exit 3",
+          script: "answer",
+        });
+        expect(opened).toMatchObject({ cwd: folder, script: "answer" });
+        const events = yield* terminals
+          .subscribe(opened.terminalId)
+          .pipe(Stream.runCollect, Effect.timeout(ANSWER_DEADLINE));
+        const text = textOf(events);
+        expect(text.startsWith("$ echo sc-$((6*7)); exit 3")).toBe(true);
+        expect(text).toContain("sc-42");
+        expect(events.at(-1)).toMatchObject({ type: "exit", code: 3 });
+        expect(yield* terminals.list(THREAD)).toEqual([
+          expect.objectContaining({ script: "answer", alive: false, exitCode: 3 }),
+        ]);
+      }).pipe(Effect.scoped),
+    TIMEOUT,
+  );
+});

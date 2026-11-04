@@ -66,6 +66,8 @@ export function TerminalView({
   shell,
   active,
   onRestart,
+  script,
+  onExit,
 }: {
   threadId: ThreadId;
   terminalId: TerminalId;
@@ -73,6 +75,10 @@ export function TerminalView({
   shell?: string | undefined;
   active: boolean;
   onRestart: () => void;
+  /** The project script it runs, whose end reads as finished or failed and restarts as a re-run. */
+  script?: string | undefined;
+  /** Called with how the process ended, once its feed says so. */
+  onExit?: ((exit: { code?: number; signal?: string }) => void) | undefined;
 }) {
   const api = useApi();
   const openInEditor = useOpenInEditor();
@@ -113,6 +119,7 @@ export function TerminalView({
     root,
     openInEditor,
     local,
+    onExit,
   });
   useEffect(() => {
     latest.current = {
@@ -124,6 +131,7 @@ export function TerminalView({
       root,
       openInEditor,
       local,
+      onExit,
     };
   });
 
@@ -242,10 +250,12 @@ export function TerminalView({
           } else if (event.type === "data") {
             term.write(event.data);
           } else {
-            setExit({
+            const ended = {
               ...(event.code !== undefined ? { code: event.code } : {}),
               ...(event.signal !== undefined ? { signal: event.signal } : {}),
-            });
+            };
+            setExit(ended);
+            latest.current.onExit?.(ended);
           }
         }
       } catch (error) {
@@ -400,10 +410,16 @@ export function TerminalView({
           role="status"
           className="flex items-center gap-2 border-t border-border px-2 py-1.5 text-xs text-muted-foreground"
         >
-          {exit.gone ? "This terminal ended with the server" : `Process exited${exitDetail}`}
+          {exit.gone
+            ? "This terminal ended with the server"
+            : script === undefined
+              ? `Process exited${exitDetail}`
+              : exit.code === 0
+                ? `${script} finished`
+                : `${script} failed${exitDetail}`}
           <Button type="button" size="xs" variant="outline" className="ml-auto" onClick={onRestart}>
             <RotateCcw data-icon="inline-start" />
-            Restart
+            {script === undefined ? "Restart" : "Run again"}
           </Button>
         </div>
       )}

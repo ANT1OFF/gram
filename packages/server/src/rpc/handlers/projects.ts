@@ -1,4 +1,10 @@
-import { cloneFolderOf, ProjectRpcs } from "@gram/contracts";
+import {
+  cloneFolderOf,
+  InvalidState,
+  NotFound,
+  ProjectRpcs,
+  type ProjectId,
+} from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { homedir } from "node:os";
@@ -6,6 +12,11 @@ import { resolve } from "node:path";
 import { cloneRepo, makeCloneSuggestions } from "../../fs/clone.ts";
 import { expandHome, registerRepo, repositoryCandidates } from "../../fs/folders.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
+import {
+  readProjectScripts,
+  saveProjectScripts,
+  ScriptsError,
+} from "../../scripts/project-scripts.ts";
 import { logDefects, type Handlers } from "./common.ts";
 import { sessionHandlers } from "./sessions.ts";
 
@@ -18,6 +29,15 @@ const projectHandlers = Effect.gen(function* () {
   const proc = yield* Proc;
   const provide = Effect.provideService(Proc, proc);
   const suggestions = makeCloneSuggestions(homedir());
+  const projectRoot = (projectId: ProjectId) =>
+    store.listProjects.pipe(
+      Effect.flatMap((projects) => {
+        const project = projects.find((each) => each.id === projectId);
+        return project === undefined
+          ? Effect.fail(new NotFound({ entity: "project", id: projectId }))
+          : Effect.succeed(project.root);
+      }),
+    );
 
   return {
     "projects.list": () => store.listProjects,
@@ -44,6 +64,25 @@ const projectHandlers = Effect.gen(function* () {
     "projects.setBookmarked": ({ projectId, bookmarked }) =>
       store.setProjectBookmarked(projectId, bookmarked),
     "projects.forget": ({ projectId }) => store.forgetProject(projectId),
+    "projects.scripts": ({ projectId }) =>
+      projectRoot(projectId).pipe(
+        Effect.flatMap((root) => Effect.promise(() => readProjectScripts(root, projectId))),
+      ),
+    "projects.saveScripts": ({ projectId, scripts }) =>
+      projectRoot(projectId).pipe(
+        Effect.flatMap((root) =>
+          Effect.tryPromise({
+            try: () => saveProjectScripts(root, projectId, scripts),
+            catch: (error) =>
+              new InvalidState({
+                message:
+                  error instanceof ScriptsError
+                    ? error.message
+                    : "Can't save the project's scripts.",
+              }),
+          }),
+        ),
+      ),
   } satisfies Partial<Handlers>;
 });
 

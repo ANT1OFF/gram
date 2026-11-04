@@ -30,6 +30,7 @@ import { AddRepository } from "@/new-thread/add-repository";
 import { AutonomyChip } from "@/orchestration/autonomy-chip";
 import { RepositoryChecklist } from "@/orchestration/repository-checklist";
 import { SwitchOrchestratorAction } from "@/orchestration/switch-orchestrator";
+import { ProjectScriptsEditor } from "@/scripts/project-scripts-editor";
 import { useThreadsStore } from "@/stores/threads";
 import { parentFolder } from "@/orchestration/workspace-repos";
 import { pauseText } from "@/thread/orchestration-model";
@@ -114,6 +115,32 @@ export function WorkspaceSettingsPage({
     <div data-testid="workspace-page" className="flex flex-col gap-8 text-sm">
       <Header state={state} changes={changes} sheet={sheet} />
       <Basics state={state} projects={projects} changes={changes} />
+      <SettingsGroup
+        label="Project scripts"
+        description="Build, test, dev and other commands, one click or key away."
+        learnMore="Each runs in the thread's own folder, in a terminal tab named after it. Pick one from Run script in a thread's header or the palette, or press its key."
+        keywords={[
+          "scripts",
+          "commands",
+          "build",
+          "test",
+          "lint",
+          "dev",
+          "run",
+          "package.json",
+          "makefile",
+        ]}
+        testId="workspace-scripts"
+      >
+        {state.workspace.projectIds.map((projectId) => (
+          <div key={projectId} className="flex flex-col gap-2">
+            {state.workspace.projectIds.length > 1 && (
+              <p className="text-xs font-medium">{projectNameOf(projects, projectId)}</p>
+            )}
+            <ProjectScriptsEditor projectId={projectId} />
+          </div>
+        ))}
+      </SettingsGroup>
       <AutonomySection state={state} changes={changes} />
       <SettingsGroup
         label="Models"

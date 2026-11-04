@@ -10,6 +10,7 @@ import type {
 import { createChannel, type Channel } from "../channel";
 import { MOCK_HOME } from "../mock-fs";
 import type { MockWorld } from "../mock-world";
+import { mockScript } from "../projects/mock-scripts";
 import type { TerminalApi, TerminalOpenInput } from "./types";
 
 const SCROLLBACK_LIMIT = 64_000;
@@ -19,6 +20,14 @@ interface MockTerminal {
   scrollback: string;
   line: string;
   subscribers: Set<Channel<TerminalEvent>>;
+  exit?: { code?: number; signal?: string };
+}
+
+/** A project script's run: what the server resolves `terminal.open`'s `script` to. */
+export interface MockScriptRun {
+  readonly name: string;
+  readonly command: string;
+  readonly cwd: string;
 }
 
 const tagged = (tag: string, message: string) => Object.assign(new Error(message), { _tag: tag });
@@ -28,9 +37,9 @@ export class MockTerminals {
   readonly #terminals = new Map<string, MockTerminal>();
   #seq = 0;
 
-  open(input: TerminalOpenInput, defaultCwd: string): TerminalOpened {
+  open(input: TerminalOpenInput, defaultCwd: string, run?: MockScriptRun): TerminalOpened {
     const terminalId = `term-${++this.#seq}` as TerminalId;
-    const cwd = input.cwd ?? defaultCwd;
+    const cwd = run?.cwd ?? input.cwd ?? defaultCwd;
     const shell = input.shell ?? "/bin/zsh";
     this.#terminals.set(terminalId, {
       info: {
@@ -39,12 +48,39 @@ export class MockTerminals {
         shell,
         alive: true,
         ...(input.threadId ? { threadId: input.threadId } : {}),
+        ...(run === undefined ? {} : { script: run.name }),
       },
-      scrollback: `Gram mock shell in ${cwd}\r\n$ `,
+      scrollback:
+        run === undefined
+          ? `Gram mock shell in ${cwd}\r\n$ `
+          : `\x1b[2m$ ${run.command}\x1b[0m\r\n`,
       line: "",
       subscribers: new Set(),
     });
-    return { terminalId, cwd, shell };
+    return { terminalId, cwd, shell, ...(run === undefined ? {} : { script: run.name }) };
+  }
+
+  /**
+   * Plays a script's run: a few lines of output, then an exit with the code its command names
+   * (`exit 2`, or `false` for 1), else 0.
+   */
+  async play(terminalId: TerminalId, run: MockScriptRun, delay: (ms: number) => Promise<void>) {
+    const terminal = this.#terminals.get(terminalId);
+    if (terminal === undefined) return;
+    const code =
+      /\bexit (\d+)/.exec(run.command)?.[1] ?? (/\bfalse\b/.test(run.command) ? "1" : "0");
+    await delay(300);
+    if (!terminal.info.alive) return;
+    this.#write(terminal, `> ${run.name}\r\n> ${run.command}\r\n\r\n`);
+    await delay(500);
+    if (!terminal.info.alive) return;
+    this.#write(
+      terminal,
+      code === "0"
+        ? "\x1b[32m✓\x1b[0m 12 checks passed\r\n"
+        : "\x1b[31m✗\x1b[0m 2 checks failed\r\n",
+    );
+    this.#exit(terminal, { code: Number(code) });
   }
 
   #get(terminalId: string): MockTerminal {
@@ -104,7 +140,10 @@ export class MockTerminals {
     );
     channel.push({ type: "replay", data: terminal.scrollback });
     if (terminal.info.alive) terminal.subscribers.add(channel);
-    else channel.close();
+    else {
+      if (terminal.exit !== undefined) channel.push({ type: "exit", ...terminal.exit });
+      channel.close();
+    }
     return channel;
   }
 
@@ -114,7 +153,13 @@ export class MockTerminals {
   }
 
   #exit(terminal: MockTerminal, how: { code?: number; signal?: string }) {
-    terminal.info = { ...terminal.info, alive: false };
+    terminal.info = {
+      ...terminal.info,
+      alive: false,
+      ...(how.code === undefined ? {} : { exitCode: how.code }),
+      ...(how.signal === undefined ? {} : { signal: how.signal }),
+    };
+    terminal.exit = how;
     for (const channel of terminal.subscribers) {
       channel.push({ type: "exit", ...how });
       channel.close();
@@ -140,9 +185,20 @@ export function createTerminalMock(world: MockWorld): TerminalApi {
       }
       return { found: true, file: value };
     },
-    terminalOpen: async (input) => {
-      const cwd = input.threadId ? world.summary(input.threadId).thread.checkout.path : MOCK_HOME;
-      return terminals.open(input, cwd);
+    terminalOpen: async ({ script, ...input }) => {
+      const thread = input.threadId ? world.summary(input.threadId).thread : undefined;
+      const cwd = thread?.checkout.path ?? MOCK_HOME;
+      if (script === undefined) return terminals.open(input, cwd);
+      const saved = thread === undefined ? undefined : mockScript(world, thread.projectId, script);
+      if (saved === undefined) throw tagged("InvalidState", `There is no script named ${script}.`);
+      const run = {
+        name: saved.name,
+        command: saved.command,
+        cwd: saved.cwd === undefined ? cwd : `${cwd}/${saved.cwd}`,
+      };
+      const opened = terminals.open(input, cwd, run);
+      void terminals.play(opened.terminalId, run, (ms) => world.delay(ms));
+      return opened;
     },
     terminalInput: async (terminalId, data) => terminals.input(terminalId, data),
     terminalResize: async (terminalId) => terminals.resize(terminalId),

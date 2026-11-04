@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { useShortcut } from "@/keyboard/registry";
 import { RemoveWorkspaceDialog } from "@/orchestration/remove-workspace";
 import { AddRepoDialog } from "@/orchestration/workspace-repos";
+import { ProjectScriptsDialog } from "@/scripts/project-scripts-dialog";
+import { ScriptShortcuts } from "@/scripts/script-shortcuts";
 import { focusPaneComposer } from "@/shell/pane-focus";
 import { useLayoutStore } from "@/stores/layout";
 import { WorktreesDialog } from "@/worktrees/worktrees-dialog";
@@ -124,6 +126,10 @@ export function ThreadDialogs() {
       {dialog?.kind === "removeWorkspace" && (
         <RemoveWorkspaceDialog workspaceId={dialog.workspaceId} onClose={dismiss} />
       )}
+      {dialog?.kind === "projectScripts" && (
+        <ProjectScriptsDialog projectId={dialog.projectId} onClose={dismiss} />
+      )}
+      <ScriptShortcuts />
       {error !== undefined && (
         <DialogShell testId="thread-action-error" title="That didn't work" onClose={clearError}>
           <p role="alert" className="text-sm">

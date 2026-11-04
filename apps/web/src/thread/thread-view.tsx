@@ -53,6 +53,7 @@ import {
   WorkerCrumbs,
   WorkerNowChip,
 } from "@/orchestration/worker-header";
+import { RunScriptMenu } from "@/scripts/run-script-menu";
 import { loadEarlier, useThreadFeed } from "@/stores/feeds";
 import { useLayoutStore } from "@/stores/layout";
 import { useRevealStore } from "@/stores/reveal";
@@ -512,6 +513,9 @@ export function ThreadView({
           earlierFailed={earlierFailed}
           onLoadEarlier={() => void pageEarlier(true)}
         />
+        {thread.role !== "orchestrator" && (
+          <RunScriptMenu threadId={threadId} projectId={thread.projectId} className={hideSm} />
+        )}
         <ThreadMenu threadId={threadId} />
         {actions}
       </header>
