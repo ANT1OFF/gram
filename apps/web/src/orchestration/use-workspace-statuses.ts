@@ -14,6 +14,7 @@ import {
   type WorkspaceStatus,
   type WorkspaceTree,
 } from "./tree-model";
+import { useAnsweredWorkers } from "./needs-you-store";
 import { askedQuestions, useWorkspaceAsks } from "./ask-stack";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { workerTones } from "./workers-model";
@@ -27,6 +28,7 @@ export function useWorkerTally(
   ledger: OrchestratorLedger | undefined,
   asking: ReadonlySet<ThreadId>,
 ): { readonly live: number; readonly working: number } {
+  const answered = useAnsweredWorkers();
   const [live, working] = useThreadsStore(
     useShallow((s) => {
       const running = workingWorkerThreads(s.byId, s.statusDetail, workspaceId).map(
@@ -36,6 +38,7 @@ export function useWorkerTally(
         byId: s.byId,
         statusDetail: s.statusDetail,
         asking,
+        answered,
       });
       return [tally.live, tally.working] as const;
     }),

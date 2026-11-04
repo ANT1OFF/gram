@@ -2,6 +2,7 @@ import { PreviewCard } from "@base-ui/react/preview-card";
 import {
   type FeatureCardHeld,
   type OrchestratorLedger,
+  type Thread,
   type ThreadId,
   type ThreadSummary,
   type WorkspaceId,
@@ -54,9 +55,10 @@ import {
   toggleOverviewSidebar,
 } from "@/views/shell-layout";
 import { parkedSoloThreads, soloThreads } from "@/views/solo-threads";
-import { useViewWorkspace } from "@/views/view-workspace";
+import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 import { useFirstRun } from "@/welcome/welcome";
 
+import { useAnsweredWorkers } from "./needs-you-store";
 import { askKeysByThread } from "./ask-model";
 import { NewEntryMenu } from "./new-entry-menu";
 import { useWorkspaceAsks } from "./ask-stack";
@@ -146,13 +148,14 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
   );
   // Each live worker's tone, by the selector the Board, ⌘J and Quiet read too.
   const asking = useMemo(() => new Set(askKeysByThread(asks ?? []).keys()), [asks]);
+  const answered = useAnsweredWorkers();
   const tones = useThreadsStore(
     useSame(
       (s) =>
         workerTones(
           ledger,
           workingWorkerThreads(s.byId, s.statusDetail, workspaceId).map((t) => t.thread.id),
-          { byId: s.byId, statusDetail: s.statusDetail, asking },
+          { byId: s.byId, statusDetail: s.statusDetail, asking, answered },
         ).tones,
     ),
   );
@@ -234,9 +237,46 @@ const focusVirtualRow = async (list: HTMLElement, index: number, last: boolean) 
   (last ? stops.at(-1) : stops[0])?.focus();
 };
 
+/**
+ * Where the thread in view lists in the overview, for `useRevealViewed`: "solo" for a solo thread,
+ * its workspace's id for a worker, and nothing for an orchestrator (its line is the workspace's own,
+ * always shown) or a thread not loaded yet.
+ */
+export const viewedSection = (
+  thread: Pick<Partial<Thread>, "workspaceId" | "spawnedBy"> | undefined,
+): "solo" | WorkspaceId | undefined => {
+  if (thread === undefined) return undefined;
+  if (thread.workspaceId === undefined) return "solo";
+  return thread.spawnedBy === undefined ? undefined : thread.workspaceId;
+};
+
+/**
+ * Opens what the thread in view lists under, once each time the view moves to another thread: a
+ * jump to a solo thread opens Solo threads, and one to a worker its workspace's line, so its row
+ * shows where it is, marked as the one in view. The thread the window opens on moves nothing, so a
+ * section folded there stays folded across a reload, and so does one folded again while there.
+ */
+function useRevealViewed() {
+  const viewed = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const section = useThreadsStore((s) =>
+    viewedSection(viewed === undefined ? undefined : s.byId[viewed]?.thread),
+  );
+  // The thread last revealed, or the one the window opened on.
+  const revealed = useRef(viewed);
+  useEffect(() => {
+    // A thread not loaded yet is revealed once it is.
+    if (viewed === undefined || section === undefined || revealed.current === viewed) return;
+    revealed.current = viewed;
+    const layout = useLayoutStore.getState();
+    if (section === "solo") layout.unfoldOverviewSection("solo");
+    else layout.toggleWorkspaceNode(overviewFoldKey(section), false);
+  }, [viewed, section]);
+}
+
 /** The Orchestrator layout's left column: what needs you, the orchestrators and the solo threads. */
 export function OverviewSidebar() {
   const hideHint = useShortcutHint("sidebar.toggle");
+  useRevealViewed();
   // The optional sections Settings → General turned off.
   const hidden = useLayoutStore((s) => s.overviewHidden);
   return (
@@ -394,7 +434,10 @@ function NeedsYou() {
 /** One line per workspace, in the switcher's order, each folded or open into its live workers. */
 function Orchestrators() {
   const workspaces = useWorkspaces();
-  const current = useViewWorkspace();
+  // A solo thread in view is in no workspace: none of their lines is marked.
+  const solo = useViewSolo();
+  const viewed = useViewWorkspace();
+  const current = solo ? undefined : viewed;
   const asks = useWorkspaceAsks();
   // The workspaces' own threads, by identity: a solo thread's update re-renders none of this.
   const own = useThreadsStore(

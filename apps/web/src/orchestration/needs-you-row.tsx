@@ -26,6 +26,7 @@ import { useSaveSettings } from "@/settings/use-save-settings";
 import { MockThumb } from "@/thread/mock-visuals";
 
 import { holdAnswer, type SendAction } from "./ask-answer";
+import { answerKey } from "./ask-keys";
 import type { AskOption } from "./ask-model";
 import { useAskStackStore } from "./ask-stack-store";
 import { saveSetAside, SNOOZE_MS } from "./inbox-set-aside";
@@ -113,7 +114,7 @@ export const optionThumbs = (
   });
 };
 
-/** An Allow or a Deny, drawn as a check or a cross; anything else by its number. */
+/** An Allow or a Deny, drawn as a check or a cross; anything else by its number and words. */
 const glyphOf = (option: AskOption): LucideIcon | undefined =>
   option.action.kind === "group"
     ? /^Allow\b/u.test(option.label)
@@ -126,6 +127,13 @@ const glyphOf = (option: AskOption): LucideIcon | undefined =>
 /** Whether Dismiss applies: a failure until it fails again, or a worker's question. */
 const canDismiss = (item: NeedsYouItem): boolean =>
   item.kind === "failure" || item.ask?.worker !== undefined;
+
+/**
+ * Whether a row's options are all an Allow or a Deny, which its icons say beside its text; any
+ * other option is said in words on a line of its own under it (`OptionAnswers`).
+ */
+const glyphsOnly = (options: readonly AskOption[]): boolean =>
+  options.every((option) => glyphOf(option) !== undefined);
 
 /** What a row's buttons do, each through its source's own path. */
 export function useNeedsYouActions() {
@@ -228,28 +236,29 @@ function QuickAnswers({
       </Hint>
     );
   }
-  if (full) return null;
-  return quickOptions(item).map((option, index) => {
-    const Glyph = glyphOf(option);
+  const options = quickOptions(item);
+  if (full || !glyphsOnly(options)) return null;
+  return options.map((option, index) => {
+    const Glyph = glyphOf(option)!;
     return (
       <Hint
         key={option.label}
         label={optionHint(option)}
         render={
           <Button
-            size={Glyph === undefined ? "xs" : "icon-xs"}
-            variant={Glyph === undefined ? "outline" : "ghost"}
+            size="icon-xs"
+            variant="ghost"
             aria-label={`${option.label}: ${itemText(item)}`}
+            aria-keyshortcuts={String(index + 1)}
             data-testid="needs-you-answer"
             data-option={option.label}
-            className={cn(
-              Glyph === undefined ? "h-5 min-w-5 px-1 font-mono text-[11px]" : ICON_BUTTON,
-            )}
+            data-choice-index={index}
+            className={ICON_BUTTON}
             onClick={() => actions.answer(item, option)}
           />
         }
       >
-        {Glyph === undefined ? index + 1 : <Glyph aria-hidden className="size-3.5" />}
+        <Glyph aria-hidden className="size-3.5" />
       </Hint>
     );
   });
@@ -302,22 +311,26 @@ function SetAside({
 }
 
 /**
- * The focused request's options with their words, under its text: numbered as its row's buttons
- * are, so the number learnt here answers the next one from the row.
+ * A request's options with their words, under its text, each numbered by the key that picks it
+ * while the row has focus (1–9, as in the Asks dock). Each says its words on one line, cut short
+ * with the whole on hover; the focused request's say them in full (`full`). A row whose options are
+ * all an Allow or a Deny has its icons beside its text instead.
  */
-function FullAnswers({
+function OptionAnswers({
   item,
   actions,
+  full,
 }: {
   item: NeedsYouItem;
   actions: ReturnType<typeof useNeedsYouActions>;
+  full: boolean;
 }) {
   const options = quickOptions(item);
-  if (options.length === 0) return null;
+  if (options.length === 0 || (!full && glyphsOnly(options))) return null;
   return (
     <span
-      data-testid="needs-you-full-answers"
-      className="col-start-2 col-end-4 flex flex-wrap gap-1 pt-1.5"
+      data-testid={full ? "needs-you-full-answers" : "needs-you-answers"}
+      className={cn("col-start-2 col-end-4 flex flex-wrap gap-1", full ? "pt-1.5" : "pt-1")}
     >
       {options.map((option, index) => {
         const Glyph = glyphOf(option);
@@ -330,9 +343,14 @@ function FullAnswers({
                 size="xs"
                 variant="outline"
                 aria-label={`${option.label}: ${itemText(item)}`}
+                aria-keyshortcuts={String(index + 1)}
                 data-testid="needs-you-answer"
                 data-option={option.label}
-                className="h-auto min-h-6 max-w-full py-0.5 text-left whitespace-normal"
+                data-choice-index={index}
+                className={cn(
+                  "max-w-full text-left",
+                  full ? "h-auto min-h-6 py-0.5 whitespace-normal" : "h-6 max-w-48",
+                )}
                 onClick={() => actions.answer(item, option)}
               />
             }
@@ -344,7 +362,12 @@ function FullAnswers({
             ) : (
               <Glyph aria-hidden className="size-3.5" />
             )}
-            <span className="min-w-0 break-words">{option.label}</span>
+            <span
+              data-testid="needs-you-answer-label"
+              className={cn("min-w-0", full ? "break-words" : "truncate")}
+            >
+              {option.label}
+            </span>
           </Hint>
         );
       })}
@@ -428,6 +451,10 @@ export function NeedsYouRow({
       data-opens={opensThread(item)}
       data-workspace={item.workspaceId}
       data-current={current || undefined}
+      // A number picks that option while the row has focus, as the Asks dock's keys do.
+      onKeyDown={(event) => {
+        if (answerKey(event.nativeEvent, event.currentTarget)) event.preventDefault();
+      }}
       className={cn(
         "group/row grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-(--radius-md) px-2 py-1.5 hover:bg-muted/60 focus-within:bg-muted/60",
         current && "bg-muted/60",
@@ -494,7 +521,7 @@ export function NeedsYouRow({
           {variant === "panel" && <SetAside item={item} actions={actions} />}
         </span>
       </span>
-      {full && <FullAnswers item={item} actions={actions} />}
+      <OptionAnswers item={item} actions={actions} full={full} />
       <OptionThumbs item={item} />
     </li>
   );

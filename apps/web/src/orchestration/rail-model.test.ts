@@ -180,6 +180,18 @@ describe("railTone", () => {
     expect(railTone(worker("a"), facts([], { a: "needsApproval" }))).toBe("needs");
     expect(railTone(worker("a"), facts([], { a: "idle" }))).toBe("idle");
   });
+
+  it("says a worker answered here is on its way back to work while the server still has it waiting", () => {
+    const answered = { ...facts([], { a: "needsInput" }), answered: new Set(["a" as ThreadId]) };
+    expect(railTone(worker("a", { state: "needsUser" }), answered)).toBe("working");
+    expect(railTone(worker("a", { state: "question" }), answered)).toBe("working");
+    // An ask of its still in the stack (a second one) still needs you.
+    expect(railTone(worker("a"), { ...answered, asking: new Set(["a" as ThreadId]) })).toBe(
+      "needs",
+    );
+    // Another worker isn't answered by it.
+    expect(railTone(worker("b", { state: "needsUser" }), answered)).toBe("needs");
+  });
 });
 
 describe("archived work", () => {

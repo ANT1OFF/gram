@@ -76,12 +76,17 @@ export interface RailRow {
   readonly held: readonly FeatureCardHeld[];
 }
 
+/** What a worker says once its asks are answered here, until it is heard from again. */
+export const ANSWERED = "answered · resuming";
+
 const NEEDS = new Set<FeatureCardWorker["state"]>(["needsUser", "question", "blocked"]);
 const DONE = new Set<FeatureCardWorker["state"]>(["merged", "delivered", "archived"]);
 
 /** What the view knows beside the cards: who has an open ask, and each thread's live status. */
 export interface RailFacts {
   readonly asking: ReadonlySet<ThreadId>;
+  /** Workers whose asks were answered here, not yet heard from (`useAnsweredWorkers`). */
+  readonly answered?: ReadonlySet<ThreadId> | undefined;
   readonly status: (threadId: ThreadId) => ThreadStatus | undefined;
   /**
    * Workers the ledger says still have work going though their state is over: a run it monitors, a
@@ -116,6 +121,8 @@ const planGoesOn = (stage: FeatureCard["stage"]): boolean =>
 export interface ToneFacts {
   /** An ask of its waits in the stack. */
   readonly asking: boolean;
+  /** Its asks were answered here and the worker isn't heard from yet (`useAnsweredWorkers`). */
+  readonly answered?: boolean | undefined;
   /** Its card's (or the ledger's) state. */
   readonly state?: FeatureCardWorker["state"] | undefined;
   readonly failed: boolean;
@@ -134,7 +141,10 @@ export interface ToneFacts {
  */
 export const workerTone = (facts: ToneFacts): RailTone => {
   const { state, status, activity } = facts;
-  if (facts.asking || (state !== undefined && NEEDS.has(state))) return "needs";
+  if (facts.asking) return "needs";
+  // Answered here: on its way back to work, whatever the server says it waits on until it hears.
+  if (facts.answered === true) return "working";
+  if (state !== undefined && NEEDS.has(state)) return "needs";
   if (facts.failed) return "error";
   if (state !== undefined && DONE.has(state)) return "merged";
   if (status === "needsApproval" || status === "needsInput") return "needs";
@@ -160,6 +170,7 @@ export const railTone = (worker: FeatureCardWorker, facts: RailFacts): RailTone 
   facts.tones?.[worker.threadId] ??
   workerTone({
     asking: facts.asking.has(worker.threadId),
+    answered: facts.answered?.has(worker.threadId),
     state: worker.state,
     failed: worker.flag === "error",
     status: facts.status(worker.threadId),

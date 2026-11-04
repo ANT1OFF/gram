@@ -30,6 +30,7 @@ import { GlideText, PresenceItem, PresenceList, Spinner, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useThreadsStore } from "@/stores/threads";
 
+import { useAnsweredWorkers } from "./needs-you-store";
 import { askKeysByThread } from "./ask-model";
 import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
@@ -207,9 +208,10 @@ function WorkersBody() {
       new Set(askKeysByThread(asks.find((w) => w.workspaceId === workspaceId)?.asks ?? []).keys()),
     [asks, workspaceId],
   );
+  const answered = useAnsweredWorkers();
   const tabs = useMemo(
-    () => workersByTab(ledger, { byId: summaries, statusDetail, now, asking }),
-    [ledger, summaries, statusDetail, now, asking],
+    () => workersByTab(ledger, { byId: summaries, statusDetail, now, asking, answered }),
+    [ledger, summaries, statusDetail, now, asking, answered],
   );
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);

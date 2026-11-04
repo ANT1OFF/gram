@@ -154,6 +154,40 @@ test("quick answers: an option, Allow and Deny go out through the stack's path, 
   );
 });
 
+test("a question's quick answers say each option's words, cut short with the whole on hover, and 2 picks the second", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const made = await start(page);
+  await seeAll(page);
+  const question = row(panel(page), "Keep both, or uv only?");
+  const answers = question.getByTestId("needs-you-answer");
+  // Words on the chips, not bare numbers; the number is the key that picks it.
+  await expect(answers).toHaveCount(2);
+  await expect(question.getByTestId("needs-you-answer-label")).toHaveText(["uv only", "Keep both"]);
+  await expect(answers.first()).toHaveText(/^1\s*uv only$/);
+  await expect(answers.first()).toHaveAttribute("aria-keyshortcuts", "1");
+  // A label too long for its chip is cut short, never wraps the row; the hint has it whole.
+  const label = question.getByTestId("needs-you-answer-label").first();
+  await expect(label).toHaveCSS("text-overflow", "ellipsis");
+  await expect(label).toHaveCSS("white-space", "nowrap");
+  await answers.first().hover();
+  await page.clock.runFor(2_000);
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
+    "uv only: What the repo's own scripts use.",
+  );
+
+  // With focus in the row, 2 answers it with the second option, through the stack's path.
+  await question.getByTestId("needs-you-open").focus();
+  await page.keyboard.press("2");
+  await expect(question).toHaveCount(0);
+  await expect(page.getByTestId("needs-you-undo-line")).toContainText("Keep both");
+  await page.clock.runFor(SENT_MS);
+  await expect
+    .poll(() => sent(page))
+    .toEqual(expect.arrayContaining([expect.stringMatching(`^r-question-${made.choosing}`)]));
+});
+
 test("a wait's Done resolves it, and a jump lands on the message that added it", async ({
   page,
 }) => {
@@ -365,9 +399,10 @@ test("a question whose options carry screenshots shows them on its row, numbered
   // The orchestrator's pick first, numbered as the stack numbers it, a picture each.
   await expect(thumbs.first()).toHaveAttribute("data-option", "C Hybrid");
   await expect(thumbs.first()).toContainText("1");
+  // Its answer carries the same number, with the option's words.
   await expect(
     question.locator('[data-testid="needs-you-answer"][data-option="C Hybrid"]'),
-  ).toHaveText("1");
+  ).toHaveText(/^1\s*C Hybrid$/);
   await expect(thumbs.first().locator("img")).toBeVisible();
   // A click enlarges it, as the stack's gallery does.
   await thumbs.first().locator("button").first().click();
