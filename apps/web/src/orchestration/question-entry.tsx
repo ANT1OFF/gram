@@ -30,7 +30,10 @@ import { ChoiceList } from "@/thread/request-cards";
 import { useLayoutStore } from "@/stores/layout";
 
 import type { MemoryQuestion } from "./memory-model";
+import { memoryId, workerQuestionId } from "./ask-model";
+import { openAskSheet } from "./ask-sheet-store";
 import {
+  fitsInPlace,
   memoryQuestionCard,
   questionOutcome,
   workerQuestionCard,
@@ -136,18 +139,32 @@ function AskedBy({ asker }: { asker: NonNullable<QuestionCard["asker"]> }) {
 export function OpenQuestion({
   card,
   compact,
+  sheet = false,
   unavailable,
   onAnswer,
   onDismiss,
+  onSheet,
 }: {
   card: QuestionCard;
   compact: boolean;
+  /**
+   * Drawn in the ask sheet: open to answer from the start, its whole text in the sheet's scroll and
+   * its answer row stuck to the sheet's bottom edge, so a choice is never out of reach.
+   */
+  sheet?: boolean;
   /** Why it can't be answered here right now; the Answer button says so. */
   unavailable?: string | undefined;
   onAnswer: (answer: string) => Promise<unknown>;
   onDismiss?: ((reason: string | undefined) => Promise<unknown>) | undefined;
+  /**
+   * Opens it in the ask sheet. Given for a question too long to answer in place
+   * (`fitsInPlace`), where Answer opens the sheet instead of unfolding the choices here.
+   */
+  onSheet?: (() => void) | undefined;
 }) {
-  const [mode, setMode] = useState<"idle" | "answering" | "dismissing">("idle");
+  const [mode, setMode] = useState<"idle" | "answering" | "dismissing">(
+    sheet ? "answering" : "idle",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [choice, setChoice] = useState<Choice>(NO_CHOICE);
@@ -170,6 +187,9 @@ export function OpenQuestion({
     if (unavailable !== undefined || answer === "") return;
     run(() => onAnswer(answer));
   };
+  const answerRow = sheet
+    ? "sticky bottom-0 -mx-4 mt-1 border-t border-border bg-popover px-4 py-2.5"
+    : undefined;
   const dismiss = () => {
     if (onDismiss === undefined) return;
     const why = reason.trim();
@@ -210,9 +230,10 @@ export function OpenQuestion({
             <Button
               size="xs"
               variant="outline"
+              data-testid="question-answer"
               disabled={unavailable !== undefined}
               title={unavailable}
-              onClick={() => setMode("answering")}
+              onClick={() => (onSheet === undefined ? setMode("answering") : onSheet())}
             >
               Answer
             </Button>
@@ -288,14 +309,38 @@ export function OpenQuestion({
               />
             </fieldset>
           )}
-          <div className="flex items-center gap-2">
-            <Button type="submit" size="xs" disabled={busy || answer === ""}>
+          <div
+            data-testid={sheet ? "ask-sheet-answer-row" : undefined}
+            className={cn("flex items-center gap-2", answerRow)}
+          >
+            <Button
+              type="submit"
+              size={sheet ? "sm" : "xs"}
+              data-testid="question-send"
+              disabled={busy || answer === "" || unavailable !== undefined}
+              title={unavailable}
+            >
               <Send data-icon="inline-start" />
               {worker ? "Send to the worker" : "Send to the orchestrator"}
             </Button>
-            <Button type="button" size="xs" variant="ghost" onClick={() => setMode("idle")}>
-              Cancel
-            </Button>
+            {sheet ? (
+              card.dismissable &&
+              onDismiss !== undefined && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  data-testid="question-dismiss"
+                  onClick={() => setMode("dismissing")}
+                >
+                  Dismiss…
+                </Button>
+              )
+            ) : (
+              <Button type="button" size="xs" variant="ghost" onClick={() => setMode("idle")}>
+                Cancel
+              </Button>
+            )}
           </div>
         </form>
       </ExpandPresence>
@@ -310,10 +355,10 @@ export function OpenQuestion({
           {mode === "dismissing" && (
             <DismissReason labelledBy={questionId} value={reason} onChange={setReason} />
           )}
-          <div className="flex items-center gap-2">
+          <div className={cn("flex items-center gap-2", answerRow)}>
             <Button
               type="submit"
-              size="xs"
+              size={sheet ? "sm" : "xs"}
               variant="outline"
               disabled={busy}
               data-testid="question-dismiss-confirm"
@@ -321,8 +366,13 @@ export function OpenQuestion({
               <CircleX data-icon="inline-start" />
               Dismiss question
             </Button>
-            <Button type="button" size="xs" variant="ghost" onClick={() => setMode("idle")}>
-              Cancel
+            <Button
+              type="button"
+              size={sheet ? "sm" : "xs"}
+              variant="ghost"
+              onClick={() => setMode(sheet ? "answering" : "idle")}
+            >
+              {sheet ? "Back" : "Cancel"}
             </Button>
           </div>
         </form>
@@ -334,6 +384,21 @@ export function OpenQuestion({
       )}
     </div>
   );
+}
+
+/** Answers an orchestrator's open question with these words, then reads its memory again. */
+export function useMemoryQuestionAnswer(workspaceId: WorkspaceId) {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return (question: MemoryQuestion) => (text: string) =>
+    api
+      .answerQuestion({
+        workspaceId,
+        ...(question.id === undefined ? {} : { questionId: question.id }),
+        question: question.text,
+        answer: text,
+      })
+      .then(() => queryClient.invalidateQueries({ queryKey: ["memory", workspaceId] }));
 }
 
 /** The open questions, answerable in place; `compact` draws each as a card of its own, for the board. */
@@ -350,28 +415,24 @@ export function OpenQuestionList({
   compact?: boolean;
   className?: string;
 }) {
-  const api = useApi();
-  const queryClient = useQueryClient();
-  const answer = (question: MemoryQuestion) => (text: string) =>
-    api
-      .answerQuestion({
-        workspaceId,
-        ...(question.id === undefined ? {} : { questionId: question.id }),
-        question: question.text,
-        answer: text,
-      })
-      .then(() => queryClient.invalidateQueries({ queryKey: ["memory", workspaceId] }));
+  const answer = useMemoryQuestionAnswer(workspaceId);
   // An answered question closes and folds away, so what is below it doesn't jump.
   return (
     <ul className={className}>
       <PresenceList>
         {questions.map((question, index) => {
           const card = memoryQuestionCard(question, index, orchestratorId);
+          const id = memoryId(workspaceId, question);
           return (
             <PresenceItem key={card.key} as="li" className={compact ? "pb-2" : "pb-3"}>
               <OpenQuestion
                 card={card}
                 compact={compact}
+                onSheet={
+                  fitsInPlace(card)
+                    ? undefined
+                    : () => openAskSheet(workspaceId, { ids: [id], key: id })
+                }
                 unavailable={
                   orchestratorId === undefined
                     ? "Open the orchestrator first: the answer is a message to it"
@@ -425,16 +486,25 @@ export function WorkerQuestionList({
   return (
     <ul className={className}>
       <PresenceList>
-        {questions.map((question) => (
-          <PresenceItem key={question.id} as="li" className={compact ? "pb-2" : "pb-3"}>
-            <OpenQuestion
-              card={workerQuestionCard(question)}
-              compact={compact}
-              onAnswer={actions.answer(question)}
-              onDismiss={actions.dismiss(question)}
-            />
-          </PresenceItem>
-        ))}
+        {questions.map((question) => {
+          const card = workerQuestionCard(question);
+          const id = workerQuestionId(workspaceId, question);
+          return (
+            <PresenceItem key={question.id} as="li" className={compact ? "pb-2" : "pb-3"}>
+              <OpenQuestion
+                card={card}
+                compact={compact}
+                onAnswer={actions.answer(question)}
+                onDismiss={actions.dismiss(question)}
+                onSheet={
+                  fitsInPlace(card)
+                    ? undefined
+                    : () => openAskSheet(workspaceId, { ids: [id], key: id })
+                }
+              />
+            </PresenceItem>
+          );
+        })}
       </PresenceList>
     </ul>
   );

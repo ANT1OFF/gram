@@ -113,3 +113,25 @@ export const questionOutcome = (question: WorkerQuestion): string | undefined =>
   if (question.stage === "dismissed") return question.reason;
   return undefined;
 };
+
+/** Past this many choices, a question is answered in the ask sheet rather than in place. */
+export const IN_PLACE_OPTIONS = 4;
+/** Past this many characters of question, context and choices, likewise. */
+export const IN_PLACE_CHARS = 600;
+
+/**
+ * Whether a question is answered where it is listed (the Board's band, a card), which then grows
+ * to hold it whole. A long one, or one with many choices, opens in the ask sheet, whose answer row
+ * stays in sight however far its text runs.
+ */
+export const fitsInPlace = (card: QuestionCard): boolean => {
+  if (card.options.length > IN_PLACE_OPTIONS) return false;
+  const words = [
+    card.text,
+    card.detail ?? "",
+    card.note ?? "",
+    card.recommendation ?? "",
+    ...card.options.map((option) => `${option.label} ${option.description ?? ""}`),
+  ];
+  return words.reduce((n, part) => n + part.length, 0) <= IN_PLACE_CHARS;
+};

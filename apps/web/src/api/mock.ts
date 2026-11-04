@@ -1678,6 +1678,11 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return simulateWorkerQuestions(this.#scenes);
   }
 
+  /** Puts a worker question in place of the one with its id: a spec's longer or changed variant. */
+  async simulateWorkerQuestion(question: WorkerQuestion): Promise<void> {
+    this.#orchestration.putWorkerQuestion(question);
+  }
+
   /** `simulateQuietBusy` (`mock-scenarios.ts`). */
   simulateQuietBusy(): Promise<MockQuietBusySimulation> {
     return simulateQuietBusy(this.#scenes);

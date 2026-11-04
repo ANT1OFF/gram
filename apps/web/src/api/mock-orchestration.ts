@@ -1594,6 +1594,19 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       return simulateWorkerQuestions(scenes, board);
     },
 
+    /** A worker question put in place of the one with its id, or added: a spec's longer variant. */
+    putWorkerQuestion(question: WorkerQuestion) {
+      const all = questionsOf.get(question.workspaceId) ?? [];
+      questionsOf.set(
+        question.workspaceId,
+        all.some((each) => each.id === question.id)
+          ? all.map((each) => (each.id === question.id ? question : each))
+          : [...all, question],
+      );
+      showQuestion(question);
+      host.emit({ type: "orchestration.changed", workspaceId: question.workspaceId });
+    },
+
     /** `simulateFinished` (`mock-board.ts`). */
     simulateFinished(board: MockBoardSimulation) {
       return simulateFinished(scenes, board);
