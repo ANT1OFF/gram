@@ -31,6 +31,7 @@ import { useToastDock } from "@/shell/toast-dock";
 import { isReviewTab, reviewsTabShown, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
+import { useTabLabelFit } from "./panel-tab-labels";
 import type * as PanelTabs from "./right-panel-tabs";
 
 const TABS: { value: RightPanelTab; label: string; icon: LucideIcon }[] = [
@@ -104,6 +105,10 @@ export function RightPanel() {
       : storedTab;
   const setTab = useLayoutStore((s) => s.setPanelTab);
   const tabList = useRef<HTMLDivElement>(null);
+  const shownTabs = TABS.filter(
+    (t) => (t.value !== "reviews" || reviewsHere) && (t.value !== "preview" || previewHere),
+  );
+  const labelFit = useTabLabelFit(tabList, tab, shownTabs.map((t) => t.value).join());
   useEffect(() => {
     // The bell may select a tab beyond the narrow strip's edge without focusing that tab.
     tabList.current
@@ -139,14 +144,12 @@ export function RightPanel() {
         <div className="flex items-center border-b border-border">
           <TabsList
             ref={tabList}
-            className="@container/panel-tabs min-w-0 flex-1 overflow-x-auto border-b-0"
+            data-label-fit={labelFit}
+            className="min-w-0 flex-1 overflow-x-auto border-b-0"
           >
-            {/* An icon each and its name on hover, the open one named and underlined in the accent:
-                every name fits only a panel opened very wide. */}
-            {TABS.filter(
-              (t) =>
-                (t.value !== "reviews" || reviewsHere) && (t.value !== "preview" || previewHere),
-            ).map((t) => {
+            {/* An icon and a name each while the strip has room for every name, then the open
+                one's alone, then icons only, each named on hover in every case. */}
+            {shownTabs.map((t) => {
               const count =
                 t.value === "notifications"
                   ? notificationCount
@@ -172,7 +175,7 @@ export function RightPanel() {
                       aria-label={name}
                       // A 28 px tab with its background on hover and focus; the open one is
                       // named, on a background and underlined, not told apart by colour alone.
-                      className="relative my-1 flex h-7 min-w-7 shrink-0 items-center justify-center gap-1.5 hover:bg-muted focus-visible:bg-muted aria-selected:bg-muted/60 after:absolute after:inset-x-1.5 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary"
+                      className="relative my-1 flex h-7 min-w-7 shrink-0 items-center justify-center hover:bg-muted focus-visible:bg-muted aria-selected:bg-muted after:absolute after:inset-x-1.5 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors after:duration-(--dur-fast) aria-selected:after:bg-primary"
                     />
                   }
                 >
@@ -186,8 +189,19 @@ export function RightPanel() {
                       />
                     )}
                   </span>
-                  <span className={cn(t.value !== tab && "hidden @min-[60rem]/panel-tabs:inline")}>
-                    {t.label}
+                  {/* Collapsed rather than removed when hidden, so it can be measured. */}
+                  <span
+                    aria-hidden
+                    data-tab-label
+                    className={cn(
+                      "overflow-hidden",
+                      !(labelFit === "all" || (labelFit === "active" && t.value === tab)) &&
+                        "max-w-0",
+                    )}
+                  >
+                    <span data-tab-label-text className="block pl-1.5 whitespace-nowrap">
+                      {t.label}
+                    </span>
                   </span>
                   {count > 0 && (
                     <span
@@ -196,7 +210,7 @@ export function RightPanel() {
                           ? "notifications-tab-count"
                           : "reviews-tab-count"
                       }
-                      className="text-muted-foreground tabular-nums"
+                      className="ml-1.5 text-muted-foreground tabular-nums"
                     >
                       {count}
                     </span>

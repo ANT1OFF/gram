@@ -1,0 +1,126 @@
+import { expect, test, type Page } from "@playwright/test";
+
+import { reviewsInPanel } from "./reviews-panel";
+
+// The panel's tabs show their names while the strip has room for every one, then only the open
+// tab's, then icons alone, measured from the strip rather than guessed from a breakpoint. Every
+// state keeps each tab's accessible name and tooltip, and its count.
+
+const open = async (page: Page, width: number) => {
+  await page.addInitScript((panelWidth) => {
+    const key = "gram.mock.settings";
+    const saved = JSON.parse(sessionStorage.getItem(key) ?? "{}") as Record<string, unknown>;
+    saved.panel = {
+      side: "right",
+      open: true,
+      width: panelWidth,
+      tab: "files",
+    };
+    sessionStorage.setItem(key, JSON.stringify(saved));
+  }, width);
+  await page.goto("/t/t-deps");
+  const panel = page.getByTestId("right-panel");
+  await expect(panel.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  return panel;
+};
+
+/** The tabs whose names show, by their `data-panel-tab`. */
+const named = (page: Page) =>
+  page
+    .getByTestId("right-panel")
+    .locator("[data-panel-tab]")
+    .evaluateAll((tabs) =>
+      tabs
+        .filter((tab) => (tab.querySelector("[data-tab-label]")?.clientWidth ?? 0) > 0)
+        .map((tab) => (tab as HTMLElement).dataset.panelTab),
+    );
+
+/** The strip's content overruns its box. */
+const overflows = (page: Page) =>
+  page
+    .getByTestId("right-panel")
+    .locator("[data-label-fit]")
+    .evaluate((list) => list.scrollWidth > list.clientWidth);
+
+test("a wide panel names every tab, and the open one stands on a background and an underline", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  const panel = await open(page, 640);
+  await panel.getByRole("button", { name: "Expand panel" }).click();
+  const list = panel.locator("[data-label-fit]");
+  await expect(list).toHaveAttribute("data-label-fit", "all");
+  const tabs = await panel.locator("[data-panel-tab]").count();
+  await expect.poll(() => named(page).then((n) => n.length)).toBe(tabs);
+  await expect(panel.getByRole("tab", { name: "Files", exact: true })).toContainText("Files");
+  expect(await overflows(page)).toBe(false);
+
+  const files = panel.getByRole("tab", { name: "Files", exact: true });
+  const diff = panel.getByRole("tab", { name: "Diff", exact: true });
+  const look = (tab: typeof files) =>
+    tab.evaluate((el) => ({
+      background: getComputedStyle(el).backgroundColor,
+      underline: getComputedStyle(el, "::after").backgroundColor,
+    }));
+  const active = await look(files);
+  const idle = await look(diff);
+  expect(active.background).not.toBe(idle.background);
+  expect(active.underline).not.toBe(idle.underline);
+  expect(idle.underline).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("a narrower panel names only the open tab, and the name follows the open tab", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const panel = await open(page, 420);
+  const list = panel.locator("[data-label-fit]");
+  await expect(list).toHaveAttribute("data-label-fit", "active");
+  await expect.poll(() => named(page)).toEqual(["files"]);
+  expect(await overflows(page)).toBe(false);
+  // Choosing another tab moves the name with it.
+  await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
+  await expect.poll(() => named(page)).toEqual(["terminal"]);
+  expect(await overflows(page)).toBe(false);
+});
+
+test("a narrow panel names no tab, and keeps every name on hover", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  const narrow = await open(page, 240);
+  await expect(narrow.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "none");
+  await expect.poll(() => named(page)).toEqual([]);
+  // The name is the tab's accessible name and its tooltip in this state too.
+  const diff = narrow.getByRole("tab", { name: "Diff", exact: true });
+  await expect(diff).toBeVisible();
+  await diff.hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Diff");
+});
+
+test("the strip goes back to every name when the panel widens again", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  const panel = await open(page, 240);
+  const list = panel.locator("[data-label-fit]");
+  await expect(list).not.toHaveAttribute("data-label-fit", "all");
+  await panel.getByRole("button", { name: "Expand panel" }).click();
+  await expect(list).toHaveAttribute("data-label-fit", "all");
+  await panel.getByRole("button", { name: "Restore panel width" }).click();
+  await expect(list).not.toHaveAttribute("data-label-fit", "all");
+});
+
+test("a count stays beside its icon when no tab is named", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  await reviewsInPanel(page, { requests: true, panelWidth: 240 });
+  await page.goto("/t/t-question");
+  const panel = page.getByTestId("right-panel");
+  await expect(panel.locator("[data-label-fit]")).toHaveAttribute("data-label-fit", "none");
+  const reviews = panel.getByRole("tab", {
+    name: "Reviews, 2 waiting",
+    exact: true,
+  });
+  await expect(reviews).toBeVisible();
+  await expect(panel.getByTestId("reviews-tab-count")).toBeVisible();
+  await expect(panel.getByTestId("reviews-tab-count")).toHaveText("2");
+});
