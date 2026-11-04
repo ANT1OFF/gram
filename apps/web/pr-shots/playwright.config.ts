@@ -20,7 +20,7 @@ export default defineConfig({
     ...devices["Desktop Chrome"],
     baseURL: `http://localhost:${port}`,
     viewport: { width: 1440, height: 900 },
-    deviceScaleFactor: 2,
+    deviceScaleFactor: process.env["GRAM_PR_SHOTS_SET"] ? 1 : 2,
     locale: "en-US",
     timezoneId: "Europe/Oslo",
     reducedMotion: "reduce",
