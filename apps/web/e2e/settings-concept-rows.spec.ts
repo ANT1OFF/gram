@@ -117,8 +117,13 @@ test("Keep computer awake defaults on and saves in browser-only mode", async ({ 
   await page.goto("/settings/general");
   const awake = general(page).getByRole("switch", { name: "Keep computer awake while agents run" });
   await expect(awake).toBeChecked();
-  await general(page).locator('[data-help-for="Keep computer awake while agents run"]').hover();
-  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
+  // What it does is the line under its name, on screen without a hover.
+  await expect(
+    general(page)
+      .locator("[data-setting]")
+      .filter({ has: page.getByRole("switch", { name: "Keep computer awake while agents run" }) })
+      .locator("[data-setting-description]"),
+  ).toHaveText(
     "Stops the system from sleeping while a turn is running; the display can still sleep.",
   );
   await awake.click();

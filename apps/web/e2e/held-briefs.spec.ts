@@ -106,7 +106,7 @@ test("the feature card in the stream shows the brief held, and it starts on its 
   await expect(held).toBeVisible();
   await expect(held).toContainText("Mail docs");
   await expect(held.getByTestId("held-until")).toHaveText(
-    new RegExp(`^Held until (\\w{3} )?${clock}$`),
+    new RegExp(`^Paused until (\\w{3} )?${clock}$`),
   );
   await expect(held.getByRole("button", { name: "Release Mail docs now" })).toBeVisible();
 

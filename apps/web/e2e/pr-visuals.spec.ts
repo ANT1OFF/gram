@@ -133,7 +133,7 @@ const seedPrs = (page: Page, made: MockOneThreadSimulation) =>
           ],
         } as never,
       );
-      // Green and approved, but its merge held until the release ships.
+      // Green and approved, but its merge paused until the release ships.
       mock.world.updateThread(
         asking as never,
         {
@@ -231,7 +231,7 @@ for (const mode of ["dark", "light"] as const) {
     await expect(chips.nth(0)).toHaveAttribute("data-tone", "plain");
     await expect(chipOf(made.asking)).toHaveAttribute("data-merge", "held");
     await expect(chipOf(made.asking)).toHaveAccessibleName(
-      /merge held by the orchestrator: after the 0\.2\.0 release/,
+      /merge paused by the orchestrator: after the 0\.2\.0 release/,
     );
     await expect(chipOf(made.asking).locator('[data-pr-mark="review"]')).toHaveAttribute(
       "data-kind",
