@@ -258,6 +258,12 @@ export const rateLimitFields = {
    * usage, Codex's credits): a full window is no stop. Absent when it said nothing of it.
    */
   credits: Schema.optionalKey(Schema.Literal(true)),
+  /** Codex has credits available, regardless of how much of the window is used. */
+  creditsAvailable: Schema.optionalKey(Schema.Literal(true)),
+  /** Codex reports an unlimited credit allowance. */
+  creditsUnlimited: Schema.optionalKey(Schema.Literal(true)),
+  /** Credit balance exactly as Codex reported it; absent when unknown. */
+  creditsBalance: Schema.optionalKey(Schema.String),
 };
 
 /**

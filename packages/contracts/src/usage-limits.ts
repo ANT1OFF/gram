@@ -43,7 +43,10 @@ export const LimitReading = Schema.Struct({
   /** Epoch ms; absent when the agent gave none. */
   resetsAt: Schema.optionalKey(Schema.Number),
   /** The latest reading said turns go on past the window on credits (`rateLimitFields.credits`). */
-  credits: Schema.optionalKey(Schema.Literal(true)),
+  credits: rateLimitFields.credits,
+  creditsAvailable: rateLimitFields.creditsAvailable,
+  creditsUnlimited: rateLimitFields.creditsUnlimited,
+  creditsBalance: rateLimitFields.creditsBalance,
   /** Epoch ms the latest reading arrived. */
   at: Schema.Number,
   /** The window's readings, oldest first, one for each change in use, at most `LIMIT_SAMPLES_MAX`. */
@@ -68,6 +71,9 @@ export interface LimitReport {
   readonly utilization?: number | undefined;
   readonly resetsAt?: number | undefined;
   readonly credits?: true | undefined;
+  readonly creditsAvailable?: true | undefined;
+  readonly creditsUnlimited?: true | undefined;
+  readonly creditsBalance?: string | undefined;
 }
 
 /** A CLI-owned account query's normalized subscription window. */
@@ -76,6 +82,9 @@ export interface SubscriptionLimitReport extends LimitReport {
   readonly utilization: number;
   readonly resetsAt?: number;
   readonly credits?: true;
+  readonly creditsAvailable?: true;
+  readonly creditsUnlimited?: true;
+  readonly creditsBalance?: string;
 }
 
 /** Epoch ms a reading stops counting: its reset, or `LIMIT_NO_RESET_TTL_MS` after it arrived. */
@@ -128,6 +137,9 @@ export function nextLimitReading(
     utilization,
     ...(resetsAt === undefined ? {} : { resetsAt }),
     ...(report.credits === true ? { credits: true as const } : {}),
+    ...(report.creditsAvailable === true ? { creditsAvailable: true as const } : {}),
+    ...(report.creditsUnlimited === true ? { creditsUnlimited: true as const } : {}),
+    ...(report.creditsBalance === undefined ? {} : { creditsBalance: report.creditsBalance }),
     at: now,
     samples,
   };

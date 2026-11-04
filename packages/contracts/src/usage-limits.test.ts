@@ -32,6 +32,24 @@ const window = (
 };
 
 describe("limit readings", () => {
+  it("carries credit metadata and clears it when the next report has none", () => {
+    const report = {
+      status: "allowed" as const,
+      utilization: 0.4,
+      credits: true as const,
+      creditsAvailable: true as const,
+      creditsUnlimited: true as const,
+      creditsBalance: "12345.67",
+    };
+    const reading = nextLimitReading(undefined, report, NOW)!;
+    expect(reading).toMatchObject(report);
+    const next = nextLimitReading(reading, { status: "allowed", utilization: 0.4 }, NOW + MINUTE)!;
+    expect(next).not.toHaveProperty("credits");
+    expect(next).not.toHaveProperty("creditsAvailable");
+    expect(next).not.toHaveProperty("creditsUnlimited");
+    expect(next).not.toHaveProperty("creditsBalance");
+  });
+
   it("adds a sample when the share changes, and starts over in a new window", () => {
     const first = nextLimitReading(
       undefined,

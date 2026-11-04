@@ -598,6 +598,14 @@ export const LimitUse = Schema.Struct({
   window: Schema.Literals(["fiveHour", "weekly"]),
   /** The share used, as a whole percent. */
   usedPct: Schema.Int,
+  /** Turns can continue past the window on credits. */
+  credits: Schema.optionalKey(Schema.Literal(true)),
+  /** Codex has credits available, regardless of how much of the window is used. */
+  creditsAvailable: Schema.optionalKey(Schema.Literal(true)),
+  /** Codex reports an unlimited credit allowance. */
+  creditsUnlimited: Schema.optionalKey(Schema.Literal(true)),
+  /** Credit balance exactly as Codex reported it; absent when unknown. */
+  creditsBalance: Schema.optionalKey(Schema.String),
   /** Epoch ms; absent when the agent gave no reset. */
   resetsAt: Schema.optionalKey(Schema.Number),
   /**
@@ -1170,9 +1178,18 @@ const LIMIT_WINDOW: Readonly<Record<LimitUse["window"], string>> = {
 /** "2026-10-15T16:00Z": a reset as the ledger's wakes write a time. */
 const utcMinute = (at: number): string => `${new Date(at).toISOString().slice(0, 16)}Z`;
 
+/** Group the integer part without rounding or losing precision in the provider's balance string. */
+const creditBalanceText = (balance: string): string =>
+  balance.replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+
 /** "Claude 5-hour 92% (resets 2026-10-15T16:00Z)". */
 const limitText = (limit: LimitUse): string =>
   `${LIMIT_AGENT[limit.agent] ?? limit.agent} ${LIMIT_WINDOW[limit.window]} ${limit.usedPct}%` +
+  (limit.creditsUnlimited === true
+    ? " (unlimited credits)"
+    : limit.credits === true || limit.creditsAvailable === true
+      ? ` (on credits${limit.creditsBalance === undefined ? "" : `, ${creditBalanceText(limit.creditsBalance)} left`})`
+      : "") +
   (limit.resetsAt === undefined ? "" : ` (resets ${utcMinute(limit.resetsAt)})`);
 
 /**

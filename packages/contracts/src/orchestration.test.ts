@@ -561,6 +561,29 @@ describe("serializeDigest", () => {
     expect(text).not.toContain("Claude's weekly limit");
   });
 
+  it.each([
+    [{ creditsAvailable: true, creditsBalance: "12345" }, " (on credits, 12,345 left)"],
+    [{ credits: true, creditsBalance: "12345.6700" }, " (on credits, 12,345.6700 left)"],
+    [{ credits: true }, " (on credits)"],
+    [{ credits: true, creditsUnlimited: true, creditsBalance: "12345" }, " (unlimited credits)"],
+    [{ creditsBalance: "0" }, ""],
+    [{}, ""],
+  ])("formats available credits in the digest: %j", (credits, suffix) => {
+    const resetsAt = Date.parse("2026-10-15T16:00:00Z");
+    for (const usedPct of [42, 100]) {
+      const text = serializeDigest({
+        ...digest,
+        budget: decode(BudgetMeters)({
+          ...budget,
+          limits: [{ agent: "codex", window: "weekly", usedPct, resetsAt, ...credits }],
+        }),
+      });
+      expect(text.split("\n").find((line) => line.startsWith("Workers:"))).toBe(
+        `Workers: 2/10 live · limits used: Codex weekly ${usedPct}%${suffix} (resets 2026-10-15T16:00Z)`,
+      );
+    }
+  });
+
   it("marks a worker whose worktree is missing on its ledger row", () => {
     const gone = decode(WorkerLedgerEntry)({ ...bare, worktreeMissing: true });
     const text = serializeDigest({

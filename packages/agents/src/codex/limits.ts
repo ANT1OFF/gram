@@ -43,6 +43,9 @@ function codexLimitSnapshot(snapshot: unknown): ReadonlyArray<SubscriptionLimitR
           ? { resetsAt: reset * 1000 }
           : {}),
         ...(credits && used >= 100 ? { credits: true as const } : {}),
+        ...(credits ? { creditsAvailable: true as const } : {}),
+        ...(balance.unlimited === true ? { creditsUnlimited: true as const } : {}),
+        ...(typeof balance.balance === "string" ? { creditsBalance: balance.balance } : {}),
       },
     ];
   });
