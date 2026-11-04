@@ -830,21 +830,41 @@ test("Settings → General's Overview sidebar row picks the mode the window lays
   await expect(page.getByTestId("general-settings")).toContainText(
     "Automatic is open from 1280 px wide and compact below.",
   );
-  await row.getByRole("radio", { name: "Hidden" }).click();
+  // Settings is focused, its strip in the overview's place; each pick lays the window out once
+  // Settings closes.
+  const pickThenLeave = async (mode: string) => {
+    await row.getByRole("radio", { name: mode }).click();
+    await expect(page.getByTestId("settings-strip")).toBeVisible();
+    await page.getByTestId("settings-back").click();
+    await expect(page.getByTestId("settings-strip")).toHaveCount(0);
+  };
+  const reopen = async () => {
+    await page.keyboard.press("ControlOrMeta+Comma");
+    await expect(row).toBeVisible();
+  };
+  await pickThenLeave("Hidden");
   await expect(overview(page)).toHaveCount(0);
   await expect.poll(() => storedOverview(page)).toBe("hidden");
-  await row.getByRole("radio", { name: "Open" }).click();
+  await reopen();
+  await pickThenLeave("Open");
   await expect(overview(page)).toBeVisible();
   await expect.poll(() => storedOverview(page)).toBe("open");
-  await row.getByRole("radio", { name: "Compact" }).click();
+  await reopen();
+  await pickThenLeave("Compact");
   await expect(rail(page)).toBeVisible();
   await expect(overview(page)).toHaveCount(0);
   await expect.poll(() => storedOverview(page)).toBe("compact");
-  await row.getByRole("radio", { name: "Automatic" }).click();
+  await reopen();
+  await pickThenLeave("Automatic");
   await expect.poll(() => storedOverview(page)).toBeUndefined();
   await expect(overview(page)).toBeVisible();
 
   // Hidden with the focus inside it on a page without a pane, the focus goes to Show sidebar.
+  await overview(page)
+    .getByTestId("top-left-nav")
+    .getByRole("button", { name: "Usage", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/usage$/);
   await overview(page).getByTestId("overview-needs-you").focus();
   await page.keyboard.press("ControlOrMeta+b");
   await expect(overview(page)).toHaveCount(0);

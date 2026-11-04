@@ -22,6 +22,7 @@ export const GROUP_TITLE = "font-heading text-[0.9375rem] font-semibold text-for
  */
 export function SettingsGroup({
   label,
+  anchor,
   description,
   learnMore,
   keywords,
@@ -31,6 +32,8 @@ export function SettingsGroup({
   children,
 }: {
   label: string;
+  /** Its id on the page, which the nav's links under the page scroll to. */
+  anchor?: string;
   description?: ReactNode;
   /** What the description leaves out, behind the ⓘ beside the title. */
   learnMore?: ReactNode;
@@ -51,7 +54,8 @@ export function SettingsGroup({
       label={label}
       {...(keywords ? { keywords } : {})}
       aria-labelledby={titleId}
-      className="flex flex-col gap-2"
+      {...(anchor === undefined ? {} : { id: anchor })}
+      className="flex scroll-mt-4 flex-col gap-2"
     >
       <div className="flex items-start gap-3 px-1">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

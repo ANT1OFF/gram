@@ -133,7 +133,9 @@ test("top navigation explains real keyboard focus and preserves routes and modif
   await popup.close();
   await settings.click();
   await expect(page).toHaveURL(/\/settings\/general$/);
-  await expect(settings).toHaveAttribute("aria-current", "page");
+  // Settings is focused: the overview, its header with it, gives way to a strip with Back.
+  await expect(page.getByTestId("settings-strip")).toBeVisible();
+  await expect(sidebar).toHaveCount(0);
   await expect(page.getByTestId("general-settings")).toBeVisible();
   const after = await page.evaluate(async () => ({
     settings: await window.gramMock!.getSettings(),
@@ -141,6 +143,9 @@ test("top navigation explains real keyboard focus and preserves routes and modif
     workspaces: (await window.gramMock!.listWorkspaces()).length,
   }));
   expect(after).toEqual(before);
+  // Back leaves Settings for the overview as it was.
+  await page.getByTestId("settings-back").click();
+  await expect(sidebar).toBeVisible();
   // Hidden, the overview comes back from the title bar's Show sidebar, its header as it was.
   await sidebar.getByRole("button", { name: "Hide sidebar", exact: true }).click();
   await expect(sidebar).toHaveCount(0);

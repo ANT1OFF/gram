@@ -14,7 +14,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Check, Download, GitMerge, MoonStar, RotateCcw, TriangleAlert, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { keyLabel } from "@/keyboard/registry";
 import { agentLabel } from "@/agents/agent-display";
@@ -101,10 +101,13 @@ const dateRange = (oldest: number | undefined, newest: number | undefined): stri
 function StartFlow({
   state,
   kind,
+  mode,
   onClose,
 }: {
   state: WorkspaceState;
   kind: DreamKind;
+  /** Review or Auto, picked beside the action that opened this. */
+  mode: DreamMode;
   onClose: () => void;
 }) {
   const api = useApi();
@@ -129,7 +132,6 @@ function StartFlow({
     : defaultModel;
   const preflight = useHarnessPreflight(selectedModel, "dream", { requireVerified: true });
   const [instructions, setInstructions] = useState("");
-  const [mode, setMode] = useState<DreamMode>("review");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const perRepoId = useId();
@@ -207,48 +209,19 @@ function StartFlow({
     >
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h3 className="text-sm font-medium">{importing ? "Import history" : "Dream now"}</h3>
+          <h3 className="text-sm font-medium">
+            {importing ? "Import history" : "Draft memory updates"}
+          </h3>
           <p className="text-muted-foreground">
             {importing
               ? "Drafts memory from your past sessions in this workspace's repos. It runs as a thread you can watch and stop."
-              : "Reads what this workspace's threads said since the memory last took in a dream and drafts tidier memory with sources for its changes."}
+              : "Reads what this workspace's threads said since memory was last updated and drafts tidier memory, with a source for each change."}
           </p>
         </div>
         <Button size="icon-xs" variant="ghost" aria-label="Close" onClick={onClose}>
           <X />
         </Button>
       </div>
-
-      <fieldset data-testid="dream-mode" className="flex flex-col gap-1">
-        <legend className="mb-1 font-medium">Adoption mode · this run only</legend>
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            name={`dream-mode-${instructionsId}`}
-            value="review"
-            checked={mode === "review"}
-            disabled={busy}
-            onChange={() => setMode("review")}
-          />
-          Review · inspect and adopt the result yourself
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            name={`dream-mode-${instructionsId}`}
-            value="auto"
-            checked={mode === "auto"}
-            disabled={busy}
-            onChange={() => setMode("auto")}
-          />
-          Auto · adopt successful validated output automatically
-        </label>
-        <p role="status" className="text-muted-foreground">
-          {mode === "auto"
-            ? "This run updates this workspace's memory without another review or approval. Changed memory, invalid output or persistence errors stop adoption. Previous versions remain available to restore. Agent sandbox and native approvals still apply."
-            : "Memory changes only after you review and adopt this run's output. Agent sandbox and native approvals still apply."}
-        </p>
-      </fieldset>
 
       {importing && (
         <div className="flex flex-wrap items-start gap-x-6 gap-y-2">
@@ -529,8 +502,19 @@ function StartFlow({
           disabled={startable === undefined}
           onClick={start}
         >
-          {importing ? "Start import" : "Start dream"}
+          {importing ? "Start import" : "Start drafting"}
         </Button>
+        <span
+          data-testid="dream-start-mode"
+          className={cn(
+            "rounded-sm border px-1.5 py-px",
+            mode === "auto"
+              ? "border-border-strong text-foreground"
+              : "border-border text-muted-foreground",
+          )}
+        >
+          {mode === "auto" ? "Auto: adopts a valid result" : "Review: you adopt it"}
+        </span>
         <Button size="sm" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
@@ -799,11 +783,15 @@ function Review({
   const [refreshed, setRefreshed] = useState<string>();
   const [discarding, setDiscarding] = useState(false);
   const ref = useRef<HTMLElement>(null);
+  // Into view as it opens, and again as it loads or fails, since loaded it is much taller.
+  const stage = review.data !== undefined ? "loaded" : review.error ? "failed" : "loading";
   useEffect(() => {
     // Braces on purpose: `scrollIntoView` returns a promise in current Chromium, and an effect that
     // returns one is taken for a clean-up.
-    ref.current?.scrollIntoView({ block: "nearest" });
-  }, []);
+    if (stage !== undefined) {
+      ref.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [stage]);
 
   if (review.error) {
     return (
@@ -895,7 +883,8 @@ function Review({
       data-testid="dream-review"
       className={cn(
         SECTION,
-        "max-h-[calc(100dvh_-_var(--titlebar-height)_-_2rem)] min-h-0 flex-col border-border-strong",
+        // Clear of the Memory view's tab bar, which stays stuck above it.
+        "max-h-[calc(100dvh_-_var(--titlebar-height)_-_4.5rem)] min-h-0 scroll-mt-12 flex-col border-border-strong",
       )}
     >
       <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -1079,11 +1068,14 @@ function DreamRow({
   now,
   reviewing,
   onReview,
+  children,
 }: {
   dream: Dream;
   now: number;
   reviewing: boolean;
   onReview: () => void;
+  /** Its review, open under it. */
+  children?: ReactNode;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -1214,7 +1206,48 @@ function DreamRow({
           {error}
         </p>
       )}
+      {children}
     </PresenceItem>
+  );
+}
+
+/**
+ * Whether the next run's result waits for your review or is adopted once it validates: a choice
+ * for that run alone, beside the actions that start one.
+ */
+function ModeChoice({ mode, onChange }: { mode: DreamMode; onChange: (mode: DreamMode) => void }) {
+  const name = useId();
+  return (
+    <fieldset
+      data-testid="dream-mode"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+    >
+      <legend className="float-left me-1 text-muted-foreground">
+        Adoption mode · next run only
+      </legend>
+      <label className="flex items-center gap-1.5">
+        <input
+          type="radio"
+          name={`dream-mode-${name}`}
+          value="review"
+          className="accent-primary"
+          checked={mode === "review"}
+          onChange={() => onChange("review")}
+        />
+        Review · you adopt the result
+      </label>
+      <label className="flex items-center gap-1.5">
+        <input
+          type="radio"
+          name={`dream-mode-${name}`}
+          value="auto"
+          className="accent-primary"
+          checked={mode === "auto"}
+          onChange={() => onChange("auto")}
+        />
+        Auto · adopt a valid result
+      </label>
+    </fieldset>
   );
 }
 
@@ -1260,31 +1293,35 @@ export function DreamsSection({
     (dream) => dream.status === "running" || dream.status === "pending",
   );
   const suggestion = backlogSuggestion(dreams.data ?? []);
+  // Review or Auto for the next run, chosen beside its action.
+  const [mode, setMode] = useState<DreamMode>("review");
 
   return (
     <section ref={ref} aria-label="Dreams" data-testid="dreams" className={SECTION}>
-      <h2 className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm font-medium">
-        <MoonStar aria-hidden className="size-4 text-muted-foreground" />
-        Dreams
-        <span className="ml-auto flex gap-2">
+      <h2 className="sr-only">Update memory</h2>
+      <p className="text-xs text-muted-foreground">
+        Dreams reread finished threads and draft updates to this workspace&rsquo;s memory. One runs
+        at a time.
+      </p>
+      <div data-testid="dream-actions" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="flex flex-wrap gap-2">
           <Button
-            size="xs"
-            variant="outline"
+            size="sm"
             data-testid="dream-now"
             disabled={running}
-            title={running ? "One dream runs per workspace at a time" : undefined}
+            title={running ? "One run per workspace at a time" : undefined}
             aria-expanded={starting === "dream"}
             onClick={() => onStartingChange(starting === "dream" ? undefined : "dream")}
           >
             <MoonStar data-icon="inline-start" />
-            Dream now
+            Draft memory updates
           </Button>
           <Button
-            size="xs"
+            size="sm"
             variant="outline"
             data-testid="dream-import"
             disabled={running}
-            title={running ? "One dream runs per workspace at a time" : undefined}
+            title={running ? "One run per workspace at a time" : undefined}
             aria-expanded={starting === "import"}
             onClick={() => onStartingChange(starting === "import" ? undefined : "import")}
           >
@@ -1292,10 +1329,17 @@ export function DreamsSection({
             Import history
           </Button>
         </span>
-      </h2>
-      <p className="text-xs text-muted-foreground">
-        A dream rereads past threads and drafts updates to this workspace&rsquo;s memory. Review
-        each run yourself, or let Auto adopt a valid result. One runs at a time.
+        <ModeChoice mode={mode} onChange={setMode} />
+      </div>
+      {running && (
+        <p data-testid="dream-busy" className="text-xs text-muted-foreground">
+          A run is under way; the next can start once it ends or you cancel it below.
+        </p>
+      )}
+      <p role="status" data-testid="dream-mode-note" className="text-xs text-muted-foreground">
+        {mode === "auto"
+          ? "This run updates this workspace's memory without another review or approval. Changed memory, invalid output or persistence errors stop adoption. Previous versions remain available to restore. Agent sandbox and native approvals still apply."
+          : "Memory changes only after you review and adopt this run's output. Agent sandbox and native approvals still apply."}
       </p>
       {suggestion !== undefined && starting === undefined && (
         <p
@@ -1310,7 +1354,7 @@ export function DreamsSection({
             onClick={() => onStartingChange("dream")}
           >
             <MoonStar data-icon="inline-start" />
-            Dream again
+            Draft again
           </Button>
         </p>
       )}
@@ -1320,6 +1364,7 @@ export function DreamsSection({
             key={starting}
             state={state}
             kind={starting}
+            mode={mode}
             onClose={() => onStartingChange(undefined)}
           />
         )}
@@ -1330,24 +1375,38 @@ export function DreamsSection({
         <PanelMessage loading>Loading dreams…</PanelMessage>
       ) : dreams.data.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No dreams yet. Dream now reads finished threads and drafts memory for you to review.
+          No runs yet. Draft memory updates reads finished threads and drafts changes for you to
+          review.
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          <PresenceList>
-            {dreams.data.map((dream) => (
-              <DreamRow
-                key={dream.id}
-                dream={dream}
-                now={now}
-                reviewing={reviewing === dream.id}
-                onReview={() => review(reviewing === dream.id ? undefined : dream.id)}
-              />
-            ))}
-          </PresenceList>
-        </ul>
+        <div className="flex flex-col gap-2 border-t border-border pt-3">
+          <h3 className="text-xs font-medium text-muted-foreground">Runs and their results</h3>
+          <ul className="flex flex-col gap-2">
+            <PresenceList>
+              {dreams.data.map((dream) => (
+                <DreamRow
+                  key={dream.id}
+                  dream={dream}
+                  now={now}
+                  reviewing={reviewing === dream.id}
+                  onReview={() => review(reviewing === dream.id ? undefined : dream.id)}
+                >
+                  {reviewing === dream.id && (
+                    <Review
+                      key={reviewing}
+                      workspaceId={workspaceId}
+                      dreamId={reviewing}
+                      onClose={() => review(undefined)}
+                    />
+                  )}
+                </DreamRow>
+              ))}
+            </PresenceList>
+          </ul>
+        </div>
       )}
-      {reviewing !== undefined && (
+      {/* A review of a run the list doesn't hold (yet), such as one opened from its thread. */}
+      {reviewing !== undefined && !(dreams.data ?? []).some((dream) => dream.id === reviewing) && (
         <Review
           key={reviewing}
           workspaceId={workspaceId}

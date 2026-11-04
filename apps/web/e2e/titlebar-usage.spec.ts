@@ -126,8 +126,16 @@ for (const link of ["/t/t-flaky", "/settings/general"]) {
       "gram.mock.orchestration": "board",
     });
     await page.goto(link);
-    // The overview lists the workspace, so a landing on its orchestrator could have happened.
-    await expect(page.getByTestId("overview-workspace").first()).toBeVisible();
+    // The workspace is listed, so a landing on its orchestrator could have happened. Settings has
+    // no overview to show it in, so there the app's own list is asked.
+    if (link.startsWith("/settings")) {
+      await expect(page.getByTestId("settings-strip")).toBeVisible();
+      await expect
+        .poll(() => page.evaluate(async () => (await window.gramMock!.listWorkspaces()).length))
+        .toBeGreaterThan(0);
+    } else {
+      await expect(page.getByTestId("overview-workspace").first()).toBeVisible();
+    }
     // Long enough for a landing to have happened; it never does off the home page.
     await page.waitForTimeout(1_000);
     await expect(page).toHaveURL(new RegExp(`${link}$`));

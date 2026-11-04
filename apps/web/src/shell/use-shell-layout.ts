@@ -37,14 +37,17 @@ export function useShellLayout() {
     select: (location) => shellPage(location.pathname),
   });
 
+  // Settings is focused: the overview gives its column to a narrow strip with Back, the compact
+  // rail's width, and its stored mode stays as it was for when Settings closes.
+  const settingsStrip = page === "/settings" && !focusMode;
   const fit = fitShell({
     windowWidth,
     threadInView: hasThread,
     threadQuiet,
     focusMode,
     sidebarWidth,
-    sidebarPeek,
-    overviewSidebar,
+    sidebarPeek: settingsStrip ? false : sidebarPeek,
+    overviewSidebar: settingsStrip ? "compact" : overviewSidebar,
     panelOpen,
     panelWidth,
     panelExpanded,
@@ -62,6 +65,7 @@ export function useShellLayout() {
   return {
     fit,
     focusMode,
+    settingsStrip: settingsStrip && fit.sidebar !== "none",
     panelLeft,
     hasThread,
     windowResizing,

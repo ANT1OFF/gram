@@ -43,7 +43,7 @@ test("each tab is a page, with history, and Settings reopens on the last one", a
   await expect(page.getByRole("heading", { level: 2, name: "General" })).toBeVisible();
 
   // The groups, one link each; the rest open from Advanced.
-  await expect(nav(page).getByRole("link")).toHaveText([
+  await expect(nav(page).locator(":scope > ul > li > a")).toHaveText([
     "General",
     "Agents",
     "Workspaces",
@@ -336,4 +336,53 @@ test("a narrow window gives Settings its width: no right panel, and the tabs fol
   await expect(page.getByTestId("right-panel")).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(nav(page).getByRole("link", { name: "Notifications" })).toBeVisible();
+});
+
+test("Settings is focused: the overview gives way to Back, and General's sections are linked", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  await page
+    .getByTestId("top-left-nav")
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/settings\/general$/);
+  // One column of navigation, not two: the overview is a strip with Back.
+  await expect(page.getByTestId("overview-sidebar")).toHaveCount(0);
+  const strip = page.getByTestId("settings-strip");
+  await expect(strip).toBeVisible();
+  expect((await strip.boundingBox())!.width).toBeLessThanOrEqual(64);
+
+  // General's subsections, linked under it, scroll the page to each.
+  const sections = page.getByTestId("settings-page-sections");
+  await expect(sections.getByRole("link")).toHaveText([
+    "Launch",
+    "Branches",
+    "Composer",
+    "Interruptions",
+    "Running work",
+    "Editor",
+    "Links",
+  ]);
+  await sections.getByRole("link", { name: "Interruptions" }).click();
+  await expect(page.getByRole("region", { name: "Interruptions" })).toBeInViewport();
+  await expect(sections.getByRole("link", { name: "Interruptions" })).toHaveAttribute(
+    "aria-current",
+    "location",
+  );
+
+  // A search shows matches from every page, so the page's own links step aside.
+  const search = page.getByRole("textbox", { name: "Search settings" });
+  await search.fill("branch prefix");
+  await expect(sections).toHaveCount(0);
+  await search.fill("");
+  await expect(sections).toBeVisible();
+
+  // Back leaves Settings, and the overview returns as it was.
+  await strip.getByRole("button", { name: "Back" }).click();
+  await expect(page).not.toHaveURL(/\/settings/);
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  await expect(page.getByTestId("settings-strip")).toHaveCount(0);
 });

@@ -39,10 +39,11 @@ test("Usage and Settings sit at the top left, in the overview or the title bar",
   await expect(hint).toHaveText(/^Settings \(.+\)$/);
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/general$/);
-  await expect(nav.getByRole("button", { name: "Settings", exact: true })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  // Settings is focused: its strip with Back takes the overview's place, the pair with it.
+  await expect(page.getByTestId("settings-strip")).toBeVisible();
+  await expect(page.getByTestId("top-left-nav")).toHaveCount(0);
+  await page.getByTestId("settings-back").click();
+  await expect(page).not.toHaveURL(/\/settings/);
 
   await nav.getByRole("button", { name: "Usage", exact: true }).click();
   await expect(page).toHaveURL(/\/usage$/);
@@ -59,6 +60,8 @@ test("Usage and Settings sit at the top left, in the overview or the title bar",
   );
   await moved.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/general$/);
+  await page.getByTestId("settings-back").click();
+  await expect(page).toHaveURL(/\/usage$/);
 
   await page.keyboard.press("ControlOrMeta+b");
   await expect(overview(page).getByTestId("top-left-nav")).toBeVisible();

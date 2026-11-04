@@ -11,6 +11,7 @@ import { OverviewRail } from "@/orchestration/overview-rail";
 import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview-sidebar";
 import { ConnectionBanner } from "@/shell/connection-banner";
 import { ShellTitlebar } from "@/shell/shell-titlebar";
+import { SettingsStrip } from "@/shell/settings-strip";
 import { SideResizeHandle } from "@/shell/side-resize";
 import { useShellLayout } from "@/shell/use-shell-layout";
 import { useWorkspaceKeys } from "@/shell/workspace-switcher";
@@ -34,6 +35,7 @@ export function AppShell() {
   const {
     fit,
     focusMode,
+    settingsStrip,
     panelLeft,
     hasThread,
     windowResizing,
@@ -47,7 +49,8 @@ export function AppShell() {
     beside,
   } = useShellLayout();
   useWorkspaceKeys();
-  useCarryOverviewFocus(fit.sidebar);
+  // The strip in Settings is no overview: entering or leaving Settings swaps nothing to carry.
+  useCarryOverviewFocus(settingsStrip ? "none" : fit.sidebar);
 
   // Settings, a new task and the board live in the chat's place, so going there brings it back.
   useEffect(() => {
@@ -94,7 +97,11 @@ export function AppShell() {
         }}
       >
         <div className="relative order-1 flex min-h-0 min-w-0 flex-col overflow-hidden">
-          {sidebarShown && (fit.sidebar === "compact" ? <OverviewRail /> : <OverviewSidebar />)}
+          {settingsStrip ? (
+            <SettingsStrip />
+          ) : (
+            sidebarShown && (fit.sidebar === "compact" ? <OverviewRail /> : <OverviewSidebar />)
+          )}
           {fit.sidebar === "full" && (
             <SideResizeHandle
               side="left"
