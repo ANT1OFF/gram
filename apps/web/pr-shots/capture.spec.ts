@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { test, type Locator, type Page } from "@playwright/test";
 
 import { pathShot, seedMockSettings, SHOTS, type Shot, type ShotMode } from "./shots";
+import { TOUR } from "./tour";
+import { FLOW_SHOTS } from "./flows";
 
 // One test per shot and mode, writing `out/<name>-<mode>.<label>.png`. `scripts/pr-shots.mjs`
 // picks the shots, the label and the checkout through the env; run it rather than this.
@@ -11,25 +13,33 @@ import { pathShot, seedMockSettings, SHOTS, type Shot, type ShotMode } from "./s
 const env = process.env;
 const label = env["GRAM_PR_SHOTS_LABEL"] === "before" ? "before" : "after";
 const list = (name: string) => (env[name] ?? "").split(",").filter((item) => item !== "");
-const outDir = fileURLToPath(new URL("out/", import.meta.url));
+const outDir = fileURLToPath(
+  new URL(env["GRAM_PR_SHOTS_SET"] === "flows" ? "out/flows/" : "out/", import.meta.url),
+);
 mkdirSync(outDir, { recursive: true });
 
 /** Fixed, so relative times and date labels read the same in both runs. */
 const CLOCK = new Date("2026-06-15T10:00:00+02:00");
 
 function selected(): readonly Shot[] {
+  const catalogue =
+    env["GRAM_PR_SHOTS_SET"] === "flows"
+      ? FLOW_SHOTS
+      : env["GRAM_PR_SHOTS_SET"] === "tour"
+        ? TOUR
+        : SHOTS;
   const names = list("GRAM_PR_SHOTS_ONLY");
   const paths = list("GRAM_PR_SHOTS_PATHS").map(pathShot);
-  const unknown = names.filter((name) => !SHOTS.some((shot) => shot.name === name));
+  const unknown = names.filter((name) => !catalogue.some((shot) => shot.name === name));
   if (unknown.length > 0) {
     throw new Error(
-      `no shot named ${unknown.join(", ")}; the shots are ${SHOTS.map((s) => s.name).join(", ")}`,
+      `no shot named ${unknown.join(", ")}; the shots are ${catalogue.map((s) => s.name).join(", ")}`,
     );
   }
   const named =
     names.length === 0 && paths.length === 0
-      ? SHOTS
-      : SHOTS.filter((shot) => names.includes(shot.name));
+      ? catalogue
+      : catalogue.filter((shot) => names.includes(shot.name));
   const all = [...named, ...paths];
   const clash = all.find((shot, i) => all.findIndex((other) => other.name === shot.name) !== i);
   if (clash) throw new Error(`two shots are named ${clash.name}`);
@@ -53,6 +63,7 @@ async function settled(page: Page, target: Page | Locator): Promise<Buffer> {
     const frame = await target.screenshot({ animations: "disabled" });
     if (last?.equals(frame)) return frame;
     if (Date.now() > deadline) {
+      if (env["GRAM_PR_SHOTS_SET"]) throw new Error("frame did not settle");
       test.info().annotations.push({ type: "warning", description: "still changing; captured" });
       return frame;
     }

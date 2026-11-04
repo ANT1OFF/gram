@@ -5,7 +5,7 @@
 // after-only. The images go to `pr-shots/out/`, gitignored: attach them with `gh pr edit --attach`,
 // never commit them. `--help` has the flags.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -13,12 +13,14 @@ import { fileURLToPath } from "node:url";
 import { parseArgs, stripVTControlCharacters } from "node:util";
 
 const webDir = fileURLToPath(new URL("..", import.meta.url));
-const outDir = join(webDir, "pr-shots", "out");
+let outDir = join(webDir, "pr-shots", "out");
 const config = join("pr-shots", "playwright.config.ts");
 
 const HELP = `bun run --filter @gram/web pr:shots [flags]
 
   --shot <name>     a shot from pr-shots/shots.ts; repeat or comma-separate (default: all)
+  --set tour        ordered 1440 × 900 UI tour; after-only, writes tour.md and numbered PNGs
+  --set flows       key interaction steps; after-only, dark by default, writes out/flows/
   --path <route>    an ad-hoc shot of a route that only needs loading, e.g. /settings/agents
   --mode <mode>     dark or light (default: both)
   --base <ref>      what "before" is the merge base with (default: origin/main)
@@ -198,6 +200,7 @@ async function main() {
     args: process.argv.slice(2).filter((arg) => arg !== "--"),
     options: {
       shot: { type: "string", multiple: true, default: [] },
+      set: { type: "string" },
       path: { type: "string", multiple: true, default: [] },
       mode: { type: "string", multiple: true, default: [] },
       base: { type: "string", default: "origin/main" },
@@ -207,13 +210,20 @@ async function main() {
     },
   });
   if (values.help) return console.log(HELP);
+  if (values.set !== undefined && !["tour", "flows"].includes(values.set))
+    throw new Error("--set is tour or flows");
+  const namedSet = values.set !== undefined;
+  const flows = values.set === "flows";
+  if (flows) outDir = join(outDir, "flows");
+  if (namedSet && values.path.length > 0) throw new Error("--set cannot be combined with --path");
   const modes = split(values.mode);
   const bad = modes.find((mode) => mode !== "dark" && mode !== "light");
   if (bad) throw new Error(`--mode is dark or light, not "${bad}"`);
   const env = {
+    GRAM_PR_SHOTS_SET: values.set ?? "",
     GRAM_PR_SHOTS_ONLY: split(values.shot).join(","),
     GRAM_PR_SHOTS_PATHS: split(values.path).join(","),
-    GRAM_PR_SHOTS_MODES: modes.join(","),
+    GRAM_PR_SHOTS_MODES: modes.length === 0 && flows ? "dark" : modes.join(","),
   };
   if (values.list) return playwright(["--list"], env);
 
@@ -225,7 +235,7 @@ async function main() {
     for (const r of failed) console.error(`after: ${r.id} failed: ${r.error ?? "see above"}`);
     throw new Error("the working tree's shots must all capture; fix the shot or the screen");
   }
-  const afterOnly = values["after-only"];
+  const afterOnly = namedSet || values["after-only"];
   let before = [];
   /** Why the base run as a whole failed, when it did: every shot is then after-only. */
   let baseError;
@@ -239,6 +249,27 @@ async function main() {
     }
   }
   rmSync(resultsFile, { force: true });
+
+  if (namedSet) {
+    const lines = [
+      flows ? "# Gram flow screenshots" : "# Gram UI tour",
+      "",
+      "1440 × 900. Synthetic mock states; no live agents.",
+      "",
+    ];
+    for (const shot of after) {
+      const file = `${shot.id}.png`;
+      renameSync(join(outDir, `${shot.id}.after.png`), join(outDir, file));
+      lines.push(`- [${shot.id}](${file}) — ${shot.title}`);
+    }
+    const index = flows ? "flows.md" : "tour.md";
+    writeFileSync(join(outDir, index), `${lines.join("\n")}\n`);
+    console.log(`\nWrote ${after.length} frames and ${join(outDir, index)}`);
+    console.log(
+      "Attach selected PNGs to your PR with gh pr edit <pr> --body-file <body.md> --attach <file> </dev/null",
+    );
+    return;
+  }
 
   const markdown = summary(after, before, afterOnly);
   writeFileSync(join(outDir, "shots.md"), markdown);

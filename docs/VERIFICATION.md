@@ -30,6 +30,48 @@ prose does not require screenshots. Detailed native/provider opt-ins belong in
 [protocol, native and live checks](#protocol-native-and-live-checks) and formal release steps in
 [releasing](RELEASING.md).
 
+### UI rating tour
+
+With the installed Playwright Chromium, capture the main surfaces in realistic mock states:
+
+```sh
+bun run --filter @gram/web pr:shots --set tour
+```
+
+The tour is after-only and writes 1440 × 900 PNGs in dark and light to the gitignored
+`apps/web/pr-shots/out/`, with an ordered `tour.md` index explaining each frame.
+Every run replaces that output directory. `--set tour --list` lists the frames;
+`--set tour --shot 03-board --mode dark` captures one for iteration. The source list is
+[tour.ts](../apps/web/pr-shots/tour.ts). Read the index in order and inspect every frame for
+loading states or missing content. These are synthetic UI scenarios, not live-provider evidence.
+The tour changes no product screens. Do not commit the images; attach selected frames to a PR
+body using relative Markdown image links and, from the output directory:
+
+```sh
+gh pr edit <pr> --body-file <body.md> --attach ./02-orchestrator-dark.png --attach ./03-board-light.png </dev/null
+```
+
+For live clicking, run `bun run dev:preview` for a disposable Chromium window with fresh mock
+storage (see [isolated preview](#isolated-ui-preview)). Or run `bun run dev:mock`, open Gram's
+right panel → Preview, and enter the local Vite URL printed in the terminal. Both use the mock
+API without a backend or agent CLI. The seeded solo threads already contain transcripts, diffs,
+questions and an approval; use the sidebar, Board/Chat switcher, Needs you, ⌘J (Ctrl+J on
+Linux/Windows), ⌘K and Settings to explore.
+
+To populate an orchestrator workspace in the mock browser, run
+`await window.gramMock.simulateOneThread()` in its developer console, then click the new
+`agent-platform` workspace in the sidebar. For Quiet's busy workspace, run
+`await window.gramMock.simulateQuietBusy()` and click `casefiles`, then Quiet. Memory in an
+orchestrator's header opens the seeded memory files and Dreams. Navigate by clicking after
+seeding: mock workspaces live in memory and a page reload drops them. Start a fresh preview to
+reset the scenarios; close its browser or press Ctrl-C to clean up its owned resources.
+
+`bun run --filter @gram/web pr:shots --set flows` exercises common interaction paths and
+captures their key steps in `out/flows/`, with its own index. It defaults to dark;
+`--mode light` selects light. Run it after the tour to retain both sets (a full tour run
+replaces all of `out/`). The flow shots verify mock actions such as saving settings, stopping
+a turn and retrying an error; they do not qualify native or provider behavior.
+
 ## Local checks
 
 | Command                        | Scope                                                                                                |
