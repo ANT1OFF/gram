@@ -838,7 +838,49 @@ const seedProjectScripts = async (page: Page) => {
   await dialog.waitFor({ state: "detached" });
 };
 
+/**
+ * The right panel's tab row on `tab`, at `width` px, so its tab names can be compared across panel
+ * widths. The Diff tab opens at a review's own width: in a 1920 px window, about 870 px.
+ */
+const panelTabsShot = (
+  name: string,
+  title: string,
+  tab: "diff" | "files",
+  width: number,
+  windowWidth = 1440,
+): Shot => ({
+  name,
+  title,
+  open: async (page) => {
+    await page.setViewportSize({ width: windowWidth, height: 900 });
+    await seedMockSettings(page, { panel: { side: "right", open: true, width, tab } });
+    await page.goto("/t/t-deps");
+    const label = tab === "diff" ? "Diff" : "Files";
+    await page
+      .getByTestId("right-panel")
+      .getByRole("tab", { name: label, exact: true })
+      .and(page.locator('[aria-selected="true"]'))
+      .waitFor();
+    await page.waitForTimeout(600);
+  },
+  element: (page) =>
+    page.getByTestId("right-panel").locator('[data-slot="tabs-list"]').first().locator(".."),
+});
+
+const PANEL_TAB_SHOTS: readonly Shot[] = [
+  panelTabsShot(
+    "panel-tabs-wide",
+    "The right panel's tabs on a review in a 1920 px window, about 870 px",
+    "diff",
+    420,
+    1920,
+  ),
+  panelTabsShot("panel-tabs-medium", "The right panel's tabs on Files at 480 px", "files", 480),
+  panelTabsShot("panel-tabs-narrow", "The right panel's tabs on Files at 240 px", "files", 240),
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...PANEL_TAB_SHOTS,
   ...UPDATE_PILL_SHOTS,
   ...TURN_FOOTER_SHOTS,
   {
