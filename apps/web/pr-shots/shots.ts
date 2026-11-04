@@ -2144,11 +2144,11 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "titlebar-layout",
-    title: "The layout picker open, its six presets in one popover",
+    title: 'The title bar\'s "…" open: Quiet, focus mode and the six layout presets',
     open: async (page) => {
       await openThread(page);
-      await page.getByRole("button", { name: /^Layout: / }).click();
-      await page.getByRole("radiogroup", { name: "Layout" }).waitFor();
+      await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("folded-layout").waitFor();
       await page.waitForTimeout(400);
     },
   },

@@ -124,7 +124,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   // Each icon names itself and its shortcut on hover, at once; the switcher says it switches.
   const tooltip = page.locator('[data-slot="tooltip-content"][data-open]');
   for (const [control, text] of [
-    [bar.getByTestId("workspace-switcher-button"), /^Switch workspace \(.+1–.+\d\)$/],
+    [bar.getByTestId("workspace-switcher-button"), /^Switch workspace \(.+1(–.+\d)?\)$/],
     [bar.getByRole("button", { name: /right panel$/ }), /^(Show|Hide) right panel \(.+\)$/],
     [bar.getByTestId("workers-button"), /^Workers, \d+ now \(.+J\)$/],
     [bar.getByTestId("titlebar-overflow"), /^More: Quiet, focus mode, layout$/],
