@@ -30,9 +30,17 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   const draft = page.getByRole("form", { name: "New task" });
   await expect(draft.getByRole("heading", { name: "New", exact: true })).toBeVisible();
   const who = draft.getByRole("radiogroup", { name: "Who does it" });
-  await expect(who.getByRole("radio")).toHaveText(["Orchestrator", "Worker", "Just me"]);
+  // Each choice is named for its role and says who owns the work in one line.
+  for (const [index, name] of ["Orchestrator", "Worker", "Just me"].entries())
+    await expect(who.getByRole("radio").nth(index)).toHaveAccessibleName(name);
+  await expect(who.getByRole("radio")).toHaveText([
+    /plans it and runs workers for you/,
+    /in its own worktree and opens a pull request/,
+    /A single chat with one agent/,
+  ]);
   await expect(who.getByRole("radio", { name: "Orchestrator" })).toBeChecked();
   await expect(draft.getByTestId("task-target")).toHaveText("agent-platform");
+  await expect(draft.getByText(/^Orchestrator: /)).toBeVisible();
 
   // Worker keeps the goal and the workspace.
   await draft.getByLabel("What needs doing").fill("Synthetic draft kept for review");
@@ -40,6 +48,9 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   await expect(draft.getByTestId("task-target")).toHaveText("agent-platform");
   await expect(draft.getByLabel("What needs doing")).toHaveValue("Synthetic draft kept for review");
+  // Its footer names the worker, not the orchestrator that only keeps track of it.
+  await expect(draft.getByRole("group", { name: "Worker" })).toBeVisible();
+  await expect(draft.getByText(/^Orchestrator: /)).toHaveCount(0);
 
   // The in chip lists the workspaces and New workspace.
   await draft.getByTestId("task-target").click();

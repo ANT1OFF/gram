@@ -14,6 +14,8 @@ export interface ToolRow {
   readonly state: ToolState;
   /** The version when ready, else what to do about it; `backticks` mark a command. */
   readonly detail: string;
+  /** Where its install instructions are, for a tool that isn't installed. */
+  readonly installUrl?: string;
 }
 
 /** The agents Gram runs; one of them signed in is enough. */
@@ -39,6 +41,14 @@ const AGENT_INSTALL: Partial<Record<LaunchTool, { install: string; signIn: strin
   codex: { install: "npm i -g @openai/codex", signIn: "codex login" },
 };
 
+/** Each tool's own install instructions, which the first run links to while it is missing. */
+const INSTALL_DOCS: Readonly<Record<LaunchTool, string>> = {
+  claude: "https://docs.claude.com/en/docs/claude-code/setup",
+  codex: "https://github.com/openai/codex",
+  git: "https://git-scm.com/downloads",
+  gh: "https://cli.github.com",
+};
+
 const CODEX_ATTENTION = {
   notSignedIn: "Not signed in. Run `codex login` with your ChatGPT account, then re-check.",
   apiKey:
@@ -61,6 +71,7 @@ export function toolRows(checks: LaunchChecks): ToolRow[] {
         ...row,
         ...(optional ? { optional } : {}),
         state: "missing",
+        installUrl: INSTALL_DOCS[row.tool],
         detail:
           install === undefined
             ? "Not found on your login-shell PATH."

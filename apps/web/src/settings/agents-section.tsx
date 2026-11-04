@@ -117,7 +117,7 @@ export function AgentsSection() {
           </SelectTrigger>
           <SelectContent align="end">
             {MODE_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
+              <SelectItem key={option.value} value={option.value} description={option.description}>
                 {option.label}
               </SelectItem>
             ))}

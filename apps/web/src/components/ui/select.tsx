@@ -84,7 +84,25 @@ function SelectContent({
   );
 }
 
-function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
+function SelectItem({
+  className,
+  children,
+  description,
+  ...props
+}: SelectPrimitive.Item.Props & {
+  /** One muted line under the label, such as what a mode lets an agent do. */
+  description?: string | undefined;
+}) {
+  const text = (
+    <SelectPrimitive.ItemText className="flex min-w-0 flex-1 gap-2 whitespace-nowrap">
+      {/* A long label, such as a gateway's model alias, ends in an ellipsis inside the list's width. */}
+      {typeof children === "string" ? (
+        <span className="min-w-0 truncate">{children}</span>
+      ) : (
+        children
+      )}
+    </SelectPrimitive.ItemText>
+  );
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -92,16 +110,22 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
         "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className,
       )}
+      // Named by its label alone; the line under it is its description.
+      {...(description !== undefined && typeof children === "string"
+        ? { "aria-label": children, "aria-description": description }
+        : {})}
       {...props}
     >
-      <SelectPrimitive.ItemText className="flex min-w-0 flex-1 gap-2 whitespace-nowrap">
-        {/* A long label, such as a gateway's model alias, ends in an ellipsis inside the list's width. */}
-        {typeof children === "string" ? (
-          <span className="min-w-0 truncate">{children}</span>
-        ) : (
-          children
-        )}
-      </SelectPrimitive.ItemText>
+      {description === undefined ? (
+        text
+      ) : (
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-0.5">
+          {text}
+          <div aria-hidden className="max-w-64 text-xs whitespace-normal text-muted-foreground">
+            {description}
+          </div>
+        </div>
+      )}
       <SelectPrimitive.ItemIndicator
         render={
           <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center" />

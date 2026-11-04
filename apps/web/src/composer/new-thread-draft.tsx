@@ -513,7 +513,7 @@ function ConfiguredNewThreadDraft() {
                 />
                 <SelectContent>
                   {MODE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
+                    <SelectItem key={o.value} value={o.value} description={o.description}>
                       {o.label}
                     </SelectItem>
                   ))}
