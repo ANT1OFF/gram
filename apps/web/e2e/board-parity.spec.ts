@@ -55,10 +55,15 @@ test("the header tidies up, pauses and resumes, and shows archived work on askin
 
   // Tidy up, in the bar's "…", sends its one message to the orchestrator.
   await more.click();
+  await page.getByTestId("menu-workspace").click();
   await page.getByTestId("folded-tidy").click();
   await more.click();
+  await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("folded-tidy")).toHaveAttribute("data-sent", /^(sent|queued)$/);
   await page.keyboard.press("Escape");
+  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
+    await page.keyboard.press("Escape");
+  }
   await page
     .getByTestId("view-switcher")
     .getByRole("radio", { name: /^Chat\b/ })
@@ -72,6 +77,7 @@ test("the header tidies up, pauses and resumes, and shows archived work on askin
   const pause = header.getByTestId("titlebar-pause");
   await expect(pause).toHaveCount(0);
   await more.click();
+  await page.getByTestId("menu-workspace").click();
   await page.getByTestId("folded-pause").click();
   await page.getByTestId("folded-pause-confirmed").click();
   await expect(board(page).getByTestId("rail-paused-line")).toContainText("Paused by you");
@@ -80,8 +86,12 @@ test("the header tidies up, pauses and resumes, and shows archived work on askin
   await expect(board(page).getByTestId("rail-paused-line")).toHaveCount(0);
   await expect(pause).toHaveCount(0);
   await more.click();
+  await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("folded-pause")).toHaveText(/^Pause workspace/);
   await page.keyboard.press("Escape");
+  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
+    await page.keyboard.press("Escape");
+  }
 
   // Archived workers are off their lines until asked for, and the choice is kept per workspace.
   const toggle = header.getByTestId("rail-show-archived");

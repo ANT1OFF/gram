@@ -150,23 +150,34 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
     await page.mouse.move(0, 400);
     await expect(tooltip).toHaveCount(0);
   }
-  // The "…" says each in words, in three groups, with its shortcut where it has one.
+  // The "…" says each in words, with its shortcut where it has one, and like every menu keeps to
+  // seven items: the thread's, the workspace's and the window's are submenus, Workers beside them.
   await bar.getByTestId("titlebar-overflow").click();
   const more = page.getByTestId("titlebar-overflow-menu");
-  const threadGroup = more.getByTestId("titlebar-menu-thread");
-  const workspaceGroup = more.getByTestId("titlebar-menu-workspace");
-  const viewGroup = more.getByTestId("titlebar-menu-view");
+  await expect(more.getByRole("menuitem")).toHaveText([
+    /^Orchestrator/,
+    /^Workers.*\d+ now.*J$/,
+    /^Workspace/,
+    /^View/,
+  ]);
+  await more.getByTestId("menu-thread").click();
+  const threadGroup = page.getByTestId("titlebar-menu-thread");
   await expect(threadGroup.getByRole("menuitem", { name: /^Switch/ })).toBeVisible();
   await expect(threadGroup.getByRole("menuitem", { name: "More…" })).toBeVisible();
-  await expect(workspaceGroup.getByTestId("folded-workers")).toHaveText(/^Workers.*\d+ now.*J$/);
+  await more.getByTestId("menu-workspace").click();
+  const workspaceGroup = page.getByTestId("titlebar-menu-workspace");
   for (const name of [/^Tidy up/, /^Pause workspace/, /^Memory$/, /^Workspace settings$/]) {
     await expect(workspaceGroup.getByRole("menuitem", { name })).toBeVisible();
   }
-  for (const name of [/^Quiet/, /^Focus mode/, /^History/, /^Layout/]) {
+  await more.getByTestId("menu-view").click();
+  const viewGroup = page.getByTestId("titlebar-menu-view");
+  for (const name of [/^Contents/, /^Quiet/, /^Focus mode/, /^History/]) {
     await expect(viewGroup.getByRole("menuitem", { name })).toBeVisible();
   }
+  await expect(viewGroup.getByRole("menuitemradio")).toHaveCount(6);
   await expect(viewGroup.getByTestId("menu-history")).toContainText("H");
   await page.keyboard.press("Escape");
+  if (await more.isVisible()) await page.keyboard.press("Escape");
   await expect(more).toBeHidden();
   await expect(bar.getByRole("button", { name: /^Inbox/ })).toBeVisible();
   await expect(bar.getByRole("button", { name: /right panel$/ })).toBeVisible();
@@ -190,10 +201,12 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await expect(bar.getByTestId("board-header").getByTestId("rail-waiting-chip")).toBeVisible();
   await expect(bar.getByTestId("pane-header")).toHaveCount(0);
   await bar.getByTestId("titlebar-overflow").click();
-  await expect(more.getByTestId("titlebar-menu-thread")).toHaveCount(0);
-  await expect(more.getByTestId("folded-tidy")).toBeVisible();
-  await expect(more.getByTestId("folded-pause")).toBeVisible();
+  await expect(more.getByTestId("menu-thread")).toHaveCount(0);
+  await more.getByTestId("menu-workspace").click();
+  await expect(page.getByTestId("folded-tidy")).toBeVisible();
+  await expect(page.getByTestId("folded-pause")).toBeVisible();
   await page.keyboard.press("Escape");
+  if (await more.isVisible()) await page.keyboard.press("Escape");
   await expect(page.getByTestId("board-header")).toHaveCount(1);
   await expect(page.getByTestId("rail-board").getByTestId("board-header")).toHaveCount(0);
   await fitsTheBar(page);
@@ -207,9 +220,11 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await expect(bar.getByTestId("view-switcher")).toBeVisible();
   await expect(bar.getByTestId("branch-chip")).toHaveCount(0);
   await bar.getByTestId("titlebar-overflow").click();
-  await expect(more.getByTestId("titlebar-menu-thread")).toBeVisible();
-  await expect(more.getByTestId("branch-chip")).toHaveCount(0);
+  await more.getByTestId("menu-thread").click();
+  await expect(page.getByTestId("titlebar-menu-thread")).toBeVisible();
+  await expect(page.getByTestId("titlebar-menu-thread").getByTestId("branch-chip")).toHaveCount(0);
   await page.keyboard.press("Escape");
+  if (await more.isVisible()) await page.keyboard.press("Escape");
   await fitsTheBar(page);
 
   // A solo thread: no workspace views or orchestration buttons, which act on work it isn't part of.
@@ -224,12 +239,15 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await expect(bar.getByTestId("titlebar-pause")).toHaveCount(0);
   await expect(bar.getByTestId("branch-chip")).toHaveCount(0);
   await bar.getByTestId("titlebar-overflow").click();
-  await expect(more.getByTestId("titlebar-menu-thread")).toBeVisible();
   // A solo thread's "…" has no workspace's controls.
-  await expect(more.getByTestId("titlebar-menu-workspace")).toHaveCount(0);
-  await expect(more).not.toContainText("fix/flaky-retry");
+  await expect(more.getByTestId("menu-workspace")).toHaveCount(0);
+  await expect(more.getByTestId("folded-workers")).toHaveCount(0);
+  await more.getByTestId("menu-thread").click();
+  const soloMenu = page.getByTestId("titlebar-menu-thread");
+  await expect(soloMenu).toBeVisible();
+  await expect(soloMenu).not.toContainText("fix/flaky-retry");
   // More… has it, to copy.
-  await more.getByTestId("menu-more").click();
+  await soloMenu.getByTestId("menu-more").click();
   const palette = page.getByTestId("command-palette");
   await expect(palette.getByRole("option", { name: "Copy fix/flaky-retry" })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -265,12 +283,12 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await expect(bar.getByRole("button", { name: /^Workers\b/ })).toHaveCount(0);
   await fitsTheBar(page);
   await overflow.click();
-  await expect(folded.getByTestId("titlebar-menu-thread")).toBeVisible();
-  await expect(folded.getByTestId("menu-layout")).toBeVisible();
-  await expect(folded.getByTestId("folded-tidy")).toBeVisible();
+  await expect(folded.getByTestId("menu-thread")).toBeVisible();
+  await expect(folded.getByTestId("menu-workspace")).toBeVisible();
   await expect(folded.getByTestId("folded-workers")).toBeVisible();
   // Each does what its button did.
-  await folded.getByTestId("folded-focus").click();
+  await folded.getByTestId("menu-view").click();
+  await page.getByTestId("folded-focus").click();
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-focus-mode", "true");
   await page.keyboard.press("ControlOrMeta+Shift+Period");
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-focus-mode", "false");
@@ -281,7 +299,7 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await expect(bar.getByTestId("view-switcher")).toBeVisible();
   await fitsTheBar(page);
   await overflow.click();
-  await expect(folded.getByTestId("folded-tidy")).toBeVisible();
+  await expect(folded.getByTestId("menu-workspace")).toBeVisible();
   await expect(folded.getByTestId("folded-workers")).toBeVisible();
   await folded.getByTestId("folded-workers").click();
   await expect(page.getByTestId("workers-list")).toBeVisible();
@@ -305,12 +323,19 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await expect(bar).toHaveAttribute("data-fold", "2");
   await fitsTheBar(page);
   await overflow.click();
-  await expect(page.getByTestId("titlebar-overflow-menu").getByTestId("folded-tidy")).toBeVisible();
-  // So is its Grid or Lanes.
+  await page.getByTestId("menu-workspace").click();
   await expect(
-    page.getByTestId("titlebar-overflow-menu").getByTestId("folded-board-layout"),
+    page.getByTestId("titlebar-menu-workspace").getByTestId("folded-tidy"),
+  ).toBeVisible();
+  // Its Grid or Lanes is under View.
+  await page.getByTestId("menu-view").click();
+  await expect(
+    page.getByTestId("titlebar-menu-view").getByTestId("folded-board-layout"),
   ).toBeVisible();
   await page.keyboard.press("Escape");
+  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
+    await page.keyboard.press("Escape");
+  }
   await page.keyboard.press("ControlOrMeta+Alt+1");
   await page.setViewportSize({ width: 640, height: 720 });
 

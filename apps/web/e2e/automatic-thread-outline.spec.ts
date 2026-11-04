@@ -3,7 +3,7 @@ import type { GramUIMessage } from "@gram/contracts";
 
 import { seedTheme } from "./seed-theme";
 import { setLayout } from "./layout";
-import { closeContents, openContents, openTitlebarMenu, titlebarMore } from "./titlebar-menu";
+import { closeContents, openBarSubmenu, openContents, titlebarMore } from "./titlebar-menu";
 import { threadRow } from "./thread-row";
 
 declare global {
@@ -255,6 +255,7 @@ if (phase !== "before") {
       await expect(page.getByTestId("conversation-rail")).toBeHidden();
       // One pane on a touch screen: Contents is in the title bar's "…".
       await titlebarMore(page).tap();
+      await page.getByTestId("menu-view").tap();
       await page.getByTestId("menu-contents").tap();
       await page
         .getByTestId("toc")
@@ -298,8 +299,9 @@ for (const provider of ["claude", "codex"] as const) {
       return;
     }
     await expect(contents).toHaveCount(0);
-    await openTitlebarMenu(page);
+    await openBarSubmenu(page, "view");
     await expect(page.getByTestId("menu-contents")).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await expect(
       page.getByTestId("conversation-rail").locator('[aria-current="location"]'),
@@ -311,8 +313,12 @@ for (const provider of ["claude", "codex"] as const) {
     await expect(menu).toBeHidden();
     await expect(transcript.locator('[data-message-id="prompt-0"]')).toBeInViewport();
     await expect(more).toBeFocused();
-    // By keyboard: the "…" opens on its first item, the thread's Contents, which opens on Enter.
+    // By keyboard: the "…" opens on its first item, End reaches View, whose first item is the
+    // thread's Contents, and Enter opens each.
     await more.press("ArrowDown");
+    await page.keyboard.press("End");
+    await expect(page.getByTestId("menu-view")).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(page.getByTestId("menu-contents")).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(menu).toBeVisible();
@@ -505,8 +511,9 @@ if (phase !== "before") {
         .click();
       await expect(transcript.locator('[data-message-id="long-u80"]')).toBeInViewport();
       await page.evaluate(() => window.gramMock!.simulateDisconnect());
-      await openTitlebarMenu(page);
+      await openBarSubmenu(page, "view");
       await expect(page.getByTestId("menu-contents")).toBeVisible();
+      await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
       await expect(transcript.locator('[data-message-id="long-u80"]')).toBeInViewport();
       const fork = await page.evaluate(

@@ -69,6 +69,7 @@ test("Quiet covers the window until Esc", async ({ page }) => {
   // Quiet is in the title bar's "…".
   await page.setViewportSize({ width: 1680, height: 900 });
   await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-quiet").click();
   await expect(page.getByTestId("quiet-layer")).toBeVisible();
   await expect(page.getByTestId("app-shell")).toHaveAttribute("inert", "");

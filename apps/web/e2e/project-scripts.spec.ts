@@ -8,9 +8,13 @@ test("adds a suggested script and one of its own, then runs them by click, key a
   await page.goto("/t/t-flaky");
   const header = page.getByTestId("pane-header");
 
-  // Nothing is saved yet, so the header keeps its room. The Terminal tab's Run script says so and
-  // leads to the editor, which offers package.json's scripts.
+  // Nothing is saved yet, so the bar's "…" has no Run script. The Terminal tab's Run script says
+  // so and leads to the editor, which offers package.json's scripts.
   await expect(header.getByRole("button", { name: "Run script" })).toHaveCount(0);
+  await page.getByTestId("titlebar-overflow").click();
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeVisible();
+  await expect(page.getByTestId("menu-run-script")).toHaveCount(0);
+  await page.keyboard.press("Escape");
   const panel = page.getByTestId("right-panel");
   await panel.getByRole("tab", { name: "Terminal", exact: true }).click();
   // The shell's canvas mounts as it starts; opened before, the menu would lose the click to it.
@@ -42,11 +46,12 @@ test("adds a suggested script and one of its own, then runs them by click, key a
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toHaveCount(0);
 
-  // Saved, the header has Run script; a click runs it in a terminal tab named after it, green.
-  await header.getByRole("button", { name: "Run script" }).click();
-  const items = popup.getByTestId("run-script-item");
+  // Saved, the bar's "…" has Run script; a click runs it in a terminal tab named after it, green.
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-run-script").click();
+  const items = page.getByTestId("folded-script");
   await expect(items).toHaveCount(2);
-  await expect(items.nth(1)).toContainText("pnpm run lint --max-warnings 0; exit 1");
+  await expect(items.nth(1)).toHaveAttribute("title", /pnpm run lint --max-warnings 0; exit 1/);
   await items.filter({ hasText: "test" }).first().click();
 
   const tabs = panel.getByRole("tablist", { name: "Terminals" }).getByRole("tab");
@@ -92,10 +97,10 @@ const addTestScript = async (page: Page) => {
   await expect(dialog).toHaveCount(0);
 };
 
-test("with scripts saved, the header's Run script leaves every chip room at 1440 px", async ({
+test("with scripts saved, Run script is the bar's \"…\"'s and every chip keeps its room at 1440 px", async ({
   page,
 }) => {
-  // pane-header-overflow's crowded 1440 px header, with a script saved so Run script is in it.
+  // pane-header-overflow's crowded 1440 px header, with a script saved.
   await page.setViewportSize({ width: 1440, height: 720 });
   await page.goto("/t/t-flaky");
   await addTestScript(page);
@@ -115,9 +120,11 @@ test("with scripts saved, the header's Run script leaves every chip room at 1440
   await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(352);
 
   const header = page.getByTestId("pane-header").first();
-  const run = header.getByRole("button", { name: "Run script" });
-  await expect(run).toBeVisible();
-  expect((await run.boundingBox())?.width).toBe(16);
+  // The header carries no Run script of its own: the bar's "…" has it.
+  await expect(header.getByRole("button", { name: "Run script" })).toHaveCount(0);
+  await page.getByTestId("titlebar-overflow").click();
+  await expect(page.getByTestId("menu-run-script")).toBeVisible();
+  await page.keyboard.press("Escape");
   const chips = header.getByTestId("pane-header-chips");
   const wrapped = await chips.evaluate((row) => {
     const top = row.getBoundingClientRect().top;
@@ -128,7 +135,7 @@ test("with scripts saved, the header's Run script leaves every chip room at 1440
   expect(wrapped, "every chip fits at this width").toBe(0);
 });
 
-test("a narrow title bar folds Run script into its … and runs the script from there", async ({
+test("a narrow title bar keeps Run script in its … and runs the script from there", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 700, height: 720 });
@@ -138,6 +145,7 @@ test("a narrow title bar folds Run script into its … and runs the script from 
     page.getByTestId("pane-header").getByRole("button", { name: "Run script" }),
   ).toBeHidden();
   await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-run-script").click();
   const item = page.getByTestId("folded-script");
   await expect(item).toHaveCount(1);
   await expect(item).toHaveAttribute("title", "pnpm run test");

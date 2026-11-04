@@ -35,6 +35,7 @@ const start = async (page: Page) => {
   await openOrchestrator(page, made.orchestratorThreadId);
   await expect(page.getByTestId("inbox-line")).toBeVisible();
   await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-quiet").click();
   await expect(quiet(page)).toBeVisible();
   await expect(card(page)).toBeVisible();
@@ -176,6 +177,7 @@ const answerAll = (page: Page) =>
 test("a solo thread's question is a card too, not 'Nothing needs you'", async ({ page }) => {
   await seed(page);
   await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-quiet").click();
   await expect(quiet(page)).toBeVisible();
   await goTo(page, "Which date library should the picker use?");
@@ -188,6 +190,7 @@ test("nothing asked: the empty field says what is going on", async ({ page }) =>
   await expect(page.getByTestId("approval-card")).toBeVisible();
   await answerAll(page);
   await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-quiet").click();
   await expect(quiet(page).getByTestId("quiet-empty")).toContainText("Nothing needs you.");
   await expect(quiet(page).getByTestId("quiet-summary")).toHaveText(/workers? (is|are) busy\./);

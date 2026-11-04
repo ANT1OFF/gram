@@ -1,5 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+import { openBarSubmenu } from "./titlebar-menu";
+
 /**
  * The thread's ⋯ menu, then its More…: ⌘K on the thread's own commands. A pane in a grid has the
  * menu in its header; the thread alone in the window has it in the title bar's one "…".
@@ -14,7 +16,7 @@ export async function openHeaderMore(page: Page): Promise<Locator> {
 
 /**
  * Opens the thread's menu, resolving with what holds its items: a grid pane's header menu, or the
- * thread's group in the title bar's "…" for the thread alone in the window.
+ * thread's submenu in the title bar's "…" for the thread alone in the window.
  */
 export async function openThreadMenu(page: Page): Promise<Locator> {
   const paneMenu = page.getByTestId("pane").getByRole("button", { name: "Thread menu" });
@@ -24,10 +26,7 @@ export async function openThreadMenu(page: Page): Promise<Locator> {
     await expect(menu).toBeVisible();
     return menu;
   }
-  await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
-  const group = page.getByTestId("titlebar-menu-thread");
-  await expect(group).toBeVisible();
-  return group;
+  return openBarSubmenu(page, "thread");
 }
 
 /**

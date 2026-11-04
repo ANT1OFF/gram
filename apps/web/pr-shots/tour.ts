@@ -6,6 +6,7 @@ import { seedMockSettings, SHOTS, type Shot } from "./shots";
 /** The orchestrator's Memory, from the title bar's "…". */
 async function openMemory(page: Page): Promise<void> {
   await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
   await page.getByTestId("menu-memory").click();
 }
 
@@ -261,6 +262,7 @@ const scenes: readonly Shot[] = [
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("menu-view").click();
       await page.getByTestId("folded-quiet").click();
       await page.getByTestId("quiet-strip-workspace").first().waitFor();
       await page.waitForTimeout(600);

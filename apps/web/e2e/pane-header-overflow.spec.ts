@@ -67,6 +67,7 @@ for (const width of [880, 1440]) {
     await menu.click({ trial: true, timeout: 2000 });
     await menu.click();
     // The push is the branch's, which More… has.
+    await page.getByTestId("menu-thread").click();
     await page.getByTestId("titlebar-menu-thread").getByRole("menuitem", { name: "More…" }).click();
     await expect(
       page.getByTestId("command-palette").getByRole("option", { name: "Push 2 commits" }),

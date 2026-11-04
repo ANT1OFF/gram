@@ -32,6 +32,7 @@ const openMemory = async (page: Page) => {
   // From the title bar's "…", its Memory.
   await openOrchestrator(page, made.orchestratorThreadId);
   await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
   await page.getByTestId("menu-memory").click();
   await expect(page).toHaveURL(new RegExp(`/w/${made.workspaceId}/memory$`));
   return made;

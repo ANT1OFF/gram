@@ -277,6 +277,7 @@ const openQuietBusy = async (page: Page): Promise<string> => {
     return made;
   });
   await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-quiet").click();
   await page.getByTestId("quiet-empty").waitFor();
   return page.evaluate(() => sessionStorage.getItem("gram.shots.workspace") ?? "");
@@ -357,6 +358,7 @@ const openReadmeQuiet = async (page: Page, width: number, height: number) => {
   await page.getByLabel("Message", { exact: true }).waitFor();
   await page.setViewportSize({ width, height });
   await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-quiet").click();
   await page.getByTestId("quiet-empty").waitFor();
   await page.mouse.move(width - 4, height - 4);
@@ -889,6 +891,7 @@ async function openBarMenu(page: Page): Promise<void> {
 /** The workspace's settings sheet, from the title bar's "…". */
 async function openWorkspaceSettingsFromBar(page: Page): Promise<void> {
   await openBarMenu(page);
+  await page.getByTestId("menu-workspace").click();
   await page.getByTestId("menu-workspace-settings").click();
 }
 
@@ -1149,6 +1152,7 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await seedProjectScripts(page);
       await openBarMenu(page);
+      await page.getByTestId("menu-run-script").click();
       await page.getByTestId("folded-scripts").waitFor();
       await page.waitForTimeout(600);
     },
@@ -1205,6 +1209,7 @@ export const SHOTS: readonly Shot[] = [
       await page.goto("/t/t-deps");
       await page.getByLabel("Message", { exact: true }).waitFor();
       await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("menu-view").click();
       await page.getByTestId("folded-quiet").click();
       await page.getByTestId("quiet-view").waitFor();
       await page.waitForTimeout(800);
@@ -1397,6 +1402,7 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOrchestration("board"));
       await openBarMenu(page);
+      await page.getByTestId("menu-workspace").click();
       await page.getByTestId("folded-pause").click();
       await page.getByTestId("folded-pause-confirm").waitFor();
       await page.waitForTimeout(600);
@@ -2406,6 +2412,7 @@ export const SHOTS: readonly Shot[] = [
         });
       });
       await openBarMenu(page);
+      await page.getByTestId("menu-thread").click();
       await page.getByRole("menuitem", { name: /Close thread/ }).click();
       await page.getByTestId("close-thread-dialog").waitFor();
     },
@@ -2712,6 +2719,7 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await openOverviewHome(page, 1440, { panel: false });
       await openBarMenu(page);
+      await page.getByTestId("menu-thread").click();
       await page.getByTestId("titlebar-menu-thread").waitFor();
       await page.waitForTimeout(400);
     },

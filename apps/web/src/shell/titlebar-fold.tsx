@@ -1,5 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
-import type { GridPreset, ThreadId, WorkspaceState } from "@gram/contracts";
+import type { GridPreset, ProjectId, ThreadId, WorkspaceState } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   BookOpen,
@@ -13,8 +13,11 @@ import {
   Ellipsis,
   Focus,
   History,
-  LayoutGrid,
+  MessageSquare,
   Moon,
+  Network,
+  PanelsTopLeft,
+  Play,
   Rows3,
   Settings2,
   Users,
@@ -32,6 +35,7 @@ import { WorkerMenuItems } from "@/orchestration/worker-header";
 import { useWorkersListStore, useWorkersNow } from "@/orchestration/workers-list";
 import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
+import { useProjectScripts } from "@/scripts/use-project-scripts";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { GRID_PRESETS, PRESET_LABELS, useLayoutStore, type BoardLayout } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -45,10 +49,10 @@ import { useTitlebarOutline } from "./titlebar-outline";
 import { FOLD_ALL, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
 // The title bar's one "…": everything the bar keeps out of sight, each item with its words and its
-// shortcut. The thread the bar carries first (its Contents, scripts and the thread menu's verbs),
-// then the workspace's (Workers, Tidy up, Pause, Memory, its settings), then the window's (Quiet,
-// focus mode, History, the layout). A narrow bar folds a worker's own actions and Board's layout
-// into it too. Each item does what its button did.
+// shortcut, and like every menu at most seven items. The carried thread's menu (and its scripts),
+// Workers, the workspace's (Tidy up, Pause, Memory, its settings) and the window's (Contents,
+// Quiet, focus mode, History, the layout), the groups each a submenu. A narrow bar folds a worker's
+// own actions and Board's layout into it too. Each item does what its button did.
 
 const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
 
@@ -265,26 +269,36 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
   );
 }
 
-/** The workspace's own: Workers, Tidy up, Pause, Memory and its settings. */
-function WorkspaceItems({ state, opening }: { state: WorkspaceState; opening: number }) {
-  const navigate = useNavigate();
+/** Workers, ⌘J's list of the workspace's workers, with how many are on now. */
+function WorkersItem() {
   const { count } = useWorkersNow();
+  return (
+    <Menu.Item
+      data-testid="folded-workers"
+      className={MENU_ITEM}
+      onClick={() => useWorkersListStore.getState().toggle()}
+    >
+      <Users aria-hidden />
+      Workers
+      {count > 0 && <span className="text-xs text-muted-foreground tabular-nums">{count} now</span>}
+      <Keys id="workers.open" />
+    </Menu.Item>
+  );
+}
+
+/** The workspace's own, in a submenu named for it: Tidy up, Pause, Memory and its settings. */
+function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: number }) {
+  const navigate = useNavigate();
   const workspaceId = state.workspace.id;
   return (
-    <Menu.Group data-testid="titlebar-menu-workspace">
-      <Menu.GroupLabel className={MENU_LABEL}>{state.workspace.name}</Menu.GroupLabel>
-      <Menu.Item
-        data-testid="folded-workers"
-        className={MENU_ITEM}
-        onClick={() => useWorkersListStore.getState().toggle()}
-      >
-        <Users aria-hidden />
-        Workers
-        {count > 0 && (
-          <span className="text-xs text-muted-foreground tabular-nums">{count} now</span>
-        )}
-        <Keys id="workers.open" />
-      </Menu.Item>
+    <Submenu
+      label="Workspace"
+      testId="menu-workspace"
+      popupTestId="titlebar-menu-workspace"
+      popupLabel={state.workspace.name}
+      icon={<Network aria-hidden />}
+      current={state.workspace.name}
+    >
       <TidyItem />
       {/* Each opening of the menu starts Pause unasked, whatever the last one left. */}
       <PauseItem key={`pause-${workspaceId}-${opening}`} state={state} />
@@ -304,12 +318,15 @@ function WorkspaceItems({ state, opening }: { state: WorkspaceState; opening: nu
         <Settings2 aria-hidden />
         Workspace settings
       </Menu.Item>
-    </Menu.Group>
+    </Submenu>
   );
 }
 
-/** The window's own: Board's layout when folded, Quiet, focus mode, History and the layout. */
-function ViewItems() {
+/**
+ * The window's own, in a submenu: the carried thread's Contents, Quiet, focus mode, History, then
+ * Board's layout when folded and the grid's layout, each picked with a check.
+ */
+function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
   const state = useViewWorkspace();
   const preset = useLayoutStore((s) => s.grid.preset);
   const focusMode = useLayoutStore((s) => s.focusMode);
@@ -318,32 +335,13 @@ function ViewItems() {
   const board = useViewStore((s) => s.view === "board") && state !== undefined && fold > 0;
   const boardLayout = useLayoutStore((s) => s.boardLayout);
   return (
-    <Menu.Group data-testid="titlebar-menu-view">
-      <Menu.GroupLabel className={MENU_LABEL}>View</Menu.GroupLabel>
-      {board && (
-        <Menu.RadioGroup
-          data-testid="folded-board-layout"
-          value={boardLayout}
-          onValueChange={(next: BoardLayout) => useLayoutStore.getState().setBoardLayout(next)}
-        >
-          {(
-            [
-              ["grid", "Board as grid", Rows3],
-              ["lanes", "Board as lanes", Columns3],
-            ] as const
-          ).map(([value, label, Icon]) => (
-            <Menu.RadioItem key={value} value={value} closeOnClick className={MENU_ITEM}>
-              <Icon aria-hidden />
-              {label}
-              <span className="ml-auto flex size-3.5 items-center justify-center pl-4">
-                <Menu.RadioItemIndicator>
-                  <CheckIcon aria-hidden />
-                </Menu.RadioItemIndicator>
-              </span>
-            </Menu.RadioItem>
-          ))}
-        </Menu.RadioGroup>
-      )}
+    <Submenu
+      label="View"
+      testId="menu-view"
+      popupTestId="titlebar-menu-view"
+      icon={<PanelsTopLeft aria-hidden />}
+    >
+      {threadId !== undefined && <ContentsSubmenu threadId={threadId} />}
       <Menu.Item
         data-testid="folded-quiet"
         title="Show only what needs you, one card at a time"
@@ -373,65 +371,108 @@ function ViewItems() {
         History
         <Keys id="history.open" />
       </Menu.Item>
-      <Submenu
-        label="Layout"
-        testId="menu-layout"
-        icon={<LayoutGrid aria-hidden />}
-        current={PRESET_LABELS[preset]}
+      {board && (
+        <>
+          {SEPARATOR}
+          <Menu.RadioGroup
+            data-testid="folded-board-layout"
+            value={boardLayout}
+            onValueChange={(next: BoardLayout) => useLayoutStore.getState().setBoardLayout(next)}
+          >
+            <Menu.GroupLabel className={MENU_LABEL}>Board</Menu.GroupLabel>
+            {(
+              [
+                ["grid", "Grid", Rows3],
+                ["lanes", "Lanes", Columns3],
+              ] as const
+            ).map(([value, label, Icon]) => (
+              <Menu.RadioItem key={value} value={value} closeOnClick className={MENU_ITEM}>
+                <Icon aria-hidden />
+                {label}
+                <Check />
+              </Menu.RadioItem>
+            ))}
+          </Menu.RadioGroup>
+        </>
+      )}
+      {SEPARATOR}
+      <Menu.RadioGroup
+        data-testid="folded-layout"
+        value={preset}
+        onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
       >
-        <Menu.RadioGroup
-          data-testid="folded-layout"
-          value={preset}
-          onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
-        >
-          {GRID_PRESETS.map((value, i) => (
-            <Menu.RadioItem
-              key={value}
-              value={value}
-              aria-label={PRESET_LABELS[value]}
-              closeOnClick
-              className={MENU_ITEM}
-            >
-              <PresetGlyph preset={value} />
-              {PRESET_LABELS[value]}
-              <Keys id={`layout.preset${i + 1}`} />
-              <span className="flex size-3.5 items-center justify-center">
-                <Menu.RadioItemIndicator>
-                  <CheckIcon aria-hidden />
-                </Menu.RadioItemIndicator>
-              </span>
-            </Menu.RadioItem>
-          ))}
-        </Menu.RadioGroup>
-      </Submenu>
-    </Menu.Group>
+        <Menu.GroupLabel className={MENU_LABEL}>Layout</Menu.GroupLabel>
+        {GRID_PRESETS.map((value, i) => (
+          <Menu.RadioItem
+            key={value}
+            value={value}
+            aria-label={PRESET_LABELS[value]}
+            closeOnClick
+            className={MENU_ITEM}
+          >
+            <PresetGlyph preset={value} />
+            {PRESET_LABELS[value]}
+            <Keys id={`layout.preset${i + 1}`} />
+            <Check />
+          </Menu.RadioItem>
+        ))}
+      </Menu.RadioGroup>
+    </Submenu>
   );
 }
 
-/** The thread the bar carries: Contents, its scripts, a folded worker's actions, then its menu. */
+/** A radio item's check, at its end: the current value's mark. */
+function Check() {
+  return (
+    <span className="ml-auto flex size-3.5 shrink-0 items-center justify-center pl-0">
+      <Menu.RadioItemIndicator>
+        <CheckIcon aria-hidden />
+      </Menu.RadioItemIndicator>
+    </span>
+  );
+}
+
+/** The carried thread's scripts, in a submenu once its project has any. */
+function RunScriptSubmenu({ threadId, projectId }: { threadId: ThreadId; projectId: ProjectId }) {
+  const scripts = useProjectScripts(projectId).data?.scripts ?? [];
+  if (scripts.length === 0) return null;
+  return (
+    <Submenu
+      label="Run script"
+      testId="menu-run-script"
+      icon={<Play aria-hidden />}
+      current={scripts.length}
+    >
+      <RunScriptMenuItems threadId={threadId} projectId={projectId} itemClassName={MENU_ITEM} />
+    </Submenu>
+  );
+}
+
+/**
+ * The carried thread's own: a folded worker's Keep beside and Take over, its menu's verbs in a
+ * submenu, and its scripts.
+ */
 function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode }) {
   const fold = useTitlebarSlot((s) => s.fold);
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   if (thread === undefined) return null;
+  const orchestrator = thread.role === "orchestrator";
   return (
-    <Menu.Group data-testid="titlebar-menu-thread">
-      <Menu.GroupLabel className={cn(MENU_LABEL, "max-w-64 truncate")}>
-        {thread.role === "orchestrator" ? "Orchestrator" : thread.title || "Thread"}
-      </Menu.GroupLabel>
-      {/* A worker in the bar folded all the way: its own actions are this menu's. */}
+    <>
+      {/* A worker in the bar folded all the way: its own actions are this menu's, first. */}
       {fold >= FOLD_ALL && thread.spawnedBy !== undefined && (
         <WorkerMenuItems thread={thread} itemClassName={MENU_ITEM} />
       )}
-      <ContentsSubmenu threadId={threadId} />
-      {thread.role !== "orchestrator" && (
-        <RunScriptMenuItems
-          threadId={thread.id}
-          projectId={thread.projectId}
-          itemClassName={MENU_ITEM}
-        />
-      )}
-      {items}
-    </Menu.Group>
+      <Submenu
+        label={orchestrator ? "Orchestrator" : "Thread"}
+        testId="menu-thread"
+        popupTestId="titlebar-menu-thread"
+        icon={orchestrator ? <Network aria-hidden /> : <MessageSquare aria-hidden />}
+      >
+        {items}
+      </Submenu>
+      {!orchestrator && <RunScriptSubmenu threadId={thread.id} projectId={thread.projectId} />}
+    </>
   );
 }
 
@@ -478,24 +519,19 @@ function OverflowMenu({
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
-          <Menu.Popup
-            data-testid="titlebar-overflow-menu"
-            className={cn(MENU_POPUP, "max-h-(--available-height) w-64 overflow-y-auto")}
-          >
+          {/* At most seven items, as every menu: the thread's, the workspace's and the window's
+              each a submenu of its own, Workers beside them. */}
+          <Menu.Popup data-testid="titlebar-overflow-menu" className={cn(MENU_POPUP, "w-64")}>
             <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
-              {thread !== undefined && (
-                <>
-                  <ThreadItems threadId={thread.id} items={thread.items} />
-                  {SEPARATOR}
-                </>
-              )}
+              {thread !== undefined && <ThreadItems threadId={thread.id} items={thread.items} />}
               {workspace && (
                 <>
-                  <WorkspaceItems key={state.workspace.id} state={state} opening={opening} />
-                  {SEPARATOR}
+                  <WorkersItem />
+                  <WorkspaceSubmenu key={state.workspace.id} state={state} opening={opening} />
                 </>
               )}
-              <ViewItems />
+              {(thread !== undefined || workspace) && SEPARATOR}
+              <ViewSubmenu threadId={thread?.id} />
             </div>
           </Menu.Popup>
         </Menu.Positioner>

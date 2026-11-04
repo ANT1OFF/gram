@@ -3,7 +3,7 @@ import type { GramUIMessage } from "@gram/contracts";
 
 import { seedTheme } from "./seed-theme";
 import { setLayout } from "./layout";
-import { contentsTrigger, openContents, openTitlebarMenu } from "./titlebar-menu";
+import { contentsTrigger, openBarSubmenu, openContents } from "./titlebar-menu";
 import { threadRow } from "./thread-row";
 
 const shots = process.env["GRAM_LONG_SHOTS"] ?? "e2e/__screenshots__";
@@ -546,8 +546,9 @@ test("the rail switches at actual 959 and 960 px pane widths", async ({ page }) 
   await expect.poll(async () => (await transcript.boundingBox())!.width).toBe(959);
   await expect(rail).toBeHidden();
   // Without the rail, Contents is still a click away: in the title bar's "…".
-  await openTitlebarMenu(page);
+  await openBarSubmenu(page, "view");
   await expect(page.getByTestId("menu-contents")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: Math.round(1600 + 960 - initial), height: 1000 });
   await expect.poll(async () => (await transcript.boundingBox())!.width).toBe(960);

@@ -91,7 +91,8 @@ describe("a thread's header in the title bar", () => {
     expect(within(header).queryByTestId("branch-chip")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    const menu = await screen.findByTestId("titlebar-overflow-menu");
+    fireEvent.click(await screen.findByTestId("menu-thread"));
+    const menu = await screen.findByTestId("titlebar-menu-thread");
     await within(menu).findByRole("menuitem", { name: "More…" });
     // The agents' working detail: More… has it, to copy and push.
     expect(within(menu).queryByTestId("branch-chip")).toBeNull();
@@ -110,19 +111,28 @@ describe("a thread's header in the title bar", () => {
     await within(slot).findByTestId("pane-header");
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     const folded = await screen.findByTestId("titlebar-folded");
-    // The carried thread's verbs first, as its header's menu had them.
-    const thread = within(folded).getByTestId("titlebar-menu-thread");
+    // Like every menu, at most seven items: the thread's and the window's are submenus. A solo
+    // thread's bar has no workspace's Workers, Tidy up or Pause.
+    expect(
+      within(folded)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Thread", "View"]);
+    expect(within(folded).queryByTestId("folded-workers")).toBeNull();
+    expect(within(folded).queryByTestId("menu-workspace")).toBeNull();
+    // The carried thread's verbs, as its header's menu had them.
+    fireEvent.click(within(folded).getByTestId("menu-thread"));
+    const thread = await screen.findByTestId("titlebar-menu-thread");
     expect(within(thread).getByRole("menuitem", { name: "Fork thread" })).toBeTruthy();
     expect(within(thread).getByRole("menuitem", { name: /^Rename/ })).toBeTruthy();
     expect(within(thread).getByRole("menuitem", { name: "More…" })).toBeTruthy();
-    // Then the window's.
-    expect(within(folded).getByRole("menuitem", { name: /^Quiet/ })).toBeTruthy();
-    expect(within(folded).getByRole("menuitem", { name: /^Focus mode/ })).toBeTruthy();
-    expect(within(folded).getByRole("menuitem", { name: /^History/ })).toBeTruthy();
-    expect(within(folded).getByTestId("menu-layout")).toBeTruthy();
-    // A solo thread's bar has no workspace's Tidy up or Workers.
-    expect(within(folded).queryByTestId("folded-tidy")).toBeNull();
-    expect(within(folded).queryByTestId("folded-workers")).toBeNull();
+    // The window's.
+    fireEvent.click(within(folded).getByTestId("menu-view"));
+    const view = await screen.findByTestId("titlebar-menu-view");
+    expect(within(view).getByRole("menuitem", { name: /^Quiet/ })).toBeTruthy();
+    expect(within(view).getByRole("menuitem", { name: /^Focus mode/ })).toBeTruthy();
+    expect(within(view).getByRole("menuitem", { name: /^History/ })).toBeTruthy();
+    expect(within(view).getAllByRole("menuitemradio")).toHaveLength(6);
   });
 
   it("carries an orchestrator's and a worker's header too", async () => {

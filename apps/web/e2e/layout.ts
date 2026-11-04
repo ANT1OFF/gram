@@ -11,21 +11,21 @@ export type LayoutName =
   | "2 columns × 3 rows"
   | "3 columns × 2 rows";
 
-/** The title bar's "…", whose Layout submenu holds the presets. */
+/** The title bar's "…", whose View submenu holds the presets. */
 export const layoutButton = titlebarMore;
 
-/** The layout presets in the title bar's open Layout submenu. */
+/** The layout presets in the title bar's open View submenu. */
 export const layoutPresets = (page: Page) =>
   page.getByTestId("folded-layout").getByRole("menuitemradio");
 
-/** Opens the title bar's "…" and its Layout submenu. */
+/** Opens the title bar's "…" and its View submenu, where the layout presets are. */
 export async function openLayout(page: Page): Promise<void> {
   await layoutButton(page).click();
-  await page.getByTestId("menu-layout").click();
+  await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-layout").waitFor();
 }
 
-/** Picks `name` from the title bar's Layout: opens it, then takes the preset, which closes it. */
+/** Picks `name` from the title bar's View: opens it, then takes the preset, which closes it. */
 export async function setLayout(page: Page, name: LayoutName): Promise<void> {
   await openLayout(page);
   await page.getByTestId("folded-layout").getByRole("menuitemradio", { name, exact: true }).click();

@@ -32,11 +32,18 @@ const start = async (page: Page) => {
 
 const titlebar = (page: Page) => page.getByTestId("shell-titlebar");
 
-/** Opens the title bar's "…" and resolves with its Tidy up. */
+/** Closes the title bar's "…" and the submenu open in it. */
+const closeMenus = async (page: Page) => {
+  const root = page.getByTestId("titlebar-overflow-menu");
+  for (let i = 0; i < 2 && (await root.isVisible()); i++) await page.keyboard.press("Escape");
+  await expect(root).toBeHidden();
+};
+
+/** Opens the title bar's "…", then its workspace's submenu, and resolves with its Tidy up. */
 const openTidy = async (page: Page) => {
   await titlebar(page).getByTestId("titlebar-overflow").click();
-  await expect(page.getByTestId("titlebar-overflow-menu")).toBeVisible();
-  return page.getByTestId("titlebar-overflow-menu").getByTestId("folded-tidy");
+  await page.getByTestId("titlebar-overflow-menu").getByTestId("menu-workspace").click();
+  return page.getByTestId("titlebar-menu-workspace").getByTestId("folded-tidy");
 };
 
 test("Tidy up in the title bar says why it can't go while there is nobody to ask", async ({
@@ -60,6 +67,7 @@ test("Tidy up in the title bar says why it can't go while there is nobody to ask
   await expect(titlebar(page).getByTestId("pane-header")).toBeVisible();
   await titlebar(page).getByTestId("titlebar-overflow").click();
   await expect(page.getByTestId("titlebar-overflow-menu")).toBeVisible();
+  await expect(page.getByTestId("menu-workspace")).toHaveCount(0);
   await expect(page.getByTestId("folded-tidy")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await page.keyboard.press("ControlOrMeta+Alt+2");
@@ -101,8 +109,7 @@ test("Tidy up in the title bar asks the orchestrator, as the board's does", asyn
   await expect(asked).toHaveText("Asked to tidy up");
   await expect(asked).toHaveAttribute("aria-disabled", "true");
   await asked.click({ force: true });
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("titlebar-overflow-menu")).toBeHidden();
+  await closeMenus(page);
   // The cooldown passes whether the menu is open or not.
   await expect(async () => {
     const again = await openTidy(page);
@@ -110,7 +117,7 @@ test("Tidy up in the title bar asks the orchestrator, as the board's does", asyn
       await expect(again).not.toHaveAttribute("data-sent", /.*/, { timeout: 500 });
       await expect(again).not.toHaveAttribute("aria-disabled", "true", { timeout: 500 });
     } finally {
-      await page.keyboard.press("Escape");
+      await closeMenus(page);
     }
   }).toPass({ timeout: 6_000 * slowdown });
   // The same message the board sends, once: an ordinary message of the user's in the thread.

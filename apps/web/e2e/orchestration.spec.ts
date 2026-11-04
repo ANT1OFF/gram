@@ -126,8 +126,13 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   await expect(header.getByRole("button", { name: "Open board" })).toHaveCount(0);
   await expect(header.getByRole("link", { name: "Memory" })).toHaveCount(0);
   await bar.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("menu-memory")).toBeVisible();
   await page.keyboard.press("Escape");
+  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
+    await page.keyboard.press("Escape");
+  }
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeHidden();
   await expect(page.getByTestId("orchestrator-banner")).toHaveCount(0);
   // A paused workspace says so in its orchestrator's thread, with the way to resume it.
   await expect(page.getByTestId("orchestrator-banner-paused")).toHaveCount(0);
@@ -483,6 +488,7 @@ test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ p
   );
   // The bar's "…" opens its workspace's settings in a sheet, over the orchestrator.
   await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
   await page.getByTestId("menu-workspace-settings").click();
   const sheet = page.getByRole("dialog", { name: "platform-2" });
   await expect(sheet.getByTestId("autonomy")).toHaveAttribute("data-value", "full");
@@ -1094,6 +1100,7 @@ test("the Board shows workers by station, pauses from its header, and fits a nar
   // too, until it is resumed.
   await bar.getByTestId("titlebar-overflow").click();
   // A worker is mid-turn, so the pause asks first: it stops workers too, at a tool boundary.
+  await page.getByTestId("menu-workspace").click();
   await page.getByTestId("folded-pause").click();
   await expect(page.getByTestId("folded-pause-confirm")).toContainText(
     "finishes the step it is on",
@@ -1121,9 +1128,13 @@ test("the Board shows workers by station, pauses from its header, and fits a nar
   await page.keyboard.press("ControlOrMeta+Alt+b");
   await page.setViewportSize({ width: 760, height: 700 });
   await bar.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("folded-tidy")).toBeVisible();
   await expect(page.getByTestId("folded-pause")).toBeVisible();
   await page.keyboard.press("Escape");
+  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
+    await page.keyboard.press("Escape");
+  }
   await expect(bar.getByTestId("rail-waiting-chip")).toBeVisible();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -1463,17 +1474,22 @@ test("Tidy up asks the orchestrator to put its board in order, from the Board or
   await page.setViewportSize({ width: 1680, height: 900 });
   const bar = page.getByTestId("shell-titlebar");
   await bar.getByTestId("titlebar-overflow").click();
-  const tidy = page.getByTestId("titlebar-overflow-menu").getByTestId("folded-tidy");
+  await page.getByTestId("menu-workspace").click();
+  const tidy = page.getByTestId("titlebar-menu-workspace").getByTestId("folded-tidy");
   await expect(tidy).toHaveAccessibleName("Tidy up");
   await tidy.click();
   const toast = page.getByTestId("toast").filter({ hasText: "Asked the orchestrator to tidy up" });
   await expect(toast).toHaveCount(1);
   await bar.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
   await expect(tidy).toHaveAttribute("data-sent", /^(sent|queued)$/);
   await expect(tidy).toHaveAttribute("aria-disabled", "true");
   await tidy.click({ force: true });
   await expect(toast).toHaveCount(1);
   await page.keyboard.press("Escape");
+  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
+    await page.keyboard.press("Escape");
+  }
 
   // It is an ordinary message of the user's in the orchestrator's thread.
   await pickChat(page);
