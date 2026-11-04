@@ -501,7 +501,7 @@ export function ThreadView({
               data-testid="status-icon"
               data-working={display.working}
               data-running={display.running}
-              className={cn("size-3.5", display.tone)}
+              className={cn("size-4", display.tone)}
             />
           </Swap>
           <RunningCount count={display.running} />

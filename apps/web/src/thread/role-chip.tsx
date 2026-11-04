@@ -102,7 +102,8 @@ export function RoleGlyph({
         />
       }
     >
-      <Icon aria-hidden className="size-3.5" />
+      {/* A header's mark, so a chrome glyph. */}
+      <Icon aria-hidden className="size-4" />
       <span className="sr-only">{info.name}</span>
     </Hint>
   );
