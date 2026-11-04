@@ -185,6 +185,30 @@ describe.skipIf(!hasGit)("gitDiff", () => {
     }).pipe(provide),
   );
 
+  it.live("leaves whitespace-only changes out on request, without falling back to the branch", () =>
+    Effect.gen(function* () {
+      const repo = makeRepo(tmp());
+      write(nodePath.join(repo, "a.txt"), "one\ntwo\n");
+      write(nodePath.join(repo, "b.txt"), "x\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "base");
+      run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+      run(repo, "checkout", "-q", "-b", "feat");
+      write(nodePath.join(repo, "b.txt"), "y\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "feat work");
+      write(nodePath.join(repo, "a.txt"), "one  \n    two\n");
+      expect((yield* gitDiff(repo)).files?.map((f) => f.path)).toEqual(["a.txt"]);
+      // Only whitespace is uncommitted: nothing to show, but the tree isn't clean either.
+      const ignored = yield* gitDiff(repo, { ignoreWhitespace: true });
+      expect(ignored.files).toEqual([]);
+      expect(ignored.base).toBeUndefined();
+      write(nodePath.join(repo, "b.txt"), "z\n");
+      const real = yield* gitDiff(repo, { ignoreWhitespace: true });
+      expect(real.files?.map((f) => [f.path, f.added, f.removed])).toEqual([["b.txt", 1, 1]]);
+    }).pipe(provide),
+  );
+
   it.live("caps oversized working-tree and branch diffs", () =>
     Effect.gen(function* () {
       const repo = makeRepo(tmp());

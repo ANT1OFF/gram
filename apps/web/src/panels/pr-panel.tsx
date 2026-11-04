@@ -322,6 +322,8 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
     return ifTarget(identityOf(detail, git?.origin), git?.pr, git?.origin);
   });
   const { actions } = useDiffFileActions(threadId);
+  // The Diff tab's Wrap lines holds for the PR's files too.
+  const wrapLines = useLayoutStore((s) => s.diffWrap);
   const panel = useRef<HTMLDivElement>(null);
   const now = useNow(
     detail.checkRuns.some((run) => checkState(run).spin === true),
@@ -565,7 +567,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         count={detail.files.length}
       >
         {detail.note && <p className="px-3 pb-1 text-xs text-warning">{detail.note}</p>}
-        <DiffFileList files={detail.files} {...actions} />
+        <DiffFileList files={detail.files} wrap={wrapLines} {...actions} />
       </Section>
     </div>
   );

@@ -20,8 +20,13 @@ import type { DiffLayout } from "@/stores/layout";
 
 import { PatchView } from "./patch-view";
 
-/** Changed lines past which a file starts collapsed, however few files there are. */
+/**
+ * Changed lines past which a file starts collapsed, however few files there are; a diff with fewer in
+ * all starts with every file open, however many there are.
+ */
 const LARGE_FILE_LINES = 400;
+/** Files a diff may have and still start open, whatever their size in all (each under the cap). */
+const FEW_FILES = 3;
 
 /** A request to open a file, and bring it (or one of its hunks) into view; `key` tells requests apart. */
 export interface DiffFocus {
@@ -64,8 +69,9 @@ function moveBetweenHeaders(event: KeyboardEvent<HTMLButtonElement>) {
 }
 
 /**
- * Files with collapsible patches; small change sets start expanded, except a file with more than
- * `LARGE_FILE_LINES` changed lines. Each file that still exists gets "Show in Files" with `onReveal`,
+ * Files with collapsible patches; a small change set (`FEW_FILES` files, or under
+ * `LARGE_FILE_LINES` changed lines in all) starts expanded, except a file with more than
+ * `LARGE_FILE_LINES` changed lines. `wrap` wraps long lines instead of scrolling them. Each file that still exists gets "Show in Files" with `onReveal`,
  * "Open in editor" with `onOpenInEditor` and "Reveal in Finder" with `onRevealInFileManager` (`path`
  * is relative to the checkout). `focus` expands and scrolls to the file at `focus.path`, or to its
  * hunk `focus.hunk`, again whenever `focus.key` changes.
@@ -73,6 +79,7 @@ function moveBetweenHeaders(event: KeyboardEvent<HTMLButtonElement>) {
 export function DiffFileList({
   files,
   layout = "unified",
+  wrap = false,
   onReveal,
   onOpenInEditor,
   onRevealInFileManager,
@@ -80,12 +87,15 @@ export function DiffFileList({
 }: {
   files: readonly DiffFile[];
   layout?: DiffLayout;
+  wrap?: boolean;
   onReveal?: (path: string) => void;
   onOpenInEditor?: (path: string) => void;
   onRevealInFileManager?: (path: string) => void;
   focus?: DiffFocus | undefined;
 }) {
-  const expanded = files.length <= 3;
+  const expanded =
+    files.length <= FEW_FILES ||
+    files.reduce((sum, file) => sum + file.additions + file.deletions, 0) < LARGE_FILE_LINES;
   return (
     <ul className="divide-y divide-border">
       {files.map((file) => {
@@ -95,6 +105,7 @@ export function DiffFileList({
             key={file.path}
             file={file}
             layout={layout}
+            wrap={wrap}
             defaultOpen={expanded && file.additions + file.deletions <= LARGE_FILE_LINES}
             {...(onReveal && exists ? { onReveal } : {})}
             {...(onOpenInEditor && exists ? { onOpenInEditor } : {})}
@@ -110,6 +121,7 @@ export function DiffFileList({
 function DiffFileRow({
   file,
   layout,
+  wrap,
   defaultOpen,
   onReveal,
   onOpenInEditor,
@@ -119,6 +131,7 @@ function DiffFileRow({
 }: {
   file: DiffFile;
   layout: DiffLayout;
+  wrap: boolean;
   defaultOpen: boolean;
   onReveal?: (path: string) => void;
   onOpenInEditor?: (path: string) => void;
@@ -259,6 +272,7 @@ function DiffFileRow({
             <PatchView
               file={file}
               layout={layout}
+              wrap={wrap}
               current={focusHunk}
               revealKey={focusHunk === undefined ? undefined : focusKey}
             />

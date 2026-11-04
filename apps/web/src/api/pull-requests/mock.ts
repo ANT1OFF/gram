@@ -107,9 +107,9 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
   };
 
   const api: PullRequestsApi = {
-    gitDiff: async (threadId, scope) => {
+    gitDiff: async (threadId, scope, options) => {
       world.summary(threadId);
-      return mockDiff(threadId, scope);
+      return mockDiff(threadId, scope, options);
     },
     prDetail,
     prCheckDiagnostic: async (_threadId, selection) => ({

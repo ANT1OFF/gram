@@ -3,6 +3,7 @@ import { useParams } from "@tanstack/react-router";
 import {
   Bell,
   FileDiff,
+  Focus,
   FolderTree,
   GitPullRequest,
   Globe,
@@ -27,7 +28,7 @@ import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
 import { useReviewRequests } from "@/reviews/review-requests";
 import { useFeature } from "@/settings/use-diagnostics";
 import { useToastDock } from "@/shell/toast-dock";
-import { reviewsTabShown, useLayoutStore, type RightPanelTab } from "@/stores/layout";
+import { isReviewTab, reviewsTabShown, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
 import type * as PanelTabs from "./right-panel-tabs";
@@ -201,7 +202,7 @@ export function RightPanel() {
               );
             })}
           </TabsList>
-          <ExpandToggle />
+          <ExpandToggle review={isReviewTab(tab)} />
         </div>
         <Suspense fallback={null}>
           <RightPanelTabs
@@ -219,11 +220,15 @@ export function RightPanel() {
   );
 }
 
-/** Lets the panel take the chat's place beside the sidebar, and gives the chat back. */
-function ExpandToggle() {
+/**
+ * Lets the panel take the chat's place beside the sidebar, and gives the chat back; on a review tab,
+ * puts the review in focus instead, leaving a strip of the chat.
+ */
+function ExpandToggle({ review }: { review: boolean }) {
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const setExpanded = useLayoutStore((s) => s.setPanelExpanded);
   const restoreHint = useShortcutHint("panel.restore");
+  if (review && !expanded) return <ReviewFocusToggle />;
   const label = expanded ? "Restore panel width" : "Expand panel";
   return (
     <Hint
@@ -240,6 +245,33 @@ function ExpandToggle() {
       }
     >
       {expanded ? <Minimize2 /> : <Maximize2 />}
+    </Hint>
+  );
+}
+
+function ReviewFocusToggle() {
+  const focused = useLayoutStore((s) => s.reviewFocus);
+  const toggle = useLayoutStore((s) => s.toggleReviewFocus);
+  const focusHint = useShortcutHint("review.focus");
+  const restoreHint = useShortcutHint("panel.restore");
+  const label = focused ? "Leave review focus" : "Focus review";
+  return (
+    <Hint
+      label={withHint(label, focused ? restoreHint : focusHint)}
+      side="bottom"
+      render={
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={label}
+          aria-pressed={focused}
+          data-testid="review-focus"
+          className="mr-2 shrink-0 text-muted-foreground aria-pressed:text-foreground"
+          onClick={toggle}
+        />
+      }
+    >
+      {focused ? <Minimize2 /> : <Focus />}
     </Hint>
   );
 }

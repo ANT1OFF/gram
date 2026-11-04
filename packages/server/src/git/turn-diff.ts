@@ -5,7 +5,12 @@ import { toDiffFile, toGitError } from "./mapping.ts";
 import { endCheckpointId } from "./turn-hooks.ts";
 
 /** A turn's changes: its start checkpoint against its end checkpoint, or the live tree while it runs. */
-export const turnDiff = (threadId: ThreadId, cwd: string, turnId: TurnId) =>
+export const turnDiff = (
+  threadId: ThreadId,
+  cwd: string,
+  turnId: TurnId,
+  options: { readonly ignoreWhitespace?: boolean | undefined } = {},
+) =>
   Effect.gen(function* () {
     const checkpoints = yield* Checkpoints;
     const top = yield* tryRepoTop(cwd).pipe(Effect.mapError(toGitError));
@@ -24,7 +29,7 @@ export const turnDiff = (threadId: ThreadId, cwd: string, turnId: TurnId) =>
     }
     const end = yield* resolve(endCheckpointId(turnId));
     const result = yield* checkpoints
-      .diffBetween(top, start, end ?? "worktree")
+      .diffBetween(top, start, end ?? "worktree", options)
       .pipe(
         Effect.mapError(
           (e) => new GitError({ message: `no checkpoint for turn ${turnId}: ${e.message}` }),
