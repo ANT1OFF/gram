@@ -52,7 +52,7 @@ const stageOf = (page: Page, workspaceId: string, id: string) =>
     [workspaceId, id] as const,
   );
 
-test("the band shows forwarded questions as the worker wrote them, answered or dismissed in place", async ({
+test("the band shows forwarded questions as the worker wrote them; Answer turns the dock to one", async ({
   page,
 }) => {
   const made = await start(page);
@@ -83,17 +83,26 @@ test("the band shows forwarded questions as the worker wrote them, answered or d
   const before = await countOf(page);
   expect(before).toBeGreaterThanOrEqual(2);
 
-  // Answered with a choice: it leaves the band and goes straight to the worker.
+  // Answer opens no second form: the Board's dock turns to it, and the card says it is there.
   await first.getByRole("button", { name: "Answer" }).click();
-  await first.getByRole("radio", { name: /^Keep for replay/ }).click();
-  await first.getByRole("button", { name: "Send to the worker" }).click();
+  const dock = page.getByTestId("rail-board").getByTestId("ask-stack");
+  const item = dock.locator(
+    `[data-testid="ask-item"][data-ask-key="worker-question:${made.workspaceId}:WQ1"]`,
+  );
+  await expect(item).toBeFocused();
+  await expect(first.getByTestId("question-answering")).toHaveText("In Asks");
+  await expect(first.getByRole("button", { name: "Answer" })).toHaveCount(0);
+  await expect(band(page).getByRole("radio")).toHaveCount(0);
+  // Picked, then sent: it leaves the band and goes straight to the worker.
+  await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+  await expect(card(page, "WQ1")).toHaveCount(1);
+  await item.getByTestId("ask-send").click();
   await expect(card(page, "WQ1")).toHaveCount(0);
   await expect.poll(() => countOf(page)).toBe(before - 1);
-  expect(await stageOf(page, made.workspaceId, "WQ1")).toMatchObject({
-    stage: "answered",
-    closedBy: "user",
-    answer: "Keep for replay",
-  });
+  // Sent once the undo window is past.
+  await expect
+    .poll(() => stageOf(page, made.workspaceId, "WQ1"), { timeout: 15_000 })
+    .toMatchObject({ stage: "answered", closedBy: "user", answer: "Keep for replay" });
 
   // Dismissed with a reason: gone too, and the worker is told why.
   await second.getByTestId("question-dismiss").click();
@@ -181,7 +190,13 @@ for (const mode of ["dark", "light"] as const) {
     await openBand(page);
     const first = card(page, "WQ1");
     await first.getByRole("button", { name: "Answer" }).click();
-    await expect(first.getByRole("radio", { name: /^Keep for replay/ })).toBeVisible();
+    await expect(first.getByTestId("question-answering")).toBeVisible();
+    await expect(
+      page
+        .getByTestId("rail-board")
+        .getByTestId("ask-option")
+        .filter({ hasText: "Keep for replay" }),
+    ).toBeVisible();
     await expect(needsYou(page)).toContainText(/need(s)? you/);
     if (SHOTS !== undefined) {
       await band(page).screenshot({ path: `${SHOTS}/band-${mode}.png` });
@@ -236,14 +251,27 @@ test("a long question's Answer opens the ask sheet, its answer row in sight", as
   await card(page, "WQ1").getByTestId("question-answer").click();
   const sheet = page.getByTestId("ask-sheet");
   await expect(sheet).toBeVisible();
+  // The sheet is the one answer surface now: the dock under it folds to one row.
+  const dock = page.getByTestId("rail-board").getByTestId("ask-stack");
+  await expect(dock).toHaveAttribute("data-compact", "true");
+  await expect(dock.getByTestId("ask-stack-waiting")).toHaveText(/^\d+ more waiting$/);
+  await expect(dock.getByTestId("ask-item")).toHaveCount(0);
   // Every choice is there, and the answer row stays on screen whatever the scroll.
   await expect(sheet.getByRole("radio")).toHaveCount(6);
   const row = sheet.getByTestId("ask-sheet-answer-row");
   await expect(row).toBeInViewport();
+  await expect(row.getByTestId("question-send")).toBeDisabled();
   await sheet.getByRole("radio", { name: /^Retry with backoff/ }).click();
   await expect(row).toBeInViewport();
-  await row.getByTestId("question-send").click();
+  // The same keys as the dock: a number picks, ⌘⏎ sends.
+  await page.keyboard.press("2");
+  await expect(sheet.getByRole("radio", { name: /^Keep for replay/ })).toBeChecked();
+  await page.keyboard.press("5");
+  await expect(sheet.getByRole("radio", { name: /^Retry with backoff/ })).toBeChecked();
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(sheet).toBeHidden();
+  // Gone, the dock is whole again.
+  await expect(dock).not.toHaveAttribute("data-compact");
   await expect
     .poll(async () => (await stageOf(page, made.workspaceId, "WQ1"))?.stage)
     .toBe("answered");

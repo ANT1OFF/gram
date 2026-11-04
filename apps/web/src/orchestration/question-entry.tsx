@@ -8,12 +8,12 @@ import {
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowDown,
   ArrowRightLeft,
   Bot,
   CircleCheck,
   CircleX,
   MessageCircleQuestion,
-  Send,
   type LucideIcon,
 } from "lucide-react";
 import { useId, useState } from "react";
@@ -22,6 +22,7 @@ import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { formatKeys } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
 import { ExpandPresence, PresenceItem, PresenceList } from "@/motion";
 import { NO_CHOICE, choiceAnswer, typeOther, type Choice } from "@/thread/choice-model";
@@ -31,8 +32,11 @@ import { ChoiceList } from "@/thread/request-cards";
 import { useLayoutStore } from "@/stores/layout";
 
 import type { MemoryQuestion } from "./memory-model";
+import { SendAnswer } from "./ask-choices";
 import { memoryId, workerQuestionId } from "./ask-model";
-import { openAskSheet } from "./ask-sheet-store";
+import { openAskSheet, showAsk } from "./ask-sheet-store";
+import { useAskStackStore } from "./ask-stack-store";
+import { useDerivedAsks } from "./needs-you-store";
 import {
   fitsInPlace,
   memoryQuestionCard,
@@ -140,9 +144,11 @@ function AskedBy({ asker }: { asker: NonNullable<QuestionCard["asker"]> }) {
 }
 
 /**
- * One open question and its answer: its choices when it offers some, a text box when not, and for
- * a worker's question a Dismiss with an optional reason. Sending closes the question, so it leaves
- * the open list. The words are the asker's, exactly.
+ * One open question. In the ask sheet (`sheet`) it is answered: its choices when it offers some, a
+ * text box when not, then Send answer; a number key picks and ⌘⏎ sends, as in the Asks dock.
+ * Anywhere else (the Board's band, a feature's sheet, Memory) it is only shown, and Answer takes it
+ * to the one place it is answered (`onOpen`), so no two forms ask the same thing at once. A worker's
+ * question has Dismiss, with an optional reason, in both. The words are the asker's, exactly.
  */
 export function OpenQuestion({
   card,
@@ -151,7 +157,8 @@ export function OpenQuestion({
   unavailable,
   onAnswer,
   onDismiss,
-  onSheet,
+  onOpen,
+  answering = false,
 }: {
   card: QuestionCard;
   compact: boolean;
@@ -160,15 +167,15 @@ export function OpenQuestion({
    * its answer row stuck to the sheet's bottom edge, so a choice is never out of reach.
    */
   sheet?: boolean;
-  /** Why it can't be answered here right now; the Answer button says so. */
+  /** Why it can't be answered right now; the Answer button says so. */
   unavailable?: string | undefined;
-  onAnswer: (answer: string) => Promise<unknown>;
+  /** Sends the answer: the sheet's. */
+  onAnswer?: ((answer: string) => Promise<unknown>) | undefined;
   onDismiss?: ((reason: string | undefined) => Promise<unknown>) | undefined;
-  /**
-   * Opens it in the ask sheet. Given for a question too long to answer in place
-   * (`fitsInPlace`), where Answer opens the sheet instead of unfolding the choices here.
-   */
-  onSheet?: (() => void) | undefined;
+  /** Where Answer goes outside the sheet: the Asks dock turned to it, or the ask sheet. */
+  onOpen?: (() => void) | undefined;
+  /** The Asks dock has it open now: it says so rather than offer Answer again. */
+  answering?: boolean;
 }) {
   const [mode, setMode] = useState<"idle" | "answering" | "dismissing">(
     sheet ? "answering" : "idle",
@@ -192,7 +199,7 @@ export function OpenQuestion({
       });
   };
   const send = () => {
-    if (unavailable !== undefined || answer === "") return;
+    if (unavailable !== undefined || answer === "" || onAnswer === undefined) return;
     run(() => onAnswer(answer));
   };
   const answerRow = sheet
@@ -207,9 +214,12 @@ export function OpenQuestion({
     <div
       data-testid={worker ? "worker-question" : "memory-question"}
       data-question={card.id}
+      data-answering={answering || undefined}
       className={cn(
         "flex flex-col gap-1",
-        compact && "rounded-(--radius-md) border border-status-needs-mark/60 bg-card p-2",
+        // A card among cards, on a neutral edge: the amber is its mark, and the dock's.
+        compact && "rounded-(--radius-md) border bg-card p-2",
+        compact && (answering ? "border-primary/60" : "border-border"),
       )}
     >
       {card.asker !== undefined && (
@@ -235,16 +245,26 @@ export function OpenQuestion({
         </p>
         {mode === "idle" && (
           <div className="flex shrink-0 items-center gap-1">
-            <Button
-              size="xs"
-              variant="outline"
-              data-testid="question-answer"
-              disabled={unavailable !== undefined}
-              title={unavailable}
-              onClick={() => (onSheet === undefined ? setMode("answering") : onSheet())}
-            >
-              Answer
-            </Button>
+            {answering ? (
+              <span
+                data-testid="question-answering"
+                className="inline-flex h-6 items-center gap-1 px-1 text-xs text-muted-foreground"
+              >
+                <ArrowDown aria-hidden className="size-3.5" />
+                In Asks
+              </span>
+            ) : (
+              <Button
+                size="xs"
+                variant="outline"
+                data-testid="question-answer"
+                disabled={unavailable !== undefined || onOpen === undefined}
+                title={unavailable}
+                onClick={() => onOpen?.()}
+              >
+                Answer
+              </Button>
+            )}
             {card.dismissable && onDismiss !== undefined && (
               <Button
                 size="xs"
@@ -286,7 +306,7 @@ export function OpenQuestion({
           </span>
         </p>
       )}
-      <ExpandPresence open={mode === "answering"}>
+      <ExpandPresence open={sheet && mode === "answering"}>
         <form
           className="flex flex-col gap-1.5 pt-1 text-sm"
           onSubmit={(event) => {
@@ -314,6 +334,7 @@ export function OpenQuestion({
                 recommended={card.recommended}
                 value={choice}
                 onChange={setChoice}
+                hints
               />
             </fieldset>
           )}
@@ -321,32 +342,26 @@ export function OpenQuestion({
             data-testid={sheet ? "ask-sheet-answer-row" : undefined}
             className={cn("flex items-center gap-2", answerRow)}
           >
-            <Button
+            <SendAnswer
               type="submit"
-              size={sheet ? "sm" : "xs"}
-              data-testid="question-send"
+              testId="question-send"
               disabled={busy || answer === "" || unavailable !== undefined}
-              title={unavailable}
-            >
-              <Send data-icon="inline-start" />
-              {worker ? "Send to the worker" : "Send to the orchestrator"}
-            </Button>
-            {sheet ? (
-              card.dismissable &&
-              onDismiss !== undefined && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  data-testid="question-dismiss"
-                  onClick={() => setMode("dismissing")}
-                >
-                  Dismiss…
-                </Button>
-              )
-            ) : (
-              <Button type="button" size="xs" variant="ghost" onClick={() => setMode("idle")}>
-                Cancel
+              title={unavailable ?? (answer === "" ? "Pick a choice first" : undefined)}
+              hint={formatKeys("mod+enter")}
+            />
+            <span className="min-w-0 truncate text-xs text-muted-foreground">
+              {worker ? "Goes straight to the worker" : "Goes to the orchestrator"}
+            </span>
+            <span className="flex-1" />
+            {card.dismissable && onDismiss !== undefined && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                data-testid="question-dismiss"
+                onClick={() => setMode("dismissing")}
+              >
+                Dismiss…
               </Button>
             )}
           </div>
@@ -394,6 +409,32 @@ export function OpenQuestion({
   );
 }
 
+/**
+ * Where a listed question's Answer goes: "dock", the Board's Asks dock turned to it (or the ask
+ * sheet, for one too long for the dock), or "sheet", the ask sheet, where no dock is in sight.
+ */
+export type AnswerIn = "dock" | "sheet";
+
+/**
+ * Answer for a listed question, by its hold id: the one place it is answered. And whether the dock
+ * has it open now, so the list marks it instead of offering a second Answer.
+ */
+function useAnswerIn(workspaceId: WorkspaceId, where: AnswerIn) {
+  const asks = useDerivedAsks((s) => s.asks.find((w) => w.workspaceId === workspaceId)?.asks);
+  const current = useAskStackStore((s) => (where === "dock" ? s.current[workspaceId] : undefined));
+  return {
+    open: (id: string, card: QuestionCard) => {
+      const ask = asks?.find((each) => each.ids.includes(id));
+      if (where === "dock" && ask !== undefined && fitsInPlace(card)) {
+        showAsk(workspaceId, ask);
+        return;
+      }
+      openAskSheet(workspaceId, { ids: [id], key: id });
+    },
+    answering: (id: string) => current === id,
+  };
+}
+
 /** Answers an orchestrator's open question with these words, then reads its memory again. */
 export function useMemoryQuestionAnswer(workspaceId: WorkspaceId) {
   const api = useApi();
@@ -409,21 +450,26 @@ export function useMemoryQuestionAnswer(workspaceId: WorkspaceId) {
       .then(() => queryClient.invalidateQueries({ queryKey: ["memory", workspaceId] }));
 }
 
-/** The open questions, answerable in place; `compact` draws each as a card of its own, for the board. */
+/**
+ * The open questions, each with Answer to the one place it is answered (`where`); `compact` draws
+ * each as a card of its own, for the board.
+ */
 export function OpenQuestionList({
   questions,
   workspaceId,
   orchestratorId,
+  where,
   compact = false,
   className,
 }: {
   questions: readonly MemoryQuestion[];
   workspaceId: WorkspaceId;
   orchestratorId: ThreadId | undefined;
+  where: AnswerIn;
   compact?: boolean;
   className?: string;
 }) {
-  const answer = useMemoryQuestionAnswer(workspaceId);
+  const answerIn = useAnswerIn(workspaceId, where);
   // An answered question closes and folds away, so what is below it doesn't jump.
   return (
     <ul className={className}>
@@ -436,17 +482,13 @@ export function OpenQuestionList({
               <OpenQuestion
                 card={card}
                 compact={compact}
-                onSheet={
-                  fitsInPlace(card)
-                    ? undefined
-                    : () => openAskSheet(workspaceId, { ids: [id], key: id })
-                }
+                onOpen={() => answerIn.open(id, card)}
+                answering={answerIn.answering(id)}
                 unavailable={
                   orchestratorId === undefined
                     ? "Open the orchestrator first: the answer is a message to it"
                     : undefined
                 }
-                onAnswer={answer(question)}
               />
             </PresenceItem>
           );
@@ -478,19 +520,22 @@ export function useWorkerQuestionActions(workspaceId: WorkspaceId) {
   };
 }
 
-/** The workers' questions waiting on the user, answerable or dismissable in place. */
+/** The workers' questions waiting on the user, each with Answer to the one place it is answered. */
 export function WorkerQuestionList({
   questions,
   workspaceId,
+  where,
   compact = false,
   className,
 }: {
   questions: readonly WorkerQuestion[];
   workspaceId: WorkspaceId;
+  where: AnswerIn;
   compact?: boolean;
   className?: string;
 }) {
   const actions = useWorkerQuestionActions(workspaceId);
+  const answerIn = useAnswerIn(workspaceId, where);
   return (
     <ul className={className}>
       <PresenceList>
@@ -502,13 +547,9 @@ export function WorkerQuestionList({
               <OpenQuestion
                 card={card}
                 compact={compact}
-                onAnswer={actions.answer(question)}
+                onOpen={() => answerIn.open(id, card)}
+                answering={answerIn.answering(id)}
                 onDismiss={actions.dismiss(question)}
-                onSheet={
-                  fitsInPlace(card)
-                    ? undefined
-                    : () => openAskSheet(workspaceId, { ids: [id], key: id })
-                }
               />
             </PresenceItem>
           );

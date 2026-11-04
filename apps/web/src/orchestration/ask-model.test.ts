@@ -7,7 +7,15 @@ import type {
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { askOf, asksOf, choiceLayout, memoryAskOf, replyChips, stepIndex } from "./ask-model";
+import {
+  answerRule,
+  askOf,
+  asksOf,
+  choiceLayout,
+  memoryAskOf,
+  replyChips,
+  stepIndex,
+} from "./ask-model";
 import { groupInbox, type InboxEntry } from "./inbox-model";
 
 const push = (id: string, command = "git push -u origin feat/mail-trigger"): ApprovalRequest => ({
@@ -109,6 +117,29 @@ describe("the ask stack's asks", () => {
     expect(plan.options.map((option) => option.action.kind)).toEqual(["open"]);
   });
 
+  it("picks a question's choices before Send answer, and acts on an approval's verbs", () => {
+    const choice = askOf(
+      groupInbox([entry("a", "docs", question("q", ["uv only", "Keep both"]))])[0]!,
+    );
+    expect(answerRule(choice.options)).toBe("pick");
+    const memory = memoryAskOf("w" as WorkspaceId, {
+      id: "Q1",
+      text: "Retry or drop?",
+      detail: undefined,
+      open: true,
+      options: [{ label: "Retry" }, { label: "Drop" }],
+      recommended: "Drop",
+    });
+    expect(answerRule(memory.options)).toBe("pick");
+    const allow = askOf(groupInbox([entry("a", "docs", push("r1"))])[0]!);
+    expect(answerRule(allow.options)).toBe("act");
+    const plan = askOf(
+      groupInbox([entry("a", "auth", { kind: "plan", id: "p" as RequestId, plan: "1. a" })])[0]!,
+    );
+    expect(answerRule(plan.options)).toBe("act");
+    expect(answerRule([])).toBe("act");
+  });
+
   it("shows what else an Allow covers: other arguments, the description, each member's checkout", () => {
     const timed: ApprovalRequest = {
       ...push("r-t"),
@@ -154,7 +185,7 @@ describe("the ask stack's asks", () => {
     });
     expect(asks.map((ask) => ask.key)).toEqual(["r-o", "memory:w:Q1", "memory:w:Q2", "r-a"]);
     expect(asks[1]!.freeForm).toEqual({ question: "Ship today?" });
-    // The orchestrator's pick first, so Enter takes it.
+    // The orchestrator's pick first, read first.
     expect(asks[2]!.options.map((option) => option.label)).toEqual(["Retry", "Drop"]);
     expect(asks[2]!.options[0]!.action).toEqual({ kind: "memory", answer: "Retry" });
     expect(asks[2]!.options.map((option) => option.recommended)).toEqual([true, undefined]);

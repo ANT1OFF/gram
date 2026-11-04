@@ -257,7 +257,7 @@ test("with nothing waiting, the popover and the panel say so", async ({ page }) 
   await expect(popover(page).getByTestId("needs-you-empty")).toBeVisible();
 });
 
-test("a worker's question opens at its ask in the orchestrator's dock, answered in one click", async ({
+test("a worker's question opens at its ask in the orchestrator's dock: pick, then Send answer", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
@@ -274,8 +274,10 @@ test("a worker's question opens at its ask in the orchestrator's dock, answered 
     .and(page.locator(`[data-ask-key="worker-question:${made.workspaceId}:WQ1"]`));
   await expect(item).toBeInViewport();
   await expect(item).toBeFocused();
-  // Step 2: its choice, the orchestrator's pick first, answers it straight to the worker.
+  // Step 2: its choice, the orchestrator's pick first, then Send answer: straight to the worker.
   await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+  await expect(page.getByTestId("ask-undo-line")).toHaveCount(0);
+  await item.getByTestId("ask-send").click();
   await expect(page.getByTestId("ask-undo-line")).toContainText("Keep for replay");
 });
 

@@ -845,7 +845,7 @@ describe("QuestionCard", () => {
     const respond = renderOne(0);
     const other = screen.getByLabelText("Other answer: Which library?");
     const otherRadio = screen.getByRole("radio", { name: "Other" }) as HTMLInputElement;
-    const send = screen.getByRole("button", { name: "Send answers" }) as HTMLButtonElement;
+    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
 
     // Focus alone picks Other, and an Other with nothing typed isn't an answer.
     fireEvent.focus(other);
@@ -873,7 +873,29 @@ describe("QuestionCard", () => {
     fireEvent.click(screen.getByLabelText("dayjs"));
     expect((screen.getByRole("radio", { name: "Other" }) as HTMLInputElement).checked).toBe(false);
     expect(other.value).toBe("luxon");
-    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    await waitFor(() =>
+      expect(respond).toHaveBeenCalledWith(T, "r2", {
+        kind: "question",
+        answers: { "Which library?": ["dayjs"] },
+      }),
+    );
+  });
+
+  it("picks with a number key and sends with ⌘⏎, the answer rule of every ask", async () => {
+    const respond = renderOne(0);
+    const card = screen.getByTestId("question-card");
+    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    // Nothing picked, nothing sent.
+    fireEvent.keyDown(card, { key: "Enter", metaKey: true });
+    expect(send.disabled).toBe(true);
+    expect(respond).not.toHaveBeenCalled();
+    fireEvent.keyDown(card, { key: "2" });
+    expect((screen.getByLabelText("dayjs") as HTMLInputElement).checked).toBe(true);
+    // A number typed into Other is the text's, not a pick.
+    fireEvent.keyDown(screen.getByLabelText("Other answer: Which library?"), { key: "1" });
+    expect((screen.getByLabelText("date-fns") as HTMLInputElement).checked).toBe(false);
+    fireEvent.keyDown(card, { key: "Enter", ctrlKey: true });
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r2", {
         kind: "question",
@@ -893,7 +915,7 @@ describe("QuestionCard", () => {
     expect(otherBox.checked).toBe(false);
     fireEvent.change(other, { target: { value: "de-AT" } });
     expect(otherBox.checked).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r2", {
         kind: "question",

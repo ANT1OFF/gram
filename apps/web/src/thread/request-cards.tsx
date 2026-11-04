@@ -18,7 +18,7 @@ import {
   ShieldQuestion,
   MessageCircleQuestion,
   ListChecks,
-  Star,
+  Send,
 } from "lucide-react";
 import {
   createContext,
@@ -32,12 +32,15 @@ import {
 
 import { useApi } from "@/api/context";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { RecommendedTag } from "@/components/recommended-tag";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useShortcut } from "@/keyboard/registry";
+import { formatKeys, useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { AttentionPulse, PresenceItem, PresenceList, PressScale } from "@/motion";
+import { Kbd } from "@/orchestration/ask-choices";
+import { answerKey } from "@/orchestration/ask-keys";
 import { useRequestRevealStore } from "@/stores/reveal";
 
 import {
@@ -229,6 +232,7 @@ function CardShell({
   title,
   children,
   footer,
+  answerKeys = false,
 }: {
   testId: string;
   /** What a Needs you jump finds the card by. */
@@ -237,7 +241,17 @@ function CardShell({
   title: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
+  /** Whether the answer rule's keys work in it: a number picks, ⌘⏎ sends (`answerKey`). */
+  answerKeys?: boolean;
 }) {
+  const onKeyDown = answerKeys
+    ? (event: KeyboardEvent<HTMLElement>) => {
+        if (answerKey(event.nativeEvent, event.currentTarget)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }
+    : undefined;
   const thread = useContext(RequestRoleContext);
   const compact = useContext(CompactContext);
   const sheet = useContext(SheetContext);
@@ -249,6 +263,7 @@ function CardShell({
         data-sheet
         aria-label={typeof title === "string" ? title : undefined}
         className="flex flex-col text-sm"
+        onKeyDown={onKeyDown}
       >
         <h3 className="mb-2 flex items-center gap-2 font-medium">
           {icon}
@@ -273,6 +288,7 @@ function CardShell({
       data-surface="card"
       data-compact={compact}
       aria-label={typeof title === "string" ? title : undefined}
+      onKeyDown={onKeyDown}
       className={cn(
         "border border-status-needs-mark/70 bg-card text-sm",
         compact
@@ -811,11 +827,23 @@ export function QuestionCard({
       requestId={request.id}
       icon={<MessageCircleQuestion aria-hidden className="size-4 text-status-needs-mark" />}
       title="The agent has a question"
+      answerKeys
       footer={
         <>
           {last ? (
-            <Button size="sm" disabled={!complete || pending} onClick={submit}>
-              Send answers
+            <Button
+              size="sm"
+              data-testid="question-card-send"
+              data-send-answer
+              disabled={!complete || pending}
+              title={complete ? undefined : "Pick a choice first"}
+              onClick={submit}
+            >
+              <Send data-icon="inline-start" />
+              {count > 1 ? "Send answers" : "Send answer"}
+              <Kbd hidden className="border-primary-foreground/30 text-primary-foreground/80">
+                {formatKeys("mod+enter")}
+              </Kbd>
             </Button>
           ) : (
             <Button size="sm" data-testid="question-next" onClick={() => setIndex(page + 1)}>
@@ -874,6 +902,7 @@ export function QuestionCard({
             multiSelect={q.multiSelect}
             value={choices[q.question] ?? NO_CHOICE}
             onChange={(choice) => setChoices((prev) => ({ ...prev, [q.question]: choice }))}
+            hints
           />
         </fieldset>
       )}
@@ -886,7 +915,8 @@ export function QuestionCard({
  * for an answer in the user's own words. On a single-select question Other is one of the radios,
  * so an answer is an option or the typed text, never both. The thread's question card and an
  * orchestrator's open questions answer through it; `recommended` names the choice the agent would
- * make.
+ * make, said in a tag and never picked for the user. With `hints`, each shows the number key that
+ * picks it (`answerKey`).
  */
 export function ChoiceList({
   question,
@@ -895,6 +925,7 @@ export function ChoiceList({
   recommended,
   value,
   onChange,
+  hints = false,
 }: {
   question: string;
   options: readonly { readonly label: string; readonly description?: string | undefined }[];
@@ -902,7 +933,14 @@ export function ChoiceList({
   recommended?: string | undefined;
   value: Choice;
   onChange: (choice: Choice) => void;
+  hints?: boolean;
 }) {
+  const hint = (index: number) =>
+    hints && index < 9 ? (
+      <Kbd hidden className="mt-0.5 ml-auto shrink-0">
+        {index + 1}
+      </Kbd>
+    ) : null;
   const name = useId();
   const optionId = (index: number) => `${name}-${index}`;
   const fieldId = `${name}-other`;
@@ -920,35 +958,33 @@ export function ChoiceList({
   return (
     <>
       {options.map((option, index) => (
-        <label
+        // The key hint sits beside the label, not in it: the label names the choice alone.
+        <div
           key={option.label}
-          className="flex cursor-pointer items-start gap-2 rounded-(--radius-sm) px-1 py-0.5 hover:bg-muted/50"
+          className="flex items-start gap-2 rounded-(--radius-sm) px-1 py-0.5 hover:bg-muted/50"
         >
-          <input
-            id={optionId(index)}
-            type={multiSelect ? "checkbox" : "radio"}
-            name={name}
-            className="mt-1 accent-(--accent)"
-            checked={value.selected.includes(option.label)}
-            onChange={() => pick(option.label)}
-          />
-          <span>
-            {option.label}
-            {option.label === recommended && (
-              <span
-                data-testid="choice-recommended"
-                title="Recommended"
-                className="ml-1 inline-flex align-[-1px] text-link"
-              >
-                <Star aria-hidden className="size-3 fill-current" />
-                <span className="sr-only">(recommended)</span>
-              </span>
-            )}
-            {option.description !== undefined && (
-              <span className="block text-xs text-muted-foreground">{option.description}</span>
-            )}
-          </span>
-        </label>
+          <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+            <input
+              id={optionId(index)}
+              type={multiSelect ? "checkbox" : "radio"}
+              name={name}
+              className="mt-1 accent-(--accent)"
+              data-choice-index={index}
+              checked={value.selected.includes(option.label)}
+              onChange={() => pick(option.label)}
+            />
+            <span className="min-w-0 flex-1">
+              {option.label}
+              {option.label === recommended && (
+                <RecommendedTag testId="choice-recommended" className="ml-1.5" />
+              )}
+              {option.description !== undefined && (
+                <span className="block text-xs text-muted-foreground">{option.description}</span>
+              )}
+            </span>
+          </label>
+          {hint(index)}
+        </div>
       ))}
       <div className="flex items-center gap-2 px-1 py-0.5">
         <input
@@ -956,6 +992,7 @@ export function ChoiceList({
           name={name}
           aria-label="Other"
           className="accent-(--accent)"
+          data-choice-index={options.length}
           checked={value.otherChosen}
           onChange={(event) => {
             onChange(chooseOther(value, event.target.checked, multiSelect));
@@ -975,6 +1012,7 @@ export function ChoiceList({
           onChange={(event) => onChange(typeOther(value, event.target.value, multiSelect))}
           onKeyDown={stepOut}
         />
+        {hint(options.length)}
       </div>
     </>
   );
