@@ -26,9 +26,12 @@ export const GHOST_TRIGGER =
 export const ROUND =
   "grid size-8 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default";
 
-/** Stop: an outline in the toolbar's tone that only turns to danger under the pointer. */
-export const STOP_OUTLINE =
-  "border border-(--composer-outline-focus) text-muted-foreground transition-colors hover:border-destructive/50 hover:bg-destructive-tint hover:text-destructive";
+/**
+ * Stop while a turn runs: its square in the text colour inside a turning ring (drawn by the
+ * composer), and danger only under the pointer.
+ */
+export const STOP_RUNNING =
+  "relative text-foreground transition-colors hover:bg-destructive-tint hover:text-destructive";
 
 /** Send's fill: the accent with a faint gloss, flat while pressed or disabled. */
 export const SEND_FILL =

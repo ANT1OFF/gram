@@ -515,14 +515,22 @@ const FOLD_VERB: Record<TurnFoldState, readonly [word: string, joined: string]> 
   stopped: ["Stopped", "Stopped after"],
 };
 
-/** `Worked for 3m 05s · 5 tools`; a turn without an end time says `Worked · 5 tools`. */
+/** Below this a duration says nothing worth reading ("0s"), so the row leaves it out. */
+const SHORTEST_SHOWN_MS = 1000;
+
+/**
+ * `Worked for 3m 05s · 5 tools`. A turn without an end time, or one that took under a second so
+ * far, says `Worked · 5 tools`: a running row gains its clock once there is a second to count.
+ */
 export function turnFoldLabel(turn: TurnSummary, now: number): string {
   const end = turn.state === "running" ? now : turn.endedAt;
   const [word, joined] = FOLD_VERB[turn.state];
+  const elapsed =
+    turn.startedAt === undefined || end === undefined ? undefined : end - turn.startedAt;
   const lead =
-    turn.startedAt === undefined || end === undefined
+    elapsed === undefined || elapsed < SHORTEST_SHOWN_MS
       ? word
-      : `${joined} ${formatElapsed(end - turn.startedAt)}`;
+      : `${joined} ${formatElapsed(elapsed)}`;
   if (turn.tools === 0) return lead;
   return `${lead} · ${turn.tools === 1 ? "1 tool" : `${turn.tools} tools`}`;
 }

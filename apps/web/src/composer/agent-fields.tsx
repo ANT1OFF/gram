@@ -9,11 +9,12 @@ import {
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Gauge, KeyRound } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { useEffect } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
+import { Swap } from "@/motion";
 import {
   Select,
   SelectContent,
@@ -24,7 +25,8 @@ import {
 
 import { SpeedField } from "./speed-field";
 import { ModelSelect } from "./model-select";
-import { PickerTrigger } from "./picker-trigger";
+import { PickerTrigger, usePickConfirm } from "./picker-trigger";
+import { EffortGauge } from "./picker-glyphs";
 import { defaultModelId, effortOptions, useModels } from "./models";
 import { GHOST_TRIGGER } from "./styles";
 
@@ -139,6 +141,7 @@ export function AgentFields({
     value.speed === "fast" ||
     (value.speed !== undefined && modelSpeeds(models, shownModel).includes("fast"));
   const effortItems = [{ value: DEFAULT_EFFORT, label: "Default effort" }, ...efforts];
+  const effortConfirm = usePickConfirm(value.variant ?? DEFAULT_EFFORT);
   useEffect(() => {
     if (initializeDefault && value.model === "" && listedDefault && !needsKey) {
       onChange({ ...value, model: listedDefault });
@@ -267,6 +270,7 @@ export function AgentFields({
           items={effortItems}
           onValueChange={(next) => {
             if (next === null) return;
+            effortConfirm.pick(next);
             onChange(
               withVariant(value, next === DEFAULT_EFFORT ? undefined : (next as ReasoningVariant)),
             );
@@ -279,7 +283,14 @@ export function AgentFields({
               "Default effort"
             }
             labelled={!ghost}
-            icon={ghost && <Gauge aria-hidden className="size-3.5" />}
+            icon={
+              ghost && (
+                <Swap swapKey={value.variant ?? DEFAULT_EFFORT}>
+                  <EffortGauge variant={value.variant} />
+                </Swap>
+              )
+            }
+            confirm={ghost ? effortConfirm.landed : undefined}
             {...trigger}
           />
           <SelectContent>

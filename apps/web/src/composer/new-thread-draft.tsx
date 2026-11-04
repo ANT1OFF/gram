@@ -21,7 +21,7 @@ import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
-import { PressScale, Spinner } from "@/motion";
+import { PressScale, Spinner, Swap } from "@/motion";
 import { CheckoutInUseNotice, useCheckoutUsers } from "@/new-thread/checkout-in-use";
 import { ExistingWorktrees } from "@/new-thread/existing-worktrees";
 import { folderProblem } from "@/new-thread/fs-errors";
@@ -47,7 +47,7 @@ import { modeWarning } from "@/thread/mode-warning";
 import { inOpenFence } from "./mention";
 import { enterSends } from "./send-key";
 import { AgentFields, choiceModel, gatewayReady } from "./agent-fields";
-import { PickerTrigger } from "./picker-trigger";
+import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { useModels } from "./models";
 import { AttachmentChips } from "./attachment-chips";
 import { randomBranchName } from "./branch-name";
@@ -314,6 +314,7 @@ function ConfiguredNewThreadDraft() {
 
   const createLabel = stage === "failed" ? "Retry" : "Create thread";
   const ModeIcon = MODE_ICONS[mode];
+  const modeConfirm = usePickConfirm(mode);
   const modeLabel = MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
   const modeWarned = modeWarning(mode);
 
@@ -469,7 +470,9 @@ function ConfiguredNewThreadDraft() {
                 value={mode}
                 items={MODE_OPTIONS}
                 onValueChange={(value) => {
-                  if (value !== null) setMode(value as PermissionMode);
+                  if (value === null) return;
+                  modeConfirm.pick(value);
+                  setMode(value as PermissionMode);
                 }}
               >
                 <PickerTrigger
@@ -477,7 +480,12 @@ function ConfiguredNewThreadDraft() {
                   label="Mode"
                   value={modeLabel}
                   labelled={false}
-                  icon={<ModeIcon aria-hidden className="size-3.5" />}
+                  icon={
+                    <Swap swapKey={mode}>
+                      <ModeIcon aria-hidden className="size-3.5" />
+                    </Swap>
+                  }
+                  confirm={modeConfirm.landed}
                   tip={[`Mode: ${modeLabel}`, modeWarned].filter(Boolean).join("\n")}
                   aria-description={modeWarned}
                   data-warning={modeWarned ? "true" : undefined}

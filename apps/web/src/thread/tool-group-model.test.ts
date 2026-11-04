@@ -458,6 +458,15 @@ describe("turnFoldLabel", () => {
     expect(turnFoldLabel(running, 134_000)).toBe("Working for 2m 14s · 4 tools");
   });
 
+  it("leaves out a duration under a second rather than say 0s", () => {
+    expect(turnFoldLabel(turn({ endedAt: 400 }), 0)).toBe("Worked · 5 tools");
+    expect(turnFoldLabel(turn({ endedAt: 1_000 }), 0)).toBe("Worked for 1s · 5 tools");
+    const running = turn({ state: "running", endedAt: undefined, tools: 4 });
+    expect(turnFoldLabel(running, 0)).toBe("Working · 4 tools");
+    expect(turnFoldLabel(running, 999)).toBe("Working · 4 tools");
+    expect(turnFoldLabel(running, 1_000)).toBe("Working for 1s · 4 tools");
+  });
+
   it("drops the duration of a turn from before the stamp", () => {
     expect(turnFoldLabel(turn({ endedAt: undefined }), 0)).toBe("Worked · 5 tools");
     expect(turnFoldLabel(turn({ state: "failed", endedAt: undefined }), 0)).toBe(

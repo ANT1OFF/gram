@@ -26,6 +26,22 @@ export interface Shot {
   readonly element?: ((page: Page) => Locator) | undefined;
 }
 
+/** Fixed, so relative times and date labels read the same in both runs. */
+export const CLOCK = new Date("2026-06-15T10:00:00+02:00");
+
+/**
+ * Lets `ms` pass on the shot's fixed clock, counted from `CLOCK`. The mock stamps a turn's start and
+ * end with the page's clock, which `capture.spec.ts` holds still, so without this every scripted
+ * turn would read as taking no time at all.
+ */
+export const elapse = (page: Page, ms: number) =>
+  page.clock.setFixedTime(new Date(CLOCK.getTime() + ms));
+
+/** How long the scripted t-flaky turn has been working when it stops on its approval. */
+const FLAKY_AT_APPROVAL_MS = 38_000;
+/** How long that turn took in all, once its approval is allowed. */
+export const FLAKY_DONE_MS = 72_000;
+
 /**
  * Merges `patch` into the mock's settings before each load. The mock keeps them in sessionStorage
  * and fills a partial save in from the defaults; merging keeps what an earlier seed set.
@@ -43,6 +59,9 @@ export const seedMockSettings = (page: Page, patch: Record<string, unknown>) =>
 const openThread = async (page: Page) => {
   await page.goto("/t/t-flaky");
   await page.getByTestId("approval-card").waitFor();
+  // The turn started as the page opened; a running row counts up from there on its next tick.
+  await elapse(page, FLAKY_AT_APPROVAL_MS);
+  await expect(page.getByTestId("turn-fold")).toContainText("Working for 38s");
   // Whether the transcript follows the last turns to its end is a race with their rendering, so
   // one run would show the top and the other the end. Both show the end, as a user lands on it.
   const transcript = page.getByTestId("transcript");

@@ -207,6 +207,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   { id: "composer.effort", keys: "mod+shift+e", label: "Pick effort", group: "Composer" },
   { id: "composer.mode", keys: "mod+shift+a", label: "Pick mode", group: "Composer" },
   { id: "composer.stash", keys: "mod+s", label: "Stash the draft", group: "Composer" },
+  { id: "composer.stop", keys: "mod+.", label: "Stop the turn", group: "Composer" },
   {
     id: "composer.dictate",
     keys: DICTATE_KEYS,

@@ -190,7 +190,8 @@ test("one send button: Stop while empty, Queue with a draft, Steer with the modi
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   await expect(button("Stop")).toBeVisible();
   await button("Stop").hover();
-  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText("Stop");
+  // Its word and its shortcut, ⌘. on macOS and Ctrl+. elsewhere.
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(/^Stop \((⌘|Ctrl\+)\.\)$/);
 
   const message = page.getByLabel("Message", { exact: true });
   await message.fill("use the fake clock");

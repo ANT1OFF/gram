@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
-import { SHOTS, seedMockSettings, type Shot } from "./shots";
+import { elapse, FLAKY_DONE_MS, SHOTS, seedMockSettings, type Shot } from "./shots";
 import { TOUR } from "./tour";
 
 const from = (shots: readonly Shot[], name: string): Shot["open"] => {
@@ -72,8 +72,10 @@ const steps: readonly Shot[] = [
     title: "Answer: allow the scripted approval and let the turn finish",
     open: async (page) => {
       await openApproval(page);
+      await elapse(page, FLAKY_DONE_MS);
       await page.getByTestId("approval-allow").click();
       await expect(page.getByTestId("pane-status")).toHaveText("Idle");
+      await expect(page.getByTestId("turn-fold")).toContainText("Worked for 1m 12s");
     },
   },
   {
@@ -206,6 +208,19 @@ const steps: readonly Shot[] = [
       await page.getByTestId("agent-error").last().getByRole("button", { name: "Retry" }).click();
       await expect(page.getByTestId("message-user").last()).toContainText("Run the e2e suite");
       await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeHidden();
+    },
+  },
+  {
+    name: "effort-changed",
+    title: "Change: pick Extra high effort and see the gauge take it",
+    open: async (page) => {
+      await seedMockSettings(page, { panel: { open: false } });
+      await page.goto("/t/t-deps");
+      await page.getByLabel("Message", { exact: true }).focus();
+      await page.keyboard.press("ControlOrMeta+Shift+KeyE");
+      await page.getByRole("option", { name: "Extra high effort" }).click();
+      await expect(page.getByRole("combobox", { name: "Effort: Extra high effort" })).toBeVisible();
+      await expect(page.getByTestId("effort-gauge")).toHaveAttribute("data-level", "xhigh");
     },
   },
 ];

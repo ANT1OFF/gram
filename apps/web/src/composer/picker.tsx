@@ -8,7 +8,7 @@ import { Swap } from "@/motion";
 
 import { ModelCombobox } from "./model-picker";
 import { MODEL_SEARCH_THRESHOLD } from "./models";
-import { PickerTrigger } from "./picker-trigger";
+import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
 
 export interface PickerOption<V extends string> {
@@ -80,6 +80,7 @@ export function Picker<V extends string>({
     setOpenState(next);
   };
   const hint = useShortcutHint(shortcutId);
+  const confirm = usePickConfirm(value);
   useShortcut(
     {
       id: shortcutId,
@@ -124,7 +125,9 @@ export function Picker<V extends string>({
       open={open}
       onOpenChange={(next) => setOpen(next)}
       onValueChange={(next) => {
-        if (next !== null) onChange(next as V);
+        if (next === null) return;
+        confirm.pick(next);
+        onChange(next as V);
       }}
     >
       <PickerTrigger
@@ -133,6 +136,7 @@ export function Picker<V extends string>({
         value={shown}
         labelled={labelled}
         icon={icon && <Swap swapKey={String(value)}>{icon}</Swap>}
+        confirm={confirm.landed}
         title={title}
         tip={[iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
           .filter(Boolean)

@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { test, type Locator, type Page } from "@playwright/test";
 
-import { pathShot, seedMockSettings, SHOTS, type Shot, type ShotMode } from "./shots";
+import { CLOCK, pathShot, seedMockSettings, SHOTS, type Shot, type ShotMode } from "./shots";
 import { TOUR } from "./tour";
 import { FLOW_SHOTS } from "./flows";
 
@@ -17,9 +17,6 @@ const outDir = fileURLToPath(
   new URL(env["GRAM_PR_SHOTS_SET"] === "flows" ? "out/flows/" : "out/", import.meta.url),
 );
 mkdirSync(outDir, { recursive: true });
-
-/** Fixed, so relative times and date labels read the same in both runs. */
-const CLOCK = new Date("2026-06-15T10:00:00+02:00");
 
 function selected(): readonly Shot[] {
   const catalogue =

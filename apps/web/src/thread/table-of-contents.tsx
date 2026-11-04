@@ -97,7 +97,10 @@ export function TableOfContents({
   );
 }
 
-/** Fits in the existing left gutter, leaving the transcript's reading width and scroll owner intact. */
+/**
+ * Fits in the existing left gutter, leaving the transcript's reading width and scroll owner intact:
+ * one mark per prompt or chapter, its title on hover, to jump between them. Hidden for a single one.
+ */
 export function ConversationRail({
   chapters,
   currentId,
@@ -119,7 +122,9 @@ export function ConversationRail({
   const jump = useCallback((messageId: string) => latestJump.current(messageId), []);
   const firstId = chapters[0]?.id;
   const { earlier, loadingEarlier, earlierFailed } = history;
-  const available = chapters.length > 0 || earlier;
+  // One mark has nowhere to jump to, and alone in the gutter it reads as a stray dash: the rail
+  // shows from the second prompt or chapter on, or while earlier history waits to load.
+  const available = chapters.length > 1 || earlier === true;
   // Disabling the loading button can blur it to body. That is not a new focus owner;
   // deliberate focus/input elsewhere retires this request's keyboard continuation.
   useEffect(() => {
@@ -182,7 +187,7 @@ export function ConversationRail({
       keepInRail(rail, target);
     }
   }, [firstId, earlier, loadingEarlier, earlierFailed]);
-  if (chapters.length === 0 && !history.earlier) return null;
+  if (!available) return null;
   return (
     <nav
       ref={railRef}
