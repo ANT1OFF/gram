@@ -46,6 +46,12 @@ export function checkoutInUsePath(error: unknown): string | undefined {
   return typeof path === "string" ? path : undefined;
 }
 
+/** A failed `thread.undoTurn` in the user's terms: the server's refusals are written for the user. */
+export function undoTurnErrorMessage(error: unknown): string {
+  if (isNotImplemented(error)) return "Undo isn't available on this server yet.";
+  return errorMessage(error);
+}
+
 /** A failed `thread.rewind` in the user's terms. */
 export function rewindErrorMessage(error: unknown): string {
   if (isNotImplemented(error)) return "Rewind isn't available yet.";

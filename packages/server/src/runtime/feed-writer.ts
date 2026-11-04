@@ -15,9 +15,11 @@ import {
   withDataPart,
   RESUME_MAX_MESSAGES,
   type GetRuntime,
+  atRest,
 } from "./runtime-state.ts";
 import type { LiveFeedEvent, ThreadFeedItem, EventHubShape } from "../events/event-hub.ts";
 import {
+  InvalidState,
   type GramUIMessage,
   type TurnEnd,
   type TurnId,
@@ -472,10 +474,40 @@ export const makeFeedMethods = ({
   publishMessage,
 }: FeedMethodsDeps): Pick<
   ThreadRuntimesShape,
-  "emitChunk" | "updateDataPart" | "replay" | "liveMessages" | "history"
+  "emitChunk" | "whileIdle" | "updateDataPart" | "replay" | "liveMessages" | "history"
 > => ({
   emitChunk: (threadId, chunk) =>
     getRuntime(threadId).pipe(Effect.flatMap((rt) => locked(rt, appendDataPart(rt, chunk)))),
+  whileIdle: (threadId, effect, receipt) =>
+    Effect.gen(function* () {
+      const rt = yield* getRuntime(threadId);
+      return yield* locked(
+        rt,
+        Effect.gen(function* () {
+          const busy =
+            rt.closing ||
+            rt.reserved ||
+            rt.reopening ||
+            rt.reopenOnIdle ||
+            rt.agentRunning ||
+            rt.launch !== undefined ||
+            rt.deliveries.size > 0 ||
+            !atRest(rt, true) ||
+            (yield* store.listRequests(threadId)).length > 0;
+          if (busy) {
+            return yield* new InvalidState({
+              message: "the thread is working, so its worktree was left alone",
+              threadId,
+              status: rt.status,
+            });
+          }
+          const result = yield* effect;
+          const chunk = receipt?.(result);
+          if (chunk !== undefined) yield* appendDataPart(rt, chunk);
+          return result;
+        }),
+      );
+    }),
   updateDataPart: (threadId, messageId, chunk) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);

@@ -425,10 +425,14 @@ export const coversRelease = (done: CloseThreadOptions, wanted: CloseThreadOptio
 
 /**
  * Nothing running, queued or started: the state a guarded close (`onlyAtRest`) requires. Pending
- * requests are the store's, and the caller checks them. Holds the lock.
+ * requests are the store's, and the caller checks them. `afterError` counts a failed turn's `error`
+ * status as at rest too. Holds the lock.
  */
-export const atRest = (rt: Runtime): boolean =>
-  (rt.status === "idle" || rt.status === "cold" || rt.status === "ended") &&
+export const atRest = (rt: Runtime, afterError = false): boolean =>
+  (rt.status === "idle" ||
+    rt.status === "cold" ||
+    rt.status === "ended" ||
+    (afterError && rt.status === "error")) &&
   rt.turn === undefined &&
   rt.queue.length === 0 &&
   rt.background.length === 0 &&

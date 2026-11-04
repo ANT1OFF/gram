@@ -1,4 +1,10 @@
-import type { SubagentUsageData, GramUIMessage, ThreadId, TurnId } from "@gram/contracts";
+import type {
+  SubagentUsageData,
+  GramUIMessage,
+  ThreadId,
+  TurnId,
+  TurnUndoData,
+} from "@gram/contracts";
 import {
   measureElement,
   useVirtualizer,
@@ -142,6 +148,7 @@ export function Transcript({
   subagentUsage,
   streamingIds,
   turnEnds,
+  turnUndos = NO_TURN_UNDOS,
   animate,
   jump,
   chapters = [],
@@ -163,6 +170,8 @@ export function Transcript({
   streamingIds: ReadonlySet<string>;
   /** Each finished turn's last reply, by message id; see `turnEndMessages`. */
   turnEnds: ReadonlyMap<string, TurnId>;
+  /** Each turn's undo receipt, by the turn it undid; see `turnUndos`. */
+  turnUndos?: ReadonlyMap<TurnId, TurnUndoData>;
   /** Only the focused pane animates streaming text. */
   animate: boolean;
   jump: JumpRequest | undefined;
@@ -792,6 +801,7 @@ export function Transcript({
                         subagentUsage={subagentUsage}
                         animate={animate}
                         turnEnd={turnEndOf(id)}
+                        turnUndos={turnUndos}
                         fold={folds.get(id)}
                         foldOpen={closed === undefined}
                       />
@@ -824,6 +834,8 @@ export function Transcript({
 /** A message counts as just sent for this long, which is when it animates in. */
 const ARRIVAL_MS = 3000;
 
+const NO_TURN_UNDOS: ReadonlyMap<TurnId, TurnUndoData> = new Map();
+
 function Row({
   threadId,
   message,
@@ -832,6 +844,7 @@ function Row({
   subagentUsage,
   animate,
   turnEnd,
+  turnUndos,
   fold,
   foldOpen,
 }: {
@@ -842,6 +855,7 @@ function Row({
   subagentUsage: ReadonlyMap<string, SubagentUsageData>;
   animate: boolean;
   turnEnd: TurnId | undefined;
+  turnUndos: ReadonlyMap<TurnId, TurnUndoData>;
   fold: MessageFold | undefined;
   foldOpen: boolean;
 }) {
@@ -870,6 +884,7 @@ function Row({
           subagentUsage={live ? subagentUsage : NO_SUBAGENT_USAGE}
           animate={animate}
           turnEnd={turnEnd}
+          turnUndo={turnEnd === undefined ? undefined : turnUndos.get(turnEnd)}
           fold={fold}
           foldOpen={foldOpen}
         />

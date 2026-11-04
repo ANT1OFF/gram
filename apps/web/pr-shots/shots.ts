@@ -746,8 +746,75 @@ async function openFlakyAtApproval(page: Page) {
   await expect(page.getByTestId("approval-card")).toBeVisible({ timeout: 20_000 });
 }
 
+/** t-deps's finished turn, scrolled to its footer: the files it changed, under its last reply. */
+async function openTurnFooter(page: Page) {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto("/t/t-deps");
+  const chip = page.getByTestId("turn-files-chip");
+  await chip.waitFor();
+  await chip.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+}
+
+/** The transcript row holding the turn's footer, its reply's end included. */
+const turnFooterRow = (page: Page) =>
+  page.locator("[data-message-id]").filter({ has: page.getByTestId("turn-files-chip") });
+
+const undoTurnFooter = async (page: Page) => {
+  await openTurnFooter(page);
+  await page.getByTestId("turn-undo").click();
+  await page.getByTestId("turn-undo-confirm").waitFor();
+};
+
+const TURN_FOOTER_SHOTS: readonly Shot[] = [
+  {
+    name: "turn-footer",
+    title: "A finished turn's footer: the files it changed, with Undo and View changes",
+    open: openTurnFooter,
+    element: turnFooterRow,
+  },
+  {
+    name: "turn-footer-confirm",
+    title: "Undo asks once before putting the turn's files back",
+    open: undoTurnFooter,
+    element: turnFooterRow,
+  },
+  {
+    name: "turn-footer-undone",
+    title: "After an undo: the card reads undone, and the transcript ends with the receipt",
+    open: async (page) => {
+      await undoTurnFooter(page);
+      await page.getByTestId("turn-undo-confirm").click();
+      await page.getByTestId("turn-undo-receipt").waitFor();
+      await page.getByTestId("turn-undone").waitFor();
+      await page.getByTestId("turn-undo-receipt").scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    name: "turn-footer-refused",
+    title: "Undo refused because a later edit changed one of the turn's files",
+    open: async (page) => {
+      await undoTurnFooter(page);
+      await page.evaluate(() => {
+        const message =
+          "Undo not available: 1 file changed again since this turn (package.json), by a later turn or by you. View the changes to undo them by hand.";
+        Object.assign(window.gramMock!, {
+          undoTurn: async () => {
+            throw Object.assign(new Error(message), { _tag: "InvalidState" });
+          },
+        });
+      });
+      await page.getByTestId("turn-undo-confirm").click();
+      await page.getByTestId("turn-undo-refused").waitFor();
+    },
+    element: turnFooterRow,
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
   ...UPDATE_PILL_SHOTS,
+  ...TURN_FOOTER_SHOTS,
   {
     name: "send-button-running",
     title: "The composer's send button during a turn, nothing typed",
