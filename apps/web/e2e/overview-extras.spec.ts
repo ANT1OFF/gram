@@ -312,11 +312,12 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
     await expect(shown[key]).toBeVisible();
   }
 
-  // Settings sits beside the overview, so each box's effect shows at once.
+  // Settings is focused, its Back strip in the overview's place: each box's effect shows on leaving.
   await page.getByLabel("Message", { exact: true }).click();
   await page.keyboard.press("ControlOrMeta+Comma");
   const group = page.getByRole("group", { name: "Sidebar sections" });
   await expect(group).toBeVisible();
+  await expect(overview(page)).toHaveCount(0);
   const box = (name: string) => group.getByRole("checkbox", { name });
   const labels = {
     solo: "Solo threads",
@@ -326,6 +327,14 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
   } as const;
   await expect(group.getByRole("checkbox")).toHaveCount(4);
   await expect(box(labels.usage)).not.toBeChecked();
+  const leave = async () => {
+    await page.getByTestId("settings-back").click();
+    await expect(overview(page)).toBeVisible();
+  };
+  const enter = async () => {
+    await page.keyboard.press("ControlOrMeta+Comma");
+    await expect(group).toBeVisible();
+  };
   const reseed = async () => {
     await expect(overview(page)).toBeVisible();
     await page.evaluate(() => window.gramMock!.simulateOneThread());
@@ -334,11 +343,13 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
 
   // Usage starts off, so turning it on is what is stored; it is shown from there.
   await box(labels.usage).check();
-  await expect(shown.usage).toBeVisible();
   await expect
     .poll(async () => (await storedLayout(page))["overviewSections"])
     .toEqual({ usage: true });
   for (const label of Object.values(labels)) await expect(box(label)).toBeChecked();
+  await leave();
+  await expect(shown.usage).toBeVisible();
+  await enter();
 
   // One at a time: each off leaves the ones still on, and only what differs is stored.
   const off: Record<string, false> = {};
@@ -349,36 +360,44 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
   for (const [key, label] of Object.entries(labels) as [keyof typeof labels, string][]) {
     await box(label).uncheck();
     off[key] = false;
+    await expect
+      .poll(async () => (await storedLayout(page))["overviewSections"] ?? {})
+      .toEqual(stored());
+    await leave();
     await expect(shown[key]).toHaveCount(0);
     for (const [other, where] of Object.entries(shown)) {
       if (!(other in off)) await expect(where).toBeVisible();
     }
-    await expect
-      .poll(async () => (await storedLayout(page))["overviewSections"] ?? {})
-      .toEqual(stored());
+    await enter();
   }
+  await leave();
   await expect(section(page, "orchestrators")).toBeVisible();
 
   // Kept across a reload. The mock's threads went with it, and an empty section stays away by
   // itself, so they are seeded again: what stays away now does so because it is turned off.
   await page.reload();
   await reseed();
-  for (const label of Object.values(labels)) await expect(box(label)).not.toBeChecked();
   for (const where of Object.values(shown)) await expect(where).toHaveCount(0);
+  await enter();
+  for (const label of Object.values(labels)) await expect(box(label)).not.toBeChecked();
 
   // Back on, one by one, each showing again.
   for (const [key, label] of Object.entries(labels) as [keyof typeof labels, string][]) {
     await box(label).check();
     delete off[key];
-    await expect(shown[key]).toBeVisible();
     await expect
       .poll(async () => (await storedLayout(page))["overviewSections"] ?? {})
       .toEqual(stored());
+    await leave();
+    await expect(shown[key]).toBeVisible();
+    await enter();
   }
+  await leave();
   await page.reload();
   await reseed();
-  for (const label of Object.values(labels)) await expect(box(label)).toBeChecked();
   for (const where of Object.values(shown)) await expect(where).toBeVisible();
+  await enter();
+  for (const label of Object.values(labels)) await expect(box(label)).toBeChecked();
 
   // Usage off again is the default: nothing is stored.
   await box(labels.usage).uncheck();

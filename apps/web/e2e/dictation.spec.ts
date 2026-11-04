@@ -398,6 +398,8 @@ test("what commits is cleaned up, the live partial never, and Settings turns eac
   await section.getByRole("switch", { name: "Spoken symbols" }).click();
   await expect(section.getByRole("switch", { name: "Spoken symbols" })).not.toBeChecked();
 
+  // Settings keeps the overview's column for its Back strip; the threads are a step out.
+  await page.getByTestId("settings-back").click();
   await threadRow(page, "t-deps").click();
   await composer.fill("");
   await composer.focus();
@@ -645,6 +647,7 @@ test("Settings: the slider's stops say what they cost, and a new stop's model re
     .toBe(false);
 
   // Dictation then runs at that stop. In-app, since a reload would start the mock afresh.
+  await page.getByTestId("settings-back").click();
   await threadRow(page, "t-deps").click();
   await page.getByRole("button", { name: "Start dictation" }).click();
   await expect
@@ -689,6 +692,7 @@ test("Settings: Accurate asks before downloading its models, and Live needs none
   await mode.getByRole("radio", { name: "Accurate" }).click();
 
   // Sessions ask for the mode; the shell decides whether it can run it.
+  await page.getByTestId("settings-back").click();
   await threadRow(page, "t-deps").click();
   await page.getByRole("button", { name: "Start dictation" }).click();
   await expect
