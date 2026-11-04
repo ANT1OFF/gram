@@ -62,7 +62,7 @@ export function ContextChip({
           aria-label={label}
           onClick={onAct}
           className={cn(
-            "grid size-7 shrink-0 place-items-center rounded-md text-warning outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+            "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
             className,
           )}
         />
