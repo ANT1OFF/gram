@@ -241,6 +241,8 @@ function FileEditor({
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
+          // A quiet outline until there is something to save, so it never looks ready when it isn't.
+          variant={dirty && !size.over ? "default" : "outline"}
           data-testid="memory-save"
           disabled={busy || !dirty || size.over}
           onClick={() =>
@@ -807,22 +809,27 @@ export function MemoryView({
               </button>
             </p>
           )}
-          <TabsContent value="overview">
-            {files.error ? (
-              <QueryError error={files.error} feature="Memory" />
-            ) : files.data === undefined ? (
-              <PanelMessage loading>Reading memory…</PanelMessage>
-            ) : (
-              <MemoryOverview
-                workspaceId={workspaceId}
-                files={files.data}
-                onOpen={(path) => {
-                  setOpenFile(path);
-                  setTab("files");
-                }}
-              />
-            )}
-          </TabsContent>
+          {/* Mounted only while chosen: left to the tabs, a switch made while its Markdown is still
+              settling kept this tall panel mounted above the next one, which then opened far
+              down the page. */}
+          {tab === "overview" && (
+            <TabsContent value="overview">
+              {files.error ? (
+                <QueryError error={files.error} feature="Memory" />
+              ) : files.data === undefined ? (
+                <PanelMessage loading>Reading memory…</PanelMessage>
+              ) : (
+                <MemoryOverview
+                  workspaceId={workspaceId}
+                  files={files.data}
+                  onOpen={(path) => {
+                    setOpenFile(path);
+                    setTab("files");
+                  }}
+                />
+              )}
+            </TabsContent>
+          )}
           <TabsContent value="files">
             {files.error ? (
               <QueryError error={files.error} feature="Memory" />

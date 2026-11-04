@@ -88,7 +88,7 @@ export function UsageMeter({
         hint="Subscription usage"
         label="Subscription usage"
         testId="usage-limits"
-        className="w-80 p-2.5"
+        className="w-[21rem] p-2.5"
         trigger={
           <button
             type="button"
@@ -137,7 +137,7 @@ function LimitsPopover() {
 }
 
 /** The popover's columns: the window, its bar and share used, and when it resets. */
-const LIMIT_ROW = "grid grid-cols-[3.75rem_1fr_2.25rem_6.5rem] items-center gap-2";
+const LIMIT_ROW = "grid grid-cols-[3.75rem_1fr_2.25rem_7.25rem] items-center gap-2";
 
 /**
  * A provider's 5-hour and weekly rows under its name and when it was last updated, its credits
@@ -199,7 +199,10 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
                 <>
                   <LimitBar limit={limit} />
                   <span className="text-right">{limitPercent(limit.utilization)}%</span>
-                  <span data-testid="usage-limit-reset" className="text-right text-xs">
+                  <span
+                    data-testid="usage-limit-reset"
+                    className="text-right text-xs whitespace-nowrap"
+                  >
                     {limit.resetsAt === undefined ? "" : resetAtText(limit.resetsAt, now)}
                   </span>
                 </>

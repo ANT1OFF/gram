@@ -162,7 +162,7 @@ function OverviewFile({
       ) : content.data.content.trim() === "" ? (
         <p className="text-xs text-muted-foreground">Empty.</p>
       ) : (
-        <div className="max-w-3xl text-sm leading-relaxed">
+        <div className="max-w-3xl text-sm leading-relaxed [&_ol]:list-decimal [&_ol]:ps-5 [&_ul]:list-disc [&_ul]:ps-5">
           <MessageResponse components={HEADINGS}>{content.data.content}</MessageResponse>
         </div>
       )}

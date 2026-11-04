@@ -270,23 +270,35 @@ const scenes: readonly Shot[] = [
   {
     name: "dreams",
     title:
-      "Memory → Update memory: the Dreams action, its mode, and seeded running, completed and failed runs",
+      "Memory → Draft memory update: the Dreams action, when the update is saved, and seeded running, completed and failed runs",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByRole("link", { name: "Memory", exact: true }).click();
-      await expect(page.getByTestId("memory-file")).toHaveCount(6);
+      await expect(page.getByTestId("memory-overview-file")).toHaveCount(6);
       await page.getByTestId("memory-tab-update").click();
       await expect(page.getByTestId("dream-row")).toHaveCount(3);
     },
   },
   {
-    name: "memory",
-    title: "Memory: populated file list and goals editor",
+    name: "memory-overview",
+    title: "Memory → Current memory: the files rendered to read, recent changes, Edit beside each",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByRole("link", { name: "Memory", exact: true }).click();
-      await expect(page.getByTestId("memory-file")).toHaveCount(6);
-      await page.locator('[data-testid="memory-file"][data-path="goals.md"]').click();
+      await expect(page.getByTestId("memory-overview-file")).toHaveCount(6);
+      await expect(
+        page.getByTestId("memory-overview").getByRole("heading", { name: "Goals" }),
+      ).toBeVisible();
+    },
+  },
+  {
+    name: "memory",
+    title: "Memory → Files: populated file list and goals editor, with its size and cap",
+    open: async (page) => {
+      await openRealisticOrchestrator(page);
+      await page.getByRole("link", { name: "Memory", exact: true }).click();
+      await expect(page.getByTestId("memory-overview-file")).toHaveCount(6);
+      await page.getByRole("button", { name: "Edit goals.md" }).click();
       await expect(page.getByTestId("memory-text")).toHaveValue(/# Goals/);
     },
   },
