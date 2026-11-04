@@ -53,11 +53,11 @@ const questionInDock = async (page: Page) => {
 const steps: readonly Shot[] = [
   {
     name: "new-menu",
-    title: "Start: sidebar New menu",
+    title: "Start: the sidebar's New opens the one New form",
     open: async (page) => {
       await openApproval(page);
       await page.getByRole("button", { name: "New", exact: true }).click();
-      await expect(page.getByRole("menu")).toBeVisible();
+      await expect(page.getByRole("menu").or(page.getByRole("radiogroup").first())).toBeVisible();
     },
   },
   {

@@ -20,6 +20,11 @@ export const MOCK_ORCHESTRATION_KEY = "gram.mock.orchestration";
 
 export const mockStartsWithBoard = (): boolean => flag(MOCK_ORCHESTRATION_KEY) === "board";
 
+/** `"1"`: the mock starts with no threads, as a true first run does. */
+export const MOCK_FRESH_KEY = "gram.mock.fresh";
+
+export const mockStartsFresh = (): boolean => flag(MOCK_FRESH_KEY) === "1";
+
 /** Comma-separated agents with a registered adapter, e.g. `"claude,codex"`. */
 export const MOCK_AGENTS_KEY = "gram.mock.agents";
 

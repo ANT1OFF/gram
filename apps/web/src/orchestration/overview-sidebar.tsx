@@ -54,6 +54,7 @@ import {
 } from "@/views/shell-layout";
 import { parkedSoloThreads, soloThreads } from "@/views/solo-threads";
 import { useViewWorkspace } from "@/views/view-workspace";
+import { useFirstRun } from "@/welcome/welcome";
 
 import { askKeysByThread } from "./ask-model";
 import { NewEntryMenu } from "./new-entry-menu";
@@ -342,6 +343,11 @@ export function useCarryOverviewFocus(sidebar: ShellFit["sidebar"]): void {
  */
 function NeedsYou() {
   const { count, label, hint } = useNeedsYou();
+  // A true first run, with no thread yet, has nothing to need you: the welcome is the one thing
+  // to look at, without a count beside it.
+  const firstRun = useFirstRun();
+  const empty = useThreadsStore((s) => Object.keys(s.byId).length === 0);
+  if (firstRun && empty) return null;
   const words = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
   // Nothing waiting, it stays as quiet grey words, so the column doesn't jump.
   return (

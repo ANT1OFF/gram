@@ -61,7 +61,7 @@ afterEach(() => {
 });
 
 describe("first run", () => {
-  it("is one screen: pick a repository, with no tools shown while all of them work", async () => {
+  it("is one screen: how Gram works, the agents, and a repository to pick", async () => {
     const { api, render, updateSettings } = load(withOnboarding({}));
     for (const profile of await api.listProfiles()) await api.removeProfile(profile.id);
     render();
@@ -71,8 +71,23 @@ describe("first run", () => {
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalled());
     await vi.mocked(api.launchChecks).mock.results[0]!.value;
     expect(await welcome.findByRole("button", { name: /^api/ })).toBeTruthy();
-    expect(welcome.queryByRole("list", { name: "Tools" })).toBeNull();
+    expect(welcome.getByRole("heading", { name: "How Gram works" })).toBeTruthy();
+    expect(
+      within(welcome.getByRole("list", { name: "How Gram works" }))
+        .getAllByRole("listitem")
+        .map((step) => step.textContent),
+    ).toEqual([
+      expect.stringContaining("You give tasks"),
+      expect.stringContaining("An orchestrator plans them and briefs workers"),
+      expect.stringContaining("Workers run Claude Code or Codex"),
+    ]);
+    // Every agent ready: each says so, and there is nothing to re-check.
+    const agents = within(await welcome.findByRole("list", { name: "Agents" })).getAllByRole(
+      "listitem",
+    );
+    expect(agents.map((item) => item.getAttribute("data-state"))).toEqual(["ready", "ready"]);
     expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(welcome.getByRole("button", { name: "Import past CLI sessions" })).toBeTruthy();
     expect(welcome.getByRole("button", { name: "Other folder" })).toBeTruthy();
     expect(welcome.getByRole("button", { name: "Clone from GitHub" })).toBeTruthy();
     // Looking at it records nothing, and a first run never asks for a gateway key.
@@ -126,12 +141,14 @@ describe("first run", () => {
     });
     render();
     const welcome = within(await screen.findByTestId("welcome"));
-    const tools = within(await welcome.findByRole("list", { name: "Tools" })).getAllByRole(
+    const agents = within(await welcome.findByRole("list", { name: "Agents" })).getAllByRole(
       "listitem",
     );
-    // Only the tool that needs something: the ready ones say nothing.
-    expect(tools.map((item) => item.getAttribute("data-tool"))).toEqual(["claude"]);
-    const claude = tools[0];
+    // Both agents, each with its state; git only when it is missing.
+    expect(agents.map((item) => item.getAttribute("data-tool"))).toEqual(["claude", "codex"]);
+    expect(agents[1]?.getAttribute("data-state")).toBe("ready");
+    expect(agents[1]?.textContent).toContain("Signed in");
+    const claude = agents[0];
     expect(claude?.getAttribute("data-state")).toBe("attention");
     expect(claude?.textContent).toContain("Run claude in a terminal to sign in.");
     fireEvent.click(welcome.getByRole("button", { name: "Check again" }));

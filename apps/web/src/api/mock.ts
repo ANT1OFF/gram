@@ -187,7 +187,12 @@ import { createWorktreesMock, PENDING_RULES } from "./worktrees/mock";
 import type { DataPart, MockWorld } from "./mock-world";
 import { isMockRepo, MockInvalidState, mockProject, resolveMockFolder } from "./mock-fs";
 import { MockPreview } from "./mock-preview";
-import { mockAgents, mockSessionExpired, mockStartsWithBoard } from "./mock-overrides";
+import {
+  mockAgents,
+  mockSessionExpired,
+  mockStartsFresh,
+  mockStartsWithBoard,
+} from "./mock-overrides";
 import { mockGitState, mockPrDetail } from "./mock-git";
 import { searchMessages } from "./mock-search";
 import {
@@ -315,7 +320,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     this.#closed = createMockClosedThreads(options.persist === true);
     this.#composer = createComposerMock(this.world, options.persist === true);
     const closedEarlier = this.#closed.ids();
-    for (const summary of seedSummaries()) {
+    for (const summary of mockStartsFresh() ? [] : seedSummaries()) {
       if (closedEarlier.has(summary.thread.id)) continue;
       // `t-flaky`'s worktree has uncommitted work, so closing it with removal needs a force.
       const git = mockGitState(
