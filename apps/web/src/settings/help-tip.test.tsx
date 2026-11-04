@@ -39,7 +39,7 @@ describe("a setting's help", () => {
     const trigger = screen.getByTestId("setting-help");
     expect(trigger.getAttribute("tabindex")).toBe("0");
     expect(trigger.getAttribute("data-help-for")).toBe("Send with");
-    expect(trigger.getAttribute("aria-label")).toBe("More about Send with");
+    expect(trigger.getAttribute("aria-label")).toBe("More info");
     const described = document.getElementById(trigger.getAttribute("aria-describedby") ?? "");
     expect(described?.textContent).toBe("Shift+Enter adds a line.");
   });

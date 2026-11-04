@@ -306,7 +306,7 @@ test("the palette starts a workspace through New task", async ({ page }) => {
 test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ page }) => {
   await page.goto("/settings/workspaces");
   const section = page.getByTestId("workspace-settings");
-  await expect(section).toContainText("spends tokens while you aren't watching");
+  await expect(section).toContainText("Gram sets no spending or time limits");
   await expect(section).toContainText("No workspaces yet.");
   // Continuing cut-off workers after a restart is off until it is turned on.
   const resume = section.getByRole("switch", { name: "Resume workers on restart" });

@@ -20,7 +20,7 @@ export function HelpTip({ label, help }: { label: string; help: ReactNode }) {
               // Focusable, so the words reach the keyboard as well as the pointer.
               tabIndex={0}
               role="img"
-              aria-label={`More about ${label}`}
+              aria-label="More info"
               aria-describedby={id}
               data-help-for={label}
               data-testid="setting-help"
