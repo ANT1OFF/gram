@@ -415,23 +415,60 @@ describe.skipIf(!hasGit)("undoing one turn's file edits", () => {
       yield* turn("turn-1", () => write(nodePath.join(repo, "tracked.txt"), "agent edit\n"));
       fs.appendFileSync(nodePath.join(repo, "tracked.txt"), "USER: uncommitted annotation\n");
 
-      expect(yield* undo("turn-1")).toEqual({ kind: "changed", paths: ["tracked.txt"] });
+      // Refused before anything else: a filtered file is outside what undo handles.
+      expect(yield* undo("turn-1")).toEqual({
+        kind: "unsupported",
+        reason: "filter",
+        paths: ["tracked.txt"],
+      });
       expect(read("tracked.txt")).toBe("agent edit\nUSER: uncommitted annotation\n");
     }).pipe(provide),
   );
 
-  it.live("still undoes a filtered file the user left as the turn wrote it", () =>
+  it.live("refuses a file git writes out with different line endings than it stores", () =>
     Effect.gen(function* () {
-      const { repo, read, turn, undo } = setup();
+      const { repo, turn, undo, tree } = setup();
       // Stored with LF, written out with CRLF: the file's bytes never equal its blob.
       write(nodePath.join(repo, ".gitattributes"), "*.txt text eol=crlf\n");
       write(nodePath.join(repo, "tracked.txt"), "before\r\n");
       run(repo, "add", "-A");
       run(repo, "commit", "-qm", "crlf");
       yield* turn("turn-1", () => write(nodePath.join(repo, "tracked.txt"), "agent\r\nedit\r\n"));
+      const before = tree();
 
-      expect(yield* undo("turn-1")).toEqual({ kind: "undone", paths: ["tracked.txt"] });
-      expect(read("tracked.txt")).toBe("before\r\n");
+      expect(yield* undo("turn-1")).toEqual({
+        kind: "unsupported",
+        reason: "filter",
+        paths: ["tracked.txt"],
+      });
+      expect(tree()).toEqual(before);
+    }).pipe(provide),
+  );
+
+  it.live("refuses an LFS-tracked file from its attribute alone", () =>
+    Effect.gen(function* () {
+      const { repo, turn, undo, tree } = setup();
+      write(nodePath.join(repo, ".gitattributes"), "*.bin filter=lfs diff=lfs merge=lfs -text\n");
+      // The driver set here, a pass-through, whatever the host's git config says about LFS:
+      // undo refuses the path by its attribute, before any driver would run.
+      run(repo, "config", "filter.lfs.process", "");
+      run(repo, "config", "filter.lfs.clean", "cat");
+      run(repo, "config", "filter.lfs.smudge", "cat");
+      run(repo, "config", "filter.lfs.required", "false");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "lfs");
+      yield* turn("turn-1", () => {
+        write(nodePath.join(repo, "model.bin"), "pointer-ish\n");
+        write(nodePath.join(repo, "tracked.txt"), "turn 1\n");
+      });
+      const before = tree();
+
+      expect(yield* undo("turn-1")).toEqual({
+        kind: "unsupported",
+        reason: "filter",
+        paths: ["model.bin"],
+      });
+      expect(tree()).toEqual(before);
     }).pipe(provide),
   );
 
@@ -441,5 +478,61 @@ describe.skipIf(!hasGit)("undoing one turn's file edits", () => {
       const error = yield* Effect.flip(undoTurnFiles(repo, "HEAD", "HEAD~1"));
       expect(error.message).toMatch(/not a full checkpoint ref/);
     }).pipe(provide),
+  );
+
+  // Final review: a checkout filter that fails for the start version, which `--check` can't see.
+
+  it.live("refuses a turn whose files go through a filter that could fail while writing", () =>
+    Effect.gen(function* () {
+      const { repo, turn, undo, tree } = setup();
+      write(nodePath.join(repo, ".gitattributes"), "z-filter filter=old-unavailable\n");
+      write(nodePath.join(repo, "z-filter"), "before\n");
+      write(nodePath.join(repo, "a-added-baseline"), "baseline\n");
+      run(repo, "config", "filter.old-unavailable.clean", "cat");
+      run(repo, "config", "filter.old-unavailable.required", "true");
+      // Writes out the turn's version, fails on the version undo would put back.
+      run(
+        repo,
+        "config",
+        "filter.old-unavailable.smudge",
+        `sh -c 'c=$(cat); [ "$c" = before ] && exit 1; printf "%s\\n" "$c"'`,
+      );
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "filtered");
+      yield* turn("turn-1", () => {
+        write(nodePath.join(repo, "a-added-baseline"), "agent ordinary\n");
+        write(nodePath.join(repo, "created-by-agent"), "agent file\n");
+        write(nodePath.join(repo, "z-filter"), "agent\n");
+      });
+      const before = tree();
+
+      expect(yield* undo("turn-1")).toEqual({
+        kind: "unsupported",
+        reason: "filter",
+        paths: ["z-filter"],
+      });
+      expect(tree()).toEqual(before);
+    }).pipe(provide),
+  );
+
+  it.live.skipIf(process.getuid?.() === 0)(
+    "says the apply failed, not that nothing changed, when git fails after its check",
+    () =>
+      Effect.gen(function* () {
+        const { repo, turn, undo } = setup();
+        write(nodePath.join(repo, "z", "file"), "committed\n");
+        run(repo, "add", "-A");
+        run(repo, "commit", "-qm", "z");
+        yield* turn("turn-1", () => {
+          write(nodePath.join(repo, "a-created"), "the turn's\n");
+          write(nodePath.join(repo, "z", "file"), "the turn's edit\n");
+        });
+        const locked = nodePath.join(repo, "z");
+        const result = yield* undo("turn-1", {
+          afterCheck: () => fs.chmodSync(locked, 0o555),
+        }).pipe(Effect.ensuring(Effect.sync(() => fs.chmodSync(locked, 0o755))));
+
+        expect(result).toMatchObject({ kind: "failed", paths: ["a-created", "z/file"] });
+      }).pipe(provide),
   );
 });

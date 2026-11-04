@@ -31,9 +31,18 @@ const UNSUPPORTED = {
   symlink: "a symlink",
   submodule: "a submodule",
   mode: "a file's mode",
+  filter:
+    "a file git converts when writing it (a filter such as LFS, an encoding, or line endings)",
 } as const;
 
-/** Why an undo changed nothing, in the user's terms; `undefined` when it went through. */
+/**
+ * What to say when git's apply failed after its check passed: any of the turn's files may already
+ * have changed, so it never says nothing changed.
+ */
+export const failedMessage = (result: Extract<TurnUndo, { kind: "failed" }>): string =>
+  `Undo failed partway: git couldn't finish reversing this turn's changes (${result.message}). These files may have changed: ${listed(result.paths)}. Check them with View changes.`;
+
+/** Why an undo changed nothing, in the user's terms; `undefined` when it went through or failed partway. */
 export const undoRefusal = (result: TurnUndo): string | undefined => {
   switch (result.kind) {
     case "undone":
@@ -52,6 +61,8 @@ export const undoRefusal = (result: TurnUndo): string | undefined => {
       return `Undo not available: this turn changed ${UNSUPPORTED[result.reason]} (${listed(result.paths)}), which undo doesn't handle.`;
     case "refused":
       return `Undo not available: git couldn't reverse this turn's changes cleanly (${result.message}). Nothing was changed.`;
+    case "failed":
+      return undefined;
   }
 };
 
@@ -106,6 +117,15 @@ export const makeTurnUndo =
             checkpointRef(threadId, endCheckpointId(turnId)),
           )
           .pipe(Effect.mapError((e) => new GitError({ message: e.message })));
+        if (result.kind === "failed") {
+          const receipt: TurnUndoData = {
+            turnId,
+            files: result.paths.length,
+            at: yield* Clock.currentTimeMillis,
+            failed: result.paths,
+          };
+          return { failed: failedMessage(result), receipt } as const;
+        }
         if (result.kind !== "undone")
           return { refused: undoRefusal(result) ?? "Undo not available." } as const;
         const receipt: TurnUndoData = {
@@ -129,6 +149,10 @@ export const makeTurnUndo =
         );
       if ("refused" in outcome) {
         return yield* new InvalidState({ message: outcome.refused, threadId });
+      }
+      if ("failed" in outcome) {
+        if (refresh !== undefined) yield* refresh(cwd);
+        return yield* new GitError({ message: outcome.failed });
       }
       if (refresh !== undefined) yield* refresh(cwd);
       return outcome.receipt;

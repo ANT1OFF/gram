@@ -89,7 +89,8 @@ export function TurnFilesChip({
               className="inline-flex items-center gap-1 px-2 text-xs text-muted-foreground"
             >
               <Undo2 aria-hidden className="size-3.5" />
-              Undone at {formatClockTime(undone.at)}
+              {undone.failed === undefined ? "Undone" : "Undo failed"} at{" "}
+              {formatClockTime(undone.at)}
             </span>
           ) : confirming ? (
             <>

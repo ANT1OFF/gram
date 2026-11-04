@@ -15,8 +15,9 @@ export const run = (
   cwd: string,
   args: ReadonlyArray<string>,
   env: Readonly<Record<string, string>> = {},
+  stdin?: string,
 ) =>
-  git(cwd, args, { env, tier: "slow" }).pipe(
+  git(cwd, args, { env, tier: "slow", ...(stdin === undefined ? {} : { stdin }) }).pipe(
     Effect.mapError((e) => new CheckpointError({ message: e.message })),
     Effect.flatMap((out) =>
       out.status === 0 ? Effect.succeed(out) : fail(gitFailMsg(out, `git ${args[0] ?? ""} failed`)),

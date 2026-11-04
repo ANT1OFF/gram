@@ -8,7 +8,7 @@ import { renderWithApi } from "@/panels/test-utils";
 import { useLayoutStore } from "@/stores/layout";
 
 import { TurnFilesChip } from "./turn-files-chip";
-import { isUndoReceipt, turnUndoLabel, turnUndos } from "./turn-undo-marker";
+import { isUndoReceipt, TurnUndoMarker, turnUndoLabel, turnUndos } from "./turn-undo-marker";
 
 const T = "t-deps" as ThreadId;
 
@@ -158,5 +158,14 @@ describe("turn undo receipts", () => {
     expect(turnUndos(messages).get("turn-1" as TurnId)).toEqual(undo);
     expect(isUndoReceipt(messages[1]!)).toBe(true);
     expect(isUndoReceipt(messages[0]!)).toBe(false);
+  });
+
+  it("says when an undo failed, and lists the files to check as text", () => {
+    const undo = { turnId: "turn-1" as TurnId, files: 2, at, failed: ["a.txt", "src/b.ts"] };
+    expect(turnUndoLabel(undo, at, intl)).toBe(
+      "Undo failed at 14:05: check 2 files with View changes",
+    );
+    renderWithApi(<TurnUndoMarker undo={undo} />, {});
+    expect(screen.getByTestId("turn-undo-failed").textContent).toBe("a.txtsrc/b.ts");
   });
 });

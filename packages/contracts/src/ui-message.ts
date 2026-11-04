@@ -205,6 +205,11 @@ export const TurnUndoDataSchema = Schema.Struct({
   files: Schema.Int,
   /** Epoch ms. */
   at: Schema.Number,
+  /**
+   * Set when git failed partway through reversing the turn: these files may have changed or not,
+   * and the user should check them. `files` is then how many.
+   */
+  failed: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type TurnUndoData = typeof TurnUndoDataSchema.Type;
 

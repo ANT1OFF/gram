@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import type { ThreadId, TurnId } from "@gram/contracts";
-import { Checkpoints, CheckpointsLive, ProcLive } from "@gram/git";
+import { Checkpoints, CheckpointsLive, ProcLive, undoTurnFiles } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -17,6 +17,15 @@ import { makeTurnUndo, UNDO_RUNNING } from "./turn-undo.ts";
 const TURN = "turn-1" as TurnId;
 const GitLayer = CheckpointsLive.pipe(Layer.provideMerge(ProcLive));
 const TestLayer = Layer.mergeAll(RuntimeTestLayer, GitLayer);
+
+/** Real git undo where the folder of `z/file` turns read-only once `git apply --check` passed. */
+const failsWriting = (repo: string, start: string, end: string) =>
+  undoTurnFiles(repo, start, end, {
+    afterCheck: () => fs.chmodSync(nodePath.join(repo, "z"), 0o555),
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => fs.chmodSync(nodePath.join(repo, "z"), 0o755))),
+    Effect.provide(ProcLive),
+  );
 
 /** An undo whose git work never ends, to interrupt. */
 const neverEnds = () => Effect.never;
@@ -192,6 +201,34 @@ describe.skipIf(!hasGit)("undoing a turn from its footer", () => {
       expect(read("tracked.txt")).toBe("turn 1\n");
       expect(yield* receipts(thread.id)).toEqual([]);
     }).pipe(Effect.provide(TestLayer)),
+  );
+
+  // Final review: a failed apply is reported as such, with the files to check in the receipt.
+  it.live.skipIf(process.getuid?.() === 0)(
+    "reports a failed apply with its files in the receipt, never that nothing changed",
+    () =>
+      Effect.gen(function* () {
+        const { repo, thread, undoWith, checkpoints } = yield* setup(dirs);
+        yield* statusIs(thread.id, "idle");
+        write(nodePath.join(repo, "z", "file"), "committed\n");
+        run(repo, "add", "-A");
+        run(repo, "commit", "-qm", "z");
+        yield* checkpoints.snapshot(repo, thread.id, "turn-2");
+        write(nodePath.join(repo, "z", "file"), "the turn's edit\n");
+        yield* checkpoints.snapshot(repo, thread.id, endCheckpointId("turn-2" as TurnId));
+
+        const error = yield* undoWith(failsWriting)(thread.id, "turn-2" as TurnId).pipe(
+          Effect.flip,
+        );
+        expect(error).toMatchObject({ _tag: "GitError" });
+        expect(error.message).toMatch(/^Undo failed partway: /);
+        expect(error.message).toContain("These files may have changed: z/file.");
+        expect(error.message).toContain("Check them with View changes.");
+        expect(error.message).not.toContain("Nothing was changed");
+        expect(yield* receipts(thread.id)).toEqual([
+          { turnId: "turn-2", files: 1, at: expect.any(Number), failed: ["z/file"] },
+        ]);
+      }).pipe(Effect.provide(TestLayer)),
   );
 
   it.live("refuses a turn with no checkpoint in this folder", () =>

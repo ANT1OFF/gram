@@ -22,6 +22,7 @@ export const turnUndoLabel = (
   const today = format(undo.at, DATE) === format(now, DATE);
   const files = `${undo.files} ${undo.files === 1 ? "file" : "files"}`;
   const at = format(undo.at, today ? CLOCK_TIME : { ...DATE, ...CLOCK_TIME });
+  if (undo.failed !== undefined) return `Undo failed at ${at}: check ${files} with View changes`;
   return `Undid edits to ${files} at ${at}`;
 };
 
@@ -40,16 +41,23 @@ export function turnUndos(messages: readonly GramUIMessage[]): ReadonlyMap<TurnI
 export const isUndoReceipt = (message: GramUIMessage): boolean =>
   message.parts.length > 0 && message.parts.every((part) => part.type === "data-turn-undo");
 
-/** Where the user undid a turn's file edits, as a quiet divider like a session restart's. */
+/**
+ * Where the user undid a turn's file edits, as a quiet divider like a session restart's. One that
+ * failed partway also lists, as text, the files that may have changed.
+ */
 export function TurnUndoMarker({ undo }: { undo: TurnUndoData }) {
   // Only to tell today from another day, so read once rather than on a clock.
   const now = useNow(false);
   const label = turnUndoLabel(undo, now);
-  return (
+  const divider = (
     <div
       role="separator"
       aria-label={label}
-      title="The files that turn changed were put back as they were before it. The agent wasn't told."
+      title={
+        undo.failed === undefined
+          ? "The files that turn changed were put back as they were before it. The agent wasn't told."
+          : "Git failed partway through reversing that turn, so some of its files may have changed and others not."
+      }
       data-testid="turn-undo-receipt"
       className="my-3 flex w-full items-center gap-3 text-xs text-muted-foreground"
     >
@@ -59,6 +67,21 @@ export function TurnUndoMarker({ undo }: { undo: TurnUndoData }) {
         <span className="text-center">{label}</span>
       </span>
       <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
+    </div>
+  );
+  if (undo.failed === undefined) return divider;
+  return (
+    <div>
+      {divider}
+      <ul
+        data-testid="turn-undo-failed"
+        aria-label="Files that may have changed"
+        className="-mt-1 mb-3 text-center font-mono text-xs text-muted-foreground select-text"
+      >
+        {undo.failed.map((path) => (
+          <li key={path}>{path}</li>
+        ))}
+      </ul>
     </div>
   );
 }

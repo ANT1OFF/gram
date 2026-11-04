@@ -32,11 +32,20 @@ export type TurnUndo =
   /** The turn changed something undo doesn't handle: a symlink, a submodule, or a file's mode. */
   | {
       readonly kind: "unsupported";
-      readonly reason: "symlink" | "submodule" | "mode";
+      readonly reason: "symlink" | "submodule" | "mode" | "filter";
       readonly paths: ReadonlyArray<string>;
     }
   /** `git apply -R --check` refused the reversed patch; nothing was changed. */
-  | { readonly kind: "refused"; readonly message: string };
+  | { readonly kind: "refused"; readonly message: string }
+  /**
+   * `--check` passed but the apply itself failed, so any of `paths` may already be reversed and
+   * others not: never reported as nothing changed.
+   */
+  | {
+      readonly kind: "failed";
+      readonly message: string;
+      readonly paths: ReadonlyArray<string>;
+    };
 
 interface Entry {
   readonly mode: string;
@@ -144,6 +153,37 @@ const blobOid = (bytes: Buffer, oidLength: number) =>
     .update(bytes)
     .digest("hex");
 
+/**
+ * Paths with a `filter` (LFS's `filter=lfs` included) or a `working-tree-encoding`, by the worktree's
+ * attributes or either checkpoint's. Their checkout runs a conversion that can fail, so `git apply`
+ * could fail partway through writing them after its check passed: they are refused up front.
+ */
+const convertedPaths = (top: string, rels: ReadonlyArray<string>, trees: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const found = new Set<string>();
+    for (const source of [undefined, ...trees]) {
+      const out = yield* run(
+        top,
+        [
+          "check-attr",
+          "-z",
+          "--stdin",
+          ...(source === undefined ? [] : [`--source=${source}`]),
+          "filter",
+          "working-tree-encoding",
+        ],
+        {},
+        rels.join("\0"),
+      );
+      const fields = (yield* whole(out, "the turn's file attributes")).split("\0");
+      for (let i = 0; i + 2 < fields.length; i += 3) {
+        const value = fields[i + 2];
+        if (value !== "unspecified" && value !== "unset") found.add(fields[i]!);
+      }
+    }
+    return [...found].toSorted();
+  });
+
 /** A filesystem call, its throw a `CheckpointError`. */
 const sync = <A>(f: () => A) =>
   Effect.try({ try: f, catch: (e) => new CheckpointError({ message: String(e) }) });
@@ -163,6 +203,8 @@ const tempFolder = Effect.acquireRelease(
 /** For tests: runs between the checks and `git apply`, as an editor saving then would. */
 export interface UndoHooks {
   readonly beforeApply?: () => void;
+  /** Runs between `git apply --check` and the apply itself. */
+  readonly afterCheck?: () => void;
 }
 
 /**
@@ -207,6 +249,9 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
           (c) => c.start !== undefined && c.end !== undefined && c.start.mode !== c.end.mode,
         );
       if (refusedKind !== undefined) return refusedKind;
+      const converted = yield* convertedPaths(top, paths, [from, to]);
+      if (converted.length > 0)
+        return { kind: "unsupported", reason: "filter", paths: converted } satisfies TurnUndo;
 
       // Committed: any commit since the turn started (in it or after) that touches one of its
       // paths. The start checkpoint's parent is HEAD at the turn's start.
@@ -222,28 +267,44 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
       const hits = paths.filter((path) => committed.has(path));
       if (hits.length > 0) return { kind: "committed", paths: hits } satisfies TurnUndo;
 
-      // The turn's end versions as git writes them out (filters and line endings applied), outside
-      // the working tree, for files whose bytes differ from their stored blob.
+      // Both versions as git writes them out, outside the working tree: undo handles only files
+      // git writes exactly as stored, so no conversion (line endings, `ident`, `core.autocrlf`)
+      // stands between the blob and the bytes, at either end of the turn.
       const scratch = yield* tempFolder;
-      const endStage = nodePath.join(scratch, "end");
-      const endFiles = changes.filter((c) => c.end !== undefined).map((c) => c.path);
-      if (endFiles.length > 0) {
-        const indexFile = yield* tempIndex;
-        const env = { GIT_INDEX_FILE: indexFile };
-        yield* run(top, ["read-tree", to], env);
-        yield* git(
-          top,
-          ["checkout-index", "-f", "-z", "--stdin", `--prefix=${endStage}${nodePath.sep}`],
-          { env, tier: "slow", stdin: endFiles.join("\0") },
-        ).pipe(
-          Effect.mapError((e) => new CheckpointError({ message: e.message })),
-          Effect.flatMap((out) =>
-            out.status === 0
-              ? Effect.void
-              : fail(gitFailMsg(out, "git couldn't write out the turn's files")),
-          ),
-        );
-      }
+      const writtenOut = (tree: string, side: "start" | "end") =>
+        Effect.gen(function* () {
+          const rels = changes.filter((c) => c[side] !== undefined).map((c) => c.path);
+          const into = nodePath.join(scratch, side);
+          if (rels.length === 0) return [] as ReadonlyArray<string>;
+          const indexFile = yield* tempIndex;
+          const env = { GIT_INDEX_FILE: indexFile };
+          yield* run(top, ["read-tree", tree], env);
+          yield* git(
+            top,
+            ["checkout-index", "-f", "-z", "--stdin", `--prefix=${into}${nodePath.sep}`],
+            { env, tier: "slow", stdin: rels.join("\0") },
+          ).pipe(
+            Effect.mapError((e) => new CheckpointError({ message: e.message })),
+            Effect.flatMap((out) =>
+              out.status === 0
+                ? Effect.void
+                : fail(gitFailMsg(out, "git couldn't write out the turn's files")),
+            ),
+          );
+          return yield* sync(() =>
+            changes.flatMap((c) => {
+              const blob = c[side];
+              if (blob === undefined) return [];
+              const bytes = fs.readFileSync(nodePath.join(into, c.path));
+              return blobOid(bytes, blob.oid.length) === blob.oid ? [] : [c.path];
+            }),
+          );
+        });
+      const differs = [
+        ...new Set([...(yield* writtenOut(from, "start")), ...(yield* writtenOut(to, "end"))]),
+      ].toSorted();
+      if (differs.length > 0)
+        return { kind: "unsupported", reason: "filter", paths: differs } satisfies TurnUndo;
       const execBits = yield* fileModeHonoured(top);
 
       // Every path on the filesystem itself, never through the index or a cleaned view of it.
@@ -289,17 +350,10 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
             changed.push(change.path);
             continue;
           }
-          // Byte for byte: the blob as stored, or as git writes it out. Never git's cleaned view
-          // of the file, which a lossy clean filter could make match after the user added to it.
+          // Byte for byte against the blob as stored, which is what git writes out here. Never
+          // git's cleaned view of the file, nor the index's word for it.
           const bytes = fs.readFileSync(abs);
-          if (blobOid(bytes, change.end.oid.length) === change.end.oid) continue;
-          let written: Buffer | undefined;
-          try {
-            written = fs.readFileSync(nodePath.join(endStage, change.path));
-          } catch {
-            written = undefined;
-          }
-          if (written === undefined || !bytes.equals(written)) changed.push(change.path);
+          if (blobOid(bytes, change.end.oid.length) !== change.end.oid) changed.push(change.path);
         }
         return { changed, obstructed: [...new Set(obstructed)] };
       });
@@ -344,6 +398,7 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
           kind: "refused",
           message: gitFailMsg(checked, "git apply refused the reversed patch"),
         } satisfies TurnUndo;
+      hooks.afterCheck?.();
       // Never cut off halfway: an interruption waits for git to finish writing.
       const applied = yield* git(top, [...apply, patch]).pipe(
         Effect.mapError((e) => new CheckpointError({ message: e.message })),
@@ -351,8 +406,9 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
       );
       if (applied.status !== 0)
         return {
-          kind: "refused",
-          message: gitFailMsg(applied, "git apply refused the reversed patch"),
+          kind: "failed",
+          message: gitFailMsg(applied, "git apply failed"),
+          paths,
         } satisfies TurnUndo;
       return { kind: "undone", paths } satisfies TurnUndo;
     }),
