@@ -450,7 +450,7 @@ function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolea
       <span aria-hidden data-action-label className={cn("overflow-hidden", !words && "max-w-0")}>
         <span data-action-label-text className="flex items-center gap-1.5 pl-1.5 whitespace-nowrap">
           {label}
-          {hint && <kbd className="font-mono text-[10px] text-muted-foreground">{hint}</kbd>}
+          {hint && <kbd className="font-sans text-[10px] text-muted-foreground">{hint}</kbd>}
         </span>
       </span>
     </Hint>
