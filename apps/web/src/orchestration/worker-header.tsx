@@ -236,7 +236,7 @@ function HoldChip({
           />
         }
       >
-        HandGrab back
+        Hand back
       </Hint>
     </span>
   );
@@ -276,10 +276,10 @@ function useWorkerActions(thread: Thread) {
 /**
  * A worker's own actions at the end of its header: Keep beside docks it next to its orchestrator's
  * chat (⌘\), and Take over holds it for you, by the same path a message you type into it takes,
- * until you hand it back. While you hold it, the hold chip and its HandGrab back stand in Take over's
+ * until you hand it back. While you hold it, the hold chip and its Hand back stand in Take over's
  * place. Watching it, here or beside the chat, never holds it. In a title bar folded all the way,
  * Keep beside and Take over are the bar's "…" items (`WorkerMenuItems`) and the hold chip is a glyph
- * and its HandGrab back.
+ * and its Hand back.
  */
 export function WorkerActions({
   thread,
