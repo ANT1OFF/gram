@@ -385,8 +385,13 @@ describe("sweep cadence", () => {
           { threadIds: [cool.id, other.id], sidebarCollapsed: false, focusedThreadId },
         ];
         yield* visibility.update(view(other.id));
-        // Left alone for a day, its row is asked about a few times an hour.
+        // Age it while suspended, without executing a day's worth of unrelated sweeps.
+        const activity = yield* AppActivity;
+        yield* activity.setPower("suspended");
         yield* TestClock.adjust(Duration.hours(25));
+        const sleeping = yield* remoteCount;
+        yield* activity.setPower("awake");
+        yield* grewTo(sleeping + 2);
         yield* TestClock.adjust(Duration.seconds(11));
         const before = seen.remote.filter((cwd) => cwd === samePathKey("/work/f1")).length;
 

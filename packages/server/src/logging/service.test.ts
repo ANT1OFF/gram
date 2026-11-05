@@ -152,6 +152,15 @@ const frame = (functionName: string, url = "", lineNumber = 0) => ({
   columnNumber: 0,
 });
 
+const spinForAWhile = () => {
+  // Wall time includes time this runner is descheduled. Keep doing actual work for
+  // enough sampling intervals, even when other suites contend for the CPU.
+  const started = process.threadCpuUsage();
+  let spins = 0;
+  while (process.threadCpuUsage(started).user < 300_000) spins += 1;
+  return spins;
+};
+
 describe("blockingStack", () => {
   const profile = {
     nodes: [
@@ -193,12 +202,6 @@ describe("blockingStack", () => {
       const profiler = yield* makeStallProfiler;
       if (profiler === undefined) return;
       yield* profiler.start;
-      const busyUntil = performance.now() + 300;
-      const spinForAWhile = () => {
-        let spins = 0;
-        while (performance.now() < busyUntil) spins += 1;
-        return spins;
-      };
       spinForAWhile();
       const found = blockingStack((yield* profiler.stop)!);
       expect(found?.path.some((text) => text.startsWith("spinForAWhile "))).toBe(true);

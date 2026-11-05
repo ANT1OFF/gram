@@ -53,9 +53,9 @@ const conflictedDream = (world: World) =>
     return { dream, workspaceId };
   });
 
-describe.skipIf(!hasGit)("dreams", () => {
-  // Each way a merge can fail is its own test: run one after another on one dream they came to
-  // about 25 s, close to the 30 s timeout once the Dream files run side by side.
+// A two-merge scenario launches about 100 isolated file helpers. At 350 ms of launch
+// contention each it exceeds 30 s; the helper and merge deadlines themselves stay unchanged.
+describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
   it.effect("a merge whose reply has no merged file, or runs past the cap, is never adopted", () =>
     inDreams((world) =>
       Effect.gen(function* () {
