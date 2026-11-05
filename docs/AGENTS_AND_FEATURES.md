@@ -215,10 +215,18 @@ archived workers, groups and their stage notes by default, including with
 `detail: true`. Use `includeArchived: true` (or `state: ["archived"]`) to inspect
 that history. Current questions, failures, blockers and PR changes stay visible.
 
-The orchestrator's chat opens on a status header with live counts. **Running** opens
-Workers, **Waiting on you** opens Needs you, **In review** opens the Board and
-**Merged today** opens History. The header also has the tightest subscription
-limit. Digests that changed nothing for you fold into one update line, together
+The orchestrator's chat opens on a status header: one compact row of live counts.
+**Running** opens Workers, **In review** opens the Board and **Merged today** opens
+History; hovering a count names its workers. **Need you here** counts this
+workspace's share of the Inbox and how many items wait elsewhere ("0 need you here
+· 2 elsewhere"), so the two numbers add up to the sidebar's count across every
+workspace. Errors are counted apart from asks, and hovering the count breaks each
+workspace's share down by kind. Clicking it opens the Inbox on the newest ask, as
+the sidebar's count does. Opened from the title bar or ⌘⇧I, the Inbox returns to
+the item you left, or to the newest of the kind you last looked at. When you come
+back after merges or failures, **Since you left** sits in the same row: click it
+for the time range and each pull request, or dismiss it for that absence. The
+subscription limit lives in the title bar only. Digests that changed nothing for you fold into one update line, together
 with the orchestrator's replies to them. These always stand on their own:
 merges, deliveries, failures, questions, boot and away digests, and replies that
 ask you something. **Show all activity** in the header shows everything, and so

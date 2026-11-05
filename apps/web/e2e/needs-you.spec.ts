@@ -91,12 +91,10 @@ test("the pill opens every workspace's items by kind, and Open thread lands on t
   const sections = inbox(page).getByTestId("inbox-section");
   await expect(sections.first()).toHaveAttribute("data-section", "errors");
   await expect(sections.nth(1)).toHaveAttribute("data-section", "approvals");
-  // The list has focus, its first item shown beside it.
+  // The list has focus; from the pill, the newest ask is shown beside it, not the error listed
+  // first.
   await expect(inbox(page).getByTestId("inbox-list")).toBeFocused();
-  await expect(detail(page)).toHaveAttribute(
-    "data-key",
-    (await inbox(page).getByTestId("inbox-item").first().getAttribute("data-key"))!,
-  );
+  await expect(detail(page)).toHaveAttribute("data-kind", /^(approval|question|plan)$/);
   // A strip heads it with every category and its count, in the list's order.
   const categories = inbox(page).getByTestId("needs-you-strip").getByTestId("needs-you-category");
   await expect(categories.nth(0)).toHaveAttribute("data-category", "errors");
@@ -187,6 +185,8 @@ test("keys: j and k move, 2 picks, ⌘⏎ sends, ⌘Z takes it back, ⏎ opens t
   await openInbox(page);
   const items = inbox(page).getByTestId("inbox-item");
   const key = (index: number) => items.nth(index).getAttribute("data-key");
+  // From the top of the list.
+  await items.first().click();
   await expect(detail(page)).toHaveAttribute("data-key", (await key(0))!);
   await page.keyboard.press("j");
   await expect(detail(page)).toHaveAttribute("data-key", (await key(1))!);
@@ -250,27 +250,30 @@ test("a wait's Done resolves it, and Open thread lands on the message that added
 test("⌘⇧U and ⌘⇧Y step through what needs you, each at its thread", async ({ page }) => {
   await start(page);
   await openInbox(page);
-  const threads = await inbox(page)
-    .getByTestId("inbox-item")
-    .evaluateAll((all) => all.map((each) => each.getAttribute("data-thread-id")));
+  const items = inbox(page).getByTestId("inbox-item");
+  const threads = await items.evaluateAll((all) =>
+    all.map((each) => each.getAttribute("data-thread-id")),
+  );
+  const keys = await items.evaluateAll((all) => all.map((each) => each.getAttribute("data-key")));
   expect(threads.length).toBeGreaterThan(2);
+  // The pill opened on the newest ask: the steps go on from there.
+  const first = keys.indexOf(await detail(page).getAttribute("data-key"));
+  expect(first).toBeGreaterThanOrEqual(0);
   await page.keyboard.press("Escape");
   await expect(inbox(page)).toBeHidden();
-  const at = (index: number) => new RegExp(`/t/${threads[index]}$`);
+  const nth = (step: number) => (first + step) % threads.length;
+  const at = (step: number) => new RegExp(`/t/${threads[nth(step)]}$`);
 
-  // From the first shown, the next.
+  // From the one shown, the next.
   await page.keyboard.press("ControlOrMeta+Shift+U");
   await expect(page).toHaveURL(at(1));
   await page.keyboard.press("ControlOrMeta+Shift+U");
   await expect(page).toHaveURL(at(2));
   await page.keyboard.press("ControlOrMeta+Shift+Y");
   await expect(page).toHaveURL(at(1));
-  // The Inbox opens on the item the steps landed on.
-  await pill(page).click();
-  await expect(detail(page)).toHaveAttribute(
-    "data-key",
-    (await inbox(page).getByTestId("inbox-item").nth(1).getAttribute("data-key"))!,
-  );
+  // Opened plainly (⌘⇧I), the Inbox opens on the item the steps landed on.
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(detail(page)).toHaveAttribute("data-key", keys[nth(1)]!);
 });
 
 test("Later puts an item away, Back now brings it, and Dismiss holds a failure behind Undo", async ({

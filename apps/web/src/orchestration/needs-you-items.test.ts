@@ -13,8 +13,11 @@ import { describe, expect, it } from "vitest";
 import { askOf, memoryAskOf, workerAskOf } from "./ask-model";
 import type { FailureItem } from "./needs-you-model";
 import {
+  kindsText,
   needsYouGroups,
   needsYouSections,
+  newestAsk,
+  type NeedsYouItem,
   sectionOf,
   sectionsIn,
   stepItem,
@@ -301,5 +304,37 @@ describe("needsYouSections", () => {
     expect(sectionOfWait("action")).toBe("steps");
     expect(sectionOfWait("review")).toBe("reviews");
     expect(sectionOfWait("draft")).toBe("drafts");
+  });
+});
+
+/** A bare item of `kind`, asked at `when`. */
+const at = (key: string, kind: NeedsYouItem["kind"], when?: number): NeedsYouItem => ({
+  key,
+  ids: [key],
+  kind,
+  title: key,
+  where: "Worker",
+  threadId: undefined,
+  owned: true,
+  at: when,
+});
+
+describe("newestAsk and kindsText", () => {
+  it("opens on the newest request, then other waits, then errors", () => {
+    const error = at("e", "failure", 9);
+    const waiting = at("w", "wait", 8);
+    expect(newestAsk([error, at("q", "question", 1), at("a", "approval", 4)])?.key).toBe("a");
+    expect(newestAsk([error, waiting])?.key).toBe("w");
+    expect(newestAsk([at("e1", "failure", 1), error])?.key).toBe("e");
+    expect(newestAsk([])).toBeUndefined();
+    // What keeps no time is oldest.
+    expect(newestAsk([at("x", "question"), at("y", "question", 1)])?.key).toBe("y");
+  });
+
+  it("says what items ask by kind, errors apart", () => {
+    expect(kindsText([at("q", "question", 1), at("e", "failure", 2), at("e2", "failure")])).toBe(
+      "2 errors, 1 question",
+    );
+    expect(kindsText([])).toBe("");
   });
 });

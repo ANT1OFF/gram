@@ -48,11 +48,22 @@ test("the header counts what runs, waits, is in review and merged, and opens eac
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("workers-list")).toHaveCount(0);
 
-  // Nothing in Gram waits on the user: the one ask is billing-api's, so no amber here.
+  // Nothing in Gram waits on the user: the ask is billing-api's and the error a solo thread's.
+  // The header says so beside the sidebar's count across every workspace, and the two add up.
   const waiting = header.getByTestId("status-waiting");
-  await expect(waiting).toHaveAccessibleName("0 waiting on you, open Inbox");
+  await expect(waiting).toHaveAccessibleName("0 need you here, 2 elsewhere, open Inbox");
+  await expect(waiting).toHaveAttribute("data-count", "0");
+  await expect(waiting.getByTestId("status-elsewhere")).toHaveAttribute("data-count", "2");
+  await expect(page.getByTestId("overview-needs-you")).toHaveAttribute("data-count", "2");
+  await waiting.hover();
+  const hint = page.getByTestId("status-waiting-hint");
+  await expect(hint).toContainText("Here: nothing needs you");
+  await expect(hint).toContainText("billing-api: 1 question");
+  await expect(hint).toContainText("1 error");
+  // It opens the Inbox on the newest ask elsewhere, not on the error listed first.
   await waiting.click();
   await expect(page.getByTestId("inbox")).toBeVisible();
+  await expect(page.getByTestId("inbox-detail")).toContainText("refund webhook");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("inbox")).toBeHidden();
 
@@ -121,14 +132,37 @@ test("finding a folded reply shows all activity and lands on it", async ({ page 
   ).toBeInViewport();
 });
 
-test("Since you left is one line of what merged while you were away", async ({ page }) => {
-  await openRealistic(page);
-  const since = page.getByTestId("since-you-left");
+test("one row above the chat: counts, Since you left on request, no second usage meter", async ({
+  page,
+}) => {
+  const made = await openRealistic(page);
+  const header = page.getByTestId("status-header");
+  // Since you left is a chip in the header's row, not a band of its own.
+  const since = header.getByTestId("since-you-left");
   await expect(since).toBeVisible();
-  await expect(since.getByTestId("since-merged")).toContainText("2 merged:");
-  // One line: no taller than a row.
-  const box = await since.boundingBox();
+  await expect(since.getByTestId("since-merged")).toHaveText("2 merged");
+  const box = await header.boundingBox();
   expect(box?.height ?? 0).toBeLessThanOrEqual(40);
-  await since.getByRole("button", { name: "Dismiss" }).click();
-  await expect(since).toHaveCount(0);
+  // The usage meter is the title bar's alone.
+  await expect(header.getByTestId("status-limit")).toHaveCount(0);
+  // The running workers' names are on hover, not in the row.
+  await expect(header.getByTestId("status-running")).toHaveText(/^\d+\s*running$/);
+
+  // The time range and each PR on request.
+  await since.getByTestId("since-you-left-open").click();
+  const detail = page.getByTestId("since-you-left-detail");
+  await expect(detail).toBeVisible();
+  await expect(detail).toContainText(/Since you left\s*\d{2}:\d{2} to \d{2}:\d{2}/);
+  await expect(detail.getByTestId("since-merged-detail")).toContainText("2 merged:");
+  await page.keyboard.press("Escape");
+  await expect(detail).toBeHidden();
+
+  // Dismissed, it stays gone for that absence, even as the view opens again.
+  await since.getByRole("button", { name: "Dismiss Since you left" }).click();
+  await expect(header.getByTestId("since-you-left")).toHaveCount(0);
+  await page.getByTestId("overview-needs-you").click();
+  await page.keyboard.press("Escape");
+  await openOrchestrator(page, made.orchestratorThreadId);
+  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.getByTestId("since-you-left")).toHaveCount(0);
 });

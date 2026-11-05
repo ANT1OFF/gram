@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useLayoutEffect, useMemo } from "react";
 
 import { useApi } from "@/api/context";
-import { toggleInbox, useInboxStore } from "@/inbox/inbox-store";
+import { showInboxAsks, toggleInbox, useInboxStore } from "@/inbox/inbox-store";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { useLayoutStore } from "@/stores/layout";
 import { useRequestRevealStore, useRevealStore } from "@/stores/reveal";
@@ -13,6 +13,7 @@ import { useViewStore } from "@/views/view-store";
 
 import { useDerivedAsks } from "./needs-you-store";
 import {
+  kindsText,
   needsYouCounts,
   stepItem,
   type NeedsYouGroup,
@@ -192,9 +193,15 @@ export function useNeedsYouCounts(): NeedsYouCounts {
   return useMemo(() => needsYouCounts(groups), [groups]);
 }
 
-/** Needs you's count and the Inbox's toggle, for the title bar's button and the sidebar's pills. */
+/**
+ * Needs you's count across every workspace, what it is by kind ("1 question, 1 error") and the
+ * Inbox's toggle, for the title bar's button, and `openAsks` for the sidebar's pills: a count opens
+ * on the newest ask, not the first error.
+ */
 export function useNeedsYou() {
   const { total } = useNeedsYouCounts();
+  const { items } = useNeedsYouList();
+  const kinds = useMemo(() => kindsText(items), [items]);
   const hint = useShortcutHint("inbox.open");
-  return { count: total, open: toggleInbox, label: "Inbox", hint };
+  return { count: total, kinds, open: toggleInbox, openAsks: showInboxAsks, label: "Inbox", hint };
 }

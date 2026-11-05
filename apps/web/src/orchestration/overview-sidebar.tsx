@@ -396,11 +396,13 @@ export function useCarryOverviewFocus(sidebar: ShellFit["sidebar"]): void {
  * hover.
  */
 function NeedsYou() {
-  const { count, label, hint, open } = useNeedsYou();
+  const { count, kinds, label, hint, openAsks } = useNeedsYou();
   // A true first run, with no thread yet, has nothing to need you: the welcome is the one thing
   // to look at, without a count beside it.
   if (useBeforeSetup()) return null;
   const words = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
+  // Its scope and kinds are said on hover, so it reads beside a workspace's own count.
+  const scope = count > 0 ? `${words} across all workspaces: ${kinds}` : words;
   // Nothing waiting, it stays as quiet grey words, so the column doesn't jump.
   return (
     <button
@@ -409,8 +411,8 @@ function NeedsYou() {
       data-testid="overview-needs-you"
       data-count={count}
       aria-label={withHint(words, hint)}
-      title={withHint(label, hint)}
-      onClick={open}
+      title={`${withHint(label, hint)}\n${scope}`}
+      onClick={openAsks}
       className={cn(
         "flex w-full shrink-0 items-center gap-2 rounded-(--radius-md) border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
         count > 0
