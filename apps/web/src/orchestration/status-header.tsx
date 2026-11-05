@@ -6,6 +6,7 @@ import { useMemo, type ReactNode } from "react";
 import { Hint } from "@/components/hint";
 import { Switch } from "@/components/ui/switch";
 import { useHistoryStore } from "@/history/history-view";
+import { showInbox } from "@/inbox/inbox-store";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { LimitBar, useLimitsNow } from "@/shell/usage-meter";
@@ -16,7 +17,7 @@ import { limitSummaryText, meterText, resetText } from "@/usage/limit-format";
 
 import { useOpenBoard } from "./open-board";
 import { namesText, statusHeaderCounts, type HeaderWorker } from "./status-header-model";
-import { openNeedsYou, useNeedsYouList } from "./use-needs-you";
+import { useNeedsYouList } from "./use-needs-you";
 import { useOrchestratorLedgers } from "./use-orchestration";
 import { useWorkersListStore } from "./workers-list";
 import { workersByTab } from "./workers-model";
@@ -167,13 +168,13 @@ function StatusStrip({
         </Item>
         <Item
           testId="status-waiting"
-          label={`${waiting} waiting on you, open Needs you`}
+          label={`${waiting} waiting on you, open Inbox`}
           hint={
             waiting === 0
               ? "Nothing waits on you"
               : `${waiting} ${plural(waiting, "item waits", "items wait")} on you`
           }
-          onClick={openNeedsYou}
+          onClick={() => showInbox({ workspaceId })}
         >
           <Inbox
             aria-hidden

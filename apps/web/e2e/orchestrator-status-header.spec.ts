@@ -50,12 +50,11 @@ test("the header counts what runs, waits, is in review and merged, and opens eac
 
   // Nothing in Gram waits on the user: the one ask is billing-api's, so no amber here.
   const waiting = header.getByTestId("status-waiting");
-  await expect(waiting).toHaveAccessibleName("0 waiting on you, open Needs you");
+  await expect(waiting).toHaveAccessibleName("0 waiting on you, open Inbox");
   await waiting.click();
-  await expect(
-    page.getByTestId("needs-you-popover").or(page.getByTestId("needs-you-panel")),
-  ).toBeVisible();
+  await expect(page.getByTestId("inbox")).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(page.getByTestId("inbox")).toBeHidden();
 
   const merged = header.getByTestId("status-merged");
   await expect(merged).toHaveAccessibleName(/^[1-9]\d* merged today, open History$/);
