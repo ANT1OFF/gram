@@ -1,5 +1,5 @@
 import type { ThreadId } from "@gram/contracts";
-import { useLocation, useParams } from "@tanstack/react-router";
+import { useParams, useRouterState } from "@tanstack/react-router";
 import { useLayoutEffect } from "react";
 
 import { useServerSettings } from "@/settings-sync/store";
@@ -50,8 +50,10 @@ export function useShellLayout() {
   // A grid of panes shares the chat's place among its threads, so it needs the room too.
   const grid = useLayoutStore((s) => s.grid.preset !== "1" && !s.grid.maximized);
   const chatBusy = board || orchestrator || grid;
-  const page = useLocation({
-    select: (location) => shellPage(location.pathname),
+  // The page on screen, not the one being loaded: a lazy route keeps the old page up until its code
+  // arrives, and the shell around it changing first showed Settings' Back strip beside the thread.
+  const page = useRouterState({
+    select: (state) => shellPage((state.resolvedLocation ?? state.location).pathname),
   });
 
   // Settings is focused: the overview gives its column to a narrow strip with Back, the compact

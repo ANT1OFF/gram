@@ -935,3 +935,59 @@ test("an untouched bottom viewport keeps following each measured token batch", a
     contentType: "application/json",
   });
 });
+
+test("a failed turn's card holds still under the pointer while the transcript grows, then follows", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(threadRow(page, "t-deps")).toBeVisible();
+  const id = await page.evaluate(async () => {
+    const mock = window.gramMock!;
+    const [created] = mock.seedLongThreads({ count: 1, turns: 0 });
+    await mock.rename(created!, "Synthetic held card");
+    for (let i = 0; i < 12; i++) {
+      mock.simulateMessage(created!, {
+        id: `scroll-${i}`,
+        role: i % 2 === 0 ? "user" : "assistant",
+        parts: [{ type: "text", text: `Invented earlier message ${i}.\n\n`.repeat(4) }],
+      });
+    }
+    mock.simulateTurnError(
+      created!,
+      { kind: "rateLimit", httpStatus: 429, retryable: true, text: "Synthetic rate limit." },
+      "Run the invented suite",
+    );
+    return created!;
+  });
+  await threadRow(page, id).click();
+  const card = page.locator('[data-testid="agent-error"][data-state="failed"]');
+  await expect(card).toBeInViewport();
+  const gap = () =>
+    page
+      .getByTestId("transcript")
+      .evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect.poll(gap).toBeLessThan(2);
+  const retry = card.getByRole("button", { name: "Retry", exact: true });
+  await retry.hover();
+  const before = (await retry.boundingBox())!.y;
+
+  // A new turn streams in under the card, as one that starts meanwhile would: following would scroll
+  // the card up from under the pointer.
+  await page.evaluate(
+    (targetId) =>
+      window.gramMock!.simulateChunks(targetId as never, "scroll-live" as never, [
+        { type: "start", messageId: "scroll-live" },
+        { type: "text-start", id: "text" },
+        { type: "text-delta", id: "text", delta: "Invented streamed line.\n\n".repeat(20) },
+      ]),
+    id,
+  );
+  await expect(page.locator('[data-message-id="scroll-live"]')).toHaveCount(1);
+  await grow(page, id);
+  expect(Math.abs((await retry.boundingBox())!.y - before)).toBeLessThan(1);
+
+  // Once the pointer leaves the transcript, it follows to what arrived meanwhile.
+  await page.mouse.move(5, 450);
+  await expect.poll(gap).toBeLessThan(2);
+  expect((await retry.boundingBox())?.y ?? -Infinity).toBeLessThan(before);
+});

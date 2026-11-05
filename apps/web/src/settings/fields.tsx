@@ -120,6 +120,7 @@ export function SettingRow({
   disabledReason,
   detail,
   learnMore,
+  status,
   children,
 }: {
   label: string;
@@ -130,6 +131,8 @@ export function SettingRow({
   htmlFor?: string;
   /** What the one line leaves out, behind the ⓘ beside the name. */
   learnMore?: ReactNode;
+  /** Beside the name, where "Saved" shows: such as how to save a draft not saved yet. */
+  status?: ReactNode;
   /** Puts the default back; absent while the value is the default. */
   onReset?: (() => void) | undefined;
   /** Why the last change to this setting failed, shown under the row. */
@@ -153,6 +156,7 @@ export function SettingRow({
         <div className="flex min-w-0 flex-[1_1_14rem]">
           <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
             {onReset && <ResetButton label={label} onReset={onReset} />}
+            {status}
             <SavedMark row={row} />
           </RowLabel>
         </div>

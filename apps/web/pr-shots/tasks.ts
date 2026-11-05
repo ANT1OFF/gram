@@ -142,6 +142,9 @@ export const TASKS: readonly Task[] = [
     path: "/t/t-docs",
     goal: "Retry the failed prompt and see its receipt",
     prepare: async (p) => {
+      // t-docs plays its README turn on load; the failed turn follows it, as the server would. A
+      // base from before the hook just doesn't wait.
+      await p.evaluate(() => window.gramMock!.turnEnded?.("t-docs" as never));
       await p.evaluate(() =>
         window.gramMock!.simulateTurnError(
           "t-docs" as never,

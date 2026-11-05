@@ -276,6 +276,39 @@ test("a worker's hover card reads it: title, station, now line, PR and a 24-hour
   await expect(card.getByTestId("overview-worker-card-time")).toHaveText(/^\d{2}:\d{2}$/);
 });
 
+test("opening a worker closes its hover card until a fresh hover; a focus still opens it", async ({
+  page,
+}) => {
+  const made = await start(page);
+  const row = worker(page, made.inReview);
+  const card = page.getByTestId("overview-worker-card");
+  await row.hover();
+  await expect(card).toBeVisible();
+  await row.click();
+  await expect(page).toHaveURL(new RegExp(`/t/${made.inReview}`));
+  await expect(card).toHaveCount(0);
+  // The pointer resting or moving on the row it picked brings nothing back over the thread.
+  const box = (await row.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2 + 4, box.y + box.height / 2);
+  await page.waitForTimeout(600);
+  await expect(card).toHaveCount(0);
+  // Leaving the row and coming back is a fresh hover.
+  await page.mouse.move(1200, 400);
+  await row.hover();
+  await expect(card).toBeVisible();
+
+  // From the keyboard: arriving on the row opens the card, Enter opens the worker and closes it.
+  await page.mouse.move(1200, 400);
+  await expect(card).toHaveCount(0);
+  await row.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowUp");
+  await expect(row).toBeFocused();
+  await expect(card).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(card).toHaveCount(0);
+});
+
 test("a worker closed with its worktree leaves the overview, and the others stay", async ({
   page,
 }) => {
