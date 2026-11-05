@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { closeMenus } from "./titlebar-menu";
+
 import { openHeaderMore, openMore, openThreadMenu as openThreadMenuOf } from "./more-menu";
 import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow, upToOrchestrator } from "./thread-row";
@@ -128,10 +130,7 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   await bar.getByTestId("titlebar-overflow").click();
   await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("menu-memory")).toBeVisible();
-  await page.keyboard.press("Escape");
-  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
-    await page.keyboard.press("Escape");
-  }
+  await closeMenus(page);
   await expect(page.getByTestId("titlebar-overflow-menu")).toBeHidden();
   await expect(page.getByTestId("orchestrator-banner")).toHaveCount(0);
   // A paused workspace says so in its orchestrator's thread, with the way to resume it.
@@ -1131,10 +1130,7 @@ test("the Board shows workers by station, pauses from its header, and fits a nar
   await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("folded-tidy")).toBeVisible();
   await expect(page.getByTestId("folded-pause")).toBeVisible();
-  await page.keyboard.press("Escape");
-  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
-    await page.keyboard.press("Escape");
-  }
+  await closeMenus(page);
   await expect(bar.getByTestId("rail-waiting-chip")).toBeVisible();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -1486,10 +1482,7 @@ test("Tidy up asks the orchestrator to put its board in order, from the Board or
   await expect(tidy).toHaveAttribute("aria-disabled", "true");
   await tidy.click({ force: true });
   await expect(toast).toHaveCount(1);
-  await page.keyboard.press("Escape");
-  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
-    await page.keyboard.press("Escape");
-  }
+  await closeMenus(page);
 
   // It is an ordinary message of the user's in the orchestrator's thread.
   await pickChat(page);

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { closeMenus } from "./titlebar-menu";
+
 import { slowdown } from "./slowdown";
 import { pressFirstWorkspaceKey } from "./thread-row";
 
@@ -31,13 +33,6 @@ const start = async (page: Page) => {
 };
 
 const titlebar = (page: Page) => page.getByTestId("shell-titlebar");
-
-/** Closes the title bar's "…" and the submenu open in it. */
-const closeMenus = async (page: Page) => {
-  const root = page.getByTestId("titlebar-overflow-menu");
-  for (let i = 0; i < 2 && (await root.isVisible()); i++) await page.keyboard.press("Escape");
-  await expect(root).toBeHidden();
-};
 
 /** Opens the title bar's "…", then its workspace's submenu, and resolves with its Tidy up. */
 const openTidy = async (page: Page) => {

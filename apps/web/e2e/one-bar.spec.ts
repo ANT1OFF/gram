@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { closeMenus } from "./titlebar-menu";
+
 // One bar, everywhere: the title bar carries a thread's header when the grid shows it alone in
 // Chat, an orchestrator's and a worker's as well as a solo thread's, and Board's controls on Board.
 // The branch is the agents' working detail and stays out of it and its menu, in More…. The bar's
@@ -176,8 +178,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   }
   await expect(viewGroup.getByRole("menuitemradio")).toHaveCount(6);
   await expect(viewGroup.getByTestId("menu-history")).toContainText("H");
-  await page.keyboard.press("Escape");
-  if (await more.isVisible()) await page.keyboard.press("Escape");
+  await closeMenus(page);
   await expect(more).toBeHidden();
   await expect(bar.getByRole("button", { name: /^Inbox/ })).toBeVisible();
   await expect(bar.getByRole("button", { name: /right panel$/ })).toBeVisible();
@@ -205,8 +206,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await more.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("folded-tidy")).toBeVisible();
   await expect(page.getByTestId("folded-pause")).toBeVisible();
-  await page.keyboard.press("Escape");
-  if (await more.isVisible()) await page.keyboard.press("Escape");
+  await closeMenus(page);
   await expect(page.getByTestId("board-header")).toHaveCount(1);
   await expect(page.getByTestId("rail-board").getByTestId("board-header")).toHaveCount(0);
   await fitsTheBar(page);
@@ -223,8 +223,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await more.getByTestId("menu-thread").click();
   await expect(page.getByTestId("titlebar-menu-thread")).toBeVisible();
   await expect(page.getByTestId("titlebar-menu-thread").getByTestId("branch-chip")).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  if (await more.isVisible()) await page.keyboard.press("Escape");
+  await closeMenus(page);
   await fitsTheBar(page);
 
   // A solo thread: no workspace views or orchestration buttons, which act on work it isn't part of.
@@ -332,10 +331,7 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
   await expect(
     page.getByTestId("titlebar-menu-view").getByTestId("folded-board-layout"),
   ).toBeVisible();
-  await page.keyboard.press("Escape");
-  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
-    await page.keyboard.press("Escape");
-  }
+  await closeMenus(page);
   await page.keyboard.press("ControlOrMeta+Alt+1");
   await page.setViewportSize({ width: 640, height: 720 });
 

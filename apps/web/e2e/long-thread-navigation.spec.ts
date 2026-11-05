@@ -4,6 +4,8 @@ import type { GramUIMessage } from "@gram/contracts";
 import { seedTheme } from "./seed-theme";
 import { setLayout } from "./layout";
 import {
+  closeContents,
+  closeMenus,
   contentsTrigger,
   openBarSubmenu,
   openContents,
@@ -424,12 +426,9 @@ for (const touch of [false, true]) {
       await jump(page, 119);
       await expect(contents).toBeFocused();
       await openContents(page);
-      await page.keyboard.press("Escape");
+      // Escape steps back out of Contents, and in the bar's "…" out of View and the menu too.
+      await closeContents(page);
       await expect(menu).toBeHidden();
-      // In the bar's "…", an Escape that only stepped back out of Contents takes one more.
-      if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
-        await page.keyboard.press("Escape");
-      }
       await expect(contents).toBeFocused();
     });
   });
@@ -553,8 +552,7 @@ test("the rail switches at actual 959 and 960 px pane widths", async ({ page }) 
   // Without the rail, Contents is still a click away: in the title bar's "…".
   await openBarSubmenu(page, "view");
   await expect(page.getByTestId("menu-contents")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
+  await closeMenus(page);
   await page.setViewportSize({ width: Math.round(1600 + 960 - initial), height: 1000 });
   await expect.poll(async () => (await transcript.boundingBox())!.width).toBe(960);
   await expect(rail).toBeVisible();

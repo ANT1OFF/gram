@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { closeMenus } from "./titlebar-menu";
+
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // The Board view: tidying up, Waiting on you, folds and every way that opens it. Mock state lives
@@ -60,10 +62,7 @@ test("the header tidies up, pauses and resumes, and shows archived work on askin
   await more.click();
   await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("folded-tidy")).toHaveAttribute("data-sent", /^(sent|queued)$/);
-  await page.keyboard.press("Escape");
-  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
-    await page.keyboard.press("Escape");
-  }
+  await closeMenus(page);
   await page
     .getByTestId("view-switcher")
     .getByRole("radio", { name: /^Chat\b/ })
@@ -88,10 +87,7 @@ test("the header tidies up, pauses and resumes, and shows archived work on askin
   await more.click();
   await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("folded-pause")).toHaveText(/^Pause workspace/);
-  await page.keyboard.press("Escape");
-  if (await page.getByTestId("titlebar-overflow-menu").isVisible()) {
-    await page.keyboard.press("Escape");
-  }
+  await closeMenus(page);
 
   // Archived workers are off their lines until asked for, and the choice is kept per workspace.
   const toggle = header.getByTestId("rail-show-archived");

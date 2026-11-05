@@ -3,7 +3,13 @@ import type { GramUIMessage } from "@gram/contracts";
 
 import { seedTheme } from "./seed-theme";
 import { setLayout } from "./layout";
-import { closeContents, openBarSubmenu, openContents, titlebarMore } from "./titlebar-menu";
+import {
+  closeContents,
+  closeMenus,
+  openBarSubmenu,
+  openContents,
+  titlebarMore,
+} from "./titlebar-menu";
 import { threadRow } from "./thread-row";
 
 declare global {
@@ -301,8 +307,7 @@ for (const provider of ["claude", "codex"] as const) {
     await expect(contents).toHaveCount(0);
     await openBarSubmenu(page, "view");
     await expect(page.getByTestId("menu-contents")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Escape");
+    await closeMenus(page);
     await expect(
       page.getByTestId("conversation-rail").locator('[aria-current="location"]'),
     ).toHaveCount(1);
@@ -513,8 +518,7 @@ if (phase !== "before") {
       await page.evaluate(() => window.gramMock!.simulateDisconnect());
       await openBarSubmenu(page, "view");
       await expect(page.getByTestId("menu-contents")).toBeVisible();
-      await page.keyboard.press("Escape");
-      await page.keyboard.press("Escape");
+      await closeMenus(page);
       await expect(transcript.locator('[data-message-id="long-u80"]')).toBeInViewport();
       const fork = await page.evaluate(
         async (id) =>

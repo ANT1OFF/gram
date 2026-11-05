@@ -53,11 +53,22 @@ export async function contentsTrigger(page: Page): Promise<Locator> {
 /** Closes an open Contents with Escape, and the title bar's menus around it if they stay open. */
 export async function closeContents(page: Page): Promise<void> {
   const toc = page.getByTestId("toc");
-  await toc.press("Escape");
+  await expect(toc).toBeVisible();
+  await closeMenus(page);
   await expect(toc).toBeHidden();
-  const root = page.getByTestId("titlebar-overflow-menu");
-  for (let i = 0; i < 2 && (await root.isVisible()); i++) await page.keyboard.press("Escape");
-  await expect(root).toBeHidden();
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeHidden();
+}
+
+/**
+ * Closes every open menu with Escape, one at a time and waiting for each to go, so no Escape
+ * reaches the page under them: Contents is View's, and View the bar's "…"'s.
+ */
+export async function closeMenus(page: Page): Promise<void> {
+  const menus = page.getByRole("menu");
+  for (let open = await menus.count(); open > 0; open = await menus.count()) {
+    await page.keyboard.press("Escape");
+    await expect(menus).toHaveCount(open - 1);
+  }
 }
 
 /**

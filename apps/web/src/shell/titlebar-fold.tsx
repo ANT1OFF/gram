@@ -22,9 +22,9 @@ import {
   Settings2,
   Users,
 } from "lucide-react";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Hint } from "@/components/hint";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
@@ -55,6 +55,9 @@ import { FOLD_ALL, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 // own actions and Board's layout into it too. Each item does what its button did.
 
 const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
+
+/** How soon after the menu closes a focus on its trigger is the one it handed back. */
+const FOCUS_RETURN_MS = 500;
 
 const TIDY_HINT =
   "Ask the orchestrator to archive what's done, fix groups, stages and plans, close settled questions and refresh its memory";
@@ -489,39 +492,66 @@ function OverflowMenu({
   const workspace = orchestration && state !== undefined;
   // How many times the menu has opened: what it asked last time doesn't carry over.
   const [opening, setOpening] = useState(0);
+  // The trigger's words show on hover and on Tab, but not as the menu closes and hands focus
+  // back: they would stand over what is under the bar, a banner's button say, as the user goes on.
+  const [hint, setHint] = useState(false);
+  const closedAt = useRef(0);
+  // Closed from a submenu (a chapter in View ▸ Contents, say), focus comes back here too, not to
+  // the submenu's trigger that closes with it.
+  const trigger = useRef<HTMLButtonElement>(null);
   const menu = (
     <Menu.Root
       onOpenChange={(open) => {
-        if (open) setOpening((n) => n + 1);
+        if (open) {
+          setOpening((n) => n + 1);
+          setHint(false);
+        } else closedAt.current = performance.now();
       }}
     >
-      <Hint
-        label={"More\nThe thread's, the workspace's and the window's controls"}
-        side="bottom"
-        render={
-          <Menu.Trigger
-            data-testid="titlebar-overflow"
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="More"
-                className={cn(
-                  "text-muted-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
-                  className,
-                )}
-              />
-            }
-          />
-        }
+      <Tooltip
+        open={hint}
+        onOpenChange={(open, details) => {
+          if (details.reason === "escape-key") details.allowPropagation();
+          if (open && details.reason === "trigger-focus") {
+            if (performance.now() - closedAt.current < FOCUS_RETURN_MS) return;
+          }
+          setHint(open);
+        }}
       >
-        <Ellipsis />
-      </Hint>
+        <TooltipTrigger
+          render={
+            <Menu.Trigger
+              ref={trigger}
+              data-testid="titlebar-overflow"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="More"
+                  className={cn(
+                    "text-muted-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
+                    className,
+                  )}
+                />
+              }
+            />
+          }
+        >
+          <Ellipsis />
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="whitespace-pre-line">
+          {"More\nThe thread's, the workspace's and the window's controls"}
+        </TooltipContent>
+      </Tooltip>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
           {/* At most seven items, as every menu: the thread's, the workspace's and the window's
               each a submenu of its own, Workers beside them. */}
-          <Menu.Popup data-testid="titlebar-overflow-menu" className={cn(MENU_POPUP, "w-64")}>
+          <Menu.Popup
+            data-testid="titlebar-overflow-menu"
+            finalFocus={trigger}
+            className={cn(MENU_POPUP, "w-64")}
+          >
             <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
               {thread !== undefined && <ThreadItems threadId={thread.id} items={thread.items} />}
               {workspace && (
