@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.9.0](https://github.com/ANT1OFF/gram/compare/v1.8.0...v1.9.0) (2026-11-05)
+
+
+### Features
+
+* a visible Focus review action and named review tabs ([#149](https://github.com/ANT1OFF/gram/issues/149)) ([b2b4e0b](https://github.com/ANT1OFF/gram/commit/b2b4e0b5ce2b9af5fdb6ff81e780b6c3610fa9bb))
+* Board defaults to a compact task grid ([#151](https://github.com/ANT1OFF/gram/issues/151)) ([0a590d2](https://github.com/ANT1OFF/gram/commit/0a590d27314206ae3de267ba9cc182076e57f374))
+* clearer secondary text, less repeated metadata, a balanced reading column ([#169](https://github.com/ANT1OFF/gram/issues/169)) ([e81c8b4](https://github.com/ANT1OFF/gram/commit/e81c8b4256a19f5a092c460334bf779cb108bead))
+* design tokens for type, spacing and radius, with a drift lint ([#158](https://github.com/ANT1OFF/gram/issues/158)) ([b297434](https://github.com/ANT1OFF/gram/commit/b297434f8ef0fc30a252a6c9659e4db6b9e129e8))
+* feedback during and after actions ([#168](https://github.com/ANT1OFF/gram/issues/168)) ([1b03f1d](https://github.com/ANT1OFF/gram/commit/1b03f1dc2dabea1384b70eaffa4181beea222700))
+* grouped transcript updates, honest approval states and scopes ([#152](https://github.com/ANT1OFF/gram/issues/152)) ([a9453e7](https://github.com/ANT1OFF/gram/commit/a9453e711963d991cdccc74463c8f623362612b6))
+* leaner title bar, one selection style, first-run primary action ([#161](https://github.com/ANT1OFF/gram/issues/161)) ([ce412fd](https://github.com/ANT1OFF/gram/commit/ce412fd7ed83117ef88d8493c587d81067709dde))
+* new workers start as Starting… with a short title; New names where it runs; first run leads with the repository ([#167](https://github.com/ANT1OFF/gram/issues/167)) ([28c40c2](https://github.com/ANT1OFF/gram/commit/28c40c2e19d5613729c284791f07573e597db90e))
+* one header row over the orchestrator chat, scoped attention counts, Inbox opens on the newest ask ([#166](https://github.com/ANT1OFF/gram/issues/166)) ([0a6bbe7](https://github.com/ANT1OFF/gram/commit/0a6bbe78adaba5071e90b3bbd82977aba202389e))
+* one Inbox for everything that needs you ([#156](https://github.com/ANT1OFF/gram/issues/156)) ([8f23d5e](https://github.com/ANT1OFF/gram/commit/8f23d5ef1cb9d8826af0c4f5ffcdc57cdef08479))
+* orchestrator status header and a quieter chat ([#154](https://github.com/ANT1OFF/gram/issues/154)) ([7c9a8e5](https://github.com/ANT1OFF/gram/commit/7c9a8e5f23b67831d053f93d1aefcd90270b8653))
+* settings without an Advanced page, regrouped and polished ([#155](https://github.com/ANT1OFF/gram/issues/155)) ([7fe025f](https://github.com/ANT1OFF/gram/commit/7fe025f1914335f31d98c5411395f0a163a8de61))
+* sidebar search row, active-first rows, bounded Done ([#148](https://github.com/ANT1OFF/gram/issues/148)) ([9f1ab5a](https://github.com/ANT1OFF/gram/commit/9f1ab5a11dec52068d8c7118a2964a8f96c32192))
+* text labels on right-panel tabs ([#143](https://github.com/ANT1OFF/gram/issues/143)) ([7380c69](https://github.com/ANT1OFF/gram/commit/7380c692ec1a535beabe872dcc3afc33d082aaf6))
+* tighter settings, a readable Memory overview and labelled usage ([#153](https://github.com/ANT1OFF/gram/issues/153)) ([be8e6b2](https://github.com/ANT1OFF/gram/commit/be8e6b29e855645bf20ef428d4a8779f3480cd5e))
+
+
+### Bug Fixes
+
+* a worker started from New starts running, with clearer New choices ([#147](https://github.com/ANT1OFF/gram/issues/147)) ([cf3fc7e](https://github.com/ANT1OFF/gram/commit/cf3fc7e42f9f99d0cefa078bc8384708443ec328))
+* ask state, quick answers and jump context stay in sync ([#150](https://github.com/ANT1OFF/gram/issues/150)) ([3356f79](https://github.com/ANT1OFF/gram/commit/3356f79080bcd3b0fe3ab844ea83643bc34326c4))
+* explain why a full-auto merge still needs approval ([#164](https://github.com/ANT1OFF/gram/issues/164)) ([e57a045](https://github.com/ANT1OFF/gram/commit/e57a045b051573ad759e3b52a24f3c29e0df9a50))
+* make unsettled jump wheel coverage deterministic ([#165](https://github.com/ANT1OFF/gram/issues/165)) ([1f06441](https://github.com/ANT1OFF/gram/commit/1f064417cee6b27db7d13673d6f25be45ca64039))
+* **test:** deterministic local-check timeout, profiler and dreams tests ([#163](https://github.com/ANT1OFF/gram/issues/163)) ([c2df38d](https://github.com/ANT1OFF/gram/commit/c2df38df1b7c05c3d9ca1b7fc8701f317d874dc7))
+* the line above the composer is the Undo alone; one count per view ([#162](https://github.com/ANT1OFF/gram/issues/162)) ([2f965bf](https://github.com/ANT1OFF/gram/commit/2f965bfd2da20a198407cce2e3a374ebf4ea6f75))
+
 ## [1.8.0](https://github.com/ANT1OFF/gram/compare/v1.7.0...v1.8.0) (2026-11-04)
 
 
