@@ -7,10 +7,11 @@ import * as nodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { parseGitDiffCapped, type DiffFile } from "./diff.ts";
+import { MAX_DIFF_READ_BYTES, parseGitDiffCapped, type DiffFile } from "./diff.ts";
+import { FILE_DIFF_GIT_ARGS } from "./diff-file.ts";
 import { CheckpointError } from "./errors.ts";
 import { git, gitFailMsg } from "./exec.ts";
-import { Proc } from "./proc.ts";
+import { Proc, type ProcOutput } from "./proc.ts";
 import {
   fail,
   headOid,
@@ -119,19 +120,56 @@ export const diffBetween = (repo: string, from: string, to: string | "worktree")
     const top = yield* repoTopOrFail(repo);
     const base = yield* pinCommit(top, from);
     const target = to === "worktree" ? yield* writeWorktreeTree(top) : yield* pinCommit(top, to);
-    const out = yield* git(top, [
-      "-c",
-      "core.quotepath=false",
-      "-c",
-      "diff.mnemonicPrefix=false",
-      "diff",
-      "--no-color",
-      base,
-      target,
-    ]).pipe(Effect.mapError((e) => new CheckpointError({ message: e.message })));
+    const out = yield* git(
+      top,
+      [
+        "-c",
+        "core.quotepath=false",
+        "-c",
+        "diff.mnemonicPrefix=false",
+        "diff",
+        "--no-color",
+        base,
+        target,
+      ],
+      { maxOutputBytes: MAX_DIFF_READ_BYTES },
+    ).pipe(Effect.mapError((e) => new CheckpointError({ message: e.message })));
     if (out.status !== 0) return yield* fail(gitFailMsg(out, "git diff failed"));
     const { files, note } = parseGitDiffCapped(out.stdout, out.truncated);
     return (note === undefined ? { files } : { files, note }) satisfies CheckpointDiff;
+  });
+
+/**
+ * `git diff` of `paths` alone between a checkpoint and another or the live working tree (untracked
+ * files included), as read up to `maxOutputBytes`; for paging through one file's patch.
+ */
+export const fileDiffBetween = (
+  repo: string,
+  from: string,
+  to: string | "worktree",
+  paths: ReadonlyArray<string>,
+  options: { readonly ignoreWhitespace: boolean; readonly maxOutputBytes: number },
+) =>
+  Effect.gen(function* () {
+    const top = yield* repoTopOrFail(repo);
+    const base = yield* pinCommit(top, from);
+    const target = to === "worktree" ? yield* writeWorktreeTree(top) : yield* pinCommit(top, to);
+    const out = yield* git(
+      top,
+      [
+        ...FILE_DIFF_GIT_ARGS,
+        "diff",
+        "--no-color",
+        ...(options.ignoreWhitespace ? ["-w"] : []),
+        base,
+        target,
+        "--",
+        ...paths,
+      ],
+      { maxOutputBytes: options.maxOutputBytes },
+    ).pipe(Effect.mapError((e) => new CheckpointError({ message: e.message })));
+    if (out.status !== 0) return yield* fail(gitFailMsg(out, "git diff failed"));
+    return out;
   });
 
 /**
@@ -226,6 +264,13 @@ export class Checkpoints extends Context.Service<
       from: string,
       to: string | "worktree",
     ) => Effect.Effect<CheckpointDiff, CheckpointError>;
+    readonly fileDiff: (
+      repo: string,
+      from: string,
+      to: string | "worktree",
+      paths: ReadonlyArray<string>,
+      options: { readonly ignoreWhitespace: boolean; readonly maxOutputBytes: number },
+    ) => Effect.Effect<ProcOutput, CheckpointError>;
     readonly restoreFiles: (repo: string, ref: string) => Effect.Effect<void, CheckpointError>;
     readonly undoTurn: (
       repo: string,
@@ -253,6 +298,8 @@ export const CheckpointsLive = Layer.effect(
     return {
       snapshot: (repo, threadId, turnId) => provide(snapshotCheckpoint(repo, threadId, turnId)),
       diffBetween: (repo, from, to) => provide(diffBetween(repo, from, to)),
+      fileDiff: (repo, from, to, paths, options) =>
+        provide(fileDiffBetween(repo, from, to, paths, options)),
       restoreFiles: (repo, ref) => provide(restoreFiles(repo, ref)),
       undoTurn: (repo, start, end) => provide(undoTurnFiles(repo, start, end)),
       list: (repo, threadId) => provide(listCheckpoints(repo, threadId)),

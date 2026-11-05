@@ -4,6 +4,7 @@
 
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
+import { DIFF_TOO_LARGE_NOTE } from "@gram/contracts/git";
 import * as Effect from "effect/Effect";
 import { openInside } from "./contained.ts";
 import type { ProcError } from "./errors.ts";
@@ -13,7 +14,12 @@ import { MAX_OUTPUT_BYTES, type Proc } from "./proc.ts";
 import { localBaseRef } from "./refs.ts";
 
 export const MAX_VIEW_BYTES = MAX_OUTPUT_BYTES;
-export const DIFF_TOO_LARGE_NOTE = "Diff too large to display";
+export { DIFF_TOO_LARGE_NOTE } from "@gram/contracts/git";
+/**
+ * Bytes of `git diff` output read for a listing. Past `MAX_VIEW_BYTES` the largest files are listed
+ * without their bodies (`too large`), so the rest stay reviewable; past this the diff isn't listed.
+ */
+export const MAX_DIFF_READ_BYTES = 4 * MAX_VIEW_BYTES;
 
 export type DiffFileStatus = "modified" | "new" | "deleted" | "renamed";
 
@@ -24,7 +30,7 @@ export interface DiffFile {
   readonly removed: number;
   /** From the first `@@` hunk onward. */
   readonly diff: string;
-  /** Untracked specials only; `diff` is empty then. */
+  /** `diff` is empty then: a body past the view cap, or an untracked binary file. */
   readonly note?: "too large" | "binary";
 }
 
@@ -256,14 +262,43 @@ export const withoutWhitespaceChanges = (files: ReadonlyArray<DiffFile>): Array<
     ];
   });
 
-/** `parseGitDiff` behind the view cap: an over-cap body is dropped with the shared note. */
+/**
+ * `parseGitDiff` behind the view cap. Output git cut at the read cap isn't listed, and has the shared
+ * note. Past the view cap, the largest bodies are dropped, each file listed `too large` with its
+ * counts, until the rest fit.
+ */
 export const parseGitDiffCapped = (
   text: string,
   truncated = false,
-): { readonly files: Array<DiffFile>; readonly note: string | undefined } =>
-  truncated || Buffer.byteLength(text) > MAX_VIEW_BYTES
-    ? { files: [], note: DIFF_TOO_LARGE_NOTE }
-    : { files: parseGitDiff(text), note: undefined };
+): { readonly files: Array<DiffFile>; readonly note: string | undefined } => {
+  if (truncated || Buffer.byteLength(text) > MAX_DIFF_READ_BYTES) {
+    return { files: [], note: DIFF_TOO_LARGE_NOTE };
+  }
+  const files = parseGitDiff(text);
+  return {
+    files: Buffer.byteLength(text) > MAX_VIEW_BYTES ? withinViewCap(files) : files,
+    note: undefined,
+  };
+};
+
+/** `files` with the largest bodies dropped until the rest fit in `MAX_VIEW_BYTES`. */
+const withinViewCap = (files: ReadonlyArray<DiffFile>): Array<DiffFile> => {
+  const sizes = files.map((file) => Buffer.byteLength(file.diff) + Buffer.byteLength(file.path));
+  let total = sizes.reduce((sum, size) => sum + size, 0);
+  const dropped = new Set<number>();
+  for (const at of sizes.map((_, i) => i).toSorted((a, b) => sizes[b]! - sizes[a]!)) {
+    if (total <= MAX_VIEW_BYTES) break;
+    dropped.add(at);
+    total -= Buffer.byteLength(files[at]!.diff);
+  }
+  return files.map((file, at) =>
+    dropped.has(at) ? { ...file, diff: "", note: "too large" as const } : file,
+  );
+};
+
+/** Bytes of diff text `files` send. */
+export const diffBytes = (files: ReadonlyArray<DiffFile>) =>
+  files.reduce((sum, file) => sum + Buffer.byteLength(file.diff), 0);
 
 /** The all-added hunk git omits for an untracked text file. An empty file adds zero lines. */
 export const untrackedTextDiff = (
@@ -323,12 +358,13 @@ const untrackedFile = (
   realTop: string,
   rel: string,
   budget: number,
+  cap = MAX_VIEW_BYTES,
 ): DiffFile | undefined => {
   const abs = nodePath.join(workTree, rel);
   const base = { path: rel, status: "new" as const, removed: 0 };
   const tooLarge = { ...base, added: 0, diff: "", note: "too large" as const };
   const binary = { ...base, added: 0, diff: "", note: "binary" as const };
-  const limit = Math.min(MAX_VIEW_BYTES, budget);
+  const limit = Math.min(cap, budget);
   let buf: Buffer;
   try {
     const stat = fs.lstatSync(abs);
@@ -348,6 +384,23 @@ const untrackedFile = (
   if (buf.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return binary;
   const text = untrackedTextDiff(buf.toString("utf8"));
   return Buffer.byteLength(text.diff) > budget ? tooLarge : { ...base, ...text };
+};
+
+/**
+ * One untracked file's all-added diff, read up to `cap` bytes the way the listing reads it (never
+ * through a link); `too large` past the cap, `undefined` when it isn't a readable file of the checkout.
+ */
+export const untrackedFileDiff = (
+  workTree: string,
+  rel: string,
+  cap: number,
+): DiffFile | undefined => {
+  try {
+    const realTop = realPathSync(workTree);
+    return untrackedFile(workTree, realTop, rel, cap, cap);
+  } catch {
+    return undefined;
+  }
 };
 
 /**
@@ -412,16 +465,20 @@ export const gitDiff = (
     if (workTree === undefined) return { repo: false };
     const branch = (yield* git(workTree, ["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim();
     const hasHead = yield* branchExists(workTree, "HEAD");
-    const tracked = yield* git(workTree, [
-      "-c",
-      "core.quotepath=false",
-      "-c",
-      "diff.mnemonicPrefix=false",
-      "diff",
-      ...(hasHead ? ["HEAD"] : []),
-      "--no-color",
-      ...whitespaceArgs(options),
-    ]);
+    const tracked = yield* git(
+      workTree,
+      [
+        "-c",
+        "core.quotepath=false",
+        "-c",
+        "diff.mnemonicPrefix=false",
+        "diff",
+        ...(hasHead ? ["HEAD"] : []),
+        "--no-color",
+        ...whitespaceArgs(options),
+      ],
+      { maxOutputBytes: MAX_DIFF_READ_BYTES },
+    );
     const capped = parseGitDiffCapped(tracked.stdout, tracked.truncated);
     if (capped.note !== undefined) {
       return { repo: true, branch, files: [], worktree: workTree, note: capped.note };
@@ -439,7 +496,7 @@ export const gitDiff = (
       workTree,
       listed.filter((p) => p !== ""),
       others.truncated,
-      Buffer.byteLength(tracked.stdout),
+      diffBytes(files),
     );
     files.push(...untracked.files);
     if (untracked.note !== undefined) {
@@ -461,16 +518,20 @@ export const gitDiff = (
     const baseOid = (yield* git(workTree, ["rev-parse", chosen])).stdout.trim();
     if (headOid === "" || headOid === baseOid)
       return { repo: true, branch, files, worktree: workTree };
-    const fallback = yield* git(workTree, [
-      "-c",
-      "core.quotepath=false",
-      "-c",
-      "diff.mnemonicPrefix=false",
-      "diff",
-      `${chosen}...HEAD`,
-      "--no-color",
-      ...whitespaceArgs(options),
-    ]);
+    const fallback = yield* git(
+      workTree,
+      [
+        "-c",
+        "core.quotepath=false",
+        "-c",
+        "diff.mnemonicPrefix=false",
+        "diff",
+        `${chosen}...HEAD`,
+        "--no-color",
+        ...whitespaceArgs(options),
+      ],
+      { maxOutputBytes: MAX_DIFF_READ_BYTES },
+    );
     const branchDiff = parseGitDiffCapped(fallback.stdout, fallback.truncated);
     if (branchDiff.note !== undefined) {
       return { repo: true, branch, files, worktree: workTree, base: chosen, note: branchDiff.note };

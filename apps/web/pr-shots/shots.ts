@@ -1136,6 +1136,42 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("right-panel"),
   },
   {
+    name: "diff-too-large-summary",
+    title: "Diff: a lockfile past the view limit, summarized by the packages it changed",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.goto("/t/t-deps");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page
+        .getByRole("button", { name: /\d+ files? changed/ })
+        .first()
+        .click();
+      await page.getByRole("button", { name: "Summarize changes" }).click();
+      await page.getByTestId("diff-summary").waitFor();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("right-panel"),
+  },
+  {
+    name: "diff-too-large-hunks",
+    title: "Diff: a lockfile past the view limit, its first 20 hunks loaded, scrolled to Load more",
+    modes: ["dark", "light"],
+    open: async (page) => {
+      await page.goto("/t/t-deps");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page
+        .getByRole("button", { name: /\d+ files? changed/ })
+        .first()
+        .click();
+      await page.getByRole("button", { name: "Load first 20 hunks" }).click();
+      const more = page.getByRole("button", { name: "Load more" });
+      await more.waitFor();
+      await more.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("right-panel"),
+  },
+  {
     name: "worker-outcome",
     title: "A finished worker opened from Done, with no messages stored",
     modes: ["dark"],

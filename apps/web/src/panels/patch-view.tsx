@@ -98,6 +98,7 @@ export function PatchView({
   numbered = true,
   headers = true,
   language,
+  hunkOffset = 0,
 }: {
   file: DiffFile;
   layout?: DiffLayout;
@@ -113,6 +114,11 @@ export function PatchView({
   headers?: boolean;
   /** Unified only: highlights the code as this language. */
   language?: BundledLanguage | undefined;
+  /**
+   * The file's hunks before this patch's first, for a file shown a chunk at a time: a pick or a
+   * comment names its hunk by its place in the file, not in the chunk.
+   */
+  hunkOffset?: number;
 }) {
   const hunks = useMemo(() => parseHunks(file.patch), [file.patch]);
   const review = useDiffReview();
@@ -200,7 +206,7 @@ export function PatchView({
         starts[index]! < budget ? (
           <Rows
             key={hunk.header}
-            index={index}
+            index={hunkOffset + index}
             hunk={hunk}
             current={index === current}
             limit={budget - starts[index]! - 1}
@@ -208,7 +214,9 @@ export function PatchView({
             headers={headers}
             language={language}
             wrap={wrap}
-            {...(review ? { review: hunkReview(review, path, index, hunk, commented) } : {})}
+            {...(review
+              ? { review: hunkReview(review, path, hunkOffset + index, hunk, commented) }
+              : {})}
           />
         ) : null,
       )}
@@ -229,7 +237,13 @@ export function PatchView({
         <ContextMenu>
           {/* The code stays selectable for copying; only the line numbers aren't. */}
           <ContextMenuTrigger className="select-text">{table}</ContextMenuTrigger>
-          <PatchMenu review={review} path={path} hunks={hunks} target={menu} />
+          <PatchMenu
+            review={review}
+            path={path}
+            hunks={hunks}
+            hunkOffset={hunkOffset}
+            target={menu}
+          />
         </ContextMenu>
       ) : (
         table
@@ -357,15 +371,17 @@ function PatchMenu({
   review,
   path,
   hunks,
+  hunkOffset,
   target,
 }: {
   review: DiffReview;
   path: string;
   hunks: readonly Hunk[];
+  hunkOffset: number;
   target: MenuTarget | undefined;
 }) {
   const pick = review.selection;
-  const hunk = pick?.path === path ? hunks[pick.hunk] : undefined;
+  const hunk = pick?.path === path ? hunks[pick.hunk - hunkOffset] : undefined;
   const range = pick && hunk ? lineRange(hunk, pick.anchor, pick.head) : undefined;
   return (
     <ContextMenuContent>

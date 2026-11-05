@@ -22,6 +22,7 @@ import { Expand, NumberTicker } from "@/motion";
 import { copyText } from "@/settings/copy-text";
 import type { DiffLayout } from "@/stores/layout";
 
+import { ChunkedPatch, useDiffChunkSource } from "./diff-chunks";
 import { PatchView } from "./patch-view";
 
 /**
@@ -281,6 +282,8 @@ function DiffFileRow({
               <TooLargeNote
                 file={file}
                 reviewable={reviewable}
+                layout={layout}
+                wrap={wrap}
                 {...(onOpenInEditor ? { onOpenInEditor } : {})}
                 {...(onReveal ? { onReveal } : {})}
               />
@@ -312,19 +315,25 @@ export const diffCommand = (file: DiffFile) =>
 
 /**
  * A patch past the view limit: what it changed, what is still reviewable here, and the ways to read
- * it elsewhere (the editor, Files, or the `git diff` command for a terminal).
+ * it: here a chunk of hunks at a time (or summarized, when generated) where the list knows its
+ * source, else in the editor, Files, or with the `git diff` command for a terminal.
  */
 function TooLargeNote({
   file,
   reviewable,
+  layout,
+  wrap,
   onOpenInEditor,
   onReveal,
 }: {
   file: DiffFile;
   reviewable: number;
+  layout: DiffLayout;
+  wrap: boolean;
   onOpenInEditor?: (path: string) => void;
   onReveal?: (path: string) => void;
 }) {
+  const source = useDiffChunkSource();
   const [copied, setCopied] = useState<string>();
   const copy = async () => {
     try {
@@ -335,16 +344,18 @@ function TooLargeNote({
     }
   };
   const lines = file.additions + file.deletions;
-  return (
-    <div data-testid="diff-too-large" className="flex flex-col gap-2 px-3 py-2 text-meta">
-      <p className="text-foreground">
-        This patch is too large to show here ({lines.toLocaleString("en-US")} changed{" "}
-        {lines === 1 ? "line" : "lines"}).
-      </p>
+  const others =
+    reviewable === 0
+      ? ""
+      : `${reviewable === 1 ? "The other file" : `The other ${reviewable} files`} in this diff ${reviewable === 1 ? "is" : "are"} reviewable here. `;
+  const alternatives = (
+    <>
       <p className="text-muted-foreground">
-        {reviewable === 0
-          ? "Read it in your editor or a terminal."
-          : `${reviewable === 1 ? "The other file" : `The other ${reviewable} files`} in this diff ${reviewable === 1 ? "is" : "are"} reviewable here. Read this one in your editor or a terminal.`}
+        {source
+          ? `${others}To read this one whole, use your editor or a terminal.`
+          : reviewable === 0
+            ? "Read it in your editor or a terminal."
+            : `${others}Read this one in your editor or a terminal.`}
       </p>
       <div className="flex flex-wrap gap-1.5">
         {onOpenInEditor && (
@@ -373,6 +384,21 @@ function TooLargeNote({
         <p role="status" className="text-muted-foreground">
           {copied}
         </p>
+      )}
+    </>
+  );
+  return (
+    <div data-testid="diff-too-large" className="flex flex-col gap-2 px-3 py-2 text-meta">
+      <p className="text-foreground">
+        This patch is too large to show here{source ? " whole" : ""} (
+        {lines.toLocaleString("en-US")} changed {lines === 1 ? "line" : "lines"}).
+      </p>
+      {source ? (
+        <ChunkedPatch source={source} file={file} layout={layout} wrap={wrap}>
+          {alternatives}
+        </ChunkedPatch>
+      ) : (
+        alternatives
       )}
     </div>
   );

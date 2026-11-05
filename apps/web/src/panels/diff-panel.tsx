@@ -1,4 +1,10 @@
-import type { Diff, DiffScope, ThreadId, TurnId } from "@gram/contracts";
+import {
+  DIFF_TOO_LARGE_NOTE,
+  type Diff,
+  type DiffScope,
+  type ThreadId,
+  type TurnId,
+} from "@gram/contracts";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
   Columns2,
@@ -25,6 +31,7 @@ import { useThreadFeed } from "@/stores/feeds";
 import { useLayoutStore, type DiffLayout, type PanelTarget } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
+import { DiffChunkSourceContext } from "./diff-chunks";
 import { useDiffFileActions } from "./diff-file-actions";
 import { DiffFileList, type DiffFocus } from "./diff-files";
 import { DiffReviewContext, useDiffReviewState } from "./diff-review";
@@ -313,6 +320,7 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
           <DiffBody
             threadId={threadId}
             scope={scope}
+            diffScope={diffScope}
             query={query}
             layout={layout === "split" && splitFits ? "split" : "unified"}
             wrap={wrap}
@@ -367,6 +375,7 @@ function ViewToggle({
 function DiffBody({
   threadId,
   scope,
+  diffScope,
   query,
   layout,
   wrap,
@@ -377,6 +386,8 @@ function DiffBody({
 }: {
   threadId: ThreadId;
   scope: ScopeKind;
+  /** What `query` asked for, and what a file too large for it is asked for again in chunks. */
+  diffScope: DiffScope | undefined;
   query: UseQueryResult<Diff>;
   layout: DiffLayout;
   wrap: boolean;
@@ -390,6 +401,9 @@ function DiffBody({
   // Its agent's session is still opening: no change could have been made yet.
   const starting = useThreadsStore((s) => s.byId[threadId]?.status === "starting");
   const focusPath = request && checkoutRelative(request.target, root);
+  // Its consumers re-render with the list anyway: the query keys, not this object, decide reuse.
+  const chunkSource =
+    diffScope === undefined ? undefined : { threadId, scope: diffScope, ignoreWhitespace };
   const nodes = useMemo(() => buildDiffTree(query.data?.files ?? []), [query.data]);
   const files = useMemo(() => treeOrder(nodes), [nodes]);
   // Every hunk of every file, in the order the list shows them: what n / p step through.
@@ -480,6 +494,15 @@ function DiffBody({
         </p>
       );
     }
+    // Changes too large to list are not "no changes".
+    if (diff.note === DIFF_TOO_LARGE_NOTE) {
+      return (
+        <p data-testid="diff-empty" className="px-3 py-2 text-meta text-warning">
+          These changes are too large to list here. Read them in your editor or a terminal with git
+          diff.
+        </p>
+      );
+    }
     return (
       <>
         <p data-testid="diff-empty" className="px-3 py-2 text-meta text-muted-foreground">
@@ -548,7 +571,9 @@ function DiffBody({
         )}
         <div data-testid="diff-files" className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <DiffReviewContext value={review}>
-            <DiffFileList files={files} layout={layout} wrap={wrap} {...actions} focus={focus} />
+            <DiffChunkSourceContext value={chunkSource}>
+              <DiffFileList files={files} layout={layout} wrap={wrap} {...actions} focus={focus} />
+            </DiffChunkSourceContext>
           </DiffReviewContext>
         </div>
       </div>

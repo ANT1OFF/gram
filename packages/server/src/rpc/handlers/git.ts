@@ -19,6 +19,7 @@ import {
   gitDiff,
   lastFetchedAt,
   localBaseRef,
+  MAX_DIFF_READ_BYTES,
   matchesBotLogin,
   parseGitDiffCapped,
   Pr,
@@ -52,6 +53,7 @@ import { GitStatePublisher } from "../../git/publisher.ts";
 import { PrReviews } from "../../git/review.ts";
 import { threadFolder, ThreadPrLookup } from "../../git/thread-pr.ts";
 import { turnDiff } from "../../git/turn-diff.ts";
+import { diffChunk } from "../../git/diff-chunk.ts";
 import { cleanUp, cleanupNotes, cleanupPlan, storageReport } from "../../git/storage.ts";
 import { cachedFolderSize, forgetFolderSize } from "../../git/worktree-size.ts";
 import { Orchestration } from "../../orchestration/service.ts";
@@ -184,16 +186,20 @@ export const gitHandlers = Effect.gen(function* () {
         const base = (yield* publisher.stateFor(cwd))?.base ?? (yield* localBaseRef(top));
         const head = { repo: true, worktree: top, ...(branch === "" ? {} : { branch }) };
         if (base === undefined) return { ...head, files: [] } satisfies Diff;
-        const out = yield* git(top, [
-          "-c",
-          "core.quotepath=false",
-          "-c",
-          "diff.mnemonicPrefix=false",
-          "diff",
-          `${base}...HEAD`,
-          "--no-color",
-          ...whitespaceArgs({ ignoreWhitespace }),
-        ]).pipe(Effect.mapError(toGitError));
+        const out = yield* git(
+          top,
+          [
+            "-c",
+            "core.quotepath=false",
+            "-c",
+            "diff.mnemonicPrefix=false",
+            "diff",
+            `${base}...HEAD`,
+            "--no-color",
+            ...whitespaceArgs({ ignoreWhitespace }),
+          ],
+          { maxOutputBytes: MAX_DIFF_READ_BYTES },
+        ).pipe(Effect.mapError(toGitError));
         if (out.status !== 0) {
           return yield* new GitError({
             message: out.stderr.trim() || "git diff failed",
@@ -324,6 +330,18 @@ export const gitHandlers = Effect.gen(function* () {
               ),
             );
         }
+      }),
+
+    "git.diffChunk": ({ threadId, ...request }) =>
+      Effect.gen(function* () {
+        const cwd = yield* threadFolder(yield* store.getThread(threadId));
+        const branchBase =
+          request.scope.kind === "branch" ? (yield* publisher.stateFor(cwd))?.base : undefined;
+        return yield* provide(
+          diffChunk({ threadId, cwd, ...request, branchBase }).pipe(
+            Effect.provideService(Checkpoints, checkpoints),
+          ),
+        );
       }),
 
     "git.branches": ({ repoPath }) =>

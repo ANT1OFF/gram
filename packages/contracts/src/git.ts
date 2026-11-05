@@ -273,6 +273,9 @@ export const DiffFile = Schema.Struct({
 });
 export type DiffFile = typeof DiffFile.Type;
 
+/** `Diff.note` when the diff was too large to list at all, as opposed to listing some files bodiless. */
+export const DIFF_TOO_LARGE_NOTE = "Diff too large to display";
+
 export const Diff = Schema.Struct({
   /** False: not a repo, and every other field is absent. */
   repo: Schema.Boolean,
