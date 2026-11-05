@@ -185,6 +185,7 @@ export function VirtualRows<T>({
     if (list === null || parent === null) return;
     // Where the list starts against the scroller's top edge, last seen.
     let seen: number | undefined;
+    let measuredScroll = parent.scrollTop;
     const measure = () => {
       const offset = offsetIn(list, parent);
       if (offset === undefined) return;
@@ -192,10 +193,15 @@ export function VirtualRows<T>({
       if (seen !== undefined && seen < 0 && Math.abs(at - seen) >= 0.5) {
         parent.scrollTop += at - seen;
       }
+      measuredScroll = parent.scrollTop;
       seen = offset - parent.scrollTop;
       setMargin((was) => (Math.abs(was - offset) < 0.5 ? was : offset));
     };
     const scrolled = () => {
+      // A compensation queues a scroll event. Another section may grow before it arrives;
+      // re-reading geometry for that unchanged scroll would absorb the new growth into `seen`.
+      if (parent.scrollTop === measuredScroll) return;
+      measuredScroll = parent.scrollTop;
       const offset = offsetIn(list, parent);
       if (offset !== undefined) seen = offset - parent.scrollTop;
     };

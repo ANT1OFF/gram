@@ -467,6 +467,8 @@ function Flyout({
         onClick={() => {
           // The click decides: a hover onto the tile it began with reopens nothing.
           reentered.current = false;
+          // Activating a focused workspace tile also cancels its pending focus preview.
+          quiet.current = !clickOpens;
           setOpen(clickOpens);
         }}
         onKeyDown={onTileKey}

@@ -1137,6 +1137,25 @@ test("the keyboard opens a tile's flyout, → goes in, Esc closes it back on the
   await expect(flyout(page)).toHaveCount(0);
 });
 
+test("activating a keyboard-focused workspace tile keeps its delayed flyout closed", async ({
+  page,
+}) => {
+  const made = await start(page, { width: 1100 });
+  await page.clock.install();
+  const other = tile(page, made.asks.other.workspaceId);
+  // Focus starts the preview delay; activating the tile before it expires chooses the workspace.
+  await other.focus();
+  await other.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/t/${made.asks.other.orchestratorThreadId}$`));
+  await page.clock.runFor(500);
+  await expect(other).toBeFocused();
+  await expect(flyout(page)).toHaveCount(0);
+  // Its explicit keyboard entry still opens the flyout after the pick.
+  await other.press("ArrowRight");
+  await expect(flyout(page)).toBeVisible();
+  await expect(flyout(page).getByTestId("overview-worker").first()).toBeFocused();
+});
+
 test("the Compact and Expand buttons pick the mode; ⌘B hides compact and brings it back compact", async ({
   page,
 }) => {

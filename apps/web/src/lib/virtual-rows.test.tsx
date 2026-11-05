@@ -73,9 +73,76 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("VirtualRows", () => {
+  it.each([false, true])(
+    "anchors consecutive growth above the list across a queued scroll event (user scroll: %s)",
+    async (userScroll) => {
+      let offset = 100;
+      const observers: {
+        callback: ResizeObserverCallback;
+        targets: Set<Element>;
+      }[] = [];
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          targets = new Set<Element>();
+          constructor(callback: ResizeObserverCallback) {
+            observers.push({ callback, targets: this.targets });
+          }
+          observe(target: Element) {
+            this.targets.add(target);
+          }
+          unobserve(target: Element) {
+            this.targets.delete(target);
+          }
+          disconnect() {
+            this.targets.clear();
+          }
+        },
+      );
+      vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+        new DOMRect(),
+      ] as unknown as DOMRectList);
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        return new DOMRect(
+          0,
+          this.hasAttribute("data-virtual-list") ? offset - this.parentElement!.scrollTop : 0,
+          240,
+          ROW,
+        );
+      });
+      const { scroller, list } = renderList();
+      const resize = () => {
+        for (const observer of observers) {
+          if (observer.targets.has(list)) observer.callback([], {} as ResizeObserver);
+        }
+      };
+      await scrollTo(scroller, 1000);
+      act(() => {
+        offset += 40;
+        resize();
+      });
+      expect(scroller.scrollTop).toBe(1040);
+      act(() => {
+        // The next section grows before the first compensation's scroll event is delivered.
+        // A real user scroll between changes still establishes a new viewport position.
+        if (userScroll) {
+          scroller.scrollTop += 100;
+          scroller.dispatchEvent(new Event("scroll"));
+        }
+        offset += 34;
+        scroller.dispatchEvent(new Event("scroll"));
+        resize();
+      });
+      expect(scroller.scrollTop).toBe(userScroll ? 1174 : 1074);
+    },
+  );
+
   it("draws the rows in view and a few more, not all of them", () => {
     const { list } = renderList();
     const rows = drawn(list);
