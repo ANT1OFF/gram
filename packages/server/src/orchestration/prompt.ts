@@ -119,6 +119,8 @@ const WORKER_TOOLS = [
   "schedule_wake",
   "depends_on",
   "message_orchestrator",
+  "memory_list",
+  "memory_read",
   "wrap_up",
 ];
 
@@ -228,7 +230,7 @@ Keep it light: tell the user what you tidied in a line or two, never a long repo
 
 ## Memory
 
-Your memory is a small set of files read with \`memory_read\`; \`MEMORY.md\` is the index. Add an entry with \`memory_append\` and change or prune one with \`memory_edit\`: neither needs the file read again first, and neither loses what else was written meanwhile. Keep \`memory_write\`, which replaces the whole file, for a new file or a rewrite. Record what cannot be derived: the user's goals and priorities, decisions and why, conventions of a repo that its CLAUDE.md does not state, how the repos relate. Date every entry and name its source (a feature, a pull request, a thread). Do not store worker status, branches or pull request state. Keep it current as you go: write a decision down when it is made, not later.
+Your memory is a small set of files read with \`memory_read\`; \`MEMORY.md\` is the index. Add an entry with \`memory_append\` and change or prune one with \`memory_edit\`: neither needs the file read again first, and neither loses what else was written meanwhile. Keep \`memory_write\`, which replaces the whole file, for a new file or a rewrite. Record what cannot be derived: the user's goals and priorities, decisions and why, conventions of a repo that its CLAUDE.md does not state, how the repos relate. Date every entry and name its source (a feature, a pull request, a thread). Do not store worker status, branches or pull request state. Keep it current as you go: write a decision down when it is made, not later. Your workers can read your memory but not write it, so write it for them too. A report's \`learned\` is a worker's offer: record it, dated and naming the worker, only when it will hold for later work and isn't there already.
 
 ## Standing decisions
 
@@ -298,6 +300,7 @@ You were started by the orchestrator thread "${input.orchestratorTitle}" with th
 
 - Use the \`report\` tool to tell the orchestrator how it is going: \`done\` when the work is finished and verified (include the pull request URL if there is one), \`blocked\` when you cannot continue, \`progress\` for a milestone worth knowing. Keep the summary short and factual, and say what you tried and ruled out, not only what worked. If you built or changed an interface other repos consume, state it in \`interface\`.
 - When you need a decision, ask it with \`ask_question\`, with the one you recommend. Your orchestrator answers it when your brief or its memory settles it; otherwise the user does. Meanwhile do what doesn't depend on it; end your turn only if nothing can move without it.
+- Your orchestrator keeps a workspace memory of goals, decisions, the user's standing decisions and repo conventions. When the brief and the repo leave a question open, look there with \`memory_list\` and \`memory_read\` before you ask; don't read it all up front. You can't change it: offer a lasting fact a later worker would need with \`learned\` on \`report\`.
 - Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.
 - After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment: it may have gone through already.
 - \`report\` is for the orchestrator; \`wrap_up\` is the recap a person opening this thread reads. In a turn that changed something, call \`report\` first, then \`wrap_up\` without \`ask\` (a question for a decision goes to \`ask_question\`), then write your closing message.

@@ -769,6 +769,14 @@ export const OrchestrationLive = Layer.effect(
       checkModelChange,
       reopen,
       authorityOf,
+      memoryReaderOf: (threadId) =>
+        Effect.gen(function* () {
+          const authority = yield* authorityOf(threadId);
+          if (authority !== undefined) return authority.state.workspace.id;
+          const thread = yield* findThread(threadId);
+          if (thread === undefined || thread.role !== undefined) return undefined;
+          return (yield* listeningWorkspace(thread))?.workspace.id;
+        }),
       isDelegated: delegated,
       noteStop,
       isWorkerSend,

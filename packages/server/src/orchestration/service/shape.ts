@@ -497,6 +497,11 @@ export interface OrchestrationShape {
 
   /** `undefined` unless the thread is its workspace's orchestrator right now. */
   authorityOf(threadId: ThreadId): Effect.Effect<Authority | undefined>;
+  /**
+   * The workspace whose memory the thread may read: the one it orchestrates, or, for a worker, the
+   * one it reports into while its orchestrator still holds the slot. `undefined` for anyone else.
+   */
+  memoryReaderOf(threadId: ThreadId): Effect.Effect<WorkspaceId | undefined>;
   /** The delegation rule for one call; reads only, since a gate may ask twice. */
   isDelegated(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /**
@@ -701,6 +706,7 @@ export interface OrchestrationShape {
       readonly evidence?: WorkerReport["evidence"] | undefined;
       readonly prUrl?: string | undefined;
       readonly interface?: string | undefined;
+      readonly learned?: string | undefined;
     },
   ): Effect.Effect<WorkerReport | undefined>;
   /** The orchestrator → worker loop guard, in place of `checkSend` for a delegated send. */

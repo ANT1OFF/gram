@@ -85,6 +85,8 @@ export type WorkerReportState = typeof WorkerReportState.Type;
 export const WORKER_REPORT_SUMMARY_MAX = 1000;
 /** The most a worker's `interface` may hold. */
 export const WORKER_REPORT_INTERFACE_MAX = 4000;
+/** The most a worker's `learned` may hold: a line or two for memory, not a report. */
+export const WORKER_REPORT_LEARNED_MAX = 500;
 
 /** Small worker-authored evidence, rendered whole before a report's prose excerpt. */
 export const WorkerReportEvidence = Schema.Struct({
@@ -106,6 +108,8 @@ export const WorkerReport = Schema.Struct({
   interface: Schema.optionalKey(
     Schema.String.check(Schema.isMaxLength(WORKER_REPORT_INTERFACE_MAX)),
   ),
+  /** A lasting fact the worker offers for memory; the orchestrator decides whether to keep it. */
+  learned: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WORKER_REPORT_LEARNED_MAX))),
   /** Epoch ms. */
   at: Schema.Number,
 });
@@ -984,6 +988,12 @@ const reportBlock = (report: DigestReport): ReadonlyArray<string> => [
     : report.interfaceUnchanged === true
       ? ["interface: unchanged since you last read it"]
       : ["interface:", quoted(report.interface, DIGEST_REPORT_INTERFACE_MAX)]),
+  ...(report.learned === undefined
+    ? []
+    : [
+        "learned (worker-authored; record it in memory only if it lasts and isn't there yet):",
+        quoted(report.learned, WORKER_REPORT_LEARNED_MAX),
+      ]),
   ...(report.summary.length > DIGEST_REPORT_SUMMARY_MAX ||
   (report.interface?.length ?? 0) > DIGEST_REPORT_INTERFACE_MAX
     ? ["Excerpt only; full worker-authored evidence: get_thread or list_workers detail."]

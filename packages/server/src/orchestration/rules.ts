@@ -958,7 +958,7 @@ interface WorkerSnapshot {
 
 /** Report timestamps do not turn unchanged worker-authored evidence into news. */
 const reportEvidenceKey = (
-  report: Pick<WorkerReport, "state" | "summary" | "interface" | "prUrl" | "evidence">,
+  report: Pick<WorkerReport, "state" | "summary" | "interface" | "prUrl" | "evidence" | "learned">,
 ): string =>
   createHash("sha256")
     .update(
@@ -968,6 +968,8 @@ const reportEvidenceKey = (
         report.interface,
         report.prUrl,
         report.evidence,
+        // Only when given, so a report from before `learned` keeps the key it was stored with.
+        ...(report.learned === undefined ? [] : [report.learned]),
       ]),
     )
     .digest("hex");

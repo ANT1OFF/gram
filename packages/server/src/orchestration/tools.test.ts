@@ -126,8 +126,6 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
           "set_stage",
           "set_group",
           "answer_worker",
-          "memory_list",
-          "memory_read",
           "memory_write",
           "memory_append",
           "memory_edit",
@@ -138,6 +136,12 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         for (const name of own) {
           expect(names("orchestrator").has(name)).toBe(true);
           expect(names("worker").has(name)).toBe(false);
+          expect(names("plain").has(name)).toBe(false);
+        }
+        // Workers read their orchestrator's memory; only the orchestrator changes it.
+        for (const name of ["memory_list", "memory_read"]) {
+          expect(names("orchestrator").has(name)).toBe(true);
+          expect(names("worker").has(name)).toBe(true);
           expect(names("plain").has(name)).toBe(false);
         }
         // A plain thread's wakes are its own, so every thread sets them.
@@ -643,6 +647,63 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         expect(partsOf(yield* store.listMessages(worker.thread.id), "data-worker-report")).toEqual(
           [],
         );
+      }),
+    ),
+  );
+
+  it.effect("lets a worker read its orchestrator's memory while that orchestrator holds it", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const runtimes = yield* ThreadRuntimes;
+        const { session, thread } = yield* openOrchestrator(world);
+        yield* session.callTool("memory_append", {
+          path: "repos/shop.md",
+          text: "2026-11-05: uses pnpm, not npm (from the brief).",
+        });
+        const worker = yield* spawn(session, { feature: "mail-trigger" });
+        const listed = (yield* worker.session.callTool("memory_list", {})) as {
+          readonly files: ReadonlyArray<{ readonly path: string }>;
+        };
+        expect(listed.files.map((file) => file.path).toSorted()).toEqual([
+          "MEMORY.md",
+          "repos/shop.md",
+        ]);
+        expect(yield* worker.session.callTool("memory_read", { file: "repos/shop.md" })).toEqual({
+          path: "repos/shop.md",
+          content: "2026-11-05: uses pnpm, not npm (from the brief).\n",
+        });
+        // Once its orchestrator no longer holds the workspace, the worker's view closes.
+        yield* runtimes.close(thread.id);
+        yield* settle;
+        const closed = yield* worker.session
+          .callTool("memory_read", { path: "repos/shop.md" })
+          .pipe(Effect.flip);
+        expect(closed).toMatchObject({ _tag: "AppToolError", tool: "memory_read" });
+        expect(String((closed as { message?: unknown }).message)).toContain("no memory to read");
+      }),
+    ),
+  );
+
+  it.effect("carries a worker's learned fact in its report, within its limit", () =>
+    inServer((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const { session, workspaceId } = yield* openOrchestrator(world);
+        const worker = yield* spawn(session, { feature: "mail-trigger" });
+        const result = yield* worker.session.callTool("report", {
+          state: "done",
+          summary: "Done.",
+          learned: "The e2e suite needs PLAYWRIGHT_BROWSERS_PATH set.",
+        });
+        expect(result).toMatchObject({ reported: true });
+        const [stored] = yield* store.listWorkerReports(workspaceId);
+        expect(stored?.report).toMatchObject({
+          learned: "The e2e suite needs PLAYWRIGHT_BROWSERS_PATH set.",
+        });
+        const tooLong = yield* worker.session
+          .callTool("report", { state: "progress", summary: "x", learned: "y".repeat(501) })
+          .pipe(Effect.flip);
+        expect(tooLong).toMatchObject({ tool: "report" });
       }),
     ),
   );

@@ -523,6 +523,12 @@ suggested topic names. Files such as `goals.md`, `decisions.md` and
 an unwritten topic. Suggested names do not establish recorded goals or decisions.
 The orchestrator should record actual information and update its index as it goes.
 
+Workers can read their orchestrator's memory with `memory_list` and `memory_read`, while that
+orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator. A
+worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
+digest shows it to the orchestrator, which records it only when it holds for later work. Solo
+threads have no workspace memory.
+
 Memory persists in a versioned filesystem tree, with `CURRENT` naming the adopted
 version; opening another session preserves existing files. Startup explains the
 sparse layout. It carries recorded standing decisions when

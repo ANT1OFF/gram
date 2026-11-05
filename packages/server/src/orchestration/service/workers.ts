@@ -123,6 +123,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
             }),
         ...(input.prUrl === undefined ? {} : { prUrl: redactText(input.prUrl) }),
         ...(input.interface === undefined ? {} : { interface: redactText(input.interface) }),
+        ...(input.learned === undefined ? {} : { learned: redactText(input.learned) }),
         at: yield* Clock.currentTimeMillis,
       };
       yield* store.addWorkerReport(state.workspace.id, report);
