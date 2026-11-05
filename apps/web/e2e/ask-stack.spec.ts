@@ -469,7 +469,7 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   expect((await badge(made.workspaceId)) + (await badge(made.other.workspaceId)) + threads).toBe(
     all,
   );
-  // Each row of a workspace's says its name, after its kind where its heading doesn't say that.
+  // Each row of a workspace's says its name.
   const name = (await workspace(made.workspaceId)
     .getByTestId("overview-workspace-row")
     .getAttribute("aria-label"))!.split(",")[0]!;
@@ -477,9 +477,7 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
     `[data-testid="inbox-item"][data-workspace="${made.workspaceId}"]`,
   );
   for (const where of await own.getByTestId("inbox-item-where").allTextContents()) {
-    expect(where).toMatch(
-      new RegExp(`^(?:(?:Plan to review|Worker question|Orchestrator question) · )?${name} · `),
-    );
+    expect(where.startsWith(`${name} · `)).toBe(true);
   }
   await page.keyboard.press("Escape");
 

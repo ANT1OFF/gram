@@ -409,7 +409,7 @@ function InboxBody({
             data-testid="inbox-list"
             className={cn(
               "shrink-0 overflow-y-auto border-r border-border p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-              docked ? "w-[min(20rem,42%)]" : "w-[min(22rem,36%)]",
+              docked ? "w-[min(22rem,46%)]" : "w-[min(22rem,36%)]",
             )}
           >
             {shown.map((section) => (
@@ -470,14 +470,16 @@ function InboxBody({
 }
 
 /**
- * What a row says of its kind, in words, where its section's heading doesn't already: "Plan to
- * review" under Approvals, "Worker question" under Questions, but not "Approval" under Approvals.
+ * What a row says of its kind, in words, where neither its section's heading nor the rest of the
+ * row already does: not "Approval" under Approvals, nor "Plan to review" when that is its title. A
+ * question's heading says it, and its thread says who asks; an error's heading says it.
  */
 const rowKind = (
   item: NeedsYouItem,
   section: NeedsYouSection,
   title: string,
 ): string | undefined => {
+  if (item.kind === "question" || item.kind === "failure") return undefined;
   const label = kindOf(item).label;
   const heading = section.label.toLowerCase();
   const said = heading === label.toLowerCase() || heading === `${label.toLowerCase()}s`;
