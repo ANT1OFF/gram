@@ -183,7 +183,9 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await stepBack(page, "titlebar-menu-workspace");
   await more.getByTestId("menu-view").click();
   const viewGroup = page.getByTestId("titlebar-menu-view");
-  for (const name of [/^Contents/, /^Quiet/, /^Focus mode/, /^History/]) {
+  // Contents joins them once the thread has prompts or chapters to list: this one has none yet.
+  await expect(viewGroup.getByTestId("menu-contents")).toHaveCount(0);
+  for (const name of [/^Quiet/, /^Focus mode/, /^History/]) {
     await expect(viewGroup.getByRole("menuitem", { name })).toBeVisible();
   }
   await expect(viewGroup.getByRole("menuitemradio")).toHaveCount(6);
