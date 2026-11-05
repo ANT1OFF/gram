@@ -3,6 +3,7 @@
 import {
   autonomyOf,
   briefFooterOf,
+  routineScheduleText,
   InvalidState,
   connectorSetOf,
   type ConnectorSet,
@@ -10,6 +11,7 @@ import {
   type Thread,
   type WorkspaceState,
   applyCharterWrites,
+  withRoutineIds,
   settingsHold,
   type SettingsRequirement,
   type WorkspaceId,
@@ -36,10 +38,54 @@ import {
 } from "./kit.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
+import { randomUUID } from "node:crypto";
+import { type OutboxState } from "../outbox.ts";
+
+/** The routines as compared for a change, whole. */
+const routinesKey = (charter: Pick<OrchestratorCharter, "routines">): string =>
+  JSON.stringify(charter.routines ?? []);
+
+/**
+ * The outbox without the run states of routines `charter` no longer runs (removed or turned off),
+ * so one added or turned on again is reckoned from then; the same outbox when nothing goes. An
+ * unsettled run of one is let go with it: its worker carries on as the orchestrator's.
+ */
+export const pruneRoutineRuns = (
+  outbox: OutboxState,
+  charter: Pick<OrchestratorCharter, "routines">,
+): OutboxState => {
+  const runs = outbox.routineRuns;
+  if (runs === undefined) return outbox;
+  const keys = new Set(
+    (charter.routines ?? []).flatMap((routine) =>
+      routine.off === true || routine.id === undefined ? [] : [routine.id as string],
+    ),
+  );
+  if (Object.keys(runs).every((key) => keys.has(key))) return outbox;
+  const kept = Object.entries(runs).filter(([key]) => keys.has(key));
+  const { routineRuns: _, ...rest } = outbox;
+  return kept.length === 0 ? rest : { ...rest, routineRuns: Object.fromEntries(kept) };
+};
+
+/** `compute`, its charter's routines each given an id (`withIds`) against the one standing. */
+const withIdsOf =
+  (compute: (standing: OrchestratorCharter) => OrchestratorCharter | undefined) =>
+  (standing: OrchestratorCharter) => {
+    const next = compute(standing);
+    return next === undefined ? undefined : withIds(standing, next);
+  };
+
+/** `charter` with an id on each routine (`withRoutineIds`), the one its name had in `prior`. */
+const withIds = (prior: OrchestratorCharter, charter: OrchestratorCharter): OrchestratorCharter => {
+  const routines = withRoutineIds(prior.routines, charter.routines, randomUUID);
+  return routines === charter.routines || routines === undefined
+    ? charter
+    : { ...charter, routines };
+};
 
 /** What an open orchestrator session is told when the footer or routing changes under it. */
 const charterChangeNotes = (
-  before: Pick<OrchestratorCharter, "workerBriefFooter" | "routeAtLimit">,
+  before: Pick<OrchestratorCharter, "workerBriefFooter" | "routeAtLimit" | "routines">,
   after: OrchestratorCharter,
 ): ReadonlyArray<string> => {
   const notes: Array<string> = [];
@@ -58,12 +104,22 @@ const charterChangeNotes = (
         : "The user turned off offering another worker model at a limit: spawns stop at limits as before, with no alternatives.",
     );
   }
+  if (routinesKey(before) !== routinesKey(after)) {
+    const on = (after.routines ?? []).filter((routine) => routine.off !== true);
+    notes.push(
+      on.length === 0
+        ? "The workspace's routines changed: none runs now."
+        : `The workspace's routines changed. Now: ${on.map((routine) => `"${routine.name}" ${routineScheduleText(routine.schedule)}`).join("; ")}.`,
+    );
+  }
   return notes;
 };
 
 /** What the charter takes from the rest of the service. */
 export interface CharterDeps {
   readonly wake: Digests["wake"];
+  /** Says a workspace's routines changed, so the routines engine looks again. */
+  readonly routinesChanged: (workspaceId: WorkspaceId) => Effect.Effect<void>;
 }
 
 /** Writing and changing a workspace's charter. */
@@ -99,6 +155,18 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
         return yield* new InvalidState({
           message: "Wait for the orchestrator switch before editing this workspace's charter.",
         });
+      // A routine's worker starts in one of the workspace's projects, whoever wrote it.
+      const outside = (charter.routines ?? []).find(
+        (routine) =>
+          routine.project !== undefined &&
+          standing !== undefined &&
+          !standing.workspace.projectIds.includes(routine.project),
+      );
+      if (outside !== undefined) {
+        return yield* new InvalidState({
+          message: `The routine "${outside.name}" names a project that isn't one of this workspace's.`,
+        });
+      }
       const orchestratorModel = charter.orchestratorModel;
       if (
         orchestratorModel !== undefined &&
@@ -182,6 +250,14 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
           yield* wake(workspaceId, "the user changed the worker models", true);
         }
       }
+      // A routine removed or turned off forgets its runs, so one back again waits for its time.
+      if (routinesKey(prior) !== routinesKey(charter)) {
+        yield* updateOutbox(workspaceId, (outbox) => [
+          pruneRoutineRuns(outbox, charter),
+          undefined,
+        ]);
+        yield* deps.routinesChanged(workspaceId);
+      }
       // The boot digest named the footer and routing once too; an open session hears of a change.
       const changed = charterChangeNotes(prior, charter);
       if (holder !== undefined && changed.length > 0) {
@@ -244,12 +320,14 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
           message: "Wait for the orchestrator switch before editing this workspace's charter.",
         });
 
+      // Every routine is stored with an id, so its runs follow it through a rename.
+      const computeWithIds = withIdsOf(compute);
       const { state, auditSeq, prior } = yield* underKeysOf(
         taskStartupLock,
         workspaceStartupKeys(workspaceId),
         Effect.gen(function* () {
           const standing = yield* store.getWorkspace(workspaceId);
-          const charter = compute(standing.charter);
+          const charter = computeWithIds(standing.charter);
           if (charter === undefined) return yield* new InvalidState({ message: CHARTER_MOVED });
           yield* checkCharter(standing, charter);
           let priorCharter: OrchestratorCharter = standing.charter;
@@ -264,7 +342,7 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
             const done = yield* store.updateWorkspaceAudited(
               workspaceId,
               (current) => {
-                const next = compute(current.charter);
+                const next = computeWithIds(current.charter);
                 if (next === undefined) return undefined;
                 priorCharter = current.charter;
                 return { ...current, charter: next };
@@ -303,7 +381,13 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
       ),
     ).pipe(Effect.map(({ state, auditSeq }) => ({ state, auditSeq: auditSeq! })));
 
-  return { setCharter, changeCharter, checkCharter, afterCharter };
+  /** Stores the charter `compute` makes of the one standing, as `setCharter` does; for routines. */
+  const editCharter = (
+    workspaceId: WorkspaceId,
+    compute: (standing: OrchestratorCharter) => OrchestratorCharter | undefined,
+  ) => writeCharter(workspaceId, compute).pipe(Effect.map(({ state }) => state));
+
+  return { setCharter, changeCharter, checkCharter, afterCharter, editCharter };
 };
 
 /** What `makeCharter` makes, for the parts whose `deps` take some of it. */

@@ -1291,18 +1291,19 @@ export const SHOTS: readonly Shot[] = [
   {
     name: "workspace-routines",
     title:
-      "Workspace settings: Routines above More options, with a worker routine, an orchestrator one and one off",
+      "Workspace settings: Routines under Models, with a weekday worker routine, an orchestrator one and one off",
     open: async (page) => {
       await openOrchestratorOf(page, async () => {
         const made = await window.gramMock!.simulateOrchestration("board");
         const mock = window.gramMock as unknown as {
-          simulateRoutine?: (routine: unknown) => void;
+          simulateRoutineState?: (workspaceId: string, id: string, state: unknown) => void;
           listWorkspaces: () => Promise<
-            ReadonlyArray<{ workspace: { id: string; homeProjectId: string } }>
+            ReadonlyArray<{ workspace: { id: string }; charter: Record<string, unknown> }>
           >;
+          setOrchestratorCharter: (id: string, charter: unknown) => Promise<unknown>;
         };
-        // The base has no routines; it shows the page as it was.
-        if (mock.simulateRoutine !== undefined) {
+        // The base has no routines in its charter or no run states; it shows the page as it was.
+        if (mock.simulateRoutineState !== undefined) {
           const state = (await mock.listWorkspaces()).find(
             (each) => each.workspace.id === made.workspaceId,
           )!;
@@ -1315,56 +1316,59 @@ export const SHOTS: readonly Shot[] = [
             day.setHours(h!, m!, 0, 0);
             return day.getTime();
           };
-          const base = {
-            workspaceId: made.workspaceId,
-            timeZone: "Europe/Oslo",
-            createdAt: at("08:00", -3),
-            updatedAt: at("08:00", -3),
-            createdBy: "user",
-          };
-          mock.simulateRoutine({
-            ...base,
-            id: "routine-ci",
-            name: "Daily CI triage",
-            brief: "Look at main's failing jobs and open one PR per real failure.",
-            target: { kind: "worker", projectId: state.workspace.homeProjectId },
-            schedule: { kind: "daily", time: "09:00" },
-            enabled: true,
+          await mock.setOrchestratorCharter(made.workspaceId, {
+            ...state.charter,
+            routines: [
+              {
+                id: "routine-ci",
+                name: "Daily CI triage",
+                brief: "Look at main's failing jobs and open one PR per real failure.",
+                schedule: { every: "weekday", at: "09:00" },
+              },
+              {
+                id: "routine-deps",
+                name: "Weekly dependency check",
+                brief:
+                  "Check for outdated dependencies and brief a worker for each bump worth doing.",
+                schedule: { every: "week", day: 1, at: "08:00" },
+                target: "orchestrator",
+              },
+              {
+                id: "routine-flakes",
+                name: "Nightly flake sweep",
+                brief: "Rerun the flaky suites and report what still fails.",
+                schedule: { every: "hours", hours: 12 },
+                off: true,
+              },
+            ],
+          });
+          mock.simulateRoutineState(made.workspaceId, "routine-ci", {
             nextRunAt: at("09:00", 1),
+            scheduleKey: JSON.stringify({ every: "weekday", at: "09:00" }),
             lastRun: { at: at("09:00"), outcome: "started", threadId: made.working },
             lastWorker: made.working,
           });
-          mock.simulateRoutine({
-            ...base,
-            id: "routine-deps",
-            name: "Weekly dependency check",
-            brief: "Check for outdated dependencies and brief a worker for each bump worth doing.",
-            target: { kind: "orchestrator" },
-            schedule: { kind: "weekly", day: "mon", time: "08:00" },
-            enabled: true,
-            createdBy: "orchestrator",
+          mock.simulateRoutineState(made.workspaceId, "routine-deps", {
             nextRunAt: at("08:00", 4),
+            scheduleKey: JSON.stringify({ every: "week", day: 1, at: "08:00" }),
             lastRun: {
               at: at("08:00", -3),
               outcome: "skipped",
               detail: 'The worker from its last run, "Bump effect", is still live.',
             },
           });
-          mock.simulateRoutine({
-            ...base,
-            id: "routine-flakes",
-            name: "Nightly flake sweep",
-            brief: "Rerun the flaky suites and report what still fails.",
-            target: { kind: "worker", projectId: state.workspace.homeProjectId },
-            schedule: { kind: "interval", hours: 12 },
-            enabled: false,
-          });
         }
         return made;
       });
       await openWorkspaceSettingsFromBar(page);
       await page.getByTestId("workspace-page").waitFor();
-      await page.getByTestId("workspace-advanced").scrollIntoViewIfNeeded();
+      // Where the section sits, under Models; the base has none, so its neighbour stands in.
+      const routines = page.getByTestId("workspace-routines");
+      await (
+        (await routines.count()) > 0
+          ? routines
+          : page.getByRole("region", { name: "Reviews & merging" })
+      ).scrollIntoViewIfNeeded();
       await page.waitForTimeout(600);
     },
   },
@@ -3140,6 +3144,21 @@ export const SHOTS: readonly Shot[] = [
       await threadRow(page, made.working).click();
       await expect(page.getByTestId("pane-header")).toContainText("Mail trigger queue worker");
       await page.waitForLoadState("networkidle");
+    },
+  },
+  {
+    name: "workers-panel",
+    title: "The panel's Workers tab beside the orchestrator: its workers by status, Done folded",
+    open: async (page) => {
+      await seedMockSettings(page, { panel: { open: true } });
+      await openWaitingOn(page, true);
+      // The base has no Workers tab: its panel shows as it was, for the before.
+      const tab = page.getByTestId("right-panel").getByRole("tab", { name: "Workers" });
+      if ((await tab.count()) === 0) return;
+      await tab.click();
+      await page.getByTestId("workers-panel-row").first().waitFor();
+      await page.mouse.move(1430, 890);
+      await page.waitForTimeout(400);
     },
   },
   {

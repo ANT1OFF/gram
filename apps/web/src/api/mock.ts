@@ -2357,8 +2357,9 @@ export function createMockApi(options: MockApiOptions = {}) {
   );
   // One spread object and a two-argument `Object.assign`: past three sources `Object.assign` falls
   // back to an overload returning `any`, which would pass `satisfies Api` unchecked.
+  const owned = core.ownedApis();
   const slices = {
-    ...core.ownedApis(),
+    ...owned,
     ...createAgentRuntimeMock(world),
     ...agentSupportMock(),
     ...createAppMock(world),
@@ -2378,7 +2379,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     simulateBrowseApproval: agentBrowse.simulateBrowseApproval,
     ...createTerminalMock(world),
     ...createThreadWakesMock(world),
-    ...createRoutinesMock(world),
+    ...createRoutinesMock(world, () => owned.listWorkspaces()),
   };
   return Object.assign(core, slices) satisfies Api;
 }

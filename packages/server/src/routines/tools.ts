@@ -1,10 +1,13 @@
 /**
- * The routine tools: `routine_list`, `routine_create` and `routine_update` (which also removes one),
- * an orchestrator's, which keeps its workspace's routines without a card, as it spawns inside its
- * charter without one. A worker is bound `routine_create` alone, and its call always asks the user,
- * at every autonomy and in every mode (a forced card, which `bypassPermissions` doesn't lift): a
- * routine starts work on its own later, so a worker never sets one up unasked. Update keeps the
- * same check, should a session's tool list ever carry it to a thread that isn't the orchestrator.
+ * The routine tools, `routine_create` and `routine_update` (which also removes one), which change the
+ * routines in the workspace's charter through its one write path (`Orchestration.editCharter`). An
+ * orchestrator keeps its workspace's routines without a card, as it spawns inside its charter without
+ * one; the charter's digest lists them, so it needs no list tool. A worker is bound `routine_create`
+ * alone, and its call always asks the user, at every autonomy and in every mode (a forced card, which
+ * `bypassPermissions` doesn't lift): a routine starts work on its own later, so a worker never sets
+ * one up unasked. Update keeps the same check, should a session's tool list ever carry it to a
+ * thread that isn't the orchestrator. The user changes routines in Settings, or by chat through
+ * `settings_propose`'s `workspace.routines` on its own card.
  *
  * What a routine starts is gated where it starts (`routines.ts`): its worker is the orchestrator's,
  * spawned under the workspace's autonomy, cap and approvals like any other.
@@ -14,23 +17,30 @@ import {
   parseRoutineSchedule,
   RoutineBrief,
   RoutineName,
+  routineNameKey,
   routineScheduleText,
-  type Project,
-  type Routine,
-  type RoutineTarget,
+  ROUTINES_MAX,
+  WorkspaceRoutines,
+  type ModelRef,
+  type OrchestratorCharter,
   type ThreadId,
+  type WorkspaceRoutine,
   type WorkspaceState,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { defineAppTool } from "../app-tools/definition.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
+import { workerModelLabel } from "../orchestration/rules.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { Routines, type RoutineAuthorship } from "./routines.ts";
+import { localZone } from "../zone-time.ts";
+import { Routines } from "./routines.ts";
+import { nextRunAfter } from "./schedule.ts";
 
 const toolError = (tool: string, message: string) => new AppToolError({ tool, message });
 
@@ -39,49 +49,59 @@ const NO_WORKSPACE =
 
 const TargetKind = Schema.Literals(["worker", "orchestrator"]);
 
-/** A schedule the tools take as words (`parseRoutineSchedule`), refused in the tool's name. */
-const scheduleOf = (tool: string, text: string) => {
-  const parsed = parseRoutineSchedule(text);
-  return "error" in parsed
-    ? Effect.fail(toolError(tool, parsed.error))
-    : Effect.succeed(parsed.schedule);
-};
+const decodeRoutines = Schema.decodeUnknownResult(WorkspaceRoutines);
 
-/** A routine as the tools list it: its schedule in words, and its times as ISO strings. */
-const listed = (routine: Routine, projects: ReadonlyArray<Project>) => ({
-  id: routine.id,
+/** A routine's row in a tool's result: its schedule in words, where it runs, and its next run. */
+const shown = (routine: WorkspaceRoutine, nextRunAt: number | undefined) => ({
   name: routine.name,
-  enabled: routine.enabled,
   schedule: routineScheduleText(routine.schedule),
-  target:
-    routine.target.kind === "orchestrator"
-      ? "orchestrator"
-      : `worker in ${projectName(projects, routine.target.projectId)}${routine.target.model === undefined ? "" : ` on ${routine.target.model}`}`,
-  createdBy: routine.createdBy,
-  ...(routine.nextRunAt === undefined
-    ? {}
-    : { nextRunAt: new Date(routine.nextRunAt).toISOString() }),
-  ...(routine.waiting === undefined ? {} : { waiting: "on the workspace's pause" }),
-  ...(routine.lastRun === undefined
-    ? {}
+  ...(routine.target === "orchestrator"
+    ? { target: "orchestrator" }
     : {
-        lastRun: {
-          at: new Date(routine.lastRun.at).toISOString(),
-          outcome: routine.lastRun.outcome,
-          ...(routine.lastRun.detail === undefined ? {} : { detail: routine.lastRun.detail }),
-          ...(routine.lastRun.threadId === undefined ? {} : { threadId: routine.lastRun.threadId }),
-        },
+        target: "worker",
+        ...(routine.project === undefined ? {} : { project: routine.project }),
+        ...(routine.model === undefined ? {} : { model: workerModelLabel(routine.model) }),
       }),
-  brief: routine.brief,
+  ...(routine.off === true ? { off: true } : {}),
+  ...(nextRunAt === undefined ? {} : { nextRunAt: new Date(nextRunAt).toISOString() }),
 });
 
-const authorship = (caller: ThreadId, by: "orchestrator" | "worker"): RoutineAuthorship => ({
-  by,
-  threadId: caller,
-});
+/** One of the charter's worker models, by `agent:model` or a bare id one entry has. */
+const modelOf = (tool: string, charter: OrchestratorCharter, named: string) =>
+  Effect.gen(function* () {
+    const roster = charter.workerModels ?? [];
+    const matches = roster.filter(
+      (entry) => workerModelLabel(entry) === named || entry.model === named,
+    );
+    if (matches.length !== 1) {
+      return yield* toolError(
+        tool,
+        roster.length === 0
+          ? "This workspace names no worker models; leave `model` out to use the default."
+          : `"${named}" isn't one of this workspace's worker models: ${roster.map(workerModelLabel).join(", ")}.`,
+      );
+    }
+    const { useFor: _useFor, default: _default, ...model } = matches[0]!;
+    return model as ModelRef;
+  });
 
-const projectName = (projects: ReadonlyArray<Project>, id: string) =>
-  projects.find((project) => project.id === id)?.name ?? id;
+/** `edit`, refused when the routines it makes wouldn't be kept: too many, or a name twice. */
+const checked =
+  (
+    edit: (
+      current: ReadonlyArray<WorkspaceRoutine>,
+    ) => ReadonlyArray<WorkspaceRoutine> | { readonly error: string },
+  ) =>
+  (current: ReadonlyArray<WorkspaceRoutine>) => {
+    const next = edit(current);
+    if ("error" in next) return next;
+    const decoded = decodeRoutines(next);
+    return Result.isFailure(decoded)
+      ? {
+          error: `At most ${ROUTINES_MAX} routines, each with a name of its own: ${decoded.failure.message.split("\n")[0]}`,
+        }
+      : next;
+  };
 
 export const RoutineAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -90,13 +110,11 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
 
-    /** The caller's workspace and whether it calls as its orchestrator or as one of its workers. */
+    /** The caller's workspace: the one it orchestrates, or the one it is a worker of. */
     const callerWorkspace = (tool: string, caller: ThreadId) =>
       Effect.gen(function* () {
         const authority = yield* orchestration.authorityOf(caller);
-        if (authority !== undefined) {
-          return { state: authority.state, by: "orchestrator" as const };
-        }
+        if (authority !== undefined) return authority.state;
         const thread = Option.getOrUndefined(yield* store.getThread(caller).pipe(Effect.option));
         if (thread?.spawnedBy === undefined || thread.workspaceId === undefined) {
           return yield* toolError(tool, NO_WORKSPACE);
@@ -105,7 +123,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           yield* store.getWorkspace(thread.workspaceId).pipe(Effect.option),
         );
         if (state === undefined) return yield* toolError(tool, NO_WORKSPACE);
-        return { state, by: "worker" as const };
+        return state;
       });
 
     /** A worker's change to a routine is the user's to allow; an orchestrator's isn't asked. */
@@ -128,91 +146,65 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
             `"${named}" isn't one of this workspace's projects: ${projects.map((project) => project.name).join(", ")}.`,
           );
         }
-        return found;
+        return found.id;
       });
 
-    const targetOf = (
+    /**
+     * The charter's routines with `edit` made, stored through the charter's write path. `edit`
+     * runs on the routines standing at the write, and its refusal fails the tool.
+     */
+    const editRoutines = (
       tool: string,
       state: WorkspaceState,
-      input: {
-        readonly target?: "worker" | "orchestrator" | undefined;
-        readonly project?: string | undefined;
-        readonly model?: string | undefined;
-      },
+      edit: (
+        current: ReadonlyArray<WorkspaceRoutine>,
+      ) => ReadonlyArray<WorkspaceRoutine> | { readonly error: string },
     ) =>
       Effect.gen(function* () {
-        if (input.target === undefined && input.project === undefined) return undefined;
-        if (input.target === "orchestrator") return { kind: "orchestrator" } as RoutineTarget;
-        if (input.project === undefined) {
-          return yield* toolError(
-            tool,
-            "A worker routine names the `project` its worker starts in.",
+        const check = checked(edit);
+        // Checked once here, for the refusal's words; again inside the write, on what stands then.
+        const first = check(state.charter.routines ?? []);
+        if ("error" in first) return yield* toolError(tool, first.error);
+        const saved = yield* orchestration
+          .editCharter(state.workspace.id, (standing) => {
+            const next = check(standing.routines ?? []);
+            if ("error" in next) return undefined;
+            const { routines: _routines, ...rest } = standing;
+            return next.length === 0 ? rest : { ...rest, routines: next };
+          })
+          .pipe(
+            Effect.mapError((e) => toolError(tool, e.message ?? "Couldn't save the routines.")),
           );
-        }
-        const project = yield* projectOf(tool, state, input.project);
-        const target: RoutineTarget = {
-          kind: "worker",
-          projectId: project.id,
-          ...(input.model === undefined ? {} : { model: input.model }),
-        };
-        return target;
+        return saved;
       });
 
-    /** One of the caller's workspace's routines, by id or name. */
-    const routineOf = (tool: string, caller: ThreadId, named: string) =>
+    /** The saved routine `name`, with its next run as the engine reckoned it. */
+    const result = (tool: string, saved: WorkspaceState, name: string) =>
       Effect.gen(function* () {
-        const { state } = yield* callerWorkspace(tool, caller);
-        const all = yield* routines
-          .list(state.workspace.id)
-          .pipe(Effect.mapError((e) => toolError(tool, e.message ?? NO_WORKSPACE)));
-        const wanted = named.trim().toLowerCase();
-        const found =
-          all.find((routine) => routine.id === named) ??
-          all.find((routine) => routine.name.toLowerCase() === wanted);
-        if (found === undefined) {
-          return yield* toolError(
-            tool,
-            `This workspace has no routine "${named}"; routine_list lists them.`,
-          );
-        }
-        return { state, routine: found };
+        const routine = (saved.charter.routines ?? []).find(
+          (each) => routineNameKey(each.name) === routineNameKey(name),
+        );
+        if (routine === undefined) return yield* toolError(tool, `"${name}" wasn't saved.`);
+        const status = (yield* routines
+          .list(saved.workspace.id)
+          .pipe(Effect.orElseSucceed(() => []))).find((each) => each.id === routine.id);
+        // The engine reckons it once it hears of the change; until then, as it will.
+        const now = yield* Clock.currentTimeMillis;
+        const nextRunAt =
+          routine.off === true
+            ? undefined
+            : status?.state.scheduleKey === JSON.stringify(routine.schedule)
+              ? status.state.nextRunAt
+              : nextRunAfter(routine.schedule, now, localZone());
+        return shown(routine, nextRunAt);
       });
-
-    const listTool = defineAppTool({
-      descriptor: {
-        name: "routine_list",
-        class: "read",
-        description:
-          "This workspace's routines (saved briefs on a schedule): each one's schedule, target, next run and last run.",
-      },
-      audience: ["orchestrator"],
-      input: Schema.Struct({ includeBriefs: Schema.optionalKey(Schema.Boolean) }),
-      handle: (caller, input) =>
-        Effect.gen(function* () {
-          const { state } = yield* callerWorkspace("routine_list", caller);
-          const projects = yield* store.listProjects;
-          const all = yield* routines
-            .list(state.workspace.id)
-            .pipe(Effect.mapError((e) => toolError("routine_list", e.message ?? NO_WORKSPACE)));
-          const now = yield* Clock.currentTimeMillis;
-          return {
-            now: new Date(now).toISOString(),
-            routines: all.map((routine) => {
-              const row = listed(routine, projects);
-              if (input.includeBriefs === true) return row;
-              const { brief: _brief, ...rest } = row;
-              return rest;
-            }),
-          };
-        }),
-    });
 
     const createTool = defineAppTool({
       descriptor: {
         name: "routine_create",
         class: "self",
         description:
-          'Save a routine: a brief that runs on a schedule (a daily CI triage, a weekly dependency check). `schedule` is "daily HH:MM", "weekly mon HH:MM" or "every N hours" (24-hour, local time; 1 to 168 hours). Each run, `target: "worker"` starts your worker in `project` on `model` (else the default) with `brief`, written to stand alone; `"orchestrator"` puts the brief in your digest. A run missed while Gram was closed runs once at the next start; a run is skipped while the last run\'s worker is live; a paused workspace holds them. From a worker this asks the user.',
+          'Save a routine: a brief run on a schedule. `schedule`: "daily HH:MM", "weekdays HH:MM", "weekly mon HH:MM" or "every N hours" (local, 24-hour). `target` "worker" starts your worker in `project` on `model` (defaults apply) with `brief`, written to stand alone; "orchestrator" puts it in your digest. A missed run runs once at start; a run is skipped while the last one\'s worker is live. From a worker this asks the user.',
       },
       audience: ["orchestrator", "worker"],
       input: Schema.Struct({
@@ -226,25 +218,36 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
       needsApproval: (caller) => askWorker(caller),
       describe: (caller, input) =>
         Effect.succeed(
-          `Save the routine "${input.name}" (${input.schedule}), which ${input.target === "orchestrator" ? "wakes the orchestrator" : `starts a worker in ${input.project ?? "a project"}`} each time with this brief: ${input.brief.slice(0, 400)}${input.brief.length > 400 ? "…" : ""} [asked by thread ${caller}]`,
+          `Save the routine "${input.name}" (${input.schedule}), which ${input.target === "orchestrator" ? "wakes the orchestrator" : `starts a worker in ${input.project ?? "the home repository"}`} each time with this brief: ${input.brief.slice(0, 400)}${input.brief.length > 400 ? "…" : ""} [asked by thread ${caller}]`,
         ),
       handle: (caller, input) =>
         Effect.gen(function* () {
           const tool = "routine_create";
-          const { state, by } = yield* callerWorkspace(tool, caller);
-          const schedule = yield* scheduleOf(tool, input.schedule);
-          const target = yield* targetOf(tool, state, input);
-          if (target === undefined) return yield* toolError(tool, "Name the routine's `target`.");
-          const routine = yield* routines
-            .create(
-              state.workspace.id,
-              { name: input.name, brief: input.brief, target, schedule },
-              authorship(caller, by),
-            )
-            .pipe(
-              Effect.mapError((e) => toolError(tool, e.message ?? "Couldn't save the routine.")),
-            );
-          return listed(routine, yield* store.listProjects);
+          const state = yield* callerWorkspace(tool, caller);
+          const parsed = parseRoutineSchedule(input.schedule);
+          if ("error" in parsed) return yield* toolError(tool, parsed.error);
+          const project =
+            input.target === "orchestrator" || input.project === undefined
+              ? undefined
+              : yield* projectOf(tool, state, input.project);
+          const model =
+            input.target === "orchestrator" || input.model === undefined
+              ? undefined
+              : yield* modelOf(tool, state.charter, input.model);
+          const routine: WorkspaceRoutine = {
+            name: input.name.trim(),
+            brief: input.brief,
+            schedule: parsed.schedule,
+            ...(input.target === "orchestrator" ? { target: "orchestrator" as const } : {}),
+            ...(project === undefined ? {} : { project }),
+            ...(model === undefined ? {} : { model }),
+          };
+          const saved = yield* editRoutines(tool, state, (current) =>
+            current.some((each) => routineNameKey(each.name) === routineNameKey(routine.name))
+              ? { error: `This workspace already has a routine named "${routine.name}".` }
+              : [...current, routine],
+          );
+          return yield* result(tool, saved, routine.name);
         }),
     });
 
@@ -253,7 +256,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         name: "routine_update",
         class: "self",
         description:
-          "Change a routine, named by `routine` (id or name): only the fields given change, as routine_create takes them. `enabled: false` turns it off; turning it on or a new schedule counts from now. `remove: true` deletes it; its workers carry on.",
+          "Change a routine, named by `routine`: only the fields given change, as routine_create takes them. `off: true` turns it off; turning it on or a new schedule counts from now. `remove: true` deletes it; its workers carry on.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -264,7 +267,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         target: Schema.optionalKey(TargetKind),
         project: Schema.optionalKey(Schema.String),
         model: Schema.optionalKey(Schema.String),
-        enabled: Schema.optionalKey(Schema.Boolean),
+        off: Schema.optionalKey(Schema.Boolean),
         remove: Schema.optionalKey(Schema.Boolean),
       }),
       needsApproval: (caller) => askWorker(caller),
@@ -280,32 +283,70 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
       handle: (caller, input) =>
         Effect.gen(function* () {
           const tool = "routine_update";
-          const { state, routine } = yield* routineOf(tool, caller, input.routine);
-          if (input.remove === true) {
-            yield* routines
-              .remove(routine.id)
-              .pipe(Effect.mapError((e) => toolError(tool, e.message ?? "Couldn't remove it.")));
-            return { removed: routine.name };
+          const state = yield* callerWorkspace(tool, caller);
+          const key = routineNameKey(input.routine);
+          const known = (state.charter.routines ?? []).find(
+            (each) => routineNameKey(each.name) === key,
+          );
+          if (known === undefined) {
+            return yield* toolError(tool, `This workspace has no routine "${input.routine}".`);
           }
-          const schedule =
-            input.schedule === undefined ? undefined : yield* scheduleOf(tool, input.schedule);
-          const target = yield* targetOf(tool, state, input);
-          const updated = yield* routines
-            .update(routine.id, {
-              ...(input.name === undefined ? {} : { name: input.name }),
-              ...(input.brief === undefined ? {} : { brief: input.brief }),
-              ...(schedule === undefined ? {} : { schedule }),
-              ...(target === undefined ? {} : { target }),
-              ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
-            })
-            .pipe(
-              Effect.mapError((e) => toolError(tool, e.message ?? "Couldn't save the routine.")),
+          if (input.remove === true) {
+            yield* editRoutines(tool, state, (current) =>
+              current.filter((each) => routineNameKey(each.name) !== key),
             );
-          return listed(updated, yield* store.listProjects);
+            return { removed: known.name };
+          }
+          const parsed =
+            input.schedule === undefined ? undefined : parseRoutineSchedule(input.schedule);
+          if (parsed !== undefined && "error" in parsed) {
+            return yield* toolError(tool, parsed.error);
+          }
+          const project =
+            input.project === undefined ? undefined : yield* projectOf(tool, state, input.project);
+          const model =
+            input.model === undefined
+              ? undefined
+              : yield* modelOf(tool, state.charter, input.model);
+          const change = (routine: WorkspaceRoutine): WorkspaceRoutine => {
+            const {
+              target: _target,
+              off: _off,
+              project: _project,
+              model: _model,
+              ...rest
+            } = routine;
+            const target =
+              input.target ?? (routine.target === "orchestrator" ? "orchestrator" : "worker");
+            const off = input.off ?? routine.off === true;
+            const keptProject = project ?? routine.project;
+            const keptModel = model ?? routine.model;
+            return {
+              ...rest,
+              ...(input.name === undefined ? {} : { name: input.name.trim() }),
+              ...(input.brief === undefined ? {} : { brief: input.brief }),
+              ...(parsed === undefined ? {} : { schedule: parsed.schedule }),
+              ...(target === "orchestrator" ? { target: "orchestrator" as const } : {}),
+              ...(target === "worker" && keptProject !== undefined ? { project: keptProject } : {}),
+              ...(target === "worker" && keptModel !== undefined ? { model: keptModel } : {}),
+              ...(off ? { off: true as const } : {}),
+            };
+          };
+          const renamed = input.name?.trim() ?? known.name;
+          const saved = yield* editRoutines(tool, state, (current) => {
+            if (
+              routineNameKey(renamed) !== key &&
+              current.some((each) => routineNameKey(each.name) === routineNameKey(renamed))
+            ) {
+              return { error: `This workspace already has a routine named "${renamed}".` };
+            }
+            return current.map((each) => (routineNameKey(each.name) === key ? change(each) : each));
+          });
+          return yield* result(tool, saved, renamed);
         }),
     });
 
-    yield* registry.register([listTool, createTool, updateTool]);
+    yield* registry.register([createTool, updateTool]);
     // Only now: a run opens a worker's session, which keeps the tools it opened with.
     yield* routines.start;
   }),

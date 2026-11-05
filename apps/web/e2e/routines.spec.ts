@@ -32,8 +32,26 @@ const openWorkspace = async (page: Page) => {
   return workspaceId;
 };
 
+/** The workspace's routines as its charter keeps them. */
 const routinesOf = (page: Page, workspaceId: string) =>
-  page.evaluate((id) => window.gramMock!.listRoutines(id as never), workspaceId);
+  page.evaluate(
+    async (id) =>
+      (await window.gramMock!.listWorkspaces()).find((state) => state.workspace.id === id)!.charter
+        .routines ?? [],
+    workspaceId,
+  );
+
+/** Saves `routines` in the workspace's charter, as the orchestrator's tool or settings chat would. */
+const setRoutines = (page: Page, workspaceId: string, routines: unknown[], pause = false) =>
+  page.evaluate(
+    async ({ id, list, paused }) => {
+      const api = window.gramMock!;
+      const state = (await api.listWorkspaces()).find((each) => each.workspace.id === id)!;
+      await api.setOrchestratorCharter(id as never, { ...state.charter, routines: list } as never);
+      if (paused) await api.setOrchestratorPaused(id as never, true);
+    },
+    { id: workspaceId, list: routines, paused: pause },
+  );
 
 test("adds a routine, refuses a 12-hour time, and saves its schedule and target", async ({
   page,
@@ -55,47 +73,48 @@ test("adds a routine, refuses a 12-hour time, and saves its schedule and target"
 
   const row = section.getByTestId("routine-row");
   await expect(row).toHaveCount(1);
-  await expect(row.getByTestId("routine-summary")).toHaveText(/^Daily at 21:30 · Worker in /);
+  await expect(row.getByTestId("routine-summary")).toHaveText(/^Every day at 21:30 · Worker in /);
   await expect(row.getByTestId("routine-runs")).toContainText("21:30");
   await expect(row.getByTestId("routine-runs")).not.toContainText(/AM|PM/);
   const [saved] = await routinesOf(page, workspaceId);
   expect(saved).toMatchObject({
     name: "Daily CI triage",
-    enabled: true,
-    schedule: { kind: "daily", time: "21:30" },
-    target: { kind: "worker" },
+    schedule: { every: "day", at: "21:30" },
   });
+  // The charter's write path gave it an id; it isn't off and goes to a worker.
+  expect(saved?.id).toBeTruthy();
+  expect(saved?.off).toBeUndefined();
+  expect(saved?.target).toBeUndefined();
 
   // Edit it into a weekly orchestrator routine.
   await row.getByRole("button", { name: "Routine Daily CI triage actions" }).click();
   await page.getByRole("menuitem", { name: "Edit…" }).click();
   await editor.getByRole("radio", { name: "Weekly" }).click();
-  await editor.getByLabel("Day").selectOption("fri");
+  await editor.getByLabel("Day").selectOption({ label: "Friday" });
   await editor.getByLabel("Time").fill("16:00");
   await editor.getByRole("radio", { name: "Wakes the orchestrator" }).click();
   await editor.getByTestId("routine-save").click();
   await expect(row.getByTestId("routine-summary")).toHaveText(
     "Fridays at 16:00 · Wakes the orchestrator",
   );
-  expect((await routinesOf(page, workspaceId))[0]).toMatchObject({
-    schedule: { kind: "weekly", day: "fri", time: "16:00" },
-    target: { kind: "orchestrator" },
+  const [edited] = await routinesOf(page, workspaceId);
+  expect(edited).toMatchObject({
+    id: saved?.id,
+    schedule: { every: "week", day: 5, at: "16:00" },
+    target: "orchestrator",
   });
   await section.screenshot({ path: test.info().outputPath("routines-section.png") });
 });
 
 test("turns a routine off and on, runs it now, and removes it after asking", async ({ page }) => {
   const workspaceId = await openWorkspace(page);
-  await page.evaluate(async (id) => {
-    const api = window.gramMock!;
-    const project = (await api.listProjects())[0]!;
-    await api.createRoutine(id as never, {
+  await setRoutines(page, workspaceId, [
+    {
       name: "Nightly flake sweep",
       brief: "Rerun the flaky suites and report what still fails.",
-      target: { kind: "worker", projectId: project.id },
-      schedule: { kind: "interval", hours: 12 },
-    });
-  }, workspaceId);
+      schedule: { every: "hours", hours: 12 },
+    },
+  ]);
   const section = page.getByTestId("workspace-routines");
   const row = section.getByTestId("routine-row");
   await expect(row.getByTestId("routine-summary")).toHaveText(/^Every 12 hours · Worker in /);
@@ -105,7 +124,7 @@ test("turns a routine off and on, runs it now, and removes it after asking", asy
   await expect(toggle).toBeChecked();
   await toggle.click();
   await expect(row.getByTestId("routine-runs")).toHaveText("Off");
-  expect((await routinesOf(page, workspaceId))[0]?.enabled).toBe(false);
+  expect((await routinesOf(page, workspaceId))[0]?.off).toBe(true);
   await toggle.click();
   await expect(row.getByTestId("routine-runs")).toContainText("Next ");
 
@@ -122,16 +141,19 @@ test("turns a routine off and on, runs it now, and removes it after asking", asy
 
 test("a paused workspace's routines can't be run now", async ({ page }) => {
   const workspaceId = await openWorkspace(page);
-  await page.evaluate(async (id) => {
-    const api = window.gramMock!;
-    await api.createRoutine(id as never, {
-      name: "Weekly dependency check",
-      brief: "Check for outdated dependencies.",
-      target: { kind: "orchestrator" },
-      schedule: { kind: "weekly", day: "mon", time: "08:00" },
-    });
-    await api.setOrchestratorPaused(id as never, true);
-  }, workspaceId);
+  await setRoutines(
+    page,
+    workspaceId,
+    [
+      {
+        name: "Weekly dependency check",
+        brief: "Check for outdated dependencies.",
+        target: "orchestrator",
+        schedule: { every: "week", day: 1, at: "08:00" },
+      },
+    ],
+    true,
+  );
   const row = page.getByTestId("workspace-routines").getByTestId("routine-row");
   await expect(row.getByTestId("routine-run-now")).toBeDisabled();
 });

@@ -3,13 +3,7 @@
 // next start; a live worker from the last run makes the next one a skip; a paused workspace holds
 // them; and a worker's routine tool always asks the user.
 import { describe, expect, it } from "@effect/vitest";
-import {
-  type ProjectId,
-  type Routine,
-  type RoutineId,
-  type ThreadId,
-  type WorkspaceId,
-} from "@gram/contracts";
+import { type RoutineSchedule, type ThreadId, type WorkspaceId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
@@ -30,8 +24,9 @@ import {
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
-import { Routines, routineHandlers } from "./routines.ts";
 import { HOUR_MS, nextRunAfter } from "./schedule.ts";
+import { addRoutine, ranAfter, routineNow, runNow, workerRoutine } from "./test-kit.ts";
+import { localZone } from "../zone-time.ts";
 
 /** The routine's workers: the threads whose `spawnedBy` names it. */
 const workersOf = (id: string) =>
@@ -40,42 +35,13 @@ const workersOf = (id: string) =>
     return (yield* store.listThreads).filter((thread) => thread.spawnedBy?.routine?.id === id);
   });
 
-const routineNow = (id: string) =>
-  Effect.gen(function* () {
-    const routines = yield* Routines;
-    return yield* routines.get(id as RoutineId);
-  });
-
-/** Waits until the routine has recorded a run after `after`, and returns it. */
-const ranAfter = (id: string, after: number) =>
-  waitReal(
-    `a run of routine ${id} after ${after}`,
-    routineNow(id).pipe(
-      Effect.map((routine) =>
-        routine.lastRun !== undefined && routine.lastRun.at >= after ? routine : undefined,
-      ),
-    ),
-  );
-
-/** A worker routine in the orchestrator's workspace, made as the user makes one in Settings. */
+/** A worker routine in the orchestrator's workspace, as the user makes one in Settings. */
 const userRoutine = (
   workspaceId: WorkspaceId,
   projectId: string,
-  schedule: Routine["schedule"],
+  schedule: RoutineSchedule,
   name = "CI triage",
-) =>
-  Effect.gen(function* () {
-    const handlers = yield* routineHandlers;
-    return yield* handlers["routine.create"]({
-      workspaceId,
-      draft: {
-        name,
-        brief: "Look at main's failing jobs and open one PR per real failure.",
-        target: { kind: "worker", projectId: projectId as ProjectId },
-        schedule,
-      },
-    });
-  });
+) => workerRoutine(workspaceId, projectId, schedule, name);
 
 describe.skipIf(!hasGit)("routines", () => {
   it.effect(
@@ -88,12 +54,11 @@ describe.skipIf(!hasGit)("routines", () => {
           Effect.gen(function* () {
             const { project, workspaceId, thread: orchestrator } = yield* openOrchestrator(world);
             const routine = yield* userRoutine(workspaceId, project.id, {
-              kind: "interval",
+              every: "hours",
               hours: 6,
             });
             const created = yield* Clock.currentTimeMillis;
             expect(routine.nextRunAt).toBe(created + 6 * HOUR_MS);
-            expect(routine.createdBy).toBe("user");
             expect(yield* workersOf(routine.id)).toHaveLength(0);
 
             yield* TestClock.adjust("6 hours");
@@ -111,7 +76,7 @@ describe.skipIf(!hasGit)("routines", () => {
             const fake = yield* FakeAgentControl;
             const brief = fake.sessions.find((s) => s.options.threadId === worker?.id)?.sent[0]
               ?.text;
-            expect(brief).toContain('started by the routine "CI triage" (every 6 hours)');
+            expect(brief).toContain('started by the scheduled routine "CI triage" (every 6 hours)');
             expect(brief).toContain("It is not a message the user just sent.");
             expect(brief).toContain("Look at main's failing jobs");
           }),
@@ -127,15 +92,15 @@ describe.skipIf(!hasGit)("routines", () => {
         Effect.gen(function* () {
           const { project, workspaceId } = yield* openOrchestrator(world);
           const routine = yield* userRoutine(workspaceId, project.id, {
-            kind: "daily",
-            time: "09:00",
+            every: "day",
+            at: "09:00",
           });
           const now = yield* Clock.currentTimeMillis;
-          expect(routine.nextRunAt).toBe(nextRunAfter(routine.schedule, now, routine.timeZone));
+          expect(routine.nextRunAt).toBe(nextRunAfter(routine.schedule, now, localZone()));
           yield* TestClock.adjust(routine.nextRunAt! - now);
           const ran = yield* ranAfter(routine.id, routine.nextRunAt!);
           expect(ran.lastRun?.outcome).toBe("started");
-          expect(ran.nextRunAt).toBe(nextRunAfter(routine.schedule, ran.lastRun!.at, ran.timeZone));
+          expect(ran.nextRunAt).toBe(nextRunAfter(routine.schedule, ran.lastRun!.at, localZone()));
           expect(ran.nextRunAt! - ran.lastRun!.at).toBeGreaterThanOrEqual(23 * HOUR_MS);
         }),
       );
@@ -152,7 +117,7 @@ describe.skipIf(!hasGit)("routines", () => {
           Effect.gen(function* () {
             const { project, workspaceId } = yield* openOrchestrator(world);
             const routine = yield* userRoutine(workspaceId, project.id, {
-              kind: "interval",
+              every: "hours",
               hours: 1,
             });
             return { routine, workspaceId };
@@ -186,10 +151,7 @@ describe.skipIf(!hasGit)("routines", () => {
         world,
         Effect.gen(function* () {
           const { project, workspaceId } = yield* openOrchestrator(world);
-          const routine = yield* userRoutine(workspaceId, project.id, {
-            kind: "interval",
-            hours: 1,
-          });
+          const routine = yield* userRoutine(workspaceId, project.id, { every: "hours", hours: 1 });
           yield* TestClock.adjust("1 hour");
           const first = yield* ranAfter(routine.id, 0);
           expect(first.lastRun?.outcome).toBe("started");
@@ -204,8 +166,7 @@ describe.skipIf(!hasGit)("routines", () => {
           expect(yield* workersOf(routine.id)).toHaveLength(1);
 
           // Run now refuses rather than starting a second.
-          const handlers = yield* routineHandlers;
-          const refused = yield* handlers["routine.run"]({ id: routine.id }).pipe(Effect.flip);
+          const refused = yield* runNow(routine.id).pipe(Effect.flip);
           expect(refused.message).toContain("is still live");
           expect(yield* workersOf(routine.id)).toHaveLength(1);
         }),
@@ -221,10 +182,7 @@ describe.skipIf(!hasGit)("routines", () => {
         Effect.gen(function* () {
           const orchestration = yield* Orchestration;
           const { project, workspaceId } = yield* openOrchestrator(world);
-          const routine = yield* userRoutine(workspaceId, project.id, {
-            kind: "interval",
-            hours: 1,
-          });
+          const routine = yield* userRoutine(workspaceId, project.id, { every: "hours", hours: 1 });
           yield* orchestration.setPaused(workspaceId, true);
           yield* TestClock.adjust("3 hours");
           yield* waitReal(
@@ -234,8 +192,7 @@ describe.skipIf(!hasGit)("routines", () => {
           const held = yield* routineNow(routine.id);
           expect(held.lastRun).toBeUndefined();
           expect(yield* workersOf(routine.id)).toHaveLength(0);
-          const handlers = yield* routineHandlers;
-          const refused = yield* handlers["routine.run"]({ id: routine.id }).pipe(Effect.flip);
+          const refused = yield* runNow(routine.id).pipe(Effect.flip);
           expect(refused.message).toContain("paused");
 
           const resumedAt = yield* Clock.currentTimeMillis;
@@ -258,19 +215,14 @@ describe.skipIf(!hasGit)("routines", () => {
         Effect.gen(function* () {
           const { workspaceId, thread, session } = yield* openOrchestrator(world);
           yield* settle;
-          const handlers = yield* routineHandlers;
-          const routine = yield* handlers["routine.create"]({
-            workspaceId,
-            draft: {
-              name: "Weekly dependency check",
-              brief:
-                "Check for outdated dependencies and brief a worker for each bump worth doing.",
-              target: { kind: "orchestrator" },
-              schedule: { kind: "weekly", day: "mon", time: "08:00" },
-            },
+          const routine = yield* addRoutine(workspaceId, {
+            name: "Weekly dependency check",
+            brief: "Check for outdated dependencies and brief a worker for each bump worth doing.",
+            target: "orchestrator",
+            schedule: { every: "week", day: 1, at: "08:00" },
           });
           const before = session.sent.length;
-          const ran = yield* handlers["routine.run"]({ id: routine.id });
+          const ran = yield* runNow(routine.id);
           expect(ran.lastRun).toMatchObject({ outcome: "messaged", manual: true });
           // Run now leaves the schedule where it was.
           expect(ran.nextRunAt).toBe(routine.nextRunAt);
@@ -278,7 +230,7 @@ describe.skipIf(!hasGit)("routines", () => {
           yield* TestClock.adjust("60 seconds");
           const woken = yield* waitSent(thread.id, before + 1);
           const digest = woken.sent.at(-1)?.text ?? "";
-          expect(digest).toContain('Routine "Weekly dependency check" (mondays at 08:00) is due.');
+          expect(digest).toContain('Routine "Weekly dependency check" (Mondays at 08:00) is due.');
           expect(digest).toContain("Check for outdated dependencies");
         }),
       );
@@ -292,7 +244,7 @@ describe.skipIf(!hasGit)("routines", () => {
         world,
         Effect.gen(function* () {
           const { project, other, workspaceId } = yield* openOrchestratorAcross(world);
-          const routine = yield* userRoutine(workspaceId, other.id, { kind: "interval", hours: 1 });
+          const routine = yield* userRoutine(workspaceId, other.id, { every: "hours", hours: 1 });
           const store = yield* ThreadStore;
           // Its project leaves the workspace after the routine was saved.
           const orchestration = yield* Orchestration;
@@ -303,13 +255,14 @@ describe.skipIf(!hasGit)("routines", () => {
             projectIds: [project.id],
             homeProjectId: project.id,
           });
-          const handlers = yield* routineHandlers;
-          const ran = yield* handlers["routine.run"]({ id: routine.id });
+          const ran = yield* runNow(routine.id);
           expect(ran.lastRun).toMatchObject({ outcome: "failed" });
           expect(ran.lastRun?.detail).toContain("no longer one of the workspace's");
           const outbox = yield* outboxOf(workspaceId);
           expect(
-            outbox.notes.some((note) => note.includes('Routine "CI triage" couldn\'t run')),
+            outbox.notes.some((note) =>
+              note.includes('Routine "CI triage" (every hour) couldn\'t run'),
+            ),
           ).toBe(true);
         }),
       );
@@ -354,28 +307,35 @@ describe.skipIf(!hasGit)("routines", () => {
           expect(workerTools).toEqual(["routine_create"]);
           // A forced card: neither bypassPermissions nor an earlier allow lifts it.
           expect(approvalFor("self", true)).toBe("forced");
-          const list = registry
-            .forThread(thread.id, "orchestrator")
-            .find((each) => each.descriptor.name === "routine_list");
-          expect(list?.needsApproval).toBeUndefined();
 
           // The orchestrator's create goes straight through; once approved, a worker's does too.
-          const made = (yield* session.callTool("routine_create", input)) as { id: string };
-          expect((yield* routineNow(made.id)).createdBy).toBe("orchestrator");
-          const fromWorker = (yield* worker.session.callTool("routine_create", {
+          const made = (yield* session.callTool("routine_create", input)) as {
+            name: string;
+            schedule: string;
+            nextRunAt?: string;
+          };
+          expect(made).toMatchObject({
+            name: "Nightly flake sweep",
+            schedule: "every day at 02:00",
+            target: "worker",
+          });
+          expect(made.nextRunAt).toBeDefined();
+          yield* worker.session.callTool("routine_create", {
             ...input,
             name: "Weekly audit",
             schedule: "weekly fri 16:00",
-          })) as { id: string };
-          const saved = yield* routineNow(fromWorker.id);
-          expect(saved).toMatchObject({ createdBy: "worker", createdByThread: worker.thread.id });
-          const listed = (yield* session.callTool("routine_list", {})) as {
-            routines: ReadonlyArray<{ name: string; schedule: string; target: string }>;
-          };
-          expect(listed.routines.map((r) => [r.name, r.schedule, r.target])).toEqual([
-            ["Nightly flake sweep", "Daily at 02:00", "worker in shop"],
-            ["Weekly audit", "Fridays at 16:00", "worker in shop"],
+          });
+          const charter = () =>
+            Effect.gen(function* () {
+              const store = yield* ThreadStore;
+              return (yield* store.getWorkspace(thread.workspaceId as WorkspaceId)).charter;
+            });
+          const saved = (yield* charter()).routines ?? [];
+          expect(saved.map((routine) => [routine.name, routine.schedule])).toEqual([
+            ["Nightly flake sweep", { every: "day", at: "02:00" }],
+            ["Weekly audit", { every: "week", day: 5, at: "16:00" }],
           ]);
+          expect(saved.every((routine) => routine.id !== undefined)).toBe(true);
           const refused = yield* session
             .callTool("routine_create", { ...input, schedule: "every 0 hours" })
             .pipe(Effect.flip);
@@ -386,12 +346,25 @@ describe.skipIf(!hasGit)("routines", () => {
           expect(garbled.message).toContain('"daily HH:MM"');
           const dup = yield* session.callTool("routine_create", input).pipe(Effect.flip);
           expect(dup.message).toContain("already has a routine named");
-          yield* session.callTool("routine_update", { routine: "Weekly audit", enabled: false });
-          expect((yield* routineNow(fromWorker.id)).nextRunAt).toBeUndefined();
+          const outside = yield* session
+            .callTool("routine_create", { ...input, name: "Elsewhere", project: "nowhere" })
+            .pipe(Effect.flip);
+          expect(outside.message).toContain("isn't one of this workspace's projects");
+          // Turned off it keeps its place; removed it goes, its id with it.
+          yield* session.callTool("routine_update", { routine: "weekly audit", off: true });
+          expect((yield* charter()).routines?.find((r) => r.name === "Weekly audit")?.off).toBe(
+            true,
+          );
+          const renamed = (yield* session.callTool("routine_update", {
+            routine: "Nightly flake sweep",
+            name: "Flake sweep",
+          })) as { name: string };
+          expect(renamed.name).toBe("Flake sweep");
+          expect((yield* charter()).routines?.find((r) => r.name === "Flake sweep")?.id).toBe(
+            saved[0]!.id,
+          );
           yield* session.callTool("routine_update", { routine: "Weekly audit", remove: true });
-          expect(
-            ((yield* session.callTool("routine_list", {})) as { routines: unknown[] }).routines,
-          ).toHaveLength(1);
+          expect(((yield* charter()).routines ?? []).map((r) => r.name)).toEqual(["Flake sweep"]);
         }),
       );
     }),

@@ -9,6 +9,7 @@ import { SupportedTaskModelSelection } from "./task-preflight.ts";
 import { ProjectId, ThreadId, WorkspaceId } from "./ids.ts";
 import { MergeReviewPolicy, RepoMergeReviewPolicies } from "./merge-policy.ts";
 import { FeatureStage, OrchestrationPause } from "./orchestration.ts";
+import { WorkspaceRoutines } from "./routines.ts";
 
 /** A named set of projects one orchestrator works across. */
 export const Workspace = Schema.Struct({
@@ -247,6 +248,11 @@ export const OrchestratorCharter = Schema.Struct({
   idleAutoCompact: Schema.optionalKey(Schema.Boolean),
   /** The thread kinds it covers; absent is the orchestrator only. Read through `idleCompactOf`. */
   idleAutoCompactKinds: Schema.optionalKey(Schema.Array(IdleCompactKind)),
+  /**
+   * Briefs the user approved, each started as a fresh worker on its schedule
+   * (`packages/server/src/orchestration/routines.ts`). Absent or empty runs none.
+   */
+  routines: Schema.optionalKey(WorkspaceRoutines),
 });
 export type OrchestratorCharter = typeof OrchestratorCharter.Type;
 

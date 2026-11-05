@@ -804,7 +804,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
             : [],
         ),
       );
-      const feature = taskFeature(input.input.text, taken);
+      const feature = taskFeature(input.name ?? input.input.text, taken);
       // The workspace's standing instructions reach a worker the user starts too.
       const text = withBriefFooter(input.input.text, briefFooterOf(state.charter));
       const hold = input.hold === true;

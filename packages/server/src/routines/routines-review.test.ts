@@ -6,11 +6,9 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   DEFAULT_CHARTER,
   LIMIT_PAUSE_TOOL,
-  Routine,
+  OrchestratorCharter,
   type AgentFailureKind,
   type MessageId,
-  type ProjectId,
-  type RoutineId,
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -37,11 +35,19 @@ import {
   type World,
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { SqlClient } from "../platform/unstable.ts";
 import { FakeAgentControl, type FakeSession } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
-import { Routines, routineHandlers } from "./routines.ts";
+import {
+  addRoutine,
+  editRoutine,
+  ranAfter,
+  routineNow,
+  runNow,
+  stageState,
+  stateOf,
+  workerRoutine,
+} from "./test-kit.ts";
 
 const HOUR = 3_600_000;
 const SLOW = { timeout: 90_000 } as const;
@@ -50,40 +56,6 @@ const workersOf = (id: string) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
     return (yield* store.listThreads).filter((thread) => thread.spawnedBy?.routine?.id === id);
-  });
-
-const routineNow = (id: string) =>
-  Effect.gen(function* () {
-    return yield* (yield* Routines).get(id as RoutineId);
-  });
-
-const ranAfter = (id: string, after: number) =>
-  waitReal(
-    `a run of routine ${id} after ${after}`,
-    routineNow(id).pipe(
-      Effect.map((routine) =>
-        routine.lastRun !== undefined && routine.lastRun.at >= after ? routine : undefined,
-      ),
-    ),
-  );
-
-const workerRoutine = (
-  workspaceId: WorkspaceId,
-  projectId: string,
-  name = "CI triage",
-  schedule: Routine["schedule"] = { kind: "interval", hours: 1 },
-) =>
-  Effect.gen(function* () {
-    const handlers = yield* routineHandlers;
-    return yield* handlers["routine.create"]({
-      workspaceId,
-      draft: {
-        name,
-        brief: "Look at main's failing jobs and open one PR per real failure.",
-        target: { kind: "worker", projectId: projectId as ProjectId },
-        schedule,
-      },
-    });
   });
 
 /** The limit cards open on the orchestrator's thread. */
@@ -124,7 +96,6 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
             const { thread, project, workspaceId } = yield* openOrchestrator(world);
             const session = yield* atAutonomy(thread, "full", { maxConcurrentWorkers: 1 });
             const routine = yield* workerRoutine(workspaceId, project.id);
-            const handlers = yield* routineHandlers;
             // The orchestrator's spawn is inside its worktree work when the routine runs.
             const racing = yield* session
               .callTool("spawn_worker", {
@@ -135,7 +106,7 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
               })
               .pipe(Effect.forkScoped);
             for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
-            const ran = yield* handlers["routine.run"]({ id: routine.id });
+            const ran = yield* runNow(routine.id);
             yield* Fiber.join(racing);
             yield* settle;
             const store = yield* ThreadStore;
@@ -168,13 +139,11 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
             expect(ran.lastRun?.outcome).toBe("started");
             yield* settle;
             // The crash: the claim and the worker exist, but the record of the run never landed.
-            const sql = yield* SqlClient.SqlClient;
             const claim = {
               requestId: `routine:${routine.id}:${before.nextRunAt}`,
               slot: before.nextRunAt!,
             };
-            const data = JSON.stringify(Schema.encodeSync(Routine)({ ...before, claim }));
-            yield* sql`UPDATE routines SET data = ${data} WHERE id = ${routine.id}`;
+            yield* stageState(routine.id, { ...stateOf(before), claim });
             // The run's spawn was keyed by the routine and its slot, so any retry of it is that worker.
             expect(ran.lastRun!.threadId).toBe(
               workerThreadId(workspaceId, `routine:${routine.id}:${before.nextRunAt}`),
@@ -220,8 +189,7 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
             yield* failBeforeOutput(failed.session, failed.thread.id);
 
             const routine = yield* workerRoutine(workspaceId, project.id);
-            const handlers = yield* routineHandlers;
-            const held = yield* handlers["routine.run"]({ id: routine.id });
+            const held = yield* runNow(routine.id);
             expect(held.lastRun?.outcome).toBe("held");
             const heldId = held.lastRun!.heldId!;
 
@@ -229,7 +197,7 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
             expect(released.spawnedBy?.routine).toEqual({ id: routine.id, name: "CI triage" });
             yield* settle;
 
-            const again = yield* handlers["routine.run"]({ id: routine.id }).pipe(Effect.flip);
+            const again = yield* runNow(routine.id).pipe(Effect.flip);
             expect(again.message).toContain("is still live");
             expect(yield* workersOf(routine.id)).toHaveLength(1);
             expect((yield* outboxOf(workspaceId)).heldBriefs ?? []).toHaveLength(0);
@@ -266,10 +234,7 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
               ),
             );
             const routine = yield* workerRoutine(workspaceId, project.id);
-            const handlers = yield* routineHandlers;
-            const running = yield* handlers["routine.run"]({ id: routine.id }).pipe(
-              Effect.forkScoped,
-            );
+            const running = yield* runNow(routine.id).pipe(Effect.forkScoped);
             const ran = yield* waitReal(
               "the run to end without asking",
               Effect.sync(() => running.pollUnsafe()),
@@ -280,9 +245,11 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
             expect(done.lastRun).toMatchObject({ outcome: "failed" });
             expect(done.lastRun?.detail).toContain("92%");
             expect(yield* workersOf(routine.id)).toHaveLength(0);
-            // The routines' lock was let go: another save goes through.
-            const routines = yield* Routines;
-            expect((yield* routines.update(routine.id, { enabled: false })).enabled).toBe(false);
+            // The routines' lock was let go: another run goes through it, and ends the same way.
+            const again = yield* runNow(routine.id);
+            expect(again.lastRun).toMatchObject({ outcome: "failed" });
+            yield* editRoutine(routine.id, (each) => ({ ...each, off: true }));
+            expect((yield* routineNow(routine.id)).enabled).toBe(false);
             expect(DEFAULT_CHARTER.pauseAtLimitPct).toBeUndefined();
           }),
         );
@@ -317,7 +284,7 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
             yield* settle;
             expect(events.length).toBeGreaterThan(seen);
             expect((yield* outboxOf(workspaceId)).notes).toContainEqual(
-              expect.stringContaining('Routine "CI triage" couldn\'t run'),
+              expect.stringContaining('Routine "CI triage" (every hour) couldn\'t run'),
             );
             // The next run is still armed, an hour on.
             const at = ran.lastRun!.at;
@@ -336,36 +303,40 @@ describe.skipIf(!hasGit)("routines: review findings", () => {
       yield* withServer(
         world,
         Effect.gen(function* () {
-          const { project, workspaceId } = yield* openOrchestrator(world);
-          const handlers = yield* routineHandlers;
-          const draft = {
+          const { project, workspaceId, session } = yield* openOrchestrator(world);
+          // The user's save is the charter RPC, whose payload decodes before anything is stored.
+          const routine = {
             name: "   ",
             brief: "Triage.",
-            target: { kind: "worker" as const, projectId: project.id },
-            schedule: { kind: "daily" as const, time: "09:00" },
+            project: project.id,
+            schedule: { every: "day" as const, at: "09:00" },
           };
-          const blank = yield* handlers["routine.create"]({ workspaceId, draft }).pipe(Effect.flip);
-          expect(blank._tag).toBe("InvalidState");
-          const blankBrief = yield* handlers["routine.create"]({
-            workspaceId,
-            draft: { ...draft, name: "Triage", brief: " \n " },
-          }).pipe(Effect.flip);
-          expect(blankBrief._tag).toBe("InvalidState");
-          expect(yield* handlers["routine.list"]({ workspaceId })).toEqual([]);
+          const decode = Schema.decodeUnknownSync(OrchestratorCharter);
+          expect(() => decode({ ...DEFAULT_CHARTER, routines: [routine] })).toThrow();
+          expect(() =>
+            decode({
+              ...DEFAULT_CHARTER,
+              routines: [{ ...routine, name: "Triage", brief: " \n " }],
+            }),
+          ).toThrow();
+          // The orchestrator's tool refuses one before it reaches the charter.
+          const blank = yield* session
+            .callTool("routine_create", {
+              name: "   ",
+              brief: "Triage.",
+              schedule: "daily 09:00",
+              target: "worker",
+            })
+            .pipe(Effect.flip);
+          expect(blank.message).toContain("Invalid input");
 
-          const made = yield* handlers["routine.create"]({
-            workspaceId,
-            draft: { ...draft, name: "  CI triage  " },
-          });
+          const made = yield* addRoutine(workspaceId, { ...routine, name: "  CI triage  " });
           expect(made.name).toBe("CI triage");
-          const renamed = yield* handlers["routine.update"]({
-            id: made.id,
-            patch: { name: "\t " },
-          }).pipe(Effect.flip);
-          expect(renamed._tag).toBe("InvalidState");
+          const renamed = yield* session
+            .callTool("routine_update", { routine: "CI triage", name: "\t " })
+            .pipe(Effect.flip);
+          expect(renamed.message).toContain("Invalid input");
           expect((yield* routineNow(made.id)).name).toBe("CI triage");
-          // Every saved routine reads back.
-          expect(Schema.decodeUnknownSync(Routine)(yield* routineNow(made.id))).toBeDefined();
         }),
       );
     }),
@@ -424,8 +395,7 @@ describe.skipIf(!hasGit)("routines: second review, the run lifecycle", () => {
           Effect.gen(function* () {
             const { project, workspaceId, session, healthy } = yield* brokenModel(world, 3);
             const routine = yield* workerRoutine(workspaceId, project.id);
-            const handlers = yield* routineHandlers;
-            const held = yield* handlers["routine.run"]({ id: routine.id });
+            const held = yield* runNow(routine.id);
             expect(held.lastRun?.outcome).toBe("held");
             const stored = (yield* outboxOf(workspaceId)).heldBriefs?.find(
               (brief) => brief.id === held.lastRun?.heldId,
@@ -479,15 +449,14 @@ describe.skipIf(!hasGit)("routines: second review, the run lifecycle", () => {
             const orchestration = yield* Orchestration;
             const { project, workspaceId } = yield* brokenModel(world, 8);
             const routine = yield* workerRoutine(workspaceId, project.id);
-            const handlers = yield* routineHandlers;
-            const held = yield* handlers["routine.run"]({ id: routine.id });
+            const held = yield* runNow(routine.id);
             expect(held.lastRun?.outcome).toBe("held");
             // The user starts the held brief; its worktree is still being made when Run now comes.
             const release = yield* orchestration
               .releaseHeldBrief(workspaceId, held.lastRun!.heldId!)
               .pipe(Effect.forkScoped);
             for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
-            const second = yield* handlers["routine.run"]({ id: routine.id }).pipe(Effect.flip);
+            const second = yield* runNow(routine.id).pipe(Effect.flip);
             const released = yield* Fiber.join(release);
             yield* settle;
             expect(second.message).toContain("is still live");
@@ -515,11 +484,7 @@ describe.skipIf(!hasGit)("routines: second review, the run lifecycle", () => {
             const threadId = workerThreadId(workspaceId, requestId);
             // The crash: the run claimed its slot and its worker's row was made, then the app quit
             // before the brief was sent or the spawn recorded.
-            const sql = yield* SqlClient.SqlClient;
-            const claimed = { ...routine, claim: { requestId, slot } };
-            yield* sql`UPDATE routines SET data = ${JSON.stringify(
-              Schema.encodeSync(Routine)(claimed),
-            )} WHERE id = ${routine.id}`;
+            yield* stageState(routine.id, { ...stateOf(routine), claim: { requestId, slot } });
             const runtimes = yield* ThreadRuntimes;
             yield* runtimes.create({
               id: threadId,
@@ -554,7 +519,7 @@ describe.skipIf(!hasGit)("routines: second review, the run lifecycle", () => {
                   fake.sessions.find((each) => each.options.threadId === made.threadId)?.sent[0],
               ),
             );
-            expect(brief.text).toContain('started by the routine "CI triage"');
+            expect(brief.text).toContain('started by the scheduled routine "CI triage"');
             expect((yield* workersOf(made.id)).map((each) => each.id)).toEqual([made.threadId]);
           }),
         );
@@ -583,10 +548,7 @@ describe.skipIf(!hasGit)("routines: second review, the run lifecycle", () => {
               requestId: `routine:${routine.id}:${routine.nextRunAt}`,
               slot: routine.nextRunAt!,
             };
-            const sql = yield* SqlClient.SqlClient;
-            yield* sql`UPDATE routines SET data = ${JSON.stringify(
-              Schema.encodeSync(Routine)({ ...ran, claim }),
-            )} WHERE id = ${routine.id}`;
+            yield* stageState(routine.id, { ...stateOf(ran), claim });
             return { id: routine.id, old, slot: claim.slot };
           }),
         );
@@ -595,10 +557,21 @@ describe.skipIf(!hasGit)("routines: second review, the run lifecycle", () => {
           Effect.gen(function* () {
             yield* settle;
             // The user moves the schedule; the next run is reckoned on the new one.
-            const routines = yield* Routines;
-            const rescheduled = yield* routines.update(first.id as RoutineId, {
-              schedule: { kind: "interval", hours: 3 },
-            });
+            yield* editRoutine(first.id, (each) => ({
+              ...each,
+              schedule: { every: "hours", hours: 3 },
+            }));
+            const rescheduled = yield* waitReal(
+              "the new schedule reckoned",
+              routineNow(first.id).pipe(
+                Effect.map((each) =>
+                  each.scheduleKey === JSON.stringify({ every: "hours", hours: 3 }) &&
+                  each.nextRunAt !== first.slot
+                    ? each
+                    : undefined,
+                ),
+              ),
+            );
             expect(rescheduled.nextRunAt).not.toBe(first.slot);
             const at = yield* Clock.currentTimeMillis;
             yield* TestClock.adjust("3 hours");
@@ -622,28 +595,21 @@ describe.skipIf(!hasGit)("routines: second review, the run lifecycle", () => {
           world,
           Effect.gen(function* () {
             const { workspaceId, thread } = yield* openOrchestrator(world);
-            const handlers = yield* routineHandlers;
-            const routine = yield* handlers["routine.create"]({
-              workspaceId,
-              draft: {
-                name: "Weekly dependency check",
-                brief: "Check for outdated dependencies.",
-                target: { kind: "orchestrator" },
-                schedule: { kind: "interval", hours: 1 },
-              },
+            const routine = yield* addRoutine(workspaceId, {
+              name: "Weekly dependency check",
+              brief: "Check for outdated dependencies.",
+              target: "orchestrator",
+              schedule: { every: "hours", hours: 1 },
             });
             const before = yield* routineNow(routine.id);
             yield* TestClock.adjust("1 hour");
             yield* ranAfter(routine.id, 0);
             // The crash: the note is in the outbox, the run's record of it never landed.
-            const sql = yield* SqlClient.SqlClient;
             const claim = {
               requestId: `routine:${routine.id}:${before.nextRunAt}`,
               slot: before.nextRunAt!,
             };
-            yield* sql`UPDATE routines SET data = ${JSON.stringify(
-              Schema.encodeSync(Routine)({ ...before, claim }),
-            )} WHERE id = ${routine.id}`;
+            yield* stageState(routine.id, { ...stateOf(before), claim });
             return { id: routine.id, workspaceId, orchestrator: thread.id };
           }),
         );

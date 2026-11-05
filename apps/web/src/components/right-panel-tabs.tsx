@@ -1,6 +1,7 @@
-import type { ThreadId } from "@gram/contracts";
+import type { ThreadId, WorkspaceId } from "@gram/contracts";
 
 import { TabsContent } from "@/components/ui/tabs";
+import { WorkersPanel } from "@/orchestration/workers-panel";
 import { ConnectorsPanel } from "@/panels/connectors-panel";
 import { DiffPanel } from "@/panels/diff-panel";
 import { FilesPanel } from "@/panels/files/files-panel";
@@ -16,12 +17,15 @@ import { ReviewRequestsPanel } from "@/reviews/review-requests";
 /** The right panel's tab contents, a chunk of their own that `RightPanel` loads lazily. */
 export function RightPanelTabs({
   threadId,
+  workspaceId,
   previewHere,
   reviewsHere,
   requestsHere,
   openPrsHere,
 }: {
   threadId: ThreadId | undefined;
+  /** The thread's workspace, whose workers the Workers tab lists. */
+  workspaceId: WorkspaceId | undefined;
   previewHere: boolean;
   reviewsHere: boolean;
   requestsHere: boolean;
@@ -29,6 +33,11 @@ export function RightPanelTabs({
 }) {
   return (
     <>
+      {workspaceId !== undefined && (
+        <TabsContent value="workers" className="flex min-h-0 flex-col">
+          <WorkersPanel key={workspaceId} workspaceId={workspaceId} />
+        </TabsContent>
+      )}
       <TabsContent value="diff" className="flex min-h-0 flex-col">
         {threadId && <WorktreeBanner threadId={threadId} />}
         {threadId ? <DiffPanel key={threadId} threadId={threadId} /> : <NoThread />}

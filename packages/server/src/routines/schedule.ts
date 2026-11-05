@@ -1,46 +1,45 @@
-// When a routine next comes due. Daily and weekly times are wall-clock times in the routine's IANA
-// zone, so a daylight-saving change moves the instant and never the time it reads: a 09:00 routine
-// runs at 09:00 on both sides of the change. A time the change skips (02:30 the night clocks go
-// forward) runs at the instant `zoned` settles on, once; a time it repeats runs once too, since the
-// next run is always looked for after the one that ran.
-import { ROUTINE_DAYS, type RoutineDay, type RoutineSchedule } from "@gram/contracts";
+// When a routine next comes due. Daily, weekday and weekly times are wall-clock times in a time
+// zone (the machine's, `localZone()`, when the engine reckons), so a daylight-saving change moves
+// the instant and never the time it reads: a 09:00 routine runs at 09:00 on both sides of the
+// change. A time the change skips (02:30 the night clocks go forward) runs once, at the instant
+// `zoned` settles on; a time it repeats runs once too, since the next run is always looked for
+// after the one that ran. An interval counts real hours from the last run.
+import type { RoutineSchedule } from "@gram/contracts";
 import { formatterOf, plusDays, wallDate, zoned, type Wall } from "../zone-time.ts";
 
 export const HOUR_MS = 3_600_000;
 
-/** The date's weekday, Monday first, as `ROUTINE_DAYS` names it. */
-export const weekdayOf = (date: Wall): RoutineDay =>
-  ROUTINE_DAYS[(new Date(Date.UTC(date.year, date.month, date.day)).getUTCDay() + 6) % 7]!;
+/** The date's weekday as `Date.getDay` counts it: 0 is Sunday. */
+export const weekdayOf = (date: Wall): number =>
+  new Date(Date.UTC(date.year, date.month, date.day)).getUTCDay();
 
-const clockOf = (time: string): { readonly hour: number; readonly minute: number } => {
-  const [hour = "0", minute = "0"] = time.split(":");
-  return { hour: Number(hour), minute: Number(minute) };
-};
+const runsOn = (schedule: Exclude<RoutineSchedule, { every: "hours" }>, weekday: number) =>
+  schedule.every === "day" ||
+  (schedule.every === "weekday" && weekday >= 1 && weekday <= 5) ||
+  (schedule.every === "week" && weekday === (schedule.day ?? 1));
 
 /**
  * The first instant strictly after `after` the schedule falls due, in `zone`: an interval's is
- * `after` plus its hours, a daily or weekly one's the next of its times. Throws `RangeError` for a
- * zone `Intl` doesn't know.
+ * `after` plus its hours, the others the next of their times. Throws `RangeError` for a zone `Intl`
+ * doesn't know.
  */
 export const nextRunAfter = (schedule: RoutineSchedule, after: number, zone: string): number => {
-  if (schedule.kind === "interval") return after + schedule.hours * HOUR_MS;
+  if (schedule.every === "hours") return after + schedule.hours * HOUR_MS;
   const format = formatterOf(zone);
   if (format === undefined) throw new RangeError(`Unknown time zone ${zone}`);
-  const { hour, minute } = clockOf(schedule.time);
+  const [hour = 0, minute = 0] = schedule.at.split(":").map(Number);
   const today = wallDate(format, after);
-  // `today` is `after`'s date in the zone, so an earlier date's time is never after it.
+  // `today` is `after`'s date in the zone, so an earlier date's time is never after it; eight days
+  // cover a weekly routine whose day is today but whose time has passed.
   for (let offset = 0; offset <= 8; offset++) {
     const date = plusDays(today, offset);
-    if (schedule.kind === "weekly" && weekdayOf(date) !== schedule.day) continue;
+    if (!runsOn(schedule, weekdayOf(date))) continue;
     const at = zoned(format, date, hour, minute);
     if (at > after) return at;
   }
-  // Unreachable: some day in the next eight is the weekday, at a time after `after`.
+  // Unreachable: every kind runs at least once in any eight days, at a time after `after`.
   throw new RangeError("No next run found");
 };
-
-/** Whether `zone` is a time zone `Intl` knows. */
-export const knownZone = (zone: string): boolean => formatterOf(zone) !== undefined;
 
 const two = (value: string | undefined) => (value ?? "0").padStart(2, "0");
 

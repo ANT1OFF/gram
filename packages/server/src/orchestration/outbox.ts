@@ -15,6 +15,7 @@ import {
   PrWakeEvent,
   PrWatchSeen,
   ReasoningVariant,
+  RoutineState,
   StoredWakeCondition,
   ThreadId,
   type PendingWake,
@@ -517,6 +518,11 @@ export const OutboxState = Schema.Struct({
   questions: Schema.optionalKey(Schema.Array(StoredWorkerQuestion)),
   /** The number of the last question id handed out (`WQ<n>`); absent before the first. */
   questionSeq: Schema.optionalKey(Schema.Int),
+  /**
+   * By routine id (`WorkspaceRoutine.id`): how its runs stand, kept by the routines engine
+   * (`routines/routines.ts`). The charter's write path drops a removed or turned-off routine's.
+   */
+  routineRuns: Schema.optionalKey(Schema.Record(Schema.String, RoutineState)),
 });
 export type OutboxState = typeof OutboxState.Type;
 

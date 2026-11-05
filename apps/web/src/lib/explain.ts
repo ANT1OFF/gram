@@ -13,6 +13,8 @@ export const EXPLAIN = {
     "You direct it yourself, and the orchestrator can't message it until you hand it back from its header.",
   tidyUp:
     "The orchestrator archives what's done, fixes groups, stages and plans, closes settled questions and refreshes its memory, then says what it changed.",
+  discover:
+    "One read-only worker surveys the repos. The orchestrator records what it found and asks which starter tasks to start; nothing starts until you pick.",
   pause:
     "The orchestrator and its workers finish their current step and stop. Nothing wakes them until you resume.",
   resume: "The orchestrator and its workers pick up where they stopped.",

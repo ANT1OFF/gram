@@ -22,6 +22,15 @@ configured pass.
   [pause a workspace](#pausing-a-workspace).
 - **Hands-off or hands-on.** Every worker is a normal thread: open it to read the transcript,
   send it a message mid-turn, answer its question or stop it.
+- **Discover.** A new workspace starts by discovering itself, and **Discover workspace** in the
+  title bar's Workspace menu or the palette runs it again. It sends the orchestrator a message, as
+  Tidy up does: one worker, briefed to only read, surveys each repo (what it does, how it builds
+  and tests, open pull requests, failing CI on the default branch, open issues and branches with
+  no pull request and no commit in 30 days). The orchestrator records what it found in a
+  `repo.md` memory topic and asks one question with up to four starter tasks, each tied to a
+  finding, to tick. It starts only what you pick, at every autonomy level. The worker's
+  read-only limit is its brief, not a sandbox: in Supervised and Publish, anything it tried to
+  push or open would still ask you first.
 - **Memory.** Each orchestrator keeps file-based [workspace memory](#workspace-memory) of goals,
   decisions and your standing rulings, which you can edit. An optional
   [Dream](#dream-and-selected-harness-support) run consolidates it into a candidate you review.
@@ -90,6 +99,8 @@ changes into events that wake the thread that cares:
   pinned to the head it checked.
 - **Digests.** Worker reports, finished turns, errors, long-open requests and pull request changes
   wake the orchestrator with one digest built from the current ledger.
+- **Routines.** A workspace's [routines](#routines) start a fresh worker (or brief the orchestrator)
+  on a schedule: every day, every weekday or once a week at a time you set, or every few hours.
 
 ### Condition wakes
 
@@ -151,6 +162,58 @@ To add a kind:
    tell. Give it a `pollEvery`, a `debounce`, and optionally a `changes` stream.
 3. List it in `WakeConditionSourcesLive`, and name it in `schedule_wake`'s description.
 
+### Routines
+
+A routine is a brief kept in the workspace's charter that runs on a schedule: a daily CI triage, a
+weekly dependency check, a stale-PR sweep. Each has a name of its own in the workspace, a brief of
+up to 4,000 characters, and a schedule: `every` `day`, `weekday` or `week` `at` a 24-hour local
+time (for `week` a `day` from 0 for Sunday to 6, Monday when absent), or `every` `hours` with
+`hours` from 1 to 168, counted from its last run. Each run starts a fresh worker in its `project`
+(the home project by default) on its `model` (the roster's default by default), or, with `target`
+`orchestrator`, puts its brief in the orchestrator's next digest. A workspace keeps at most eight.
+Every write of the charter gives a routine without one an `id`, the one its name had if it had
+one, so its runs follow it through a rename.
+
+Three ways change them, all through the charter's one write path:
+
+- Settings → Workspaces → a workspace → Routines adds, edits, turns off, removes and runs one now,
+  and shows each one's last and next run; each change saves with Undo.
+- The orchestrator keeps them with `routine_create` and `routine_update` (`remove: true` deletes
+  one), without a card, as it spawns inside its charter without one. Their schedule is a few
+  words: `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00` or `every 6 hours`. A worker is bound
+  `routine_create` alone, and its call always asks the user: a forced card that `bypassPermissions`
+  and Full autonomy don't lift.
+- Settings by chat: `settings_propose` with `workspace.routines`, the whole list, each brief in full
+  on the card the user approves.
+
+The orchestrator's charter names them, and an open session is told when they change.
+
+How a run goes is the engine's (`routines/routines.ts`), its state kept in the workspace's outbox
+under the routine's id:
+
+- A routine's worker is the orchestrator's, spawned through the same `spawn_worker` path, so the
+  workspace's autonomy, worker cap, limits, approvals and merge gates apply unchanged. The spawn is
+  unattended: a run never raises a card. What would ask the user (one worker past the cap, a repo
+  outside the workspace, the limit threshold's question without an answer for that window) refuses
+  instead, the cap and the repos checked under the spawn's own lock so a racing spawn is counted,
+  and a held brief of a routine keeps that rule when it is released. The run is recorded as failed,
+  and the orchestrator's next digest says why. Its brief opens by naming the routine, and its
+  header says "From routine <name>".
+- Each run is one occurrence, claimed before it starts anything; the claim's request id is its
+  spawn's, so a run a restart cut short finds its worker again and finishes one a crash left
+  without its brief. The claim stays until the occurrence settles: while its brief is held, being
+  released, or its worker is live, a due run is skipped and recorded so. Its phase is read from
+  durable facts under the lock every release of a held brief takes.
+- A routine new, turned on again or given a new schedule is reckoned from then, never run for a time
+  it missed. A run missed while Gram was closed runs once, a minute after the next start, never
+  once per miss. A paused workspace pauses its routines: a run that falls due waits and runs once
+  on the resume. An orchestrator routine's note goes into the digest once per occurrence.
+- Times are read in the machine's time zone, so a daylight-saving change keeps 09:00 at 09:00; a
+  time the change skips runs once that night.
+
+Source: [routines](../packages/contracts/src/routines.ts), [engine](../packages/server/src/routines/routines.ts),
+[schedules](../packages/server/src/routines/schedule.ts), [tools](../packages/server/src/routines/tools.ts).
+
 ### Merge freezes
 
 `merge_freeze` holds Gram's own merges onto a branch of one of the caller's workspace's repos (its
@@ -179,35 +242,6 @@ Only the thread that froze it, or its workspace's orchestrator, can lift it. It 
 expiry: every read checks the time, whatever the timers did, so a thread that stopped, or a
 restart past the expiry, never keeps it. A closed thread's freezes end with it. Its end looks again
 at every armed merge in the repo, and fires `freezeLifted` wakes.
-
-### Routines
-
-A routine is a workspace's saved brief on a schedule: daily or weekly at an `HH:MM` local time, or
-every 1 to 168 hours from its last run. Each time it comes due it starts a worker in one of the
-workspace's projects (on one of the charter's worker models, else its default), or puts its brief
-in the orchestrator's next digest and wakes it. The user keeps them in the workspace's settings
-(Routines: on and off, Run now, Edit, Remove, the last and next run); the orchestrator keeps them
-with `routine_list`, `routine_create` and `routine_update` (`remove: true` deletes one). Their
-schedule is a few words: `daily 09:00`, `weekly mon 09:00` or `every 6 hours`.
-
-- A routine's worker is the orchestrator's, spawned through the same `spawn_worker` path, so the
-  workspace's autonomy, worker cap, limits, approvals and merge gates apply unchanged. The spawn is
-  unattended: a run never raises a card. What would ask the user (one worker past the cap, a repo
-  outside the workspace, the limit threshold's question without an answer for that window) refuses
-  instead, the cap and the repos checked under the spawn's own lock so a racing spawn is counted.
-  The run is recorded as failed, and the orchestrator's next digest says why. Its brief opens by saying a routine started it, and
-  its header says "From routine <name>".
-- A worker is bound `routine_create` alone, and its call always asks the user: a forced card that
-  `bypassPermissions` and Full autonomy don't lift.
-- A run missed while Gram was closed runs once, a minute after the next start; the next one is
-  reckoned from it, never once per miss. A run claims its slot before it starts anything, and its
-  spawn's request id comes from that claim, so a run a restart cut short finds its worker again
-  instead of making a second. While any worker the routine started is still live (a held brief
-  released later included), or a brief of its run is still held, a due run is skipped and
-  recorded so. A paused workspace pauses
-  its routines: a run that falls due waits and runs once on the resume.
-- Times are read in the zone the machine was in when the routine was saved, so a daylight-saving
-  change keeps 09:00 at 09:00; a time the change skips runs once that night.
 
 ## Accounts, models and speed
 
@@ -551,6 +585,12 @@ suggested topic names. Files such as `goals.md`, `decisions.md` and
 `memory_list` reports actual files; `memory_read` returns a missing-file error for
 an unwritten topic. Suggested names do not establish recorded goals or decisions.
 The orchestrator should record actual information and update its index as it goes.
+
+Workers can read their orchestrator's memory with `memory_list` and `memory_read`, while that
+orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator. A
+worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
+digest shows it to the orchestrator, which records it only when it holds for later work. Solo
+threads have no workspace memory.
 
 Memory persists in a versioned filesystem tree, with `CURRENT` naming the adopted
 version; opening another session preserves existing files. Startup explains the

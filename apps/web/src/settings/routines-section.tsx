@@ -1,15 +1,15 @@
 import {
   ROUTINE_BRIEF_MAX,
-  ROUTINE_DAY_NAMES,
   ROUTINE_DAYS,
   ROUTINE_MAX_INTERVAL_HOURS,
   ROUTINE_MIN_INTERVAL_HOURS,
   ROUTINE_NAME_MAX,
   routineScheduleText,
+  type OrchestratorCharter,
   type Project,
-  type ProjectId,
-  type Routine,
-  type RoutineDay,
+  type RoutineState,
+  type RoutineStatus,
+  type WorkspaceRoutine,
   type WorkspaceState,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,43 +27,59 @@ import { goToThread } from "@/orchestration/worker-banner";
 import { inputCls, OptionGroup } from "./fields";
 import { RowMenuButton, type RowAction } from "./row-menu";
 import {
-  draftOfForm,
   emptyRoutineForm,
   EVERY_OPTIONS,
   formOfRoutine,
   lastRunText,
+  modelLabel,
   nextRunText,
+  routineOfForm,
+  withRoutines,
   type RoutineForm,
 } from "./routines-model";
 import { SettingsGroup } from "./settings-group";
+import type { useWorkspaceChanges } from "./workspace-actions";
 import { projectNameOf } from "./workspace-settings-model";
+
+type Changes = ReturnType<typeof useWorkspaceChanges>;
 
 const LABEL = "text-meta font-medium text-foreground";
 
+/** No runs yet: a routine just saved, before the server has reckoned its next run. */
+const NO_STATE: RoutineState = {};
+
 /**
- * Workspace settings → Routines: the workspace's saved briefs that run on a schedule, each with a
- * switch, Run now, its last and next run, and Edit and Remove in its menu. Add routine opens the
- * same form a row's Edit does, above the list.
+ * Workspace settings → Routines: the briefs the workspace's charter runs on a schedule, each with a
+ * switch, Run now, its last and next run, and Edit and Remove in its menu. Every change is a charter
+ * save, said with Undo like the page's others. Add routine opens the same form a row's Edit does.
  */
 export function RoutinesSection({
   state,
   projects,
+  changes,
 }: {
   state: WorkspaceState;
   projects: readonly Project[];
+  changes: Changes;
 }) {
   const api = useApi();
   const workspaceId = state.workspace.id;
-  const { data: routines = [], isPending } = useQuery({
+  const charter = changes.charter ?? state.charter;
+  const routines = charter.routines ?? [];
+  const { data: statuses = [] } = useQuery({
     queryKey: ["routines", workspaceId],
     queryFn: () => api.listRoutines(workspaceId),
   });
   const [adding, setAdding] = useState(false);
+  const save = (next: OrchestratorCharter, title: string) =>
+    new Promise<void>((resolve, reject) => {
+      void changes.saveCharter(next, title, (message) => reject(new Error(message))).then(resolve);
+    });
   return (
     <SettingsGroup
       label="Routines"
-      description="Saved briefs that start a worker or wake the orchestrator on a schedule."
-      learnMore="A run missed while Gram was closed runs once on the next start. While the worker from a routine's last run is still live, its next run is skipped. Pausing the workspace pauses its routines; a run that came due meanwhile runs once on the resume. Their workers are the orchestrator's, under the same autonomy, worker cap and approvals."
+      description="Briefs that start a worker or wake the orchestrator on a schedule."
+      learnMore="A run missed while Gram was closed runs once on the next start. While the worker from a routine's last run is still live, its next run is skipped. Pausing the workspace pauses its routines; a run that came due meanwhile runs once on the resume. Their workers are the orchestrator's, under the same autonomy, worker cap and approvals. The orchestrator can add and change routines too; a worker can only ask you to approve one."
       keywords={["routine", "schedule", "recurring", "cron", "daily", "weekly", "nightly"]}
       testId="workspace-routines"
       action={
@@ -72,6 +88,7 @@ export function RoutinesSection({
             size="sm"
             variant="outline"
             data-testid="routine-add"
+            disabled={changes.busy}
             onClick={() => setAdding(true)}
           >
             <Plus data-icon="inline-start" />
@@ -81,51 +98,99 @@ export function RoutinesSection({
       }
     >
       {adding && (
-        <RoutineEditor state={state} projects={projects} onDone={() => setAdding(false)} />
+        <RoutineEditor
+          state={state}
+          charter={charter}
+          projects={projects}
+          save={save}
+          onDone={() => setAdding(false)}
+        />
       )}
-      {!isPending && routines.length === 0 && !adding && (
+      {routines.length === 0 && !adding && (
         <p data-testid="routines-empty" className="text-body text-muted-foreground">
           No routines yet
         </p>
       )}
       {routines.map((routine) => (
-        <RoutineRow key={routine.id} routine={routine} state={state} projects={projects} />
+        <RoutineRow
+          key={routine.id ?? routine.name}
+          routine={routine}
+          status={statuses.find((each) => each.id === routine.id)}
+          state={state}
+          charter={charter}
+          projects={projects}
+          busy={changes.busy}
+          save={save}
+        />
       ))}
     </SettingsGroup>
   );
 }
 
-function targetText(routine: Routine, projects: readonly Project[]) {
-  if (routine.target.kind === "orchestrator") return "Wakes the orchestrator";
-  const model = routine.target.model === undefined ? "" : ` on ${routine.target.model}`;
-  return `Worker in ${projectNameOf(projects, routine.target.projectId)}${model}`;
+function targetText(
+  routine: WorkspaceRoutine,
+  state: WorkspaceState,
+  projects: readonly Project[],
+) {
+  if (routine.target === "orchestrator") return "Wakes the orchestrator";
+  const project = projectNameOf(projects, routine.project ?? state.workspace.homeProjectId);
+  const model = routine.model === undefined ? "" : ` on ${modelLabel(routine.model)}`;
+  return `Worker in ${project}${model}`;
 }
+
+/** "Daily at 09:00": the schedule's words, with a capital to start a line. */
+const scheduleLine = (routine: WorkspaceRoutine) => {
+  const words = routineScheduleText(routine.schedule);
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
 
 function RoutineRow({
   routine,
+  status,
   state,
+  charter,
   projects,
+  busy: saving,
+  save,
 }: {
-  routine: Routine;
+  routine: WorkspaceRoutine;
+  status: RoutineStatus | undefined;
   state: WorkspaceState;
+  charter: OrchestratorCharter;
   projects: readonly Project[];
+  busy: boolean;
+  save: (next: OrchestratorCharter, title: string) => Promise<void>;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>();
   const now = useNow(true, undefined, 30_000);
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: ["routines", routine.workspaceId] });
+  const runs = status?.state ?? NO_STATE;
+  const busy = saving || running;
+  const others = (charter.routines ?? []).filter((each) => each !== routine);
   const act = (change: () => Promise<unknown>) => {
     setError(undefined);
-    setBusy(true);
-    void change()
-      .then(refresh)
-      .catch((e: unknown) => setError(errorMessage(e)))
-      .finally(() => setBusy(false));
+    void change().catch((e: unknown) => setError(errorMessage(e)));
+  };
+  const replace = (next: WorkspaceRoutine | undefined) =>
+    withRoutines(
+      charter,
+      (charter.routines ?? []).flatMap((each) =>
+        each !== routine ? [each] : next === undefined ? [] : [next],
+      ),
+    );
+  const runNow = () => {
+    if (routine.id === undefined) return;
+    setRunning(true);
+    act(() =>
+      api
+        .runRoutine(state.workspace.id, routine.id!)
+        .then(() => queryClient.invalidateQueries({ queryKey: ["routines", state.workspace.id] }))
+        .finally(() => setRunning(false)),
+    );
   };
   const actions: RowAction[] = [
     { label: "Edit…", icon: Pencil, disabled: busy, onSelect: () => setEditing(true) },
@@ -137,13 +202,16 @@ function RoutineRow({
       onSelect: () => setRemoving(true),
     },
   ];
-  const run = routine.lastRun;
+  const run = runs.lastRun;
   if (editing) {
     return (
       <RoutineEditor
         state={state}
+        charter={charter}
         projects={projects}
         routine={routine}
+        others={others}
+        save={(next, title) => save(next, title)}
         onDone={() => setEditing(false)}
       />
     );
@@ -154,19 +222,27 @@ function RoutineRow({
         <Switch
           className="mt-0.5"
           aria-label={`Run ${routine.name} on its schedule`}
-          checked={routine.enabled}
+          checked={routine.off !== true}
           disabled={busy}
-          onCheckedChange={(enabled) => act(() => api.updateRoutine(routine.id, { enabled }))}
+          onCheckedChange={(on) => {
+            const { off: _off, ...rest } = routine;
+            act(() =>
+              save(
+                replace(on ? rest : { ...rest, off: true }),
+                on ? `Routine “${routine.name}” on` : `Routine “${routine.name}” off`,
+              ),
+            );
+          }}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="font-medium text-foreground" title={routine.name}>
             {routine.name}
           </span>
           <span data-testid="routine-summary" className="text-meta text-muted-foreground">
-            {routineScheduleText(routine.schedule)} · {targetText(routine, projects)}
+            {scheduleLine(routine)} · {targetText(routine, state, projects)}
           </span>
           <span data-testid="routine-runs" className="text-meta text-muted-foreground">
-            {nextRunText(routine, now)}
+            {nextRunText(routine, runs, now)}
             {run !== undefined && (
               <>
                 {" · "}
@@ -206,9 +282,9 @@ function RoutineRow({
             size="sm"
             variant="outline"
             data-testid="routine-run-now"
-            disabled={busy || state.paused !== undefined}
+            disabled={busy || state.paused !== undefined || routine.id === undefined}
             title={state.paused !== undefined ? "Resume the workspace to run routines" : undefined}
-            onClick={() => act(() => api.runRoutine(routine.id))}
+            onClick={runNow}
           >
             <Play data-icon="inline-start" />
             Run now
@@ -230,7 +306,7 @@ function RoutineRow({
             variant="destructive"
             data-testid="routine-remove-confirm"
             disabled={busy}
-            onClick={() => act(() => api.removeRoutine(routine.id))}
+            onClick={() => act(() => save(replace(undefined), `Routine “${routine.name}” removed`))}
           >
             Remove
           </Button>
@@ -248,46 +324,57 @@ function RoutineRow({
   );
 }
 
-/** A routine's form: a new one's, or a saved one's to edit. Save sends it whole. */
+/** A routine's form: a new one's, or a saved one's to edit. Save stores it in the charter. */
 function RoutineEditor({
   state,
+  charter,
   projects,
   routine,
+  others,
+  save,
   onDone,
 }: {
   state: WorkspaceState;
+  charter: OrchestratorCharter;
   projects: readonly Project[];
-  routine?: Routine;
+  routine?: WorkspaceRoutine;
+  others?: readonly WorkspaceRoutine[];
+  save: (next: OrchestratorCharter, title: string) => Promise<void>;
   onDone: () => void;
 }) {
-  const api = useApi();
-  const queryClient = useQueryClient();
-  const ids = { name: useId(), brief: useId(), time: useId(), day: useId(), hours: useId() };
-  const projectId = useId();
-  const modelId = useId();
+  const ids = { name: useId(), brief: useId(), time: useId(), hours: useId() };
   const [form, setForm] = useState<RoutineForm>(() =>
-    routine === undefined
-      ? emptyRoutineForm(state.workspace.homeProjectId)
-      : formOfRoutine(routine),
+    routine === undefined ? emptyRoutineForm() : formOfRoutine(routine),
   );
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<RoutineForm>) => setForm((current) => ({ ...current, ...patch }));
   const repos = state.workspace.projectIds;
-  const models = state.charter.workerModels ?? [];
+  const roster = charter.workerModels ?? [];
 
-  const save = () => {
-    const made = draftOfForm(form);
+  const submit = () => {
+    const made = routineOfForm(form, {
+      editing: routine,
+      others: others ?? charter.routines ?? [],
+      roster,
+    });
     if ("error" in made) return setError(made.error);
     setError(undefined);
     setBusy(true);
-    const workspaceId = state.workspace.id;
-    void (
+    const routines = charter.routines ?? [];
+    const next =
       routine === undefined
-        ? api.createRoutine(workspaceId, made.draft)
-        : api.updateRoutine(routine.id, made.draft)
+        ? withRoutines(charter, [...routines, made.routine])
+        : withRoutines(
+            charter,
+            routines.map((each) => (each === routine ? made.routine : each)),
+          );
+    void save(
+      next,
+      routine === undefined
+        ? `Routine “${made.routine.name}” added`
+        : `Routine “${made.routine.name}” saved`,
     )
-      .then(() => queryClient.invalidateQueries({ queryKey: ["routines", workspaceId] }))
       .then(onDone)
       .catch((e: unknown) => setError(errorMessage(e)))
       .finally(() => setBusy(false));
@@ -300,7 +387,7 @@ function RoutineEditor({
       className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
-        save();
+        submit();
       }}
     >
       <div className="flex flex-col gap-1">
@@ -340,22 +427,22 @@ function RoutineEditor({
             value={form.every}
             onChange={(every) => set({ every })}
           />
-          {form.every === "weekly" && (
+          {form.every === "week" && (
             <select
-              id={ids.day}
               aria-label="Day"
               className={cn(inputCls, "w-36")}
               value={form.day}
-              onChange={(event) => set({ day: event.target.value as RoutineDay })}
+              onChange={(event) => set({ day: Number(event.target.value) })}
             >
-              {ROUTINE_DAYS.map((day) => (
+              {/* Monday first, as the week reads. */}
+              {[1, 2, 3, 4, 5, 6, 0].map((day) => (
                 <option key={day} value={day}>
-                  {ROUTINE_DAY_NAMES[day]}
+                  {ROUTINE_DAYS[day]}
                 </option>
               ))}
             </select>
           )}
-          {form.every !== "interval" ? (
+          {form.every !== "hours" ? (
             <span className="flex items-center gap-1.5">
               <label htmlFor={ids.time} className="text-meta text-muted-foreground">
                 at
@@ -364,11 +451,11 @@ function RoutineEditor({
                 id={ids.time}
                 aria-label="Time"
                 className={cn(inputCls, "w-20 font-mono")}
-                value={form.time}
+                value={form.at}
                 placeholder="09:00"
                 inputMode="numeric"
                 autoComplete="off"
-                onChange={(event) => set({ time: event.target.value })}
+                onChange={(event) => set({ at: event.target.value })}
               />
               <span className="text-meta text-muted-foreground">local time</span>
             </span>
@@ -407,28 +494,31 @@ function RoutineEditor({
           {form.target === "worker" && (
             <>
               <select
-                id={projectId}
                 aria-label="Repository"
                 className={cn(inputCls, "w-44")}
-                value={form.projectId ?? ""}
-                onChange={(event) => set({ projectId: event.target.value as ProjectId })}
+                value={form.project}
+                onChange={(event) => set({ project: event.target.value })}
               >
-                {repos.map((id) => (
-                  <option key={id} value={id}>
-                    {projectNameOf(projects, id)}
-                  </option>
-                ))}
+                <option value="">
+                  {projectNameOf(projects, state.workspace.homeProjectId)} (home)
+                </option>
+                {repos
+                  .filter((id) => id !== state.workspace.homeProjectId)
+                  .map((id) => (
+                    <option key={id} value={id}>
+                      {projectNameOf(projects, id)}
+                    </option>
+                  ))}
               </select>
               <select
-                id={modelId}
                 aria-label="Model"
                 className={cn(inputCls, "w-56")}
                 value={form.model}
                 onChange={(event) => set({ model: event.target.value })}
               >
                 <option value="">Workspace default model</option>
-                {models.map((model) => {
-                  const value = `${model.agent}:${model.model}`;
+                {roster.map((model) => {
+                  const value = modelLabel(model);
                   return (
                     <option key={value} value={value}>
                       {value}

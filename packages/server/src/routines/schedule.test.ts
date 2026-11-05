@@ -28,22 +28,22 @@ const NEW_YORK = "America/New_York";
 describe("nextRunAfter", () => {
   it("runs a daily routine later the same day, else the next day", () => {
     const morning = Date.parse("2026-06-10T05:00:00Z"); // 07:00 in Oslo
-    expect(wall(nextRunAfter({ kind: "daily", time: "09:00" }, morning, OSLO), OSLO)).toBe(
+    expect(wall(nextRunAfter({ every: "day", at: "09:00" }, morning, OSLO), OSLO)).toBe(
       "Wed 2026-06-10 09:00",
     );
     const evening = Date.parse("2026-06-10T18:00:00Z"); // 20:00 in Oslo
-    expect(wall(nextRunAfter({ kind: "daily", time: "09:00" }, evening, OSLO), OSLO)).toBe(
+    expect(wall(nextRunAfter({ every: "day", at: "09:00" }, evening, OSLO), OSLO)).toBe(
       "Thu 2026-06-11 09:00",
     );
   });
 
   it("never runs again at the instant that just ran", () => {
     const at = nextRunAfter(
-      { kind: "daily", time: "09:00" },
+      { every: "day", at: "09:00" },
       Date.parse("2026-06-10T05:00:00Z"),
       OSLO,
     );
-    expect(wall(nextRunAfter({ kind: "daily", time: "09:00" }, at, OSLO), OSLO)).toBe(
+    expect(wall(nextRunAfter({ every: "day", at: "09:00" }, at, OSLO), OSLO)).toBe(
       "Thu 2026-06-11 09:00",
     );
   });
@@ -51,11 +51,11 @@ describe("nextRunAfter", () => {
   it("reads the time in the routine's zone, not UTC's", () => {
     // 03:00 UTC on the 10th is 23:00 on the 9th in New York: 22:30 there is the 10th's.
     const after = Date.parse("2026-06-10T03:00:00Z");
-    const next = nextRunAfter({ kind: "daily", time: "22:30" }, after, NEW_YORK);
+    const next = nextRunAfter({ every: "day", at: "22:30" }, after, NEW_YORK);
     expect(wall(next, NEW_YORK)).toBe("Wed 2026-06-10 22:30");
     expect(new Date(next).toISOString()).toBe("2026-06-11T02:30:00.000Z");
     // The same routine in Oslo is another instant.
-    expect(wall(nextRunAfter({ kind: "daily", time: "22:30" }, after, OSLO), OSLO)).toBe(
+    expect(wall(nextRunAfter({ every: "day", at: "22:30" }, after, OSLO), OSLO)).toBe(
       "Wed 2026-06-10 22:30",
     );
   });
@@ -65,7 +65,7 @@ describe("nextRunAfter", () => {
     let at = Date.parse("2026-03-27T12:00:00Z");
     const spring: string[] = [];
     for (let i = 0; i < 4; i++) {
-      at = nextRunAfter({ kind: "daily", time: "09:00" }, at, OSLO);
+      at = nextRunAfter({ every: "day", at: "09:00" }, at, OSLO);
       spring.push(wall(at, OSLO));
     }
     expect(spring).toEqual([
@@ -76,18 +76,16 @@ describe("nextRunAfter", () => {
     ]);
     // The day the clocks go forward is 23 hours long.
     const before = nextRunAfter(
-      { kind: "daily", time: "09:00" },
+      { every: "day", at: "09:00" },
       Date.parse("2026-03-28T00:00:00Z"),
       OSLO,
     );
-    expect(nextRunAfter({ kind: "daily", time: "09:00" }, before, OSLO) - before).toBe(
-      23 * HOUR_MS,
-    );
+    expect(nextRunAfter({ every: "day", at: "09:00" }, before, OSLO) - before).toBe(23 * HOUR_MS);
 
     at = Date.parse("2026-10-23T12:00:00Z");
     const autumn: string[] = [];
     for (let i = 0; i < 4; i++) {
-      at = nextRunAfter({ kind: "daily", time: "09:00" }, at, OSLO);
+      at = nextRunAfter({ every: "day", at: "09:00" }, at, OSLO);
       autumn.push(wall(at, OSLO));
     }
     expect(autumn).toEqual([
@@ -103,7 +101,7 @@ describe("nextRunAfter", () => {
     let at = Date.parse("2026-03-28T12:00:00Z");
     const skipped: number[] = [];
     for (let i = 0; i < 3; i++) {
-      at = nextRunAfter({ kind: "daily", time: "02:30" }, at, OSLO);
+      at = nextRunAfter({ every: "day", at: "02:30" }, at, OSLO);
       skipped.push(at);
     }
     expect(skipped.map((each) => wall(each, OSLO))).toEqual([
@@ -115,7 +113,7 @@ describe("nextRunAfter", () => {
     at = Date.parse("2026-10-24T12:00:00Z");
     const repeated: string[] = [];
     for (let i = 0; i < 3; i++) {
-      at = nextRunAfter({ kind: "daily", time: "02:30" }, at, OSLO);
+      at = nextRunAfter({ every: "day", at: "02:30" }, at, OSLO);
       repeated.push(wall(at, OSLO));
     }
     expect(repeated).toEqual([
@@ -127,53 +125,59 @@ describe("nextRunAfter", () => {
 
   it("runs a weekly routine on its weekday, this week if it hasn't passed", () => {
     const wednesday = Date.parse("2026-06-10T05:00:00Z"); // Wed 07:00 in Oslo
-    expect(
-      wall(nextRunAfter({ kind: "weekly", day: "wed", time: "09:00" }, wednesday, OSLO), OSLO),
-    ).toBe("Wed 2026-06-10 09:00");
-    expect(
-      wall(nextRunAfter({ kind: "weekly", day: "mon", time: "09:00" }, wednesday, OSLO), OSLO),
-    ).toBe("Mon 2026-06-15 09:00");
+    expect(wall(nextRunAfter({ every: "week", day: 3, at: "09:00" }, wednesday, OSLO), OSLO)).toBe(
+      "Wed 2026-06-10 09:00",
+    );
+    expect(wall(nextRunAfter({ every: "week", day: 1, at: "09:00" }, wednesday, OSLO), OSLO)).toBe(
+      "Mon 2026-06-15 09:00",
+    );
     const after = Date.parse("2026-06-10T08:00:00Z"); // Wed 10:00, past this week's
-    expect(
-      wall(nextRunAfter({ kind: "weekly", day: "wed", time: "09:00" }, after, OSLO), OSLO),
-    ).toBe("Wed 2026-06-17 09:00");
+    expect(wall(nextRunAfter({ every: "week", day: 3, at: "09:00" }, after, OSLO), OSLO)).toBe(
+      "Wed 2026-06-17 09:00",
+    );
+  });
+
+  it("skips the weekend for a weekday routine, and runs a weekly one on Monday by default", () => {
+    const friday = Date.parse("2026-06-12T08:00:00Z"); // Fri 10:00 in Oslo, past 07:00
+    expect(wall(nextRunAfter({ every: "weekday", at: "07:00" }, friday, OSLO), OSLO)).toBe(
+      "Mon 2026-06-15 07:00",
+    );
+    expect(wall(nextRunAfter({ every: "week", at: "18:00" }, friday, OSLO), OSLO)).toBe(
+      "Mon 2026-06-15 18:00",
+    );
   });
 
   it("keeps a weekly routine's clock time across a change", () => {
     const after = Date.parse("2026-10-20T12:00:00Z");
-    const first = nextRunAfter({ kind: "weekly", day: "mon", time: "08:15" }, after, OSLO);
-    const second = nextRunAfter({ kind: "weekly", day: "mon", time: "08:15" }, first, OSLO);
+    const first = nextRunAfter({ every: "week", day: 1, at: "08:15" }, after, OSLO);
+    const second = nextRunAfter({ every: "week", day: 1, at: "08:15" }, first, OSLO);
     expect([wall(first, OSLO), wall(second, OSLO)]).toEqual([
       "Mon 2026-10-26 08:15",
       "Mon 2026-11-02 08:15",
     ]);
     // The week across the change is an hour longer.
-    const firstAcross = nextRunAfter({ kind: "weekly", day: "sat", time: "08:15" }, after, OSLO);
-    const secondAcross = nextRunAfter(
-      { kind: "weekly", day: "sat", time: "08:15" },
-      firstAcross,
-      OSLO,
-    );
+    const firstAcross = nextRunAfter({ every: "week", day: 6, at: "08:15" }, after, OSLO);
+    const secondAcross = nextRunAfter({ every: "week", day: 6, at: "08:15" }, firstAcross, OSLO);
     expect(secondAcross - firstAcross).toBe(7 * 24 * HOUR_MS + HOUR_MS);
   });
 
   it("counts an interval in real hours from the last run, whatever the clock does", () => {
     const at = Date.parse("2026-10-25T00:00:00Z");
-    expect(nextRunAfter({ kind: "interval", hours: 6 }, at, OSLO) - at).toBe(6 * HOUR_MS);
-    expect(nextRunAfter({ kind: "interval", hours: 1 }, at, OSLO) - at).toBe(HOUR_MS);
+    expect(nextRunAfter({ every: "hours", hours: 6 }, at, OSLO) - at).toBe(6 * HOUR_MS);
+    expect(nextRunAfter({ every: "hours", hours: 1 }, at, OSLO) - at).toBe(HOUR_MS);
   });
 
   it("refuses a zone Intl doesn't know", () => {
-    expect(() => nextRunAfter({ kind: "daily", time: "09:00" }, 0, "Mars/Olympus")).toThrow(
+    expect(() => nextRunAfter({ every: "day", at: "09:00" }, 0, "Mars/Olympus")).toThrow(
       RangeError,
     );
   });
 });
 
 describe("weekdayOf and runStamp", () => {
-  it("names the weekday Monday first", () => {
-    expect(weekdayOf({ year: 2026, month: 10, day: 2 })).toBe("mon");
-    expect(weekdayOf({ year: 2026, month: 10, day: 8 })).toBe("sun");
+  it("counts the weekday as Date.getDay does, Sunday 0", () => {
+    expect(weekdayOf({ year: 2026, month: 10, day: 2 })).toBe(1);
+    expect(weekdayOf({ year: 2026, month: 10, day: 8 })).toBe(0);
   });
 
   it("stamps a run in the routine's zone, on a 24-hour clock", () => {

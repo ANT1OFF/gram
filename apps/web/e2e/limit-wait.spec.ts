@@ -37,7 +37,9 @@ test("a thread at its usage limit waits on one quiet line, and resumes on reques
     );
   }, resumeAt);
   const line = page.getByTestId("limit-wait");
-  await expect(line).toContainText(/^Limit reached · resumes (?:[A-Z][a-z]{2} )?\d{2}:\d{2}/);
+  await expect(line).toContainText(
+    /^Limit reached · resumes (?:\d{1,2} [A-Z][a-z]{2} (?:\d{4} )?|[A-Z][a-z]{2} )?\d{2}:\d{2}/,
+  );
   await expect(page.getByTestId("agent-error")).toHaveCount(0);
   if (SHOTS !== undefined) await page.screenshot({ path: `${SHOTS}/after.png` });
 
@@ -84,15 +86,20 @@ test("a wait whose limit no longer applies says it cleared, and resumes on its o
     );
   }, resetAt);
   const line = page.getByTestId("limit-wait");
+  // Three hours on can fall after midnight, when the shared stamp names the date: "6 Nov 00:12".
   // Before: the stale wait stood until its reset, or until the user clicked Resume now.
-  await expect(line).toContainText(/^Limit reached · resumes (?:[A-Z][a-z]{2} )?\d{2}:\d{2}/);
+  await expect(line).toContainText(
+    /^Limit reached · resumes (?:\d{1,2} [A-Z][a-z]{2} (?:\d{4} )?|[A-Z][a-z]{2} )?\d{2}:\d{2}/,
+  );
   if (CLEARED_SHOTS !== undefined) await page.screenshot({ path: `${CLEARED_SHOTS}/before.png` });
 
   // Fresh readings show the account well below its limit: the wait ends early, staggered.
   await page.evaluate(() => {
     void window.gramMock!.simulateLimitCleared("t-release" as never, Date.now() + 8_000);
   });
-  await expect(line).toContainText(/^Limit cleared · resumes (?:[A-Z][a-z]{2} )?\d{2}:\d{2}/);
+  await expect(line).toContainText(
+    /^Limit cleared · resumes (?:\d{1,2} [A-Z][a-z]{2} (?:\d{4} )?|[A-Z][a-z]{2} )?\d{2}:\d{2}/,
+  );
   await page.evaluate(() => {
     void window.gramMock!.simulateLimitCleared("t-release" as never);
   });

@@ -451,7 +451,14 @@ export const OrchestrationLive = Layer.effect(
       routePaused,
     });
 
-    const { setCharter, changeCharter, checkCharter, afterCharter } = makeCharter(kit, { wake });
+    // A routine change: the routines engine (`routines/routines.ts`) looks again on this event.
+    const { setCharter, changeCharter, checkCharter, afterCharter, editCharter } = makeCharter(
+      kit,
+      {
+        wake,
+        routinesChanged: orchestrationChanged,
+      },
+    );
 
     const {
       noteForNextDigest,
@@ -731,6 +738,19 @@ export const OrchestrationLive = Layer.effect(
     );
 
     return Orchestration.of({
+      routineStates: (workspaceId) =>
+        readOutbox(workspaceId).pipe(Effect.map((outbox) => outbox.routineRuns ?? {})),
+      updateRoutineState: (workspaceId, id, change) =>
+        updateOutbox(workspaceId, (outbox) => {
+          const before = outbox.routineRuns?.[id];
+          const after = change(before);
+          if (after === before) return [outbox, after];
+          const { [id]: _gone, ...others } = outbox.routineRuns ?? {};
+          const runs = after === undefined ? others : { ...others, [id]: after };
+          const { routineRuns: _runs, ...rest } = outbox;
+          return [Object.keys(runs).length === 0 ? rest : { ...rest, routineRuns: runs }, after];
+        }),
+      editCharter,
       listWorkspaces: store.listWorkspaces,
       saveWorkspace,
       commitWorkspace,
@@ -769,6 +789,14 @@ export const OrchestrationLive = Layer.effect(
       checkModelChange,
       reopen,
       authorityOf,
+      memoryReaderOf: (threadId) =>
+        Effect.gen(function* () {
+          const authority = yield* authorityOf(threadId);
+          if (authority !== undefined) return authority.state.workspace.id;
+          const thread = yield* findThread(threadId);
+          if (thread === undefined || thread.role !== undefined) return undefined;
+          return (yield* listeningWorkspace(thread))?.workspace.id;
+        }),
       isDelegated: delegated,
       noteStop,
       isWorkerSend,

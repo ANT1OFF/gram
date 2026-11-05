@@ -12,6 +12,7 @@ import {
   type Handoff,
   type ModelRef,
   type ReopenedMembership,
+  type RoutineState,
   type OrchestratorCharter,
   type OrchestratorLedger,
   type JoinTarget,
@@ -509,8 +510,32 @@ export interface OrchestrationShape {
     E
   >;
 
+  // -- Routines' seam (`routines/routines.ts`) ----------------------------------------------
+  /** How each of the workspace's routines' runs stand, by routine id, as its outbox keeps them. */
+  routineStates(workspaceId: WorkspaceId): Effect.Effect<Readonly<Record<string, RoutineState>>>;
+  /** Changes one routine's run state in the outbox, `undefined` dropping it; what was stored. */
+  updateRoutineState(
+    workspaceId: WorkspaceId,
+    id: string,
+    change: (state: RoutineState | undefined) => RoutineState | undefined,
+  ): Effect.Effect<RoutineState | undefined>;
+  /**
+   * Stores the charter `compute` makes of the one standing, through the charter's one write path
+   * (ids for routines, their run states pruned, the orchestrator told); `undefined` from `compute`
+   * is a charter that moved under it.
+   */
+  editCharter(
+    workspaceId: WorkspaceId,
+    compute: (standing: OrchestratorCharter) => OrchestratorCharter | undefined,
+  ): Effect.Effect<WorkspaceState, NotFound | InvalidState>;
+  // -- end of Routines' seam -----------------------------------------------------------------
   /** `undefined` unless the thread is its workspace's orchestrator right now. */
   authorityOf(threadId: ThreadId): Effect.Effect<Authority | undefined>;
+  /**
+   * The workspace whose memory the thread may read: the one it orchestrates, or, for a worker, the
+   * one it reports into while its orchestrator still holds the slot. `undefined` for anyone else.
+   */
+  memoryReaderOf(threadId: ThreadId): Effect.Effect<WorkspaceId | undefined>;
   /** The delegation rule for one call; reads only, since a gate may ask twice. */
   isDelegated(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /**
@@ -589,6 +614,8 @@ export interface OrchestrationShape {
       readonly model?: ModelRef;
       /** "Start under my control": held as the user's from its first input. */
       readonly hold?: boolean;
+      /** What its feature and title are named from, in place of the input's text. */
+      readonly name?: string;
     },
   ): Effect.Effect<Thread, NotFound | InvalidState | ThreadNotFound>;
   /** Whether `add_worker_repo` needs a card: only for a project outside the workspace. Reads only. */
@@ -715,6 +742,7 @@ export interface OrchestrationShape {
       readonly evidence?: WorkerReport["evidence"] | undefined;
       readonly prUrl?: string | undefined;
       readonly interface?: string | undefined;
+      readonly learned?: string | undefined;
     },
   ): Effect.Effect<WorkerReport | undefined>;
   /** The orchestrator → worker loop guard, in place of `checkSend` for a delegated send. */

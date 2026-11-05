@@ -172,6 +172,7 @@ export function WorkspaceSettingsPage({
           onChange={(next, title) => void changes.saveCharter(next, title)}
         />
       </SettingsGroup>
+      <RoutinesSection state={state} projects={projects} changes={changes} />
       <SettingsGroup
         label="Reviews & merging"
         description="What has to happen before a worker's pull request may merge."
@@ -183,7 +184,6 @@ export function WorkspaceSettingsPage({
           onChange={(next) => void changes.saveCharter(next, "Merge policy saved")}
         />
       </SettingsGroup>
-      <RoutinesSection state={state} projects={projects} />
       <MoreOptions state={state} changes={changes} />
     </div>
   );

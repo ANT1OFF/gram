@@ -16,6 +16,7 @@ import { renderWithApi } from "@/panels/test-utils";
 import { autonomyLevel } from "@/settings/workspace-settings-model";
 import { useServerSettings } from "@/settings-sync/store";
 
+import { DISCOVER_MESSAGE } from "./board-model";
 import { NewWorkspaceSheet } from "./new-workspace";
 
 const navigate = vi.fn(async (_to: unknown) => {});
@@ -93,6 +94,7 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     const save = vi.spyOn(api, "saveWorkspace");
     const task = vi.spyOn(api, "startTask");
     const open = vi.spyOn(api, "openOrchestrator");
+    const send = vi.spyOn(api, "send");
     render({ repo: API });
     await screen.findByRole("form", { name: "New workspace" });
     fireEvent.change(screen.getByLabelText("What should it work on?"), {
@@ -112,6 +114,9 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     });
     expect(open).not.toHaveBeenCalled();
     const thread = await task.mock.results[0]!.value;
+    // Then Discover, queued behind the first message.
+    expect(send).toHaveBeenLastCalledWith(thread.id, { text: DISCOVER_MESSAGE });
+    expect(send.mock.calls.filter(([, input]) => input.text === DISCOVER_MESSAGE)).toHaveLength(1);
     expect(thread.workspaceId).toBe(made.workspace.id);
     expect(navigate).toHaveBeenCalledWith({
       to: "/t/$threadId",
@@ -127,6 +132,7 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     const save = vi.spyOn(api, "saveWorkspace");
     const task = vi.spyOn(api, "startTask");
     const open = vi.spyOn(api, "openOrchestrator");
+    const send = vi.spyOn(api, "send");
     render({ repo: DOCS });
     await screen.findByRole("form", { name: "New workspace" });
     fireEvent.click(screen.getByTestId("new-workspace-start"));
@@ -134,6 +140,9 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(save.mock.calls[0]![0].name).toBe("docs 2");
     expect(task).not.toHaveBeenCalled();
     expect(open).toHaveBeenCalledOnce();
+    // A workspace made with no first message starts by discovering itself.
+    const thread = await open.mock.results[0]!.value;
+    expect(send).toHaveBeenCalledExactlyOnceWith(thread.id, { text: DISCOVER_MESSAGE });
     expect(api.updateSettings).not.toHaveBeenCalled();
   });
 
@@ -346,6 +355,7 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
 
     const save = vi.spyOn(api, "saveWorkspace");
     const open = vi.spyOn(api, "openOrchestrator").mockRejectedValueOnce(new Error("no session"));
+    const send = vi.spyOn(api, "send");
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await screen.findByText("no session");
     // Made, but not opened: Start now opens that workspace only.
@@ -355,6 +365,8 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(save).toHaveBeenCalledTimes(1);
     const [first, second] = open.mock.calls;
     expect(second).toEqual(first);
+    // Discover went once, with the open that worked.
+    expect(send).toHaveBeenCalledOnce();
     expect(first).toEqual([{ workspaceId: (await save.mock.results[0]!.value).workspace.id }]);
   });
 });

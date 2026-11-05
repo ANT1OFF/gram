@@ -1,17 +1,15 @@
-import type { Routine, RoutineDraft, RoutineId, RoutinePatch, WorkspaceId } from "@gram/contracts";
+import type { RoutineId, RoutineStatus, WorkspaceId } from "@gram/contracts";
 
-/** `routine.*`: a workspace's routines, saved briefs that run on a schedule. */
+/**
+ * `routine.*`: how a workspace's routines' runs stand, and the user's Run now. Routines themselves
+ * live in the workspace's charter and change through `setOrchestratorCharter`.
+ */
 export interface RoutinesApi {
-  /** The workspace's routines, by name. */
-  listRoutines(workspaceId: WorkspaceId): Promise<readonly Routine[]>;
-  /** Rejects with `InvalidState` for a project outside the workspace, a name taken or one too many. */
-  createRoutine(workspaceId: WorkspaceId, draft: RoutineDraft): Promise<Routine>;
-  /** Changes the fields given; turning one on reckons its next run from now. */
-  updateRoutine(id: RoutineId, patch: RoutinePatch): Promise<Routine>;
-  removeRoutine(id: RoutineId): Promise<void>;
+  /** The workspace's routines as its charter has them, by name, each with how its runs stand. */
+  listRoutines(workspaceId: WorkspaceId): Promise<readonly RoutineStatus[]>;
   /**
-   * Runs it now, off its schedule. Rejects with `InvalidState` while the workspace is paused or the
-   * worker from its last run is still live.
+   * Runs it now, off its schedule. Rejects with `InvalidState` while the workspace is paused or a
+   * worker or held brief of its last run is still going.
    */
-  runRoutine(id: RoutineId): Promise<Routine>;
+  runRoutine(workspaceId: WorkspaceId, id: RoutineId): Promise<RoutineStatus>;
 }
