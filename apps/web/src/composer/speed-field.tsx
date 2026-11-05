@@ -11,6 +11,7 @@ import { Swap } from "@/motion";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { SpeedGlyph } from "./picker-glyphs";
 import { GHOST_TRIGGER } from "./styles";
+import type { LabelSize } from "./toolbar-layout";
 
 export const speedOptions = (
   models: readonly AgentModel[] | undefined,
@@ -72,7 +73,7 @@ export function SpeedField({
    * On a toolbar (`ghost`), shows the value beside the bolt; either way its name and tooltip say it.
    * Outside one the trigger is a form's field, value in full.
    */
-  labelled?: boolean;
+  labelled?: boolean | LabelSize;
   /** `sm` to sit in a row of small controls; the ghost style is always small. */
   size?: "sm" | "default";
 }) {

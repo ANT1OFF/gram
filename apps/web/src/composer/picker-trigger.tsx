@@ -5,6 +5,47 @@ import { SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
 
+import type { LabelSize } from "./toolbar-layout";
+
+/** `labelled` as a size: `true` is the value in full, `false` the glyph alone. */
+export const labelSize = (labelled: boolean | LabelSize): LabelSize =>
+  labelled === true ? "full" : labelled === false ? "icon" : labelled;
+
+/**
+ * The value's words on a toolbar trigger: in full, or in `compact` form when the row is short of
+ * room. Both are always there to be measured (`useToolbarLayout`); the one not showing is hidden,
+ * the full one still read by screen readers.
+ */
+export function ValueWords({
+  value,
+  compact,
+  labelled,
+}: {
+  value: string;
+  compact?: string | undefined;
+  labelled: boolean | LabelSize;
+}) {
+  const size = labelSize(labelled);
+  const distinct = compact !== undefined && compact !== value;
+  const full = size === "full" || (size === "short" && !distinct);
+  return (
+    <>
+      <span data-toolbar-label className={cn("min-w-0 truncate", !full && "sr-only")}>
+        {value}
+      </span>
+      {distinct && (
+        <span
+          aria-hidden
+          data-toolbar-compact
+          className={cn("min-w-0 truncate", size !== "short" && "sr-only")}
+        >
+          {compact}
+        </span>
+      )}
+    </>
+  );
+}
+
 /**
  * Confirms a pick once it lands: `pick` notes the value chosen, and `landed` counts each time the
  * shown value then turns into it. A value that changes any other way (another thread's in the same
@@ -23,14 +64,16 @@ export function usePickConfirm(value: string | undefined) {
 
 /**
  * A select's trigger. On a toolbar (the thread's composer and the new-thread prompt box) it is its
- * glyph, then the chosen value in a word or two when `labelled`: "Extra high", "Plan". The value
- * gives way to the glyph alone when the row runs short (`useToolbarLayout`), and either way the
+ * glyph, then the chosen value in a word or two when `labelled`: "Extra high", "Plan". Short of
+ * room it says the value in `compact` form ("X-high"), and only at the narrowest gives way to the
+ * glyph alone (`useToolbarLayout`); either way the
  * trigger's name and its tooltip say both, "Effort: Extra high", with the shortcut. As a form's
  * `field` it names what it picks and shows the value in full.
  */
 export function PickerTrigger({
   label,
   value,
+  compact,
   labelled,
   field = false,
   icon,
@@ -43,8 +86,13 @@ export function PickerTrigger({
   label: string;
   /** The chosen value in short: the toolbar's text, and named after `label`. */
   value: string;
-  /** Shows `value` beside the glyph; without it the glyph stands alone. */
-  labelled: boolean;
+  /** The value in three to six letters, for a row short of room: "X-high", "Edits". */
+  compact?: string | undefined;
+  /**
+   * How much of the value shows beside the glyph: `true` or "full" the whole of it, "short" its
+   * `compact` form, `false` or "icon" none, the glyph standing alone.
+   */
+  labelled: boolean | LabelSize;
   /** A form's select: named `label`, with the full value from the list in the trigger. */
   field?: boolean;
   icon?: ReactNode;
@@ -72,14 +120,23 @@ export function PickerTrigger({
       </SelectTrigger>
     );
   const named = `${label}: ${value}`;
+  // Short of room its chevron goes, leaving the space to the words (`useToolbarLayout`).
+  const bare = labelSize(labelled) !== "full";
   return (
     // A native title would wait a second before saying what the glyph means.
-    <Hint label={tip ?? named} render={<SelectTrigger aria-label={named} {...props} />}>
+    <Hint
+      label={tip ?? named}
+      render={
+        <SelectTrigger
+          aria-label={named}
+          {...props}
+          className={cn(props.className, bare && "[&>svg:last-child]:hidden")}
+        />
+      }
+    >
       {glyph}
       {/* Measured by `useToolbarLayout`, hidden or not, to know what showing it would take. */}
-      <span data-toolbar-label className={cn("min-w-0 truncate", !labelled && "sr-only")}>
-        {value}
-      </span>
+      <ValueWords value={value} compact={compact} labelled={labelled} />
     </Hint>
   );
 }

@@ -59,10 +59,12 @@ test("the toolbar's targets are as tall as Send, and ring on keyboard focus", as
   await page.goto("/t/t-deps");
   const toolbar = page.getByTestId("composer-toolbar");
   const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
+  const speed = toolbar.getByRole("combobox", { name: /^Speed: / });
   const targets = [
     toolbar.getByRole("combobox", { name: "Model", exact: true }),
     effort,
-    toolbar.getByRole("button", { name: "More composer controls" }),
+    toolbar.getByRole("combobox", { name: /^Mode: / }),
+    speed,
     toolbar.getByRole("button", { name: "Send", exact: true }),
   ];
   for (const target of targets) {
@@ -72,8 +74,8 @@ test("the toolbar's targets are as tall as Send, and ring on keyboard focus", as
   }
   // The row never runs its words into Send.
   const send = await box(toolbar.getByRole("button", { name: "Send", exact: true }));
-  const more = await box(toolbar.getByRole("button", { name: "More composer controls" }));
-  expect(send.x - (more.x + more.width)).toBeGreaterThanOrEqual(40);
+  const last = await box(speed);
+  expect(send.x - (last.x + last.width)).toBeGreaterThanOrEqual(40);
 
   // From the message box, Tab walks the toolbar; the effort picker rings as every control does.
   await page.getByLabel("Message", { exact: true }).focus();
@@ -83,7 +85,7 @@ test("the toolbar's targets are as tall as Send, and ring on keyboard focus", as
   await expect(effort).toHaveCSS("outline-style", "solid");
 });
 
-test("Stop is a solid stop button, says its key while you're in the composer, and keeps the reply", async ({
+test("Stop says Stop beside its square, says its key while you're in the composer, and keeps the reply", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -92,10 +94,14 @@ test("Stop is a solid stop button, says its key while you're in the composer, an
   await page.goto("/t/t-flaky");
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
-  // A filled disc, not Send's accent and not a bare glyph.
+  // A filled pill with the word, not Send's accent and not a bare glyph.
   const fill = await stop.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(fill).not.toBe("rgba(0, 0, 0, 0)");
+  await expect(stop).toHaveText("Stop");
   await expect(page.getByTestId("stop-ring")).toBeVisible();
+  // Where Send sits: the right edges line up, so the spot doesn't move as the turn starts and ends.
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  const stopRight = await stop.evaluate((el) => el.getBoundingClientRect().right);
 
   const key = page.getByTestId("stop-key");
   await page.locator("body").click({ position: { x: 5, y: 300 } });
@@ -111,5 +117,7 @@ test("Stop is a solid stop button, says its key while you're in the composer, an
   await page.keyboard.press("ControlOrMeta+Period");
   await expect(stop).toBeHidden();
   await expect(page.getByTestId("stop-receipt")).toContainText(/Stopped by you/);
+  await expect(page.getByTestId("stop-receipt")).toContainText(/Continue/);
+  expect(await send.evaluate((el) => el.getBoundingClientRect().right)).toBeCloseTo(stopRight, 0);
   await expect(said).toBeVisible();
 });

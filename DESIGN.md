@@ -75,13 +75,20 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     current value is its check.
   - Keyboard focus is the `focus-ring` outline (`--focus-ring`, `--focus-width`); a menu, list or
     dialog never rings as a whole.
-- **The composer's toolbar says its values while it has room:** the model's name, then effort
-  and mode in a word or two beside their glyphs ("Extra high", "Plan"), giving way to glyphs alone
-  from the right as the row narrows, then folding into "…". Each trigger's tooltip and name say
-  the value and its shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current
-  value with a line on what each costs, and a pick is confirmed in words for a moment. Every
-  target on the row is 32 px tall. Stop is a solid disc inside the running ring, and its key
-  shows beside it while the composer has focus.
+- **The composer's toolbar says its values:** one order in every composer (the orchestrator's
+  chat, a solo thread's and `/new`): model · effort · mode · speed, then "…". A control that
+  doesn't apply keeps its slot, greyed, with why on hover, so the rest never move up. Each says
+  its value in full while the row has room ("Claude Opus", "Extra high", "Plan"); short of it, in
+  three to six letters ("Opus", "X-high", "Edits"); still short, the pickers take a row of their
+  own above Send and Stop, words kept. Only when even that row can't hold the short words do they
+  give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
+  shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current value with a line on
+  what each costs, and a pick is confirmed in words for a moment. Every target on the row is 32 px
+  tall, and words keep 48 px clear of Send and Stop. Stop is a solid pill reading "Stop" beside
+  its square, the square inside the running ring, right-aligned where Send sits; its key shows
+  beside it while the composer has focus.
+- **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
+  the instant tooltip (`Hint`), never a native title, with the shortcut where there is one.
 - **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title, then
   what wants you (a paused workspace, usage, the bell), one "…" with everything else in words and
   shortcuts, and the panel. A new control goes in the "…" unless it is needed at a glance.

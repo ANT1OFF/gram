@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { focusedThreadId } from "@/shell/thread-switcher";
@@ -28,20 +29,25 @@ export function NewEntryMenu() {
   const entry = newEntryOf(useTaskDraftStore((s) => s.entry));
   const hint = useShortcutHint(SHORTCUT[entry]);
   return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label="New"
-      data-testid="new-entry"
-      data-entry={entry}
-      title={withHint("New: agent team, one worker or single agent chat", hint)}
-      className="ml-auto text-muted-foreground [-webkit-app-region:no-drag]"
-      onClick={() => {
-        if (entry === "oneOff") prefillOneOff(focusedThreadId());
-        void navigate(newEntryRoute(entry));
-      }}
+    <Hint
+      label={withHint("New: agent team, one worker or single agent chat", hint)}
+      side="bottom"
+      render={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="New"
+          data-testid="new-entry"
+          data-entry={entry}
+          className="ml-auto text-muted-foreground [-webkit-app-region:no-drag]"
+          onClick={() => {
+            if (entry === "oneOff") prefillOneOff(focusedThreadId());
+            void navigate(newEntryRoute(entry));
+          }}
+        />
+      }
     >
       <Plus />
-    </Button>
+    </Hint>
   );
 }

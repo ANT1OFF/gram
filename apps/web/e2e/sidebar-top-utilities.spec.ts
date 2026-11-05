@@ -166,3 +166,25 @@ test("empty sidebar keeps all five top actions reachable", async ({ page }) => {
   await sidebar.getByRole("button", { name: "Usage", exact: true }).click();
   await expect(page).toHaveURL(/\/usage$/);
 });
+
+// The header stays icons alone, so each says what it does the moment it's hovered, and its key where
+// it has one: a native title would wait a second before saying anything.
+test("each top-left icon names itself and its key on hover", async ({ page }) => {
+  await page.goto("/");
+  const sidebar = page.getByTestId("overview-sidebar");
+  await sidebar.waitFor();
+  const tooltip = page.locator('[data-slot="tooltip-content"]');
+  const expected: readonly [string, RegExp][] = [
+    ["Hide sidebar", /^Hide sidebar \((⌘|Ctrl\+)B\)$/],
+    ["Usage", /^Usage/],
+    ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
+    ["Compact overview", /^Compact overview$/],
+    ["New", /^New: agent team, one worker or single agent chat \(/],
+  ];
+  for (const [name, label] of expected) {
+    await sidebar.locator(`[aria-label="${name}"]`).first().hover();
+    await expect(tooltip).toHaveText(label);
+    await page.mouse.move(600, 600);
+    await expect(tooltip).toHaveCount(0);
+  }
+});

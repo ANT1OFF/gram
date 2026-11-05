@@ -895,8 +895,107 @@ async function openWorkspaceSettingsFromBar(page: Page): Promise<void> {
   await page.getByTestId("menu-workspace-settings").click();
 }
 
+/** A draft in the composer, so the toolbar is read as a user about to send sees it. */
+const DRAFT = "Add retry coverage for the queue consumer.";
+
+/** The realistic Gram orchestrator's composer at `width`, a draft in it. */
+const openOrchestratorComposer = (width: number) => async (page: Page) => {
+  await page.setViewportSize({ width, height: 1095 });
+  await page.addInitScript(() => {
+    sessionStorage.setItem("gram.mock.orchestration", "realistic");
+  });
+  await seedMockSettings(page, { panel: { open: false } });
+  await page.goto("/");
+  await page.getByTestId("app-shell").waitFor();
+  const made = await page.evaluate(async () => {
+    const started = await window.gramMock!.startedRealistic();
+    if (started === undefined)
+      throw new Error("the mock did not start with the realistic scenario");
+    return started;
+  });
+  // In-app, so the scenario seeded in memory stays: at 1024 px the overview is its compact rail,
+  // with no workspace row to click.
+  await page.evaluate((id) => {
+    history.pushState({}, "", `/t/${id}`);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, made.orchestratorThreadId);
+  await page.waitForURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
+  await page.getByLabel("Message", { exact: true }).fill(DRAFT);
+  await page.waitForTimeout(400);
+};
+
+/** A solo thread's composer at `width`, a draft in it; with `diff`, its turn's diff beside it. */
+const openSoloComposer =
+  (width: number, diff = false) =>
+  async (page: Page) => {
+    await page.setViewportSize({ width, height: 1095 });
+    await seedMockSettings(page, { panel: { open: false } });
+    await page.goto("/t/t-deps");
+    if (diff) {
+      await page.getByTestId("turn-files-chip").click();
+      await page.getByTestId("diff-panel").getByTestId("diff-file").first().waitFor();
+      // The diff dragged wide, as a reviewer does: the thread keeps about 330 px.
+      const handle = page.getByTestId("right-resize");
+      const edge = (await handle.boundingBox())!;
+      const y = edge.y + edge.height / 2;
+      await page.mouse.move(edge.x + edge.width / 2, y);
+      await page.mouse.down();
+      await page.mouse.move(470, y, { steps: 6 });
+      await page.mouse.up();
+    }
+    await page.getByLabel("Message", { exact: true }).fill(DRAFT);
+    await page.waitForTimeout(400);
+  };
+
+/** The `/new` prompt box at `width`, a prompt in it. */
+const openNewPrompt = (width: number) => async (page: Page) => {
+  await page.setViewportSize({ width, height: 1095 });
+  await page.goto("/new");
+  await page.getByRole("form", { name: "New thread" }).waitFor();
+  await page.getByLabel("First prompt", { exact: true }).fill(DRAFT);
+  await page.waitForTimeout(400);
+};
+
+/** Each composer toolbar at a real window's width and at 1024 px. */
+const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1024].flatMap((width): Shot[] => [
+  {
+    name: `composer-orchestrator-${width}`,
+    title: `The orchestrator's composer at ${width} px: model · effort · mode · speed`,
+    open: openOrchestratorComposer(width),
+    element: composerSurface,
+  },
+  {
+    name: `composer-solo-${width}`,
+    title: `A solo thread's composer at ${width} px: the same order`,
+    open: openSoloComposer(width),
+    element: composerSurface,
+  },
+  {
+    name: `composer-running-${width}`,
+    title: `A running turn's composer at ${width} px: Stop in words`,
+    open: async (page) => {
+      await page.setViewportSize({ width, height: 1095 });
+      await openRunningComposer(page);
+      await page.waitForTimeout(400);
+    },
+    element: composerSurface,
+  },
+  {
+    name: `new-prompt-${width}`,
+    title: `The /new prompt box at ${width} px: values in words`,
+    open: openNewPrompt(width),
+    element: composerSurface,
+  },
+]);
+
 export const SHOTS: readonly Shot[] = [
   ...PANEL_TAB_SHOTS,
+  ...COMPOSER_TOOLBAR_SHOTS,
+  {
+    name: "composer-diff-1024",
+    title: "A solo thread at 1024 px beside a wide diff: the narrow composer keeps short values",
+    open: openSoloComposer(1024, true),
+  },
   ...UPDATE_PILL_SHOTS,
   ...TURN_FOOTER_SHOTS,
   {

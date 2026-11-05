@@ -9,12 +9,18 @@ import { Swap } from "@/motion";
 import { ModelCombobox } from "./model-picker";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
+import type { LabelSize } from "./toolbar-layout";
 
 export interface PickerOption<V extends string> {
   value: V;
   label: string;
   /** The value on the toolbar's trigger and in its tooltip, when shorter than `label`. */
   short?: string | undefined;
+  /**
+   * The value in three to six letters, for a toolbar short of room for `short`: "High", "Ask",
+   * "Opus". The tooltip and name still say `short`.
+   */
+  compact?: string | undefined;
   /** A line under the label: the model picker's search list, and each mode's consequence. */
   description?: string | undefined;
   /** The model picker's section past favourites: the agent or gateway it runs on, or Custom. */
@@ -42,11 +48,12 @@ interface PickerProps<V extends string> {
   /** What `icon` stands for, in the tooltip and read after the label. */
   iconLabel?: string | undefined;
   /**
-   * Shows the value beside the glyph, in short for effort and mode ("Extra high"). Without it the
-   * glyph stands alone; either way its name and tooltip say the value ("Mode: Bypass"), and the open
-   * list spells out every option with the current one checked.
+   * Shows the value beside the glyph, in short for effort and mode ("Extra high"), or with "short"
+   * in its compact form ("X-high"). Without it the glyph stands alone; either way its name and
+   * tooltip say the value ("Mode: Bypass"), and the open list spells out every option with the
+   * current one checked.
    */
-  labelled?: boolean;
+  labelled?: boolean | LabelSize;
   /**
    * A settings form's select rather than a toolbar control: named by its label alone, the value in
    * full, and its shortcut in a native title.
@@ -153,6 +160,7 @@ export function Picker<V extends string>({
         size="sm"
         label={label}
         value={shown}
+        compact={chosen?.compact}
         labelled={labelled}
         field={field}
         icon={icon && <Swap swapKey={String(value)}>{icon}</Swap>}

@@ -294,29 +294,40 @@ export function OverviewSidebar() {
           title bar's Show sidebar takes while it is hidden, so the toggle never moves. Too narrow
           for them all beside the buttons, the rest wrap to a row below rather than clip. */}
       <div className="flex min-h-(--titlebar-height) shrink-0 flex-wrap content-start items-center gap-1 px-2 py-1.5 pl-[max(--spacing(2),var(--window-lights-inset))] [-webkit-app-region:drag]">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Hide sidebar"
-          data-testid="overview-hide"
-          title={withHint("Hide sidebar", hideHint)}
-          className="text-muted-foreground [-webkit-app-region:no-drag]"
-          onClick={toggleOverviewSidebar}
+        {/* Each icon says what it does the moment it's hovered, with its key where it has one. */}
+        <Hint
+          label={withHint("Hide sidebar", hideHint)}
+          side="bottom"
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Hide sidebar"
+              data-testid="overview-hide"
+              className="text-muted-foreground [-webkit-app-region:no-drag]"
+              onClick={toggleOverviewSidebar}
+            />
+          }
         >
           <PanelLeftClose />
-        </Button>
+        </Hint>
         <TopLeftNav />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Compact overview"
-          data-testid="overview-compact"
-          title="Compact overview"
-          className="text-muted-foreground [-webkit-app-region:no-drag]"
-          onClick={() => switchOverview("compact")}
+        <Hint
+          label="Compact overview"
+          side="bottom"
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Compact overview"
+              data-testid="overview-compact"
+              className="text-muted-foreground [-webkit-app-region:no-drag]"
+              onClick={() => switchOverview("compact")}
+            />
+          }
         >
           <PanelLeftDashed />
-        </Button>
+        </Hint>
         <NewEntryMenu />
       </div>
       <div

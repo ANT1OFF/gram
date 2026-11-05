@@ -13,14 +13,15 @@ import type { PickerOption } from "./picker";
 
 /**
  * The modes the composer offers, each with what it lets the agent do without asking in one line,
- * read in the open list (the trigger stays a glyph). Codex runs the asking modes in its sandbox;
- * Bypass lifts it.
+ * read in the open list; the trigger says the label, or `compact` when the toolbar is short of
+ * room. Codex runs the asking modes in its sandbox; Bypass lifts it.
  */
 export const MODE_OPTIONS: readonly PickerOption<PermissionMode>[] = [
   { value: "default", label: "Ask", description: "Asks before each file edit and command." },
   {
     value: "acceptEdits",
     label: "Accept edits",
+    compact: "Edits",
     description: "Edits files without asking. Asks before running a command.",
   },
   {
@@ -57,6 +58,7 @@ export const MODE_ICONS: Readonly<Record<PermissionMode, LucideIcon>> = {
 export const EFFORT_OPTIONS: readonly PickerOption<ReasoningVariant>[] = [
   {
     value: "none",
+    compact: "None",
     label: "No thinking",
     short: "No thinking",
     description: "Answers without reasoning first. The fastest.",
@@ -69,6 +71,7 @@ export const EFFORT_OPTIONS: readonly PickerOption<ReasoningVariant>[] = [
   },
   {
     value: "medium",
+    compact: "Med",
     label: "Medium effort",
     short: "Medium",
     description: "Balances speed and depth for everyday work.",
@@ -81,6 +84,7 @@ export const EFFORT_OPTIONS: readonly PickerOption<ReasoningVariant>[] = [
   },
   {
     value: "xhigh",
+    compact: "X-high",
     label: "Extra high effort",
     short: "Extra high",
     description: "Reasons at length. Slower, and uses more of your plan.",
@@ -110,3 +114,17 @@ export const DEFAULT_MODEL_OPTIONS: readonly PickerOption<string>[] = [
   { value: "sonnet", label: "Claude Sonnet" },
   { value: "haiku", label: "Claude Haiku" },
 ];
+
+/**
+ * A model's name in a word or so, for a toolbar short of room: the vendor and any note in
+ * brackets go, and a name still long keeps its first word. "Claude Opus" is "Opus", "Opus 5.5"
+ * stays, "GPT-6 Luna" is "GPT-6".
+ */
+export function compactModelName(name: string): string {
+  const bare = name
+    .replace(/\s*\(.*\)\s*$/, "")
+    .replace(/^(Claude|OpenAI)\s+/i, "")
+    .trim();
+  if (bare === "") return name;
+  return bare.length <= 8 ? bare : (bare.split(/\s+/)[0] ?? bare);
+}
