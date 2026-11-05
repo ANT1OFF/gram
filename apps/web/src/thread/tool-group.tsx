@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import { Expand } from "@/motion";
 
-import { ApprovalLink, useAwaitingTools, useShowApproval } from "./awaiting-tools";
+import { ApprovalSlot, ApprovalSlotsOpen, useNeedsSlot } from "./approval-slots";
+import { useAwaitingTools } from "./awaiting-tools";
 import { ToolCard, type ToolCardProps } from "./tool-cards";
 import { EditCounts } from "./file-edit-card";
 import {
@@ -35,12 +36,12 @@ export function ToolGroup({
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
-  const showApproval = useShowApproval(waiting?.toolCallId);
+  // Closed, the run's line holds the card of the call it hides, or that card's receipt.
+  const needsSlot = useNeedsSlot();
+  const hidden = open ? undefined : run.find((part) => needsSlot(part.toolCallId));
 
   return (
     <div data-testid="tool-group" data-open={open}>
-      {/* The toggle and, while a call waits, the link to its card share a line; the toggle stays
-          the group's own first child. */}
       <button
         type="button"
         aria-expanded={open}
@@ -87,18 +88,16 @@ export function ToolGroup({
           )}
         />
       </button>
-      {showApproval !== undefined && (
-        <span className="ml-2 inline-flex align-middle">
-          <ApprovalLink onShow={showApproval} label="Show approval" />
-        </span>
-      )}
+      {hidden !== undefined && <ApprovalSlot toolCallId={hidden.toolCallId} />}
       <Expand open={open} id={bodyId}>
         {opened && (
-          <div className="flex flex-col gap-2 pt-1.5">
-            {run.map((part) => (
-              <ToolCard key={part.toolCallId} part={part} {...card} />
-            ))}
-          </div>
+          <ApprovalSlotsOpen open={open}>
+            <div className="flex flex-col gap-2 pt-1.5">
+              {run.map((part) => (
+                <ToolCard key={part.toolCallId} part={part} {...card} />
+              ))}
+            </div>
+          </ApprovalSlotsOpen>
         )}
       </Expand>
     </div>

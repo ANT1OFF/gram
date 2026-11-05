@@ -108,7 +108,15 @@ import { useSlabHandoff } from "./slab-handoff";
 import { useOrchestratorVerbs, VerbMenu } from "./verb-menu";
 import { filterVerbs, gridIndexForKey, VERB_COLUMNS, type Verb } from "./verbs";
 import { UnavailableSlot } from "./unavailable-slot";
-import { GHOST_MIRROR, ROUND, SEND_FILL, SLAB, SLAB_TEXTAREA, STOP_PILL } from "./styles";
+import {
+  GHOST_MIRROR,
+  ROUND,
+  SEND_FILL,
+  SLAB,
+  SLAB_TEXTAREA,
+  STOP_PILL,
+  STOP_QUIET,
+} from "./styles";
 import { StashMenu, stashesQueryKey } from "./stash-menu";
 import { ToolbarOverflow, type FoldedPicker } from "./toolbar-overflow";
 import { useMentions } from "./use-mentions";
@@ -124,6 +132,8 @@ const BUSY: ReadonlySet<ThreadStatus> = new Set([
   "needsApproval",
   "needsInput",
 ]);
+/** A turn held at the user's answer: nothing runs, and the card's answer is the step to take. */
+const WAITING_ON_YOU: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
 const HINT_MS = 2500;
 /**
  * The threads with a send or steer waiting for the connection, across every composer: a thread's
@@ -182,6 +192,8 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     backgroundWorking(status, activityLine(status, s.statusDetail[threadId], summary?.activity)),
   );
   const busy = BUSY.has(status);
+  // Stop steps back while the turn only waits on an answer; a background agent still works.
+  const waitingOnYou = WAITING_ON_YOU.has(status) && !background;
   const steerable = running && summary?.capabilities?.steer === true;
   // Some tests render a thread with no model.
   const agent = summary?.thread.model?.agent ?? "claude";
@@ -860,7 +872,14 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     // Stopping keeps what the turn wrote so far; only what it hadn't yet written is lost.
     stop: {
       aria: "Stop",
-      hint: withHint(background ? stopLabel : `${stopLabel} · keeps the reply so far`, stopHint),
+      hint: withHint(
+        background
+          ? stopLabel
+          : waitingOnYou
+            ? "Stop the turn instead of answering"
+            : `${stopLabel} · keeps the reply so far`,
+        stopHint,
+      ),
     },
   } as const;
   useShortcut(
@@ -1319,7 +1338,14 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                         type="button"
                         aria-label={actionLabels[action].aria}
                         disabled={action !== "stop" && !canSend}
-                        className={action === "stop" ? STOP_PILL : cn(ROUND, SEND_FILL)}
+                        data-waiting={action === "stop" && waitingOnYou ? "" : undefined}
+                        className={
+                          action === "stop"
+                            ? waitingOnYou
+                              ? STOP_QUIET
+                              : STOP_PILL
+                            : cn(ROUND, SEND_FILL)
+                        }
                         onClick={runAction}
                       />
                     }
@@ -1329,10 +1355,12 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                       // is at work, not only how to end it. Still under Reduced and Off.
                       <>
                         <span aria-hidden className="relative grid size-4 place-items-center">
-                          <RingSpinner
-                            data-testid="stop-ring"
-                            className="pointer-events-none absolute inset-0 size-4"
-                          />
+                          {!waitingOnYou && (
+                            <RingSpinner
+                              data-testid="stop-ring"
+                              className="pointer-events-none absolute inset-0 size-4"
+                            />
+                          )}
                           <Square className="size-2 fill-current" />
                         </span>
                         <span>Stop</span>

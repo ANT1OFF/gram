@@ -23,7 +23,7 @@ import { keepBeside, useBesideStore } from "./beside-store";
 import { openFeatureSheet } from "./feature-sheet-store";
 import { orchestratorRowTitle } from "./tree-model";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
-import { goToThread } from "./worker-banner";
+import { FINISHED_WORKER, goToThread } from "./worker-banner";
 import { workerGlideId, useWorkersListStore } from "./workers-list";
 import { workerEntryOf, workerRow } from "./workers-model";
 
@@ -260,9 +260,6 @@ const TITLEBAR_ICON =
   "inline-flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 const TITLEBAR_WORDS = "h-7 px-2";
 
-/** A worker's end states, where there is nothing left to take over. */
-const FINISHED = new Set(["merged", "delivered", "archived"]);
-
 /** What a worker's own actions can do now: dock beside its orchestrator, or be taken over. */
 function useWorkerActions(thread: Thread) {
   const { entry } = useWorkerFacts(thread);
@@ -282,7 +279,7 @@ function useWorkerActions(thread: Thread) {
         ? () => keepBeside(thread.id, open)
         : undefined,
     takeOver:
-      worker && !held && entry !== undefined && !FINISHED.has(entry.state)
+      worker && !held && entry !== undefined && !FINISHED_WORKER.has(entry.state)
         ? () => void takeOver()
         : undefined,
   };

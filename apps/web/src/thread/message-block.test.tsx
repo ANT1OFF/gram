@@ -1040,6 +1040,14 @@ describe("MessageBlock agent errors", () => {
 
   it("says plainly when the provider gave no reset time, with Retry now and Usage beside it", () => {
     show(vi.fn(), error);
+    // Throttled requests, which a retry may get past, stay "Rate limited", with Retry a full
+    // button under the message rather than a corner control.
+    expect(screen.getByTestId("agent-error-title").textContent).toBe("Rate limited");
+    const retry = screen.getByTestId("agent-error-retry");
+    expect(retry.textContent).toBe("Retry");
+    expect(retry.className).not.toContain("h-6");
+    const sentence = screen.getByText(error.text);
+    expect(sentence.compareDocumentPosition(retry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const time = screen.getByTestId("agent-error-retry-time");
     expect(time.dataset["known"]).toBe("false");
     expect(time.textContent).toBe("The provider gave no reset time. Retry now, or check Usage.");
@@ -1095,6 +1103,10 @@ describe("MessageBlock agent errors", () => {
     const time = screen.getByTestId("agent-error-retry-time");
     expect(time.dataset["known"]).toBe("true");
     expect(time.textContent).toMatch(/Try again at (\w{3} )?\d\d:\d\d/);
+    // A spent usage limit is named for what it is, with its reset, never "Rate limited".
+    expect(screen.getByTestId("agent-error-title").textContent).toMatch(
+      /^Usage limit reached · resets (\w{3} )?\d\d:\d\d$/,
+    );
     // Sending now would only repeat the refusal: no Retry, only Retry then.
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     fireEvent.click(screen.getByTestId("agent-error-retry-then"));

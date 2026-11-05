@@ -14,6 +14,7 @@ import {
   pauseLeavesRunning,
   pauseText,
   WORKER_HELD_LINE,
+  WORKER_TAKE_OVER_LINE,
   workerHeldEnds,
   workerPauseLine,
 } from "@/thread/orchestration-model";
@@ -40,6 +41,9 @@ export const goToThread = (threadId: ThreadId, event?: { preventDefault: () => v
   else useLayoutStore.getState().openThread(threadId);
 };
 
+/** A worker's end states, where there is nothing left to take over. */
+export const FINISHED_WORKER: ReadonlySet<string> = new Set(["merged", "delivered", "archived"]);
+
 /** A banner line under a header: a glyph, its lead in words, the sentence, and any action. */
 const BANNER =
   "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-meta text-foreground";
@@ -47,7 +51,7 @@ const BANNER =
 /**
  * What a worker's crumbs can't say, under the header and only while it applies: the repos a
  * multi-repo worker works in; that it is under the user's control, what that means and what the header's
- * Hand back does; and its workspace's pause, which reads apart from a hold: a filled band that
+ * Hand back does, or while it isn't, what Take over would change; and its workspace's pause, which reads apart from a hold: a filled band that
  * names the workspace and resumes all of it.
  */
 export function WorkerBanner({ thread }: { thread: Thread }) {
@@ -102,6 +106,18 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
             {WORKER_HELD_LINE}
           </span>
         </div>
+      )}
+      {!held && entry !== undefined && !FINISHED_WORKER.has(entry.state) && (
+        // While Take over is offered, what it would change, in a quiet line of its own.
+        <p
+          data-testid="worker-banner-take-over"
+          className="flex min-w-0 items-center gap-2 border-b border-edge px-3 py-1 text-meta text-muted-foreground"
+        >
+          <HandGrab aria-hidden className="size-icon-row shrink-0" />
+          <span className="min-w-0 truncate" title={WORKER_TAKE_OVER_LINE}>
+            {WORKER_TAKE_OVER_LINE}
+          </span>
+        </p>
       )}
       {repos !== undefined && (
         <p

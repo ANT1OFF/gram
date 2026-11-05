@@ -21,14 +21,18 @@ import {
 } from "lucide-react";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 
 import { useApi } from "@/api/context";
@@ -76,6 +80,7 @@ import {
   type ApprovalDetails,
 } from "./request-model";
 import { ApprovalReceiptLine, useApprovalReceipts } from "./approval-receipt";
+import { useApprovalSlots } from "./approval-slots";
 import { RoleChip } from "./role-chip";
 
 type RoleFields = Pick<Thread, "role" | "spawnedBy">;
@@ -118,14 +123,20 @@ export function AlwaysPreviewRequestCards({ children }: { children: ReactNode })
   return <AlwaysPreviewContext value={true}>{children}</AlwaysPreviewContext>;
 }
 
+/** Whether a card shows its shortcut hints: of several on screen, only the one the keys answer. */
+const HintsContext = createContext(true);
+
 /** A card's shortcut hint, which the inbox leaves out as its cards own no shortcuts. */
 function CardKbd({ id }: { id: string }) {
-  return useContext(CompactContext) ? null : <ShortcutKbd id={id} cap />;
+  const hints = useContext(HintsContext);
+  return useContext(CompactContext) || !hints ? null : <ShortcutKbd id={id} cap />;
 }
 
 /**
- * Pending requests for a thread, with approvals sharing one paged slot. One answered from the
- * Inbox, and held for its Undo or being sent, is left out: it is answered, and Undo brings it back.
+ * Pending requests for a thread. In a thread view each approval is drawn under the tool row that
+ * waits on it (`PlacedApprovals`); elsewhere, and for a call whose row isn't drawn, approvals share
+ * one paged slot above the composer. One answered from the Inbox, and held for its Undo or being
+ * sent, is left out: it is answered, and Undo brings it back.
  */
 export function RequestCards({
   threadId,
@@ -147,14 +158,21 @@ export function RequestCards({
   );
   const approvals = requests.filter((request) => request.kind === "approval");
   const sheet = useContext(SheetContext);
+  const compact = useContext(CompactContext);
+  const drawn = useApprovalSlots();
+  const slots = sheet || compact ? undefined : drawn;
   return (
     <RequestRoleContext value={thread}>
-      {/* What the last answer did, in the thread, until the next card lands. */}
-      {!sheet && approvals.length === 0 && <ApprovalReceiptLine threadId={threadId} />}
+      {/* What the last answer did, until the next card lands: under its row when that is drawn. */}
+      {!sheet && <Receipt threadId={threadId} approvals={approvals} slots={slots} />}
+      {slots !== undefined && approvals.length > 0 && (
+        <PlacedApprovals threadId={threadId} requests={approvals} focused={focused} slots={slots} />
+      )}
       {/* A card lands, and an answered one folds away, so the transcript above never jumps. */}
       <PresenceList>
         {requests.map((request) =>
-          request.kind === "approval" && request !== approvals[0] ? null : (
+          request.kind === "approval" &&
+          (slots !== undefined || request !== approvals[0]) ? null : (
             <PresenceItem
               key={request.kind === "approval" ? "approvals" : request.id}
               className="my-2"
@@ -171,6 +189,261 @@ export function RequestCards({
         )}
       </PresenceList>
     </RequestRoleContext>
+  );
+}
+
+/**
+ * The thread's one approval receipt, where its card was: under the call's row while that is drawn
+ * and the request answered, else above the composer once no approval is left to answer.
+ */
+function Receipt({
+  threadId,
+  approvals,
+  slots,
+}: {
+  threadId: ThreadId;
+  approvals: readonly ApprovalRequest[];
+  slots: ReadonlyMap<string, HTMLElement> | undefined;
+}) {
+  const source = useApprovalReceipts(
+    useShallow((s) => {
+      const receipt = s.byThread[threadId];
+      return { requestId: receipt?.requestId, toolUseId: receipt?.toolUseId };
+    }),
+  );
+  const slot = source.toolUseId === undefined ? undefined : slots?.get(source.toolUseId);
+  if (slot !== undefined) {
+    // Still pending, its card is in the slot; the receipt follows once the answer lands.
+    if (approvals.some((request) => request.id === source.requestId)) return null;
+    return createPortal(<ApprovalReceiptLine threadId={threadId} />, slot);
+  }
+  return approvals.length === 0 ? <ApprovalReceiptLine threadId={threadId} /> : null;
+}
+
+/**
+ * A thread's approvals, each drawn under the tool row that waits on it. A card whose row isn't
+ * drawn (scrolled out of the transcript's window, folded away, or a request no call made) waits
+ * above the composer instead, paged as before. Every card stays mounted in this one place whichever
+ * slot draws it, so moving never resets it: its preview stays open and an answer in flight stays
+ * in flight.
+ *
+ * Enter, ⌥Enter and Escape answer one card only: the selected one (the first, or the one a Needs
+ * you jump, a focus or the pager chose), which alone shows their hints, and only while it is on
+ * screen when the key is pressed. That is measured at the press (`onScreen`), never from an
+ * earlier report, so a card scrolled away, paged out or folded into a collapsed row answers no key.
+ */
+function PlacedApprovals({
+  threadId,
+  requests,
+  focused,
+  slots,
+}: {
+  threadId: ThreadId;
+  requests: readonly ApprovalRequest[];
+  focused: boolean;
+  slots: ReadonlyMap<string, HTMLElement>;
+}) {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  const [selected, setSelected] = useState({ id: requests[0]?.id, index: 0 });
+  const found = requests.findIndex((request) => request.id === selected.id);
+  const index = found < 0 ? Math.min(selected.index, requests.length - 1) : found;
+  const current = requests[index];
+  // Resolving an earlier request must not change which command the user is reviewing.
+  if (current && (current.id !== selected.id || index !== selected.index)) {
+    setSelected({ id: current.id, index });
+  }
+  const select = (id: ApprovalRequest["id"]) => {
+    const at = requests.findIndex((request) => request.id === id);
+    if (at >= 0 && id !== selected.id) setSelected({ id, index: at });
+  };
+  // A Needs you jump to one of these shows it, whichever was being reviewed.
+  const revealed = useRequestRevealStore((s) =>
+    s.request?.threadId === threadId ? s.request.requestId : undefined,
+  );
+  const revealAt = requests.findIndex((request) => request.id === revealed);
+  if (revealAt >= 0 && revealAt !== index)
+    setSelected({ id: requests[revealAt]?.id, index: revealAt });
+  // Shown, it is taken, so moving on to another approval stays where it is put.
+  useEffect(() => {
+    if (revealAt >= 0 && revealAt === index) useRequestRevealStore.getState().clear();
+  }, [revealAt, index]);
+
+  // Read when a key is pressed: which card is selected now, and each card's element.
+  const selectedId = useRef(current?.id);
+  useLayoutEffect(() => {
+    selectedId.current = current?.id;
+  });
+  const elements = useRef(new Map<string, HTMLElement>());
+  const register = useCallback((id: string, element: HTMLElement | undefined) => {
+    if (element === undefined) elements.current.delete(id);
+    else elements.current.set(id, element);
+  }, []);
+  const mayAnswer = useCallback((id: string) => {
+    if (selectedId.current !== id) return false;
+    const element = elements.current.get(id);
+    return element !== undefined && onScreen(element);
+  }, []);
+  const slotOf = (request: ApprovalRequest) =>
+    request.toolUseId === undefined ? undefined : slots.get(request.toolUseId);
+  const waiting = requests.filter((request) => slotOf(request) === undefined);
+  const shown = waiting.find((request) => request.id === current?.id) ?? waiting[0];
+  const at = shown === undefined ? -1 : waiting.indexOf(shown);
+  return (
+    <>
+      {waiting.length > 1 && (
+        <nav
+          aria-label="Approval navigation"
+          className="mt-2 -mb-1 flex items-center justify-end gap-1"
+        >
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Previous approval"
+            disabled={at <= 0}
+            onClick={() => select(waiting[at - 1]!.id)}
+          >
+            <ChevronLeft aria-hidden className="size-icon-chip" />
+          </Button>
+          <span
+            aria-live="polite"
+            aria-atomic="true"
+            className="min-w-8 text-center font-mono text-meta text-muted-foreground"
+          >
+            <span className="sr-only">Approval </span>
+            {at + 1}/{waiting.length}
+          </span>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Next approval"
+            disabled={at >= waiting.length - 1}
+            onClick={() => select(waiting[at + 1]!.id)}
+          >
+            <ChevronRight aria-hidden className="size-icon-chip" />
+          </Button>
+        </nav>
+      )}
+      <div ref={setHost} data-testid="approval-fallback" />
+      {requests.map((request) => {
+        const slot = slotOf(request);
+        return (
+          <PlacedApproval
+            key={request.id}
+            threadId={threadId}
+            request={request}
+            target={slot ?? host}
+            inline={slot !== undefined}
+            hidden={slot === undefined && request !== shown}
+            selected={request.id === current?.id}
+            focused={focused}
+            register={register}
+            mayAnswer={mayAnswer}
+            onSelect={select}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Moves a card's own element into `target`, the row's slot or the place above the composer, and
+ * spaces it for where it is: under its row, clear of the row above and of the transcript row's
+ * edge; above the composer, as the other cards there sit. A card shown in neither is hidden.
+ */
+function place(element: HTMLElement, target: HTMLElement | null, inline: boolean, hidden: boolean) {
+  element.dataset["inline"] = String(inline);
+  element.className = inline ? "pt-1 pb-1" : "my-2";
+  element.hidden = hidden;
+  if (target === null || element.parentNode === target) return;
+  // Moving an element drops the focus inside it; the control that had it keeps it.
+  const focused = document.activeElement;
+  const had = focused instanceof HTMLElement && element.contains(focused);
+  target.append(element);
+  if (had && !hidden) focused.focus({ preventScroll: true });
+}
+
+/**
+ * Whether any of `element` is on screen now: connected, in nothing hidden, collapsed or inert, and
+ * inside the window and every ancestor that clips it (the transcript's scroller, a folded body).
+ * Measured when asked, so it is never a stale report.
+ */
+export function onScreen(element: HTMLElement): boolean {
+  if (!element.isConnected || element.closest("[hidden], [inert]") !== null) return false;
+  const rect = element.getBoundingClientRect();
+  let top = Math.max(rect.top, 0);
+  let left = Math.max(rect.left, 0);
+  let bottom = Math.min(rect.bottom, window.innerHeight);
+  let right = Math.min(rect.right, window.innerWidth);
+  for (let node = element.parentElement; node !== null; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+    const clip = node.getBoundingClientRect();
+    top = Math.max(top, clip.top);
+    left = Math.max(left, clip.left);
+    bottom = Math.min(bottom, clip.bottom);
+    right = Math.min(right, clip.right);
+  }
+  return bottom > top && right > left;
+}
+
+/**
+ * One approval card, rendered into an element of its own that is moved into its row's slot, or
+ * into the place above the composer: the card is never remounted by the move.
+ */
+function PlacedApproval({
+  threadId,
+  request,
+  target,
+  inline,
+  hidden,
+  selected,
+  focused,
+  register,
+  mayAnswer,
+  onSelect,
+}: {
+  threadId: ThreadId;
+  request: ApprovalRequest;
+  target: HTMLElement | null;
+  inline: boolean;
+  hidden: boolean;
+  /** Whether this is the card the keys answer, while it is on screen; it alone shows their hints. */
+  selected: boolean;
+  focused: boolean;
+  register: (id: string, element: HTMLElement | undefined) => void;
+  /** Asked at each press: whether this card may answer it now. */
+  mayAnswer: (id: string) => boolean;
+  onSelect: (id: ApprovalRequest["id"]) => void;
+}) {
+  const [element] = useState(() => {
+    const div = document.createElement("div");
+    div.setAttribute("data-testid", "approval-place");
+    return div;
+  });
+  const id = request.id;
+  useLayoutEffect(() => place(element, target, inline, hidden), [element, target, inline, hidden]);
+  useLayoutEffect(() => {
+    register(id, element);
+    return () => {
+      register(id, undefined);
+      element.remove();
+    };
+  }, [element, id, register]);
+  const canAnswer = useCallback(() => mayAnswer(id), [mayAnswer, id]);
+  return createPortal(
+    <HintsContext value={selected}>
+      <div onFocus={() => onSelect(id)}>
+        <ApprovalCard
+          threadId={threadId}
+          request={request}
+          active={focused && selected}
+          canAnswer={canAnswer}
+        />
+      </div>
+    </HintsContext>,
+    element,
   );
 }
 
@@ -253,7 +526,11 @@ function useRespond(threadId: ThreadId, request: PendingRequest) {
     setPending(true);
     try {
       await api.respond(threadId, request.id, answer);
-      if (receipt !== undefined) useApprovalReceipts.getState().show(threadId, receipt);
+      if (receipt !== undefined)
+        useApprovalReceipts.getState().show(threadId, receipt, {
+          requestId: request.id,
+          toolUseId: request.kind === "approval" ? request.toolUseId : undefined,
+        });
     } catch (error) {
       console.error("respond", error);
       setPending(false);
@@ -666,10 +943,17 @@ export function ApprovalCard({
   threadId,
   request,
   active,
+  canAnswer,
 }: {
   threadId: ThreadId;
   request: ApprovalRequest;
   active: boolean;
+  /**
+   * Asked at each press of Enter, ⌥Enter or Escape: whether this card may take it now. A card
+   * drawn under its row passes whether it is the selected card and on screen; without it, `active`
+   * alone decides, as above the composer.
+   */
+  canAnswer?: (() => boolean) | undefined;
 }) {
   const { respond, pending } = useRespond(threadId, request);
   const compact = useContext(CompactContext);
@@ -711,6 +995,7 @@ export function ApprovalCard({
       label: ALLOW_ONCE,
       group: "Thread",
       once: true,
+      when: () => canAnswer?.() ?? true,
       run: () => allow("once"),
     },
     active && pause === undefined,
@@ -721,7 +1006,7 @@ export function ApprovalCard({
       keys: "alt+enter",
       label: alwaysAllowOpenLabel(1),
       group: "Thread",
-      when: () => canAlways,
+      when: () => canAlways && (canAnswer?.() ?? true),
       // Once per press, for both steps: a held ⌥⏎ opens the preview and nothing more, so saving
       // takes a second, separate press, and a held key never reaches the next card in the queue.
       once: true,
@@ -730,7 +1015,15 @@ export function ApprovalCard({
     active && pause === undefined,
   );
   useShortcut(
-    { id: "approval.deny", keys: "escape", label: DENY, group: "Thread", once: true, run: deny },
+    {
+      id: "approval.deny",
+      keys: "escape",
+      label: DENY,
+      group: "Thread",
+      once: true,
+      when: () => canAnswer?.() ?? true,
+      run: deny,
+    },
     active && pause === undefined,
   );
 

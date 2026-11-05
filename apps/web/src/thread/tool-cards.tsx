@@ -15,7 +15,8 @@ import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Expand, isMarkPhase, StatusMark, Swap } from "@/motion";
 
-import { ApprovalLink, useAwaitingTools, useShowApproval, withApproval } from "./awaiting-tools";
+import { ApprovalSlot, ApprovalSlotsOpen } from "./approval-slots";
+import { useAwaitingTools, withApproval } from "./awaiting-tools";
 import {
   basename,
   PHASE_DISPLAY,
@@ -41,7 +42,17 @@ export interface ToolCardProps {
   renderSubagent: (message: GramUIMessage) => ReactNode;
 }
 
-export function ToolCard({
+/** A tool call's row, with its approval card right under it while the call waits on one. */
+export function ToolCard(props: ToolCardProps) {
+  return (
+    <>
+      <ToolCardRow {...props} />
+      <ApprovalSlot toolCallId={props.part.toolCallId} />
+    </>
+  );
+}
+
+function ToolCardRow({
   part,
   subagents,
   subagentUsage,
@@ -125,7 +136,6 @@ function ToolShell({
   );
   const display = PHASE_DISPLAY[phase];
   const words = labelOf?.(phase) ?? { label: name, raw: undefined };
-  const showApproval = useShowApproval(phase === "awaiting" ? part.toolCallId : undefined);
   const [open, setOpen] = useState(defaultOpen);
   // A closed body is inert and zero-height, so it isn't rendered until first opened: a long
   // transcript would otherwise lay out every tool's full output. It stays mounted once opened, so
@@ -166,13 +176,8 @@ function ToolShell({
           </span>
           {meta}
           {/* A finished row is the common case: its check says so, and the word is for a reader.
-            A waiting row's word is the link to its card instead, beside the toggle. */}
-          <span
-            className={cn(
-              "shrink-0 text-meta",
-              phase === "done" || showApproval !== undefined ? "sr-only" : display.tone,
-            )}
-          >
+            A waiting row's card is right under it. */}
+          <span className={cn("shrink-0 text-meta", phase === "done" ? "sr-only" : display.tone)}>
             {display.label}
           </span>
           <ChevronDown
@@ -180,11 +185,6 @@ function ToolShell({
             className="size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) in-data-panel-open:rotate-180"
           />
         </CollapsibleTrigger>
-        {showApproval !== undefined && (
-          <span className="shrink-0 pr-3">
-            <ApprovalLink onShow={showApproval} label={display.label} />
-          </span>
-        )}
       </div>
       {!open && (
         <ToolImages
@@ -201,7 +201,8 @@ function ToolShell({
                 Tool <code className="font-mono text-foreground">{words.raw}</code>
               </p>
             )}
-            {children}
+            {/* A subagent's calls inside hold their approvals only while this body is open. */}
+            <ApprovalSlotsOpen open={open}>{children}</ApprovalSlotsOpen>
             <ToolImages part={part} size="large" className="flex flex-wrap items-start gap-2" />
             {part.state === "output-error" && (
               <pre className="overflow-x-auto font-mono text-meta whitespace-pre-wrap text-destructive">

@@ -39,6 +39,14 @@ export const STOP_PILL =
   "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-(--composer-button-radius) bg-foreground pr-3 pl-2.5 text-meta font-medium text-background outline-none transition-colors hover:bg-destructive focus-visible:focus-ring";
 
 /**
+ * Stop while the turn only waits on the user, at an approval or a question: the answer on its card
+ * is the step to take, so Stop steps back to an outline in the quiet text colour, with no turning
+ * ring, as nothing runs. The same size and place as `STOP_PILL`; danger only under the pointer.
+ */
+export const STOP_QUIET =
+  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-(--composer-button-radius) border border-border bg-transparent pr-3 pl-2.5 text-meta font-medium text-muted-foreground outline-none transition-colors hover:border-destructive/50 hover:text-destructive focus-visible:focus-ring";
+
+/**
  * Send's fill: the accent with a faint gloss, flat while pressed. With nothing to send it takes the
  * neutral disabled fill every button takes (components/ui/button.tsx), never a dimmed accent that
  * still reads as pressable.

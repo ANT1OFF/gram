@@ -21,7 +21,7 @@ import {
   type EarlierAttempt,
   type RetryReceipt,
 } from "./attempt-model";
-import { failureLabel } from "./failure-kinds";
+import { failureLabel, USAGE_LIMIT } from "./failure-kinds";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
 import { retryKey, retryTimeOf, useRetrySchedule } from "./retry-time";
 
@@ -106,7 +106,7 @@ function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
               <span className="font-medium text-foreground">
                 {`Attempt ${attempt} · ${formatStamp(error.at)}`}
               </span>
-              {` · ${failureLabel(error.kind)}`}
+              {` · ${failureLabel(error.kind, error.retryable)}`}
               <p className="break-words">{error.text}</p>
             </li>
           ))}
@@ -210,7 +210,7 @@ function ErrorCard({
             {retriedLabel(retried)}
           </p>
           <p data-testid="agent-error-history" className="text-meta break-words">
-            {failureLabel(error.kind)}
+            {failureLabel(error.kind, error.retryable)}
             {attempt !== undefined && attempt.attempt > 1 && ` · attempt ${attempt.attempt}`}
             {": "}
             {error.text}
@@ -222,6 +222,18 @@ function ErrorCard({
   }
 
   const repeat = attempt !== undefined && attempt.attempt > 1;
+  // A spent usage limit says so, and when it resets once that is known: "Usage limit reached ·
+  // resets 11:15". The provider throttling requests stays "Rate limited".
+  const spent = limited && (!error.retryable || retryAt !== undefined);
+  const title = spent
+    ? retryAt !== undefined && retryAt > now
+      ? `${USAGE_LIMIT} · resets ${resetText(retryAt, now)}`
+      : USAGE_LIMIT
+    : failureLabel(error.kind, error.retryable);
+  // Retry is the card's own step, a full button under what failed: the primary one when trying
+  // again now may go through, an outline "Retry now" while a known reset is still ahead.
+  const early = retryAt !== undefined && retryAt > now;
+  const canRetryNow = text !== undefined && (error.retryable || !early);
   /**
    * "Retry then": sends the turn's message again once the reset passes, if it is still the thread's
    * last error with nothing running by then. Read when it fires, not now: the user may have sent
@@ -244,8 +256,8 @@ function ErrorCard({
     >
       <CircleX aria-hidden className="mt-0.5 size-icon-row shrink-0 text-destructive" />
       <div className="min-w-0 flex-1">
-        <p className="text-meta font-medium text-destructive">
-          {failureLabel(error.kind)}
+        <p data-testid="agent-error-title" className="text-meta font-medium text-destructive">
+          {title}
           {repeat && (
             <span data-testid="agent-error-attempt-number" className="text-foreground">
               {` · attempt ${attempt.attempt} of ${attempt.of} · needs action`}
@@ -276,18 +288,26 @@ function ErrorCard({
             Gateway settings
           </Link>
         )}
+        {canRetryNow && text !== undefined && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant={early ? "outline" : "default"}
+              data-testid="agent-error-retry"
+              onClick={() => void retry(text)}
+              disabled={pending}
+            >
+              <RotateCw aria-hidden />
+              {early ? "Retry now" : "Retry"}
+            </Button>
+          </div>
+        )}
         {unsent !== undefined && text !== undefined && (
           <p data-testid="retry-unsent" className="mt-1 text-meta break-words text-foreground">
             {unsent}
           </p>
         )}
       </div>
-      {text !== undefined && (error.retryable || retryAt === undefined || retryAt <= now) && (
-        <Button size="xs" variant="outline" onClick={() => void retry(text)} disabled={pending}>
-          <RotateCw aria-hidden />
-          {retryAt !== undefined && retryAt > now ? "Retry now" : "Retry"}
-        </Button>
-      )}
     </div>
   );
 }

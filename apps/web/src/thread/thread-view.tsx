@@ -72,6 +72,7 @@ import { ownPrOnStrip } from "./pr-strip-model";
 import { LimitWaitLine } from "./limit-wait-line";
 import { QueueList } from "./queue-list";
 import { RecapCard } from "./recap-card";
+import { ApprovalSlotsProvider } from "./approval-slots";
 import { RequestCards } from "./request-cards";
 import { RoleGlyph, useThreadRole } from "./role-chip";
 import { activeStreamingIds } from "./streaming";
@@ -591,43 +592,46 @@ export function ThreadView({
       {finding && (
         <FindBar threadId={threadId} onReveal={reveal} onClose={() => setFinding(false)} />
       )}
-      <OrchestratorStreamProvider stream={stream}>
-        <Transcript
-          threadId={threadId}
-          loading={phase === "loading"}
-          messages={shown}
-          subagents={children}
-          subagentUsage={subagentUsage}
-          streamingIds={streamingSet}
-          turnEnds={turnEnds}
-          turnUndos={undos}
-          animate={focused}
-          jump={chapterJump}
-          chapters={chapters}
-          onChapterJump={jumpToChapter}
-          reveal={revealJump}
-          flashId={flashId}
-          earlier={earlier}
-          loadingEarlier={loadingEarlier}
-          earlierFailed={earlierFailed}
-          onLoadEarlier={(retry) => void pageEarlier(retry)}
-          live={thread.spawnedBy !== undefined}
-        />
-      </OrchestratorStreamProvider>
-      <div className="w-full thread-column shrink-0 px-6">
-        {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
-        {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
-        <StopReceiptLine threadId={threadId} />
-        {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
-        <RequestCards
-          threadId={threadId}
-          requests={summary.pendingRequests}
-          focused={focused}
-          thread={thread}
-        />
-        <LimitWaitLine thread={thread} />
-        <QueueList threadId={threadId} />
-      </div>
+      {/* The transcript's waiting rows hold the approval cards the requests below draw. */}
+      <ApprovalSlotsProvider threadId={threadId}>
+        <OrchestratorStreamProvider stream={stream}>
+          <Transcript
+            threadId={threadId}
+            loading={phase === "loading"}
+            messages={shown}
+            subagents={children}
+            subagentUsage={subagentUsage}
+            streamingIds={streamingSet}
+            turnEnds={turnEnds}
+            turnUndos={undos}
+            animate={focused}
+            jump={chapterJump}
+            chapters={chapters}
+            onChapterJump={jumpToChapter}
+            reveal={revealJump}
+            flashId={flashId}
+            earlier={earlier}
+            loadingEarlier={loadingEarlier}
+            earlierFailed={earlierFailed}
+            onLoadEarlier={(retry) => void pageEarlier(retry)}
+            live={thread.spawnedBy !== undefined}
+          />
+        </OrchestratorStreamProvider>
+        <div className="w-full thread-column shrink-0 px-6">
+          {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
+          {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
+          <StopReceiptLine threadId={threadId} />
+          {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
+          <RequestCards
+            threadId={threadId}
+            requests={summary.pendingRequests}
+            focused={focused}
+            thread={thread}
+          />
+          <LimitWaitLine thread={thread} />
+          <QueueList threadId={threadId} />
+        </div>
+      </ApprovalSlotsProvider>
       <FolderMissingNotice threadId={threadId} />
       <MergedCleanupNotice threadId={threadId} />
       <LapsedConnectorsNotice threadId={threadId} />
