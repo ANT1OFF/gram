@@ -22,6 +22,7 @@ import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
 import { boardWorkspaceFor } from "./board-model";
 import { StatusDot, type DotState } from "./status-dot";
+import { glyphState, STATUS_WORDS } from "./status-words";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useWorkspaceStatuses } from "./use-workspace-statuses";
 import {
@@ -74,15 +75,9 @@ export const useWorkersListStore = create<WorkersListState>()((set) => ({
 export const workerGlideId = (threadId: ThreadId) => `worker-name-${threadId}`;
 
 /** A row's state as the sidebar's and the Board's dot (`StatusDot`), and its name. */
-const GLYPHS: Readonly<Record<WorkerGlyph, { state: DotState; label: string }>> = {
-  working: { state: "working", label: "Running" },
-  waiting: { state: "waiting", label: "Waiting" },
-  needsYou: { state: "needs", label: "Needs you" },
-  error: { state: "error", label: "Failed" },
-  idle: { state: "idle", label: "Stopped" },
-  merged: { state: "merged", label: "Done" },
-  delivered: { state: "done", label: "Done" },
-  archived: { state: "archived", label: "Done" },
+const glyphOf = (glyph: WorkerGlyph): { state: DotState; label: string } => {
+  const state = glyphState(glyph);
+  return { state, label: STATUS_WORDS[state] };
 };
 
 const EMPTY = "No workers yet";
@@ -383,7 +378,7 @@ function WorkerListRow({
   onHover: () => void;
   onOpen: () => void;
 }) {
-  const glyph = GLYPHS[row.glyph];
+  const glyph = glyphOf(row.glyph);
   return (
     <div
       id={`worker-row-${index}`}

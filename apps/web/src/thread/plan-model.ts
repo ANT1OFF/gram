@@ -94,6 +94,14 @@ export const stripState = (
   return { lead: undefined, line: nextLine, count: true };
 };
 
+/**
+ * The strip's glyph: a failed turn takes the failed mark every status uses (`STATUS_DISPLAY.error`)
+ * and a stopped one the stop's square, as its receipt does; only a turn that runs or ended draws
+ * its plan's ring. A partly drawn ring beside "Failed at step 1/4" read as still loading.
+ */
+export const stripGlyph = (turn: StripTurn): "failed" | "stopped" | "ring" =>
+  turn === "failed" ? "failed" : turn === "stopped" ? "stopped" : "ring";
+
 /** The tone a phase's text and ring take. */
 export const PHASE_TONE: Record<PlanPhase, string> = {
   needsYou: "text-status-needs",

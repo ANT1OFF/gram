@@ -10,6 +10,7 @@ import {
   moveStep,
   stepPrBadge,
   stripLine,
+  stripGlyph,
   stripState,
   stripSteps,
   withStep,
@@ -43,6 +44,14 @@ describe("the header's plan strip", () => {
     expect(stripLine([plan.steps[0]!, plan.steps[2]!])).toBe("Next: Update FEATURES.md");
     expect(stripLine([{ text: "Lanes", status: "done" }])).toBeUndefined();
     expect(stripLine([])).toBeUndefined();
+  });
+
+  it("marks a failed turn with the failed glyph and a stopped one with the stop's, never a ring", () => {
+    // Round 8: "Failed at step 1/4" beside a partly drawn ring, which read as loading.
+    expect(stripGlyph("failed")).toBe("failed");
+    expect(stripGlyph("stopped")).toBe("stopped");
+    expect(stripGlyph("running")).toBe("ring");
+    expect(stripGlyph("ended")).toBe("ring");
   });
 
   it("says where the turn stands, never a step as running once the turn is over", () => {

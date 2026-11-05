@@ -702,7 +702,9 @@ export function Transcript({
         ref={scrollRef}
         data-testid="transcript"
         data-transcript=""
-        className="h-full min-h-0 overflow-y-auto mask-b-from-[calc(100%-1.5rem)] [overflow-anchor:none]"
+        // Scrolled, it fades under what sits above it too (a catch-up, the plan strip), so the
+        // first line in view is never cut hard at their edge as if covered.
+        className="h-full min-h-0 overflow-y-auto mask-b-from-[calc(100%-1.5rem)] [overflow-anchor:none] data-under:mask-t-from-[calc(100%-1rem)]"
         onWheel={(event) => {
           if (event.deltaY === 0) return;
           interruptJump();
@@ -829,6 +831,7 @@ export function Transcript({
           // follow; an upward gesture must stay paused even for a subpixel movement.
           else if (!following.current && input.resume) setFollowing(true);
           lastScrollTop.current = el.scrollTop;
+          el.toggleAttribute("data-under", el.scrollTop > 0);
           if (!following.current) wantEarlier(el);
         }}
       >

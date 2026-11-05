@@ -252,7 +252,7 @@ function ErrorCard({
             </span>
           )}
         </p>
-        <p className="break-words">{error.text}</p>
+        <p className="break-words">{errorSentence(error.kind, error.text)}</p>
         {repeat && <EarlierAttempts earlier={attempt.earlier} />}
         {limited && current && retried === undefined && (
           <RetryTime
@@ -260,6 +260,7 @@ function ErrorCard({
             now={now}
             due={due}
             canRetry={text !== undefined && !pending}
+            where={onGateway ? "gateway" : "provider"}
             onRetryThen={() =>
               text !== undefined && retryAt !== undefined && retryThen(text, retryAt)
             }
@@ -292,15 +293,34 @@ function ErrorCard({
 }
 
 /**
+ * What the card says when no reset time is known: only what is known, and the two things to do.
+ * "Try again in a moment" beside "when this clears isn't known" guessed and denied it at once.
+ */
+export const unknownResetText = (where: "provider" | "gateway", canRetry: boolean): string =>
+  `The ${where} gave no reset time. ${canRetry ? "Retry now, or check" : "Check"}`;
+
+/** What the card says once the reported reset has passed. */
+export const resetPassedText = (where: "provider" | "gateway", canRetry: boolean): string =>
+  `The ${where}'s reset time has passed. ${canRetry ? "Retry now, or check" : "Check"}`;
+
+/**
+ * A rate-limit sentence stored before its guess was dropped ("Try again in a moment."), without
+ * it: the card's retry-time line says what is known about when.
+ */
+export const errorSentence = (kind: string, text: string): string =>
+  kind === "rateLimit" ? text.replace(/\s*Try again in a moment\.\s*$/u, "") : text;
+
+/**
  * Under a rate limit, when to try again: "Try again at 11:15" with "Retry then" when the provider
- * reported the reset, and a plain "no time" when it didn't, never a guess. Usage has the readings
- * behind it either way.
+ * reported the reset, and when it didn't, that plainly, with Retry now and Usage, never a guess.
+ * Usage has the readings behind it either way.
  */
 function RetryTime({
   at,
   now,
   due,
   canRetry,
+  where,
   onRetryThen,
   onCancel,
 }: {
@@ -309,6 +329,8 @@ function RetryTime({
   /** When a retry set with "Retry then" goes, epoch ms. */
   due: number | undefined;
   canRetry: boolean;
+  /** Who limits it: a gateway, or the provider. */
+  where: "provider" | "gateway";
   onRetryThen: () => void;
   onCancel: () => void;
 }) {
@@ -328,10 +350,8 @@ function RetryTime({
         data-known="false"
         className="mt-1 text-meta text-muted-foreground"
       >
-        {at === undefined
-          ? "The provider gave no retry time, so when this clears isn't known."
-          : "The provider's reset time has passed."}{" "}
-        {usage}
+        {at === undefined ? unknownResetText(where, canRetry) : resetPassedText(where, canRetry)}{" "}
+        {usage}.
       </p>
     );
   }

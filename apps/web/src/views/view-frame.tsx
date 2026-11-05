@@ -19,7 +19,14 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { BoardView } from "./board-view";
 import { QuietView, useQuietMode } from "./quiet-view";
-import { APP_VIEWS, useViewStore, VIEW_LABELS, type AppView } from "./view-store";
+import {
+  APP_VIEWS,
+  chatRoute,
+  switcherChecked,
+  useViewStore,
+  VIEW_LABELS,
+  type AppView,
+} from "./view-store";
 import { useViewWorkspace } from "./view-workspace";
 
 // The frame Chat, Board and Quiet share: the title bar's switcher and Quiet toggle, the
@@ -103,13 +110,25 @@ export function QuietLayer() {
   );
 }
 
-/** Chat · Board in the title bar. */
+/**
+ * Chat · Board in the title bar. On a page of its own (Settings, Memory, New) neither is marked
+ * (`switcherChecked`), and Chat goes back to the last chat shown.
+ */
 export function ViewSwitcher({ className }: { className?: string }) {
   const view = useViewStore((s) => s.view);
   const setView = useViewStore((s) => s.setView);
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const navigate = useNavigate();
   const hasWorkspace = useViewWorkspace() !== undefined;
   const slab = useId();
   const available = APP_VIEWS.filter((each) => viewAvailable(each, hasWorkspace));
+  const checked = switcherChecked(view, pathname);
+  const pickView = (each: AppView) => {
+    setView(each);
+    if (each === "chat" && !chatRoute(pathname)) {
+      void navigate({ to: useViewStore.getState().lastChat ?? "/" });
+    }
+  };
   // With no workspace yet there is no Board to switch to, and Chat alone is no choice.
   const { workspaces, settled } = useWorkspacesQuery();
   if (settled && workspaces.length === 0) return null;
@@ -119,17 +138,19 @@ export function ViewSwitcher({ className }: { className?: string }) {
       aria-label="View"
       data-testid="view-switcher"
       className={cn("isolate flex items-center gap-0.5", className)}
-      onKeyDown={(event) => radioGroupKeyDown(event, available, view, setView)}
+      onKeyDown={(event) => radioGroupKeyDown(event, available, checked ?? view, pickView)}
     >
       {APP_VIEWS.map((each) => (
         <ViewSegment
           key={each}
           view={each}
           shortcutId={`view.${each}`}
-          checked={view === each}
+          checked={checked === each}
+          // With neither marked, Tab still lands on the first.
+          focusable={checked === each || (checked === undefined && each === available[0])}
           disabled={!available.includes(each)}
           slab={slab}
-          onPick={() => setView(each)}
+          onPick={() => pickView(each)}
         />
       ))}
     </div>
@@ -140,6 +161,7 @@ function ViewSegment({
   view,
   shortcutId,
   checked,
+  focusable,
   disabled,
   slab,
   onPick,
@@ -147,6 +169,7 @@ function ViewSegment({
   view: AppView;
   shortcutId: string;
   checked: boolean;
+  focusable: boolean;
   disabled: boolean;
   slab: string;
   onPick: () => void;
@@ -158,7 +181,7 @@ function ViewSegment({
       type="button"
       role="radio"
       aria-checked={checked}
-      tabIndex={checked ? 0 : -1}
+      tabIndex={focusable ? 0 : -1}
       disabled={disabled}
       title={withHint(label, hint)}
       onClick={onPick}
@@ -184,12 +207,18 @@ const pick = (view: AppView) => () => {
  */
 export function useViewShortcuts(): void {
   const hasWorkspace = useViewWorkspace() !== undefined;
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const navigate = useNavigate();
   useShortcut({
     id: "view.chat",
     keys: "mod+alt+1",
     label: "Chat",
     group: "Navigation",
-    run: pick("chat"),
+    // From a page of its own, back to the last chat, as the switcher's Chat goes.
+    run: () => {
+      pick("chat")();
+      if (!chatRoute(pathname)) void navigate({ to: useViewStore.getState().lastChat ?? "/" });
+    },
   });
   useShortcut({
     id: "view.board",

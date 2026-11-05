@@ -6,29 +6,27 @@ import { useThreadsStore } from "@/stores/threads";
 import { contextLevel, contextPercent, UsageBar, type ContextLevel } from "@/thread/usage-bar";
 import { useCostShown } from "@/usage/cost";
 
-const RADIUS = 8;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-// The fill is a glyph read against the composer's card, so it takes text-grade tokens, which the
-// contrast matrix holds above the UI floor on every surface.
+// The fill is read against the composer's card, so it takes the title bar's usage meter's tokens
+// (`LimitBar`), which the contrast matrix holds above the UI floor on every surface.
 const FILL: Record<ContextLevel, string> = {
-  normal: "stroke-muted-foreground",
-  warning: "stroke-warning",
-  critical: "stroke-destructive",
+  normal: "bg-muted-foreground",
+  warning: "bg-warning",
+  critical: "bg-destructive",
 };
 
-/** How much of the ring to leave undrawn for `percent`, as a `stroke-dashoffset`. */
-export const ringOffset = (percent: number): number =>
-  CIRCUMFERENCE * (1 - Math.min(100, Math.max(0, percent)) / 100);
+/** How much of the bar to fill for `percent`, clamped to the track. */
+export const barShare = (percent: number): number => Math.min(100, Math.max(0, percent));
 
 /** The trigger's name: the context filled when there is a window to fill, else just "Usage". */
 export const ringLabel = (percent: number | undefined): string =>
   percent === undefined ? "Usage" : `Usage: ${percent}% of the context window`;
 
 /**
- * The thread's usage beside Send: a ring for how full the context window is, opening onto the
- * usage bar (tokens, context, and cost on a gateway). Without a window to measure the ring is only
- * its dashed track. Subscribed on its own, so a usage report renders only the ring.
+ * The thread's usage beside Send: how full the context window is, as a thin bar and its number in
+ * the title bar's usage meter's form, opening onto the usage bar (tokens, context, and cost on a
+ * gateway). Never a ring: a partly drawn circle beside Send read as a spinner on a thread with
+ * nothing running. Without a window to measure it says "Usage". Subscribed on its own, so a usage
+ * report renders only this.
  */
 export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp: boolean }) {
   const usage = useThreadsStore((s) => s.usage[threadId]);
@@ -45,35 +43,30 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
         data-testid="usage-ring"
         data-level={level}
         aria-label={ringLabel(percent)}
-        className="grid size-8 shrink-0 place-items-center rounded-full outline-none hover:bg-accent focus-visible:focus-ring"
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-meta text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring"
       >
-        <svg aria-hidden viewBox="0 0 20 20" className="size-5 -rotate-90">
-          <circle
-            cx="10"
-            cy="10"
-            r={RADIUS}
-            fill="none"
-            strokeWidth="2.5"
-            strokeDasharray={percent === undefined ? "2 2.2" : undefined}
-            className="stroke-[color-mix(in_srgb,var(--fg-muted)_28%,transparent)]"
-          />
-          {percent !== undefined && (
-            <circle
-              cx="10"
-              cy="10"
-              r={RADIUS}
-              fill="none"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeDasharray={CIRCUMFERENCE}
-              strokeDashoffset={ringOffset(percent)}
-              className={cn(
-                "transition-[stroke-dashoffset] duration-(--dur-move-base) ease-(--ease-spring)",
-                FILL[level],
-              )}
-            />
-          )}
-        </svg>
+        {percent === undefined ? (
+          <span>Usage</span>
+        ) : (
+          <>
+            <span
+              aria-hidden
+              data-testid="usage-ring-bar"
+              className="block h-1 w-4 shrink-0 overflow-hidden rounded-full bg-foreground/15"
+            >
+              <span
+                className={cn(
+                  "block h-full rounded-full transition-[width] duration-(--dur-move-base) ease-(--ease-spring)",
+                  FILL[level],
+                )}
+                style={{ width: `${barShare(percent)}%` }}
+              />
+            </span>
+            <span aria-hidden className="tabular-nums">
+              {percent}%
+            </span>
+          </>
+        )}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="end" sideOffset={8} className="isolate z-50">

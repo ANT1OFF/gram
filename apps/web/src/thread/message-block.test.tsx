@@ -26,6 +26,7 @@ import {
   compactionLabel,
   compactionParts,
 } from "./compaction-marker";
+import { errorSentence } from "./agent-error-card";
 import { filePath, MessageBlock } from "./message-block";
 import { useRetrySchedule } from "./retry-time";
 import { sessionRestartLabel } from "./session-restart-marker";
@@ -858,7 +859,7 @@ describe("MessageBlock agent errors", () => {
     kind: "rateLimit",
     httpStatus: 429,
     retryable: true,
-    text: "The gateway is rate limiting requests (HTTP 429). Try again in a moment.",
+    text: "The gateway is rate limiting requests (HTTP 429).",
     turnId: "turn-1",
     at: 7,
   } as const;
@@ -1037,13 +1038,23 @@ describe("MessageBlock agent errors", () => {
     );
   });
 
-  it("says plainly when the provider gave no retry time, with Usage beside it", () => {
+  it("says plainly when the provider gave no reset time, with Retry now and Usage beside it", () => {
     show(vi.fn(), error);
     const time = screen.getByTestId("agent-error-retry-time");
     expect(time.dataset["known"]).toBe("false");
-    expect(time.textContent).toContain("The provider gave no retry time");
+    expect(time.textContent).toBe("The provider gave no reset time. Retry now, or check Usage.");
     expect(screen.getByTestId("agent-error-usage").getAttribute("href")).toBe("/usage");
     expect(screen.queryByTestId("agent-error-retry-then")).toBeNull();
+  });
+
+  it("never guesses a time beside a reset it doesn't know, an older stored sentence included", () => {
+    // Round 8: "Try again in a moment." sat beside "when this clears isn't known".
+    show(vi.fn(), { ...error, text: `${error.text} Try again in a moment.` });
+    const card = screen.getByTestId("agent-error").textContent ?? "";
+    expect(card).not.toContain("in a moment");
+    expect(card).not.toContain("isn't known");
+    expect(card).toContain(error.text);
+    expect(errorSentence("unknown", "Try again in a moment.")).toBe("Try again in a moment.");
   });
 
   it("names the provider's reset as the time to try again, and retries then on request", async () => {

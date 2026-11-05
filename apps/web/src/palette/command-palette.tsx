@@ -11,7 +11,7 @@ import {
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ChevronDown, Search, X } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
@@ -22,8 +22,7 @@ import { useOpenBoard } from "@/orchestration/open-board";
 import { useWorkersListStore } from "@/orchestration/workers-list";
 import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { hiddenIds, useAskStackStore } from "@/orchestration/ask-stack-store";
-import { useWorkspaces } from "@/orchestration/use-orchestration";
-import { threadStatusOf } from "@/sidebar/status";
+import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
 import { agentLabel } from "@/agents/agent-display";
 import { openInNewWindow } from "@/desktop/open-in-new-window";
 import { focusOtherWindow } from "@/desktop/open-thread";
@@ -88,6 +87,7 @@ import { useScopeCommands, type ScopeSteps } from "./scope-commands";
 import { matchesWordFilters } from "./word-filters";
 import { useWordFilters, WordFilterControls } from "./word-filter-controls";
 import { Snippet } from "./snippet";
+import { paletteStatusWords, statusWord } from "./status-words";
 
 /** Steps of "Open in pane…" that keep the palette open for the next pick. */
 const KEEPS_OPEN = /^(pick:|action:openInPane$|action:resume$)/;
@@ -182,6 +182,7 @@ function PaletteBody({
   const params = useParams({ strict: false });
   const currentId = params.threadId as ThreadId | undefined;
   const byId = useThreadsStore((s) => s.byId);
+  const statusDetail = useThreadsStore((s) => s.statusDetail);
   const askHeld = useAskStackStore((s) => s.held);
   const askSent = useAskStackStore((s) => s.sent);
   const { data: projects = [] } = useQuery({
@@ -198,6 +199,8 @@ function PaletteBody({
   const scriptThread = currentThread?.role === "orchestrator" ? undefined : currentThread;
   const { data: projectScripts } = useProjectScripts(scriptThread?.projectId);
   const workspaces = useWorkspaces();
+  const workspaceIds = useMemo(() => workspaces.map(({ workspace }) => workspace.id), [workspaces]);
+  const ledgers = useOrchestratorLedgers(workspaceIds);
   /** Whether `projectId` has the one-project workspace `openOrchestrator` would otherwise make. */
   const hasOwnWorkspace = (projectId: string) =>
     workspaces.some(
@@ -313,9 +316,15 @@ function PaletteBody({
         wordFilters.remainder.trim().split(/\s+/).length >= 3 &&
         query.length <= 500));
   const answered = hiddenIds({ held: askHeld, sent: askSent });
+  // Each thread's status as the sidebar and ⌘J word it, from the same selectors.
+  const statusWords = paletteStatusWords(
+    workspaces.map(({ workspace, paused }) => ({ id: workspace.id, paused: paused !== undefined })),
+    ledgers,
+    { byId, statusDetail, now },
+  );
   const describe = (summary: ThreadSummary) => ({
     label: summary.thread.title,
-    hint: `${projectNameOf(projects, summary.thread.projectId)} · ${threadStatusOf(summary).label}`,
+    hint: `${projectNameOf(projects, summary.thread.projectId)} · ${statusWord(summary, statusWords)}`,
     keywords: summary.thread.checkout.branch ?? "",
   });
   const goTo = (threadId: ThreadId) => {
@@ -335,7 +344,7 @@ function PaletteBody({
     .map((summary) => ({
       id: `worker:${summary.thread.id}`,
       label: summary.thread.title,
-      hint: `${summary.thread.spawnedBy?.feature ?? ""} · ${threadStatusOf(summary).label}`,
+      hint: `${summary.thread.spawnedBy?.feature ?? ""} · ${statusWord(summary, statusWords)}`,
       keywords: `${summary.thread.checkout.branch ?? ""} ${workspaceNames.get(summary.thread.workspaceId as WorkspaceId) ?? ""}`,
       scope: threadScope(summary.thread),
       run: () => goTo(summary.thread.id),

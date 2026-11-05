@@ -206,8 +206,10 @@ const CATEGORY: Record<MergeBlockerKind, string> = {
 
 /**
  * The blockers counted and named by category, worst first, for the summary's one heading:
- * `{ count: "3 blockers", categories: "checks, changes requested, review bot" }`. One failing check
- * is a "check"; `undefined` for none.
+ * `{ count: "3 reasons", categories: "checks, changes requested, review bot" }`. One failing check
+ * is a "check"; `undefined` for none. Counted as reasons, never as blockers: "blockers" is the
+ * review bot's word for its findings ("Review bot: 2 blockers", and the PR strip's "2 blockers"),
+ * and the same word with another number beside it read as two counts of one thing.
  */
 export const blockerSummaryOf = (
   blockers: readonly MergeBlocker[],
@@ -215,7 +217,7 @@ export const blockerSummaryOf = (
   blockers.length === 0
     ? undefined
     : {
-        count: plural(blockers.length, "blocker"),
+        count: plural(blockers.length, "reason"),
         categories: blockers
           .map((blocker) =>
             blocker.kind === "checks" && blocker.word.startsWith("1 ")

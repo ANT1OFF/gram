@@ -104,9 +104,11 @@ import { shownPrNumbers, useChipsFit, useWorkerPrChips, WorkerPrChips } from "./
 import { peek } from "./peek-store";
 import { nowBesidePrs, TONE_DOT, type RailTone } from "./rail-model";
 import { StatusDot } from "./status-dot";
+import { STATUS_WORDS } from "./status-words";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
-import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
+import { NeedsYouEntry } from "./needs-you-entry";
+import { useNeedsYouCounts } from "./use-needs-you";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
@@ -413,37 +415,10 @@ export function useCarryOverviewFocus(sidebar: ShellFit["sidebar"]): void {
  * here and how much elsewhere, are on its hover.
  */
 function NeedsYou() {
-  const { count, scope: where, label, hint, openAsks } = useNeedsYouPill();
   // A true first run, with no thread yet, has nothing to need you: the welcome is the one thing
   // to look at, without a count beside it.
   if (useBeforeSetup()) return null;
-  const words = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
-  // Its scope and kinds are said on hover, so it reads beside a workspace's own count.
-  const scope = count > 0 ? `${words} across all workspaces\n${where}` : words;
-  // Nothing waiting, it stays as quiet grey words, so the column doesn't jump.
-  return (
-    <button
-      type="button"
-      {...{ [STOP]: "" }}
-      data-testid="overview-needs-you"
-      data-count={count}
-      aria-label={withHint(words, hint)}
-      title={`${withHint(label, hint)}\n${scope}`}
-      onClick={openAsks}
-      className={cn(
-        // Its dot and words on the rows' marks and titles (`ROW`): one left edge down the column.
-        "flex h-8 w-full shrink-0 items-center gap-2 rounded-(--radius-md) border px-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        count > 0
-          ? "border-status-needs-mark/60 font-medium text-status-needs hover:bg-status-needs-mark/10"
-          : "border-transparent text-muted-foreground hover:bg-sidebar-row-hover",
-      )}
-    >
-      {count > 0 && (
-        <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs-mark" />
-      )}
-      <span className="min-w-0 flex-1 truncate">{words}</span>
-    </button>
-  );
+  return <NeedsYouEntry variant="row" {...{ [STOP]: "" }} data-testid="overview-needs-you" />;
 }
 
 /** One line per workspace, in the switcher's order, each folded or open into its live workers. */
@@ -538,7 +513,8 @@ function WorkspaceRow({
   const hover = waiting === undefined ? summary : `${summary}\nOrchestrator: ${waiting.hint}`;
   const line = orchestratorLine(word, { working, asks });
   const name = state.workspace.name;
-  // Nothing under it, not even its orchestrator at work: one line, its name and "idle".
+  // Nothing under it, not even its orchestrator at work: one line, its name and the word every
+  // surface says of a thread at rest (`STATUS_WORDS`), so the palette and this row agree.
   const orchestratorBusy = useThreadsStore(
     (s) => workingOrchestrator(s, state.workspace) !== undefined,
   );
@@ -623,7 +599,7 @@ function WorkspaceRow({
               <span className={ROW_STATUS}>
                 {empty ? (
                   <span data-testid="overview-workspace-idle" className="truncate">
-                    Idle
+                    {STATUS_WORDS.idle}
                   </span>
                 ) : (
                   <span className="truncate">

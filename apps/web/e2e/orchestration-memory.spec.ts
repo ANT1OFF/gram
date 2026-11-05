@@ -335,11 +335,11 @@ test("the Board's chip and the orchestrator's banner open the Inbox on the open 
   await expect(item("Q3")).toHaveCount(1);
   await page.keyboard.press("Escape");
 
-  // So does the orchestrator's banner.
+  // So does the sidebar's pill from the orchestrator, whose header has no second way in.
   await pickChat(page);
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("banner-questions")).toHaveText("2 decisions to make");
-  await page.getByTestId("banner-questions").click();
+  await expect(page.getByTestId("banner-questions")).toHaveCount(0);
+  await page.getByTestId("overview-needs-you").click();
   await expect(inbox).toBeVisible();
   await item("Q3").click();
   const reply = page.getByTestId("inbox-detail").getByTestId("ask-reply-input");
@@ -354,7 +354,6 @@ test("the Board's chip and the orchestrator's banner open the Inbox on the open 
     String(before - 1),
   );
   await expect(page.getByTestId("waiting-questions")).toHaveCount(0);
-  await expect(page.getByTestId("banner-questions")).toHaveText("1 decision to make");
   await page.keyboard.press("ControlOrMeta+Shift+KeyD");
   await expect(chip).toHaveAttribute("data-count", String(before - 1));
 });

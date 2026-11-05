@@ -98,9 +98,9 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   // done, is in History, which names its workspace. Solo threads lists neither.
   const workspace = workspaceRow(page, made.workspaceId);
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAccessibleName(/^api, /);
-  // With no worker and its orchestrator at rest, the workspace is its name over "Idle", the rows'
-  // two lines, and nothing under it.
-  await expect(workspace.getByTestId("overview-workspace-idle")).toHaveText("Idle");
+  // With no worker and its orchestrator at rest, the workspace is its name over "Stopped", the
+  // word the palette says of its orchestrator too, and nothing under it.
+  await expect(workspace.getByTestId("overview-workspace-idle")).toHaveText("Stopped");
   await expect(workspace.getByTestId("overview-workers")).toHaveCount(0);
   await openHistory(page);
   await expect(historyRow(page, made.workerThreadId)).toHaveAccessibleName(
@@ -1412,7 +1412,8 @@ test("a fresh session is offered at 90 % context, confirmed in place, and shows 
   await expect(paneHeader.getByRole("heading")).toHaveAccessibleName(
     "Orchestrator: agent-platform",
   );
-  await expect(paneHeader.getByTestId("banner-questions")).toHaveText("2 decisions to make");
+  // Its questions are the sidebar pill's, not a chip of their own here.
+  await expect(paneHeader.getByTestId("banner-questions")).toHaveCount(0);
   const chip = paneHeader.getByTestId("context-chip");
   await expect(chip).toHaveAccessibleName("Context 92 % — start a fresh session");
   await expect(chip).toHaveText("");

@@ -62,6 +62,7 @@ import {
 import { ROW } from "./overview-section";
 import { peek } from "./peek-store";
 import { workingWorkerThreads } from "./tree-model";
+import { needsYouScope, needsYouWords } from "./needs-you-entry";
 import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
 import { ledgerSlotsText } from "./overview-extras-model";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
@@ -157,8 +158,9 @@ const Separator = () => <span aria-hidden className="h-px w-6 shrink-0 bg-sideba
  */
 function RailNeedsYou() {
   const { count, scope: where, label: action, hint, openAsks } = useNeedsYouPill();
-  const label = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
-  const scope = count > 0 ? `${label} across all workspaces\n${where}` : label;
+  // The sidebar's words, which a number alone stands for here: the rail has room for no more.
+  const label = needsYouWords(count);
+  const scope = needsYouScope(count, where);
   // Nothing waiting, it stays as a quiet grey pill, so the tiles don't jump.
   return (
     <button

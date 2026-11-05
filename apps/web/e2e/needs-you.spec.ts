@@ -543,8 +543,8 @@ test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3
   // Narrower, no pill is on screen: ⌘⌥3 opens it, within the window.
   await page.setViewportSize({ width: 520, height: 800 });
   await expect(page.getByTestId("overview-rail-needs-you")).toBeHidden();
-  // With no pill on screen, the title bar's Inbox button is the way in, and wears the count.
-  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-badge", "true");
+  // With no pill on screen, the title bar's entry is the way in, in the pill's own words.
+  await expect(page.getByTestId("inbox-button")).toHaveText(/^\d+ needs? you$/);
   await page.keyboard.press("ControlOrMeta+Alt+3");
   await expect(inbox(page)).toBeVisible();
   await fits(520);

@@ -1,21 +1,12 @@
 import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  Brain,
-  Columns3,
-  FolderGit2,
-  HandGrab,
-  MessageCircleQuestion,
-  Pause,
-  Settings2,
-} from "lucide-react";
+import { Brain, Columns3, FolderGit2, HandGrab, Pause, Settings2 } from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { Hint } from "@/components/hint";
 import { focusOtherWindow } from "@/desktop/open-thread";
-import { showInbox } from "@/inbox/inbox-store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import {
@@ -32,7 +23,6 @@ import { ContextChip, HandingOff } from "./fresh-session";
 import { memoryIsEmpty } from "./memory-model";
 import { useOpenBoard } from "./open-board";
 import { midTurnWorkers } from "./tree-model";
-import { useAskedQuestions } from "./ask-stack";
 import { useHandoff, useHandoffStore, useResume } from "./use-board-actions";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { useWorkerPause } from "./worker-pause";
@@ -146,9 +136,10 @@ function useOrchestratorWorkspace(thread: Thread) {
 
 /**
  * An orchestrator's chips in its pane header: once its context is nearly full, the offer of a
- * fresh session, the questions it left open, the ways to its board and
- * its memory, which the thread menu offers too, and its workspace's settings in a sheet. The glyph and title already say whose it is.
- * Switching it is in the thread menu and the workspace settings' Models.
+ * fresh session, the ways to its board and its memory, which the thread menu offers too, and its
+ * workspace's settings in a sheet. The glyph and title already say whose it is. The questions it
+ * left open have no chip here: what needs you has one way in (`NeedsYouEntry`), and its workspace's
+ * line counts them. Switching it is in the thread menu and the workspace settings' Models.
  */
 export function OrchestratorChips({
   thread,
@@ -163,10 +154,8 @@ export function OrchestratorChips({
 }) {
   const { state, workspaceId } = useOrchestratorWorkspace(thread);
   const handoff = useHandoff(state);
-  const { questions } = useAskedQuestions(workspaceId);
   const openBoard = useOpenBoard();
   if (workspaceId === undefined) return null;
-  const noun = questions.length === 1 ? "decision" : "decisions";
   return (
     <>
       {handoff.running ? (
@@ -178,24 +167,6 @@ export function OrchestratorChips({
             onAct={() => useHandoffStore.getState().confirm(workspaceId)}
           />
         )
-      )}
-      {questions.length > 0 && (
-        <Hint
-          label={`${questions.length} ${noun} to make in the Inbox`}
-          side="bottom"
-          render={
-            <button
-              type="button"
-              onClick={() => showInbox({ workspaceId })}
-              data-testid="banner-questions"
-              className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-meta text-status-needs outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          }
-        >
-          <MessageCircleQuestion aria-hidden className="size-4" />
-          <span className="tabular-nums">{questions.length}</span>
-          <span className="sr-only"> {noun} to make</span>
-        </Hint>
       )}
       {!inTitlebar && (
         <Hint

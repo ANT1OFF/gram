@@ -57,6 +57,7 @@ import { useSetGroup, useSetStage } from "./use-board-actions";
 import { useFeatureCards, useFeatureSummary } from "./use-feature-cards";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { StatusDot } from "./status-dot";
+import { STATUS_WORDS } from "./status-words";
 import { useWorkerWaitings } from "./use-waiting-on";
 import { useWorkersListStore } from "./workers-list";
 import { workingWorkerThreads } from "./tree-model";
@@ -70,13 +71,13 @@ import { ledgerWorkersOver, workerActivities, workerTones } from "./workers-mode
 export const RAIL_TONES: Readonly<
   Record<RailTone, { icon: LucideIcon; tone: string; label: string }>
 > = {
-  needs: { icon: CircleAlert, tone: "text-status-needs-mark", label: "Needs you" },
-  attention: { icon: CircleDot, tone: "text-status-idle", label: "Stopped" },
-  error: { icon: CircleAlert, tone: "text-destructive", label: "Failed" },
-  working: { icon: Spinner, tone: "text-status-working", label: "Running" },
-  waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting" },
-  idle: { icon: CircleDot, tone: "text-status-idle", label: "Stopped" },
-  merged: { icon: GitMerge, tone: "text-merged", label: "Done" },
+  needs: { icon: CircleAlert, tone: "text-status-needs-mark", label: STATUS_WORDS.needs },
+  attention: { icon: CircleDot, tone: "text-status-idle", label: STATUS_WORDS.attention },
+  error: { icon: CircleAlert, tone: "text-destructive", label: STATUS_WORDS.error },
+  working: { icon: Spinner, tone: "text-status-working", label: STATUS_WORDS.working },
+  waiting: { icon: Hourglass, tone: "text-status-working", label: STATUS_WORDS.waiting },
+  idle: { icon: CircleDot, tone: "text-status-idle", label: STATUS_WORDS.idle },
+  merged: { icon: GitMerge, tone: "text-merged", label: STATUS_WORDS.merged },
 };
 
 /** Who has an open ask in the workspace's stack, and each thread's live status. */
