@@ -759,7 +759,8 @@ export function ApprovalCard({
                 disabled={pending}
                 onClick={always}
               >
-                {confirming ? "Save and allow" : "Always allow…"} <CardKbd id="approval.always" />
+                {confirming ? alwaysConfirmLabel(rules.length) : "Always allow…"}{" "}
+                <CardKbd id="approval.always" />
               </Button>
             )}
             {confirming && (
@@ -831,8 +832,16 @@ const REACH_WORD: Record<AlwaysRule["reach"], string> = {
 };
 
 /**
+ * "Always allow…"'s second press, in the same verb as its first: "Always allow this rule", or
+ * "Always allow these 2 rules".
+ */
+export const alwaysConfirmLabel = (count: number): string =>
+  count === 1 ? "Always allow this rule" : `Always allow these ${count} rules`;
+
+/**
  * What "Always allow…" would keep, before it keeps it: each rule in the agent's own spelling, what
- * it does, how far it reaches and where it is written. Nothing is saved until "Save and allow".
+ * it does, how far it reaches and where it is written. Nothing is saved until its second press,
+ * "Always allow this rule".
  */
 function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
   const compact = useContext(CompactContext);
@@ -847,7 +856,9 @@ function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
       )}
     >
       <p className="font-medium">
-        {rules.length === 1 ? "Save this rule?" : `Save these ${rules.length} rules?`}
+        {rules.length === 1
+          ? "Always allow this rule?"
+          : `Always allow these ${rules.length} rules?`}
       </p>
       <ul className="flex flex-col gap-2">
         {rules.map((rule, index) => (
@@ -871,7 +882,8 @@ function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
         ))}
       </ul>
       <p className="text-meta text-muted-foreground">
-        Nothing is saved until you choose Save and allow. Allow once saves nothing.
+        Nothing is saved until you choose {alwaysConfirmLabel(rules.length)}. Allow once saves
+        nothing.
       </p>
     </div>
   );

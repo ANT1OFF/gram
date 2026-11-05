@@ -36,6 +36,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   Lists, menus and the sidebar share one row shape.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings, 16 px between sections and at a pane's edges.
+- **Settings descriptions** (a setting's or a group's line under its name) are `text-body` in
+  `text-description` (`--fg-description`, a step nearer `fg` than `fg-muted`), no wider than
+  `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`).
 - **Titles and metadata:** a title at 13 to 14 px in `fg` (`text-body-strong` or `text-reading`),
   its metadata (where it is from, its state, a time or a count) at 12 px in `fg-muted`
   (`text-meta`), never smaller. A title wraps to two lines before it is cut short. Metadata a
@@ -121,7 +124,9 @@ take `bg-card` or `bg-popover` (both `--surface-raised`, which is `surface-3`: t
 muted text at AA there) and the edge `border-edge`, which carries the step in dark where a shadow
 doesn't show; a row that opens or acts (a tool row, an update, the files-changed row) takes the
 firmer `border-edge-action`. A plain divider stays `border-border`. `shadow-raised` for a card on a surface, `shadow-overlay` for what
-floats (a menu, a popover, a dialog, a toast), `shadow-composer` for the composer slab. More
+floats (a menu, a popover, a toast), `shadow-modal` for a modal dialog over the scrim (History, a
+confirm), `shadow-composer` for the composer slab. The scrim dims toward the chrome surface, more
+in light (82%) than dark (60%), so the page behind a light dialog doesn't compete with it. More
 contrast and forced colours turn the shadows off and the edges to `border-strong`.
 
 **Selection and focus.** The `row-cursor`, `choice-selected`, `focus-ring` and

@@ -119,7 +119,7 @@ export function KeyboardSection() {
         if (groupRows.length === 0) return null;
         return (
           <SearchScope key={group} as="section" label={group} aria-label={group}>
-            <h3 className="mb-1 text-caption font-medium tracking-wide text-muted-foreground uppercase">
+            <h3 className="mb-1.5 text-meta font-medium tracking-wide text-muted-foreground uppercase">
               {group}
             </h3>
             <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
@@ -133,15 +133,15 @@ export function KeyboardSection() {
                     </span>
                   )}
                   {row.overridden && (
-                    <span className="rounded-sm border border-border px-1 text-caption text-muted-foreground">
+                    <span className="rounded-sm border border-border px-1.5 text-meta text-muted-foreground">
                       custom
                     </span>
                   )}
-                  <kbd className="shrink-0 rounded-2xs border border-border bg-muted px-1.5 py-0.5 font-mono text-meta">
+                  <kbd className="inline-flex h-6 min-w-7 shrink-0 items-center justify-center rounded-2xs border border-border bg-muted px-2 font-mono text-body">
                     {row.keys === undefined ? "Off" : formatKeys(row.keys)}
                   </kbd>
                   <Button
-                    size="xs"
+                    size="sm"
                     variant="ghost"
                     aria-label={`Change ${row.label}`}
                     onClick={() => setChanging(row.id)}
@@ -150,7 +150,7 @@ export function KeyboardSection() {
                   </Button>
                   {row.overridden && (
                     <Button
-                      size="xs"
+                      size="sm"
                       variant="ghost"
                       aria-label={`Reset ${row.label} to ${formatKeys(row.defaultKeys)}`}
                       onClick={() => reset(row.id)}
@@ -199,7 +199,7 @@ function BindingItem({ id, label, children }: { id: string; label: string; child
     <li
       {...search}
       data-testid={`binding-${id}`}
-      className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-reading"
+      className="flex min-h-11 flex-wrap items-center gap-3 px-3 py-1.5 text-reading"
     >
       {children}
     </li>
@@ -217,7 +217,7 @@ function useSettingsSearchOn(): boolean {
 
 /** A filter chip: a toggle with the one selected style. */
 const CHIP =
-  "inline-flex h-6 items-center gap-1 rounded-md border border-border px-2 text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring aria-pressed:choice-selected";
+  "inline-flex h-7 items-center gap-1 rounded-md border border-border px-3 text-body text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring aria-pressed:choice-selected";
 
 /**
  * "Search shortcuts" and the chips under it: one group or all, and only the clashing or custom

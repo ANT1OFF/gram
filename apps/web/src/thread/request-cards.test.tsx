@@ -451,7 +451,7 @@ describe("ApprovalCard", () => {
     fireEvent.click(screen.getByTestId("approval-always-back"));
     expect(screen.queryByTestId("approval-always-rules")).toBeNull();
     fireEvent.click(screen.getByTestId("approval-always"));
-    expect(screen.getByTestId("approval-always").textContent).toContain("Save and allow");
+    expect(screen.getByTestId("approval-always").textContent).toContain("Always allow this rule");
     fireEvent.click(screen.getByTestId("approval-always"));
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r1", {

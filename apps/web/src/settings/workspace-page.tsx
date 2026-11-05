@@ -37,7 +37,7 @@ import { pauseText } from "@/thread/orchestration-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { useOpenBoard } from "@/orchestration/open-board";
-import { SaveHint } from "./save-hint";
+import { DraftActions, SaveHint } from "./save-hint";
 import { AutomaticDreamField } from "./automatic-dream-field";
 import { AutonomyField } from "./autonomy-field";
 import { Field, inputCls, NumberField } from "./fields";
@@ -448,6 +448,10 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
       void changes.saveWorkspace(result.input, `Renamed to ${result.input.name}`, setError);
     }
   };
+  const cancel = () => {
+    setDraft(undefined);
+    setError(undefined);
+  };
   return (
     <Field
       label="Name"
@@ -455,24 +459,24 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
       htmlFor={id}
       status={dirty ? <SaveHint id={hintId} /> : undefined}
     >
-      <input
-        id={id}
-        className={inputCls}
-        value={draft ?? workspace.name}
-        spellCheck={false}
-        autoComplete="off"
-        disabled={changes.busy}
-        aria-describedby={dirty ? hintId : undefined}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.nativeEvent.isComposing) flushSync(commit);
-          if (event.key === "Escape") {
-            setDraft(undefined);
-            setError(undefined);
-          }
-        }}
-      />
+      <span className="flex max-w-md items-center gap-2">
+        <input
+          id={id}
+          className={inputCls}
+          value={draft ?? workspace.name}
+          spellCheck={false}
+          autoComplete="off"
+          disabled={changes.busy}
+          aria-describedby={dirty ? hintId : undefined}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) flushSync(commit);
+            if (event.key === "Escape") cancel();
+          }}
+        />
+        {dirty && <DraftActions label="Name" onSave={commit} onCancel={cancel} />}
+      </span>
       {error !== undefined && (
         <p role="alert" className="text-meta text-destructive">
           {error}
@@ -488,7 +492,10 @@ function AutonomySection({ state, changes }: { state: WorkspaceState; changes: C
   // server names the threads in the way and the ways out, and that belongs beside the choice.
   // Kept with the charter it was refused against: any later save gives a new charter, which
   // clears it, as one that removes what was in the way should.
-  const [refusal, setRefusal] = useState<{ charter: OrchestratorCharter; message: string }>();
+  const [refusal, setRefusal] = useState<{
+    charter: OrchestratorCharter;
+    message: string;
+  }>();
   const autonomyError = refusal?.charter === charter ? refusal.message : undefined;
   return (
     <SettingsGroup

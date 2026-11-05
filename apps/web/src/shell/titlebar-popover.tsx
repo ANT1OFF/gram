@@ -17,6 +17,7 @@ export function TitlebarPopover({
   className,
   onShown,
   align = "end",
+  keepClearBelow = 0,
   open: openProp,
   onOpenChange,
   children,
@@ -32,6 +33,11 @@ export function TitlebarPopover({
   onShown?: (popup: HTMLElement) => void;
   /** Which edge of the trigger it lines up with: `start` for a control at the title bar's left. */
   align?: "start" | "end";
+  /**
+   * CSS px at the window's foot it stays out of, scrolling instead: such as the conversation's
+   * composer and the approval card above it.
+   */
+  keepClearBelow?: number;
   /** For a caller that closes it itself; uncontrolled otherwise. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -57,7 +63,13 @@ export function TitlebarPopover({
         </Tooltip>
       )}
       <Popover.Portal>
-        <Popover.Positioner side="bottom" align={align} sideOffset={6} className="isolate z-50">
+        <Popover.Positioner
+          side="bottom"
+          align={align}
+          sideOffset={6}
+          collisionPadding={{ top: 5, right: 5, left: 5, bottom: Math.max(5, keepClearBelow) }}
+          className="isolate z-50"
+        >
           <Popover.Popup
             data-surface="overlay"
             aria-label={label}
@@ -70,6 +82,7 @@ export function TitlebarPopover({
               <div
                 className={cn(
                   "rounded-md border border-edge bg-popover text-popover-foreground shadow-overlay",
+                  keepClearBelow > 0 && "max-h-(--available-height) overflow-y-auto",
                   className,
                 )}
               >

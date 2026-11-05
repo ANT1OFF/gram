@@ -153,6 +153,11 @@
   --settings-column-width: 60rem;
   --settings-column-wide: 68rem;
   --settings-lean: 0.3;
+  /* A setting's or a group's line of description: a step nearer the text than a row's metadata,
+     since it is read rather than glanced at, and no wider than a comfortable line of prose. Mixing
+     toward fg only raises contrast, so it holds every floor fg-muted holds. */
+  --fg-description: color-mix(in oklab, var(--fg-muted) 70%, var(--fg));
+  --description-measure: 38rem;
 
   /* The composer slab (its radius is per look): a faint outline with the shadow tucked under it, so
      it floats without a frame. Focus darkens the outline to border-strong, which the contrast
@@ -190,6 +195,9 @@
   /* Behind modal dialogs: dims toward the chrome surface, so a light theme dims light. The contrast
      matrix in @gram/themes mirrors the strengths. */
   --scrim: color-mix(in srgb, var(--surface-1) calc(var(--scrim-strength) * 100%), transparent);
+  /* A modal dialog's shadow over the scrim: the overlay shadow, plus a wider, deeper one so the
+     dialog lifts off a dimmed page; light needs it most, where the scrim dims toward white. */
+  --elevation-modal: var(--elevation-overlay), 0 28px 64px -16px rgb(0 0 0 / 0.22);
 
   /* Destructive badges and buttons: error text on its own tint. danger-text is derived to hold on
      these strengths, which is why they're tokens rather than per-component opacities. */
@@ -205,6 +213,17 @@
   );
 }
 
+/* Light dims toward white, so the page behind a dialog fades rather than darkens: it takes a
+   stronger scrim, or its text competes with the dialog's list. The contrast matrix in
+   @gram/themes mirrors the strengths. */
+[data-mode="light"] {
+  --scrim-strength: 0.82;
+}
+
+[data-mode="light"][data-contrast="more"] {
+  --scrim-strength: 0.9;
+}
+
 [data-mode="dark"] {
   --shadow-composer: 0 14px 32px -18px rgb(0 0 0 / 0.75), inset 0 1px 0 rgb(255 255 255 / 0.03);
 }
@@ -215,10 +234,12 @@
   --composer-outline: var(--border-strong);
   --composer-focus-width: var(--focus-width);
   --shadow-composer: none;
+  --elevation-modal: none;
 }
 
 @media (forced-colors: active) {
   :root {
+    --elevation-modal: none;
     --edge-raised: CanvasText;
     --edge-action: CanvasText;
     --composer-outline: CanvasText;

@@ -66,6 +66,21 @@ test("a folder field says how to save, then Saved, and why a path can't be saved
 
   await page.reload();
   await expect(folder).toHaveValue("~/work/sandbox");
+
+  // A pointer saves with the Save beside the dirty field, and Undo puts the old path back.
+  await folder.fill("~/work/other");
+  await expect(row.getByTestId("setting-unsaved")).toHaveText("Enter to save · Esc to cancel");
+  await row.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(row.getByTestId("setting-saved")).toBeVisible();
+  await expect(row.getByTestId("setting-draft-actions")).toHaveCount(0);
+  await row.getByTestId("setting-undo").click();
+  await expect(folder).toHaveValue("~/work/sandbox");
+  // Cancel drops a draft without saving it.
+  await folder.fill("~/elsewhere");
+  await row.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(folder).toHaveValue("~/work/sandbox");
+  await page.reload();
+  await expect(folder).toHaveValue("~/work/sandbox");
 });
 
 test("each tab is a page, with history, and Settings reopens on the last one", async ({ page }) => {

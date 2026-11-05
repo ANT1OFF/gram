@@ -42,7 +42,7 @@ import { EFFORT_OPTIONS } from "@/composer/options";
 import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { SaveHint } from "./save-hint";
+import { DraftActions, dropUndo, offerUndo, SaveHint } from "./save-hint";
 import { HelperHarnessPicker, LocalHelperSettings } from "./local-helper-settings";
 import { AI_HELPERS_DEFAULTS, resetFor } from "./defaults";
 import { inputCls, LONG_COPY, SettingRow, Toggle } from "./fields";
@@ -393,6 +393,9 @@ export function AiHelpersSection() {
   );
 }
 
+/** The budget's field, and the key its Undo outlives the field's remount by. */
+const BUDGET_ID = "settings-helper-budget";
+
 /** The daily budget in dollars, saved on blur or Enter. */
 function BudgetField({
   value,
@@ -416,7 +419,15 @@ function BudgetField({
       return;
     }
     setInvalid(undefined);
-    if (usd !== value) onSave(usd);
+    if (usd !== value) {
+      const before = value;
+      offerUndo(BUDGET_ID, () => onSave(before));
+      onSave(usd);
+    }
+  };
+  const cancel = () => {
+    setDraft(String(value));
+    setInvalid(undefined);
   };
   return (
     <SettingRow
@@ -430,17 +441,18 @@ function BudgetField({
         </p>
       }
       keywords={["cost", "spend", "dollars", "limit"]}
-      htmlFor="settings-helper-budget"
+      htmlFor={BUDGET_ID}
       onReset={onReset}
       error={invalid ?? saveError}
       status={dirty ? <SaveHint id={hintId} /> : undefined}
+      undoKey={BUDGET_ID}
     >
       <span className="flex items-center gap-1.5">
         <span aria-hidden className="text-muted-foreground">
           $
         </span>
         <input
-          id="settings-helper-budget"
+          id={BUDGET_ID}
           className={cn(inputCls, "w-20 tabular-nums")}
           value={draft}
           inputMode="decimal"
@@ -449,16 +461,15 @@ function BudgetField({
           onChange={(event) => {
             setDraft(event.target.value);
             setInvalid(undefined);
+            dropUndo(BUDGET_ID);
           }}
           onBlur={commit}
           onKeyDown={(event) => {
             if (event.key === "Enter") commit();
-            if (event.key === "Escape") {
-              setDraft(String(value));
-              setInvalid(undefined);
-            }
+            if (event.key === "Escape") cancel();
           }}
         />
+        {dirty && <DraftActions label="Gateway estimate limit" onSave={commit} onCancel={cancel} />}
       </span>
     </SettingRow>
   );

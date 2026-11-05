@@ -24,7 +24,7 @@ import { OVERVIEW_OPEN_FROM, useLayoutStore } from "@/stores/layout";
 import { branchPrefixSetting } from "./branch-prefix";
 import { GENERAL_DEFAULTS, resetFor } from "./defaults";
 import { OptionGroup, rowInputCls, SettingRow, Toggle } from "./fields";
-import { SaveHint } from "./save-hint";
+import { DraftActions, dropUndo, offerUndo, SaveHint } from "./save-hint";
 import { claimTouchedRow, markSaved, markTouchedSaved } from "./saved-mark";
 import { GENERAL_ANCHORS } from "./general-anchors";
 import { SettingsGroup } from "./settings-group";
@@ -486,7 +486,15 @@ function FolderField({
     if (next === (value ?? "")) return setInvalid(undefined);
     const problem = folderProblem(next);
     setInvalid(problem);
-    if (problem === undefined) onSave(next);
+    if (problem === undefined) {
+      const before = value ?? "";
+      offerUndo(id, () => onSave(before));
+      onSave(next);
+    }
+  };
+  const cancel = () => {
+    setDraft(value ?? "");
+    setInvalid(undefined);
   };
 
   return (
@@ -497,6 +505,7 @@ function FolderField({
       onReset={onReset}
       error={invalid ?? error}
       status={unsaved ? <SaveHint id={hintId} /> : undefined}
+      undoKey={id}
     >
       <input
         id={id}
@@ -509,16 +518,15 @@ function FolderField({
         onChange={(event) => {
           setDraft(event.target.value);
           setInvalid(undefined);
+          dropUndo(id);
         }}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === "Enter") commit();
-          if (event.key === "Escape") {
-            setDraft(value ?? "");
-            setInvalid(undefined);
-          }
+          if (event.key === "Escape") cancel();
         }}
       />
+      {unsaved && <DraftActions label={label} onSave={commit} onCancel={cancel} />}
     </SettingRow>
   );
 }

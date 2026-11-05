@@ -216,10 +216,13 @@ test("the foot, turned on, matches the title bar meter's usage, and its slots th
   await page.getByTestId("usage-meter").click();
   const popover = page.getByRole("dialog", { name: "Subscription usage" });
   const fiveHour = async (provider: string) => {
-    const cells = popover
+    const row = popover
       .getByRole("region", { name: provider })
-      .locator('[data-testid="usage-limit-row"][data-window="fiveHour"] > span:not([aria-hidden])');
-    return { percent: await cells.nth(1).textContent(), resets: await cells.nth(2).textContent() };
+      .locator('[data-testid="usage-limit-row"][data-window="fiveHour"]');
+    // The popover says "42% used" and "Resets 12:30"; the foot is terser, "42% · 12:30".
+    const used = (await row.getByTestId("usage-limit-used").textContent()) ?? "";
+    const reset = (await row.getByTestId("usage-limit-reset").textContent()) ?? "";
+    return { percent: used.replace(/ used$/, ""), resets: reset.replace(/^Resets /, "") };
   };
   const claude = await fiveHour("Claude Code");
   const codex = await fiveHour("Codex");

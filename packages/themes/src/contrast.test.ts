@@ -28,6 +28,12 @@ const cases = LOOK_IDS.flatMap((look) =>
   ),
 );
 
+/** The modal scrim's strength, as web tokens.css sets `--scrim-strength`. */
+const SCRIM_STRENGTH: Record<Mode, Record<Contrast, number>> = {
+  dark: { standard: 0.6, more: 0.8 },
+  light: { standard: 0.82, more: 0.9 },
+};
+
 /** Every pair below the floor, as "fg on bg = ratio" strings. */
 function failures(vars: CssVariables, mode: Mode, contrast: Contrast): string[] {
   const v = (name: string) => vars[`--${name}`]!;
@@ -49,11 +55,12 @@ function failures(vars: CssVariables, mode: Mode, contrast: Contrast): string[] 
     "surface-1@alpha/wash-info": composite(v("surface-1"), alpha, washes[1]!),
     "surface-3@alpha/backdrop": composite(v("surface-3"), alpha, backdrop),
     "surface-3@alpha/wash-accent": composite(v("surface-3"), alpha, washes[0]!),
-    // Overlays over the modal scrim (web tokens.css: surface-1 at 60%, 80% at more contrast).
+    // Overlays over the modal scrim (web tokens.css: surface-1 at 60%, 80% at more contrast; light
+    // at 82%, 90% at more contrast).
     "surface-3@alpha/scrim": composite(
       v("surface-3"),
       alpha,
-      composite(v("surface-1"), contrast === "more" ? 0.8 : 0.6, v("surface-2")),
+      composite(v("surface-1"), SCRIM_STRENGTH[mode][contrast], v("surface-2")),
     ),
   };
   // Terminal: scanline rows mix each surface toward the backdrop extreme; more contrast removes them.
