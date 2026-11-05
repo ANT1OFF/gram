@@ -4,9 +4,11 @@ test("deletes a past session, then continues the latest one on the chosen effort
   page,
 }) => {
   await page.goto("/new");
-  await page.getByLabel("Effort").click();
+  // The effort picker is a glyph named with its value, in the prompt box as in a thread's composer.
+  const effort = page.getByRole("combobox", { name: /^Effort: / });
+  await effort.click();
   await page.getByRole("option", { name: "High effort", exact: true }).click();
-  await expect(page.getByLabel("Effort")).toContainText("High effort");
+  await expect(effort).toHaveAccessibleName("Effort: High");
 
   await page.getByRole("button", { name: "Resume a past session…" }).click();
   const picker = page.getByTestId("resume-sessions");
@@ -22,5 +24,5 @@ test("deletes a past session, then continues the latest one on the chosen effort
   await page.getByRole("button", { name: "Continue latest session" }).click();
   await expect(page).toHaveURL(/\/t\/t-/);
   await expect(page.getByTestId("pane-header")).toContainText("Speed up the flaky retry suite");
-  await expect(page.getByLabel("Effort")).toContainText("High effort");
+  await expect(effort).toHaveAccessibleName("Effort: High");
 });
