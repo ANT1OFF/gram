@@ -170,9 +170,11 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
   const surface2 = s.bg;
   const lighterSurface = luminance(surface1) > luminance(surface2) ? surface1 : surface2;
   // A raised card, a field or a menu: in dark a clear step off the page, so a card reads by its fill
-  // rather than by an outline; in light, a step toward white, its edge carrying the rest.
+  // rather than by an outline; in light, a step toward white, its edge carrying the rest. Near-black
+  // surfaces take the larger step, where a small one barely shows; mid-tone ones already separate.
+  const raisedStep = hexToOklch(lighterSurface).l < 0.3 ? 0.055 : 0.035;
   const surface3 = dark
-    ? shiftLightness(lighterSurface, 0.055)
+    ? shiftLightness(lighterSurface, raisedStep)
     : mix(lighterSurface, "#ffffff", 0.5);
   // Hover sits a shade past the raised step in dark, so a row on a card still lights under the
   // pointer; on a palette whose surfaces are already light enough that the shade would cost the text

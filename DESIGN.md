@@ -182,8 +182,9 @@ sections, at a pane's edges), as in `gap-inset` or `px-section`.
 and `rounded-xl` 16, `rounded-full` for pills and dots, and `--composer-radius` for the composer.
 
 **Elevation.** Three surfaces: the chrome (`surface-1`), the page (`surface-2`) and one raised step
-(`surface-3`). In dark the raised step is a clear one (about 5% lightness over the lighter of the
-other two), so a card reads by its fill; Neutral Dark is near-black (`#131313` page, `#0b0b0b`
+(`surface-3`). In dark the raised step is a clear one on near-black palettes (5.5% lightness over
+the lighter of the other two, 3.5% on mid-tone ones that already separate), so a card reads by its
+fill; Neutral Dark is near-black (`#131313` page, `#0b0b0b`
 chrome), not black. Hover sits a shade past the raised step. One step for every secondary
 surface: a card, a panel's block, a popover and a menu
 take `bg-card` or `bg-popover` (both `--surface-raised`, which is `surface-3`: the palettes hold
