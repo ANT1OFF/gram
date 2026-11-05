@@ -40,7 +40,9 @@ describe("NewFormHeader", () => {
       "true",
       "false",
     ]);
-    expect(screen.getByText("Synthetic workspace")).toBeTruthy();
+    // Where it goes is a named group of its own before the prompt, not an "in" chip.
+    const where = screen.getByRole("group", { name: "Where it runs" });
+    expect(within(where).getByText("Synthetic workspace")).toBeTruthy();
     expect(screen.getByTestId("task-way-note").textContent).toBe("Synthetic line");
 
     fireEvent.click(radios[2]!);

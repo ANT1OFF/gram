@@ -387,6 +387,8 @@ function DiffBody({
 }) {
   const { root, actions } = useDiffFileActions(threadId);
   const review = useDiffReviewState(threadId, query.data);
+  // Its agent's session is still opening: no change could have been made yet.
+  const starting = useThreadsStore((s) => s.byId[threadId]?.status === "starting");
   const focusPath = request && checkoutRelative(request.target, root);
   const nodes = useMemo(() => buildDiffTree(query.data?.files ?? []), [query.data]);
   const files = useMemo(() => treeOrder(nodes), [nodes]);
@@ -471,6 +473,13 @@ function DiffBody({
   // Nothing to show is one line, not a heading, a notice and an empty state.
   if (files.length === 0) {
     const base = (fallbackBase ?? diff.base)?.replace(/^origin\//, "");
+    if (starting) {
+      return (
+        <p data-testid="diff-empty" className="px-3 py-2 text-meta text-muted-foreground">
+          No changes yet: the agent is starting.
+        </p>
+      );
+    }
     return (
       <>
         <p data-testid="diff-empty" className="px-3 py-2 text-meta text-muted-foreground">

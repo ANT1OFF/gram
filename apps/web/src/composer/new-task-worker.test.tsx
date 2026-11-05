@@ -104,7 +104,8 @@ describe("New task's direct worker picker", () => {
   it("starts on the roster's default and sends exactly that worker to the server", async () => {
     const { preview, start } = setup([opus, haiku, sol]);
     const model = await screen.findByLabelText("Worker model");
-    expect(model.textContent).toContain("synthetic-large · high");
+    // By the name the composer gives it, from the agent's model list, not by its id.
+    expect(model.textContent).toContain("Synthetic · high");
     expect(screen.getByLabelText("Worker agent").textContent).toContain("Claude Code");
     expect(preview.mock.calls[0]?.[0]).toEqual({
       target: { projectId },
@@ -157,7 +158,9 @@ describe("New task's direct worker picker", () => {
 
   it("falls back to the default when the remembered model is no longer on the roster", async () => {
     setup([opus, haiku], { [targetKey]: workerChoiceKey(sol.model) });
-    expect((await screen.findByLabelText("Worker model")).textContent).toContain("synthetic-large");
+    expect((await screen.findByLabelText("Worker model")).textContent).toContain(
+      "Synthetic · high",
+    );
   });
 
   it("filters the models by the agent picked", async () => {
@@ -165,7 +168,7 @@ describe("New task's direct worker picker", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByLabelText("Worker model"));
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
-      expect.stringContaining("synthetic-large"),
+      expect.stringContaining("Synthetic · high"),
       expect.stringContaining("synthetic-small"),
     ]);
     await user.keyboard("{Escape}");
@@ -202,7 +205,7 @@ describe("New task's direct worker picker", () => {
     expect(startButton().disabled).toBe(true);
 
     await user.click(screen.getByLabelText("Worker model"));
-    const large = screen.getByRole("option", { name: /synthetic-large/ });
+    const large = screen.getByRole("option", { name: /^Synthetic · high/ });
     expect(large.getAttribute("aria-disabled")).toBe("true");
     expect(large.textContent).toContain(`Unavailable: ${reason}`);
     await user.click(screen.getByRole("option", { name: /synthetic-small/ }));

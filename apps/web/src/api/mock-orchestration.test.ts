@@ -101,11 +101,24 @@ describe("MockApi orchestration", () => {
     const workspaceId = orchestrator.workspaceId!;
     expect((await api.listWorkspaces()).map((w) => w.workspace.projectIds)).toEqual([["p-api"]]);
 
+    const abort = new AbortController();
+    const statuses: string[] = [];
+    void (async () => {
+      for await (const event of api.events(abort.signal)) {
+        if (event.type === "thread.status") statuses.push(`${event.threadId}:${event.status}`);
+      }
+    })();
     const worker = await api.startTask({
       target: { workspaceId },
       input: { text: "Fix the flaky retry test\nIt fails on Windows." },
       direct: { projectId: "p-api" as ProjectId },
     });
+    // Its session opens before its first turn runs, as a real worker's does.
+    await vi.waitFor(() => expect(statuses).toContain(`${worker.id}:running`));
+    const own = statuses.filter((each) => each.startsWith(`${worker.id}:`));
+    expect(own.indexOf(`${worker.id}:starting`)).toBeGreaterThanOrEqual(0);
+    expect(own.indexOf(`${worker.id}:starting`)).toBeLessThan(own.indexOf(`${worker.id}:running`));
+    abort.abort();
     expect(worker).toMatchObject({
       title: "Fix the flaky retry test",
       workspaceId,

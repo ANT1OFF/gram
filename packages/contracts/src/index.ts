@@ -17,6 +17,7 @@ export * from "./completion.ts";
 export * from "./codex-home.ts";
 export * from "./custom-models.ts";
 export * from "./domain.ts";
+export * from "./thread-title.ts";
 export * from "./errors.ts";
 export * from "./events.ts";
 export * from "./feed-cursor.ts";

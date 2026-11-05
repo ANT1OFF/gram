@@ -80,7 +80,7 @@ export const STATUS_DISPLAY: Record<
   { icon: LucideIcon; label: string; tone: string }
 > = {
   cold: { icon: CircleDashed, label: "Idle", tone: "text-status-idle" },
-  starting: { icon: Spinner, label: "Starting", tone: "text-status-working" },
+  starting: { icon: Spinner, label: "Starting…", tone: "text-status-working" },
   idle: { icon: CircleDot, label: "Idle", tone: "text-status-idle" },
   running: { icon: Spinner, label: "Working", tone: "text-status-working" },
   needsApproval: { icon: CircleAlert, label: "Needs approval", tone: "text-status-needs" },

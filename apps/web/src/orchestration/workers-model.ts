@@ -412,6 +412,7 @@ export const workerRow = (
     if (live.state === "archived") return row("archived", `archived${when}`);
     return row(FINISHED_GLYPH[live.state] ?? "delivered", `done${when}`);
   }
+  if (live.status === "starting" && activity === undefined) return row(undefined, "starting…");
   if (running) return row(undefined, activity === undefined ? "working" : activityGist(activity));
   if (live.state === "question" || (live.reportStands === true && report?.state === "question")) {
     return row(undefined, "asked a question");

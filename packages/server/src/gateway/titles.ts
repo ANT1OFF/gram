@@ -1,4 +1,11 @@
-import type { SlashCommand, GramUIMessage, Thread, ThreadId, ThreadStatus } from "@gram/contracts";
+import {
+  derivedTitle,
+  type SlashCommand,
+  type GramUIMessage,
+  type Thread,
+  type ThreadId,
+  type ThreadStatus,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -6,8 +13,12 @@ import * as Stream from "effect/Stream";
 
 import { basisHash, type HelperJob, type HelperSchedulerShape } from "../helper/scheduler.ts";
 
-/** The title a thread starts with (see `ThreadRuntimes.create`). */
+/** The title a thread starts with (see `ThreadRuntimes.create`): short, from its first prompt. */
 export const heuristicTitle = (firstPrompt: string | undefined): string =>
+  derivedTitle(firstPrompt);
+
+/** The starting title before `derivedTitle`: the first line, clipped at 60. Still a default. */
+const clippedTitle = (firstPrompt: string | undefined): string =>
   firstPrompt?.split("\n")[0]?.trim().slice(0, 60) || "New thread";
 
 const textOf = (message: GramUIMessage | undefined): string =>
@@ -45,7 +56,9 @@ export const hasDefaultTitle = (
 ): boolean =>
   !thread.userNamed &&
   thread.agentNamed !== true &&
-  [undefined, opener, ...earlier].some((text) => thread.title === heuristicTitle(text));
+  [undefined, opener, ...earlier].some(
+    (text) => thread.title === heuristicTitle(text) || thread.title === clippedTitle(text),
+  );
 
 /** What there is to name a thread from. */
 export interface Opening {

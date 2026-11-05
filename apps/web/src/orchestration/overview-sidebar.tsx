@@ -30,6 +30,7 @@ import { keyLabel } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { formatClockTime, formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
+import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
 import { revealVirtualRow, virtualRowOf, VirtualRows } from "@/lib/virtual-rows";
 import { PresenceItem, PresenceList, Swap } from "@/motion";
@@ -754,10 +755,12 @@ export function WorkerRow({
     pause === undefined &&
     lastActivity !== undefined &&
     now - lastActivity >= SETTLED_AFTER_MS;
+  // Its session is opening: nothing has run yet, so neither "Working" nor "Idle" is true.
+  const starting = status === "starting" && !asking && !row.failed;
   const facts = [
     row.title,
     ...(pause === undefined ? [] : [PAUSE_WORD[pause.state]]),
-    waiting?.label ?? row.now,
+    starting ? STARTING : (waiting?.label ?? row.now),
     ...(agent === undefined ? [] : [agentLabel(agent)]),
     ...(lastActivity === undefined ? [] : [`last active ${formatClockTime(lastActivity)}`]),
   ];
@@ -811,7 +814,14 @@ export function WorkerRow({
       </span>
       {/* At work, the thread's own step and what it runs, as its tree row says them, else the
           card's now line. An ask or a failure is all the row says. */}
-      {working && !asking && !row.failed ? (
+      {starting ? (
+        <span
+          data-testid="overview-worker-starting"
+          className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground"
+        >
+          {STARTING}
+        </span>
+      ) : working && !asking && !row.failed ? (
         <WorkerStep row={row} />
       ) : waiting !== undefined ? (
         <WaitingLine waiting={waiting} testId="overview-worker-waiting" />
@@ -903,6 +913,9 @@ function usePickedPreview() {
     },
   };
 }
+
+/** A worker's line while its agent session opens, before its first turn runs. */
+const STARTING = "Starting…";
 
 /** A row's 8 px dot, centred on its title's first line however many lines the title takes. */
 const DOT_ON_FIRST_LINE = "size-2 self-start justify-self-center mt-[calc((1lh-0.5rem)/2)]";
@@ -1145,7 +1158,7 @@ function SoloThreads() {
   const viewed = useParams({ strict: false }).threadId;
   if (solo.length + parked.length === 0) return null;
   return (
-    <Section id="solo" title="Solo threads" count={solo.length}>
+    <Section id="solo" title="Solo threads" count={solo.length} hint={EXPLAIN.solo}>
       {solo.length > 0 && <SoloList threads={solo} viewed={viewed} />}
       {parked.length > 0 && <FoldedThreads kind="parked" threads={parked} viewed={viewed} />}
     </Section>

@@ -7,6 +7,7 @@ import { Hint } from "@/components/hint";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { keyLabel, useShortcut } from "@/keyboard/registry";
 import { useNow } from "@/lib/use-now";
+import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
 import { GlideText, Swap } from "@/motion";
 import { useThreadsStore } from "@/stores/threads";
@@ -317,7 +318,7 @@ export function WorkerActions({
       ) : (
         actions.takeOver !== undefined && (
           <Hint
-            label="Stop the orchestrator messaging this worker, so you can direct it yourself"
+            label={EXPLAIN.takeOver}
             side="bottom"
             render={
               <button
@@ -371,11 +372,17 @@ export function WorkerMenuItems({
       {actions.takeOver !== undefined && (
         <Menu.Item
           data-testid="menu-take-over"
-          className={itemClassName}
+          aria-description={EXPLAIN.takeOver}
+          className={cn(itemClassName, "items-start")}
           onClick={actions.takeOver}
         >
-          <HandGrab aria-hidden className="size-3.5" />
-          Take over
+          <HandGrab aria-hidden className="mt-0.5 size-3.5" />
+          <span className="flex max-w-64 min-w-0 flex-col">
+            Take over
+            <span aria-hidden className="text-meta whitespace-normal text-muted-foreground">
+              {EXPLAIN.takeOver}
+            </span>
+          </span>
         </Menu.Item>
       )}
       <div role="separator" className="-mx-1 my-1 h-px bg-border" />

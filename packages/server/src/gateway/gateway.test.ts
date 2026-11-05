@@ -737,6 +737,11 @@ describe("title watcher", () => {
       expect((yield* run(thread(), 2, some)).helperCalls).toBe(0);
       expect((yield* run(thread(), 1, [Option.none()])).current.title).toBe(heuristicTitle(prompt));
       expect(hasDefaultTitle(thread(), prompt)).toBe(true);
+      // A thread that started before titles were shortened still carries a default one.
+      const long = "Add retry coverage for the queue consumer. Then make the backoff exponential.";
+      expect(hasDefaultTitle(thread({ title: long.slice(0, 60) }), long)).toBe(true);
+      expect(hasDefaultTitle(thread({ title: heuristicTitle(long) }), long)).toBe(true);
+      expect(heuristicTitle(long)).toBe("Add retry coverage for the queue consumer");
     }),
   );
 });

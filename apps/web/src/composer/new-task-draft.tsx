@@ -9,7 +9,7 @@ import {
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderGit2 } from "lucide-react";
+import { FolderGit2, GitBranch } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -53,9 +53,10 @@ import {
 import { TaskTargetPicker } from "@/orchestration/task-target-picker";
 import { useOrchestratorLedger, useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { useServerSettings } from "@/settings-sync/store";
+import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
-import { NewFormHeader, WHO_ENTRY, type Who } from "@/new-thread/who-does-it";
+import { NewFormHeader, WHO_ENTRY, WhereFact, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -75,7 +76,7 @@ import { MentionMenu } from "./mention-menu";
 import { enterSends } from "./send-key";
 import { useAttachments } from "./use-attachments";
 import { useMentions } from "./use-mentions";
-import { useModelsSettled } from "./models";
+import { useModelNames, useModelsSettled } from "./models";
 import { SLAB, SLAB_TEXTAREA } from "./styles";
 import { shownWorkerChoice, workerChoiceKey } from "./worker-choice";
 import { WorkerFields } from "./worker-fields";
@@ -192,6 +193,8 @@ export function NewTaskDraft({
         ? shownWorker.model
         : undefined;
   const workerPreflight = useHarnessPreflight(workerModel, "worker");
+  // Models by the names the composer gives them, not their ids.
+  const nameOf = useModelNames([orchestratorModel, workerModel, shownWorker?.model]);
   const inputModel = way === "direct" ? workerModel : orchestratorModel;
   const inputModels = useModelsSettled(
     inputModel?.agent ?? "claude",
@@ -374,37 +377,54 @@ export function NewTaskDraft({
           disabled={attachments.uploading}
           where={
             <>
-              <TaskTargetPicker
-                value={target}
-                disabled={attachments.uploading}
-                workspaces={workspaces}
-                projects={projects}
-                onPick={(next) => {
-                  if (next.kind === "newWorkspace") return toNewWorkspace();
-                  setPicked(next);
-                  setRepoId(undefined);
-                }}
-              />
-              {way === "direct" && repo !== undefined && repos.length > 1 && (
-                <Select
-                  value={repo.id}
-                  items={repos.map((each) => ({ value: each.id, label: each.name }))}
-                  onValueChange={(value) => {
-                    if (value !== null) setRepoId(value as ProjectId);
+              <WhereStop label={makesOne ? "New workspace for" : "Workspace"}>
+                <TaskTargetPicker
+                  value={target}
+                  disabled={attachments.uploading}
+                  workspaces={workspaces}
+                  projects={projects}
+                  onPick={(next) => {
+                    if (next.kind === "newWorkspace") return toNewWorkspace();
+                    setPicked(next);
+                    setRepoId(undefined);
                   }}
-                >
-                  <SelectTrigger size="sm" aria-label="Repo" className="h-7 text-meta">
-                    <FolderGit2 aria-hidden />
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {repos.map((each) => (
-                      <SelectItem key={each.id} value={each.id}>
-                        {each.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
+              </WhereStop>
+              {way === "direct" && repo !== undefined && (
+                <WhereStop label="Repository">
+                  {repos.length > 1 ? (
+                    <Select
+                      value={repo.id}
+                      items={repos.map((each) => ({ value: each.id, label: each.name }))}
+                      onValueChange={(value) => {
+                        if (value !== null) setRepoId(value as ProjectId);
+                      }}
+                    >
+                      <SelectTrigger size="sm" aria-label="Repo" className="h-7 text-meta">
+                        <FolderGit2 aria-hidden />
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {repos.map((each) => (
+                          <SelectItem key={each.id} value={each.id}>
+                            {each.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <WhereFact icon={FolderGit2} testId="task-repo">
+                      {repo.name}
+                    </WhereFact>
+                  )}
+                </WhereStop>
+              )}
+              {way === "direct" && repo !== undefined && (
+                <WhereStop label="Checkout">
+                  <WhereFact icon={GitBranch} testId="task-checkout">
+                    New worktree, new branch
+                  </WhereFact>
+                </WhereStop>
               )}
             </>
           }
@@ -572,8 +592,7 @@ export function NewTaskDraft({
                 Start under my control
               </label>
               <span id={`${holdId}-line`} className="text-muted-foreground">
-                You direct it yourself, and the orchestrator can't message it until you hand it
-                back.
+                {EXPLAIN.startHeld}
               </span>
             </div>
           </div>
@@ -591,7 +610,7 @@ export function NewTaskDraft({
           ) : (
             way === "plan" && (
               <p className="text-meta text-muted-foreground">
-                {`Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${orchestratorModel.model}`}
+                {`Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)}`}
               </p>
             )
           )}
@@ -623,7 +642,7 @@ export function NewTaskDraft({
           )}
           {shownWorker?.unavailable !== undefined && (
             <p role="alert" className="text-meta text-destructive">
-              {agentLabel(shownWorker.model.agent)} {shownWorker.model.model} can't run here:{" "}
+              {agentLabel(shownWorker.model.agent)} {nameOf(shownWorker.model)} can't run here:{" "}
               {shownWorker.unavailable}. Pick another worker model.
             </p>
           )}
@@ -631,7 +650,7 @@ export function NewTaskDraft({
             <>
               {shownWorker === undefined && (
                 <p className="text-meta text-muted-foreground">
-                  Worker: {agentLabel(workerModel.agent)} · {workerModel.model}
+                  Worker: {agentLabel(workerModel.agent)} · {nameOf(workerModel)}
                 </p>
               )}
               <HarnessPreflightNote

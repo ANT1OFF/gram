@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { useModelNames } from "./models";
 import { GHOST_TRIGGER } from "./styles";
 import {
   firstWorkerChoiceOf,
@@ -33,13 +34,14 @@ export function WorkerFields({
   onPick: (key: string) => void;
   disabled?: boolean;
 }) {
+  const nameOf = useModelNames(choices.map((choice) => choice.model));
   const agents = workerAgents(choices);
   const agent = shown.model.agent;
   const models = choices.filter((choice) => choice.model.agent === agent);
   const agentItems = agents.map((each) => ({ value: each, label: agentLabel(each) }));
   const modelItems = models.map((choice) => ({
     value: workerChoiceKey(choice.model),
-    label: workerChoiceLabel(choice.model),
+    label: workerChoiceLabel(choice.model, nameOf(choice.model)),
   }));
 
   return (
@@ -111,7 +113,7 @@ export function WorkerFields({
               >
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate">
-                    {workerChoiceLabel(choice.model)}
+                    {workerChoiceLabel(choice.model, nameOf(choice.model))}
                     {choice.default === true && (
                       <span className="ml-1.5 text-meta text-muted-foreground">Default</span>
                     )}

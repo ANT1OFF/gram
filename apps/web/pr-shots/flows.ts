@@ -108,14 +108,20 @@ const steps: readonly Shot[] = [
   },
   {
     name: "task-started",
-    title: "Start: submit the task and land on its new thread",
+    title: "Start: submit the task and land on its new thread, its agent still starting",
     open: async (page) => {
+      // Held while its session opens, so the frame shows the new worker as it starts.
+      await page.addInitScript(() => {
+        window.gramMockHoldGates = true;
+        window.gramMockHoldWorkerStart = true;
+      });
       await page.goto("/new-task?way=direct");
       await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
       await page.getByRole("button", { name: /Start (workspace and )?worker/ }).click();
       await expect(page).toHaveURL(/\/t\//);
       await page.getByLabel("Message", { exact: true }).waitFor();
       await page.getByTestId("message-user").first().waitFor();
+      await page.getByTestId("overview-worker-starting").first().waitFor();
     },
   },
   { name: "new-thread", title: "Start: one-off thread form", open: shot("new-thread") },

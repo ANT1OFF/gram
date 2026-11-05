@@ -258,7 +258,10 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
   await page.goto("/");
   const welcome = page.getByTestId("welcome");
-  await expect(welcome.getByRole("heading", { name: "How Gram works" })).toBeVisible();
+  // It leads with the repository; how Gram works is folded under How it works.
+  await expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeVisible();
+  await expect(welcome.getByRole("list", { name: "How Gram works" })).toHaveCount(0);
+  await welcome.getByRole("button", { name: "How it works" }).click();
   await expect(
     welcome.getByRole("list", { name: "How Gram works" }).getByRole("listitem"),
   ).toHaveText([
@@ -266,7 +269,6 @@ test("first run is one screen: how Gram works, the agents, a repository and past
     /^An orchestrator plans them and briefs workers/,
     /^Workers run Claude Code or Codex/,
   ]);
-  await expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeVisible();
   // Codex alone is enough: Claude Code missing is shown, but is nothing to fix.
   await expect(welcome.getByRole("radio", { name: /^web/ })).toBeVisible();
   // Before any setup there are no pull requests or usage beside the welcome.

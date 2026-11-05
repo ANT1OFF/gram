@@ -432,7 +432,8 @@ describe("ThreadRuntimes", () => {
     Effect.gen(function* () {
       const store = yield* ThreadStore;
       const { thread, session } = yield* createRunning("fix the flaky test");
-      expect(thread.title).toBe("fix the flaky test");
+      // A short title from the prompt, until a helper, the agent or the user names it.
+      expect(thread.title).toBe("Fix the flaky test");
       expect(session.options.resumeId).toBeUndefined();
 
       yield* session.completeTurn("fixed");

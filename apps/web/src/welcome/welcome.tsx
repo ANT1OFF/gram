@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
+  ChevronRight,
   Circle,
   CircleAlert,
   CircleCheck,
@@ -17,7 +18,7 @@ import {
   Network,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { create } from "zustand";
 
 import { AgentIcon } from "@/agents/agent-display";
@@ -76,8 +77,9 @@ export function useBeforeSetup(): boolean {
 }
 
 /**
- * First run, on one screen: what Gram does in three rows, whether Claude Code and Codex are
- * installed and signed in, and a repository to start on. The pick opens the new-workspace sheet on
+ * First run, on one screen: a repository to start on, whether Claude Code and Codex are installed
+ * and signed in beside the action that opens it, and what Gram does in three rows under How it
+ * works, folded until asked for. The pick opens the new-workspace sheet on
  * it, which marks the first run done once the workspace is made. Past CLI sessions can be picked up
  * from here too. Gateways stay in Settings.
  */
@@ -168,27 +170,10 @@ function FirstRun() {
       className="flex w-full max-w-xl flex-col gap-5 rounded-lg border border-border bg-card p-5 text-reading text-card-foreground"
     >
       <div className="flex flex-col gap-3">
-        <h2 id="welcome-title" className="font-heading text-title">
-          How Gram works
-        </h2>
-        <ol aria-label="How Gram works" data-testid="welcome-steps" className="flex flex-col gap-3">
-          {STEPS.map(({ icon: Icon, title, line }) => (
-            <li key={title} className="flex items-start gap-3">
-              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent text-muted-foreground">
-                <Icon aria-hidden className="size-4" />
-              </span>
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="font-medium">{title}</span>
-                <span className="text-meta text-muted-foreground">{line}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      </div>
-      <AgentStrip />
-      <div className="flex flex-col gap-3 border-t border-border pt-4">
         <div className="flex flex-col gap-0.5">
-          <h3 className="font-heading text-reading font-medium">Pick a repository to start</h3>
+          <h2 id="welcome-title" className="font-heading text-title">
+            Pick a repository to start
+          </h2>
           <p className="text-meta text-muted-foreground">
             It becomes a workspace with its own orchestrator. You can add more repositories later.
           </p>
@@ -201,6 +186,8 @@ function FirstRun() {
           onSelect={setPickedRoot}
           onOpen={openRepo}
         />
+        {/* Whether the agents can run, beside the action that starts them. */}
+        <AgentStrip />
         <div className="flex flex-wrap items-center gap-2">
           {/* The one primary action: open the picked repository, or with none to pick, a folder. */}
           {picked !== undefined && (
@@ -264,8 +251,65 @@ function FirstRun() {
           </p>
         )}
       </div>
+      <HowItWorks />
       <ImportSessions />
     </section>
+  );
+}
+
+/**
+ * How Gram works, folded under one line until asked for: the first run leads with the repository,
+ * and the team, orchestrator and worktree model is there for whoever wants it first.
+ */
+function HowItWorks() {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="flex flex-col gap-2 border-t border-border pt-4">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-expanded={open}
+          aria-controls={id}
+          data-testid="welcome-how"
+          className="-ml-2.5"
+          onClick={() => setOpen((was) => !was)}
+        >
+          <ChevronRight
+            data-icon="inline-start"
+            className={cn("transition-transform duration-(--dur-fast)", open && "rotate-90")}
+          />
+          How it works
+        </Button>
+        <span className="text-meta text-muted-foreground">
+          Tasks, the orchestrator and its workers, in three steps.
+        </span>
+      </div>
+      <Expand open={open}>
+        {open && (
+          <ol
+            id={id}
+            aria-label="How Gram works"
+            data-testid="welcome-steps"
+            className="flex flex-col gap-3"
+          >
+            {STEPS.map(({ icon: Icon, title, line }) => (
+              <li key={title} className="flex items-start gap-3">
+                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent text-muted-foreground">
+                  <Icon aria-hidden className="size-4" />
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="font-medium">{title}</span>
+                  <span className="text-meta text-muted-foreground">{line}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Expand>
+    </div>
   );
 }
 

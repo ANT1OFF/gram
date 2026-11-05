@@ -108,9 +108,43 @@ function Choice({
 }
 
 /**
+ * One stop on the New form's Where it runs row: what it is ("Workspace", "Repository",
+ * "Checkout") in muted words, then its chip, a picker or a plain fact.
+ */
+export function WhereStop({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="shrink-0 text-meta text-muted-foreground">{label}</span>
+      {children}
+    </span>
+  );
+}
+
+/** A Where it runs stop that is a fact, not a choice: the same chip shape, with no menu. */
+export function WhereFact({
+  icon: Icon,
+  children,
+  testId,
+}: {
+  icon: LucideIcon;
+  children: ReactNode;
+  testId?: string;
+}) {
+  return (
+    <span
+      data-testid={testId}
+      className="flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-dashed border-border px-2 text-meta text-foreground"
+    >
+      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+/**
  * The top of the one New form, the same whoever does it: the title, Who does it with each
- * choice's owner in a line, where it goes (`where`, an "in" chip), and one plain line on what
- * happens next there.
+ * choice's owner in a line, Where it runs (`where`: the workspace, the repository and the checkout,
+ * or the folder, each named before submit), and one plain line on what happens next there.
  */
 export function NewFormHeader({
   who,
@@ -128,6 +162,7 @@ export function NewFormHeader({
 }) {
   const slab = useId();
   const labelId = useId();
+  const whereId = useId();
   return (
     <header className="flex flex-col gap-3">
       <h1 className="font-heading text-title">New</h1>
@@ -152,12 +187,21 @@ export function NewFormHeader({
           ))}
         </div>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-meta text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          in
-          {where}
+      <div
+        role="group"
+        aria-labelledby={whereId}
+        data-testid="new-where"
+        className="flex min-w-0 flex-col gap-2"
+      >
+        <span id={whereId} className="text-meta font-medium text-muted-foreground">
+          Where it runs
         </span>
-        <p key={who} data-testid="task-way-note" className="gram-fade min-w-0 basis-full">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">{where}</div>
+        <p
+          key={who}
+          data-testid="task-way-note"
+          className="gram-fade min-w-0 text-meta text-muted-foreground"
+        >
           {line}
         </p>
       </div>
