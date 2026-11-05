@@ -33,7 +33,7 @@ const start = async (page: Page) => {
   await flakyAsked(page);
   const made = await page.evaluate(() => window.gramMock!.simulateFailures());
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-waiting")).toBeVisible();
+  await expect(page.getByTestId("status-header")).toBeVisible();
   await page.getByTestId("titlebar-overflow").click();
   await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-quiet").click();

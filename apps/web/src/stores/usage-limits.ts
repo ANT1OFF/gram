@@ -17,8 +17,11 @@ export type LimitProvider = (typeof LIMIT_PROVIDERS)[number];
 export const LIMIT_WINDOWS = ["fiveHour", "weekly"] as const;
 export type LimitWindow = (typeof LIMIT_WINDOWS)[number];
 
-/** The share of a window used from which the meter turns warning-coloured. */
-const LIMIT_WARN_AT = 0.8;
+/**
+ * The share of a window used from which the meter turns warning-coloured. Below it the meter stays
+ * neutral, so the title bar's only amber is what needs you until a limit is truly close.
+ */
+export const LIMIT_WARN_AT = 0.9;
 
 /** How long a reading without a reset time stays current (`LIMIT_NO_RESET_TTL_MS`). */
 export const NO_RESET_TTL_MS = LIMIT_NO_RESET_TTL_MS;
@@ -212,7 +215,7 @@ export const limitSpent = (limit: UsageLimit): boolean =>
   limit.credits !== true && (limit.status === "rejected" || limit.utilization >= 1);
 
 /**
- * A reading's colour: neutral below 80% of the window, the warning amber from there, red once it is
+ * A reading's colour: neutral below 90% of the window, the warning amber from there, red once it is
  * spent with no credits (`limitSpent`).
  */
 export const limitTone = (limit: UsageLimit): "neutral" | "warning" | "spent" =>

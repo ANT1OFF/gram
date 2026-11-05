@@ -146,9 +146,9 @@ const Separator = () => <span aria-hidden className="h-px w-6 shrink-0 bg-border
  * the open overview's opens.
  */
 function RailNeedsYou() {
-  const { count, kinds, label: action, hint, openAsks } = useNeedsYou();
+  const { count, scope: where, label: action, hint, openAsks } = useNeedsYou();
   const label = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
-  const scope = count > 0 ? `${label} across all workspaces: ${kinds}` : label;
+  const scope = count > 0 ? `${label} across all workspaces\n${where}` : label;
   // Nothing waiting, it stays as a quiet grey pill, so the tiles don't jump.
   return (
     <button

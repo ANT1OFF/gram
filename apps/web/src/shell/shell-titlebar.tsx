@@ -146,7 +146,8 @@ export function ShellTitlebar({
             textClassName="@max-2xl/titlebar:hidden"
           />
         )}
-        <InboxButton />
+        {/* The sidebar's pill counts what needs you; hidden, the button wears the count. */}
+        <InboxButton badge={!sidebarShown} />
       </div>
       <div
         role="group"

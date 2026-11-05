@@ -67,7 +67,7 @@ const home = async (page: Page, mode: "light" | "dark" = "dark") => {
   const made = await page.evaluate(() => window.gramMock!.simulateOneThread());
   await pressFirstWorkspaceKey(page);
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await expect(page.getByTestId("status-waiting")).toBeVisible();
+  await expect(page.getByTestId("status-header")).toBeVisible();
   return made;
 };
 

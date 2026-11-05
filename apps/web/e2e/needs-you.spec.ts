@@ -318,6 +318,24 @@ test("Later puts an item away, Back now brings it, and Dismiss holds a failure b
   await expect(pill(page)).toHaveAttribute("data-count", String(before - 1));
 });
 
+test("the detail shows what the asking thread said last and what it changed", async ({ page }) => {
+  await start(page);
+  await openInbox(page);
+  await show(page, "git push origin fix/flaky-retry");
+  const context = detail(page).getByTestId("inbox-context");
+  await expect(context).toBeVisible();
+  // Its latest turns, oldest first, the newest the one that led to the ask.
+  const turns = context.getByTestId("inbox-context-turn");
+  await expect(turns.last()).toContainText(
+    "The test passes 20/20 now. I'd like to push the branch.",
+  );
+  await expect(turns.last()).toHaveAttribute("data-role", "assistant");
+  expect(await turns.count()).toBeGreaterThan(1);
+  expect(await turns.count()).toBeLessThanOrEqual(4);
+  // And what its edits changed, as a line.
+  await expect(context.getByTestId("inbox-context-changes")).toContainText("1 file changed");
+});
+
 test("with nothing waiting, the Inbox says so", async ({ page }) => {
   await page.goto("/t/t-deps");
   await expect(threadRow(page, "t-deps")).toBeVisible();
@@ -361,9 +379,11 @@ test("a worker's question is answered in the Inbox: pick, then Send answer", asy
 test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3 opens it", async ({
   page,
 }) => {
-  // Below the open overview's width, the compact rail carries the pill.
+  // Below the open overview's width, the compact rail carries the pill, the one count: the title
+  // bar's Inbox button wears none beside it.
   await page.setViewportSize({ width: 1000, height: 800 });
   await start(page);
+  await expect(page.getByTestId("inbox-button")).not.toHaveAttribute("data-badge");
   await page.getByTestId("overview-rail-needs-you").click();
   await expect(inbox(page)).toBeVisible();
   const fits = async (width: number) => {
@@ -379,6 +399,8 @@ test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3
   // Narrower, no pill is on screen: ⌘⌥3 opens it, within the window.
   await page.setViewportSize({ width: 520, height: 800 });
   await expect(page.getByTestId("overview-rail-needs-you")).toBeHidden();
+  // With no pill on screen, the title bar's Inbox button wears the count.
+  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-badge", "true");
   await page.keyboard.press("ControlOrMeta+Alt+3");
   await expect(inbox(page)).toBeVisible();
   await fits(520);

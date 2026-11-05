@@ -1,16 +1,19 @@
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { DrawnCheck } from "@/motion";
 
+import { useInboxStore } from "./inbox-store";
+
 // Where the Asks dock was, above the orchestrator's composer and at the Board's foot: the Undo for
 // the newest answer still held, from the Inbox, a notification, the menu bar or a failure dismissed
 // on the Board, so it can be taken back from where the work is. Nothing to take back, nothing shows.
-// How much waits is the status header's "Waiting on you" and the Board's chip, each its view's one
-// count.
+// The receipt shows once: while the Inbox is open its own foot has it (`NeedsYouUndo`), so this line
+// waits until the Inbox closes. How much waits is the sidebar's pill and the workspace's badge.
 
 export function UndoLine({ testId = "inbox-line" }: { testId?: string }) {
   const last = useAskStackStore((s) => s.held.at(-1));
   const undo = useAskStackStore((s) => s.undo);
-  if (last === undefined) return null;
+  const inboxOpen = useInboxStore((s) => s.open);
+  if (last === undefined || inboxOpen) return null;
   return (
     <div className="shrink-0 bg-thread px-3 pt-2" data-testid={`${testId}-dock`}>
       <div

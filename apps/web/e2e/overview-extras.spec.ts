@@ -237,9 +237,9 @@ test("the foot, turned on, matches the title bar meter's usage, and its slots th
   await expect(meters.nth(1).getByTestId("overview-usage-text")).toHaveText(
     `${codex.percent} · ${codex.resets}`,
   );
-  // Codex is past the warning, as the title bar's meter says.
-  await expect(meters.nth(1)).toHaveAttribute("data-warn", "true");
-  await expect(page.getByTestId("usage-meter")).toHaveAttribute("data-warn", "true");
+  // Codex's 85% is short of the warning, as the title bar's meter says.
+  await expect(meters.nth(1)).not.toHaveAttribute("data-warn");
+  await expect(page.getByTestId("usage-meter")).not.toHaveAttribute("data-warn");
 
   // Slots: the workspace's live workers against its cap, and its held briefs.
   await page.evaluate(

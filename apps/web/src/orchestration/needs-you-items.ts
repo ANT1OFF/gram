@@ -409,3 +409,27 @@ export const kindsText = (items: readonly NeedsYouItem[]): string =>
   })
     .filter((words) => words !== "")
     .join(", ");
+
+/**
+ * Where the total is, from where the user is: "Here (Gram): nothing needs you", "billing-api: 1
+ * question", "Threads outside a workspace: 1 error". The sidebar pill's hover, so the one global
+ * count says how much of it is here and how much elsewhere; every count is a share of the one list.
+ * Outside a workspace (a solo thread) there is no "here", only each group's share.
+ */
+export const scopeLines = (
+  groups: readonly NeedsYouGroup[],
+  here: { readonly workspaceId: WorkspaceId; readonly name: string } | undefined,
+): string[] => {
+  const name = (group: NeedsYouGroup) =>
+    group.key === THREADS_GROUP ? "Threads outside a workspace" : group.name;
+  const own =
+    here === undefined ? undefined : groups.find((group) => group.workspaceId === here.workspaceId);
+  const others = groups.filter((group) => group !== own && group.items.length > 0);
+  const lines: string[] = [];
+  if (here !== undefined) {
+    const kinds = own === undefined ? "" : kindsText(own.items);
+    lines.push(`Here (${here.name}): ${kinds === "" ? "nothing needs you" : kinds}`);
+  }
+  for (const group of others) lines.push(`${name(group)}: ${kindsText(group.items)}`);
+  return lines;
+};

@@ -9,6 +9,7 @@ import {
   limitPercent,
   limitShareText,
   limitSummaryText,
+  meterHint,
   meterLabel,
   creditsText,
   meterText,
@@ -102,8 +103,11 @@ describe("limit formatting", () => {
     };
     expect(meterText(tightest)).toBe("Claude 42%");
     expect(meterText({ ...tightest, provider: "codex" })).toBe("Codex 42%");
+    expect(meterHint({ ...tightest, provider: "codex" })).toBe(
+      "Highest usage: Codex 5-hour limit, 42%",
+    );
     expect(meterLabel({ ...tightest, window: "weekly" })).toBe(
-      "Subscription usage: Claude Code weekly limit 42% used",
+      "Highest subscription usage: Claude Code weekly limit 42% used",
     );
   });
 
@@ -115,7 +119,7 @@ describe("limit formatting", () => {
     };
     expect(meterText(tightest)).toBe("Claude 100% · credits");
     expect(meterLabel(tightest)).toBe(
-      "Subscription usage: Claude Code 5-hour limit 100% used, continuing on credits",
+      "Highest subscription usage: Claude Code 5-hour limit 100% used, continuing on credits",
     );
   });
 

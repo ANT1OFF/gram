@@ -16,6 +16,8 @@ import {
   tightestLimit,
   useUsageLimits,
   type LimitProvider,
+  type LimitWindow,
+  type TightestLimit,
   type UsageLimit,
   type UsageLimits,
 } from "@/stores/usage-limits";
@@ -24,6 +26,7 @@ import {
   creditsText,
   forecastText,
   limitPercent,
+  meterHint,
   meterLabel,
   meterText,
   resetAtText,
@@ -58,8 +61,10 @@ export function useMinuteNow(): number {
 }
 
 /**
- * The title bar's subscription meter: the limit closest to running out, as a thin bar and a share,
- * opening onto every provider's 5-hour and weekly windows. Nothing until an agent reports a limit.
+ * The title bar's subscription meter: the limit closest to running out (the highest usage of any
+ * provider's window, as its hover and name say), as a thin bar and a share, opening onto every
+ * provider's 5-hour and weekly windows. Neutral until 90%, so amber in the title bar means what
+ * needs you. Nothing until an agent reports a limit.
  */
 export function UsageMeter({
   className,
@@ -85,7 +90,7 @@ export function UsageMeter({
       className={cn("rounded-full", className)}
     >
       <TitlebarPopover
-        hint="Subscription usage"
+        hint={meterHint(tightest)}
         label="Subscription usage"
         testId="usage-limits"
         className="w-[21rem] p-2.5"
@@ -108,14 +113,17 @@ export function UsageMeter({
           </button>
         }
       >
-        <LimitsPopover />
+        <LimitsPopover shown={tightest} />
       </TitlebarPopover>
     </PulseOnce>
   );
 }
 
-/** The popover's body, ticking each minute while open so ages and forecasts stay true. */
-function LimitsPopover() {
+/**
+ * The popover's body, ticking each minute while open so ages and forecasts stay true. The window
+ * the title bar shows is marked, and named at the foot.
+ */
+function LimitsPopover({ shown }: { shown: Pick<TightestLimit, "provider" | "window"> }) {
   const now = useMinuteNow();
   return (
     <div className="grid gap-1.5 text-body">
@@ -129,9 +137,17 @@ function LimitsPopover() {
         <span className="text-right">Resets at</span>
       </div>
       {LIMIT_PROVIDERS.map((provider) => (
-        <ProviderLimits key={provider} provider={provider} now={now} />
+        <ProviderLimits
+          key={provider}
+          provider={provider}
+          now={now}
+          shown={shown.provider === provider ? shown.window : undefined}
+        />
       ))}
-      <p className="mt-1 text-meta text-muted-foreground">Includes your own use outside Gram.</p>
+      <p data-testid="usage-limits-foot" className="mt-1 text-meta text-muted-foreground">
+        The title bar shows the highest: {agentLabel(shown.provider)}{" "}
+        {WINDOW_LABEL[shown.window].toLowerCase()}. Includes your own use outside Gram.
+      </p>
     </div>
   );
 }
@@ -142,9 +158,19 @@ const LIMIT_ROW = "grid grid-cols-[3.75rem_1fr_2.25rem_7.25rem] items-center gap
 /**
  * A provider's 5-hour and weekly rows under its name and when it was last updated, its credits
  * when the agent reports them, and under a row the forecast when there is pace enough to make one;
- * nothing for a provider with no current reading.
+ * nothing for a provider with no current reading. Every provider says its age the same way, in
+ * muted words beside its name; an old reading dims its rows as it dims the meter, never amber.
  */
-function ProviderLimits({ provider, now }: { provider: LimitProvider; now: number }) {
+function ProviderLimits({
+  provider,
+  now,
+  shown,
+}: {
+  provider: LimitProvider;
+  now: number;
+  /** The window the title bar's meter shows, when it is this provider's. */
+  shown: LimitWindow | undefined;
+}) {
   const windows = useUsageLimits((s) => s.limits[provider]);
   const current = LIMIT_WINDOWS.flatMap((window) => {
     const limit = currentLimit(windows?.[window], now);
@@ -161,7 +187,7 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
         <span
           data-testid="usage-limit-age"
           data-stale={stale || undefined}
-          className={cn("text-meta", stale ? "text-warning-text" : "text-muted-foreground")}
+          className="text-meta text-muted-foreground tabular-nums"
         >
           Updated {agoText(newest.at ?? now, now)}
         </span>
@@ -182,10 +208,13 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
             <div
               data-testid="usage-limit-row"
               data-window={window}
+              data-shown={shown === window || undefined}
               className={cn(
                 LIMIT_ROW,
                 "text-muted-foreground tabular-nums",
+                shown === window && "text-foreground",
                 limit !== undefined && TONE_TEXT[limitTone(limit)],
+                stale && "opacity-70",
               )}
             >
               <span>{WINDOW_LABEL[window]}</span>
@@ -232,7 +261,7 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
   );
 }
 
-/** A reading's words by its tone (`limitTone`): neutral, then amber from 80%, red once spent. */
+/** A reading's words by its tone (`limitTone`): neutral, then amber from 90%, red once spent. */
 const TONE_TEXT = {
   neutral: undefined,
   warning: "text-warning hover:text-warning",
@@ -245,7 +274,7 @@ const TONE_FILL = {
   spent: "bg-destructive",
 } as const;
 
-/** A thin track whose fill glides to each new reading; amber from 80%, red once spent. */
+/** A thin track whose fill glides to each new reading; amber from 90%, red once spent. */
 export function LimitBar({ limit, className }: { limit: UsageLimit; className?: string }) {
   const percent = limitPercent(limit.utilization);
   return (

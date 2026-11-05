@@ -393,17 +393,18 @@ export function useCarryOverviewFocus(sidebar: ShellFit["sidebar"]): void {
 }
 
 /**
- * The pill: what needs you across every workspace, which opens the Inbox. Its shortcut is on its
- * hover.
+ * The pill: what needs you across every workspace, which opens the Inbox; the window's one global
+ * count (the title bar's Inbox button shows none beside it). Its shortcut, and how much of it is
+ * here and how much elsewhere, are on its hover.
  */
 function NeedsYou() {
-  const { count, kinds, label, hint, openAsks } = useNeedsYou();
+  const { count, scope: where, label, hint, openAsks } = useNeedsYou();
   // A true first run, with no thread yet, has nothing to need you: the welcome is the one thing
   // to look at, without a count beside it.
   if (useBeforeSetup()) return null;
   const words = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
   // Its scope and kinds are said on hover, so it reads beside a workspace's own count.
-  const scope = count > 0 ? `${words} across all workspaces: ${kinds}` : words;
+  const scope = count > 0 ? `${words} across all workspaces\n${where}` : words;
   // Nothing waiting, it stays as quiet grey words, so the column doesn't jump.
   return (
     <button
@@ -541,6 +542,8 @@ function WorkspaceRow({
     <div
       data-testid="overview-workspace"
       data-workspace-id={id}
+      data-current={here || undefined}
+      data-asks={asks}
       data-folded={folded || undefined}
       className="flex flex-col"
     >

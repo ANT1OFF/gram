@@ -18,6 +18,7 @@ import {
   needsYouSections,
   newestAsk,
   type NeedsYouItem,
+  scopeLines,
   sectionOf,
   sectionsIn,
   stepItem,
@@ -237,6 +238,28 @@ describe("needsYouGroups", () => {
       away: new Set(["w:t-solo:w-2", "w:t-arb:w-3", "failure:checks:example/arb#7:abc"]),
     });
     expect(groups.map((group) => group.name)).toEqual(["Gram"]);
+  });
+});
+
+describe("scopeLines", () => {
+  it("says how much of the total is here and how much is in each other place", () => {
+    const groups = needsYouGroups(sources());
+    const lines = scopeLines(groups, { workspaceId: ARB, name: "Arb bot" });
+    expect(lines[0]).toBe("Here (Arb bot): 1 error, 1 draft");
+    expect(lines.slice(1)).toEqual([
+      `Gram: ${kindsText(groups[0]!.items)}`,
+      `Threads outside a workspace: ${kindsText(groups[2]!.items)}`,
+    ]);
+  });
+
+  it("says nothing needs you here when the workspace has no share, and has no here off one", () => {
+    const groups = needsYouGroups(sources());
+    const quiet = "w-quiet" as WorkspaceId;
+    expect(scopeLines(groups, { workspaceId: quiet, name: "Quiet" })[0]).toBe(
+      "Here (Quiet): nothing needs you",
+    );
+    expect(scopeLines(groups, undefined)).toHaveLength(3);
+    expect(scopeLines([], undefined)).toEqual([]);
   });
 });
 

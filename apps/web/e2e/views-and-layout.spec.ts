@@ -10,15 +10,15 @@ const start = async (page: Page) => {
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await page.evaluate(() => window.gramMock!.simulateAsks());
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-waiting")).toBeVisible();
+  await expect(page.getByTestId("status-header")).toBeVisible();
   return made;
 };
 
 const views = (page: Page) => page.getByRole("radiogroup", { name: "View" });
 const view = (page: Page, name: string) =>
   views(page).getByRole("radio", { name: new RegExp(`^${name}\\b`) });
-/** The orchestrator's status header's Waiting on you, its way into the Inbox. */
-const chatStack = (page: Page) => page.locator("[data-pane-root]").getByTestId("status-waiting");
+/** The orchestrator's status header, Chat's own row. */
+const chatStack = (page: Page) => page.locator("[data-pane-root]").getByTestId("status-header");
 const composer = (page: Page) => page.getByLabel("Message", { exact: true });
 
 test("Chat and Board switch over the same route, and Esc comes back", async ({ page }) => {

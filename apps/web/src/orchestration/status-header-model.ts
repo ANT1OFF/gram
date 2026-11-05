@@ -2,9 +2,10 @@ import type { ThreadId } from "@gram/contracts";
 
 import { startOfDay, type WorkerRow, type WorkersByTab } from "./workers-model";
 
-// The orchestrator's status header: what is running, what waits on the user, what is in review and
-// what merged today, in counts that come from the same rows as the views they open (⌘J's Now,
-// Needs you, the Board and History), so the header and the view never disagree. No React.
+// The orchestrator's status header: what is running, what is in review and what merged today, in
+// counts that come from the same rows as the views they open (⌘J's Now, the Board and History), so
+// the header and the view never disagree. What needs you is the sidebar's pill and the workspace's
+// badge, not the header's. No React.
 
 /** A worker as the header names it: its title and its now line, for the hover. */
 export interface HeaderWorker {
@@ -16,8 +17,6 @@ export interface HeaderWorker {
 export interface StatusHeaderCounts {
   /** Workers whose turn runs now, in ⌘J's order. */
   readonly running: readonly HeaderWorker[];
-  /** What waits on the user in this workspace: its Needs you items. */
-  readonly waiting: number;
   /** Workers whose PR is in review (checks running or passed, a reviewer to come). */
   readonly inReview: readonly HeaderWorker[];
   /** Workers that merged since local midnight, latest first. */
@@ -33,11 +32,7 @@ const named = (row: WorkerRow): HeaderWorker => ({
 const rowsOf = (features: WorkersByTab[keyof WorkersByTab]) =>
   features.flatMap((feature) => feature.rows);
 
-export const statusHeaderCounts = (
-  tabs: WorkersByTab,
-  waiting: number,
-  now: number,
-): StatusHeaderCounts => {
+export const statusHeaderCounts = (tabs: WorkersByTab, now: number): StatusHeaderCounts => {
   const live = rowsOf(tabs.now);
   const today = startOfDay(now);
   // A feature that finished over two days is under both; a worker counts once.
@@ -50,7 +45,6 @@ export const statusHeaderCounts = (
   });
   return {
     running: live.filter((row) => row.activity === "working").map(named),
-    waiting,
     inReview: live.filter((row) => row.state === "inReview").map(named),
     mergedToday: mergedToday.map(named),
   };

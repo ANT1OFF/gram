@@ -85,10 +85,10 @@ test("the Board's chip opens the Inbox, and an answer there clears it everywhere
   await expect(waiting).toHaveAttribute("data-count", String(before - 1));
   await expect(chip(page, made.pushers[0])).not.toHaveAttribute("data-tone", "needs");
 
-  // Back in Chat, the orchestrator's status header has lost it too.
+  // Back in Chat, the workspace's line in the sidebar has lost it too.
   await page.keyboard.press("Escape");
-  await expect(page.locator("[data-pane-root]").getByTestId("status-waiting")).toHaveAttribute(
-    "data-count",
+  await expect(page.locator('[data-testid="overview-workspace"][data-current]')).toHaveAttribute(
+    "data-asks",
     String(before - 1),
   );
 });
