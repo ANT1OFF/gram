@@ -72,12 +72,6 @@
   --shadow-card: var(--shadow-raised);
   --shadow-popover: var(--shadow-overlay);
 
-  /* Selection: the keyboard cursor or hover row in a list or menu, and the picked option in a
-     choice group (radio cards, segmented choices). Focus is --focus-ring; see the focus-ring utility. */
-  --color-row-cursor: var(--row-cursor);
-  --color-choice-selected: var(--choice-selected);
-  --color-choice-selected-border: var(--choice-selected-border);
-
   /* shadcn names → semantic tokens */
   --color-background: var(--surface-2);
   --color-foreground: var(--fg);
@@ -138,17 +132,6 @@
   --color-sidebar-block-border: var(--sidebar-block-border);
   --color-thread: var(--thread-bg);
   --color-panel: var(--panel-bg);
-}
-
-/* Keyboard focus: one ring for every control. `focus-visible:focus-ring` outside the element;
-   `focus-ring-inset` inside it, for rows in a container that clips. */
-@utility focus-ring {
-  outline: var(--focus-width) solid var(--focus-ring);
-  outline-offset: var(--focus-offset);
-}
-@utility focus-ring-inset {
-  outline: var(--focus-width) solid var(--focus-ring);
-  outline-offset: calc(var(--focus-width) * -1);
 }
 
 @layer base {

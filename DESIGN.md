@@ -89,17 +89,10 @@ and `rounded-xl` 16, `rounded-full` for pills and dots, and `--composer-radius` 
 popover, a dialog, a toast), `shadow-composer` for the composer slab. More contrast and forced
 colours turn them off.
 
-**Selection and focus.**
-
-- `bg-row-cursor` (`--row-cursor`): the row under the keyboard cursor or the pointer in a list or
-  menu.
-- `bg-choice-selected` with `border-choice-selected-border` (`--choice-selected`,
-  `--choice-selected-border`): the option picked in a choice group, such as a radio card or a
-  segmented choice. It is outlined in the accent so the pick never reads as focus.
-- `focus-visible:focus-ring` (`--focus-ring`, `--focus-width`, `--focus-offset`): the one keyboard
-  focus ring, outside the element; `focus-ring-inset` draws it inside, for rows in a container
-  that clips.
-- `bg-sidebar-row-active`: the current place in the sidebar.
+**Selection and focus.** The keyboard cursor row (`row-cursor`), a picked choice
+(`choice-selected`) and the focus ring (`focus-ring`) have their own tokens, defined with the
+selection work in tokens.css and globals.css; `bg-sidebar-row-active` marks the current place in
+the sidebar.
 
 **The drift check.** `node tools/design-tokens/check.mjs` (part of `bun run lint`) flags in
 `apps/web/src`: text sizes outside the scale (`text-xs`, `text-[13px]`), raw arbitrary spacing
