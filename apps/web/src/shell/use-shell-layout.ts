@@ -65,7 +65,7 @@ export function useShellLayout() {
     threadInView: hasThread,
     threadQuiet,
     focusMode,
-    sidebarWidth: sidebarWidthFor(sidebarWidth, windowWidth),
+    sidebarWidth,
     sidebarPeek: settingsStrip ? false : sidebarPeek,
     overviewSidebar: settingsStrip ? "compact" : overviewSidebar,
     panelOpen,
@@ -79,7 +79,13 @@ export function useShellLayout() {
     reviewRequestsPlacement,
     openPrsPlacement,
   };
-  const fit = fitShell(input);
+  // The untouched sidebar widens with the window, but only while the panel is closed: a review or
+  // a tab beside the chat keeps the room it had, and expanding one doesn't move the sidebar.
+  const stored = fitShell(input);
+  const fit =
+    stored.panel !== "none"
+      ? stored
+      : fitShell({ ...input, sidebarWidth: sidebarWidthFor(sidebarWidth, windowWidth) });
   // The panel and sidebar as they'd be without the review's focus, which the chat keeps its width
   // under, so the transcript isn't laid out anew.
   const unfocused = fit.reviewFocus ? fitShell({ ...input, reviewFocus: false }) : fit;
