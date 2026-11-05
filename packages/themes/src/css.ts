@@ -33,8 +33,9 @@ const round = (v: number, digits = 3) => Number(v.toFixed(digits));
 const rem = (px: number) => `${round(px / 16, 4)}rem`;
 
 /**
- * The type scale as `--type-<step>-size`, `-line` and, where a step has one, `-weight`; globals.css
- * maps them to the `text-<step>` utilities. A step without a weight inherits its parent's.
+ * The type scale as `--type-<step>-size`, `-line`, `-tracking` and, where a step has one,
+ * `-weight`; globals.css maps them to the `text-<step>` utilities. A step without a weight inherits
+ * its parent's.
  */
 function typeVariables(look: Look): CssVariables {
   const vars: CssVariables = {};
@@ -43,6 +44,7 @@ function typeVariables(look: Look): CssVariables {
     vars[`--type-${step}-size`] = rem(style.size);
     vars[`--type-${step}-line`] = rem(style.lineHeight);
     if (style.weight !== undefined) vars[`--type-${step}-weight`] = `${style.weight}`;
+    vars[`--type-${step}-tracking`] = style.tracking === undefined ? "0em" : `${style.tracking}em`;
   }
   return vars;
 }

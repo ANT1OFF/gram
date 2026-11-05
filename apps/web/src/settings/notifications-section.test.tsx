@@ -299,6 +299,10 @@ describe("NotificationsSection", () => {
     );
     await waitFor(() => expect(radio("None").getAttribute("aria-checked")).toBe("true"));
 
+    // None has nothing to preview; a sound names the one its preview plays.
+    expect(screen.queryByTestId("sound-preview")).toBeNull();
+    fireEvent.click(radio("Marimba"));
+    await waitFor(() => expect(radio("Marimba").getAttribute("aria-checked")).toBe("true"));
     updateSettings.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Preview Marimba" }));
     expect(playChime).toHaveBeenCalledWith("marimba");
@@ -329,7 +333,7 @@ describe("NotificationsSection", () => {
     expect(screen.queryByTestId("sound-motion-off")).toBeNull();
     act(() => themeStore.setState({ motion: "off" }));
     expect(screen.getByTestId("sound-motion-off").textContent).toContain("Preview still plays");
-    fireEvent.click(screen.getByRole("button", { name: "Preview Bell" }));
-    expect(playChime).toHaveBeenCalledWith("bell");
+    fireEvent.click(screen.getByRole("button", { name: "Preview Chime" }));
+    expect(playChime).toHaveBeenCalledWith("chime");
   });
 });

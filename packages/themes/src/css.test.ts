@@ -36,7 +36,7 @@ describe("generateThemeCss", () => {
       mode: "dark",
       contrast: "standard",
     });
-    expect(vars["--p-bg"]).toBe("#0a0a0a");
+    expect(vars["--p-bg"]).toBe("#131313");
   });
 });
 

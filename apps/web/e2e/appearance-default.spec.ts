@@ -57,7 +57,7 @@ for (const state of [undefined, {}, { motion: "off" }]) {
     ).toHaveAttribute("aria-pressed", "true");
     expect(
       await root.evaluate((el) => getComputedStyle(el).getPropertyValue("--p-bg").trim()),
-    ).toBe("#0a0a0a");
+    ).toBe("#131313");
     await page.emulateMedia({ colorScheme: "dark" });
     await page.emulateMedia({ colorScheme: "light" });
     await page.reload();

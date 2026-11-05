@@ -3,7 +3,6 @@ import { Check, Play } from "lucide-react";
 import { useRef, useState, type KeyboardEvent } from "react";
 
 import { errorMessage } from "@/api/errors";
-import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { CHIME_SOUNDS, playChime } from "@/desktop/chime";
 import { useMotionLevel } from "@/motion";
@@ -140,26 +139,20 @@ export function NotificationsSection() {
           onReset={resetOf("sound")}
           error={errorOf("sound")}
           detail={
-            <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-1 text-meta text-muted-foreground">
-                <span>Preview</span>
-                {SOUNDS.map((sound) => (
-                  <Hint
-                    key={sound}
-                    label={`Preview ${CHIME_SOUNDS[sound].label}`}
-                    render={
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        aria-label={`Preview ${CHIME_SOUNDS[sound].label}`}
-                        onClick={() => playChime(sound)}
-                      />
-                    }
-                  >
-                    <Play />
-                  </Hint>
-                ))}
-              </div>
+            <div className="flex flex-col items-start gap-1">
+              {/* One named preview, of the sound chosen: pick a sound, then hear it. */}
+              {current !== undefined && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  data-testid="sound-preview"
+                  className="-ms-2"
+                  onClick={() => playChime(current)}
+                >
+                  <Play aria-hidden data-icon="inline-start" />
+                  Preview {CHIME_SOUNDS[current].label}
+                </Button>
+              )}
               {motion === "off" && current !== undefined && (
                 <p data-testid="sound-motion-off" className="text-meta text-muted-foreground">
                   Motion is Off, so notifications stay quiet. Preview still plays the sound.

@@ -1,5 +1,5 @@
 import type { GramUIMessage } from "@gram/contracts";
-import { ChevronRight, History } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { PR_STATE_DISPLAY } from "@/components/pr-marks-model";
@@ -24,7 +24,7 @@ const COUNT_TONE: Record<string, string> = {
 /**
  * The background events a run of digests brought, as one update in the orchestrator's stream: a
  * single light rule line, "09:19 · Update · 2 merged · 1 report ───", its time first, muted and with
- * no box, so it reads as a marker between the orchestrator's answers rather than one of them. It opens in place on every line it gathered and on the digests behind
+ * no box and no glyph but its fold's chevron (History's clock means History), so it reads as a marker between the orchestrator's answers rather than one of them. It opens in place on every line it gathered and on the digests behind
  * them, so nothing is hidden, only folded; an update with a line that needs the user or failed
  * starts open. A run that spoke no line is its digest line alone, in the same box.
  *
@@ -88,7 +88,6 @@ export function UpdateBlock({
             open && "rotate-90",
           )}
         />
-        <History aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         <UpdateTime time={words.time} />
         <span className="min-w-0 truncate text-muted-foreground">
           <span className="font-medium">Update</span>
@@ -173,7 +172,6 @@ function QuietUpdate({
             open && "rotate-90",
           )}
         />
-        <History aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         <UpdateTime time={time} />
         <span className="min-w-0 truncate text-muted-foreground">
           <span className="font-medium">Update</span>

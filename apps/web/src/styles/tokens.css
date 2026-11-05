@@ -128,6 +128,9 @@
   --surface-raised: var(--surface-3);
   --edge-raised: color-mix(in srgb, var(--border-strong) 18%, var(--border-subtle));
   --edge-action: color-mix(in srgb, var(--border-strong) 30%, var(--border-subtle));
+  /* A settings group's card: in dark its fill is the step (surface-3 sits clearly off the page), so
+     it takes no outline; light's raised step is too faint to carry it alone and keeps the hairline. */
+  --edge-group: transparent;
 
   /* A control laid over a picture (an attachment's remove button): dark in every palette, since
      what is under it is the picture, not the theme. */
@@ -154,6 +157,8 @@
   /* The thread column: the transcript, the composer and the strips beside them. Settings →
      Appearance → Reading sets --transcript-max-width (thread/reading.ts); 48rem is Comfortable. */
   --thread-max-width: var(--transcript-max-width, 48rem);
+  /* The longest line of transcript prose (globals.css), whatever the column's width. */
+  --reading-measure: 70ch;
   /* How the column sits in a pane wider than it: this share of the spare room before it, the rest
      after (globals.css thread-column). */
   --thread-lean: 0.4;
@@ -163,10 +168,9 @@
   --settings-column-width: 60rem;
   --settings-column-wide: 68rem;
   --settings-lean: 0.3;
-  /* A setting's or a group's line of description: a step nearer the text than a row's metadata,
-     since it is read rather than glanced at, and no wider than a comfortable line of prose. Mixing
-     toward fg only raises contrast, so it holds every floor fg-muted holds. */
-  --fg-description: color-mix(in oklab, var(--fg-muted) 70%, var(--fg));
+  /* A setting's or a group's line of description: the secondary colour, so the setting's name (fg,
+     medium) and what it does read as two levels, and no wider than a comfortable line of prose. */
+  --fg-description: var(--fg-muted);
   --description-measure: 38rem;
 
   /* The composer slab (its radius is per look): a faint outline with the shadow tucked under it, so
@@ -228,6 +232,7 @@
    @gram/themes mirrors the strengths. */
 [data-mode="light"] {
   --scrim-strength: 0.82;
+  --edge-group: color-mix(in srgb, var(--border-subtle) 60%, transparent);
   /* On pale chrome a 14% accent and a surface-3 fill barely show: the open thread's row, its
      workspace's line and the sidebar's group lines take a step more, still restrained. */
   --selected-bg: color-mix(in oklab, var(--accent) 20%, var(--surface-3));
@@ -245,6 +250,7 @@
 
 [data-contrast="more"] {
   --edge-raised: var(--border-strong);
+  --edge-group: var(--border-strong);
   --edge-action: var(--border-strong);
   --composer-outline: var(--border-strong);
   --composer-focus-width: var(--focus-width);
@@ -257,6 +263,7 @@
     --elevation-modal: none;
     --edge-raised: CanvasText;
     --edge-action: CanvasText;
+    --edge-group: CanvasText;
     --composer-outline: CanvasText;
     --composer-focus-width: var(--focus-width);
     --shadow-composer: none;
