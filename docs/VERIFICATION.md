@@ -77,6 +77,36 @@ captures their key steps in `out/flows/`, with its own index. It defaults to dar
 replaces all of `out/`). The flow shots verify mock actions such as saving settings, stopping
 a turn and retrying an error; they do not qualify native or provider behavior.
 
+### Scripted rating tasks
+
+```sh
+bun run --filter @gram/web pr:shots --set tasks
+```
+
+This contributor-only set drives 12 rubric tasks through visible roles, labels and keyboard
+shortcuts over the realistic mock. It writes `tasks.json`, `tasks.md`, one WebM per task and
+key-frame PNGs to gitignored `apps/web/pr-shots/out/tasks/`. Do not commit recordings or images.
+It defaults to dark; `--mode light`, `--size 1440x900`, `--list` and `--shot 11-stop` work here too.
+A tasks run replaces only `out/tasks/`; a full tour replaces all of `out/`.
+
+Each task declares its start and goal. Fixture staging and initial navigation are outside the
+measurement; measured actions never call mock controls or navigate by URL. One click, keyboard
+chord or contiguous text entry counts as one step; focusing an input counts as a click unless it
+already has focus. Reports retain attempted actions, completion checks, dead ends and frames.
+An unexpected failure exits nonzero and stays failed, rather than becoming “not possible”.
+The JSON includes the app's Git revision, capture date, viewport and per-task theme. Elapsed time
+excludes setup and PNG capture overhead, includes UI waits, and measures automation, not human
+speed or live-provider latency. Videos include the brief setup; `taskStartVideoMs` is the
+approximate measured start offset. A reload used to verify settings persistence is an assertion,
+not a counted task step. The chosen tasks include a diff, an approval and an effort change;
+they do not claim to qualify every alternative in those rubric categories.
+
+To drive a separate installed checkout of main with this worktree's runner, set
+`GRAM_PR_SHOTS_WEB_DIR` to that checkout's `apps/web` directory. Keep its pinned dependencies
+installed. The report records that checkout's revision; no source files are copied into it.
+Inspect every task's start/final frames and recording before giving the evidence to raters.
+These synthetic runs qualify browser UI paths only.
+
 ## Local checks
 
 | Command                        | Scope                                                                                                |
