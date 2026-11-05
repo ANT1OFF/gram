@@ -103,7 +103,7 @@ import { peek } from "./peek-store";
 import { NESTED_TONE_DOT, type RailTone } from "./rail-model";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
-import { useNeedsYou, useNeedsYouCounts } from "./use-needs-you";
+import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
@@ -398,7 +398,7 @@ export function useCarryOverviewFocus(sidebar: ShellFit["sidebar"]): void {
  * here and how much elsewhere, are on its hover.
  */
 function NeedsYou() {
-  const { count, scope: where, label, hint, openAsks } = useNeedsYou();
+  const { count, scope: where, label, hint, openAsks } = useNeedsYouPill();
   // A true first run, with no thread yet, has nothing to need you: the welcome is the one thing
   // to look at, without a count beside it.
   if (useBeforeSetup()) return null;

@@ -196,15 +196,26 @@ export function useNeedsYouCounts(): NeedsYouCounts {
 }
 
 /**
- * Needs you's count across every workspace, what it is by kind ("1 question, 1 error"), how much
- * of it is here and how much elsewhere (`scopeLines`, for the pill's hover) and the Inbox's toggle,
- * for the title bar's button, and `openAsks` for the sidebar's pills: a count opens on the newest
- * ask, here before elsewhere, and never on the first error.
+ * Needs you's count across every workspace, what it is by kind ("1 question, 1 error") and the
+ * Inbox's toggle, for the title bar's button. Reads no route: the pills' own here/elsewhere is
+ * `useNeedsYouPill`'s.
  */
 export function useNeedsYou() {
   const { total } = useNeedsYouCounts();
-  const { items, groups } = useNeedsYouList();
+  const { items } = useNeedsYouList();
   const kinds = useMemo(() => kindsText(items), [items]);
+  const hint = useShortcutHint("inbox.open");
+  return { count: total, kinds, open: toggleInbox, label: "Inbox", hint };
+}
+
+/**
+ * The sidebar's pills: `useNeedsYou`, plus how much of the count is here and how much elsewhere
+ * (`scopeLines`, for the hover) and `openAsks`, which opens on the newest ask in the workspace in
+ * view, or anywhere when nothing here asks, and never on the first error.
+ */
+export function useNeedsYouPill() {
+  const needs = useNeedsYou();
+  const { groups } = useNeedsYouList();
   const solo = useViewSolo();
   const viewed = useViewWorkspace()?.workspace;
   const hereId = solo ? undefined : viewed?.id;
@@ -217,16 +228,9 @@ export function useNeedsYou() {
       ).join("\n"),
     [groups, hereId, hereName],
   );
-  const hint = useShortcutHint("inbox.open");
   return {
-    count: total,
-    kinds,
+    ...needs,
     scope,
-    open: toggleInbox,
-    // On the newest ask in the workspace in view, as its line's badge counts it; anywhere when
-    // nothing here asks.
     openAsks: () => showInbox(hereId === undefined ? { ask: true } : { workspaceId: hereId }),
-    label: "Inbox",
-    hint,
   };
 }
