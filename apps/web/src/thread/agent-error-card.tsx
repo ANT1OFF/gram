@@ -16,6 +16,7 @@ import { resetText } from "@/usage/limit-format";
 
 import { attemptsOf, errorKey, type AttemptFacts, type RetryReceipt } from "./attempt-model";
 import { failureLabel } from "./failure-kinds";
+import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
 import { retryKey, retryTimeOf, useRetrySchedule } from "./retry-time";
 
 /** Failures a gateway profile's settings can fix: its key, its models, or its spending limit. */
@@ -199,6 +200,7 @@ function ErrorCard({
       data-testid="agent-error"
       data-kind={error.kind}
       data-state="failed"
+      {...{ [HOLD_UNDER_POINTER]: "" }}
       className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-destructive/40 p-2.5 text-reading"
     >
       <CircleX aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />

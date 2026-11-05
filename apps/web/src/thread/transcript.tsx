@@ -25,6 +25,8 @@ import { isFoldOpen, useTurnFolds } from "@/stores/turn-folds";
 
 import { AwaitingToolsProvider } from "./awaiting-tools";
 import { CompactingLine } from "./compaction-marker";
+import { EmptyThread } from "./empty-thread";
+import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
 import { MessageBlock } from "./message-block";
 import { isToolPart, type Chapter } from "./parts";
 import { runningSubagents } from "./subagent-strip-model";
@@ -216,6 +218,12 @@ export function Transcript({
    * click on whatever was pressed (a tool row's toggle at the end, say) would be lost.
    */
   const [pressing, setPressing] = useState(false);
+  /**
+   * The row of an actionable card under the pointer (`HOLD_UNDER_POINTER`), by its message id. While
+   * there is one, rows above it that change size move the scroll with them and following holds off,
+   * so the card stays where the pointer is rather than sliding from under a click.
+   */
+  const held = useRef<string>(undefined);
   const inProgress = useThreadsStore((s) => TURN_IN_PROGRESS.has(s.byId[threadId]?.status ?? ""));
   const compaction = useThreadsStore((s) => s.byId[threadId]?.compaction);
   // Measured: in a narrow pane the line wraps, and the room under the last row must grow with it.
@@ -324,7 +332,7 @@ export function Transcript({
     // End anchoring also follows row remeasurement, independently of followOnAppend and the
     // size-change predicate below. A negative threshold disables that while the reader is paused,
     // including the frame between an upward gesture and its native scroll event.
-    scrollEndThreshold: following.current ? 1 : -1,
+    scrollEndThreshold: following.current && held.current === undefined ? 1 : -1,
     getItemKey: (index) => messages[index]?.id ?? index,
     paddingStart: earlier ? EARLIER_ROW : 0,
     // Room under the last row, and in what following scrolls to, so the newest line sits clear of
@@ -337,13 +345,19 @@ export function Transcript({
     (value: boolean) => {
       following.current = value;
       // ResizeObserver may run before React commits this input event's state update.
-      virtualizer.options.scrollEndThreshold = value ? 1 : -1;
+      virtualizer.options.scrollEndThreshold = value && held.current === undefined ? 1 : -1;
       setIsFollowing(value);
     },
     [virtualizer],
   );
 
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    // A row above a held card moves the scroll by what it grew or shrank, so the card stays put.
+    const hold = held.current;
+    if (hold !== undefined) {
+      const card = instance.measurementsCache.find((each) => each.key === hold);
+      if (card !== undefined && item.index < card.index) return true;
+    }
     const offset = (instance.scrollOffset ?? 0) + instance.scrollAdjustments;
     // Keep the default first-measure and spanning-row rules. Width reflow above the fold
     // preserves the reader's current position even after backward navigation or manual input.
@@ -398,7 +412,7 @@ export function Transcript({
   // brings into view.
   const compactingSince = compaction?.startedAt;
   useEffect(() => {
-    if (following.current && messages.length > 0) {
+    if (following.current && held.current === undefined && messages.length > 0) {
       virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
     }
   }, [messages, compactingSince, compactingRow, virtualizer]);
@@ -577,6 +591,20 @@ export function Transcript({
     }
   };
 
+  /** Holds the actionable card the pointer is on, if any, and lets go of the one it left. */
+  const holdUnder = (target: EventTarget | null) => {
+    const card = target instanceof Element ? target.closest(`[${HOLD_UNDER_POINTER}]`) : null;
+    const row = card?.closest<HTMLElement>("[data-index]");
+    const key = row ? messages[Number(row.dataset["index"])]?.id : undefined;
+    if (key === held.current) return;
+    const released = held.current !== undefined && key === undefined;
+    held.current = key;
+    virtualizer.options.scrollEndThreshold = following.current && key === undefined ? 1 : -1;
+    // What arrived below while the card was held comes into view once the pointer has left it.
+    if (released && following.current && messages.length > 0)
+      virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+  };
+
   const jumpToLatest = () => {
     pendingJump.current = undefined;
     virtualizer.cancelScroll();
@@ -679,6 +707,8 @@ export function Transcript({
           touchPosition.current = undefined;
           manualGesture.current = undefined;
         }}
+        onPointerOver={(event) => holdUnder(event.target)}
+        onPointerLeave={() => holdUnder(null)}
         onPointerDown={(event) => {
           setPressing(true);
           const release = () => {
@@ -769,7 +799,7 @@ export function Transcript({
         {loading ? (
           <p className="p-6 text-reading text-muted-foreground">Loading conversation…</p>
         ) : messages.length === 0 ? (
-          <p className="p-6 text-reading text-muted-foreground">No messages yet.</p>
+          <EmptyThread threadId={threadId} />
         ) : (
           <PrRefsProvider threadId={threadId}>
             <FileRefsProvider threadId={threadId}>

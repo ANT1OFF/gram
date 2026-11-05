@@ -1,6 +1,7 @@
 import type { DiffFile, DiffFileStatus } from "@gram/contracts";
 import {
   ChevronRight,
+  Copy,
   FileMinus,
   FilePen,
   FilePlus,
@@ -13,9 +14,12 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
+import { errorMessage } from "@/api/errors";
+import { Button } from "@/components/ui/button";
 import { revealLabel } from "@/editor/use-open-in-editor";
 import { cn } from "@/lib/utils";
 import { Expand, NumberTicker } from "@/motion";
+import { copyText } from "@/settings/copy-text";
 import type { DiffLayout } from "@/stores/layout";
 
 import { PatchView } from "./patch-view";
@@ -111,6 +115,7 @@ export function DiffFileList({
             {...(onOpenInEditor && exists ? { onOpenInEditor } : {})}
             {...(onRevealInFileManager && exists ? { onRevealInFileManager } : {})}
             {...(focus?.path === file.path ? { focusKey: focus.key, focusHunk: focus.hunk } : {})}
+            reviewable={files.length - files.filter((f) => f.tooLarge || f.binary).length}
           />
         );
       })}
@@ -128,11 +133,14 @@ function DiffFileRow({
   onRevealInFileManager,
   focusKey,
   focusHunk,
+  reviewable,
 }: {
   file: DiffFile;
   layout: DiffLayout;
   wrap: boolean;
   defaultOpen: boolean;
+  /** Files in the list whose patch shows here, for a too-large file's note. */
+  reviewable: number;
   onReveal?: (path: string) => void;
   onOpenInEditor?: (path: string) => void;
   onRevealInFileManager?: (path: string) => void;
@@ -269,16 +277,103 @@ function DiffFileRow({
       <Expand open={open} id={bodyId}>
         {rendered && (
           <div className="border-t border-border bg-card/40">
-            <PatchView
-              file={file}
-              layout={layout}
-              wrap={wrap}
-              current={focusHunk}
-              revealKey={focusHunk === undefined ? undefined : focusKey}
-            />
+            {file.tooLarge ? (
+              <TooLargeNote
+                file={file}
+                reviewable={reviewable}
+                {...(onOpenInEditor ? { onOpenInEditor } : {})}
+                {...(onReveal ? { onReveal } : {})}
+              />
+            ) : (
+              <PatchView
+                file={file}
+                layout={layout}
+                wrap={wrap}
+                current={focusHunk}
+                revealKey={focusHunk === undefined ? undefined : focusKey}
+              />
+            )}
           </div>
         )}
       </Expand>
     </li>
+  );
+}
+
+/** `path` quoted for a POSIX shell. */
+const shellQuote = (path: string) =>
+  /^[\w./@+-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
+
+/** The command that prints `file`'s patch from its checkout, as the Diff panel would show it. */
+export const diffCommand = (file: DiffFile) =>
+  file.status === "untracked" || file.status === "added"
+    ? `git diff --no-index -- /dev/null ${shellQuote(file.path)}`
+    : `git diff -- ${shellQuote(file.path)}`;
+
+/**
+ * A patch past the view limit: what it changed, what is still reviewable here, and the ways to read
+ * it elsewhere (the editor, Files, or the `git diff` command for a terminal).
+ */
+function TooLargeNote({
+  file,
+  reviewable,
+  onOpenInEditor,
+  onReveal,
+}: {
+  file: DiffFile;
+  reviewable: number;
+  onOpenInEditor?: (path: string) => void;
+  onReveal?: (path: string) => void;
+}) {
+  const [copied, setCopied] = useState<string>();
+  const copy = async () => {
+    try {
+      await copyText(diffCommand(file));
+      setCopied("Copied. Run it in the checkout to see the whole patch.");
+    } catch (error) {
+      setCopied(`Couldn't copy: ${errorMessage(error)}`);
+    }
+  };
+  const lines = file.additions + file.deletions;
+  return (
+    <div data-testid="diff-too-large" className="flex flex-col gap-2 px-3 py-2 text-meta">
+      <p className="text-foreground">
+        This patch is too large to show here ({lines.toLocaleString("en-US")} changed{" "}
+        {lines === 1 ? "line" : "lines"}).
+      </p>
+      <p className="text-muted-foreground">
+        {reviewable === 0
+          ? "Read it in your editor or a terminal."
+          : `${reviewable === 1 ? "The other file" : `The other ${reviewable} files`} in this diff ${reviewable === 1 ? "is" : "are"} reviewable here. Read this one in your editor or a terminal.`}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {onOpenInEditor && (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={() => onOpenInEditor(file.path)}
+          >
+            <SquareArrowOutUpRight data-icon="inline-start" />
+            Open in editor
+          </Button>
+        )}
+        {onReveal && (
+          <Button type="button" size="xs" variant="ghost" onClick={() => onReveal(file.path)}>
+            <FolderSearch data-icon="inline-start" />
+            Show in Files
+          </Button>
+        )}
+        <Button type="button" size="xs" variant="ghost" onClick={() => void copy()}>
+          <Copy data-icon="inline-start" />
+          Copy git diff command
+        </Button>
+      </div>
+      {copied && (
+        <p role="status" className="text-muted-foreground">
+          {copied}
+        </p>
+      )}
+    </div>
   );
 }

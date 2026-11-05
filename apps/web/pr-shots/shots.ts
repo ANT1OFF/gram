@@ -1080,6 +1080,80 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "settings-folder-saved",
+    title: "Settings: Default folder just saved with Enter",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/general");
+      const folder = page.getByLabel("Default folder", { exact: true });
+      await folder.fill("~/work/sandbox");
+      await folder.press("Enter");
+      await page.waitForTimeout(400);
+    },
+    element: (page) => page.getByRole("region", { name: "Branches" }),
+  },
+  {
+    name: "settings-folder-draft",
+    title: "Settings: Default folder typed in, not saved yet",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/general");
+      await page.getByLabel("Default folder", { exact: true }).fill("~/work/sandbox");
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByRole("region", { name: "Branches" }),
+  },
+  {
+    name: "settings-folder-invalid",
+    title: "Settings: a relative Default folder, refused in place",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/general");
+      const folder = page.getByLabel("Default folder", { exact: true });
+      await folder.fill("work");
+      await folder.press("Enter");
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByRole("region", { name: "Branches" }),
+  },
+  {
+    name: "diff-too-large",
+    title: "Diff: a file past the view limit, beside a reviewable one",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.goto("/t/t-deps");
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      await page
+        .getByRole("button", { name: /\d+ files? changed/ })
+        .first()
+        .click();
+      await page.locator('[data-testid="diff-file"][data-path="pnpm-lock.yaml"]').waitFor();
+      await page.waitForTimeout(300);
+    },
+    element: (page) => page.getByTestId("right-panel"),
+  },
+  {
+    name: "worker-outcome",
+    title: "A finished worker opened from Done, with no messages stored",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.addInitScript(() =>
+        sessionStorage.setItem("gram.mock.orchestration", "realistic"),
+      );
+      await page.goto("/");
+      await page.getByTestId("app-shell").waitFor();
+      await page.evaluate(() => window.gramMock!.startedRealistic());
+      await page.getByRole("button", { name: /^Release notes for 0.9, Gram, merged/ }).click();
+      await page
+        .getByRole("heading", { name: "Worker: Release notes for 0.9", exact: true })
+        .waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "workspace-sheet",
     title: 'Workspace settings from the title bar\'s "…"',
     modes: ["dark"],

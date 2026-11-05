@@ -1301,6 +1301,15 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     return simulateStatus(this.#scenes, threadId, status, detail, compaction);
   }
 
+  /**
+   * Resolves once `threadId` has no turn running, as before a hook that stages a later turn: the
+   * server runs one turn at a time, so a failed turn can't land while an earlier one still streams.
+   */
+  async turnEnded(threadId: ThreadId): Promise<void> {
+    const runtime = this.#runtime(threadId);
+    while (runtime.running) await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
   /** `simulateTurnError` (`mock-thread-sims.ts`). */
   simulateTurnError(threadId: ThreadId, error: Omit<ThreadError, "turnId" | "at">, text: string) {
     return simulateTurnError(this.#scenes, threadId, error, text);

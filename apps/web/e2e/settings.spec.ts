@@ -35,6 +35,39 @@ test("general settings persist across a reload", async ({ page }) => {
   );
 });
 
+test("a folder field says how to save, then Saved, and why a path can't be saved", async ({
+  page,
+}) => {
+  await page.goto("/settings/general");
+  const general = page.getByTestId("general-settings");
+  const folder = general.getByLabel("Default folder", { exact: true });
+  const row = general
+    .locator("[data-setting]")
+    .filter({ has: page.getByLabel("Default folder", { exact: true }) });
+
+  await folder.fill("~/work/sandbox");
+  await expect(row.getByTestId("setting-unsaved")).toHaveText("Enter or Tab to save");
+  await folder.press("Enter");
+  // The row that saved says so, though the save changed its value and its reset now shows.
+  await expect(row.getByTestId("setting-saved")).toBeVisible();
+  await expect(row.getByTestId("setting-unsaved")).toHaveCount(0);
+  await expect(row.getByTestId("setting-reset")).toBeVisible();
+
+  // A relative path is not saved: the field says why, in place, and keeps the draft to fix.
+  await folder.fill("work");
+  await folder.press("Enter");
+  await expect(row.getByText("Use a full path, starting with ~/ or /.")).toBeVisible();
+  await expect(folder).toHaveAttribute("aria-invalid", "true");
+  await expect(folder).toHaveValue("work");
+  // Escape puts the saved value back.
+  await folder.press("Escape");
+  await expect(folder).toHaveValue("~/work/sandbox");
+  await expect(row.getByText("Use a full path, starting with ~/ or /.")).toHaveCount(0);
+
+  await page.reload();
+  await expect(folder).toHaveValue("~/work/sandbox");
+});
+
 test("each tab is a page, with history, and Settings reopens on the last one", async ({ page }) => {
   await page.goto("/settings");
   await expect(page).toHaveURL(/\/settings\/general$/);
@@ -387,7 +420,8 @@ test("Settings is focused: the overview gives way to Back, and General's section
   await expect(page.getByTestId("overview-sidebar")).toHaveCount(0);
   const strip = page.getByTestId("settings-strip");
   await expect(strip).toBeVisible();
-  expect((await strip.boundingBox())!.width).toBeLessThanOrEqual(64);
+  // The column narrows as Settings appears, so its width settles a moment after.
+  await expect.poll(async () => (await strip.boundingBox())!.width).toBeLessThanOrEqual(64);
 
   // General's subsections, linked under it, scroll the page to each.
   const sections = page.getByTestId("settings-page-sections");
@@ -418,4 +452,37 @@ test("Settings is focused: the overview gives way to Back, and General's section
   await expect(page).not.toHaveURL(/\/settings/);
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
   await expect(page.getByTestId("settings-strip")).toHaveCount(0);
+});
+
+test("opening Settings never shows its Back strip beside the thread it is leaving", async ({
+  page,
+}) => {
+  // Settings' code arrives late, as on a cold start, so the router keeps the thread up meanwhile.
+  await page.route(/\/src\/(settings|routes\/settings)/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await route.continue();
+  });
+  await page.goto("/t/t-deps");
+  const composer = page.getByLabel("Message", { exact: true });
+  await expect(composer).toBeVisible();
+  await page.evaluate(() => {
+    const probe = { mixed: 0 };
+    (window as unknown as { gramMixedFrames: typeof probe }).gramMixedFrames = probe;
+    const sample = () => {
+      const strip = document.querySelector('[data-testid="settings-strip"]');
+      const thread = document.querySelector('[aria-label="Message"]');
+      if (strip && thread) probe.mixed++;
+      if (!document.querySelector('[data-testid="general-settings"]'))
+        requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await page.keyboard.press("ControlOrMeta+,");
+  await expect(page.getByTestId("general-settings")).toBeVisible();
+  await expect(page.getByTestId("settings-strip")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { gramMixedFrames: { mixed: number } }).gramMixedFrames.mixed,
+    ),
+  ).toBe(0);
 });

@@ -16,6 +16,9 @@ const openApproval = shot("thread");
 const retryableError = async (page: Page) => {
   await page.goto("/t/t-docs");
   await page.getByLabel("Message", { exact: true }).waitFor();
+  // t-docs plays its README turn on load; the failed turn follows it, as the server would. A base
+  // from before the hook just doesn't wait.
+  await page.evaluate(() => window.gramMock!.turnEnded?.("t-docs" as never));
   await page.evaluate(() =>
     window.gramMock!.simulateTurnError(
       "t-docs" as never,

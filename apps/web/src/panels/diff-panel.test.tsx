@@ -19,6 +19,9 @@ vi.mock("@/motion/number-ticker", () => ({
   NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
 }));
 
+const copyText = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/settings/copy-text", () => ({ copyText }));
+
 const T = "t-flaky" as ThreadId;
 
 afterEach(() => {
@@ -97,7 +100,14 @@ describe("DiffPanel", () => {
     fireEvent.click(within(files[0]!).getAllByRole("button")[0]!);
     expect(within(files[0]!).getByText("Binary file not shown")).toBeTruthy();
     fireEvent.click(within(files[5]!).getAllByRole("button")[0]!);
-    expect(within(files[5]!).getByText("Diff too large to display")).toBeTruthy();
+    // A file past the view limit isn't a dead end: it says what is still reviewable here and
+    // offers another way to read it.
+    const tooLarge = within(files[5]!).getByTestId("diff-too-large");
+    expect(tooLarge.textContent).toContain("This patch is too large to show here");
+    expect(tooLarge.textContent).toContain("The other 4 files in this diff are reviewable here.");
+    fireEvent.click(within(tooLarge).getByRole("button", { name: "Copy git diff command" }));
+    expect(copyText).toHaveBeenCalledWith("git diff --no-index -- /dev/null vendor.js");
+    expect(await within(tooLarge).findByRole("status")).toBeTruthy();
   });
 
   it("asks again without whitespace-only changes, and wraps lines, as remembered", async () => {

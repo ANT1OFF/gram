@@ -10,7 +10,7 @@ import {
   type SettingsPatch,
 } from "@gram/contracts";
 import { Settings2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
@@ -198,8 +198,6 @@ export function GeneralSection() {
         description="Where new threads and clones start, and how their branches are named."
       >
         <FolderField
-          // A saved value from elsewhere resets the draft.
-          key={`default:${settings.agents.defaultFolder ?? ""}`}
           id="settings-default-folder"
           label="Default folder"
           description="Where the project picker starts for a new thread. ~ is your home folder."
@@ -212,7 +210,6 @@ export function GeneralSection() {
           }
         />
         <FolderField
-          key={`clone:${settings.agents.cloneFolder ?? ""}`}
           id="settings-clone-folder"
           label="Where new clones go"
           description="Where repositories added by GitHub name or URL are cloned."
@@ -437,7 +434,20 @@ export function KeepInTraySetting() {
   );
 }
 
-/** A folder setting, saved on blur or Enter; an empty field clears it. */
+/**
+ * Why `folder` can't be saved as a folder setting, if it can't: the server resolves it on its own,
+ * so a relative path would mean nothing it could show here. Empty clears the setting.
+ */
+function folderProblem(folder: string): string | undefined {
+  if (folder === "" || folder === "~" || /^(~[/\\]|\/|[A-Za-z]:[/\\]|\\\\)/.test(folder)) return;
+  return "Use a full path, starting with ~/ or /.";
+}
+
+/**
+ * A folder setting, saved on Enter or when the field loses focus; an empty field clears it, and
+ * Escape puts the saved value back. While the draft differs from what is saved, the row says how to
+ * save it; once saved it says "Saved", and a path it can't save says why under the row.
+ */
 function FolderField({
   id,
   label,
@@ -458,10 +468,24 @@ function FolderField({
   error: string | undefined;
 }) {
   const [draft, setDraft] = useState(value ?? "");
+  const [invalid, setInvalid] = useState<string>();
+  const [saved, setSaved] = useState(value);
+  // A saved value, from here or elsewhere, resets the draft. The row stays mounted, so the "Saved"
+  // its own save shows stays with it.
+  if (value !== saved) {
+    setSaved(value);
+    setDraft(value ?? "");
+    setInvalid(undefined);
+  }
+  const hintId = useId();
+  const unsaved = draft.trim() !== (value ?? "") && invalid === undefined;
 
   const commit = () => {
     const next = draft.trim();
-    if (next !== (value ?? "")) onSave(next);
+    if (next === (value ?? "")) return setInvalid(undefined);
+    const problem = folderProblem(next);
+    setInvalid(problem);
+    if (problem === undefined) onSave(next);
   };
 
   return (
@@ -470,7 +494,18 @@ function FolderField({
       description={description}
       htmlFor={id}
       onReset={onReset}
-      error={error}
+      error={invalid ?? error}
+      status={
+        unsaved ? (
+          <span
+            id={hintId}
+            data-testid="setting-unsaved"
+            className="text-meta text-muted-foreground"
+          >
+            Enter or Tab to save
+          </span>
+        ) : undefined
+      }
     >
       <input
         id={id}
@@ -478,10 +513,19 @@ function FolderField({
         value={draft}
         placeholder={placeholder}
         spellCheck={false}
-        onChange={(event) => setDraft(event.target.value)}
+        aria-invalid={invalid !== undefined || undefined}
+        aria-describedby={unsaved ? hintId : undefined}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setInvalid(undefined);
+        }}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === "Enter") commit();
+          if (event.key === "Escape") {
+            setDraft(value ?? "");
+            setInvalid(undefined);
+          }
         }}
       />
     </SettingRow>

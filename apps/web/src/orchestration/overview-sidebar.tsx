@@ -761,7 +761,9 @@ export function WorkerRow({
     ...(agent === undefined ? [] : [agentLabel(agent)]),
     ...(lastActivity === undefined ? [] : [`last active ${formatClockTime(lastActivity)}`]),
   ];
+  const preview = usePickedPreview();
   const onClick = (event: MouseEvent<HTMLElement>) => {
+    preview.picked();
     if (besideKey(event)) keepBeside(row.threadId, openThread);
     else if (event.altKey) {
       peek({ kind: "worker", threadId: row.threadId, title: row.title }, event.currentTarget);
@@ -830,8 +832,13 @@ export function WorkerRow({
   }
   return (
     <RowMenu menu={<WorkerRowMenuItems threadId={row.threadId} />}>
-      <PreviewCard.Root>
-        <PreviewCard.Trigger delay={250} render={<button {...props} />}>
+      <PreviewCard.Root open={preview.open} onOpenChange={preview.onOpenChange}>
+        <PreviewCard.Trigger
+          delay={250}
+          render={<button {...props} />}
+          onMouseLeave={preview.onMouseLeave}
+          onBlur={preview.onBlur}
+        >
           {body}
         </PreviewCard.Trigger>
         <PreviewCard.Portal>
@@ -864,6 +871,37 @@ export function WorkerRow({
       {chips}
     </RowMenu>
   );
+}
+
+/**
+ * A row's hover card, closed by the click or Enter that opens the row: it would otherwise stay over
+ * the thread just opened, under a pointer that hasn't moved. It stays closed until a fresh hover,
+ * after the pointer has left the row, or a fresh focus, after the focus has left it; a focus still
+ * opens it from the keyboard.
+ */
+function usePickedPreview() {
+  const [open, setOpen] = useState(false);
+  const hoverQuiet = useRef(false);
+  const focusQuiet = useRef(false);
+  return {
+    open,
+    picked: () => {
+      hoverQuiet.current = true;
+      focusQuiet.current = true;
+      setOpen(false);
+    },
+    onOpenChange: (next: boolean, details: PreviewCard.Root.ChangeEventDetails) => {
+      if (next && details.reason === "trigger-hover" && hoverQuiet.current) return;
+      if (next && details.reason === "trigger-focus" && focusQuiet.current) return;
+      setOpen(next);
+    },
+    onMouseLeave: () => {
+      hoverQuiet.current = false;
+    },
+    onBlur: () => {
+      focusQuiet.current = false;
+    },
+  };
 }
 
 /** A row's 8 px dot, centred on its title's first line however many lines the title takes. */
