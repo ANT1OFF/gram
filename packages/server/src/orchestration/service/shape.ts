@@ -87,6 +87,14 @@ export interface SpawnWorkerInput {
    * set by the routines engine alone, never by the agent's tool.
    */
   readonly routine?: { readonly id: string; readonly name: string } | undefined;
+  /**
+   * Nobody is there to answer a card: a routine's run. Whatever would ask the user (one worker past
+   * the charter's cap, a repo outside the workspace, the limit threshold's question) refuses
+   * instead, with `unattended:` and why; the cap and the workspace's repos are checked under the
+   * spawn's own lock, so no other spawn lands between the check and the worker. Set by the routines
+   * engine alone, never by an agent's tool.
+   */
+  readonly unattended?: true | undefined;
 }
 
 /** What `spawn_worker` tells the orchestrator about a low-priority brief it held instead. */

@@ -662,6 +662,7 @@ export type RefusalCode =
   | "not_joinable"
   | "limit_paused"
   | "limit_unanswered"
+  | "unattended"
   | "feature_paused"
   | "unknown_question"
   | "closed"

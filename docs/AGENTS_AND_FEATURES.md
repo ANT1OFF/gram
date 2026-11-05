@@ -191,15 +191,20 @@ with `routine_list`, `routine_create` and `routine_update` (`remove: true` delet
 schedule is a few words: `daily 09:00`, `weekly mon 09:00` or `every 6 hours`.
 
 - A routine's worker is the orchestrator's, spawned through the same `spawn_worker` path, so the
-  workspace's autonomy, worker cap, limits, approvals and merge gates apply unchanged. A run that
-  would need the user's card (one worker past the cap) starts nothing and is recorded as failed,
-  and the orchestrator's next digest says why. Its brief opens by saying a routine started it, and
+  workspace's autonomy, worker cap, limits, approvals and merge gates apply unchanged. The spawn is
+  unattended: a run never raises a card. What would ask the user (one worker past the cap, a repo
+  outside the workspace, the limit threshold's question without an answer for that window) refuses
+  instead, the cap and the repos checked under the spawn's own lock so a racing spawn is counted.
+  The run is recorded as failed, and the orchestrator's next digest says why. Its brief opens by saying a routine started it, and
   its header says "From routine <name>".
 - A worker is bound `routine_create` alone, and its call always asks the user: a forced card that
   `bypassPermissions` and Full autonomy don't lift.
 - A run missed while Gram was closed runs once, a minute after the next start; the next one is
-  reckoned from it, never once per miss. While the worker from a routine's last run is still live
-  (or its held brief still waits), a due run is skipped and recorded so. A paused workspace pauses
+  reckoned from it, never once per miss. A run claims its slot before it starts anything, and its
+  spawn's request id comes from that claim, so a run a restart cut short finds its worker again
+  instead of making a second. While any worker the routine started is still live (a held brief
+  released later included), or a brief of its run is still held, a due run is skipped and
+  recorded so. A paused workspace pauses
   its routines: a run that falls due waits and runs once on the resume.
 - Times are read in the zone the machine was in when the routine was saved, so a daylight-saving
   change keeps 09:00 at 09:00; a time the change skips runs once that night.

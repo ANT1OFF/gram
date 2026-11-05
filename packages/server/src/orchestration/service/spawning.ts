@@ -399,6 +399,34 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ),
             );
           }
+          if (input.unattended === true) {
+            // Under the spawn lock, so a spawn racing this one is counted: what would need the
+            // user's card is refused here, never asked, and never let through on a stale count.
+            const outside = yield* outsideWorkspace(
+              tool,
+              [input.project, ...(input.alsoIn ?? [])],
+              state,
+            );
+            if (outside.length > 0) {
+              return yield* toolError(
+                tool,
+                refusal(
+                  "unattended",
+                  `It needs your approval to add ${outside.map(repoLabel).join(" and ")} to the "${state.workspace.name}" workspace, so no worker started.`,
+                ),
+              );
+            }
+            const { budget } = yield* survey(state, false);
+            if (!budgetVerdict({ charter: state.charter, liveWorkers: budget.liveWorkers }).ok) {
+              return yield* toolError(
+                tool,
+                refusal(
+                  "unattended",
+                  `It needs your approval: ${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}, so no worker started.`,
+                ),
+              );
+            }
+          }
           const project = yield* resolveProject(tool, input.project, state, call);
           const others: Array<Project> = [];
           for (const named of input.alsoIn ?? []) {

@@ -440,9 +440,18 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         now,
       ).filter((limit) => atThreshold(limit, pauseAtPct));
       for (const limit of reached) {
-        const decision =
-          holdOf((yield* readOutbox(workspaceId)).limitHolds, limit, now)?.decision ??
-          (yield* askLimit(callerId, workspaceId, limit, pauseAtPct));
+        const decided = holdOf((yield* readOutbox(workspaceId)).limitHolds, limit, now)?.decision;
+        // A routine's run asks nobody: without the user's answer for this window it doesn't start.
+        if (decided === undefined && input.unattended === true) {
+          return yield* toolError(
+            tool,
+            refusal(
+              "unattended",
+              `${limitName(limit)} is at ${usedPct(limit.utilization)}%, at the workspace's ${pauseAtPct}% threshold, and nobody was there to say whether to start more workers, so none started.`,
+            ),
+          );
+        }
+        const decision = decided ?? (yield* askLimit(callerId, workspaceId, limit, pauseAtPct));
         if (decision === "keepGoing") continue;
         const until =
           limit.resetsAt === undefined
@@ -533,7 +542,8 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       if (found === undefined) return undefined;
       const { limit, project } = found;
       const now = yield* Clock.currentTimeMillis;
-      const { priority: _priority, atLimit: _atLimit, ...rest } = input;
+      // Released later by a reset or by the user, never by the run that was held: not unattended.
+      const { priority: _priority, atLimit: _atLimit, unattended: _unattended, ...rest } = input;
       const stored: StoredHeldBrief = {
         id: `held-${randomUUID().slice(0, 8)}`,
         callerId: caller.id,

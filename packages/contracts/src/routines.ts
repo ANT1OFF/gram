@@ -131,6 +131,18 @@ export const Routine = Schema.Struct({
   lastHeld: Schema.optionalKey(Schema.String),
   /** Epoch ms it next comes due; absent while it is off. Past it, it runs at once. */
   nextRunAt: Schema.optionalKey(Schema.Number),
+  /**
+   * The run in progress, kept before it starts anything: its spawn's request id, named by the
+   * routine and the slot it is for, so a run a restart cut short finds the worker it made instead of
+   * making another. Cleared when the run is recorded.
+   */
+  claim: Schema.optionalKey(
+    Schema.Struct({
+      requestId: Schema.String,
+      slot: Schema.Number,
+      manual: Schema.optionalKey(Schema.Literal(true)),
+    }),
+  ),
   /** Due, and waiting on its workspace's pause: it runs once when the workspace resumes. */
   waiting: Schema.optionalKey(Schema.Literal("paused")),
 });

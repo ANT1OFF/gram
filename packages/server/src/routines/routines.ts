@@ -7,16 +7,20 @@
  *
  * A worker a routine starts is the workspace's orchestrator's worker like any other, spawned under
  * the same gates: the workspace's autonomy, its charter's worker models and cap, the limits that hold
- * or pause spawns, and every approval and merge rule after. A run that would need the user's card
- * (one worker past the cap) doesn't start one; it is recorded as failed, saying so.
+ * or pause spawns, and every approval and merge rule after. Its spawn is `unattended`: what would ask
+ * the user (one worker past the cap, the limit threshold's question) refuses instead, the cap checked
+ * under the spawn's own lock, and the run is recorded as failed, saying so. A run never raises a card.
  *
  * The engine keeps one timer per routine, as the wakes do (`wakes/thread-wakes.ts`): it sleeps until
  * the routine's `nextRunAt` and runs it then. Three rules hold every run:
  *
  * - A run missed while Gram was closed runs once, a minute after the next start, never once for each
- *   time it missed: the next run is reckoned from when it ran (`nextRunAfter`).
- * - While the worker its last run started is still live (or its held brief still waits), a due run
- *   starts nothing and is recorded as skipped.
+ *   time it missed: the next run is reckoned from when it ran (`nextRunAfter`). Before a run starts
+ *   anything it keeps a claim: its spawn's request id, named by the routine and the slot it is for.
+ *   A run a restart cut short after its spawn finds that worker again rather than making another.
+ * - While a worker the routine started is still live (whichever run made it, a held brief released
+ *   later included), or a brief of its run is still held, a due run starts nothing and is recorded
+ *   as skipped. A released brief's worker becomes the routine's `lastWorker`.
  * - A paused workspace pauses its routines: a run that falls due waits, marked `waiting`, and runs
  *   once when the workspace resumes.
  */
@@ -51,6 +55,7 @@ import * as Stream from "effect/Stream";
 import { EventHub } from "../events/event-hub.ts";
 import { redactText } from "../logging/redact.ts";
 import { isLiveWorker } from "../orchestration/ledger.ts";
+import { readOutbox } from "../orchestration/outbox.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { withBriefFooter } from "../orchestration/user-words.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -102,6 +107,23 @@ export interface RoutinesShape {
 export class Routines extends Context.Service<Routines, RoutinesShape>()("@gram/server/Routines") {}
 
 const decode = Schema.decodeUnknownOption(Schema.fromJsonString(Routine));
+const valid = Schema.decodeUnknownOption(Routine);
+
+/**
+ * A name and brief as they are kept: the name trimmed, and either refused when nothing is left.
+ * Normalised before any check, so what passes is what is saved.
+ */
+const normalised = <P extends { readonly name?: string; readonly brief?: string }>(fields: P) =>
+  Effect.gen(function* () {
+    const name = fields.name?.trim();
+    if (name !== undefined && name === "") {
+      return yield* new InvalidState({ message: "Give the routine a name." });
+    }
+    if (fields.brief !== undefined && fields.brief.trim() === "") {
+      return yield* new InvalidState({ message: "Write the brief it runs with." });
+    }
+    return name === undefined ? fields : { ...fields, name };
+  });
 const encode = (routine: Routine) => JSON.stringify(Schema.encodeSync(Routine)(routine));
 
 const run = <A>(effect: Effect.Effect<A, SqlError>) =>
@@ -130,6 +152,7 @@ const recorded = (routine: Routine, ran: RoutineRun, manual: boolean): Routine =
     waiting: _waiting,
     lastRun: _lastRun,
     nextRunAt: _nextRunAt,
+    claim: _claim,
     lastWorker,
     lastHeld,
     ...rest
@@ -207,30 +230,69 @@ export const RoutinesLive = Layer.effect(
       });
 
     /**
-     * Why a run now would start a second worker beside one still going, or `undefined`: the worker
-     * the last started run made is live on the ledger, or the brief its held run left still waits.
+     * The routine as its threads and held briefs have it now, saved if that changed, and why a run
+     * now would start a second worker beside one still going, or `undefined`. Every worker it
+     * started counts, found by the routine on its `spawnedBy`, not only the one its last run
+     * recorded: a held brief released since (by the user, a reset or a probe) became one, and a run a
+     * restart cut short made one it never recorded. The newest of them becomes its `lastWorker`, and
+     * a held brief that is no longer held stops being its `lastHeld`.
      */
-    const overlap = (routine: Routine, state: WorkspaceState) =>
+    const reconcile = (routine: Routine) =>
       Effect.gen(function* () {
-        if (routine.lastWorker === undefined && routine.lastHeld === undefined) return undefined;
+        const outbox = readOutbox(yield* store.getOutbox(routine.workspaceId)).state;
+        const held = (outbox.heldBriefs ?? []).filter(
+          (brief) =>
+            brief.input.routine?.id === routine.id ||
+            (routine.lastHeld !== undefined && brief.id === routine.lastHeld),
+        );
         const ledger = yield* orchestration
-          .ledger(state.workspace.id)
+          .ledger(routine.workspaceId)
           .pipe(Effect.option, Effect.map(Option.getOrUndefined));
-        if (routine.lastHeld !== undefined) {
-          if (ledger?.held?.some((held) => held.id === routine.lastHeld) === true) {
-            return "The brief its last run left held is still waiting to start.";
-          }
+        const entries = new Map(
+          (ledger?.features ?? [])
+            .flatMap((feature) => feature.workers)
+            .map((worker) => [worker.threadId as string, worker]),
+        );
+        const mine = (yield* store.listThreads)
+          .filter(
+            (thread) =>
+              thread.workspaceId === routine.workspaceId &&
+              thread.spawnedBy?.routine?.id === routine.id,
+          )
+          .toSorted((a, b) => b.createdAt - a.createdAt);
+        const newest = mine[0];
+        const lastHeld = held.some((brief) => brief.id === routine.lastHeld)
+          ? routine.lastHeld
+          : undefined;
+        const lastWorker = newest?.id ?? routine.lastWorker;
+        let current = routine;
+        if (lastHeld !== routine.lastHeld || lastWorker !== routine.lastWorker) {
+          const { lastHeld: _held, lastWorker: _worker, ...rest } = routine;
+          current = {
+            ...rest,
+            ...(lastWorker === undefined ? {} : { lastWorker }),
+            ...(lastHeld === undefined ? {} : { lastHeld }),
+          };
+          yield* write(current);
         }
-        if (routine.lastWorker === undefined) return undefined;
-        const thread = yield* store
-          .getThread(routine.lastWorker)
-          .pipe(Effect.option, Effect.map(Option.getOrUndefined));
-        if (thread === undefined || thread.parked) return undefined;
-        const entry = ledger?.features
-          .flatMap((feature) => feature.workers)
-          .find((worker) => worker.threadId === routine.lastWorker);
-        if (entry === undefined || !isLiveWorker(entry)) return undefined;
-        return `The worker from its last run, "${thread.title}", is still live.`;
+        if (held.length > 0) {
+          return {
+            routine: current,
+            busy: "A brief from its last run is held, waiting to start.",
+          };
+        }
+        const live = mine.find((thread) => {
+          if (thread.parked) return false;
+          const entry = entries.get(thread.id);
+          return entry !== undefined && isLiveWorker(entry);
+        });
+        return {
+          routine: current,
+          busy:
+            live === undefined
+              ? undefined
+              : `The worker from its last run, "${live.title}", is still live.`,
+        };
       });
 
     /** The orchestrator thread that follows the run, or why there is none. */
@@ -243,7 +305,12 @@ export const RoutinesLive = Layer.effect(
       });
 
     /** Starts what the routine is for, and says how it went. */
-    const execute = (routine: Routine, state: WorkspaceState, now: number) =>
+    const execute = (
+      routine: Routine,
+      state: WorkspaceState,
+      now: number,
+      claim: NonNullable<Routine["claim"]>,
+    ) =>
       Effect.gen(function* () {
         const holder = yield* holderOf(state);
         if (holder === undefined) {
@@ -278,21 +345,15 @@ export const RoutinesLive = Layer.effect(
           feature: routineSlug(routine.name),
           title: routine.name,
           brief: withBriefFooter(routineBrief(routine), yield* orchestration.briefFooter(holder)),
-          branch: `routine/${words}-${runStamp(now, routine.timeZone)}`,
+          branch: `routine/${words}-${runStamp(claim.slot, routine.timeZone)}`,
           ...(target.model === undefined ? {} : { model: target.model }),
-          clientRequestId: `routine:${routine.id}:${now}`,
+          // The claim's, kept before this call: a retry after a restart gets the same worker back.
+          clientRequestId: claim.requestId,
           atLimit: "stay" as const,
           routine: { id: routine.id, name: routine.name },
+          // Nobody answers a card for a schedule: what would ask is refused, under the spawn lock.
+          unattended: true as const,
         };
-        // A spawn the user's card would decide (past the charter's cap) isn't one a schedule makes.
-        if (yield* orchestration.spawnNeedsApproval(holder, input)) {
-          const card = yield* orchestration.describeSpawn(holder, input);
-          return {
-            at: now,
-            outcome: "failed",
-            detail: detailOf(`It needs your approval, so no worker started: ${card}`),
-          } satisfies RoutineRun;
-        }
         return yield* orchestration.spawnWorker(holder, input).pipe(
           Effect.map((spawned): RoutineRun => {
             if ("held" in spawned) {
@@ -321,7 +382,7 @@ export const RoutinesLive = Layer.effect(
             Effect.succeed({
               at: now,
               outcome: "failed",
-              detail: detailOf(e.message.replace(/^[a-z_]+: /, "")),
+              detail: detailOf(e.message.replace(/^[a-z_]+: /, "").replace(/^[a-z_]+: /, "")),
             } satisfies RoutineRun),
           ),
         );
@@ -336,35 +397,52 @@ export const RoutinesLive = Layer.effect(
             `Routine "${routine.name}" couldn't run: ${ran.detail ?? "no reason given"}`,
           );
 
-    /** The routine's run comes due: it runs, waits on a pause, or is skipped behind a live one. */
+    /**
+     * The routine's run comes due: it runs, waits on a pause, or is skipped behind a live one. This
+     * runs in the routine's own timer fiber, which arming the next run replaces, so the run is saved,
+     * told and noted first and the next run armed last.
+     */
     const due = (id: string): Effect.Effect<void> =>
       lock
         .withPermits(1)(
           Effect.gen(function* () {
-            const routine = routines.get(id);
-            if (routine === undefined || !routine.enabled || routine.nextRunAt === undefined)
-              return;
+            const stored = routines.get(id);
+            if (stored === undefined || !stored.enabled || stored.nextRunAt === undefined) return;
             const now = yield* Clock.currentTimeMillis;
-            if (now < routine.nextRunAt) return yield* arm(routine);
-            const state = yield* workspaceOf(routine.workspaceId);
-            if (state === undefined) return yield* drop(routine);
+            if (now < stored.nextRunAt) return yield* arm(stored);
+            const state = yield* workspaceOf(stored.workspaceId);
+            if (state === undefined) return yield* drop(stored);
             if (state.paused !== undefined) {
-              if (routine.waiting !== "paused") {
-                yield* write({ ...routine, waiting: "paused" });
-                yield* changed(routine.workspaceId);
+              if (stored.waiting !== "paused") {
+                const waiting: Routine = { ...stored, waiting: "paused" };
+                yield* write(waiting);
+                yield* changed(stored.workspaceId);
+                return yield* arm(waiting, ROUTINE_PAUSE_RETRY);
               }
-              return yield* arm(routine, ROUTINE_PAUSE_RETRY);
+              return yield* arm(stored, ROUTINE_PAUSE_RETRY);
             }
-            const busy = yield* overlap(routine, state);
-            const ran: RoutineRun =
-              busy !== undefined
-                ? { at: now, outcome: "skipped", detail: busy }
-                : yield* execute(routine, state, now);
+            const { routine, busy } = yield* reconcile(stored);
+            let ran: RoutineRun;
+            if (busy !== undefined) {
+              ran = { at: now, outcome: "skipped", detail: busy };
+            } else {
+              // The slot this run is for, claimed before anything starts; a run a restart cut short
+              // kept its claim, and finishes under it.
+              const claim =
+                routine.claim !== undefined && routine.claim.manual !== true
+                  ? routine.claim
+                  : {
+                      requestId: `routine:${routine.id}:${routine.nextRunAt}`,
+                      slot: routine.nextRunAt!,
+                    };
+              yield* write({ ...routine, claim });
+              ran = yield* execute(routine, state, now, claim);
+            }
             const next = recorded(routine, ran, false);
             yield* write(next);
-            yield* arm(next);
             yield* changed(routine.workspaceId);
             yield* noteFailure(routine, ran);
+            yield* arm(next);
           }),
         )
         .pipe(
@@ -388,9 +466,17 @@ export const RoutinesLive = Layer.effect(
       return routine === undefined ? Effect.fail(notFound(id)) : Effect.succeed(routine);
     };
 
-    /** Refuses a routine its workspace can't run: a project outside it, a name taken, a bad zone. */
+    /**
+     * Refuses a routine its workspace can't run (a project outside it, a name taken, a bad zone) or
+     * that wouldn't read back: what is saved always decodes, so a restart never drops it.
+     */
     const check = (state: WorkspaceState, routine: Routine) =>
       Effect.gen(function* () {
+        if (Option.isNone(valid(routine))) {
+          return yield* new InvalidState({
+            message: "That routine isn't complete: it needs a name, a brief and a schedule.",
+          });
+        }
         if (routine.target.kind === "worker") {
           if (!state.workspace.projectIds.includes(routine.target.projectId)) {
             return yield* new InvalidState({
@@ -415,9 +501,10 @@ export const RoutinesLive = Layer.effect(
         }
       });
 
-    const create: RoutinesShape["create"] = (workspaceId, draft, author) =>
+    const create: RoutinesShape["create"] = (workspaceId, given, author) =>
       lock.withPermits(1)(
         Effect.gen(function* () {
+          const draft = yield* normalised(given);
           const state = yield* store.getWorkspace(workspaceId);
           const count = [...routines.values()].filter(
             (routine) => routine.workspaceId === workspaceId,
@@ -433,7 +520,7 @@ export const RoutinesLive = Layer.effect(
           const routine: Routine = {
             id: randomUUID() as RoutineId,
             workspaceId,
-            name: draft.name.trim(),
+            name: draft.name,
             brief: draft.brief,
             target: draft.target,
             schedule: draft.schedule,
@@ -453,16 +540,17 @@ export const RoutinesLive = Layer.effect(
         }),
       );
 
-    const update: RoutinesShape["update"] = (id, patch) =>
+    const update: RoutinesShape["update"] = (id, given) =>
       lock.withPermits(1)(
         Effect.gen(function* () {
+          const patch = yield* normalised(given);
           const before = yield* get(id);
           const state = yield* store.getWorkspace(before.workspaceId);
           const now = yield* Clock.currentTimeMillis;
           const { nextRunAt: _next, waiting: _waiting, ...rest } = before;
           const merged = {
             ...rest,
-            ...(patch.name === undefined ? {} : { name: patch.name.trim() }),
+            ...(patch.name === undefined ? {} : { name: patch.name }),
             ...(patch.brief === undefined ? {} : { brief: patch.brief }),
             ...(patch.target === undefined ? {} : { target: patch.target }),
             ...(patch.schedule === undefined ? {} : { schedule: patch.schedule }),
@@ -516,11 +604,20 @@ export const RoutinesLive = Layer.effect(
               message: "The workspace is paused. Resume it to run its routines.",
             });
           }
-          const busy = yield* overlap(routine, state);
-          if (busy !== undefined) return yield* new InvalidState({ message: busy });
+          const reconciled = yield* reconcile(routine);
+          if (reconciled.busy !== undefined) {
+            yield* changed(routine.workspaceId);
+            return yield* new InvalidState({ message: reconciled.busy });
+          }
           const now = yield* Clock.currentTimeMillis;
-          const ran = yield* execute(routine, state, now);
-          const next = recorded(routine, ran, true);
+          const claim = {
+            requestId: `routine:${routine.id}:manual:${now}`,
+            slot: now,
+            manual: true as const,
+          };
+          yield* write({ ...reconciled.routine, claim });
+          const ran = yield* execute(reconciled.routine, state, now, claim);
+          const next = recorded(reconciled.routine, ran, true);
           yield* write(next);
           yield* changed(routine.workspaceId);
           yield* noteFailure(routine, ran);
@@ -573,11 +670,47 @@ export const RoutinesLive = Layer.effect(
         Effect.forkScoped,
       );
 
+    // A held brief of a routine's run that starts later (the user's release, a reset, a probe) is
+    // the routine's worker from then on: its row shows it, and the next run counts it.
+    yield* hub
+      .internalEvents(
+        (event) => event.type === "thread.upsert" && event.thread.spawnedBy?.routine !== undefined,
+        "routine workers",
+      )
+      .pipe(
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            if (event.type !== "thread.upsert") return;
+            const id = event.thread.spawnedBy?.routine?.id;
+            const routine = id === undefined ? undefined : routines.get(id);
+            if (routine?.lastHeld === undefined) return;
+            yield* lock.withPermits(1)(
+              Effect.gen(function* () {
+                const current = routines.get(routine.id);
+                if (current === undefined) return;
+                const { routine: next } = yield* reconcile(current);
+                if (next !== current) yield* changed(next.workspaceId);
+              }),
+            );
+          }),
+        ),
+        Effect.forkScoped,
+      );
+
     const start: RoutinesShape["start"] = Effect.gen(function* () {
       if (started) return;
       started = true;
       const now = yield* Clock.currentTimeMillis;
-      for (const routine of routines.values()) {
+      // Writing back the routine being visited replaces its value in place, which iteration allows.
+      for (const stored of routines.values()) {
+        // A Run now the last run of the app cut short: whatever worker it made, the next run's
+        // reconcile finds by the routine on its `spawnedBy`, so its claim has nothing left to do.
+        let routine = stored;
+        if (stored.claim?.manual === true) {
+          const { claim: _claim, ...rest } = stored;
+          routine = rest;
+          yield* lock.withPermits(1)(write(routine));
+        }
         if (!routine.enabled || routine.nextRunAt === undefined) continue;
         // Missed while Gram was closed: once, shortly after the start, never once per miss.
         yield* routine.nextRunAt <= now ? arm(routine, ROUTINE_CATCH_UP_DELAY) : arm(routine);
