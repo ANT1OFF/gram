@@ -219,7 +219,7 @@ describe("PrPanel", () => {
     renderWithApi(<PrPanel threadId={T} />, withResult(mockPrDetail(T)));
     // Blocked, the summary carries it: the header line drops its own Blocked chip.
     const panel = await screen.findByTestId("pr-panel");
-    expect(within(panel).getByTestId("pr-blocker-count").textContent).toBe("2 blockers");
+    expect(within(panel).getByTestId("pr-blocker-count").textContent).toBe("2 reasons");
     expect(within(panel).queryByTestId("pr-merge-state")).toBeNull();
   });
 
@@ -255,7 +255,7 @@ describe("PrPanel", () => {
     const panel = await screen.findByTestId("pr-panel");
 
     expect(within(panel).getByTestId("pr-merge-blocked").textContent).toBe(
-      "Merge blocked · 2 blockers: check, changes requested",
+      "Merge blocked · 2 reasons: check, changes requested",
     );
     const next = within(panel).getByTestId("pr-next-action");
     expect(next.textContent).toBe("Inspect test (windows) job");

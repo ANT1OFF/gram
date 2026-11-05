@@ -56,7 +56,7 @@ test("a retry that fails says so on the failed turn's card", async ({ page }) =>
         kind: "rateLimit",
         httpStatus: 429,
         retryable: true,
-        text: "The gateway is rate limiting requests (HTTP 429). Try again in a moment.",
+        text: "The provider is rate limiting requests (HTTP 429).",
       },
       "Run the e2e suite",
     );

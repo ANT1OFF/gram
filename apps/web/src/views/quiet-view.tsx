@@ -32,6 +32,7 @@ import {
 } from "@/orchestration/ask-stack";
 import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
+import { NeedsYouEntry } from "@/orchestration/needs-you-entry";
 import { useDerivedAsks } from "@/orchestration/needs-you-store";
 import { allWorkspacesPaused, setAllWorkspacesPaused } from "@/orchestration/pause-workspace";
 import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
@@ -329,12 +330,7 @@ export function QuietView({ workspaceId }: ViewProps) {
       {peeked !== undefined && (
         <Peek workspace={peeked} onClose={() => setPeek(undefined)} onOpen={leaveTo} />
       )}
-      <Strip
-        strip={strip}
-        asks={deck.length}
-        peek={peek}
-        onPeek={(id) => setPeek(id === peek ? undefined : id)}
-      />
+      <Strip strip={strip} peek={peek} onPeek={(id) => setPeek(id === peek ? undefined : id)} />
     </div>
   );
 }
@@ -543,16 +539,13 @@ function PeekRow({ row, onOpen }: { row: WorkerRow; onOpen: () => void }) {
   );
 }
 
-/** The bottom strip: a dot per worker by workspace, the asks, the time, and the one menu. */
+/** The bottom strip: a dot per worker by workspace, what needs you, the time, and the one menu. */
 function Strip({
   strip,
-  asks,
   peek,
   onPeek,
 }: {
   strip: readonly StripWorkspace[];
-  /** Every card in the deck, the solo threads' included. */
-  asks: number;
   peek: WorkspaceId | undefined;
   onPeek: (workspaceId: WorkspaceId) => void;
 }) {
@@ -589,11 +582,8 @@ function Strip({
           </button>
         ))}
       </div>
-      {asks > 0 && (
-        <span data-testid="quiet-asks" className="text-status-needs tabular-nums">
-          {asks} {asks === 1 ? "ask" : "asks"}
-        </span>
-      )}
+      {/* The window's one attention entry, in the sidebar pill's words and count. */}
+      <NeedsYouEntry variant="chip" data-testid="quiet-asks" />
       <UsageMeter />
       <span className="text-muted-foreground tabular-nums">
         {pad(time.getHours())}:{pad(time.getMinutes())}

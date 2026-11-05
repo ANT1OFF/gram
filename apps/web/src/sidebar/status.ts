@@ -19,6 +19,7 @@ import {
 
 import { firstLine } from "@/lib/format";
 import { Spinner } from "@/motion/spinner";
+import { STATUS_WORDS } from "@/orchestration/status-words";
 import { compactingLabel } from "@/thread/compaction-marker";
 
 import type { Attention, AttentionReason } from "./attention";
@@ -76,20 +77,21 @@ export const runningSummary = (work: readonly RunningWork[]): string => {
 
 /**
  * Glyph shape + text label per runtime status, so status never relies on colour alone. The words are
- * the status dots' few (`STATUS_DOTS`): running, stopped, failed, and needs you by what it needs.
+ * the status dots' few (`STATUS_WORDS`): running, stopped, failed, and needs you by what it needs.
  */
 export const STATUS_DISPLAY: Record<
   ThreadStatus,
   { icon: LucideIcon; label: string; tone: string }
 > = {
-  cold: { icon: CircleDashed, label: "Stopped", tone: "text-status-idle" },
+  cold: { icon: CircleDashed, label: STATUS_WORDS.idle, tone: "text-status-idle" },
   starting: { icon: Spinner, label: "Starting…", tone: "text-status-working" },
-  idle: { icon: CircleDot, label: "Stopped", tone: "text-status-idle" },
-  running: { icon: Spinner, label: "Running", tone: "text-status-working" },
+  idle: { icon: CircleDot, label: STATUS_WORDS.idle, tone: "text-status-idle" },
+  running: { icon: Spinner, label: STATUS_WORDS.working, tone: "text-status-working" },
   needsApproval: { icon: CircleAlert, label: "Needs approval", tone: "text-status-needs" },
   needsInput: { icon: CircleAlert, label: "Needs input", tone: "text-status-needs" },
-  error: { icon: CircleAlert, label: "Failed", tone: "text-destructive" },
-  ended: { icon: CircleCheck, label: "Ended", tone: "text-muted-foreground" },
+  error: { icon: CircleAlert, label: STATUS_WORDS.error, tone: "text-destructive" },
+  // An ended thread has stopped for good: the same word as any other at rest.
+  ended: { icon: CircleCheck, label: STATUS_WORDS.idle, tone: "text-muted-foreground" },
 };
 
 const COMPLETED_REASON: Record<CompletedReason, string> = {
@@ -224,7 +226,7 @@ export const rowStatus = (
   // A merge completes a thread like anything else: its headline says "Done · #198 merged", and a
   // merge glyph of its own said "merged" on threads that had gone on working after it.
   if (resting && thread.completedAt !== undefined) {
-    const label = "Completed";
+    const label = STATUS_WORDS.done;
     return {
       icon: CircleCheck,
       tone: "text-success",

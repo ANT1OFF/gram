@@ -67,6 +67,11 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await expect(speed).toHaveAccessibleName("Speed: Default");
   await expect(more).toHaveCount(0);
 
+  // The context gauge beside Send keeps the ring's 32 px: the steps below are measured against
+  // what that slot leaves, and a wider gauge folded the pickers a step early.
+  const gauge = await page.getByTestId("usage-ring").boundingBox();
+  expect(gauge!.width).toBeLessThanOrEqual(32);
+
   // Short of room, the model's name goes compact first; the others keep their words.
   const model = toolbar.getByRole("combobox", { name: /^Model/ });
   await squeeze(page, 520);

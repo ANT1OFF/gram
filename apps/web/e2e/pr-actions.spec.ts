@@ -31,7 +31,7 @@ test("the PR overview leads with what blocks the merge and one next step", async
 
   const blocked = panel.getByTestId("pr-merge-blocked");
   await expect(blocked).toHaveText(
-    "Merge blocked · 3 blockers: check, changes requested, review bot",
+    "Merge blocked · 3 reasons: check, changes requested, review bot",
   );
   // The header line above doesn't repeat what the summary says.
   await expect(panel.getByTestId("pr-merge-state")).toHaveCount(0);

@@ -24,6 +24,7 @@ import {
   Plus,
   RefreshCw,
   Sparkles,
+  Square,
   Target,
   User,
   X,
@@ -40,6 +41,7 @@ import { useNow } from "@/lib/use-now";
 import { spin, Spinner, StatusMark, Swap, type MarkPhase } from "@/motion";
 import { imeComposing } from "@/composer/send-key";
 import { useThreadFeed } from "@/stores/feeds";
+import { STATUS_DISPLAY } from "@/sidebar/status";
 import { useThreadsStore } from "@/stores/threads";
 
 import { stopOf } from "./attempt-model";
@@ -51,6 +53,7 @@ import {
   editOf,
   moveStep,
   stepPrBadge,
+  stripGlyph,
   stripState,
   stripSteps,
   type StripTurn,
@@ -463,6 +466,8 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
   if (state === undefined && !open) return null;
   const line = state?.line;
   const lead = state?.lead;
+  const glyph = stripGlyph(turn);
+  const FailedIcon = STATUS_DISPLAY.error.icon;
 
   return (
     <div
@@ -479,19 +484,33 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
         className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
       >
         {/* While the thread works, the header's status is the one thing that moves, so the ring
-            only counts. */}
-        <PlanRing
-          headline={{
-            phase:
-              turn === "stopped" || turn === "failed"
-                ? "stale"
-                : headline === undefined || headline.phase === "working"
-                  ? "next"
-                  : headline.phase,
-            done: progress.done,
-            total: progress.total,
-          }}
-        />
+            only counts. A turn that failed or was stopped says so in its glyph too. */}
+        {glyph === "failed" ? (
+          <FailedIcon
+            aria-hidden
+            data-testid="plan-strip-glyph"
+            data-glyph="failed"
+            className={cn("size-3.5 shrink-0", STATUS_DISPLAY.error.tone)}
+          />
+        ) : glyph === "stopped" ? (
+          <span
+            aria-hidden
+            data-testid="plan-strip-glyph"
+            data-glyph="stopped"
+            className="grid size-3.5 shrink-0 place-items-center"
+          >
+            <Square className="size-2.5 fill-current" />
+          </span>
+        ) : (
+          <PlanRing
+            headline={{
+              phase:
+                headline === undefined || headline.phase === "working" ? "next" : headline.phase,
+              done: progress.done,
+              total: progress.total,
+            }}
+          />
+        )}
         <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">
           {goal || "Plan"}
         </span>

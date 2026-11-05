@@ -69,14 +69,15 @@ describe("rowStatus", () => {
     const byUser = { completedAt: 1, completedReason: "user" } as unknown as Thread;
     expect(rowStatus(byUser, "idle", undefined)).toMatchObject({
       icon: STATUS_DISPLAY.ended.icon,
-      label: "Completed",
+      // The word every surface says of finished work (`STATUS_WORDS.done`); the reason is its hover.
+      label: "Done",
       title: "Completed: marked done by you",
     });
   });
 
   it("gives a thread its PR's merge completed the check too, with the merge as its reason", () => {
     const status = rowStatus(merged, "cold", undefined);
-    expect(status).toMatchObject({ label: "Completed", title: "Completed: PR merged" });
+    expect(status).toMatchObject({ label: "Done", title: "Completed: PR merged" });
     expect(status.icon).toBe(STATUS_DISPLAY.ended.icon);
   });
 

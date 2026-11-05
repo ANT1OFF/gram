@@ -2,12 +2,14 @@ import type { ThreadSummary, WorkspaceState } from "@gram/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { doneSoloThreads, parkedSoloThreads, soloThreads } from "./solo-threads";
-import { useViewStore } from "./view-store";
+import { chatRoute, switcherChecked, useViewStore } from "./view-store";
 import { viewWorkspace } from "./view-workspace";
 
 const s = useViewStore.getState;
 
-beforeEach(() => useViewStore.setState({ view: "chat", quiet: false, carry: undefined }));
+beforeEach(() =>
+  useViewStore.setState({ view: "chat", quiet: false, carry: undefined, lastChat: undefined }),
+);
 
 describe("the view", () => {
   it("goes back to Chat on a route change, unless a workspace switch carries it there", () => {
@@ -37,6 +39,35 @@ describe("the view", () => {
     // A route change isn't a pick.
     s().routeChanged("/settings");
     expect(s()).toMatchObject({ view: "chat", picks: before + 2 });
+  });
+
+  it("marks Chat only on a chat route, so Settings, Memory and New never read as Chat", () => {
+    // Round 8 found Chat highlighted on Memory, Settings, New and New workspace.
+    for (const page of [
+      "/settings/general",
+      "/w/ws-1/memory",
+      "/new",
+      "/new-task",
+      "/new-workspace",
+      "/usage",
+    ]) {
+      expect(chatRoute(page)).toBe(false);
+      expect(switcherChecked("chat", page)).toBeUndefined();
+      // Board draws over any route, and is marked wherever it shows.
+      expect(switcherChecked("board", page)).toBe("board");
+    }
+    expect(switcherChecked("chat", "/t/t-1")).toBe("chat");
+    expect(switcherChecked("chat", "/")).toBe("chat");
+  });
+
+  it("remembers the last chat route, which Chat goes back to from a page of its own", () => {
+    s().routeChanged("/t/t-1");
+    s().routeChanged("/settings/general");
+    expect(s().lastChat).toBe("/t/t-1");
+    s().routeChanged("/w/ws-1/memory");
+    expect(s().lastChat).toBe("/t/t-1");
+    s().routeChanged("/t/t-2");
+    expect(s().lastChat).toBe("/t/t-2");
   });
 
   it("keeps Quiet apart from the view", () => {

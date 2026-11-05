@@ -47,20 +47,30 @@ describe("mergeBlockersOf", () => {
 
   it("counts the blockers and names each one's category for the summary's heading", () => {
     expect(blockerSummaryOf(mergeBlockersOf(detail(), "blocked", BOT_BLOCKERS))).toEqual({
-      count: "3 blockers",
+      count: "3 reasons",
       categories: "check, changes requested, review bot",
     });
     const two = { ...detail(), reviewDecision: "", checkRuns: [run("a"), run("b")] };
     expect(blockerSummaryOf(mergeBlockersOf(two, "conflicts"))).toEqual({
-      count: "2 blockers",
+      count: "2 reasons",
       categories: "checks, conflicts",
     });
     const required = { ...detail(), reviewDecision: "REVIEW_REQUIRED", checkRuns: [] };
     expect(blockerSummaryOf(mergeBlockersOf(required, "blocked"))).toEqual({
-      count: "1 blocker",
+      count: "1 reason",
       categories: "review required",
     });
     expect(blockerSummaryOf([])).toBeUndefined();
+  });
+
+  it("never counts the merge's reasons in the review bot's word, which the PR strip shows", () => {
+    // The panel said "3 blockers" over the strip's "2 blockers": two numbers for one word. The
+    // bot's count keeps "blockers", always scoped to the bot; the merge's count is its reasons.
+    const blockers = mergeBlockersOf(detail(), "blocked", BOT_BLOCKERS);
+    expect(blockerSummaryOf(blockers)?.count).not.toMatch(/blocker/);
+    expect(blockers.filter((b) => /blocker/.test(b.word)).map((b) => b.word)).toEqual([
+      `review bot: ${BOT_BLOCKERS.text}`,
+    ]);
   });
 
   it("leads with inspecting a failing Actions job, whose evidence the panel can show", () => {

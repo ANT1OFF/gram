@@ -7,6 +7,7 @@ import { useApi } from "@/api/context";
 import { ExpandPresence, Shimmer, Swap } from "@/motion";
 
 import { reportLine } from "./board-model";
+import { repeatsReport } from "./catch-up-model";
 import { useOrchestratorLedger } from "./use-orchestration";
 import { workerEntryOf } from "./workers-model";
 
@@ -23,9 +24,11 @@ interface Opened {
 
 /**
  * "Catch me up", at the top of a worker you open after a report you hadn't seen: the helper's one
- * or two sentences on what changed since you last looked, else that report's own summary, so the
- * view is complete with helpers off. Decided once, as the view opens: a report that lands while you
- * watch is one you saw. Reading it changes nothing about the worker.
+ * or two sentences on what changed since you last looked. Only when they add to that report, which
+ * the view shows already (in the transcript, or a finished worker's Last report): the same words
+ * twice, one above the other, said nothing. Decided once, as the view opens: a report that lands
+ * while you watch is one you saw. Reading it changes nothing about the worker. It sits above the
+ * transcript, never over it; the transcript fades under it as it does into the composer.
  */
 export function CatchUpCard({ thread }: { thread: Thread }) {
   const api = useApi();
@@ -57,7 +60,9 @@ export function CatchUpCard({ thread }: { thread: Thread }) {
     (opened?.summary === undefined ? undefined : reportLine(opened.summary, REPORT_MAX));
   // Its room is taken as the view opens, with a placeholder line while the helper drafts, so the
   // transcript isn't pushed down under a reader it is following.
-  const show = due && dismissed !== thread.id && (isPending || text !== undefined);
+  // Nothing it would say that the view's last report doesn't already (`repeatsReport`).
+  const fresh = text !== undefined && !repeatsReport(text, opened?.summary);
+  const show = due && dismissed !== thread.id && (isPending || fresh);
   return (
     <ExpandPresence open={show}>
       <div

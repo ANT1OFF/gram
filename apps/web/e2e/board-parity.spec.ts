@@ -411,21 +411,15 @@ test("⌘⇧D, the orchestrator's header, the palette and Memory all open the Bo
   await page.keyboard.press("ControlOrMeta+Shift+D");
   await onBoard();
 
-  // The orchestrator's bar: Board beside its header, and its questions count.
+  // The orchestrator's bar: Board beside its header. Its questions have no chip of their own:
+  // what needs you has one way in, the sidebar's pill.
   await chat();
   await bar(page)
     .getByRole("radio", { name: /^Board\b/ })
     .click();
   await onBoard();
   await chat();
-  const questions = page.getByTestId("banner-questions");
-  if ((await questions.count()) > 0) {
-    // Its decisions are in the Inbox, over the chat.
-    await questions.click();
-    await expect(page.getByTestId("inbox")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await chat();
-  }
+  await expect(page.getByTestId("banner-questions")).toHaveCount(0);
 
   // The palette's Open board.
   await page.keyboard.press("ControlOrMeta+k");

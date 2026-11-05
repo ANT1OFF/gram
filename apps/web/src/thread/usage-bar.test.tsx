@@ -8,7 +8,7 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ContextRing, ringLabel, ringOffset } from "@/composer/context-ring";
+import { barShare, ContextRing, ringLabel } from "@/composer/context-ring";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { themeStore } from "@/theme/store";
@@ -235,12 +235,10 @@ describe("ContextRing", () => {
     return screen.getByTestId("usage-ring");
   };
 
-  it("draws the filled share of the ring, clamped to the circle", () => {
-    const full = ringOffset(0);
-    expect(ringOffset(100)).toBe(0);
-    expect(ringOffset(25)).toBeCloseTo(full * 0.75);
-    expect(ringOffset(140)).toBe(0);
-    expect(ringOffset(-5)).toBe(full);
+  it("fills the bar to the share used, clamped to the track", () => {
+    expect(barShare(25)).toBe(25);
+    expect(barShare(140)).toBe(100);
+    expect(barShare(-5)).toBe(0);
   });
 
   it("names the context filled, or just usage without a window", () => {
@@ -253,19 +251,32 @@ describe("ContextRing", () => {
     expect(screen.queryByTestId("usage-ring")).toBeNull();
   });
 
-  it("fills to the context used and colours it by level", () => {
+  it("fills a bar to the context used, says the number, and colours it by level", () => {
     const ring = renderRing(usage({ contextTokens: 186_000 }));
     expect(ring.getAttribute("aria-label")).toBe("Usage: 93% of the context window");
     expect(ring.dataset["level"]).toBe("warning");
-    expect(ring.querySelectorAll("circle")).toHaveLength(2);
+    expect(ring.textContent).toBe("93%");
+    // In the ring's 32 px, which the toolbar's layout measures.
+    expect(ring.className).toMatch(/\bsize-8\b/);
+    expect(screen.getByTestId("usage-ring-bar").firstElementChild?.getAttribute("style")).toContain(
+      "width: 93%",
+    );
   });
 
-  it("is only a dashed track without a window, and still opens onto what is known", async () => {
+  it("never draws a circle beside Send, which read as a spinner on an idle thread", () => {
+    // Round 8: after Stop and on a finished thread, a partly drawn ring beside Send looked like
+    // work still running. The only turning glyph there is Stop's, and only while a turn runs.
+    for (const value of [usage({ contextTokens: 62_000 }), withoutContextTokens()]) {
+      cleanup();
+      const ring = renderRing(value);
+      expect(ring.querySelector("svg, circle")).toBeNull();
+    }
+  });
+
+  it("says Usage without a window, and still opens onto what is known", async () => {
     const ring = renderRing(withoutContextTokens());
     expect(ring.getAttribute("aria-label")).toBe("Usage");
-    const circles = ring.querySelectorAll("circle");
-    expect(circles).toHaveLength(1);
-    expect(circles[0]!.getAttribute("stroke-dasharray")).not.toBeNull();
+    expect(ring.textContent).toBe("Usage");
 
     fireEvent.click(ring);
     await screen.findByTestId("usage");

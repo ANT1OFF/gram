@@ -19,7 +19,7 @@ test("a thread at its usage limit waits on one quiet line, and resumes on reques
         kind: "rateLimit",
         httpStatus: 429,
         retryable: true,
-        text: "The provider is rate limiting requests (HTTP 429). Try again in a moment.",
+        text: "The provider is rate limiting requests (HTTP 429).",
       },
       "Carry on with the brief",
     );

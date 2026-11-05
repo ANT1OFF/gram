@@ -111,7 +111,7 @@ export const failureText = (
             : `The provider refused the request over billing or a spending limit${status}.`;
       case "rateLimit":
         return failure.retryable
-          ? `${where} is rate limiting requests${status}. Try again in a moment.`
+          ? `${where} is rate limiting requests${status}.`
           : `The usage limit is reached${status}. It resets on the provider's schedule.`;
       case "auth": {
         const off = offGateway(detail, context);
