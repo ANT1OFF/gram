@@ -72,9 +72,11 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   const gauge = await page.getByTestId("usage-ring").boundingBox();
   expect(gauge!.width).toBeLessThanOrEqual(32);
 
-  // Short of room, the model's name goes compact first; the others keep their words.
+  // Short of room, the model's name goes compact first; the others keep their words. Measured at
+  // 540 px: Linux names Stop's key "Ctrl+.", some 26 px wider than "⌘.", so at 520 px there the
+  // pickers may already have their own row instead (still in words, checked below).
   const model = toolbar.getByRole("combobox", { name: /^Model/ });
-  await squeeze(page, 520);
+  await squeeze(page, 540);
   const compact = model.locator("[data-toolbar-compact]");
   await expect(compact).not.toHaveClass(/\bsr-only\b/);
   await expect(compact).toHaveText("Opus");
@@ -82,6 +84,13 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await expect(model).toHaveAccessibleName("Model: Claude Opus");
   await expect(mode).toHaveText(/^Ask/);
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
+
+  // At 520 px, on one row in short words or on their own row in full ones, effort and mode still
+  // say their values: never a glyph alone.
+  await squeeze(page, 520);
+  const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
+  await expect.poll(() => shownWords(effort)).toMatch(/^(Model|Model default)$/);
+  await expect.poll(() => shownWords(mode)).toBe("Ask");
 
   // Narrower, the pickers take a row of their own, words and all, above Send and Stop: still so
   // at 300 px, a narrow pane beside a wide diff in a 1024 px window.
