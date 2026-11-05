@@ -42,6 +42,11 @@ interface StreamExtras {
    * with no other message between them, the whole run; empty on any other message.
    */
   readonly digests: readonly StreamDigest[];
+  /**
+   * In a quiet stream, the orchestrator's replies folded into this update because nothing in their
+   * episodes changed for the user, oldest first; absent everywhere else.
+   */
+  readonly replies?: readonly GramUIMessage[];
 }
 
 export interface StreamPlan {
@@ -54,6 +59,19 @@ export interface StreamPlan {
   readonly extras: ReadonlyMap<string, StreamExtras>;
   /** The digests in the transcript with when each was delivered, for "Since you left". */
   readonly digests: readonly DeliveredDigest[];
+  /**
+   * In a quiet stream, the anchor each folded message went to, by its id: what a search or a jump
+   * to a folded message opens. Empty with folding off.
+   */
+  readonly foldedInto: ReadonlyMap<string, string>;
+}
+
+export interface PlanOptions {
+  /**
+   * Fold what changed nothing for the user (`quietEpisodes`): the default view of an
+   * orchestrator's chat. Off, "Show all activity", every reply stands as it was.
+   */
+  readonly quiet?: boolean;
 }
 
 /** A message's orchestration digest, if it is one. */
@@ -119,6 +137,7 @@ export function digestLineWords(
 export function planStream(
   messages: readonly GramUIMessage[],
   cards: readonly FeatureCard[],
+  { quiet = false }: PlanOptions = {},
 ): StreamPlan {
   const known = new Set(cards.map((card) => card.feature));
   const anchored = new Set<string>();
@@ -170,7 +189,9 @@ export function planStream(
     kept.push(message);
   }
   closeRun();
-  const shown = folded.size === 0 ? kept : kept.filter((message) => !folded.has(message.id));
+  const unfolded = folded.size === 0 ? kept : kept.filter((message) => !folded.has(message.id));
+  const foldedInto = new Map<string, string>();
+  const shown = quiet ? foldQuiet(unfolded, extras, foldedInto) : unfolded;
   const first = shown[0];
   const since = first?.metadata?.createdAt ?? 0;
   const loose = cards
@@ -180,7 +201,94 @@ export function planStream(
     const there = extras.get(first.id) ?? NOTHING;
     extras.set(first.id, { ...there, cards: [...loose, ...there.cards] });
   }
-  return { messages: shown, extras, digests };
+  return { messages: shown, extras, digests, foldedInto };
+}
+
+/** What makes an update one the user should read: a merge, a delivery, a failure, a question. */
+const NOTABLE: ReadonlySet<StreamLine["kind"]> = new Set(["merged", "delivered", "failed", "ask"]);
+
+/** A reply that asks the user something is never folded, whatever its digest said. */
+const asksUser = (message: GramUIMessage): boolean =>
+  message.parts.some((part) => isToolPart(part) && toolNameOf(part).endsWith("ask_user"));
+
+/**
+ * Whether a run of digests, with the orchestrator's replies to it, changed nothing for the user:
+ * no line merged, delivered, failed or asks, none of its digests is a boot or an away digest (the
+ * reply to one is what the user reads when they come back), and no reply asks them anything.
+ */
+export const quietEpisode = (extras: StreamExtras, replies: readonly GramUIMessage[]): boolean =>
+  extras.digests.length > 0 &&
+  !extras.lines.some(({ line }) => NOTABLE.has(line.kind)) &&
+  !extras.digests.some(
+    ({ digest }) =>
+      digest.variant === "boot" ||
+      digest.variant === "away" ||
+      digest.userAwayMinutes !== undefined,
+  ) &&
+  !replies.some(asksUser);
+
+/**
+ * The quiet stream: each digest's episode (its run of digests and the orchestrator's replies up to
+ * the next message of the user's) that changed nothing for the user folds into its update, and
+ * quiet episodes in a row share one update, on the last digest of the last of them. Their lines,
+ * cards, digests and replies all go with it, so the update opens on everything; only where it
+ * shows changes. An episode with a merge, a failure or a question stands as it is.
+ */
+function foldQuiet(
+  messages: readonly GramUIMessage[],
+  extras: Map<string, StreamExtras>,
+  foldedInto: Map<string, string>,
+): readonly GramUIMessage[] {
+  const shown: GramUIMessage[] = [];
+  /** The quiet episodes in a row so far: their digests (the anchors) and replies, in order. */
+  let group: GramUIMessage[] = [];
+  const closeGroup = () => {
+    const anchors = group.filter((message) => digestOf(message) !== undefined);
+    const anchor = anchors.at(-1);
+    if (anchor === undefined) return;
+    const lines: TimedLine[] = [];
+    const cards: string[] = [];
+    const digests: StreamDigest[] = [];
+    const replies: GramUIMessage[] = [];
+    for (const message of group) {
+      const own = extras.get(message.id);
+      lines.push(...(own?.lines ?? []));
+      cards.push(...(own?.cards ?? []));
+      digests.push(...(own?.digests ?? []));
+      if (digestOf(message) === undefined) replies.push(message);
+      if (message !== anchor) {
+        foldedInto.set(message.id, anchor.id);
+        extras.delete(message.id);
+      }
+    }
+    // Digests no reply answered read as they did: only replies make the update a quiet one.
+    extras.set(anchor.id, { lines, cards, digests, ...(replies.length > 0 ? { replies } : {}) });
+    shown.push(anchor);
+    group = [];
+  };
+  for (let index = 0; index < messages.length;) {
+    const message = messages[index]!;
+    const own = extras.get(message.id);
+    if (digestOf(message) === undefined || own === undefined) {
+      closeGroup();
+      shown.push(message);
+      index += 1;
+      continue;
+    }
+    // The episode: this digest and the replies after it, up to the next message of the user's.
+    let end = index + 1;
+    while (end < messages.length && messages[end]!.role !== "user") end += 1;
+    const replies = messages.slice(index + 1, end);
+    if (quietEpisode(own, replies)) {
+      group.push(message, ...replies);
+    } else {
+      closeGroup();
+      shown.push(message, ...replies);
+    }
+    index = end;
+  }
+  closeGroup();
+  return shown;
 }
 
 /** One count in an update's header: "2 merged", toned as its lines are. */
@@ -239,4 +347,34 @@ export function updateWords(
     time: Number.isFinite(newest) ? clock(newest) : undefined,
     needsYou: byKind.has("ask") || byKind.has("failed"),
   };
+}
+
+/** The longest preview a quiet update's header carries; the line truncates it further to fit. */
+const PREVIEW_MAX = 160;
+
+/**
+ * A quiet update's preview: the first line the newest of its replies says, in plain words (its
+ * markdown marks and link targets dropped), so the one updating line reads where things stand,
+ * "The release build is 23 minutes in…". Undefined when no reply says anything yet.
+ */
+export function replyPreview(replies: readonly GramUIMessage[] | undefined): string | undefined {
+  for (const reply of (replies ?? []).toReversed()) {
+    const text = reply.parts
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join("\n");
+    const line = text
+      .split("\n")
+      .map((each) =>
+        each
+          .replace(/!?\[([^\]]*)\]\([^)]*\)/gu, "$1")
+          .replace(/[*_`~]+/gu, "")
+          .replace(/^\s*(?:#+|>|[-+]|\d+\.)\s+/u, "")
+          .replace(/\s+/gu, " ")
+          .trim(),
+      )
+      .find((each) => each !== "");
+    if (line !== undefined)
+      return line.length > PREVIEW_MAX ? `${line.slice(0, PREVIEW_MAX - 1)}…` : line;
+  }
+  return undefined;
 }

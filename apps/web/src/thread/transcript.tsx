@@ -911,7 +911,24 @@ function Row({
           foldOpen={foldOpen}
         />
       )}
-      <StreamExtrasView messageId={message.id} />
+      <StreamExtrasView
+        messageId={message.id}
+        renderReply={(reply) => (
+          // A reply a quiet update folded, drawn as it was: its own turn, streaming if it still is.
+          <MessageBlock
+            threadId={threadId}
+            message={reply}
+            streamingIds={streamingIds.has(reply.id) ? streamingIds : NOT_STREAMING}
+            subagents={NO_SUBAGENTS}
+            subagentUsage={NO_SUBAGENT_USAGE}
+            animate={false}
+            turnEnd={undefined}
+            turnUndo={undefined}
+            fold={undefined}
+            foldOpen={false}
+          />
+        )}
+      />
     </div>
   );
 }

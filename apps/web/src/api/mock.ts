@@ -178,7 +178,7 @@ import {
   simulateRealistic,
   calmSeeds,
 } from "./mock-scenarios";
-import type { MockRealisticSimulation } from "./mock-realistic";
+import type { MockDigestStream, MockRealisticSimulation } from "./mock-realistic";
 import {
   IDENTITY,
   MOCK_CAPABILITIES,
@@ -1714,6 +1714,16 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
   async startedRealistic(): Promise<MockRealisticSimulation | undefined> {
     const made = await this.#starting;
     return mockStartsRealistic() ? (made as MockRealisticSimulation) : undefined;
+  }
+
+  /**
+   * `simulateDigestStream` (`mock-realistic.ts`): a long run of quiet digests, and one merge, on
+   * the realistic orchestrator. Only with the realistic scenario started.
+   */
+  async simulateDigestStream(): Promise<MockDigestStream> {
+    const made = await this.startedRealistic();
+    if (made === undefined) throw new Error("the mock did not start with the realistic scenario");
+    return this.#orchestration.simulateDigestStream(made);
   }
 
   /** `simulateReachingWorkers` (`mock-scenarios.ts`). */

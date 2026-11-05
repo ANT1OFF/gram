@@ -46,6 +46,8 @@ import { OrchestratorBanner, OrchestratorChips, WorkerBanner } from "@/orchestra
 import { CatchUpCard } from "@/orchestration/catch-up-card";
 import { FailuresCard } from "@/orchestration/failures-card";
 import { SinceYouLeftCard } from "@/orchestration/since-you-left";
+import { StatusHeader } from "@/orchestration/status-header";
+import { useAllActivity } from "@/stores/all-activity";
 import { OrchestratorStreamProvider, useOrchestratorStream } from "@/orchestration/stream-context";
 import { StuckCard } from "@/orchestration/stuck-card";
 import {
@@ -248,6 +250,15 @@ export function ThreadView({
     const timer = setTimeout(() => useRevealStore.getState().done(revealNonce), FLASH_MS);
     return () => clearTimeout(timer);
   }, [revealNonce]);
+
+  // A search hit or a jump to a reply a quiet update folded shows all activity, so it can land.
+  const foldedHit =
+    revealRequest?.threadId === threadId && revealIndex === -1
+      ? stream?.plan.foldedInto.has(revealRequest.messageId)
+      : false;
+  useEffect(() => {
+    if (foldedHit === true) useAllActivity.getState().set(threadId, true);
+  }, [foldedHit, threadId]);
 
   const reveal = (messageId: string) => useRevealStore.getState().reveal(threadId, messageId);
 
@@ -549,6 +560,14 @@ export function ThreadView({
           {detail}
         </p>
       )}
+      <StatusHeader thread={thread} />
+      {stream !== undefined && (
+        <SinceYouLeftCard
+          key={`since-you-left:${thread.id}`}
+          thread={thread}
+          digests={stream.plan.digests}
+        />
+      )}
       <WaitingTray threadId={threadId} />
       <PlanStrip threadId={threadId} />
       <WorkerBanner thread={thread} />
@@ -612,13 +631,6 @@ export function ThreadView({
       <EditBanner threadId={threadId} />
       <PrStrip threadId={threadId} focused={focused} />
       <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
-      {stream !== undefined && (
-        <SinceYouLeftCard
-          key={`since-you-left:${thread.id}`}
-          thread={thread}
-          digests={stream.plan.digests}
-        />
-      )}
       {thread.role === "orchestrator" && (
         <AskStack workspaceId={thread.workspaceId} composerThreadId={thread.id} focused={focused} />
       )}

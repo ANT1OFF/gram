@@ -51,7 +51,14 @@ vi.mock("@/orchestration/stream-context", async (original) => ({
     // One stream per history, as the real hook memoizes it.
     let stream = seen.streams.get(messages);
     if (stream === undefined) {
-      stream = { plan: { messages: messages.slice(1), extras: new Map(), digests: [] } };
+      stream = {
+        plan: {
+          messages: messages.slice(1),
+          extras: new Map(),
+          digests: [],
+          foldedInto: new Map(),
+        },
+      };
       seen.streams.set(messages, stream);
     }
     return stream;
