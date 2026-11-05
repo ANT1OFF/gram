@@ -13,7 +13,7 @@ export function Snippet({
   className?: string;
 }) {
   return (
-    <span className={cn("truncate text-xs text-muted-foreground", className)}>
+    <span className={cn("truncate text-meta text-muted-foreground", className)}>
       {highlightSegments(text, highlights).map((segment, i) =>
         segment.match ? (
           <mark key={i} className="rounded-xs bg-highlight/25 px-0.5 text-foreground">

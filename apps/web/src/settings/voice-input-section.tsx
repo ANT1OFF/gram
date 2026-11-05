@@ -216,7 +216,7 @@ export function VoiceInputSection() {
   const pending = useLifecyclePending();
   const on = settings !== undefined && voiceInputOn(settings);
 
-  if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   const stop = speechPerformanceOf(settings);
   const mode = speechModeOf(settings);
   const current = statuses[SPEECH_MODEL_FOR_STOP[stop]];
@@ -232,7 +232,7 @@ export function VoiceInputSection() {
   };
 
   return (
-    <div className="flex flex-col gap-5 text-sm" data-testid="voice-input-settings">
+    <div className="flex flex-col gap-5 text-reading" data-testid="voice-input-settings">
       <div className={SETTINGS_CARD}>
         <VoiceInputSwitch
           label="Voice input"
@@ -281,7 +281,7 @@ export function VoiceInputSection() {
             description="Catches the half second before you press. Audio stays in memory on this computer."
             // In the open, not in the hover: it's what turning this on consents to.
             detail={
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 The microphone stays open for 2 minutes after you focus a composer or dictate, so{" "}
                 {isMac() ? "the macOS" : "your system's"} microphone indicator stays lit.
               </p>
@@ -324,7 +324,7 @@ export function VoiceInputSection() {
             }}
           />
         )}
-        {error !== undefined && <p className="text-xs text-destructive">{error}</p>}
+        {error !== undefined && <p className="text-meta text-destructive">{error}</p>}
       </div>
       {on && (
         <div className={SETTINGS_CARD}>
@@ -341,7 +341,7 @@ export function VoiceInputSection() {
               save({ voice: { performance: next } }).catch(fail);
             }}
           />
-          {error !== undefined && <p className="text-xs text-destructive">{error}</p>}
+          {error !== undefined && <p className="text-meta text-destructive">{error}</p>}
         </div>
       )}
       {on && (
@@ -405,7 +405,7 @@ function ConsentModel({ status }: { status: SpeechStatus }) {
   const { model } = status;
   return (
     <div className="flex flex-col gap-1">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-reading">
         <dt className="text-muted-foreground">Model</dt>
         <dd>{model.name}</dd>
         <dt className="text-muted-foreground">Download</dt>
@@ -422,7 +422,7 @@ function ConsentModel({ status }: { status: SpeechStatus }) {
           </a>
         </dd>
       </dl>
-      <p className="text-xs text-muted-foreground">{model.license.attribution}.</p>
+      <p className="text-meta text-muted-foreground">{model.license.attribution}.</p>
     </div>
   );
 }
@@ -464,7 +464,7 @@ function DownloadNotice({
           <ConsentModel key={each.model.id} status={each} />
         ))}
       </div>
-      <p className="text-sm">
+      <p className="text-reading">
         <span className="text-muted-foreground">In all: </span>
         {formatSize(size)}
         {status.freeBytes === undefined ? "" : ` (${formatSize(status.freeBytes)} free)`}, about{" "}
@@ -540,7 +540,7 @@ function AccurateModelsRow({
           description={`${names}: ${formatSize(progress.sizeBytes)} on disk. ${statuses.map((status) => `${status.model.license.attribution}.`).join(" ")}`}
         >
           <span
-            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            className="flex items-center gap-1.5 text-meta text-muted-foreground"
             data-testid="voice-accurate-ready"
           >
             <CircleCheck aria-hidden className="size-3.5 text-success" />
@@ -664,7 +664,7 @@ function AccurateNotice({
           <ConsentModel key={status.model.id} status={status} />
         ))}
       </div>
-      <p className="text-sm">
+      <p className="text-reading">
         <span className="text-muted-foreground">In all: </span>
         {formatSize(size)}
         {free === undefined ? "" : ` (${formatSize(free)} free)`}, about{" "}
@@ -708,7 +708,7 @@ function ModelRow({
           description={`${status.model.name}, ${variant}: ${formatSize(progress.sizeBytes)} on disk. ${status.model.license.attribution}.`}
         >
           <span
-            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            className="flex items-center gap-1.5 text-meta text-muted-foreground"
             data-testid="voice-model-ready"
           >
             <CircleCheck aria-hidden className="size-3.5 text-success" />
@@ -954,7 +954,7 @@ function PerformanceSlider({
             className="w-full accent-primary"
             onChange={(event) => onChange(STOPS[Number(event.target.value)] ?? "balanced")}
           />
-          <div aria-hidden className="grid grid-cols-3 text-xs text-muted-foreground">
+          <div aria-hidden className="grid grid-cols-3 text-meta text-muted-foreground">
             {STOPS.map((each, i) => (
               <span
                 key={each}
@@ -969,7 +969,7 @@ function PerformanceSlider({
           </div>
           <p
             id={helpId}
-            className="text-xs text-muted-foreground"
+            className="text-meta text-muted-foreground"
             data-testid="voice-performance-help"
           >
             {STOP_HELP[stop]}

@@ -91,7 +91,7 @@ const why = (compaction: CompactionData): string =>
     ? IDLE[compaction.outcome ?? "completed"]
     : TRIGGER[compaction.trigger];
 
-const ROW = "flex w-full items-center gap-3 text-xs text-muted-foreground";
+const ROW = "flex w-full items-center gap-3 text-meta text-muted-foreground";
 
 /**
  * The live line's words: `Compacting context…`, how long it has taken, and the context it started
@@ -215,7 +215,7 @@ export function CompactionMarker({ compaction }: { compaction: CompactionData })
       <CollapsibleContent className="gram-collapse">
         <div
           data-testid="compaction-details"
-          className="mt-2 rounded-(--radius-md) bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+          className="mt-2 rounded-(--radius-md) bg-muted/40 px-3 py-2 text-meta text-muted-foreground"
         >
           <p className="mb-2 font-medium">
             {idle

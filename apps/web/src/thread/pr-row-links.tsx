@@ -27,9 +27,9 @@ const LINK = cn(
   FOCUS,
 );
 const SURFACE =
-  "origin-(--transform-origin) rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "origin-(--transform-origin) rounded-md border border-border bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[highlighted]:row-cursor";
 
 /**
  * A row's PR number. Hovering it shows what the PR is; clicking it goes there, which `onOpen`
@@ -75,9 +75,9 @@ export function PrNumberLink({
           <PreviewCard.Popup
             data-testid="pr-row-card"
             data-surface="overlay"
-            className={cn(SURFACE, "flex w-80 flex-col gap-2 p-3 text-sm")}
+            className={cn(SURFACE, "flex w-80 flex-col gap-2 p-3 text-reading")}
           >
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-meta text-muted-foreground">
               {display && (
                 <span
                   className={cn(
@@ -99,7 +99,7 @@ export function PrNumberLink({
             </div>
             {card.title !== undefined && <p className="line-clamp-3 font-medium">{card.title}</p>}
             {(card.author !== undefined || stats || card.changedFiles !== undefined) && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 text-meta text-muted-foreground">
                 {card.author !== undefined && <span className="truncate">{card.author}</span>}
                 {stats && (
                   <span className="ml-auto flex shrink-0 gap-1 tabular-nums">

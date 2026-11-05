@@ -19,13 +19,13 @@ export function QueryError({
     <div
       role="status"
       className={cn(
-        "flex flex-col items-center gap-2 p-6 text-center text-sm text-muted-foreground",
+        "flex flex-col items-center gap-2 p-6 text-center text-reading text-muted-foreground",
         className,
       )}
     >
       <CircleSlash aria-hidden className="size-5" />
       <p>{unavailable ? `${feature} isn't available yet.` : `${feature} failed to load.`}</p>
-      {!unavailable && <p className="font-mono text-xs">{errorMessage(error)}</p>}
+      {!unavailable && <p className="font-mono text-meta">{errorMessage(error)}</p>}
     </div>
   );
 }

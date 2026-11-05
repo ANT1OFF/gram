@@ -408,7 +408,7 @@ export function TerminalView({
       {exit && (
         <div
           role="status"
-          className="flex items-center gap-2 border-t border-border px-2 py-1.5 text-xs text-muted-foreground"
+          className="flex items-center gap-2 border-t border-border px-2 py-1.5 text-meta text-muted-foreground"
         >
           {exit.gone
             ? "This terminal ended with the server"
@@ -424,7 +424,7 @@ export function TerminalView({
         </div>
       )}
       {problem && (
-        <p role="alert" className="border-t border-border px-2 py-1.5 text-xs text-danger-text">
+        <p role="alert" className="border-t border-border px-2 py-1.5 text-meta text-danger-text">
           {problem}
         </p>
       )}

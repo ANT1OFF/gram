@@ -56,7 +56,7 @@ export function BriefingPlaceholder({ thread }: { thread: Thread }) {
           data-testid="briefing"
           data-phase={current.phase}
           aria-label={`${PHASE_LABEL[current.phase]} ${current.excerpt}`}
-          className="mb-2 flex flex-col gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs"
+          className="mb-2 flex flex-col gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-meta"
         >
           <div className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 truncate font-medium text-foreground">{current.excerpt}</span>
@@ -64,7 +64,7 @@ export function BriefingPlaceholder({ thread }: { thread: Thread }) {
               {PHASE_LABEL[current.phase]}
             </Shimmer>
           </div>
-          <ol aria-hidden className="flex items-center gap-1 text-[0.7rem] text-muted-foreground">
+          <ol aria-hidden className="flex items-center gap-1 text-caption text-muted-foreground">
             {FEATURE_STATIONS.map((station, i) => (
               <li key={station} className="flex items-center gap-1">
                 {i > 0 && <span className="h-px w-3 bg-border" />}

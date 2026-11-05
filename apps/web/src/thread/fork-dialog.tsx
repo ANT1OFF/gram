@@ -60,18 +60,16 @@ export function ForkDialog({
         <Dialog.Backdrop className="fixed inset-0 z-40 bg-scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Dialog.Popup
           data-testid="fork-dialog"
-          className="fixed top-[20%] left-1/2 z-50 flex w-[min(34rem,90vw)] -translate-x-1/2 flex-col gap-4 rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-lg transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[20%] left-1/2 z-50 flex w-[min(34rem,90vw)] -translate-x-1/2 flex-col gap-4 rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
-          <Dialog.Title className="font-heading text-base font-medium">
-            Fork into worktree
-          </Dialog.Title>
-          <Dialog.Description className="text-xs text-muted-foreground">
+          <Dialog.Title className="font-heading text-title">Fork into worktree</Dialog.Title>
+          <Dialog.Description className="text-meta text-muted-foreground">
             {fromMessageId
               ? "The new thread gets the conversation up to this reply, in a new worktree."
               : "The new thread gets the whole conversation, in a new worktree."}
           </Dialog.Description>
           {notice && (
-            <p role="status" className="rounded-md border border-warning/50 px-2 py-1.5 text-xs">
+            <p role="status" className="rounded-md border border-warning/50 px-2 py-1.5 text-meta">
               {notice}
             </p>
           )}
@@ -84,17 +82,17 @@ export function ForkDialog({
           >
             <WorktreeFields repoPath={repoPath} value={worktree} onChange={setWorktree} />
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Title (optional)</span>
+              <span className="text-meta font-medium text-muted-foreground">Title (optional)</span>
               <input
                 aria-label="Fork title"
                 placeholder={thread ? `Fork of ${thread.title}` : "Title"}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
+                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
               />
             </label>
             {error && (
-              <p role="alert" className="text-sm text-destructive">
+              <p role="alert" className="text-reading text-destructive">
                 {error}
               </p>
             )}

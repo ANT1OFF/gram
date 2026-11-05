@@ -26,29 +26,29 @@ function OpenLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalProps, 
   return (
     <DialogShell testId="link-dialog" title="Open external link?" onClose={onClose}>
       {link === null ? (
-        <p className="text-sm text-muted-foreground">Only http and https links open.</p>
+        <p className="text-reading text-muted-foreground">Only http and https links open.</p>
       ) : (
         <div className="flex flex-col gap-1 rounded-md border border-border bg-muted/40 px-3 py-2.5">
-          <span className="text-xs text-muted-foreground">This link goes to</span>
+          <span className="text-meta text-muted-foreground">This link goes to</span>
           <span
             data-testid="link-dialog-host"
-            className="font-mono text-base font-semibold break-all text-foreground"
+            className="font-mono text-title break-all text-foreground"
           >
             {link.host}
           </span>
           {link.written !== undefined && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               The link spells it <span className="font-mono">{link.written}</span>.
             </span>
           )}
         </div>
       )}
-      <p className="max-h-28 overflow-auto font-mono text-xs break-all text-muted-foreground">
+      <p className="max-h-28 overflow-auto font-mono text-meta break-all text-muted-foreground">
         {url}
       </p>
       {link !== null &&
         (link.untrustable === undefined ? (
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-reading">
             <input
               type="checkbox"
               checked={trust}
@@ -59,7 +59,7 @@ function OpenLinkDialog({ onClose, onConfirm, url }: Omit<LinkSafetyModalProps, 
             </span>
           </label>
         ) : (
-          <p className="text-xs text-muted-foreground">{ALWAYS_ASKS_BECAUSE[link.untrustable]}</p>
+          <p className="text-meta text-muted-foreground">{ALWAYS_ASKS_BECAUSE[link.untrustable]}</p>
         ))}
       <div className="flex justify-end gap-2">
         <Button

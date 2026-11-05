@@ -20,7 +20,7 @@ export function PanelMessage({
   return (
     <p
       role="status"
-      className="flex flex-col items-center gap-2 p-6 text-center text-sm text-muted-foreground"
+      className="flex flex-col items-center gap-2 p-6 text-center text-reading text-muted-foreground"
     >
       {Icon && <Icon aria-hidden ref={drawOn} strokeWidth={1.5} className="size-6 opacity-70" />}
       <span>{loading ? <Shimmer>{children}</Shimmer> : children}</span>

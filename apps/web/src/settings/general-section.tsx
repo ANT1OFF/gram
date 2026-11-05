@@ -88,7 +88,7 @@ export function GeneralSection() {
   const overviewHidden = useLayoutStore((s) => s.overviewHidden);
   const setOverviewHidden = useLayoutStore((s) => s.setOverviewHidden);
 
-  if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
 
   /** Saves `patch`, and puts a failure under the row `key` names. */
   const applyTo = (key: keyof typeof GENERAL_DEFAULTS) => (patch: SettingsPatch) => {
@@ -344,7 +344,7 @@ export function LaunchAtLoginSetting() {
       error={error}
       detail={
         state.needsApproval ? (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-meta text-muted-foreground">
             <span>Waiting for your approval in System Settings → General → Login Items.</span>
             <Hint
               label="Open Login Items"
@@ -504,7 +504,7 @@ function SectionChecks({
       className="flex flex-wrap justify-end gap-x-4 gap-y-1.5"
     >
       {OVERVIEW_OPTIONAL_SECTIONS.map((section) => (
-        <label key={section} className="flex cursor-pointer items-center gap-1.5 text-sm">
+        <label key={section} className="flex cursor-pointer items-center gap-1.5 text-reading">
           <input
             type="checkbox"
             data-section={section}

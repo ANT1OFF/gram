@@ -39,7 +39,7 @@ export function CiCheckDetail({
   )
     return null;
   return (
-    <div className="w-full ps-5 text-xs">
+    <div className="w-full ps-5 text-meta">
       <button
         type="button"
         aria-expanded={open}
@@ -123,7 +123,7 @@ function JobEvidence({
     );
   return (
     <div
-      className="my-2 flex flex-col gap-1.5 rounded border border-border p-2"
+      className="my-2 flex flex-col gap-1.5 rounded-2xs border border-border p-2"
       data-testid="ci-job-detail"
     >
       <p>{data.explanation}</p>

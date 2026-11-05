@@ -68,9 +68,9 @@ const AREAS: readonly { readonly value: IssueArea | typeof NO_AREA; readonly lab
   { value: "agents", label: "Agents" },
 ];
 
-const labelCls = "text-xs font-medium text-muted-foreground";
+const labelCls = "text-meta font-medium text-muted-foreground";
 const inputCls =
-  "w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** Help → Report an Issue…: a bug, feature request or question, filed on Gram's repo. */
 export function ReportIssueDialog() {
@@ -146,7 +146,7 @@ function ReportIssueForm({
   if (filed !== undefined) {
     return (
       <DialogShell testId="report-issue-dialog" title="Report an issue" onClose={onClose}>
-        <div data-testid="report-issue-filed" className="flex items-center gap-2 text-sm">
+        <div data-testid="report-issue-filed" className="flex items-center gap-2 text-reading">
           <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
           <button
             type="button"
@@ -195,7 +195,7 @@ function ReportIssueForm({
               aria-checked={kind === option.value}
               tabIndex={kind === option.value ? 0 : -1}
               onClick={() => setKind(option.value)}
-              className="group flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:border-ring aria-checked:bg-accent aria-checked:text-foreground"
+              className="group flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-reading text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:border-ring aria-checked:bg-accent aria-checked:text-foreground"
             >
               <option.icon
                 aria-hidden
@@ -239,7 +239,7 @@ function ReportIssueForm({
               if (next !== null) setArea(next);
             }}
           >
-            <SelectTrigger aria-label="Area" className="text-xs">
+            <SelectTrigger aria-label="Area" className="text-meta">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -250,7 +250,7 @@ function ReportIssueForm({
               ))}
             </SelectContent>
           </Select>
-          <label className="flex h-8 items-center gap-2 text-sm">
+          <label className="flex h-8 items-center gap-2 text-reading">
             <input
               type="checkbox"
               checked={includeDiagnostics}
@@ -263,7 +263,7 @@ function ReportIssueForm({
           <Collapsible>
             <CollapsibleTrigger
               data-testid="report-issue-diagnostics"
-              className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              className="group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground"
             >
               <ChevronRight
                 aria-hidden
@@ -274,7 +274,7 @@ function ReportIssueForm({
             <CollapsibleContent className="gram-collapse">
               <pre
                 data-testid="report-issue-diagnostics-body"
-                className="mt-1 overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap"
+                className="mt-1 overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap"
               >
                 {footer.data}
               </pre>
@@ -282,7 +282,10 @@ function ReportIssueForm({
           </Collapsible>
         )}
         {error !== undefined && (
-          <div role="alert" className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-2 text-meta text-destructive"
+          >
             <span className="min-w-0 flex-1 break-words">{error}</span>
             <Button
               type="button"

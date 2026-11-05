@@ -38,8 +38,8 @@ export function ArtifactCard({
         <AppWindow aria-hidden className="size-4" />
       </span>
       <div className="min-w-0 flex-1" title={artifact.url}>
-        <span className="block truncate text-sm font-medium">{name}</span>
-        <span className="block truncate text-xs text-muted-foreground">
+        <span className="block truncate text-reading font-medium">{name}</span>
+        <span className="block truncate text-meta text-muted-foreground">
           Artifact on claude.ai{artifact.version === undefined ? "" : ` · v${artifact.version}`}
         </span>
       </div>

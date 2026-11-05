@@ -105,7 +105,7 @@ export function FileTree({ threadId, root }: { threadId: ThreadId; root: string 
         ref={treeRef}
         role="tree"
         aria-label="Files"
-        className="p-1 text-sm"
+        className="p-1 text-reading"
         onKeyDown={treeKeyDown}
       >
         <TreeLevel threadId={threadId} path={root} depth={1} />
@@ -126,7 +126,7 @@ function TreeLevel({ threadId, path, depth }: { threadId: ThreadId; path: string
 
   if (query.status === "pending") {
     return (
-      <li role="none" className="py-1 text-xs text-muted-foreground" style={indent(depth + 1)}>
+      <li role="none" className="py-1 text-meta text-muted-foreground" style={indent(depth + 1)}>
         <Shimmer>Loading…</Shimmer>
       </li>
     );
@@ -146,7 +146,7 @@ function TreeLevel({ threadId, path, depth }: { threadId: ThreadId; path: string
   }
   if (query.status === "error") {
     return (
-      <li role="none" className="py-1 text-xs text-danger-text" style={indent(depth + 1)}>
+      <li role="none" className="py-1 text-meta text-danger-text" style={indent(depth + 1)}>
         {filesProblem(query.error)}
       </li>
     );
@@ -160,12 +160,12 @@ function TreeLevel({ threadId, path, depth }: { threadId: ThreadId; path: string
         <TreeRow key={entry.path} threadId={threadId} entry={entry} depth={depth} />
       ))}
       {entries.length === 0 && (
-        <li role="none" className="py-1 text-xs text-muted-foreground" style={indent(depth + 1)}>
+        <li role="none" className="py-1 text-meta text-muted-foreground" style={indent(depth + 1)}>
           {filter ? "No matching files" : "Empty folder"}
         </li>
       )}
       {query.data.truncated && (
-        <li role="none" className="py-1 text-xs text-muted-foreground" style={indent(depth + 1)}>
+        <li role="none" className="py-1 text-meta text-muted-foreground" style={indent(depth + 1)}>
           More files not shown
         </li>
       )}

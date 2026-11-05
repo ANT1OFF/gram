@@ -21,10 +21,10 @@ export function ShortcutList() {
     <div className="grid gap-4 sm:grid-cols-2">
       {sections.map((section) => (
         <section key={section.group} aria-label={section.group}>
-          <h3 className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          <h3 className="mb-1 text-caption font-medium tracking-wide text-muted-foreground uppercase">
             {section.group}
           </h3>
-          <dl className="flex flex-col gap-1 text-sm">
+          <dl className="flex flex-col gap-1 text-reading">
             {section.rows.map((row) => (
               <div key={row.id} className="flex items-center gap-2">
                 <dt className="truncate">{row.label}</dt>
@@ -32,7 +32,7 @@ export function ShortcutList() {
                   {row.keys.map((keys) => (
                     <kbd
                       key={keys}
-                      className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs"
+                      className="rounded-2xs border border-border bg-muted px-1.5 py-0.5 font-mono text-meta"
                     >
                       {formatKeys(keys)}
                     </kbd>

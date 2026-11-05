@@ -30,7 +30,7 @@ import {
 import { COPIED_MS, copyMarkdown } from "./message-actions";
 
 const ROW =
-  "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 text-xs hover:bg-muted/60";
+  "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 text-meta hover:bg-muted/60";
 const JUMP =
   "flex min-w-0 flex-1 items-center gap-1.5 self-stretch text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 const CHIP = "shrink-0 rounded-sm border border-border px-1 text-muted-foreground";
@@ -146,7 +146,7 @@ export function SubagentStrip({
                       <span
                         className={cn(
                           "min-w-0 shrink truncate",
-                          row.command ? "font-mono text-[11px]" : "font-medium",
+                          row.command ? "font-mono text-caption" : "font-medium",
                         )}
                       >
                         {row.label}
@@ -231,7 +231,7 @@ function WorkHint({
 }
 
 const code = (text: string) => (
-  <code className="block min-w-0 truncate font-mono text-[11px] opacity-80">{text}</code>
+  <code className="block min-w-0 truncate font-mono text-caption opacity-80">{text}</code>
 );
 
 /** Copies a task's whole command, which the line and its tooltip show only the start of. */

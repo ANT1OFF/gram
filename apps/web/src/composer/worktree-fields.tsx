@@ -22,9 +22,9 @@ import { BRANCH_PREFIXES, branchRef, randomBranchName, type BranchPrefix } from 
 /** `WorktreeChoice.base` for "whatever the repository's default branch is". */
 export const DEFAULT_BASE = "__default__";
 
-const labelCls = "text-xs font-medium text-muted-foreground";
+const labelCls = "text-meta font-medium text-muted-foreground";
 const inputCls =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 export interface WorktreeChoice {
   prefix: BranchPrefix;
@@ -74,7 +74,7 @@ export function WorktreeFields({
             if (next !== null) onChange({ ...value, prefix: next as BranchPrefix });
           }}
         >
-          <SelectTrigger aria-label="Branch prefix" className="font-mono text-xs">
+          <SelectTrigger aria-label="Branch prefix" className="font-mono text-meta">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -91,7 +91,7 @@ export function WorktreeFields({
         <span className="flex gap-1">
           <input
             aria-label="Branch name"
-            className={cn(inputCls, "font-mono text-xs")}
+            className={cn(inputCls, "font-mono text-meta")}
             value={value.name}
             onChange={(event) => onChange({ ...value, name: event.target.value })}
           />
@@ -118,7 +118,7 @@ export function WorktreeFields({
             if (next !== null) onChange({ ...value, base: next });
           }}
         >
-          <SelectTrigger aria-label="Base branch" className="font-mono text-xs">
+          <SelectTrigger aria-label="Base branch" className="font-mono text-meta">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -179,7 +179,7 @@ function UpstreamSyncNote({ repoPath }: { repoPath: string }) {
   if (forward.isSuccess) {
     const { branch, ref, commits: moved } = forward.data;
     return (
-      <p role="status" className="w-full text-xs text-muted-foreground">
+      <p role="status" className="w-full text-meta text-muted-foreground">
         {`Fast-forwarded ${branch} by ${commits(moved)} to ${ref}.`}
       </p>
     );
@@ -190,7 +190,7 @@ function UpstreamSyncNote({ repoPath }: { repoPath: string }) {
   return (
     <p
       data-testid="upstream-sync"
-      className="flex w-full flex-wrap items-center gap-2 text-xs text-muted-foreground"
+      className="flex w-full flex-wrap items-center gap-2 text-meta text-muted-foreground"
     >
       <span>{`${data.branch} is ${commits(data.behind)} behind ${data.ref}.`}</span>
       {data.blocker === undefined ? (
@@ -252,7 +252,7 @@ function BaseFreshness({ repoPath, base }: { repoPath: string; base: string }) {
   if (fetch.isSuccess) {
     const n = fetch.data.newCommits;
     return (
-      <p role="status" className="w-full text-xs text-muted-foreground">
+      <p role="status" className="w-full text-meta text-muted-foreground">
         {n === 0
           ? `${base} is up to date.`
           : `Fetched ${n} new commit${n === 1 ? "" : "s"} into ${base}.`}
@@ -264,7 +264,7 @@ function BaseFreshness({ repoPath, base }: { repoPath: string; base: string }) {
   return (
     <p
       data-testid="base-freshness"
-      className="flex w-full flex-wrap items-center gap-2 text-xs text-muted-foreground"
+      className="flex w-full flex-wrap items-center gap-2 text-meta text-muted-foreground"
     >
       <span>
         {lastFetched === undefined

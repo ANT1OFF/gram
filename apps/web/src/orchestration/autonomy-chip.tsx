@@ -32,7 +32,7 @@ export function AutonomyChip({
       data-autonomy={autonomy}
       title={`${level.label} autonomy. ${level.description}`}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-sm border px-1 text-xs font-normal transition-colors duration-(--dur-base)",
+        "inline-flex shrink-0 items-center gap-1 rounded-sm border px-1 text-meta font-normal transition-colors duration-(--dur-base)",
         level.warn ? "border-warning/50 text-warning" : "border-border text-muted-foreground",
         className,
       )}

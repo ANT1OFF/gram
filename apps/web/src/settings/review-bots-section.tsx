@@ -22,7 +22,7 @@ const toDrafts = (bots: ReadonlyArray<ReviewBot>): ReviewBotDraft[] =>
 export function ReviewBotsSection() {
   const settings = useServerSettings((s) => s.settings);
   const [status, setStatus] = useState(false);
-  if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   const saved = reviewBotsOf(settings);
   return (
     <ReviewBotsEditor
@@ -71,7 +71,7 @@ function ReviewBotsEditor({
   };
 
   return (
-    <div className="flex flex-col gap-4 text-sm" data-testid="review-bots">
+    <div className="flex flex-col gap-4 text-reading" data-testid="review-bots">
       {drafts.length === 0 && (
         <p className="text-muted-foreground">
           No external review bots configured. Human reviews are still tracked. Merge review policies

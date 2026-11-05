@@ -8,9 +8,9 @@ import { cn } from "@/lib/utils";
 import type { PickerOption } from "./picker";
 
 const POPUP =
-  "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-3.5 [&_svg]:shrink-0";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-3.5 [&_svg]:shrink-0";
 
 /** A picker that no longer fits on the toolbar, offered in the "…" menu as a submenu. */
 export interface FoldedPicker {
@@ -76,7 +76,7 @@ export function ToolbarOverflow({
                 >
                   {picker.icon}
                   {picker.label}
-                  <span className="ml-auto pl-3 text-xs text-muted-foreground">
+                  <span className="ml-auto pl-3 text-meta text-muted-foreground">
                     {picker.options.find((option) => option.value === picker.value)?.label}
                   </span>
                   <ChevronRightIcon aria-hidden />
@@ -112,7 +112,7 @@ export function ToolbarOverflow({
                                 {option.label}
                                 <span
                                   aria-hidden
-                                  className="max-w-64 text-xs whitespace-normal text-muted-foreground"
+                                  className="max-w-64 text-meta whitespace-normal text-muted-foreground"
                                 >
                                   {option.description}
                                 </span>
@@ -122,7 +122,7 @@ export function ToolbarOverflow({
                         ))}
                       </Menu.RadioGroup>
                       {picker.description && (
-                        <p className="max-w-72 px-2 py-1 text-xs text-muted-foreground">
+                        <p className="max-w-72 px-2 py-1 text-meta text-muted-foreground">
                           {picker.description}
                         </p>
                       )}

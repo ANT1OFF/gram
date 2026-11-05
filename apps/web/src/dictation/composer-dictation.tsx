@@ -246,7 +246,7 @@ export function DictationStrip({ partial }: { partial: string }) {
     <p
       aria-hidden
       data-testid="dictation-partial"
-      className="truncate px-4 pb-1 text-left text-sm [direction:rtl]"
+      className="truncate px-4 pb-1 text-left text-reading [direction:rtl]"
     >
       <span dir="ltr" className={DICTATION_PARTIAL}>
         {partial}
@@ -259,7 +259,7 @@ export function DictationStrip({ partial }: { partial: string }) {
 export function DictationError({ state }: { state: DictationState }) {
   if (state.phase !== "error") return null;
   return (
-    <p role="alert" className="px-4 pb-2 text-xs text-warning-text">
+    <p role="alert" className="px-4 pb-2 text-meta text-warning-text">
       Dictation: {state.message}
     </p>
   );

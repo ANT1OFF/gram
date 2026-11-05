@@ -50,11 +50,11 @@ import { useWorkspacesQuery } from "./use-orchestration";
 
 const SECTION = "flex flex-col gap-3 rounded-(--radius-md) border border-border bg-card/40 p-3";
 /** A tab's one line on what it is for, beside its action. */
-const LEAD = "min-w-0 flex-1 text-xs text-muted-foreground";
+const LEAD = "min-w-0 flex-1 text-meta text-muted-foreground";
 /** A size beside its cap, the cap as short as it reads: 32 KB, not 32.0 KB. */
 const capText = (cap: number): string => `${cap / 1024} KB`;
 const INPUT =
-  "rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
+  "rounded-md border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
 /**
  * The questions the orchestrator left for the user: the open ones answerable here, then a fold of
@@ -115,7 +115,7 @@ function Questions({ state }: { state: WorkspaceState }) {
             aria-expanded={showClosed}
             aria-controls={closedId}
             onClick={() => setShowClosed((was) => !was)}
-            className="flex items-center gap-1 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex items-center gap-1 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronRight
               aria-hidden
@@ -200,12 +200,12 @@ function FileEditor({
       className="flex min-w-0 flex-1 flex-col gap-2"
     >
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <h3 className="font-mono text-sm">{path}</h3>
+        <h3 className="font-mono text-reading">{path}</h3>
         <span
           data-testid="memory-size"
           data-over={size.over}
           className={cn(
-            "text-xs tabular-nums",
+            "text-meta tabular-nums",
             size.over ? "text-destructive" : "text-muted-foreground",
           )}
         >
@@ -213,7 +213,7 @@ function FileEditor({
           {size.over && " — too large to save"}
         </span>
         {saved > 0 && !dirty && (
-          <span key={saved} className="gram-fade text-xs text-success">
+          <span key={saved} className="gram-fade text-meta text-success">
             Saved
           </span>
         )}
@@ -222,18 +222,18 @@ function FileEditor({
         aria-label={`Contents of ${path}`}
         data-testid="memory-text"
         spellCheck={false}
-        className={cn(INPUT, "min-h-64 flex-1 resize-y py-1.5 font-mono text-xs leading-5")}
+        className={cn(INPUT, "min-h-64 flex-1 resize-y py-1.5 font-mono text-meta leading-5")}
         value={text}
         onChange={(event) => setDraft(event.target.value)}
       />
       {movedUnder && (
-        <p role="status" className="text-xs text-warning">
+        <p role="status" className="text-meta text-warning">
           This file changed in memory since you started editing. Saving overwrites what is there
           now; Revert shows it.
         </p>
       )}
       {error !== undefined && (
-        <p role="alert" data-testid="memory-error" className="text-xs text-destructive">
+        <p role="alert" data-testid="memory-error" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -340,14 +340,14 @@ function NewFileForm({
           .finally(() => setBusy(false));
       }}
     >
-      <label htmlFor={id} className="text-xs text-muted-foreground">
+      <label htmlFor={id} className="text-meta text-muted-foreground">
         A Markdown file, at most two folders deep
       </label>
       <input
         id={id}
         ref={focus}
         spellCheck={false}
-        className={cn(INPUT, "h-7 font-mono text-xs")}
+        className={cn(INPUT, "h-7 font-mono text-meta")}
         value={path}
         placeholder="repos/gram.md"
         onChange={(event) => {
@@ -356,7 +356,7 @@ function NewFileForm({
         }}
       />
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -434,7 +434,7 @@ function Files({
                   aria-current={open === file.path ? "true" : undefined}
                   onClick={() => setSelected(file.path)}
                   className={cn(
-                    "flex w-full items-baseline gap-2 rounded-(--radius-sm) px-2 py-1 text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
+                    "flex w-full items-baseline gap-2 rounded-(--radius-sm) px-2 py-1 text-left text-meta outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
                     open === file.path && "bg-sidebar-row-active",
                   )}
                 >
@@ -458,11 +458,11 @@ function Files({
             ))}
           </PresenceList>
           {files.length === 0 && (
-            <li className="px-2 py-1 text-xs text-muted-foreground">No files yet.</li>
+            <li className="px-2 py-1 text-meta text-muted-foreground">No files yet.</li>
           )}
         </ul>
         {open === undefined ? (
-          <p className="flex-1 self-center text-center text-xs text-muted-foreground">
+          <p className="flex-1 self-center text-center text-meta text-muted-foreground">
             {files.length === 0 ? "Memory is empty." : "Pick a file to read or edit it."}
           </p>
         ) : (
@@ -494,8 +494,8 @@ function VersionRow({
   const [error, setError] = useState<string>();
   return (
     <li data-testid="memory-version" data-version={version.version} className="flex flex-col">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-        <span className="font-mono text-sm">{version.version}</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-meta">
+        <span className="font-mono text-reading">{version.version}</span>
         <span className="text-muted-foreground">adopted {agoText(version.adoptedAt, now)}</span>
         <span className="text-muted-foreground tabular-nums">
           {version.files} {version.files === 1 ? "file" : "files"}
@@ -544,7 +544,7 @@ function VersionRow({
         its next digest.
       </InlineConfirm>
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -688,11 +688,11 @@ export function MemoryView({
       <div
         role="status"
         data-testid="memory-missing"
-        className="flex flex-col items-center gap-2 p-8 text-center text-sm text-muted-foreground"
+        className="flex flex-col items-center gap-2 p-8 text-center text-reading text-muted-foreground"
       >
         <BookOpenText aria-hidden className="size-5" />
         <p>No such workspace.</p>
-        <p className="max-w-sm text-xs">
+        <p className="max-w-sm text-meta">
           It may have been removed. Workspaces are in{" "}
           <Link to="/settings/workspaces" className="underline hover:text-foreground">
             Settings → Workspaces
@@ -715,7 +715,7 @@ export function MemoryView({
       )}
     >
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3">
-        <h1 className="flex min-w-0 items-center gap-2 text-base font-medium">
+        <h1 className="flex min-w-0 items-center gap-2 text-title">
           <BookOpenText aria-hidden className="size-4 shrink-0 text-primary" />
           <span className="truncate">Memory · {state.workspace.name}</span>
         </h1>
@@ -792,7 +792,7 @@ export function MemoryView({
           {empty && starting === undefined && tab !== "update" && (
             <p
               data-testid="memory-import-offer"
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted-foreground"
             >
               This workspace's memory is empty. Draft it from your past sessions in these repos; you
               see what it would read, and what that costs, before anything runs.

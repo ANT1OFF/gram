@@ -48,9 +48,9 @@ export function VoiceVocabularyField({
         <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
           {entries.map((entry) => (
             <li key={entry.term} className="flex min-h-8 items-center gap-2 py-1 pr-1 pl-2.5">
-              <span className="font-mono text-xs">{entry.term}</span>
+              <span className="font-mono text-meta">{entry.term}</span>
               {entry.soundsLike !== undefined && entry.soundsLike.length > 0 && (
-                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                <span className="min-w-0 truncate text-meta text-muted-foreground">
                   heard as {entry.soundsLike.map((spelling) => `“${spelling}”`).join(", ")}
                 </span>
               )}
@@ -118,7 +118,7 @@ export function VoiceVocabularyField({
         </WhyDisabled>
       </div>
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}

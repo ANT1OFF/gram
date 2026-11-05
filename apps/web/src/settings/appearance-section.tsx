@@ -263,14 +263,14 @@ export function AppIconControl() {
           >
             <ChoiceCheck checked={icon === current} className="absolute top-1 right-1" />
             <img src={`/app-icons/${icon}.png`} alt="" className="size-10" draggable={false} />
-            <span className="text-[11px] leading-tight text-muted-foreground">
+            <span className="text-caption leading-tight text-muted-foreground">
               {APP_ICON_NAMES[icon]}
             </span>
           </button>
         ))}
       </div>
       {choose.isError && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           Couldn't change the icon: {errorMessage(choose.error)}
         </p>
       )}
@@ -306,11 +306,11 @@ function PaletteCard({
           <span key={i} className="flex-1" style={{ backgroundColor: hex }} />
         ))}
       </span>
-      <span className="flex items-center gap-1 text-xs font-medium">
+      <span className="flex items-center gap-1 text-meta font-medium">
         {choice.name}
         <ChoiceCheck checked={selected} className="ml-auto" />
       </span>
-      {choice.note && <span className="text-[11px] text-muted-foreground">{choice.note}</span>}
+      {choice.note && <span className="text-caption text-muted-foreground">{choice.note}</span>}
     </button>
   );
 }
@@ -333,12 +333,12 @@ function Control({
   const search = useSettingSearch({ label, description: hint, keywords });
   return (
     <section {...search} className="flex flex-col gap-2">
-      <h3 className="font-caption text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <h3 className="font-caption text-meta font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </h3>
-      {hintFirst && hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {hintFirst && hint && <p className="text-meta text-muted-foreground">{hint}</p>}
       {children}
-      {!hintFirst && hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {!hintFirst && hint && <p className="text-meta text-muted-foreground">{hint}</p>}
     </section>
   );
 }
@@ -385,7 +385,7 @@ function PreviewCard({ className, children }: { className?: string; children: Re
     <div
       {...{ [LONG_COPY]: "sample thread" }}
       className={cn(
-        "rounded-lg border-(length:--card-border-width) border-border bg-card p-3 shadow-card backdrop-blur-(--surface-blur)",
+        "rounded-lg border-(length:--card-border-width) border-border bg-card p-3 shadow-raised backdrop-blur-(--surface-blur)",
         className,
       )}
     >
@@ -471,13 +471,13 @@ function SidebarSample() {
   }, [auto]);
 
   return (
-    <aside className="flex flex-col rounded-lg border-(length:--card-border-width) border-border bg-sidebar p-2 text-sidebar-foreground shadow-card backdrop-blur-(--surface-blur)">
+    <aside className="flex flex-col rounded-lg border-(length:--card-border-width) border-border bg-sidebar p-2 text-sidebar-foreground shadow-raised backdrop-blur-(--surface-blur)">
       <GlideList id="appearance-sidebar">
         {GROUPS.map((group) => {
           const rows = sample.rows.filter((row) => row.status === group.status);
           return (
             <section key={group.status} className="mb-2">
-              <h3 className="flex items-center gap-1.5 px-2 py-1 font-caption text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              <h3 className="flex items-center gap-1.5 px-2 py-1 font-caption text-caption font-medium tracking-wide text-muted-foreground uppercase">
                 <group.icon className={cn("size-3", group.tone)} />
                 {group.label}
                 <NumberTicker className="ml-auto tabular-nums" value={rows.length} />
@@ -487,7 +487,7 @@ function SidebarSample() {
                   <GlideItem
                     key={row.id}
                     glideId={row.id}
-                    className="flex h-(--sidebar-row-height) items-center gap-1.5 rounded-(--sidebar-row-radius) px-2 text-sm hover:bg-sidebar-row-hover"
+                    className="flex h-(--sidebar-row-height) items-center gap-1.5 rounded-(--sidebar-row-radius) px-2 text-reading hover:bg-sidebar-row-hover"
                   >
                     <span className="text-muted-foreground">{row.project}</span>
                     <span className="text-subtle">•</span>
@@ -540,7 +540,7 @@ function ToolCardSample() {
           aria-expanded={open}
           aria-controls="appearance-tool-output"
           onClick={() => setOpen((o) => !o)}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-reading outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <ChevronRight
             className={cn(
@@ -550,12 +550,14 @@ function ToolCardSample() {
           />
           <SquareTerminal className="size-4 shrink-0 text-muted-foreground" />
           <span className="font-medium">Bash</span>
-          <code className="truncate font-mono text-xs text-muted-foreground">pnpm test retry</code>
+          <code className="truncate font-mono text-meta text-muted-foreground">
+            pnpm test retry
+          </code>
         </button>
         {running ? (
-          <Shimmer className="text-xs text-muted-foreground">Running…</Shimmer>
+          <Shimmer className="text-meta text-muted-foreground">Running…</Shimmer>
         ) : (
-          <span className="flex items-center gap-1 text-xs text-success-text">
+          <span className="flex items-center gap-1 text-meta text-success-text">
             <Check className="size-3.5" />
             {seconds.toFixed(1)}s
           </span>
@@ -576,7 +578,7 @@ function ToolCardSample() {
         </PressScale>
       </div>
       <Expand open={open} id="appearance-tool-output">
-        <pre className="mt-2 overflow-x-auto rounded-md bg-surface-2 p-2 font-mono text-xs leading-relaxed text-muted-foreground">
+        <pre className="mt-2 overflow-x-auto rounded-md bg-surface-2 p-2 font-mono text-meta leading-relaxed text-muted-foreground">
           {TOOL_OUTPUT}
         </pre>
       </Expand>

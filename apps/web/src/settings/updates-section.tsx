@@ -67,12 +67,14 @@ export function UpdatesSection({
   );
 
   if (!bridge) {
-    return <p className="text-sm text-muted-foreground">Updates are managed by the desktop app.</p>;
+    return (
+      <p className="text-reading text-muted-foreground">Updates are managed by the desktop app.</p>
+    );
   }
   // A Developer ID signed install updates through Electron's updater; the rest of this page is
   // the `gh` updater's. Until main has said which this install uses, show neither.
   if (native === undefined && bridge.updates.native)
-    return <p className="text-sm text-muted-foreground">Reading the update status…</p>;
+    return <p className="text-reading text-muted-foreground">Reading the update status…</p>;
   if (native) {
     return (
       <NativeUpdatesSection
@@ -144,7 +146,7 @@ export function UpdatesSection({
   };
 
   return (
-    <div className="flex flex-col gap-3 text-sm" data-testid="updates">
+    <div className="flex flex-col gap-3 text-reading" data-testid="updates">
       <BuildStatus check={check} checking={checking} error={error} />
       {/* An unsigned Mac has no updater to check automatically. */}
       {bridge.platform !== "darwin" && (
@@ -195,17 +197,17 @@ export function UpdatesSection({
               <li key={release.tag} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
                 <span className="font-mono">{release.version}</span>
                 {release.prerelease && (
-                  <span className="rounded-sm border border-border px-1 text-xs text-muted-foreground">
+                  <span className="rounded-sm border border-border px-1 text-meta text-muted-foreground">
                     pre-release
                   </span>
                 )}
                 {release.signed && (
-                  <span className="rounded-sm border border-border px-1 text-xs text-muted-foreground">
+                  <span className="rounded-sm border border-border px-1 text-meta text-muted-foreground">
                     signed
                   </span>
                 )}
                 {release.relation === "current" && (
-                  <span className="text-xs text-muted-foreground">running version</span>
+                  <span className="text-meta text-muted-foreground">running version</span>
                 )}
                 <span className="ml-auto" />
                 {action && check.canSelfInstall && (

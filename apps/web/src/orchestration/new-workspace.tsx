@@ -107,9 +107,9 @@ export function NewWorkspaceSheet({
       <div className="flex min-h-full items-center justify-center p-6">
         <div
           data-testid="new-workspace"
-          className="flex w-full max-w-lg flex-col gap-5 rounded-lg border border-border bg-card p-5 text-sm text-card-foreground"
+          className="flex w-full max-w-lg flex-col gap-5 rounded-lg border border-border bg-card p-5 text-reading text-card-foreground"
         >
-          <h1 className="font-heading text-base font-medium">New workspace</h1>
+          <h1 className="font-heading text-title">New workspace</h1>
           {loadError && !shown ? (
             <div role="alert" data-testid="sheet-load-error" className="flex flex-col gap-2">
               <p className="text-destructive">
@@ -372,7 +372,10 @@ function SheetForm({
           Cancel
         </Button>
         {source !== undefined && (
-          <span data-testid="new-workspace-from" className="ml-auto text-xs text-muted-foreground">
+          <span
+            data-testid="new-workspace-from"
+            className="ml-auto text-meta text-muted-foreground"
+          >
             Setup from {source.workspace.name}
           </span>
         )}
@@ -419,7 +422,7 @@ function ReposField({
             <span
               key={projectId}
               data-testid="new-workspace-repo"
-              className="flex items-center gap-1 rounded-full border border-border py-0.5 ps-2.5 pe-1 text-xs"
+              className="flex items-center gap-1 rounded-full border border-border py-0.5 ps-2.5 pe-1 text-meta"
             >
               {name}
               <button

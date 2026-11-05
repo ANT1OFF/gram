@@ -11,7 +11,7 @@ import { useOpenThread } from "@/shell/thread-switcher";
 import { Dialog, DialogShell } from "./dialog-shell";
 
 const fieldCls =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /**
  * "Check out PR…" from ⌘K or a review request: a new worktree on the PR's head branch, a thread in it
@@ -93,12 +93,12 @@ export function CheckoutPrDialog({
           onChange={(event) => setValue(event.target.value)}
         />
         {value.trim() !== "" && !ref && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             Type a number like #12, owner/repo#12 or a github.com PR URL
           </p>
         )}
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-reading text-destructive">
             {error}
           </p>
         )}

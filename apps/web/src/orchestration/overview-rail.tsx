@@ -159,7 +159,7 @@ function RailNeedsYou() {
       title={withHint(action, hint)}
       onClick={open}
       className={cn(
-        "h-5 min-w-7 shrink-0 rounded-full px-1.5 text-[11px] leading-5 font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "h-5 min-w-7 shrink-0 rounded-full px-1.5 text-caption leading-5 font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring",
         count > 0
           ? "bg-status-needs text-background hover:bg-status-needs/85"
           : "bg-sidebar-block text-muted-foreground hover:bg-sidebar-row-hover",
@@ -171,7 +171,7 @@ function RailNeedsYou() {
 }
 
 const TILE =
-  "relative grid size-9 shrink-0 place-items-center rounded-[9px] border border-sidebar-block-border bg-sidebar-block text-[12.5px] font-semibold tracking-wide text-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring aria-current:border-foreground/35 aria-current:bg-sidebar-row-active aria-current:text-foreground";
+  "relative grid size-9 shrink-0 place-items-center rounded-xs border border-sidebar-block-border bg-sidebar-block text-body font-semibold tracking-wide text-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring aria-current:border-foreground/35 aria-current:bg-sidebar-row-active aria-current:text-foreground";
 
 /** One tile per workspace, in the switcher's order, as the open overview's rows. */
 function WorkspaceTiles() {
@@ -259,7 +259,7 @@ function WorkspaceTile({
             data-testid="overview-tile-ring"
             data-working={ringing || undefined}
             className={cn(
-              "pointer-events-none absolute -inset-1 rounded-[12px] border-2",
+              "pointer-events-none absolute -inset-1 rounded-sm border-2",
               ringing ? "gram-ring-breathe border-status-working/55" : "border-transparent",
             )}
           />
@@ -268,7 +268,7 @@ function WorkspaceTile({
             <span
               aria-hidden
               data-testid="overview-tile-asks"
-              className="absolute -top-1.5 -right-2 h-4 min-w-4 rounded-full bg-status-needs px-1 text-center text-[10px] leading-4 font-semibold text-background tabular-nums"
+              className="absolute -top-1.5 -right-2 h-4 min-w-4 rounded-full bg-status-needs px-1 text-center text-caption leading-4 font-semibold text-background tabular-nums"
             >
               {asks}
             </span>
@@ -287,7 +287,7 @@ const TileCount = ({ count }: { count: number }) => (
   <span
     aria-hidden
     data-testid="overview-tile-count"
-    className="absolute -right-1.5 -bottom-1.5 rounded-[6px] border border-sidebar-block-border bg-sidebar px-0.75 text-[10px] leading-3.5 font-normal tracking-normal text-muted-foreground tabular-nums"
+    className="absolute -right-1.5 -bottom-1.5 rounded-xs border border-sidebar-block-border bg-sidebar px-0.75 text-caption leading-3.5 font-normal tracking-normal text-muted-foreground tabular-nums"
   >
     {count}
   </span>
@@ -458,7 +458,7 @@ function Flyout({
             onClick={onPick}
             className={cn(
               CARD_SURFACE,
-              "flex max-h-[min(32rem,var(--available-height))] w-72 flex-col gap-px overflow-y-auto p-2 text-[13px]",
+              "flex max-h-[min(32rem,var(--available-height))] w-72 flex-col gap-px overflow-y-auto p-2 text-body",
             )}
           >
             {children}
@@ -471,11 +471,11 @@ function Flyout({
 
 function FlyoutHead({ title, detail }: { title: string; detail: string }) {
   return (
-    <h3 className="flex items-baseline gap-2 px-1.5 pt-0.5 pb-1 text-[13px] font-semibold">
+    <h3 className="flex items-baseline gap-2 px-1.5 pt-0.5 pb-1 text-body font-semibold">
       <span className="min-w-0 flex-1 truncate">{title}</span>
       <span
         data-testid="overview-flyout-summary"
-        className="shrink-0 text-xs font-normal text-muted-foreground"
+        className="shrink-0 text-meta font-normal text-muted-foreground"
       >
         {detail}
       </span>
@@ -484,7 +484,7 @@ function FlyoutHead({ title, detail }: { title: string; detail: string }) {
 }
 
 const Empty = ({ children }: { children: ReactNode }) => (
-  <p className="px-1.5 py-1 text-xs text-muted-foreground">{children}</p>
+  <p className="px-1.5 py-1 text-meta text-muted-foreground">{children}</p>
 );
 
 /** The workspace the window is on: its live workers, most urgent first, as the open overview has them. */
@@ -557,7 +557,7 @@ function OtherWorkerRow({ summary }: { summary: ThreadSummary }) {
           <AgentIcon agent={thread.model.agent} className="size-3" />
         )}
       </span>
-      <span className="col-span-2 col-start-2 min-w-0 truncate text-xs text-muted-foreground">
+      <span className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground">
         {now}
       </span>
     </button>

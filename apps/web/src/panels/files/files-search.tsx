@@ -92,7 +92,7 @@ export function FilesSearchResults({
         : "done";
 
   return (
-    <div data-testid="files-search" className="flex flex-col text-xs">
+    <div data-testid="files-search" className="flex flex-col text-meta">
       <p role="status" aria-live="polite" className="px-2 py-1.5 text-muted-foreground">
         {searchStatus(state, matches, last?.nextOffset !== undefined)}
       </p>
@@ -201,7 +201,7 @@ function ResultList({
             onKeyDown={onKeyDown(index, match)}
             className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm px-2 py-1 text-left outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
           >
-            <span className="flex min-w-0 font-mono text-[11px] text-muted-foreground">
+            <span className="flex min-w-0 font-mono text-caption text-muted-foreground">
               <span className="truncate">{match.relativePath}</span>
               <span className="shrink-0">:{match.line}</span>
             </span>

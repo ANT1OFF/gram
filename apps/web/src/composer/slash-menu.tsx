@@ -7,7 +7,7 @@ import { ListHighlight } from "@/motion";
 import type { MenuCommand } from "./slash-native";
 
 export const POPOVER =
-  "absolute right-0 bottom-full left-0 z-20 mb-1 rounded-lg border border-border bg-popover p-1 text-sm shadow-md";
+  "absolute right-0 bottom-full left-0 z-20 mb-1 rounded-lg border border-border bg-popover p-1 text-reading shadow-overlay";
 
 export function SlashMenu({
   id,
@@ -49,7 +49,7 @@ export function SlashMenu({
             <li
               role="presentation"
               className={cn(
-                "flex items-center gap-1 px-2 pt-1 pb-0.5 text-[11px] text-muted-foreground",
+                "flex items-center gap-1 px-2 pt-1 pb-0.5 text-caption text-muted-foreground",
                 index > 0 && "mt-1 border-t border-border pt-1.5",
               )}
             >
@@ -73,11 +73,11 @@ export function SlashMenu({
           >
             <span className="font-mono">/{command.name}</span>
             {command.argumentHint && (
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="font-mono text-meta text-muted-foreground">
                 {command.argumentHint}
               </span>
             )}
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate text-meta text-muted-foreground">
               {command.description}
             </span>
             {!headed && command.action !== undefined && (
@@ -98,7 +98,7 @@ export function SlashNote({ note }: { note: string }) {
     <div
       role="status"
       data-testid="slash-note"
-      className={cn(POPOVER, "flex items-start gap-2 px-2 py-1.5 text-xs text-muted-foreground")}
+      className={cn(POPOVER, "flex items-start gap-2 px-2 py-1.5 text-meta text-muted-foreground")}
     >
       <CircleSlash aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
       <span>{note}</span>

@@ -69,7 +69,7 @@ export function TitlebarPopover({
             <Unfold onShown={onShown}>
               <div
                 className={cn(
-                  "rounded-md border border-border bg-popover text-popover-foreground shadow-md",
+                  "rounded-md border border-border bg-popover text-popover-foreground shadow-overlay",
                   className,
                 )}
               >

@@ -26,7 +26,7 @@ export function SettingsStrip() {
         title="Back (Esc)"
         onClick={() => leaveSettings(navigate)}
         className={cn(
-          "mt-2 flex shrink-0 flex-col items-center gap-0.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground outline-none [-webkit-app-region:no-drag]",
+          "mt-2 flex shrink-0 flex-col items-center gap-0.5 rounded-md px-2 py-1.5 text-meta text-muted-foreground outline-none [-webkit-app-region:no-drag]",
           "hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
         )}
       >

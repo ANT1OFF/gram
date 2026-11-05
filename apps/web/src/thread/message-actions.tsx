@@ -32,7 +32,7 @@ const BUSY: ReadonlySet<ThreadStatus> = new Set([
 const ACTION =
   "rounded-(--radius-sm) text-muted-foreground aria-disabled:opacity-50 [@media(pointer:coarse)]:size-9";
 const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
 
 export const messageText = (message: GramUIMessage): string =>
   message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n");
@@ -141,7 +141,7 @@ function SentAt({ message }: { message: GramUIMessage }) {
       data-testid="message-sent-at"
       dateTime={new Date(createdAt).toISOString()}
       title={formatMessageTime(createdAt)}
-      className="px-1.5 py-0.5 text-xs text-muted-foreground tabular-nums"
+      className="px-1.5 py-0.5 text-meta text-muted-foreground tabular-nums"
     >
       {formatMessageStamp(createdAt)}
     </time>
@@ -246,7 +246,7 @@ function CopyAction({
         {content}
         <span>
           <span className="block">{shown}</span>
-          <span className="block text-xs text-muted-foreground">
+          <span className="block text-meta text-muted-foreground">
             Prompt and replies as Markdown
           </span>
         </span>
@@ -363,18 +363,18 @@ function RewindAction({ threadId, message }: { threadId: ThreadId; message: Gram
         <Popover.Positioner side="bottom" align={isUser ? "end" : "start"} sideOffset={4}>
           <Popover.Popup
             data-testid="rewind-confirm"
-            className="z-50 flex w-64 flex-col gap-2 rounded-(--radius-lg) border border-border bg-popover p-3 text-sm text-popover-foreground shadow-(--shadow-raised) transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="z-50 flex w-64 flex-col gap-2 rounded-(--radius-lg) border border-border bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised) transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <Popover.Title className="font-medium">
               {isUser ? "Edit this message?" : "Rewind to this reply?"}
             </Popover.Title>
-            <Popover.Description className="text-xs text-muted-foreground">
+            <Popover.Description className="text-meta text-muted-foreground">
               {isUser
                 ? "The composer is filled with it; sending removes it and everything after."
                 : "Everything after this reply is removed from the conversation."}
             </Popover.Description>
             {support === "historyAndFiles" && (
-              <label className="flex items-center gap-2 text-xs">
+              <label className="flex items-center gap-2 text-meta">
                 <input
                   type="checkbox"
                   checked={files}
@@ -384,12 +384,12 @@ function RewindAction({ threadId, message }: { threadId: ThreadId; message: Gram
               </label>
             )}
             {error && (
-              <p role="alert" className="text-xs text-destructive">
+              <p role="alert" className="text-meta text-destructive">
                 {error}
               </p>
             )}
             <div className="flex justify-end gap-2">
-              <Popover.Close className="rounded-(--radius-sm) px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
+              <Popover.Close className="rounded-(--radius-sm) px-2 py-1 text-meta text-muted-foreground hover:text-foreground">
                 Cancel
               </Popover.Close>
               <Button size="xs" disabled={pending || busy} onClick={() => void confirm()}>
@@ -466,14 +466,14 @@ function ForkActions({
           <FolderGit2 aria-hidden className="size-3.5" />
           <span>
             <span className="block">Fork into worktree…</span>
-            <span className="block text-xs text-muted-foreground">
+            <span className="block text-meta text-muted-foreground">
               {disabledReason ?? "Continue from this reply in a new worktree"}
             </span>
           </span>
         </Menu.Item>
       </MoreActions>
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -511,7 +511,7 @@ function MoreActions({ children }: { children: ReactNode }) {
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="start" sideOffset={4} className="isolate z-50 outline-none">
-          <Menu.Popup className="min-w-56 max-w-[calc(100vw-1rem)] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none">
+          <Menu.Popup className="min-w-56 max-w-[calc(100vw-1rem)] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none">
             {children}
           </Menu.Popup>
         </Menu.Positioner>

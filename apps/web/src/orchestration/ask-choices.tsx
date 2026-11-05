@@ -26,7 +26,7 @@ export function Kbd({
       data-testid="ask-kbd"
       aria-hidden={hidden || undefined}
       className={cn(
-        "rounded-sm border border-border/70 px-1 font-mono text-[10px] leading-4 text-muted-foreground",
+        "rounded-sm border border-border/70 px-1 font-mono text-caption leading-4 text-muted-foreground",
         className,
       )}
     >
@@ -102,7 +102,7 @@ function RadioMark({ checked }: { checked: boolean }) {
     <span
       aria-hidden
       className={cn(
-        "mt-[3px] grid size-3.5 shrink-0 place-items-center rounded-full border transition-colors duration-(--dur-fast)",
+        "mt-[calc((1lh-0.875rem)/2)] grid size-3.5 shrink-0 place-items-center rounded-full border transition-colors duration-(--dur-fast)",
         checked ? "border-primary" : "border-muted-foreground/60",
       )}
     >
@@ -242,7 +242,7 @@ export function AskChoices({
                     <span
                       className={cn(
                         "font-medium break-words",
-                        size === "sm" ? "text-[0.8rem]" : "text-sm",
+                        size === "sm" ? "text-body" : "text-reading",
                       )}
                     >
                       {option.label}
@@ -252,7 +252,7 @@ export function AskChoices({
                   {option.description !== undefined && (
                     <span
                       data-testid="ask-choice-description"
-                      className="text-xs break-words text-muted-foreground"
+                      className="text-meta break-words text-muted-foreground"
                     >
                       {option.description}
                     </span>
@@ -343,7 +343,7 @@ export function AskChoices({
                   <span
                     className={cn(
                       "font-medium break-words",
-                      size === "sm" ? "text-[0.8rem]" : "text-sm",
+                      size === "sm" ? "text-body" : "text-reading",
                     )}
                   >
                     {option.label}
@@ -353,7 +353,7 @@ export function AskChoices({
                 {option.description !== undefined && (
                   <span
                     data-testid="ask-choice-description"
-                    className="text-xs break-words text-muted-foreground"
+                    className="text-meta break-words text-muted-foreground"
                   >
                     {option.description}
                   </span>

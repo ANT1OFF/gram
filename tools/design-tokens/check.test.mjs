@@ -53,9 +53,14 @@ describe("design-token drift check", () => {
   it("flags Tailwind's shadows and raw shadow colours, not elevations", () => {
     expect(
       tokens(
-        `"shadow shadow-md shadow-[0_1px_2px_rgb(0_0_0/0.1)] shadow-raised shadow-overlay shadow-none shadow-[inset_3px_0_0_var(--label-tint)] drop-shadow-sm"`,
+        `"shadow shadow-md shadow-card shadow-[0_1px_2px_rgb(0_0_0/0.1)] shadow-raised shadow-overlay shadow-none shadow-[inset_3px_0_0_var(--label-tint)] drop-shadow-sm"`,
       ),
-    ).toEqual(["shadow shadow", "shadow shadow-md", "shadow shadow-[0_1px_2px_rgb(0_0_0/0.1)]"]);
+    ).toEqual([
+      "shadow shadow",
+      "shadow shadow-md",
+      "shadow shadow-card",
+      "shadow shadow-[0_1px_2px_rgb(0_0_0/0.1)]",
+    ]);
   });
 
   it("flags colours that skip the palette", () => {

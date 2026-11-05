@@ -162,7 +162,7 @@ export function CloseThreadDialog({
       {warning && (
         <p
           role="status"
-          className="flex items-start gap-2 rounded-md border border-warning/50 px-2 py-1.5 text-xs"
+          className="flex items-start gap-2 rounded-md border border-warning/50 px-2 py-1.5 text-meta"
         >
           <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
           {warning}
@@ -172,7 +172,7 @@ export function CloseThreadDialog({
         <p
           role="status"
           data-testid="close-waiting-warning"
-          className="flex items-start gap-2 rounded-md border border-warning/50 px-2 py-1.5 text-xs"
+          className="flex items-start gap-2 rounded-md border border-warning/50 px-2 py-1.5 text-meta"
         >
           <Inbox aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
           {waiting}
@@ -180,7 +180,7 @@ export function CloseThreadDialog({
       )}
 
       {canRemove && (
-        <label className="flex items-start gap-2 text-sm">
+        <label className="flex items-start gap-2 text-reading">
           <input
             type="checkbox"
             className="mt-1"
@@ -192,7 +192,7 @@ export function CloseThreadDialog({
           />
           <span className="flex flex-col gap-0.5">
             Also delete the worktree on disk
-            <span className="text-xs text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               {!removeWorktree
                 ? "The worktree folder stays on disk."
                 : canDeleteBranch && deleteBranch
@@ -204,7 +204,7 @@ export function CloseThreadDialog({
       )}
 
       {canDeleteBranch && (
-        <label className="flex items-start gap-2 pl-5 text-sm">
+        <label className="flex items-start gap-2 pl-5 text-reading">
           <input
             type="checkbox"
             className="mt-1"
@@ -213,7 +213,7 @@ export function CloseThreadDialog({
           />
           <span className="flex flex-col gap-0.5">
             Also delete the local branch {branchName}
-            <span className="text-xs text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               #{merged.number} is merged. The branch is deleted only if its tip is still the PR's
               head and nothing else has it checked out; the remote branch is never touched.
             </span>
@@ -231,7 +231,7 @@ export function CloseThreadDialog({
 
       {dirty !== undefined && <DirtyAlert changedFiles={dirty} />}
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {error}
         </p>
       )}

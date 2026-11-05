@@ -7,11 +7,11 @@ import { cn } from "@/lib/utils";
 import { reposWithoutWorkspace, taskTargetKey, type TaskTarget } from "./task-model";
 
 const POPUP =
-  "z-50 w-80 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 w-80 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 outline-none select-none data-[highlighted]:row-cursor";
 const LABEL =
-  "px-2 pt-1.5 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase";
+  "px-2 pt-1.5 pb-1 text-caption font-medium tracking-wide text-muted-foreground uppercase";
 
 /**
  * What the New form's "in" chip picks: a task's target, or `newWorkspace`, which is no target but
@@ -56,7 +56,7 @@ export function TaskTargetPicker({
         data-testid="task-target"
         disabled={disabled}
         aria-label={`In: ${label}`}
-        className="flex h-7 w-fit max-w-64 min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 text-xs text-foreground outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-7 w-fit max-w-64 min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 text-meta text-foreground outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate">{label}</span>
@@ -76,7 +76,7 @@ export function TaskTargetPicker({
                   >
                     <Network aria-hidden className="size-4 shrink-0 text-primary" />
                     <span className="min-w-0 flex-1 truncate">{each.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="shrink-0 text-meta text-muted-foreground">
                       {plural(each.projectIds.length, "repo")}
                     </span>
                     <Check
@@ -102,7 +102,9 @@ export function TaskTargetPicker({
                 >
                   <FolderGit2 aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">makes one on send</span>
+                  <span className="shrink-0 text-meta text-muted-foreground">
+                    makes one on send
+                  </span>
                   <Check
                     aria-hidden
                     className={cn(

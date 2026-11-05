@@ -54,7 +54,7 @@ export function FolderBrowser({ onChoose }: { onChoose: (path: string) => void }
         </Button>
         <nav
           aria-label="Breadcrumb"
-          className="flex min-w-0 flex-1 items-center overflow-x-auto text-xs"
+          className="flex min-w-0 flex-1 items-center overflow-x-auto text-meta"
         >
           {folder &&
             breadcrumbs(folder.path, home).map((crumb, i, crumbs) => (
@@ -81,7 +81,7 @@ export function FolderBrowser({ onChoose }: { onChoose: (path: string) => void }
           onRetry={() => void query.refetch()}
         />
       ) : query.status === "error" ? (
-        <div className="flex items-center gap-2 p-3 text-xs">
+        <div className="flex items-center gap-2 p-3 text-meta">
           <p role="alert" className="flex items-center gap-1.5 text-danger-text">
             <CircleAlert aria-hidden className="size-3.5 shrink-0" />
             {folderProblem(query.error).message}
@@ -99,7 +99,7 @@ export function FolderBrowser({ onChoose }: { onChoose: (path: string) => void }
           onUp={up}
         />
       ) : (
-        <p className="p-3 text-xs text-muted-foreground">
+        <p className="p-3 text-meta text-muted-foreground">
           <Shimmer>Loading folders…</Shimmer>
         </p>
       )}
@@ -107,7 +107,7 @@ export function FolderBrowser({ onChoose }: { onChoose: (path: string) => void }
       <div className="flex items-center gap-2 border-t border-border p-1.5">
         {folder && (
           <>
-            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+            <span className="min-w-0 truncate font-mono text-meta text-muted-foreground">
               {tildify(folder.path, home)}
             </span>
             {isGitRepo && <GitBadge />}
@@ -181,7 +181,7 @@ function FolderList({
       className="max-h-72 min-h-24 overflow-y-auto p-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset"
     >
       {folders.length === 0 && (
-        <li className="px-2 py-3 text-xs text-muted-foreground">
+        <li className="px-2 py-3 text-meta text-muted-foreground">
           No subfolders. Choose this folder or go up.
         </li>
       )}
@@ -193,7 +193,7 @@ function FolderList({
           aria-selected={i === active}
           onClick={() => setActive(i)}
           onDoubleClick={() => onEnter(entry)}
-          className="flex h-(--space-row) cursor-default items-center gap-2 rounded-md px-2 text-sm aria-selected:bg-accent"
+          className="flex h-(--space-row) cursor-default items-center gap-2 rounded-md px-2 text-reading aria-selected:bg-accent"
         >
           {entry.isGitRepo ? (
             <FolderGit2 aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -205,7 +205,7 @@ function FolderList({
         </li>
       ))}
       {truncated && (
-        <li className="px-2 py-1.5 text-xs text-muted-foreground">
+        <li className="px-2 py-1.5 text-meta text-muted-foreground">
           Showing the first {folders.length} folders. Type a name to narrow it down.
         </li>
       )}

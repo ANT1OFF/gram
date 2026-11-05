@@ -28,7 +28,7 @@ export function WhatsNewDialog() {
 
   return (
     <DialogShell testId="whats-new-dialog" title="What's new in Gram" onClose={close}>
-      <div className="flex max-h-[55vh] flex-col gap-4 overflow-y-auto text-sm">
+      <div className="flex max-h-[55vh] flex-col gap-4 overflow-y-auto text-reading">
         <ReleaseNotes releases={releases} audience={audience} />
       </div>
       <div className="flex justify-end">

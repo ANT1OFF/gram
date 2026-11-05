@@ -97,12 +97,12 @@ function Choice({
       }
     >
       {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
-      <span className="relative flex w-full items-center gap-1.5 text-sm font-medium">
+      <span className="relative flex w-full items-center gap-1.5 text-reading font-medium">
         <Icon aria-hidden className="size-3.5 shrink-0" />
         {choice.label}
         <ChoiceCheck checked={checked} className="ml-auto" />
       </span>
-      <span className="relative text-xs text-muted-foreground">{choice.line}</span>
+      <span className="relative text-meta text-muted-foreground">{choice.line}</span>
     </Hint>
   );
 }
@@ -130,9 +130,9 @@ export function NewFormHeader({
   const labelId = useId();
   return (
     <header className="flex flex-col gap-3">
-      <h1 className="font-heading text-base font-medium">New</h1>
+      <h1 className="font-heading text-title">New</h1>
       <div className="flex flex-col gap-2">
-        <span id={labelId} className="text-xs font-medium text-muted-foreground">
+        <span id={labelId} className="text-meta font-medium text-muted-foreground">
           Who does it
         </span>
         <div
@@ -152,7 +152,7 @@ export function NewFormHeader({
           ))}
         </div>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-meta text-muted-foreground">
         <span className="flex items-center gap-1.5">
           in
           {where}

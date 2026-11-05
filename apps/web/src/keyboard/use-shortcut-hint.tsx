@@ -17,5 +17,5 @@ export const withHint = (label: string, hint: string): string =>
 export function ShortcutKbd({ id, className }: { id: string; className?: string }) {
   const hint = useShortcutHint(id);
   if (!hint) return null;
-  return <kbd className={cn("font-mono text-[10px]", className)}>{hint}</kbd>;
+  return <kbd className={cn("font-mono text-caption", className)}>{hint}</kbd>;
 }

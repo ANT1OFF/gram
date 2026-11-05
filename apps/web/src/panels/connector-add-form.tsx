@@ -40,7 +40,7 @@ const SCOPES: { value: McpScope; label: string }[] = [
 const TARGETS: ReadonlyArray<McpTarget> = ["claude", "codex"];
 
 const FIELD =
-  "w-full rounded-md border border-input bg-transparent px-2 py-1 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
+  "w-full rounded-md border border-input bg-transparent px-2 py-1 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
 function Choices<T extends string>({
   label,
@@ -195,7 +195,7 @@ export function AddConnectorForm({
     <form
       aria-label="Add MCP server"
       data-testid="connector-add-form"
-      className="flex flex-col gap-2.5 border-b border-border bg-muted/30 px-3 py-3 text-xs"
+      className="flex flex-col gap-2.5 border-b border-border bg-muted/30 px-3 py-3 text-meta"
       onSubmit={(event) => {
         event.preventDefault();
         submit();

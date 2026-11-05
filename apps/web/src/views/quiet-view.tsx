@@ -67,9 +67,9 @@ const DOT: Readonly<Record<DotTone, string>> = {
 };
 
 const MENU_POPUP =
-  "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[highlighted]:row-cursor";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -281,11 +281,11 @@ export function QuietView({ workspaceId }: ViewProps) {
         <Swap swapKey={card?.ask.key ?? "empty"} as="div" className="w-full max-w-xl">
           {card === undefined ? (
             <div data-testid="quiet-empty" className="grid gap-1.5 text-center">
-              <p className="text-xl">Nothing needs you.</p>
-              <p data-testid="quiet-summary" className="text-[15px] text-muted-foreground">
+              <p className="text-heading font-normal">Nothing needs you.</p>
+              <p data-testid="quiet-summary" className="text-reading text-muted-foreground">
                 {quietSummary(strip)}
               </p>
-              <p data-testid="quiet-about" className="mt-2 text-xs text-muted-foreground">
+              <p data-testid="quiet-about" className="mt-2 text-meta text-muted-foreground">
                 Quiet shows only what needs you, one card at a time. Esc leaves it.
               </p>
             </div>
@@ -310,7 +310,7 @@ export function QuietView({ workspaceId }: ViewProps) {
           <p
             key={last.key}
             data-testid="quiet-undo-line"
-            className="mt-4 flex items-center gap-1 text-[13px]"
+            className="mt-4 flex items-center gap-1 text-body"
           >
             <DrawnCheck className="size-3.5 text-success-text" />
             {last.done}
@@ -375,9 +375,9 @@ function QuietCard({
       data-testid="quiet-card"
       data-key={ask.key}
       aria-label="Needs you"
-      className="grid gap-3 rounded-lg border border-border bg-card p-5 shadow-sm"
+      className="grid gap-3 rounded-lg border border-border bg-card p-5 shadow-raised"
     >
-      <header className="flex items-center gap-2 text-[13px] text-muted-foreground">
+      <header className="flex items-center gap-2 text-body text-muted-foreground">
         <Icon aria-hidden className="size-4 shrink-0 text-status-needs-mark" />
         <span className="truncate">{card.workspace}</span>
         <span className="flex-1" />
@@ -386,20 +386,20 @@ function QuietCard({
         </span>
       </header>
       <div className="grid gap-1.5">
-        <p className="text-lg break-words" data-testid="quiet-title">
+        <p className="text-title font-normal break-words" data-testid="quiet-title">
           {ask.lead}
           {ask.count > 1 && <span className="text-muted-foreground"> × {ask.count}</span>}
         </p>
         {ask.command !== undefined && (
           <pre
             data-testid="quiet-command"
-            className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-xs break-all whitespace-pre-wrap"
+            className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta break-all whitespace-pre-wrap"
           >
             {ask.command}
           </pre>
         )}
         {ask.extras.length > 0 && (
-          <p className="font-mono text-[11px] break-all text-muted-foreground">
+          <p className="font-mono text-caption break-all text-muted-foreground">
             {ask.extras.map((field, at) => (
               <span key={field.label}>
                 {at > 0 && " · "}
@@ -408,13 +408,13 @@ function QuietCard({
             ))}
           </p>
         )}
-        <p className="text-[13px] text-muted-foreground">{ask.context}</p>
+        <p className="text-body text-muted-foreground">{ask.context}</p>
         {ask.description !== undefined && ask.description.trim() !== "" && (
           <MoreText
             text={ask.description}
             lines={3}
             testId="quiet-description"
-            className="text-[13px] text-muted-foreground"
+            className="text-body text-muted-foreground"
           />
         )}
         <AskDetails ask={ask} />
@@ -422,7 +422,7 @@ function QuietCard({
           <ReplyField ask={ask} current onSend={onReply} inputRef={replyRef} />
         )}
         {problem !== undefined && (
-          <p role="alert" data-testid="quiet-problem" className="text-xs text-destructive">
+          <p role="alert" data-testid="quiet-problem" className="text-meta text-destructive">
             {problem}
           </p>
         )}
@@ -501,7 +501,7 @@ function Peek({
     <section
       data-testid="quiet-peek"
       aria-label={workspace.name}
-      className="mx-auto mb-2 grid w-[min(36rem,calc(100%-2rem))] gap-1 rounded-lg border border-border bg-card p-3 text-sm"
+      className="mx-auto mb-2 grid w-[min(36rem,calc(100%-2rem))] gap-1 rounded-lg border border-border bg-card p-3 text-reading"
     >
       <header className="flex items-center gap-2">
         <h2 className="font-medium">{workspace.name}</h2>
@@ -537,7 +537,7 @@ function PeekRow({ row, onOpen }: { row: WorkerRow; onOpen: () => void }) {
       >
         <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[dotTone(row)])} />
         <span className="min-w-0 flex-1 truncate">{row.title}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{row.now}</span>
+        <span className="shrink-0 text-meta text-muted-foreground">{row.now}</span>
       </button>
     </li>
   );
@@ -561,7 +561,7 @@ function Strip({
   return (
     <footer
       data-testid="quiet-strip"
-      className="flex shrink-0 items-center gap-3 border-t border-border px-4 py-2 text-[13px]"
+      className="flex shrink-0 items-center gap-3 border-t border-border px-4 py-2 text-body"
     >
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {strip.map((w) => (

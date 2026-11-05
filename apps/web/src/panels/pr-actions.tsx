@@ -29,9 +29,9 @@ const STRATEGY_LABEL: Record<MergeStrategy, string> = {
 };
 
 const POPUP =
-  "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-3.5 [&_svg]:shrink-0";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-3.5 [&_svg]:shrink-0";
 
 /**
  * Why merging an open PR wouldn't go through yet, as GitHub's merge state and the PR's reviews and
@@ -201,7 +201,7 @@ export function PrActions({
           <span
             id={reasonId}
             data-testid="pr-merge-blocked"
-            className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
+            className="flex min-w-0 items-center gap-1 text-meta text-muted-foreground"
           >
             <Ban aria-hidden className="size-3.5 shrink-0" />
             {blocked}
@@ -333,17 +333,17 @@ function MergeDialog({
       onClose={onClose}
     >
       {options.isPending ? (
-        <p className="text-xs text-muted-foreground">Loading merge options…</p>
+        <p className="text-meta text-muted-foreground">Loading merge options…</p>
       ) : options.isError ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {options.error.message}
         </p>
       ) : strategies.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           This repository allows none of squash, merge commits or rebase.
         </p>
       ) : (
-        <fieldset className="flex flex-col gap-1.5 text-sm">
+        <fieldset className="flex flex-col gap-1.5 text-reading">
           <legend className="sr-only">Merge strategy</legend>
           {strategies.map((s) => (
             <label key={s} className="flex items-center gap-2">
@@ -370,7 +370,7 @@ function MergeDialog({
             </label>
           )}
           {babysit && (
-            <p data-testid="auto-merge-babysit" className="text-xs text-muted-foreground">
+            <p data-testid="auto-merge-babysit" className="text-meta text-muted-foreground">
               Auto-merge is off while babysitting; merge by hand.
             </p>
           )}

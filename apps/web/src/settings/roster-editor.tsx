@@ -108,7 +108,7 @@ function UseForField({
     <input
       data-testid="worker-model-note"
       aria-label={`What ${modelName(model)} is for`}
-      className={cn(inputCls, "h-7 max-w-none text-xs")}
+      className={cn(inputCls, "h-7 max-w-none text-meta")}
       placeholder={NOTE_PLACEHOLDER}
       maxLength={WORKER_MODEL_NOTE_MAX}
       spellCheck={false}
@@ -152,7 +152,7 @@ function EffortField({
       data-testid="worker-model-effort"
       aria-label={`Effort for ${modelName(model)}`}
       title={effortsUnlisted(models, model.model) ? UNLISTED_EFFORTS : undefined}
-      className="h-7 rounded-md border border-input bg-transparent px-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="h-7 rounded-md border border-input bg-transparent px-1.5 text-reading outline-none focus-visible:ring-2 focus-visible:ring-ring"
       value={model.variant ?? DEFAULT_EFFORT}
       disabled={disabled}
       onChange={(event) =>
@@ -289,7 +289,7 @@ function HarnessNotes({
     <Popover.Root>
       <Popover.Trigger
         data-testid="harness-notes"
-        className="flex items-center gap-1 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex items-center gap-1 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <CircleHelp aria-hidden className="size-3.5" />
         {label}
@@ -300,7 +300,7 @@ function HarnessNotes({
             data-surface="overlay"
             aria-label={label}
             {...{ [LONG_COPY]: "learn more" }}
-            className="flex max-h-(--available-height) max-w-md origin-(--transform-origin) flex-col gap-2 overflow-y-auto rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="flex max-h-(--available-height) max-w-md origin-(--transform-origin) flex-col gap-2 overflow-y-auto rounded-md border border-border bg-popover px-3 py-2 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             {notes.map(({ agent, notes: lines }) => (
               <section key={agent} data-testid={`harness-note-${agent}`}>
@@ -366,7 +366,7 @@ function IssueNote({ issue }: { issue: WorkerModelIssue }) {
       role="status"
       data-testid="worker-model-warning"
       data-unavailable={issue.unavailable === undefined ? undefined : true}
-      className="flex items-start gap-1.5 text-xs text-warning"
+      className="flex items-start gap-1.5 text-meta text-warning"
     >
       <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
       <span>
@@ -511,13 +511,15 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                       )}
                     >
                       <div className="flex items-start gap-2">
-                        <span className="flex min-h-7 min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                        <span className="flex min-h-7 min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-reading">
                           <AgentIcon
                             agent={model.agent}
                             className="size-3.5 shrink-0 text-muted-foreground"
                           />
                           <span className="shrink-0">{agentLabel(model.agent)}</span>
-                          <span className="min-w-0 font-mono text-xs break-all">{model.model}</span>
+                          <span className="min-w-0 font-mono text-meta break-all">
+                            {model.model}
+                          </span>
                           <WorkerSpeedField
                             model={model}
                             disabled={disabled}
@@ -529,7 +531,7 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                             onChange={(variant) => replace(index, withVariant(model, variant))}
                           />
                           {profile !== undefined && (
-                            <span className="shrink-0 text-xs text-muted-foreground">
+                            <span className="shrink-0 text-meta text-muted-foreground">
                               {profile}
                             </span>
                           )}

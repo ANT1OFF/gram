@@ -78,7 +78,7 @@ export function LabelsDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
     >
       {labels.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No labels yet.</p>
+        <p className="text-reading text-muted-foreground">No labels yet.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {labels.map((label) => (
@@ -93,7 +93,7 @@ export function LabelsDialog({ onClose }: { onClose: () => void }) {
         </ul>
       )}
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {error}
         </p>
       )}
@@ -148,7 +148,7 @@ function LabelRow({
       </div>
       <input
         aria-label="Label name"
-        className="h-7 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring"
+        className="h-7 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring"
         value={name}
         onChange={(event) => setName(event.target.value)}
         onBlur={commit}

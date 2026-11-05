@@ -172,7 +172,7 @@ export function CommentEditorRow({
           value={note}
           onChange={(event) => setNote(event.target.value)}
           onKeyDown={onKeyDown}
-          className="block w-full resize-y rounded-md border border-input bg-transparent px-2 py-1 text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="block w-full resize-y rounded-md border border-input bg-transparent px-2 py-1 text-meta outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
         />
         <div className="mt-1 flex items-center justify-end gap-1">
           <Button size="xs" variant="ghost" onClick={onCancel}>
@@ -180,7 +180,7 @@ export function CommentEditorRow({
           </Button>
           <Button size="xs" disabled={note.trim() === ""} onClick={submit}>
             {submitLabel}
-            <kbd className="font-mono text-[10px] opacity-70">{keyLabel("⌘⏎")}</kbd>
+            <kbd className="font-mono text-caption opacity-70">{keyLabel("⌘⏎")}</kbd>
           </Button>
         </div>
       </td>
@@ -193,7 +193,7 @@ export function CommentNoteRow({ span, comment }: { span: number; comment: DiffC
   return (
     <tr data-testid="diff-comment" data-comment={comment.id}>
       <td colSpan={span} className={ROW_CELL}>
-        <div className="flex min-w-0 items-start gap-1.5 text-xs">
+        <div className="flex min-w-0 items-start gap-1.5 text-meta">
           <MessageSquare aria-hidden className="mt-0.5 size-3.5 shrink-0 text-info" />
           <span className="sr-only">Draft comment on {commentLabel(comment)}:</span>
           <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">

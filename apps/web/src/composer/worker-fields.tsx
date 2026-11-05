@@ -68,7 +68,7 @@ export function WorkerFields({
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{item.label}</span>
                     {!usable && (
-                      <span className="text-xs whitespace-normal text-muted-foreground">
+                      <span className="text-meta whitespace-normal text-muted-foreground">
                         No roster model of it can run here
                       </span>
                     )}
@@ -79,7 +79,7 @@ export function WorkerFields({
           </SelectContent>
         </Select>
       ) : (
-        <span className="flex h-7 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground">
+        <span className="flex h-7 items-center gap-1.5 px-2 text-meta font-medium text-muted-foreground">
           <AgentIcon agent={agent} className="size-4" />
           {agentLabel(agent)}
         </span>
@@ -113,11 +113,11 @@ export function WorkerFields({
                   <span className="truncate">
                     {workerChoiceLabel(choice.model)}
                     {choice.default === true && (
-                      <span className="ml-1.5 text-xs text-muted-foreground">Default</span>
+                      <span className="ml-1.5 text-meta text-muted-foreground">Default</span>
                     )}
                   </span>
                   {why !== undefined && (
-                    <span className="max-w-80 text-xs whitespace-normal text-muted-foreground">
+                    <span className="max-w-80 text-meta whitespace-normal text-muted-foreground">
                       {choice.unavailable === undefined ? why : `Unavailable: ${why}`}
                     </span>
                   )}

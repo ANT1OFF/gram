@@ -64,7 +64,7 @@ export function RoleChip({
       data-testid={testId}
       title={info.description}
       className={cn(
-        "inline-flex max-w-48 shrink-0 items-center gap-1 rounded-sm border border-border px-1 text-xs font-normal text-muted-foreground",
+        "inline-flex max-w-48 shrink-0 items-center gap-1 rounded-sm border border-border px-1 text-meta font-normal text-muted-foreground",
         className,
       )}
     >

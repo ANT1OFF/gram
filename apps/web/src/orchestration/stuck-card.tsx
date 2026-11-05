@@ -18,7 +18,7 @@ import { useOrchestratorLedger } from "./use-orchestration";
 import { workerEntryOf } from "./workers-model";
 
 const CHIP =
-  "rounded-sm border border-border px-1.5 py-0.5 text-xs text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "rounded-sm border border-border px-1.5 py-0.5 text-meta text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Puts a nudge in the worker's own composer, in the pane `from` is in, to edit and send. */
 function fillWorkerComposer(threadId: ThreadId, text: string, from: HTMLElement) {
@@ -80,12 +80,12 @@ export function StuckCard({ thread }: { thread: Thread }) {
       <div
         data-testid="worker-stuck"
         data-source={source}
-        className="flex flex-col gap-1.5 border-b border-border bg-card/40 px-4 py-2 text-sm"
+        className="flex flex-col gap-1.5 border-b border-border bg-card/40 px-4 py-2 text-reading"
       >
         <div className="flex items-start gap-2">
           <Clock aria-hidden className="mt-0.5 size-3.5 shrink-0 text-status-idle" />
           <div className="min-w-0 flex-1">
-            <span className="mr-1.5 text-xs text-muted-foreground">
+            <span className="mr-1.5 text-meta text-muted-foreground">
               Why is it stuck? · {idleSince === undefined ? "" : idleFor(idleSince, now)}
             </span>
             <Swap swapKey={source} className="inline">

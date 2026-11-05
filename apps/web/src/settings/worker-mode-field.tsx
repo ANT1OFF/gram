@@ -47,7 +47,7 @@ export function WorkerModeField({
           />
           <span className="flex min-w-0 flex-col">
             <span>{choice.label}</span>
-            <span className="text-xs text-muted-foreground">{choice.line}</span>
+            <span className="text-meta text-muted-foreground">{choice.line}</span>
           </span>
         </label>
       ))}

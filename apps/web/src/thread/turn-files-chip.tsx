@@ -68,7 +68,7 @@ export function TurnFilesChip({
               type="button"
               data-testid="turn-files-chip"
               onClick={viewChanges}
-              className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-(--radius-xs) text-sm font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-(--radius-xs) text-reading font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           }
         >
@@ -76,7 +76,7 @@ export function TurnFilesChip({
           {files(count)} changed
         </Hint>
         <span
-          className="font-mono text-xs tabular-nums"
+          className="font-mono text-meta tabular-nums"
           aria-label={`${additions} lines added, ${deletions} removed`}
         >
           <span className="text-success">+{additions.toLocaleString()}</span>{" "}
@@ -86,7 +86,7 @@ export function TurnFilesChip({
           {undone !== undefined ? (
             <span
               data-testid="turn-undone"
-              className="inline-flex items-center gap-1 px-2 text-xs text-muted-foreground"
+              className="inline-flex items-center gap-1 px-2 text-meta text-muted-foreground"
             >
               <Undo2 aria-hidden className="size-3.5" />
               {undone.failed === undefined ? "Undone" : "Undo failed"} at{" "}
@@ -94,7 +94,7 @@ export function TurnFilesChip({
             </span>
           ) : confirming ? (
             <>
-              <span className="px-1 text-xs text-muted-foreground">
+              <span className="px-1 text-meta text-muted-foreground">
                 Put back {files(count)} as before this turn?
               </span>
               <Button
@@ -142,7 +142,11 @@ export function TurnFilesChip({
         </span>
       </div>
       {refused !== undefined && (
-        <p role="status" data-testid="turn-undo-refused" className="text-xs text-muted-foreground">
+        <p
+          role="status"
+          data-testid="turn-undo-refused"
+          className="text-meta text-muted-foreground"
+        >
           {refused}
         </p>
       )}

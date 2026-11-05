@@ -132,7 +132,7 @@ function MessageAttachment({
   return (
     <li data-testid="message-attachment" title={path} className="max-w-full">
       {src === undefined ? (
-        <span className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-xs">
+        <span className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-meta">
           <Paperclip aria-hidden className="size-3.5" />
           {name}
         </span>
@@ -162,13 +162,13 @@ function SentFile({ threadId, url }: { threadId: ThreadId; url: string }) {
   const inCheckout = checkoutRelative(path, root) !== undefined;
   const [copied, setCopied] = useState(false);
   const card =
-    "flex max-w-full items-center gap-2 self-start rounded-md border border-border px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+    "flex max-w-full items-center gap-2 self-start rounded-md border border-border px-2 py-1.5 text-left text-reading hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
   return (
     <div data-testid="sent-file" title={path} className="my-1 flex max-w-full flex-col gap-1">
       {src !== undefined ? (
         <>
           <AttachmentLightbox src={src} name={name} />
-          <span className="truncate text-xs text-muted-foreground">{name}</span>
+          <span className="truncate text-meta text-muted-foreground">{name}</span>
         </>
       ) : inCheckout ? (
         <button
@@ -198,7 +198,7 @@ function SentFile({ threadId, url }: { threadId: ThreadId; url: string }) {
             <span className="truncate">{name}</span>
             <span
               key={copied ? "copied" : "path"}
-              className={`truncate text-xs text-muted-foreground${copied ? " gram-fade" : ""}`}
+              className={`truncate text-meta text-muted-foreground${copied ? " gram-fade" : ""}`}
             >
               {copied ? "Path copied" : path}
             </span>
@@ -420,7 +420,7 @@ export const MessageBlock = memo(function MessageBlock({
                     key={key}
                     id={`chapter-${part.data.id}`}
                     data-testid="chapter"
-                    className="my-3 flex items-center gap-3 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                    className="my-3 flex items-center gap-3 text-meta font-medium tracking-wide text-muted-foreground uppercase"
                   >
                     <span className="h-px flex-1 bg-border" />
                     {part.data.title}

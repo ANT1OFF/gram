@@ -58,7 +58,7 @@ export function AttachmentChips({
               className={cn(
                 REMOVE,
                 item.previewUrl
-                  ? "absolute top-1 right-1 grid size-5 place-items-center bg-black/60 text-white hover:bg-black/75"
+                  ? "absolute top-1 right-1 grid size-5 place-items-center bg-media-scrim text-on-media hover:bg-media-scrim-hover"
                   : "text-muted-foreground hover:text-foreground",
               )}
               onClick={() => onRemove(item.key)}
@@ -101,7 +101,7 @@ export function AttachmentChips({
               {...chip}
               {...common}
               className={cn(
-                "flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-xs",
+                "flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-meta",
                 arrivals.has(item.key) && "gram-swap",
                 failed ? "border-destructive text-destructive" : "border-border",
               )}

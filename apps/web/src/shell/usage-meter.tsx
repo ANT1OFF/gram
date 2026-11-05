@@ -98,7 +98,7 @@ export function UsageMeter({
             data-stale={stale || undefined}
             aria-label={meterLabel(tightest)}
             className={cn(
-              "flex h-6 items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted",
+              "flex h-6 items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted",
               TONE_TEXT[tone],
               stale && "opacity-70",
             )}
@@ -118,11 +118,11 @@ export function UsageMeter({
 function LimitsPopover() {
   const now = useMinuteNow();
   return (
-    <div className="grid gap-1.5 text-[13px]">
+    <div className="grid gap-1.5 text-body">
       <div
         aria-hidden
         data-testid="usage-limit-headings"
-        className={cn(LIMIT_ROW, "text-[11px] text-muted-foreground")}
+        className={cn(LIMIT_ROW, "text-caption text-muted-foreground")}
       >
         <span />
         <span className="col-span-2 text-right">Used</span>
@@ -131,7 +131,7 @@ function LimitsPopover() {
       {LIMIT_PROVIDERS.map((provider) => (
         <ProviderLimits key={provider} provider={provider} now={now} />
       ))}
-      <p className="mt-1 text-xs text-muted-foreground">Includes your own use outside Gram.</p>
+      <p className="mt-1 text-meta text-muted-foreground">Includes your own use outside Gram.</p>
     </div>
   );
 }
@@ -161,13 +161,13 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
         <span
           data-testid="usage-limit-age"
           data-stale={stale || undefined}
-          className={cn("text-xs", stale ? "text-warning-text" : "text-muted-foreground")}
+          className={cn("text-meta", stale ? "text-warning-text" : "text-muted-foreground")}
         >
           Updated {agoText(newest.at ?? now, now)}
         </span>
       </div>
       {credits !== undefined && (
-        <p data-testid="usage-provider-credits" className="-mt-1 text-xs text-muted-foreground">
+        <p data-testid="usage-provider-credits" className="-mt-1 text-meta text-muted-foreground">
           {credits}
         </p>
       )}
@@ -201,7 +201,7 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
                   <span className="text-right">{limitPercent(limit.utilization)}%</span>
                   <span
                     data-testid="usage-limit-reset"
-                    className="text-right text-xs whitespace-nowrap"
+                    className="text-right text-meta whitespace-nowrap"
                   >
                     {limit.resetsAt === undefined ? "" : resetAtText(limit.resetsAt, now)}
                   </span>
@@ -209,12 +209,18 @@ function ProviderLimits({ provider, now }: { provider: LimitProvider; now: numbe
               )}
             </div>
             {limit?.credits === true && (
-              <p data-testid="usage-limit-credits" className="-mt-1 text-xs text-muted-foreground">
+              <p
+                data-testid="usage-limit-credits"
+                className="-mt-1 text-meta text-muted-foreground"
+              >
                 {CREDITS_TEXT}
               </p>
             )}
             {forecast !== undefined && (
-              <p data-testid="usage-limit-forecast" className="-mt-1 text-xs text-muted-foreground">
+              <p
+                data-testid="usage-limit-forecast"
+                className="-mt-1 text-meta text-muted-foreground"
+              >
                 {forecastText(forecast)}
                 {stale && " · from an older reading"}
               </p>

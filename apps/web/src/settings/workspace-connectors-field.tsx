@@ -93,12 +93,12 @@ export function WorkspaceConnectorsField({
           />
         )}
         {saved.mode === "allow" && entries.length === 0 && pending === undefined && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             With nothing listed, its threads get only Gram's own tools.
           </p>
         )}
         {error && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-meta text-destructive">
             {error}
           </p>
         )}

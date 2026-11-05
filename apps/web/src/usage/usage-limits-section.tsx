@@ -64,15 +64,15 @@ export function UsageLimitsSection({
   return (
     <section aria-labelledby="usage-limits-title" data-testid="usage-limits-section">
       <div className="mb-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <h2 id="usage-limits-title" className="text-sm font-semibold">
+        <h2 id="usage-limits-title" className="text-reading font-semibold">
           Limits
         </h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           As your agents last reported them · includes use outside Gram
         </p>
       </div>
       {providers.length === 0 ? (
-        <p className="text-sm text-muted-foreground" data-testid="usage-limits-none">
+        <p className="text-reading text-muted-foreground" data-testid="usage-limits-none">
           {provider === undefined
             ? "Limits appear here once Claude Code or Codex reports one."
             : `Limits appear here once ${agentLabel(provider)} reports one.`}
@@ -122,7 +122,7 @@ function LimitCard({
         className="flex min-h-28 flex-col rounded-lg border border-border bg-card px-4 py-3.5 text-muted-foreground"
       >
         <CardTitle provider={provider} window={window} />
-        <p className="mt-auto text-xs">No reading yet</p>
+        <p className="mt-auto text-meta">No reading yet</p>
       </div>
     );
   const percent = limitPercent(limit.utilization);
@@ -151,12 +151,12 @@ function LimitCard({
         <p
           data-testid="usage-limit-percent"
           className={cn(
-            "ml-auto text-2xl leading-none font-medium",
+            "ml-auto text-heading leading-none font-medium",
             spent ? "text-destructive" : warns && "text-warning",
           )}
         >
           {percent}
-          <span className="ml-px text-sm font-normal text-muted-foreground">%</span>
+          <span className="ml-px text-reading font-normal text-muted-foreground">%</span>
         </p>
       </div>
       <div
@@ -180,7 +180,7 @@ function LimitCard({
           />
         )}
       </div>
-      <div className="flex justify-between gap-2 text-xs text-muted-foreground tabular-nums">
+      <div className="flex justify-between gap-2 text-meta text-muted-foreground tabular-nums">
         <span data-testid="usage-limit-reset">
           {limit.resetsAt === undefined ? "" : `Resets ${resetAtText(limit.resetsAt, now)}`}
         </span>
@@ -189,14 +189,14 @@ function LimitCard({
         )}
       </div>
       {limit.credits === true && (
-        <p data-testid="usage-limit-credits" className="mt-0.5 text-xs text-muted-foreground">
+        <p data-testid="usage-limit-credits" className="mt-0.5 text-meta text-muted-foreground">
           {CREDITS_TEXT}
         </p>
       )}
       {forecast !== undefined && (
         <p
           data-testid="usage-limit-forecast"
-          className={cn("mt-0.5 text-xs", warns ? "text-warning" : "text-muted-foreground")}
+          className={cn("mt-0.5 text-meta", warns ? "text-warning" : "text-muted-foreground")}
         >
           {forecastText(forecast)}
         </p>
@@ -216,7 +216,7 @@ function LimitCard({
 
 function CardTitle({ provider, window }: { provider: LimitProvider; window: LimitWindow }) {
   return (
-    <h3 className="text-[13px]">
+    <h3 className="text-body">
       <span
         aria-hidden
         className="mr-1.5 inline-block size-2 rounded-full align-middle"

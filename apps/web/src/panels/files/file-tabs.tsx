@@ -66,7 +66,7 @@ export function FileTabs({
             }}
             onKeyDown={(event) => onKeyDown(event, index, path)}
             className={cn(
-              "group/tab flex h-8 max-w-48 shrink-0 cursor-default items-center gap-1.5 border-e border-border ps-2.5 pe-1 text-xs text-muted-foreground outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset",
+              "group/tab flex h-8 max-w-48 shrink-0 cursor-default items-center gap-1.5 border-e border-border ps-2.5 pe-1 text-meta text-muted-foreground outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset",
               active && "bg-accent text-foreground",
             )}
           >

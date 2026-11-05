@@ -189,7 +189,7 @@ export function AiHelpersSection() {
     refetchInterval: 60_000,
   });
 
-  if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
 
   const apply = (key: HelpersKey, patch: NonNullable<SettingsPatch["helpers"]>) => {
     setFailed(undefined);
@@ -236,7 +236,7 @@ export function AiHelpersSection() {
           </SettingRow>
         )}
         {errorOf("source") && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-meta text-destructive">
             {errorOf("source")}
           </p>
         )}
@@ -327,7 +327,7 @@ export function AiHelpersSection() {
                       <p
                         data-testid="suggest-rate"
                         title={SUGGEST_RATE_TITLE}
-                        className="text-xs text-muted-foreground tabular-nums"
+                        className="text-meta text-muted-foreground tabular-nums"
                       >
                         {suggestRateLine(status.suggestions)}
                       </p>
@@ -367,13 +367,13 @@ export function AiHelpersSection() {
           detail={
             <div className="flex flex-col gap-1.5" data-testid="helper-usage">
               {source === "gateway" && pause !== undefined && (
-                <p role="status" className="flex items-start gap-1.5 text-xs text-warning">
+                <p role="status" className="flex items-start gap-1.5 text-meta text-warning">
                   <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
                   {pause}
                 </p>
               )}
               {status !== undefined && (
-                <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                <ul className="flex flex-col gap-0.5 text-meta text-muted-foreground">
                   {usageByKind(status).map((line) => (
                     <li key={line.kind} className="flex gap-2">
                       <span className="w-24 shrink-0">{line.label}</span>
@@ -562,7 +562,7 @@ function HelperContextPicker({ profile }: { profile: GatewayProfile }) {
           <div
             role="group"
             aria-label="Allow helper context"
-            className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm"
+            className="flex flex-col gap-2 rounded-md border border-border p-3 text-reading"
           >
             <p {...{ [LONG_COPY]: "consent" }}>
               {pending === "opening"
@@ -772,13 +772,13 @@ function HelperModelPicker({
       {effortChoice?.unlisted === true && picked?.effort !== undefined && (
         <p
           data-testid="helper-effort-unlisted"
-          className="text-right text-xs text-muted-foreground"
+          className="text-right text-meta text-muted-foreground"
         >
           {UNLISTED_EFFORT_NOTE}
         </p>
       )}
       {save.error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {errorMessage(save.error)}
         </p>
       )}

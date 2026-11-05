@@ -138,7 +138,7 @@ export function KeyCaptureDialog({
       description={`Now ${row.keys === undefined ? "off" : formatKeys(row.keys, mac)}; the default is ${formatKeys(row.defaultKeys, mac)}.`}
       onClose={onClose}
     >
-      <p data-testid="key-capture-status" role="status" aria-live="polite" className="text-sm">
+      <p data-testid="key-capture-status" role="status" aria-live="polite" className="text-reading">
         {recording
           ? `Recording: press the new keys${row.loneModifier ? `, or tap one modifier such as ${formatKeys("altright", mac)} alone` : ""}. Escape cancels; Backspace turns the shortcut off.`
           : capture.state === "off"
@@ -147,19 +147,19 @@ export function KeyCaptureDialog({
       </p>
       <kbd
         aria-hidden
-        className="self-start rounded border border-border bg-muted px-2 py-1 font-mono text-lg"
+        className="self-start rounded-2xs border border-border bg-muted px-2 py-1 font-mono text-title font-normal"
       >
         {recording ? "…" : (shown ?? "Off")}
       </kbd>
       {unusable && (
-        <p data-testid="key-capture-unusable" className="text-xs text-destructive">
+        <p data-testid="key-capture-unusable" className="text-meta text-destructive">
           {unusable}
         </p>
       )}
       {clashes.length > 0 && (
         <p
           data-testid="key-capture-clash"
-          className="flex items-start gap-1.5 text-xs text-warning"
+          className="flex items-start gap-1.5 text-meta text-warning"
         >
           <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           Same keys as {clashes.map((other) => other.label).join(", ")}. Replace turns{" "}
@@ -169,7 +169,7 @@ export function KeyCaptureDialog({
       {systemUse && (
         <p
           data-testid="key-capture-system"
-          className="flex items-start gap-1.5 text-xs text-warning"
+          className="flex items-start gap-1.5 text-meta text-warning"
         >
           <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           macOS uses {shown} for itself ({systemUse}), so Gram may never see it.
@@ -178,7 +178,7 @@ export function KeyCaptureDialog({
       {caveat && (
         <p
           data-testid="key-capture-caveat"
-          className="flex items-start gap-1.5 text-xs text-warning"
+          className="flex items-start gap-1.5 text-meta text-warning"
         >
           <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           {caveat}

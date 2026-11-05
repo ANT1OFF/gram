@@ -42,22 +42,22 @@ export function PermissionChecklist({
   return (
     <div className="flex flex-col gap-1.5">
       {rules.status === "pending" ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           <Shimmer>Checking permission rules…</Shimmer>
         </p>
       ) : rules.status === "error" ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           Couldn't read the worktree's permission rules: {errorMessage(rules.error)}
         </p>
       ) : (
         rules.data.length > 0 && (
           <fieldset className="flex flex-col gap-1">
-            <legend className="mb-1 text-xs text-muted-foreground">
+            <legend className="mb-1 text-meta text-muted-foreground">
               These permission rules were approved in this worktree. Add them to the main checkout
               so future threads inherit them:
             </legend>
             {rules.data.map((rule) => (
-              <label key={rule} className="flex items-center gap-2 font-mono text-xs">
+              <label key={rule} className="flex items-center gap-2 font-mono text-meta">
                 <input
                   type="checkbox"
                   checked={!skipped.has(rule)}
@@ -78,7 +78,7 @@ export function DirtyAlert({ changedFiles }: { changedFiles: number }) {
   return (
     <p
       role="alert"
-      className="rounded-md border border-destructive/40 bg-destructive-tint px-2 py-1.5 text-xs"
+      className="rounded-md border border-destructive/40 bg-destructive-tint px-2 py-1.5 text-meta"
     >
       This worktree has{" "}
       {changedFiles > 0

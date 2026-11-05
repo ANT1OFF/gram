@@ -35,14 +35,14 @@ export function SaveFooter({
       {children}
       <div className="ms-auto flex items-center gap-3">
         {dirty ? (
-          <span data-testid="settings-unsaved" className="text-xs text-warning-text">
+          <span data-testid="settings-unsaved" className="text-meta text-warning-text">
             Unsaved changes
           </span>
         ) : (
           saved && (
             <span
               role="status"
-              className="gram-fade inline-flex items-center gap-0.5 text-xs text-success-text"
+              className="gram-fade inline-flex items-center gap-0.5 text-meta text-success-text"
             >
               <DrawnCheck className="size-3.5" />
               Saved

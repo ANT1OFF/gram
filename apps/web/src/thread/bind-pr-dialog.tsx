@@ -58,13 +58,13 @@ export function BindPrDialog({ threadId, onClose }: { threadId: ThreadId; onClos
           aria-label="Pull request number or URL"
           // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
-          className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           placeholder={origin ? "#12 or a PR URL" : "https://github.com/owner/repo/pull/12"}
           value={value}
           onChange={(event) => setValue(event.target.value)}
         />
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-reading text-destructive">
             {error}
           </p>
         )}

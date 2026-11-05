@@ -71,7 +71,7 @@ export function PrWatch({
   return (
     <div
       data-testid="pr-watch"
-      className="mx-3 my-2 flex flex-col rounded-(--radius-md) border border-border bg-muted/40 text-xs"
+      className="mx-3 my-2 flex flex-col rounded-(--radius-md) border border-border bg-muted/40 text-meta"
     >
       <div
         role="group"
@@ -133,7 +133,7 @@ export function PrWatch({
               value={roundsText}
               onChange={(event) => setRoundsText(event.target.value)}
               onBlur={() => setRoundsText(String(babysitRounds(roundsText)))}
-              className="h-6 w-10 rounded-md border border-input bg-background px-1.5 text-xs text-foreground tabular-nums outline-none focus-visible:border-ring"
+              className="h-6 w-10 rounded-md border border-input bg-background px-1.5 text-meta text-foreground tabular-nums outline-none focus-visible:border-ring"
             />
           </label>
         )}

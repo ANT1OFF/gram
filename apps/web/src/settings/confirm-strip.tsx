@@ -32,7 +32,7 @@ export function ConfirmStrip({
       role="group"
       aria-label={label}
       className={cn(
-        "flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 p-2 text-sm",
+        "flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 p-2 text-reading",
         className,
       )}
     >

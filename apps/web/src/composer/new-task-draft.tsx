@@ -80,7 +80,7 @@ import { SLAB, SLAB_TEXTAREA } from "./styles";
 import { shownWorkerChoice, workerChoiceKey } from "./worker-choice";
 import { WorkerFields } from "./worker-fields";
 
-const labelCls = "text-xs font-medium text-muted-foreground";
+const labelCls = "text-meta font-medium text-muted-foreground";
 
 /**
  * The New form for the orchestrator (⌘N's `/new-task`) or, with `initialWay` "direct" (⌥⌘N), for
@@ -393,7 +393,7 @@ export function NewTaskDraft({
                     if (value !== null) setRepoId(value as ProjectId);
                   }}
                 >
-                  <SelectTrigger size="sm" aria-label="Repo" className="h-7 text-xs">
+                  <SelectTrigger size="sm" aria-label="Repo" className="h-7 text-meta">
                     <FolderGit2 aria-hidden />
                     <SelectValue />
                   </SelectTrigger>
@@ -524,7 +524,7 @@ export function NewTaskDraft({
               <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
                 {shownWorker !== undefined && (
                   <div role="group" aria-label="Worker" className="contents">
-                    <span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
+                    <span aria-hidden className="pl-1.5 text-meta text-muted-foreground">
                       Worker
                     </span>
                     <WorkerFields
@@ -540,7 +540,7 @@ export function NewTaskDraft({
                 <span
                   aria-live="polite"
                   data-testid="draft-dictation-status"
-                  className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground"
+                  className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
                 >
                   {dictation.active ? dictationStatus(dictation.state) : undefined}
                 </span>
@@ -567,7 +567,7 @@ export function NewTaskDraft({
               onCheckedChange={setHold}
               className="mt-0.5"
             />
-            <div className="flex min-w-0 flex-col gap-0.5 text-xs">
+            <div className="flex min-w-0 flex-col gap-0.5 text-meta">
               <label htmlFor={holdId} className="font-medium text-foreground">
                 Start under my control
               </label>
@@ -580,17 +580,17 @@ export function NewTaskDraft({
         )}
 
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-reading text-destructive">
             {error}
           </p>
         )}
 
         <div className="flex flex-col gap-3">
           {orchestratorModel === undefined ? (
-            <p className="text-xs text-muted-foreground">Checking the task's selected harness…</p>
+            <p className="text-meta text-muted-foreground">Checking the task's selected harness…</p>
           ) : (
             way === "plan" && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 {`Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${orchestratorModel.model}`}
               </p>
             )
@@ -609,7 +609,7 @@ export function NewTaskDraft({
             />
           )}
           {selection.isError && (
-            <p role="alert" className="text-xs text-destructive">
+            <p role="alert" className="text-meta text-destructive">
               {errorMessage(selection.error)}{" "}
               <Button
                 type="button"
@@ -622,7 +622,7 @@ export function NewTaskDraft({
             </p>
           )}
           {shownWorker?.unavailable !== undefined && (
-            <p role="alert" className="text-xs text-destructive">
+            <p role="alert" className="text-meta text-destructive">
               {agentLabel(shownWorker.model.agent)} {shownWorker.model.model} can't run here:{" "}
               {shownWorker.unavailable}. Pick another worker model.
             </p>
@@ -630,7 +630,7 @@ export function NewTaskDraft({
           {way === "direct" && workerModel !== undefined && (
             <>
               {shownWorker === undefined && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-meta text-muted-foreground">
                   Worker: {agentLabel(workerModel.agent)} · {workerModel.model}
                 </p>
               )}
@@ -667,7 +667,7 @@ export function NewTaskDraft({
               </Button>
             </PressScale>
             {target !== undefined && !makesOne && (
-              <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-meta text-muted-foreground">
                 <WorkspaceAutonomy
                   state={workspace}
                   autonomy={autonomyOf(workspace?.charter ?? DEFAULT_CHARTER)}

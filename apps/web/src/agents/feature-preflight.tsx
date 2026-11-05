@@ -111,7 +111,7 @@ export function HarnessPreflightNote({
   return (
     <div
       data-testid="harness-preflight"
-      className="flex flex-col gap-1 text-xs text-muted-foreground"
+      className="flex flex-col gap-1 text-meta text-muted-foreground"
     >
       {(checking || result.reason !== undefined) && (
         <p

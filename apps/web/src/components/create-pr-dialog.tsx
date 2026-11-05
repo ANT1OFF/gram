@@ -18,9 +18,9 @@ import { cn } from "@/lib/utils";
 import { useThreadsStore } from "@/stores/threads";
 import { DialogShell } from "@/thread/dialog-shell";
 
-const labelCls = "text-xs font-medium text-muted-foreground";
+const labelCls = "text-meta font-medium text-muted-foreground";
 const inputCls =
-  "w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** `origin/main` as GitHub names it: `main`. */
 const branchName = (ref: string) => ref.replace(/^origin\//, "");
@@ -155,7 +155,7 @@ export function CreatePrDialog({ threadId, onClose }: { threadId: ThreadId; onCl
                 if (next !== null) setBase(next);
               }}
             >
-              <SelectTrigger aria-label="Base branch" className="font-mono text-xs">
+              <SelectTrigger aria-label="Base branch" className="font-mono text-meta">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -167,7 +167,7 @@ export function CreatePrDialog({ threadId, onClose }: { threadId: ThreadId; onCl
               </SelectContent>
             </Select>
           </label>
-          <label className="flex h-8 items-center gap-2 text-sm">
+          <label className="flex h-8 items-center gap-2 text-reading">
             <input
               type="checkbox"
               checked={draft}
@@ -177,12 +177,12 @@ export function CreatePrDialog({ threadId, onClose }: { threadId: ThreadId; onCl
           </label>
         </div>
         {needsPush && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             origin doesn't have this branch's latest commits yet, so they're pushed first.
           </p>
         )}
         {error !== undefined && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-meta text-destructive">
             {error}
           </p>
         )}

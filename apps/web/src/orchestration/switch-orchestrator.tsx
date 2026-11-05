@@ -80,7 +80,7 @@ export function SwitchOrchestratorAction({
         className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3"
         data-testid="orchestrator-switch-action"
       >
-        <div className="text-xs">
+        <div className="text-meta">
           <p className="font-medium">Current orchestrator</p>
           <p data-testid="orchestrator-current" className="mt-1 text-muted-foreground">
             {switchCurrentText(current, identity?.model)}
@@ -157,7 +157,7 @@ export function SwitchOrchestratorDialog({
     <DialogShell testId="switch-orchestrator-dialog" title="Switch orchestrator" onClose={onClose}>
       {change === undefined ? (
         <>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             Current: <span data-testid="switch-current-model">{name(current.model)}</span>
             {identity?.model && identity.model !== current.model.model
               ? ` (CLI reports ${identity.model})`
@@ -166,20 +166,20 @@ export function SwitchOrchestratorDialog({
           <div className="flex flex-wrap gap-2" data-testid="switch-target-fields">
             <AgentFields value={choice} onChange={setChoice} subscriptionOnly />
           </div>
-          <p className="text-xs text-muted-foreground" data-testid="switch-model-availability">
+          <p className="text-meta text-muted-foreground" data-testid="switch-model-availability">
             {known
               ? "Listed by your installed CLI. Availability still depends on your account."
               : catalog.settled
                 ? "Custom or unverified model ID. The exact ID will be sent; account availability is not verified."
                 : "Checking the installed CLI's model list…"}
           </p>
-          <p className="text-sm">
+          <p className="text-reading">
             The current orchestrator finishes its work and questions, then saves workspace memory
             and stops. The selected harness starts a fresh session on this thread using memory and
             the current ledger. Earlier messages stay visible here; the full provider conversation
             is not transferred.
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             Queued messages wait for the new session's workspace context. Worker models, open
             decisions and workspace pauses stay in place. After success, this selection also becomes
             the workspace's preference for future orchestrators.
@@ -187,18 +187,18 @@ export function SwitchOrchestratorDialog({
         </>
       ) : (
         <div className="flex flex-col gap-3" data-testid="orchestrator-switch-status">
-          <p className="text-xs text-muted-foreground">Previous: {name(change.previous)}</p>
-          <p className="text-sm font-medium">Requested: {name(change.target)}</p>
-          <p role="status" className="text-sm">
+          <p className="text-meta text-muted-foreground">Previous: {name(change.previous)}</p>
+          <p className="text-reading font-medium">Requested: {name(change.target)}</p>
+          <p role="status" className="text-reading">
             {switchStatusText(change)}
           </p>
           {change.detail && (
-            <p role="alert" className="text-xs text-destructive">
+            <p role="alert" className="text-meta text-destructive">
               {change.detail}
             </p>
           )}
           {change.phase === "failed" && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               History, workers, decisions and queued messages are retained.{" "}
               {change.targetRelease === "notStarted"
                 ? "The target never started a session. Resolve the startup error, then retry safely."
@@ -210,7 +210,7 @@ export function SwitchOrchestratorDialog({
         </div>
       )}
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}

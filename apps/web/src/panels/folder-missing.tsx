@@ -47,7 +47,7 @@ export function FolderMissing({ threadId, problem }: { threadId: ThreadId; probl
     <div
       role="status"
       data-testid="folder-missing"
-      className="flex flex-col items-center gap-2 p-6 text-center text-sm text-muted-foreground"
+      className="flex flex-col items-center gap-2 p-6 text-center text-reading text-muted-foreground"
     >
       <FolderX aria-hidden className="size-5" />
       <p>{problem}</p>
@@ -57,7 +57,7 @@ export function FolderMissing({ threadId, problem }: { threadId: ThreadId; probl
           Close thread
         </Button>
       </div>
-      {error && <p className="text-xs text-danger-text">{error}</p>}
+      {error && <p className="text-meta text-danger-text">{error}</p>}
     </div>
   );
 }

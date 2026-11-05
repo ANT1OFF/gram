@@ -56,7 +56,7 @@ export function EditCounts({
 }) {
   if (kind === "delete") return null;
   return (
-    <span data-testid="edit-counts" className="shrink-0 font-mono text-xs tabular-nums">
+    <span data-testid="edit-counts" className="shrink-0 font-mono text-meta tabular-nums">
       <span className="text-success">+{additions}</span>
       {kind === "modify" && (
         <>
@@ -86,7 +86,7 @@ export function FileEditCard({ part }: { part: AnyToolPart }) {
       <div
         data-testid="file-edit"
         data-tool-call-id={part.toolCallId}
-        className="py-0.5 text-sm text-muted-foreground"
+        className="py-0.5 text-reading text-muted-foreground"
       >
         {phase === "pending" || phase === "running" ? "Editing…" : (error ?? "Edit")}
       </div>
@@ -147,7 +147,7 @@ function FileEditRow({
       <div
         onClick={toggle}
         className={cn(
-          "group flex max-w-full items-center gap-1.5 py-0.5 text-sm",
+          "group flex max-w-full items-center gap-1.5 py-0.5 text-reading",
           openable && "cursor-pointer",
           working ? "text-foreground" : "text-muted-foreground",
         )}
@@ -173,7 +173,7 @@ function FileEditRow({
           <EditCounts additions={edit.additions} deletions={edit.deletions} kind={edit.kind} />
         )}
         {phase !== "done" && !working && (
-          <span className={cn("shrink-0 text-xs", display.tone)}>{display.label}</span>
+          <span className={cn("shrink-0 text-meta", display.tone)}>{display.label}</span>
         )}
         {openable && (
           <button
@@ -212,7 +212,7 @@ function FileEditRow({
               </div>
             )}
             {error !== undefined && (
-              <pre className="mt-1 overflow-x-auto font-mono text-xs whitespace-pre-wrap text-destructive">
+              <pre className="mt-1 overflow-x-auto font-mono text-meta whitespace-pre-wrap text-destructive">
                 {error}
               </pre>
             )}

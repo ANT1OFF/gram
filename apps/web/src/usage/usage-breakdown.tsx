@@ -65,9 +65,9 @@ export function UsageBreakdownSection({ breakdown }: { breakdown: UsageBreakdown
       className="grid grid-cols-1 gap-x-8 gap-y-7 @3xl:grid-cols-2"
     >
       <div>
-        <h2 className="mb-2 text-sm font-semibold">By workspace</h2>
+        <h2 className="mb-2 text-reading font-semibold">By workspace</h2>
         {workspaces.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No Gram threads in this period.</p>
+          <p className="text-reading text-muted-foreground">No Gram threads in this period.</p>
         ) : (
           <BarList bars={workspaces} testId="usage-by-workspace" />
         )}
@@ -84,13 +84,13 @@ function ThreadList({ threads }: { threads: UsageBreakdown["threads"] }) {
   return (
     <div>
       <div className="mb-2 flex items-baseline gap-2.5">
-        <h2 className="text-sm font-semibold">By thread</h2>
+        <h2 className="text-reading font-semibold">By thread</h2>
         {threads.length > 0 && (
-          <span className="text-xs text-muted-foreground">Top {shown.length}</span>
+          <span className="text-meta text-muted-foreground">Top {shown.length}</span>
         )}
       </div>
       {threads.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No Gram threads in this period.</p>
+        <p className="text-reading text-muted-foreground">No Gram threads in this period.</p>
       ) : (
         <ul data-testid="usage-by-thread" className="grid gap-0.5">
           {shown.map((thread) => {
@@ -101,7 +101,7 @@ function ThreadList({ threads }: { threads: UsageBreakdown["threads"] }) {
                 data-testid="usage-thread-row"
                 data-thread-id={thread.threadId}
               >
-                <div className="flex min-w-0 items-center gap-2 pt-1.5 text-[13px]">
+                <div className="flex min-w-0 items-center gap-2 pt-1.5 text-body">
                   <AgentIcon agent={agent} className="size-3.5 shrink-0 text-muted-foreground" />
                   {thread.title === null ? (
                     <span className="truncate text-muted-foreground">Deleted thread</span>
@@ -114,7 +114,7 @@ function ThreadList({ threads }: { threads: UsageBreakdown["threads"] }) {
                       {thread.title}
                     </Link>
                   )}
-                  <span className="shrink-0 rounded-sm bg-muted px-1.5 text-[11px] text-muted-foreground">
+                  <span className="shrink-0 rounded-sm bg-muted px-1.5 text-caption text-muted-foreground">
                     {ROLE_LABEL[thread.role]}
                   </span>
                   <Amount totals={thread.totals} className="ml-auto" />
@@ -145,10 +145,10 @@ function BarList({ bars, testId }: { bars: readonly Bar[]; testId: string }) {
     <ul data-testid={testId} className="grid gap-0.5">
       {bars.map((bar) => (
         <li key={bar.key} data-testid="usage-breakdown-row" data-key={bar.key}>
-          <div className="flex min-w-0 items-baseline gap-2 pt-1.5 text-[13px]">
+          <div className="flex min-w-0 items-baseline gap-2 pt-1.5 text-body">
             <span className="truncate">{bar.label}</span>
             {bar.note !== undefined && (
-              <span className="shrink-0 text-xs text-muted-foreground">{bar.note}</span>
+              <span className="shrink-0 text-meta text-muted-foreground">{bar.note}</span>
             )}
             <Amount totals={bar.totals} className="ml-auto" />
           </div>
@@ -191,11 +191,7 @@ function SplitBar({
     value: families[f] + (f === "other" ? rest : 0),
   })).filter((p) => p.value > 0);
   return (
-    <div
-      aria-hidden
-      className="mt-1 flex h-1 gap-[2px]"
-      style={{ width: `${(total / max) * 100}%` }}
-    >
+    <div aria-hidden className="mt-1 flex h-1 gap-0.5" style={{ width: `${(total / max) * 100}%` }}>
       {parts.map((p) => (
         <span
           key={p.family}
@@ -224,18 +220,21 @@ export function OutsideGramSection({
       className="rounded-lg border border-dashed border-border-strong px-4 py-3.5"
     >
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <h2 id="usage-outside-title" className="flex items-center gap-1.5 text-sm font-semibold">
+        <h2
+          id="usage-outside-title"
+          className="flex items-center gap-1.5 text-reading font-semibold"
+        >
           <SquareTerminal aria-hidden className="size-3.5 text-muted-foreground" />
           Outside Gram
         </h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           Your own terminal sessions, from local CLI history · in no workspace
         </p>
       </div>
       <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-3">
         {outside.map((row) => (
           <div key={row.provider} data-testid="usage-outside-provider" data-provider={row.provider}>
-            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <dt className="flex items-center gap-1.5 text-meta text-muted-foreground">
               <span
                 aria-hidden
                 className="size-2 rounded-full"
@@ -244,21 +243,21 @@ export function OutsideGramSection({
               {agentLabel(row.provider)}
             </dt>
             <dd
-              className="text-xl font-medium"
+              className="text-heading font-medium"
               title={`${wholeTokens(row.totals.totalTokens)} tokens`}
             >
               {compactTokens(row.totals.totalTokens)}
             </dd>
-            <dd className="text-xs text-muted-foreground">
+            <dd className="text-meta text-muted-foreground">
               {row.sessions} {row.sessions === 1 ? "session" : "sessions"}
             </dd>
           </div>
         ))}
         {total > 0 && (
           <div>
-            <dt className="text-xs text-muted-foreground">Share of all tokens</dt>
-            <dd className="text-xl font-medium">{Math.round((sum / total) * 100)}%</dd>
-            <dd className="text-xs text-muted-foreground">this period</dd>
+            <dt className="text-meta text-muted-foreground">Share of all tokens</dt>
+            <dd className="text-heading font-medium">{Math.round((sum / total) * 100)}%</dd>
+            <dd className="text-meta text-muted-foreground">this period</dd>
           </div>
         )}
       </dl>

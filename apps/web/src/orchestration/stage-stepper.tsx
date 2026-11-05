@@ -99,7 +99,7 @@ export function StageStepper({
         <span
           data-testid="stage-label"
           title={model.current}
-          className="inline-flex w-fit max-w-full items-center gap-1 rounded-sm border border-border px-1 text-[11px] text-foreground/80"
+          className="inline-flex w-fit max-w-full items-center gap-1 rounded-sm border border-border px-1 text-caption text-foreground/80"
         >
           <Milestone aria-hidden className="size-3.5 shrink-0" />
           <span className="truncate">{model.current}</span>
@@ -140,7 +140,7 @@ export function StageStepper({
             ))}
           </ol>
           {!bare && (
-            <span className="flex min-w-0 items-baseline gap-1 text-[11px]">
+            <span className="flex min-w-0 items-baseline gap-1 text-caption">
               <span
                 data-testid="stage-current"
                 title={model.current}
@@ -155,7 +155,7 @@ export function StageStepper({
       ) : (
         <ol
           aria-label={`Stages of ${subject}`}
-          className="flex flex-wrap items-center gap-x-0.5 gap-y-1 text-[11px]"
+          className="flex flex-wrap items-center gap-x-0.5 gap-y-1 text-caption"
         >
           {model.steps.map((step, index) => {
             const Icon = STEP_ICON[step.status];
@@ -214,7 +214,7 @@ export function StageStepper({
               : undefined
           }
           className={cn(
-            "flex min-w-0 items-start gap-1 text-[11px]",
+            "flex min-w-0 items-start gap-1 text-caption",
             model.stale ? "text-warning" : "text-muted-foreground",
           )}
         >
@@ -227,7 +227,7 @@ export function StageStepper({
         <p
           data-testid="stage-note"
           title={model.note}
-          className="line-clamp-2 text-[11px] break-words text-muted-foreground"
+          className="line-clamp-2 text-caption break-words text-muted-foreground"
         >
           {model.note}
         </p>
@@ -258,7 +258,7 @@ export function StageChip({
       data-stale={model.stale}
       title={stageTitle(model)}
       className={cn(
-        "inline-flex max-w-32 min-w-0 shrink items-center gap-1 rounded-sm border border-border px-1 text-[11px] font-normal text-muted-foreground",
+        "inline-flex max-w-32 min-w-0 shrink items-center gap-1 rounded-sm border border-border px-1 text-caption font-normal text-muted-foreground",
         brief &&
           "shrink-0 border-transparent @min-[324px]/sidebar:max-w-24 @min-[324px]/sidebar:shrink @min-[324px]/sidebar:border-border",
         className,

@@ -122,12 +122,12 @@ export function AddRepoDialog({
     >
       <div className="flex flex-col gap-4">
         {workspace !== undefined ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             The orchestrator can then start workers there. In it now:{" "}
             {workspace.projectIds.map((id) => projectNameOf(projects, id)).join(", ")}.
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             Clone a repository from GitHub, or add one that is already on this computer. It opens on
             New thread.
           </p>

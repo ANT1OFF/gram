@@ -56,7 +56,7 @@ export function AgentsSection() {
   const local = useLocalDefaultChoice(settings?.agents.defaultModel === undefined);
   const [failed, setFailed] = useState<{ key: AgentsKey; message: string }>();
 
-  if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   const agents = settings.agents;
   const choice =
     agents.defaultModel === undefined ? local.choice : choiceFromModel(agents.defaultModel);
@@ -84,7 +84,7 @@ export function AgentsSection() {
         }
       >
         {agents.defaultModel === undefined && local.discovering ? (
-          <p role="status" className="text-sm text-muted-foreground">
+          <p role="status" className="text-reading text-muted-foreground">
             Discovering local agents…
           </p>
         ) : (

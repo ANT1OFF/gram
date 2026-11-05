@@ -200,23 +200,23 @@ function Row({
         className="min-w-0 flex-1 text-left"
       >
         <span className="flex items-center gap-2">
-          <span className="truncate text-[13px] font-medium text-foreground">{view.title}</span>
+          <span className="truncate text-body font-medium text-foreground">{view.title}</span>
           {suggested && (
-            <span className="shrink-0 rounded-sm border border-dashed border-border px-1 text-[10px] text-muted-foreground">
+            <span className="shrink-0 rounded-sm border border-dashed border-border px-1 text-caption text-muted-foreground">
               suggested
             </span>
           )}
-          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground tabular-nums">
+          <span className="ml-auto shrink-0 text-caption text-muted-foreground tabular-nums">
             {formatRelative(view.createdAt, now)}
           </span>
         </span>
         {expanded ? (
-          <span data-testid="waiting-item-detail" className="mt-0.5 flex flex-col gap-1 text-xs">
+          <span data-testid="waiting-item-detail" className="mt-0.5 flex flex-col gap-1 text-meta">
             {item.body !== undefined && (
               <span className="whitespace-pre-wrap text-muted-foreground">{item.body}</span>
             )}
             {item.copy !== undefined && (
-              <span className="max-h-40 overflow-y-auto rounded-sm border border-border bg-background/60 px-2 py-1 font-mono text-[11px] whitespace-pre-wrap text-foreground">
+              <span className="max-h-40 overflow-y-auto rounded-sm border border-border bg-background/60 px-2 py-1 font-mono text-caption whitespace-pre-wrap text-foreground">
                 {item.copy}
               </span>
             )}
@@ -224,7 +224,7 @@ function Row({
           </span>
         ) : (
           (view.preview ?? host) !== undefined && (
-            <span className="block truncate text-xs text-muted-foreground">
+            <span className="block truncate text-meta text-muted-foreground">
               {view.preview ?? host}
             </span>
           )
@@ -343,7 +343,7 @@ function ResolvedLine({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 px-2 py-1 text-meta text-muted-foreground hover:text-foreground"
       >
         <ChevronRight
           aria-hidden
@@ -357,7 +357,7 @@ function ResolvedLine({
             <li
               key={item.id}
               data-testid="waiting-resolved-item"
-              className="flex items-center gap-2 px-2 py-1 pl-6 text-xs text-muted-foreground"
+              className="flex items-center gap-2 px-2 py-1 pl-6 text-meta text-muted-foreground"
             >
               <Check aria-hidden className="size-3.5 shrink-0 text-success" />
               <span className="min-w-0 truncate line-through">{item.title}</span>
@@ -456,7 +456,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         aria-expanded={open}
         aria-label={views.length === 0 ? "Nothing waits on you" : trayLabel(views)}
         onClick={() => setOpen(!open)}
-        className="mx-auto flex h-8 w-full max-w-(--thread-max-width) items-center gap-2 px-6 text-xs text-muted-foreground hover:text-foreground @max-sm:px-3"
+        className="mx-auto flex h-8 w-full max-w-(--thread-max-width) items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
       >
         <PulseOnce trigger={additions} tone="needs">
           <Inbox aria-hidden className="size-3.5 text-status-needs-mark" />
@@ -508,7 +508,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
               <li
                 key={item.id}
                 data-testid="waiting-undo-row"
-                className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground"
+                className="flex items-center gap-2 px-2 py-1 text-meta text-muted-foreground"
               >
                 <Check aria-hidden className="size-3.5 shrink-0 text-success" />
                 <span className="min-w-0 truncate line-through">{item.title}</span>
@@ -523,7 +523,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
               </li>
             ))}
             {byHelper.length > 0 && (
-              <li data-testid="waiting-helper-resolved" className="px-2 pt-1 text-xs">
+              <li data-testid="waiting-helper-resolved" className="px-2 pt-1 text-meta">
                 <button
                   type="button"
                   aria-expanded={showResolved}
@@ -622,7 +622,7 @@ export function WaitChip({ wait }: { wait: WaitData }) {
     <div
       data-testid="wait-chip"
       data-state={wait.state}
-      className="my-1.5 flex w-fit max-w-full items-center gap-1.5 text-xs text-muted-foreground"
+      className="my-1.5 flex w-fit max-w-full items-center gap-1.5 text-meta text-muted-foreground"
     >
       <Inbox
         aria-hidden
@@ -646,7 +646,7 @@ export function WaitChip({ wait }: { wait: WaitData }) {
 export function WaitNoteLine({ note }: { note: WaitNoteData }) {
   const [open, setOpen] = useState(false);
   return (
-    <div data-testid="wait-note" className="flex max-w-full flex-col items-end gap-1 text-xs">
+    <div data-testid="wait-note" className="flex max-w-full flex-col items-end gap-1 text-meta">
       <button
         type="button"
         aria-expanded={open}

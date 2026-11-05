@@ -44,7 +44,7 @@ export function AutonomyChoice({
   const full = autonomyLevel("full");
   return (
     <div data-testid={testId} data-value={value} className="flex flex-col gap-2">
-      <span id={labelId} className="text-xs font-medium text-muted-foreground">
+      <span id={labelId} className="text-meta font-medium text-muted-foreground">
         {label}
       </span>
       {explain && <AuthorityExplainer className="mb-0.5" />}
@@ -71,17 +71,17 @@ export function AutonomyChoice({
               className={CHOICE_CARD}
             >
               {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
-              <span className="flex w-full items-center gap-1.5 text-sm font-medium">
+              <span className="flex w-full items-center gap-1.5 text-reading font-medium">
                 {level.label}
                 <ChoiceCheck checked={checked} className="ml-auto" />
               </span>
-              <span className="text-xs text-muted-foreground">{AUTONOMY_LINE[level.value]}</span>
+              <span className="text-meta text-muted-foreground">{AUTONOMY_LINE[level.value]}</span>
             </button>
           );
         })}
       </div>
       {value === "full" && (
-        <p data-testid="autonomy-full-note" className="text-xs text-muted-foreground">
+        <p data-testid="autonomy-full-note" className="text-meta text-muted-foreground">
           Your branch protection and required reviews are the only gate.{" "}
           <Hint
             label={full.detail}

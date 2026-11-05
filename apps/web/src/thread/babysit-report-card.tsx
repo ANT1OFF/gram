@@ -31,7 +31,7 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
     <article
       aria-label={`#${report.number} ready to merge`}
       data-testid="babysit-report"
-      className="my-2 flex flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-sm"
+      className="my-2 flex flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading"
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <GitPullRequest aria-hidden className="size-4 text-success" />
@@ -42,11 +42,11 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
           #{report.number} ready to merge
           <ExternalLink aria-hidden className="size-3.5" />
         </OutboundLink>
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="font-mono text-meta text-muted-foreground">
           {report.headRefOid.slice(0, 7)}
         </span>
       </header>
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta">
         <VerdictLabel verdict={report.verdict} />
         <span className={cn("flex items-center gap-1", checks.tone)}>
           <checks.icon aria-hidden className="size-3.5" />
@@ -56,11 +56,11 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
           Merge state <span className="font-mono">{report.mergeState}</span>
         </span>
       </p>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         {plural(report.rounds, "round")} · {plural(report.handled, "finding")} handled
       </p>
       <FindingList label="Declined" findings={report.declined} tone="text-muted-foreground" />
-      <p data-testid="babysit-not-merged" className="flex items-center gap-1 text-xs font-medium">
+      <p data-testid="babysit-not-merged" className="flex items-center gap-1 text-meta font-medium">
         <Hand aria-hidden className="size-3.5" />
         Not merged: merging is up to you
       </p>

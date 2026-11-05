@@ -44,7 +44,7 @@ const heldWhy = (held: FeatureCardHeld): string =>
       : `${limitShareText(held)}, so this low-priority brief waits for the reset.`);
 
 const RELEASE =
-  "relative shrink-0 rounded-sm px-1 text-xs text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  "relative shrink-0 rounded-sm px-1 text-meta text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 
 /** One held brief as a line of a feature card: its title, its release time and Release now. */
 export function HeldBriefLine({
@@ -62,7 +62,7 @@ export function HeldBriefLine({
       data-testid="held-brief"
       data-held-id={held.id}
       title={reason}
-      className="flex min-w-0 items-center gap-2 text-xs"
+      className="flex min-w-0 items-center gap-2 text-meta"
     >
       <Hourglass aria-hidden className="-mx-0.75 size-3.5 shrink-0 text-muted-foreground" />
       <span className="w-36 min-w-0 shrink-0 truncate font-medium">{held.title}</span>
@@ -105,14 +105,14 @@ export function HeldBriefChip({
       data-testid="rail-held"
       data-held-id={held.id}
       title={reason}
-      className="flex w-full max-w-72 min-w-0 flex-col items-start gap-1 rounded-(--radius-md) border border-dashed border-border bg-card px-2.5 py-2 text-xs"
+      className="flex w-full max-w-72 min-w-0 flex-col items-start gap-1 rounded-(--radius-md) border border-dashed border-border bg-card px-2.5 py-2 text-meta"
     >
       <span className="flex w-full min-w-0 items-start gap-1.5">
         <Hourglass aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <span className="line-clamp-2 min-w-0 font-medium break-words">{held.title}</span>
       </span>
       {/* A station is narrow: "until 18:00" on a line of its own, Release now under it. */}
-      <span className="pl-4.5 text-xs whitespace-nowrap text-muted-foreground">
+      <span className="pl-4.5 text-meta whitespace-nowrap text-muted-foreground">
         <span className="sr-only">Paused brief: </span>
         <span data-testid="held-until" className="tabular-nums">
           {heldStateText(held, now, { short: true })}

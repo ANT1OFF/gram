@@ -15,7 +15,7 @@ export function RecommendedTag({
     <span
       data-testid={testId}
       className={cn(
-        "inline-flex h-4 shrink-0 items-center rounded-full border border-border px-1.5 align-[1px] text-[10px] leading-none font-normal text-muted-foreground",
+        "inline-flex h-4 shrink-0 items-center rounded-full border border-border px-1.5 align-[1px] text-caption leading-none font-normal text-muted-foreground",
         className,
       )}
     >

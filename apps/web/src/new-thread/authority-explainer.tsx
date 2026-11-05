@@ -27,7 +27,7 @@ export function AuthorityExplainer({ className }: { className?: string }) {
       aria-label="Permissions and autonomy"
       data-testid="authority-explainer"
       className={cn(
-        "grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground",
+        "grid grid-cols-[auto_1fr] items-center gap-x-1.5 gap-y-1 text-meta text-muted-foreground",
         className,
       )}
     >

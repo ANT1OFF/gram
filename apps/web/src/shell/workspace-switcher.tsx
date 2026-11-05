@@ -173,7 +173,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
           data-testid="workspace-switcher-button"
           data-workspaces={workspaces.length}
           className={cn(
-            "max-w-48 gap-1 px-2 text-[13px] font-medium data-popup-open:bg-muted",
+            "max-w-48 gap-1 px-2 text-body font-medium data-popup-open:bg-muted",
             className,
           )}
         >
@@ -203,12 +203,14 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
                 <span
                   data-testid="workspace-ask-count"
                   aria-label={`${count} ${count === 1 ? "needs" : "need"} you`}
-                  className="min-w-4 rounded-full bg-accent px-1 text-center text-[11px] leading-4 text-accent-foreground tabular-nums"
+                  className="min-w-4 rounded-full bg-accent px-1 text-center text-caption leading-4 text-accent-foreground tabular-nums"
                 >
                   {count}
                 </span>
               )}
-              {shown && <kbd className="font-sans text-[11px] opacity-70">{formatKeys(shown)}</kbd>}
+              {shown && (
+                <kbd className="font-sans text-caption opacity-70">{formatKeys(shown)}</kbd>
+              )}
             </SwitcherItem>
           );
         })}
@@ -240,7 +242,7 @@ function SoloThreads({
     <section aria-label="Solo threads" data-testid="solo-threads">
       <h2
         className={cn(
-          "flex items-center justify-between px-2 pt-1.5 pb-1 text-[11px] font-medium text-muted-foreground",
+          "flex items-center justify-between px-2 pt-1.5 pb-1 text-caption font-medium text-muted-foreground",
           leading && "mt-1 border-t border-border pt-2",
         )}
       >
@@ -250,10 +252,10 @@ function SoloThreads({
       {threads.map(({ thread }) => (
         <SwitcherItem key={thread.id} onClick={() => onOpen(thread.id)}>
           <span className="min-w-0 flex-1 truncate">{threadDisplayTitle(thread)}</span>
-          <span className="max-w-20 shrink-0 truncate text-[11px] text-muted-foreground">
+          <span className="max-w-20 shrink-0 truncate text-caption text-muted-foreground">
             {projectNames.get(thread.projectId)}
           </span>
-          <span className="w-7 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
+          <span className="w-7 shrink-0 text-right text-caption text-muted-foreground tabular-nums">
             {formatRelative(thread.lastActivityAt, now)}
           </span>
         </SwitcherItem>
@@ -277,7 +279,7 @@ function SwitcherItem({
       {...{ [ITEM]: "" }}
       aria-current={current || undefined}
       onClick={onClick}
-      className="flex h-7 shrink-0 items-center gap-2 rounded-(--radius-sm) px-2 text-left text-[13px] text-foreground outline-none hover:bg-muted focus-visible:bg-muted"
+      className="flex h-7 shrink-0 items-center gap-2 rounded-(--radius-sm) px-2 text-left text-body text-foreground outline-none hover:bg-muted focus-visible:bg-muted"
     >
       {children}
     </button>

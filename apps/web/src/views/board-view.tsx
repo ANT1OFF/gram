@@ -110,7 +110,7 @@ function WorkerChip({
       data-asking={asking || undefined}
       // The name's button stretches over the whole chip; the PR and the overlap sit above it.
       className={cn(
-        "relative flex w-full max-w-72 min-w-0 flex-col gap-1 rounded-(--radius-md) border border-border bg-card px-2.5 py-2 text-xs focus-within:ring-2 focus-within:ring-ring hover:border-ring/60",
+        "relative flex w-full max-w-72 min-w-0 flex-col gap-1 rounded-(--radius-md) border border-border bg-card px-2.5 py-2 text-meta focus-within:ring-2 focus-within:ring-ring hover:border-ring/60",
         worker.tone === "needs" && "border-status-needs-mark/60",
       )}
     >
@@ -143,7 +143,7 @@ function WorkerChip({
       <span
         className={cn(
           // In a narrow lane the PR and the overlap wrap under the words rather than cut them.
-          "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-4.5 text-xs text-muted-foreground",
+          "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-4.5 text-meta text-muted-foreground",
           !named && worker.pr === undefined && overlap === undefined && "hidden",
         )}
       >
@@ -195,7 +195,7 @@ function TrackPiece({ index, reach }: { index: number; reach: number }) {
       {index > 0 && (
         <span
           className={cn(
-            "absolute top-[5px] -left-1 h-0.5 w-[calc(50%+0.25rem)]",
+            "absolute top-1/2 -left-1 -translate-y-1/2 h-0.5 w-[calc(50%+0.25rem)]",
             index <= reach ? "bg-muted-foreground" : "bg-border",
           )}
         />
@@ -203,7 +203,7 @@ function TrackPiece({ index, reach }: { index: number; reach: number }) {
       {index < last && (
         <span
           className={cn(
-            "absolute top-[5px] -right-1 h-0.5 w-[calc(50%+0.25rem)]",
+            "absolute top-1/2 -right-1 -translate-y-1/2 h-0.5 w-[calc(50%+0.25rem)]",
             index < reach ? "bg-muted-foreground" : "bg-border",
           )}
         />
@@ -273,7 +273,7 @@ function FeatureLine({
           stacked ? "max-w-xl" : "row-span-2 pr-2",
         )}
       >
-        <span className="flex min-w-0 items-start gap-1.5 text-sm font-medium">
+        <span className="flex min-w-0 items-start gap-1.5 text-reading font-medium">
           {/* The name opens the feature's sheet; its menu sits beside it. */}
           <button
             type="button"
@@ -309,13 +309,13 @@ function FeatureLine({
           <span
             data-testid="rail-summary"
             title={summary}
-            className="line-clamp-2 text-xs text-foreground/80"
+            className="line-clamp-2 text-meta text-foreground/80"
           >
             {summary}
           </span>
         )}
         {repos && (
-          <span data-testid="rail-repos" className="truncate text-xs text-muted-foreground">
+          <span data-testid="rail-repos" className="truncate text-meta text-muted-foreground">
             {row.projects.join(" · ")}
           </span>
         )}
@@ -368,7 +368,7 @@ function FeatureLine({
             data-station={station}
             className="flex flex-col gap-1.5"
           >
-            <h4 className="flex items-baseline gap-1.5 text-xs font-medium text-foreground/80">
+            <h4 className="flex items-baseline gap-1.5 text-meta font-medium text-foreground/80">
               {STATION_LABELS[station]}
               <span className="font-normal text-muted-foreground tabular-nums">{cards}</span>
             </h4>
@@ -390,7 +390,7 @@ function OtherLine({ place, children }: { place: RowPlace; children: ReactNode }
     <li {...place}>
       <p
         data-testid="rail-other"
-        className="bg-card/40 px-4 py-2 text-sm font-medium text-muted-foreground"
+        className="bg-card/40 px-4 py-2 text-reading font-medium text-muted-foreground"
       >
         Other
       </p>
@@ -416,7 +416,7 @@ function LaneHeads({ counts }: { counts: Readonly<Record<FeatureStation, number>
       aria-hidden
       data-testid="rail-lane-heads"
       className={cn(
-        "sticky top-0 z-10 grid gap-x-2 border-b border-border bg-thread px-4 py-1.5 text-center text-xs",
+        "sticky top-0 z-10 grid gap-x-2 border-b border-border bg-thread px-4 py-1.5 text-center text-meta",
         COLUMNS,
       )}
     >
@@ -595,7 +595,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
           <div
             role="status"
             data-testid="rail-empty"
-            className="flex flex-col items-center gap-1 p-10 text-center text-sm text-muted-foreground"
+            className="flex flex-col items-center gap-1 p-10 text-center text-reading text-muted-foreground"
           >
             <Columns3
               aria-hidden
@@ -607,12 +607,12 @@ function RailBoard({ state }: { state: WorkspaceState }) {
               <>
                 {/* Its finished work is in Done, as the sidebar has it; Show finished brings it here. */}
                 <p className="text-foreground">Nothing going now</p>
-                <p className="text-xs">Finished work is in Done.</p>
+                <p className="text-meta">Finished work is in Done.</p>
               </>
             ) : (
               <>
                 <p className="text-foreground">No features yet</p>
-                <p className="text-xs">Ask the orchestrator to build one.</p>
+                <p className="text-meta">Ask the orchestrator to build one.</p>
               </>
             )}
           </div>

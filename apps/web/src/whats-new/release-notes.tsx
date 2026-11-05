@@ -13,7 +13,7 @@ export function HighlightBody({ text, mac }: { text: string; mac?: boolean }) {
         return key ? (
           <kbd
             key={i}
-            className="rounded-sm border border-border bg-muted px-1 font-mono text-[0.85em] text-foreground"
+            className="rounded-sm border border-border bg-muted px-1 font-mono text-code text-foreground"
           >
             {keyLabel(key[1] ?? "", mac)}
           </kbd>

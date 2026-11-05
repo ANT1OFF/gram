@@ -47,7 +47,7 @@ export function ProjectPicker({ value, onChange, status, debounceMs }: ProjectPi
 
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="mb-2 text-xs font-medium text-muted-foreground">Project</legend>
+      <legend className="mb-2 text-meta font-medium text-muted-foreground">Project</legend>
       <div className="flex gap-1">
         <PathField
           value={value}
@@ -115,13 +115,13 @@ function FolderStatusLine({ status }: { status: FolderStatus }) {
   switch (status.state) {
     case "empty":
       return (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           Type a path, browse, or pick a project from the folder chip.
         </p>
       );
     case "checking":
       return (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="text-meta text-muted-foreground">
           <Shimmer>Checking folder…</Shimmer>
         </p>
       );
@@ -138,7 +138,7 @@ function FolderStatusLine({ status }: { status: FolderStatus }) {
         <p
           role="alert"
           data-testid="folder-problem"
-          className="flex items-center gap-1.5 text-xs text-danger-text"
+          className="flex items-center gap-1.5 text-meta text-danger-text"
         >
           <CircleAlert aria-hidden className="size-3.5 shrink-0" />
           {status.problem.message}
@@ -149,7 +149,7 @@ function FolderStatusLine({ status }: { status: FolderStatus }) {
         <p
           role="status"
           data-testid="folder-status"
-          className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+          className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground"
         >
           <FolderCheck aria-hidden className="size-3.5 shrink-0 text-success-text" />
           <span className="truncate font-mono">{tildify(status.folder.path, home)}</span>

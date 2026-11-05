@@ -1234,7 +1234,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
           </div>
           <span
             aria-live="polite"
-            className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground"
+            className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
           >
             {hint ?? (dictation.active ? dictationStatus(dictation.state) : undefined)}
           </span>
@@ -1288,7 +1288,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                 <ContextMenuItem disabled={!canSend} onClick={() => void send()}>
                   {busy ? <ListPlus aria-hidden /> : <ArrowUp aria-hidden />}
                   {busy ? "Queue" : "Send"}
-                  <kbd className="ml-auto pl-3 font-mono text-[10px] text-muted-foreground">
+                  <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
                     {sendKeyHint}
                   </kbd>
                 </ContextMenuItem>
@@ -1296,7 +1296,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                   <ContextMenuItem disabled={!canSend} onClick={() => void steer()}>
                     <Send aria-hidden />
                     {STEER_LABEL}
-                    <kbd className="ml-auto pl-3 font-mono text-[10px] text-muted-foreground">
+                    <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
                       {steerModifier}-click
                     </kbd>
                   </ContextMenuItem>
@@ -1304,7 +1304,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                 <ContextMenuItem disabled={!canSend} onClick={() => void send(true)}>
                   <SquarePen aria-hidden />
                   Send and start a new draft
-                  <kbd className="ml-auto pl-3 font-mono text-[10px] text-muted-foreground">
+                  <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
                     {newDraftHint}
                   </kbd>
                 </ContextMenuItem>
@@ -1327,7 +1327,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
 function SendGlyph({ action }: { action: SendAction }) {
   switch (action) {
     case "stop":
-      return <Square aria-hidden className="size-3.5 rounded-[2px] fill-current" />;
+      return <Square aria-hidden className="size-3.5 rounded-2xs fill-current" />;
     case "queue":
       return <ListPlus aria-hidden className="size-4" />;
     case "steer":
@@ -1384,7 +1384,7 @@ function GhostHint({
       aria-hidden
       data-testid={hidden ? undefined : "suggestion-hint"}
       className={cn(
-        "text-[11px] text-muted-foreground *:ms-2 *:inline-block *:whitespace-nowrap",
+        "text-caption text-muted-foreground *:ms-2 *:inline-block *:whitespace-nowrap",
         hidden && "invisible",
       )}
     >
@@ -1403,4 +1403,4 @@ function GhostHint({
   );
 }
 
-const KBD = "rounded-sm border border-border px-1 font-mono text-[10px]";
+const KBD = "rounded-sm border border-border px-1 font-mono text-caption";

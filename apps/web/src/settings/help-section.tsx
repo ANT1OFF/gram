@@ -31,7 +31,7 @@ export function HelpSection() {
   };
 
   return (
-    <div className="flex flex-col gap-4 text-sm" data-testid="whats-new">
+    <div className="flex flex-col gap-4 text-reading" data-testid="whats-new">
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-muted-foreground">
           {info ? `You're running Gram ${info.version}.` : "Gram"}

@@ -61,7 +61,7 @@ export function useWordFilters(query: string, workspaceKey: string, enabled: boo
 
 const FIELD_LABELS = { workspace: "Workspace", kind: "Kind", state: "State", time: "Time range" };
 const controlClass =
-  "rounded-sm border border-border bg-background px-1.5 py-1 text-xs focus-visible:outline-2 focus-visible:outline-ring";
+  "rounded-sm border border-border bg-background px-1.5 py-1 text-meta focus-visible:outline-2 focus-visible:outline-ring";
 
 export function WordFilterControls({
   query,
@@ -166,7 +166,7 @@ export function WordFilterControls({
             <button
               type="button"
               aria-label={`Remove ${FIELD_LABELS[filter.field].toLowerCase()}`}
-              className="rounded-sm px-1.5 text-xs hover:bg-background focus-visible:outline-2 focus-visible:outline-ring"
+              className="rounded-sm px-1.5 text-meta hover:bg-background focus-visible:outline-2 focus-visible:outline-ring"
               onClick={() => remove(filter.field)}
             >
               ×
@@ -180,7 +180,7 @@ export function WordFilterControls({
         </button>
       )}
       {eligible && requested === query && suggestions.isFetching && (
-        <span role="status" className="text-xs text-muted-foreground">
+        <span role="status" className="text-meta text-muted-foreground">
           Suggesting filters…
         </span>
       )}
@@ -196,7 +196,7 @@ export function WordFilterControls({
         </button>
       ))}
       {eligible && requested === query && !suggestions.isFetching && !proposed.length && (
-        <span role="status" className="text-xs text-muted-foreground">
+        <span role="status" className="text-meta text-muted-foreground">
           No extra filters
         </span>
       )}

@@ -10,9 +10,9 @@ import { TYPE_STEPS } from "@gram/themes";
 export const cn: CnFunction = createCn({
   extend: {
     theme: {
-      text: [...TYPE_STEPS],
+      text: [...TYPE_STEPS, "code"],
       radius: ["2xs"],
-      shadow: ["raised", "overlay", "composer", "card", "popover"],
+      shadow: ["raised", "overlay", "composer"],
       spacing: ["tight", "inset", "list", "section"],
     },
   },

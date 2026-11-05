@@ -11,7 +11,7 @@ import { focusIfConnected, focusLost } from "@/lib/use-return-focus";
 import { Notice, useReviewAction } from "./review/review-thread-card";
 
 const inputCls =
-  "h-7 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-7 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 function Swatch({ label }: { label: PrLabel }) {
   return (
@@ -74,7 +74,7 @@ export function PrLabels({ threadId, detail }: { threadId: ThreadId; detail: PrD
     <div ref={stripRef} className="flex min-w-0 flex-col gap-1 has-[form]:basis-full">
       <div
         data-testid="pr-labels"
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted-foreground"
       >
         {labels.length > 0 && <span>Labels</span>}
         {labels.length > 0 && (
@@ -143,13 +143,13 @@ export function PrLabels({ threadId, detail }: { threadId: ThreadId; detail: PrD
             </Button>
           </div>
           {repoLabels.isPending ? (
-            <p className="text-xs text-muted-foreground">Loading labels…</p>
+            <p className="text-meta text-muted-foreground">Loading labels…</p>
           ) : repoLabels.isError ? (
-            <p role="alert" className="text-xs text-destructive">
+            <p role="alert" className="text-meta text-destructive">
               {errorMessage(repoLabels.error)}
             </p>
           ) : options.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No matching labels</p>
+            <p className="text-meta text-muted-foreground">No matching labels</p>
           ) : (
             <ul aria-label="Repository labels" className="flex flex-wrap gap-1">
               {options.map((label) => (

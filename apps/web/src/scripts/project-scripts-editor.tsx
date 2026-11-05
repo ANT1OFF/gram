@@ -17,7 +17,7 @@ import { inputCls } from "@/settings/fields";
 
 import { useProjectScripts, useSaveProjectScripts } from "./use-project-scripts";
 
-const LABEL = "text-xs font-medium text-muted-foreground";
+const LABEL = "text-meta font-medium text-muted-foreground";
 
 const canonical = (keys: string) => {
   const normal = normalizeShortcut(keys);
@@ -84,17 +84,17 @@ export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
     }
   };
 
-  if (isPending) return <p className="text-xs text-muted-foreground">Loading scripts…</p>;
+  if (isPending) return <p className="text-meta text-muted-foreground">Loading scripts…</p>;
   if (isError || data === undefined)
-    return <p className="text-xs text-danger-text">Couldn't read this project's scripts.</p>;
+    return <p className="text-meta text-danger-text">Couldn't read this project's scripts.</p>;
 
   const add = (suggestion: ScriptSuggestion) =>
     void write([...scripts, { name: suggestion.name, command: suggestion.command }]);
 
   return (
-    <div data-testid="project-scripts-editor" className="flex flex-col gap-3 text-sm">
+    <div data-testid="project-scripts-editor" className="flex flex-col gap-3 text-reading">
       {data.problem !== undefined && (
-        <p role="alert" className="text-xs text-danger-text">
+        <p role="alert" className="text-meta text-danger-text">
           {data.problem} Saving here replaces it.
         </p>
       )}
@@ -124,12 +124,12 @@ export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
                   <span className="flex items-center gap-2">
                     <span className="truncate font-medium">{script.name}</span>
                     {script.shortcut !== undefined && (
-                      <kbd className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      <kbd className="shrink-0 font-mono text-caption text-muted-foreground">
                         {formatKeys(script.shortcut)}
                       </kbd>
                     )}
                   </span>
-                  <span className="truncate font-mono text-xs text-muted-foreground">
+                  <span className="truncate font-mono text-meta text-muted-foreground">
                     {script.command}
                     {script.cwd !== undefined && ` · in ${script.cwd}`}
                   </span>
@@ -180,7 +180,7 @@ export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
         </Button>
       )}
       {error !== undefined && (
-        <p role="alert" className="text-xs text-danger-text">
+        <p role="alert" className="text-meta text-danger-text">
           {error}
         </p>
       )}
@@ -196,11 +196,11 @@ export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
               >
                 <div className="flex min-w-0 flex-1 items-baseline gap-2">
                   <span className="truncate">{suggestion.name}</span>
-                  <span className="truncate font-mono text-xs text-muted-foreground">
+                  <span className="truncate font-mono text-meta text-muted-foreground">
                     {suggestion.command}
                   </span>
                 </div>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
+                <span className="shrink-0 text-caption text-muted-foreground">
                   {suggestion.source}
                 </span>
                 <Button
@@ -217,7 +217,7 @@ export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
           </ul>
         </div>
       )}
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         Saved in <code className="font-mono">{SCRIPTS_FILE}</code> in the project's folder, which
         you can also edit by hand. Only your click or key runs one; agents can't.
       </p>
@@ -305,7 +305,7 @@ function ScriptForm({
         </div>
       </div>
       {touched && problem !== undefined && (draft.name !== "" || draft.command !== "") && (
-        <p className="text-xs text-danger-text">{problem}</p>
+        <p className="text-meta text-danger-text">{problem}</p>
       )}
       <div className="flex justify-end gap-2">
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>

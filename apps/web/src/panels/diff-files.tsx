@@ -201,7 +201,7 @@ function DiffFileRow({
           aria-controls={bodyId}
           onClick={() => setOpen((o) => !o)}
           onKeyDown={moveBetweenHeaders}
-          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset"
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-meta outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset"
         >
           <ChevronRight
             aria-hidden

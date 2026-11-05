@@ -76,7 +76,7 @@ export function PrListControls({
             placeholder="Search PRs…"
             value={options.search}
             onChange={(e) => setOptions({ ...options, search: e.target.value })}
-            className="h-6 min-w-0 w-full bg-transparent text-[11px] outline-none placeholder:text-muted-foreground"
+            className="h-6 min-w-0 w-full bg-transparent text-caption outline-none placeholder:text-muted-foreground"
           />
         </label>
         <Hint label={`Sort: ${sortLabels[options.sort]}`} render={<span className={control} />}>
@@ -131,7 +131,7 @@ export function PrListControls({
         </Hint>
       </div>
       {active && (
-        <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+        <div className="mt-1 flex items-center justify-between text-caption text-muted-foreground">
           <span role="status">
             {shown} of {total} · {sortLabels[options.sort]}
             {options.filter !== "all" ? ` · ${filterLabels[options.filter]}` : ""}
@@ -152,7 +152,7 @@ export function PrListControls({
         </div>
       )}
       {error && (
-        <p role="status" className="text-[11px] text-muted-foreground">
+        <p role="status" className="text-caption text-muted-foreground">
           Refresh failed. Showing last known list.
         </p>
       )}

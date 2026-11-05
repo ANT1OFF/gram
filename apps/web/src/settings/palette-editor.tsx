@@ -84,11 +84,11 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
     <section aria-labelledby={`${nameId}-heading`} className="flex flex-col gap-3">
       <h3
         id={`${nameId}-heading`}
-        className="font-caption text-xs font-medium tracking-wide text-muted-foreground uppercase"
+        className="font-caption text-meta font-medium tracking-wide text-muted-foreground uppercase"
       >
         Custom palette
       </h3>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         Starting from {active.name}
         {editable ? "." : " (built in: save your changes as a new palette)."}
       </p>
@@ -113,10 +113,10 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
             className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3 text-foreground"
           >
             <div className="rounded-md border border-border bg-card p-2">
-              <p className="text-sm font-medium">fix-flaky-test</p>
-              <p className="text-xs text-muted-foreground">api · fix/flaky · 2 files changed</p>
+              <p className="text-reading font-medium">fix-flaky-test</p>
+              <p className="text-meta text-muted-foreground">api · fix/flaky · 2 files changed</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-meta">
               <Button size="xs" tabIndex={-1}>
                 Allow
               </Button>
@@ -125,7 +125,7 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
               <span className="text-success-text">+12</span>
               <span className="text-danger-text">−3</span>
             </div>
-            <code className="rounded-md bg-surface-2 p-1.5 font-mono text-xs text-muted-foreground">
+            <code className="rounded-md bg-surface-2 p-1.5 font-mono text-meta text-muted-foreground">
               pnpm test retry
             </code>
           </div>
@@ -133,7 +133,7 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
           {warnings.length > 0 && (
             <ul
               aria-label="Contrast warnings"
-              className="flex flex-col gap-1 text-xs text-warning-text"
+              className="flex flex-col gap-1 text-meta text-warning-text"
             >
               {warnings.map((w) => (
                 <li key={w.label} className="flex items-center gap-1.5">
@@ -186,7 +186,7 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
               saveAs();
             }}
           >
-            <label htmlFor={nameId} className="text-xs text-muted-foreground">
+            <label htmlFor={nameId} className="text-meta text-muted-foreground">
               New palette name
             </label>
             <div className="flex gap-1.5">
@@ -198,14 +198,14 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
                   setName(event.target.value);
                   setShowProblem(false);
                 }}
-                className="h-8 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-danger"
+                className="h-8 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 text-reading outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-danger"
               />
               <Button size="sm" variant="outline" type="submit">
                 Save as…
               </Button>
             </div>
             {showProblem && problem && (
-              <p role="alert" className="text-xs text-danger-text">
+              <p role="alert" className="text-meta text-danger-text">
                 {problem}
               </p>
             )}
@@ -244,7 +244,7 @@ function SeedField({
         onChange={(event) => onChange(normalizeHex(event.target.value))}
         className="size-7 shrink-0 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
       />
-      <label htmlFor={id} className="w-20 shrink-0 text-xs">
+      <label htmlFor={id} className="w-20 shrink-0 text-meta">
         {label}
       </label>
       <input
@@ -256,7 +256,7 @@ function SeedField({
           setText(event.target.value);
           if (isHex(event.target.value)) onChange(normalizeHex(event.target.value));
         }}
-        className="h-7 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 font-mono text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-danger"
+        className="h-7 min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 font-mono text-meta outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-danger"
       />
     </div>
   );

@@ -339,9 +339,9 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
   const decision = reviewWord(detail.reviewDecision);
 
   return (
-    <div ref={panel} data-testid="pr-panel" className="min-h-0 flex-1 overflow-y-auto text-sm">
+    <div ref={panel} data-testid="pr-panel" className="min-h-0 flex-1 overflow-y-auto text-reading">
       <header className="flex flex-col gap-2 px-3 pt-3 pb-1">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 text-meta text-muted-foreground">
           <span
             data-testid="pr-state"
             className={cn(
@@ -368,7 +368,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
           </OutboundLink>
         </div>
         <h3 className="font-medium text-pretty">{detail.title}</h3>
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-muted-foreground">
           <span
             className="min-w-0 truncate font-mono"
             title={`${detail.baseRefName} ← ${detail.headRefName}`}
@@ -401,7 +401,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         {badge?.stale && (
           <p
             data-testid="pr-stale"
-            className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+            className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground"
           >
             <CloudOff aria-hidden className="size-3.5 shrink-0" />
             Couldn't refresh from GitHub: {staleReasonText(badge.stale.reason)}
@@ -459,7 +459,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
                 key={`${run.name}:${flashes[run.name] ?? 0}`}
                 data-testid="check-run"
                 className={cn(
-                  "flex flex-col gap-1 px-3 py-1 text-xs",
+                  "flex flex-col gap-1 px-3 py-1 text-meta",
                   flashes[run.name] !== undefined && "gram-flash",
                 )}
               >
@@ -511,7 +511,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
             const short = commit.oid.slice(0, 7);
             const url = commitUrl(detail.url, commit.oid);
             return (
-              <li key={commit.oid} className="flex items-center gap-2 px-3 py-1 text-xs">
+              <li key={commit.oid} className="flex items-center gap-2 px-3 py-1 text-meta">
                 <GitCommitHorizontal
                   aria-hidden
                   className="size-3.5 shrink-0 text-muted-foreground"
@@ -547,7 +547,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
               key={`${comment.author}-${comment.at}`}
               className="rounded-(--radius-md) border border-border bg-card/40 p-2"
             >
-              <p className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <p className="mb-1 flex items-center gap-1.5 text-meta text-muted-foreground">
                 <MessageSquare aria-hidden className="size-3.5" />
                 <span className="font-medium text-foreground">{comment.author}</span>
                 {comment.kind === "review" && comment.state && (
@@ -567,7 +567,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         empty={detail.note ?? "No files"}
         count={detail.files.length}
       >
-        {detail.note && <p className="px-3 pb-1 text-xs text-warning">{detail.note}</p>}
+        {detail.note && <p className="px-3 pb-1 text-meta text-warning">{detail.note}</p>}
         <DiffFileList files={detail.files} wrap={wrapLines} {...actions} />
       </Section>
     </div>
@@ -602,7 +602,7 @@ function Section({
     if (attention) setOpen(true);
   }
   const heading =
-    "flex w-full items-center gap-1.5 px-3 py-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase";
+    "flex w-full items-center gap-1.5 px-3 py-2 text-caption font-medium tracking-wide text-muted-foreground uppercase";
   const trailing = meta ?? (count === 0 ? undefined : count);
 
   // Nothing to fold: the heading says it's empty, with any action (a rerun's outcome) below.
@@ -614,7 +614,7 @@ function Section({
           <span className="ml-auto tracking-normal normal-case">{meta ?? empty}</span>
         </h4>
         {action}
-        {meta !== undefined && <p className="px-3 pb-2 text-xs text-muted-foreground">{empty}</p>}
+        {meta !== undefined && <p className="px-3 pb-2 text-meta text-muted-foreground">{empty}</p>}
       </section>
     );
   }
@@ -673,7 +673,7 @@ function PrDescription({ body }: { body: string }) {
           type="button"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="flex w-full items-center gap-1.5 py-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex w-full items-center gap-1.5 py-2 text-caption font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             aria-hidden
@@ -695,7 +695,7 @@ function PrDescription({ body }: { body: string }) {
         <p
           data-testid="pr-description-preview"
           onClick={() => setOpen(true)}
-          className="mb-2 line-clamp-2 cursor-pointer text-xs text-muted-foreground"
+          className="mb-2 line-clamp-2 cursor-pointer text-meta text-muted-foreground"
         >
           {descriptionPreview(body)}
         </p>

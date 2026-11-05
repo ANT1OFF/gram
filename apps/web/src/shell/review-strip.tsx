@@ -48,7 +48,7 @@ export function ReviewStrip({ side }: { side: "left" | "right" }) {
           <MessageSquare />
         </Hint>
         {title && (
-          <span className="min-h-0 truncate text-xs text-muted-foreground [writing-mode:vertical-rl]">
+          <span className="min-h-0 truncate text-meta text-muted-foreground [writing-mode:vertical-rl]">
             {title}
           </span>
         )}

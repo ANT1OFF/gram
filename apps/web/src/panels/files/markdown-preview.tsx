@@ -89,7 +89,7 @@ export function MarkdownPreview({ content, ...file }: MarkdownFile & { content: 
       {/* A readable measure, centred once the panel is wide, at the transcript's body size. */}
       <div
         data-testid="markdown-preview"
-        className="mx-auto w-full max-w-3xl px-6 py-5 text-sm leading-relaxed"
+        className="mx-auto w-full max-w-3xl px-6 py-5 text-reading leading-relaxed"
       >
         <MessageResponse components={COMPONENTS} rehypePlugins={REHYPE_PLUGINS}>
           {content}

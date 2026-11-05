@@ -53,7 +53,7 @@ export function NeedsYouStrip({
             data-category={key}
             onClick={() => onPick(on && key !== "all" ? "all" : key)}
             className={cn(
-              "inline-flex h-6 items-center gap-1 rounded-(--radius-sm) px-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "inline-flex h-6 items-center gap-1 rounded-(--radius-sm) px-1 text-meta outline-none focus-visible:ring-2 focus-visible:ring-ring",
               on
                 ? "bg-accent font-medium text-foreground"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

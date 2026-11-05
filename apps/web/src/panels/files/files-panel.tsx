@@ -30,7 +30,7 @@ import { filesProblem } from "./files-problem";
 import { SplitHandle } from "./split-handle";
 
 const inputCls =
-  "h-7 w-full rounded-md border border-input bg-transparent ps-7 pe-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-7 w-full rounded-md border border-input bg-transparent ps-7 pe-2 text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** Typed first in the find box, it searches the files' contents instead of filtering by name. */
 const CONTENTS_PREFIX = "?";

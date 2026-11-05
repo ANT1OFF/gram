@@ -9,18 +9,18 @@ export const SLAB =
 
 /** The message box inside it: grows with its text, to at most a third of a short grid pane. */
 export const SLAB_TEXTAREA =
-  "block max-h-[min(13rem,calc(var(--pane-height,100vh)*0.33))] min-h-19.5 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed outline-none field-sizing-content placeholder:text-muted-foreground";
+  "block max-h-[min(13rem,calc(var(--pane-height,100vh)*0.33))] min-h-19.5 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-reading leading-relaxed outline-none field-sizing-content placeholder:text-muted-foreground";
 
 /**
  * A suggested reply, behind the message box in exactly its box: the typed text invisible, the rest
  * in the placeholder's tone. It wraps and scrolls as the box does.
  */
 export const GHOST_MIRROR =
-  "pointer-events-none absolute inset-0 overflow-hidden px-4 pt-3 pb-1 text-sm leading-relaxed break-words whitespace-pre-wrap";
+  "pointer-events-none absolute inset-0 overflow-hidden px-4 pt-3 pb-1 text-reading leading-relaxed break-words whitespace-pre-wrap";
 
 /** A toolbar control: no border, muted until hovered. */
 export const GHOST_TRIGGER =
-  "gap-1.5 border-transparent px-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent";
+  "gap-1.5 border-transparent px-2 text-meta font-medium text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent";
 
 /** Send and Stop: a 32 px circle holding one glyph. */
 export const ROUND =
@@ -35,4 +35,4 @@ export const STOP_RUNNING =
 
 /** Send's fill: the accent with a faint gloss, flat while pressed or disabled. */
 export const SEND_FILL =
-  "bg-primary text-primary-foreground shadow-xs shadow-primary/24 inset-shadow-2xs inset-shadow-white/16 active:inset-shadow-black/8 active:shadow-none disabled:opacity-64 disabled:shadow-none";
+  "bg-primary text-primary-foreground shadow-raised shadow-primary/24 inset-shadow-2xs inset-shadow-white/16 active:inset-shadow-black/8 active:shadow-none disabled:opacity-64 disabled:shadow-none";

@@ -16,7 +16,7 @@ type Option = PickerOption<string>;
 const NO_FAVOURITES = () => false;
 
 const ROW =
-  "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:row-cursor";
+  "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[highlighted]:row-cursor";
 
 /**
  * The model picker: a search box over the models, favourites first, then a section per agent or
@@ -79,8 +79,8 @@ export function ModelCombobox({
     "data-warning": warning ? "true" : undefined,
     className: cn(
       field
-        ? "flex h-8 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-muted"
-        : "flex h-7 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-[min(var(--radius-md),10px)] border border-transparent bg-transparent px-2 text-xs font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none select-none hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[popup-open]:bg-accent",
+        ? "flex h-8 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-reading whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-muted"
+        : "flex h-7 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-[min(var(--radius-md),10px)] border border-transparent bg-transparent px-2 text-meta font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none select-none hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[popup-open]:bg-accent",
       warning && "text-warning hover:text-warning",
     ),
   };
@@ -137,14 +137,14 @@ export function ModelCombobox({
             data-surface="overlay"
             data-testid="model-picker"
             aria-label="Models"
-            className="flex w-80 max-w-(--available-width) origin-(--transform-origin) flex-col rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="flex w-80 max-w-(--available-width) origin-(--transform-origin) flex-col rounded-md border border-border bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <div className="flex items-center gap-2 border-b border-border px-2.5">
               <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               <Combobox.Input
                 aria-label="Search models"
                 placeholder="Search models…"
-                className="h-9 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="h-9 w-full bg-transparent text-reading outline-none placeholder:text-muted-foreground"
                 onKeyDown={(event) => {
                   // An IME takes ⇧↵ to accept a candidate; 229 is how some browsers report it.
                   const composing = event.nativeEvent.isComposing || event.keyCode === 229;
@@ -157,13 +157,13 @@ export function ModelCombobox({
               />
             </div>
             <Combobox.Empty>
-              <p className="px-3 py-3 text-sm text-muted-foreground">No model matches.</p>
+              <p className="px-3 py-3 text-reading text-muted-foreground">No model matches.</p>
             </Combobox.Empty>
             <Combobox.List className="max-h-[min(20rem,var(--available-height))] overflow-y-auto overscroll-contain p-1 empty:p-0">
               {(group: ModelGroup) => (
                 <Combobox.Group key={group.label} items={group.items as Option[]}>
                   {headed && (
-                    <Combobox.GroupLabel className="px-2 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
+                    <Combobox.GroupLabel className="px-2 pt-2 pb-1 text-caption font-medium text-muted-foreground">
                       {group.label}
                     </Combobox.GroupLabel>
                   )}
@@ -190,7 +190,7 @@ export function ModelCombobox({
                           <span className="flex min-w-0 flex-1 flex-col">
                             <span className="truncate">{option.label}</span>
                             {option.description && (
-                              <span className="truncate text-xs text-muted-foreground">
+                              <span className="truncate text-meta text-muted-foreground">
                                 {option.description}
                               </span>
                             )}

@@ -48,7 +48,7 @@ export function AgentRuntimeDetails({
   return (
     <div
       data-testid="runtime-details"
-      className="ms-6 mt-1 mb-2 flex flex-col gap-2 border-s border-border/60 ps-3 text-xs"
+      className="ms-6 mt-1 mb-2 flex flex-col gap-2 border-s border-border/60 ps-3 text-meta"
     >
       <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-0.5">
         <Fact label="Runs">

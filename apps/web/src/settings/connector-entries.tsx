@@ -77,7 +77,7 @@ export function ConnectorEntries({
           {entries.map((known) => (
             <li
               key={known}
-              className="flex h-6 items-center gap-0.5 rounded-md border border-border pr-0.5 pl-2 font-mono text-xs"
+              className="flex h-6 items-center gap-0.5 rounded-md border border-border pr-0.5 pl-2 font-mono text-meta"
             >
               {known}
               <Hint
@@ -140,7 +140,7 @@ export function ConnectorEntries({
         </WhyDisabled>
       </div>
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}

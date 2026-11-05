@@ -43,20 +43,20 @@ export function TaskChip({ threadId, chip }: { threadId: ThreadId; chip: TaskChi
     <div
       data-testid="task-chip"
       data-status={chip.status}
-      className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-dashed border-border p-2.5 text-sm data-[status=dismissed]:opacity-60"
+      className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-dashed border-border p-2.5 text-reading data-[status=dismissed]:opacity-60"
     >
       <ListPlus aria-hidden className="mt-0.5 size-4 shrink-0 text-highlight" />
       <div className="min-w-0 flex-1">
         <p className="font-medium">{chip.title}</p>
-        <p className="line-clamp-2 text-xs text-muted-foreground">{chip.prompt}</p>
+        <p className="line-clamp-2 text-meta text-muted-foreground">{chip.prompt}</p>
         {chip.reason === undefined ? null : (
-          <p data-testid="task-chip-reason" className="mt-1 text-xs text-muted-foreground">
+          <p data-testid="task-chip-reason" className="mt-1 text-meta text-muted-foreground">
             Why: {chip.reason}
           </p>
         )}
         <p
           data-testid="task-chip-where"
-          className="mt-1 flex items-center gap-1 font-mono text-xs text-muted-foreground"
+          className="mt-1 flex items-center gap-1 font-mono text-meta text-muted-foreground"
         >
           <GitBranch aria-hidden className="size-3.5" />
           {taskStartLabel(taskStart(chip, git))}
@@ -72,7 +72,7 @@ export function TaskChip({ threadId, chip }: { threadId: ThreadId; chip: TaskChi
           </Button>
         </div>
       ) : (
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className="shrink-0 text-meta text-muted-foreground">
           {chip.status === "accepted" ? "Started" : "Dismissed"}
         </span>
       )}

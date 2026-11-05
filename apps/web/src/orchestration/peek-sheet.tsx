@@ -96,7 +96,7 @@ export function PeekSheet() {
           finalFocus={returnFocusTo(opener)}
           onKeyDown={onKeyDown}
           className={cn(
-            "inset-y-2 end-2 z-50 flex w-[min(26rem,calc(100%-1rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-sm text-popover-foreground shadow-lg outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0",
+            "inset-y-2 end-2 z-50 flex w-[min(26rem,calc(100%-1rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-reading text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0",
             inPane ? "absolute" : "fixed",
           )}
         >
@@ -209,12 +209,12 @@ function WorkerPeekView({
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
         {peek.brief !== undefined && (
           <section data-testid="peek-brief" className="flex flex-col gap-0.5">
-            <h4 className="text-xs text-muted-foreground">Brief</h4>
+            <h4 className="text-meta text-muted-foreground">Brief</h4>
             <p className="line-clamp-4 whitespace-pre-line">{peek.brief}</p>
           </section>
         )}
         {(peek.files.length > 0 || peek.changedFiles !== undefined) && (
-          <ul data-testid="peek-files" className="flex flex-col gap-0.5 font-mono text-xs">
+          <ul data-testid="peek-files" className="flex flex-col gap-0.5 font-mono text-meta">
             {peek.files.map((file) => (
               <li key={file.path} className="flex min-w-0 items-center gap-1.5">
                 <FileDiff aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
@@ -238,7 +238,7 @@ function WorkerPeekView({
           <p
             data-testid="peek-command"
             data-running={peek.command.running}
-            className="flex min-w-0 items-center gap-1.5 font-mono text-xs"
+            className="flex min-w-0 items-center gap-1.5 font-mono text-meta"
           >
             <SquareTerminal aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate">{peek.command.command}</span>
@@ -252,7 +252,7 @@ function WorkerPeekView({
             {peek.report}
           </p>
         )}
-        <p className="mt-auto text-xs text-muted-foreground">
+        <p className="mt-auto text-meta text-muted-foreground">
           A peek. Open it to see the full transcript, its changes and its terminal.
         </p>
       </div>
@@ -310,7 +310,7 @@ function PrPeekView({
         {pr.title !== undefined && <span className="font-normal"> {pr.title}</span>}
       </SheetHead>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-meta">
           {pr.checks !== undefined && (
             <Fact label="Checks" testId="peek-pr-checks">
               <span className={pr.checks.tone === undefined ? undefined : TONE[pr.checks.tone]}>
@@ -337,7 +337,7 @@ function PrPeekView({
           )}
         </dl>
         {pr.runs.length > 0 && (
-          <ul data-testid="peek-pr-runs" className="flex flex-col gap-0.5 text-xs">
+          <ul data-testid="peek-pr-runs" className="flex flex-col gap-0.5 text-meta">
             {pr.runs.map((run) => {
               const check = checkState(run);
               const duration = checkDuration(run, now);
@@ -385,7 +385,7 @@ function PrPeekView({
           )}
         </div>
         {pr.note !== undefined && (
-          <p data-testid="peek-pr-note" className="text-xs text-muted-foreground">
+          <p data-testid="peek-pr-note" className="text-meta text-muted-foreground">
             {pr.note}
           </p>
         )}

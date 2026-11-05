@@ -144,7 +144,7 @@ export function TerminalFindBar({
         event.preventDefault();
         onClose();
       }}
-      className="absolute top-2 right-3 z-10 flex items-center gap-1 rounded-md border border-border bg-card py-1 pr-1 pl-2 shadow-md"
+      className="absolute top-2 right-3 z-10 flex items-center gap-1 rounded-md border border-border bg-card py-1 pr-1 pl-2 shadow-overlay"
     >
       <input
         ref={inputRef}
@@ -157,13 +157,13 @@ export function TerminalFindBar({
           runSearch(find, event.target.value, toggles, "incremental");
         }}
         onKeyDown={onFieldKeyDown}
-        className="h-6 w-40 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        className="h-6 w-40 min-w-0 bg-transparent text-reading outline-none placeholder:text-muted-foreground"
       />
       <span
         aria-live="polite"
         data-testid="terminal-find-status"
         className={cn(
-          "shrink-0 text-xs tabular-nums",
+          "shrink-0 text-meta tabular-nums",
           valid ? "text-muted-foreground" : "text-danger-text",
         )}
       >
@@ -176,7 +176,7 @@ export function TerminalFindBar({
         title="Match case"
         aria-pressed={toggles.caseSensitive}
         onClick={() => toggle("caseSensitive")}
-        className="font-mono text-[11px] aria-pressed:bg-muted aria-pressed:text-foreground"
+        className="font-mono text-caption aria-pressed:bg-muted aria-pressed:text-foreground"
       >
         Aa
       </Button>
@@ -187,7 +187,7 @@ export function TerminalFindBar({
         title="Use regular expression"
         aria-pressed={toggles.regex}
         onClick={() => toggle("regex")}
-        className="font-mono text-[11px] aria-pressed:bg-muted aria-pressed:text-foreground"
+        className="font-mono text-caption aria-pressed:bg-muted aria-pressed:text-foreground"
       >
         .*
       </Button>

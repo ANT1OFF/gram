@@ -124,7 +124,7 @@ export function HistoryView() {
           aria-label="History"
           // A thread just opened takes focus in its pane; only a dismissal hands it back.
           finalFocus={() => (picked ? false : returnFocusTo(opener)())}
-          className="fixed top-[10%] left-1/2 z-50 flex max-h-[76vh] w-[min(46rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[10%] left-1/2 z-50 flex max-h-[76vh] w-[min(46rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && <HistoryBody onPicked={() => setPicked(true)} />}
         </Dialog.Popup>
@@ -274,7 +274,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
           data-testid="history-search"
           aria-label="Search history"
           placeholder="Search history by title or repo"
-          className="h-11 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="h-11 flex-1 bg-transparent text-reading outline-none placeholder:text-muted-foreground"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -295,7 +295,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
               data-history-filter={id}
               onClick={() => changeFilter(id)}
               className={cn(
-                "h-7 rounded-(--radius-sm) px-2.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring",
+                "h-7 rounded-(--radius-sm) px-2.5 text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring",
                 filter === id && "bg-accent font-medium text-accent-foreground",
               )}
             >
@@ -315,7 +315,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
         {rows.length === 0 && (
           <p
             data-testid="history-empty"
-            className="px-3 py-8 text-center text-sm text-muted-foreground"
+            className="px-3 py-8 text-center text-reading text-muted-foreground"
           >
             {query.trim() !== ""
               ? "No matches"
@@ -329,7 +329,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
             <h3
               data-testid="history-group"
               data-grouping={by}
-              className="px-2 pt-2 pb-0.5 text-xs font-medium text-muted-foreground"
+              className="px-2 pt-2 pb-0.5 text-meta font-medium text-muted-foreground"
             >
               {group.label}
             </h3>
@@ -358,20 +358,20 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
             data-testid="history-more"
             aria-busy={busy || undefined}
             onClick={() => setLimit((current) => current + DONE_PAGE)}
-            className="mx-1 rounded-md px-2 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring"
+            className="mx-1 rounded-md px-2 py-1 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring"
           >
             Show more
           </button>
         )}
       </div>
       {error !== undefined && (
-        <p role="alert" className="border-t border-border px-3 py-1.5 text-xs text-destructive">
+        <p role="alert" className="border-t border-border px-3 py-1.5 text-meta text-destructive">
           {error}
         </p>
       )}
       <div
         data-testid="history-keys"
-        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground"
+        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
         <span>
           <kbd className="font-sans">↑↓</kbd> move
@@ -427,7 +427,7 @@ function HistoryRow({
       onMouseMove={onHover}
       onClick={onOpen}
       className={cn(
-        "flex min-h-9 cursor-default items-center gap-2.5 rounded-md px-2 text-sm",
+        "flex min-h-9 cursor-default items-center gap-2.5 rounded-md px-2 text-reading",
         active && "row-cursor",
         resuming && "opacity-60",
       )}
@@ -438,11 +438,11 @@ function HistoryRow({
       </span>
       <span
         data-testid="history-where"
-        className="min-w-0 shrink truncate text-xs text-muted-foreground"
+        className="min-w-0 shrink truncate text-meta text-muted-foreground"
       >
         {where}
       </span>
-      <span className="ml-auto flex shrink-0 items-center gap-2 pl-3 text-xs text-muted-foreground">
+      <span className="ml-auto flex shrink-0 items-center gap-2 pl-3 text-meta text-muted-foreground">
         {entry.agent !== undefined && <AgentIcon agent={entry.agent} className="size-3.5" />}
         <span data-testid="history-outcome">{word}</span>
         <time

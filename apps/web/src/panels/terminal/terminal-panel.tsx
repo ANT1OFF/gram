@@ -104,7 +104,7 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
               <div
                 key={id}
                 className={cn(
-                  "flex shrink-0 items-center rounded-md text-xs text-muted-foreground",
+                  "flex shrink-0 items-center rounded-md text-meta text-muted-foreground",
                   selected && "bg-muted text-foreground",
                 )}
               >
@@ -162,7 +162,7 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
         ))}
       </div>
       {problem && (
-        <p role="alert" className="border-t border-border px-2 py-1.5 text-xs text-danger-text">
+        <p role="alert" className="border-t border-border px-2 py-1.5 text-meta text-danger-text">
           {problem}
         </p>
       )}

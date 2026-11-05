@@ -56,7 +56,7 @@ export function DictateKeyRow({ mac = isMac() }: { mac?: boolean }) {
         warnings.length > 0 && (
           <ul data-testid="dictate-key-warnings" className="flex flex-col gap-1">
             {warnings.map((warning) => (
-              <li key={warning} className="flex items-start gap-1.5 text-xs text-warning">
+              <li key={warning} className="flex items-start gap-1.5 text-meta text-warning">
                 <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
                 {warning}
               </li>
@@ -67,7 +67,7 @@ export function DictateKeyRow({ mac = isMac() }: { mac?: boolean }) {
     >
       <kbd
         data-testid="dictate-key"
-        className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs"
+        className="rounded-2xs border border-border bg-muted px-1.5 py-0.5 font-mono text-meta"
       >
         {row.keys === undefined ? "Off" : formatKeys(row.keys, mac)}
       </kbd>

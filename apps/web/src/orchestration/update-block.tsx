@@ -82,7 +82,7 @@ export function UpdateBlock({
         aria-expanded={open}
         aria-controls={bodyId}
         aria-label={["Update", ...said, words.time].filter((word) => word !== undefined).join(", ")}
-        className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-meta outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => {
           setToggled(!open);
           setOpened(true);

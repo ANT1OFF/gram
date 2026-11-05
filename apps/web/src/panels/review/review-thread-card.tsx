@@ -48,7 +48,7 @@ export function Notice({ notice }: { notice: NoticeState | undefined }) {
     <p
       role={notice.tone === "error" ? "alert" : "status"}
       className={cn(
-        "text-xs",
+        "text-meta",
         notice.tone === "error" ? "text-destructive" : "text-muted-foreground",
       )}
     >
@@ -113,7 +113,7 @@ export function ReviewThreadCard({
       aria-label={`${severityLabel}: ${location(thread)}`}
       className="flex flex-col gap-1.5 rounded-(--radius-md) border border-border bg-card/40 p-2"
     >
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-meta text-muted-foreground">
         <span className={cn("shrink-0 rounded-sm border px-1", SEVERITY_TONE[thread.severity])}>
           {severityLabel}
         </span>
@@ -138,12 +138,12 @@ export function ReviewThreadCard({
       </p>
       {first && <MessageResponse>{displayBody(first.body)}</MessageResponse>}
       {first?.suggestion !== undefined && (
-        <figure data-testid="review-suggestion" className="text-xs">
+        <figure data-testid="review-suggestion" className="text-meta">
           <figcaption className="mb-0.5 text-muted-foreground">
             {first.suggestion === "" ? "Suggests deleting these lines" : "Suggested change"}
           </figcaption>
           {first.suggestion !== "" && (
-            <pre className="overflow-x-auto rounded-sm bg-muted p-1.5 font-mono text-[11px]">
+            <pre className="overflow-x-auto rounded-sm bg-muted p-1.5 font-mono text-caption">
               {first.suggestion}
             </pre>
           )}
@@ -152,7 +152,7 @@ export function ReviewThreadCard({
       {replies.length > 0 && (
         <ul className="flex flex-col gap-1 border-l-2 border-border pl-2">
           {replies.map((comment) => (
-            <li key={comment.id} data-testid="review-reply" className="text-xs">
+            <li key={comment.id} data-testid="review-reply" className="text-meta">
               <span className="font-medium">{comment.author}</span>
               <MessageResponse>{comment.body}</MessageResponse>
             </li>
@@ -212,7 +212,7 @@ export function ReviewThreadCard({
             onChange={(event) => setReply(event.target.value)}
             rows={3}
             placeholder="Fixed in <sha>: …"
-            className="w-full resize-y rounded-sm border border-border bg-background p-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full resize-y rounded-sm border border-border bg-background p-1.5 text-meta outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <div className="flex gap-1">
             <Button type="submit" size="xs" disabled={action.pending || !reply.trim()}>

@@ -8,7 +8,7 @@ export function RunningCount({ count }: { count: number | undefined }) {
     <span
       aria-hidden
       data-testid="running-count"
-      className="pointer-events-none absolute -right-1 -bottom-0.5 text-[9px] leading-none font-medium text-status-working tabular-nums"
+      className="pointer-events-none absolute -right-1 -bottom-0.5 text-caption leading-none font-medium text-status-working tabular-nums"
     >
       {count}
     </span>

@@ -32,7 +32,7 @@ export function DiffCommentChips({
             key={comment.id}
             data-testid="diff-comment-chip"
             className={cn(
-              "flex max-w-full min-w-0 items-center gap-1 rounded-md border border-border text-xs",
+              "flex max-w-full min-w-0 items-center gap-1 rounded-md border border-border text-meta",
               arrivals.has(comment.id) && "gram-swap",
             )}
           >

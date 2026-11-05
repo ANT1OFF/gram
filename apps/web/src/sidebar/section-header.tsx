@@ -81,7 +81,7 @@ export function SectionToggle({
         } as CSSProperties
       }
       className={cn(
-        "flex w-full min-w-0 items-center gap-1.5 rounded-(--radius-sm) px-2 py-1 text-[11px] font-semibold tracking-[0.06em] text-foreground uppercase outline-none transition-colors duration-(--dur-fast) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full min-w-0 items-center gap-1.5 rounded-(--radius-sm) px-2 py-1 text-caption font-semibold tracking-[0.06em] text-foreground uppercase outline-none transition-colors duration-(--dur-fast) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
       {...button}
@@ -102,7 +102,7 @@ export function SectionToggle({
       {children}
       <span
         data-testid={countTestId}
-        className="ml-auto min-w-5 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--section-count)_calc(var(--section-tint-strength)*100%),transparent)] px-1.5 text-center text-[10px] leading-4 tracking-normal text-(--section-count) tabular-nums"
+        className="ml-auto min-w-5 shrink-0 rounded-full bg-[color-mix(in_srgb,var(--section-count)_calc(var(--section-tint-strength)*100%),transparent)] px-1.5 text-center text-caption leading-4 tracking-normal text-(--section-count) tabular-nums"
       >
         {count}
       </span>
@@ -131,7 +131,7 @@ export function SubgroupToggle({
       type="button"
       aria-expanded={expanded}
       className={cn(
-        "flex w-full items-center gap-1 rounded-(--radius-sm) pt-1.5 pr-2 pb-0.5 pl-4 text-xs text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full items-center gap-1 rounded-(--radius-sm) pt-1.5 pr-2 pb-0.5 pl-4 text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
       {...button}

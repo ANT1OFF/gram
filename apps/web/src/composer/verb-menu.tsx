@@ -143,7 +143,7 @@ export function VerbMenu({
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onChoose(verb)}
             className={cn(
-              "flex cursor-default flex-col items-center gap-1 rounded-md px-1 py-2 text-xs",
+              "flex cursor-default flex-col items-center gap-1 rounded-md px-1 py-2 text-meta",
               index === activeIndex && "text-accent-foreground",
             )}
           >

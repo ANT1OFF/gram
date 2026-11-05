@@ -30,7 +30,7 @@ export function ToggleSwitch({
       <span
         aria-hidden
         className={cn(
-          "inline-block size-3 rounded-full bg-background shadow transition-transform",
+          "inline-block size-3 rounded-full bg-background shadow-raised transition-transform",
           on ? "translate-x-3" : "translate-x-0.5",
         )}
       />
@@ -67,7 +67,7 @@ export function TogglePill({
       disabled={disabled}
       onClick={onToggle}
       className={cn(
-        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border bg-background px-2 text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border bg-background px-2 text-meta transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
         on
           ? "border-primary text-foreground"
           : "border-border text-muted-foreground hover:text-foreground",

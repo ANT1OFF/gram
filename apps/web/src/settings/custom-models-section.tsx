@@ -61,7 +61,7 @@ const asSaved = (drafts: ReadonlyArray<CustomModelDraft>) => {
 export function CustomModelsSection() {
   const settings = useServerSettings((s) => s.settings);
   const [status, setStatus] = useState(false);
-  if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   const saved = settings.agents.customModels ?? [];
   return (
     <CustomModelsEditor
@@ -144,7 +144,7 @@ function CustomModelsEditor({
   };
 
   return (
-    <div className="flex flex-col gap-4 text-sm" data-testid="custom-models">
+    <div className="flex flex-col gap-4 text-reading" data-testid="custom-models">
       <ul className={cn(SETTINGS_CARD, "empty:hidden")}>
         {drafts.map((draft, i) => (
           <DraftRow
@@ -165,12 +165,12 @@ function CustomModelsEditor({
                   {draft.name.trim() || draft.id.trim() || "New model"}
                 </span>
                 {draft.name.trim() !== "" && draft.id.trim() !== "" && (
-                  <span className="truncate font-mono text-xs text-muted-foreground">
+                  <span className="truncate font-mono text-meta text-muted-foreground">
                     {draft.id.trim()}
                   </span>
                 )}
                 {!draft.effort && (
-                  <span className="shrink-0 text-xs text-muted-foreground">no effort</span>
+                  <span className="shrink-0 text-meta text-muted-foreground">no effort</span>
                 )}
               </>
             }
@@ -235,7 +235,7 @@ function CustomModelsEditor({
       </ul>
       {suggestions.length > 0 && (
         <div className="flex flex-col gap-1.5" data-testid="model-suggestions">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             Used in Claude Code on this machine, and not listed by the agent:
           </p>
           <div className="flex flex-wrap gap-1.5">

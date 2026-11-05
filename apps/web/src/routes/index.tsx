@@ -16,7 +16,7 @@ function HomePage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       {!deciding && (
-        <div className="flex min-h-full flex-col items-center justify-center gap-6 p-6 text-sm text-muted-foreground">
+        <div className="flex min-h-full flex-col items-center justify-center gap-6 p-6 text-reading text-muted-foreground">
           {firstRun ? (
             <Welcome />
           ) : (

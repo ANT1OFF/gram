@@ -16,7 +16,7 @@ import { SavedMark, touchHandlers } from "./saved-mark";
 import { useSettingSearch } from "./search-scope";
 
 export const inputCls =
-  "h-8 w-full max-w-md rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-8 w-full max-w-md rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** A text input on the right of a `SettingRow`: a fixed width, narrower when the row is. */
 export const rowInputCls = cn(inputCls, "w-64 max-w-full");
@@ -228,7 +228,7 @@ export function ExpandableError({ message }: { message: string }) {
   const [open, setOpen] = useState(false);
   const long = isLongError(message);
   return (
-    <div role="alert" className="flex flex-col items-start gap-0.5 text-xs text-destructive">
+    <div role="alert" className="flex flex-col items-start gap-0.5 text-meta text-destructive">
       <p className={cn("wrap-anywhere whitespace-pre-line", long && !open && "line-clamp-3")}>
         {message}
       </p>

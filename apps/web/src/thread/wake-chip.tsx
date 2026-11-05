@@ -85,7 +85,7 @@ export function HeaderWakeChip({
         }`}
         title={hintOf(wakes, now)}
         className={cn(
-          "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1 text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+          "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1 text-meta text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
           className,
         )}
       >
@@ -97,9 +97,9 @@ export function HeaderWakeChip({
         <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50">
           <Popover.Popup
             data-testid="pane-wake-popup"
-            className="w-72 origin-(--transform-origin) rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="w-72 origin-(--transform-origin) rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
-            <Popover.Title className="px-1 pb-1.5 text-xs text-muted-foreground">
+            <Popover.Title className="px-1 pb-1.5 text-meta text-muted-foreground">
               The agent set these to wake itself with its note.
             </Popover.Title>
             <ul aria-label="Pending wakes" className="flex max-h-72 flex-col overflow-y-auto">
@@ -107,13 +107,13 @@ export function HeaderWakeChip({
                 <li key={wake.id} className="flex items-start gap-2 rounded-sm px-1 py-1">
                   <span
                     title={wakeWhenText(wake, (at) => formatWakeTime(at, now))}
-                    className="w-16 shrink-0 text-xs text-muted-foreground tabular-nums"
+                    className="w-16 shrink-0 text-meta text-muted-foreground tabular-nums"
                   >
                     {labelOf(wake, now)}
                   </span>
-                  <span className="min-w-0 flex-1 text-sm break-words">
+                  <span className="min-w-0 flex-1 text-reading break-words">
                     {wake.onPr !== undefined && (
-                      <span className="block text-xs text-muted-foreground">
+                      <span className="block text-meta text-muted-foreground">
                         {wakeWhenText(wake, (at) => formatWakeTime(at, now))}
                       </span>
                     )}

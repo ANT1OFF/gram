@@ -75,7 +75,7 @@ export function BrowserInspectionPanel({
     <section
       aria-label="Browser inspection"
       data-testid="browser-inspection"
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 text-xs"
+      className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 text-meta"
     >
       <div className="flex flex-wrap items-center gap-1">
         <span className="mr-auto font-medium">Inspect Preview</span>
@@ -143,7 +143,7 @@ export function BrowserInspectionPanel({
           value={ref}
           pattern="ref_[0-9]+"
           onChange={(event) => setRef(event.target.value)}
-          className="h-7 min-w-0 flex-1 rounded border border-input bg-transparent px-2 font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-7 min-w-0 flex-1 rounded-2xs border border-input bg-transparent px-2 font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <Hint
           side="bottom"

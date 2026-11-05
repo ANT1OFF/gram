@@ -102,7 +102,7 @@ export function SavedMark({ row }: { row: string }) {
           <m.span
             key={shown}
             data-testid="setting-saved"
-            className="inline-flex items-center gap-0.5 text-xs text-success-text"
+            className="inline-flex items-center gap-0.5 text-meta text-success-text"
             initial={{ opacity: level === "off" ? 1 : 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

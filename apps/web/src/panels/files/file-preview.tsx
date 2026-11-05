@@ -142,7 +142,7 @@ export function FilePreview({
         onClose();
       }}
     >
-      <div className="flex items-center gap-1.5 border-b border-border px-2 py-1 text-xs">
+      <div className="flex items-center gap-1.5 border-b border-border px-2 py-1 text-meta">
         <FileCode aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate font-mono" title={path}>
           {relative}
@@ -205,7 +205,7 @@ export function FilePreview({
           <X />
         </Button>
       </div>
-      <div ref={scroller} className="min-h-0 flex-1 overflow-auto text-xs">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-auto text-meta">
         {body}
       </div>
     </div>

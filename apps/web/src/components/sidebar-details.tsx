@@ -53,7 +53,7 @@ export function SidebarDetails({
           className="max-h-[min(24rem,calc(100dvh-2rem))] flex-col items-stretch"
         >
           <span className="min-h-0 overflow-y-auto whitespace-pre-line">{label}</span>
-          <span className="shrink-0 border-t border-background/20 pt-1 text-[10px] dark:border-border dark:text-muted-foreground">
+          <span className="shrink-0 border-t border-background/20 pt-1 text-caption dark:border-border dark:text-muted-foreground">
             {keyboard ? "Press F1 for full details" : "Focus the row and press F1 for full details"}
           </span>
         </TooltipContent>
@@ -67,12 +67,12 @@ export function SidebarDetails({
               data-surface="overlay"
               initialFocus={body}
               finalFocus={returnFocusTo(opener)}
-              className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(32rem,90vw)] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-lg"
+              className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(32rem,90vw)] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-overlay"
             >
-              <Dialog.Title className="shrink-0 font-heading text-base font-medium">
+              <Dialog.Title className="shrink-0 font-heading text-title">
                 Sidebar details
               </Dialog.Title>
-              <Dialog.Description className="shrink-0 text-xs text-muted-foreground">
+              <Dialog.Description className="shrink-0 text-meta text-muted-foreground">
                 Use Arrow keys, Page Up/Down or Home/End to read all details. Escape returns to the
                 row.
               </Dialog.Description>
@@ -81,7 +81,7 @@ export function SidebarDetails({
                 role="region"
                 aria-label="Full sidebar details"
                 tabIndex={0}
-                className="min-h-0 overflow-y-auto rounded-sm text-xs leading-5 whitespace-pre-line wrap-anywhere outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="min-h-0 overflow-y-auto rounded-sm text-meta leading-5 whitespace-pre-line wrap-anywhere outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {label}
               </div>
