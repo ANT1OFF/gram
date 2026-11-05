@@ -9,6 +9,12 @@
 // pinned ones. A read whose check fails returns nothing it read. A write checks its fresh temp file
 // the same way before writing any content into it, renames it over the target (replacing a link
 // there, never writing through one), and checks the result again.
+//
+// What is left: without `openat`/`renameat`, a folder swapped for a link between the last check and
+// the `rename` (or the `open`) is caught after the call, not prevented. A rename in that window can
+// replace a file of the same name in the swapped-in folder before the refusal. Only someone who can
+// already write to Gram's own state folder can make that swap, and they already control what is in
+// it. A descriptor-relative commit would need native code, which this deliberately doesn't add.
 
 import { randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
@@ -34,6 +40,8 @@ export interface DocFileHooks {
   readonly beforeOpen?: (path: string) => Promise<void>;
   /** After a file is opened or created, before it is checked. */
   readonly afterOpen?: (path: string) => Promise<void>;
+  /** After the record is written and closed, before the checks that guard its rename. */
+  readonly beforeRename?: (temp: string) => Promise<void>;
   /** In place of `rename`, to fail a commit. */
   readonly rename?: (from: string, to: string) => Promise<void>;
 }
@@ -234,6 +242,12 @@ export const writePinned = async (
     await handle.sync();
     await handle.close();
     closed = true;
+    await hooks?.beforeRename?.(temp);
+    // Checked again at the last moment: both folders still the pinned ones and the temp still the
+    // file written. Node has no renameat, so a swap after this check and before the rename is the
+    // one window left (see the module's note).
+    await sameFile(temp, created);
+    await stillPinned(folder.pins);
     await (hooks?.rename ?? rename)(temp, target);
     renamed = true;
     await sameFile(target, created);

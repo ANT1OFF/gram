@@ -271,11 +271,19 @@ export const makeDocs = (
       return doc ?? (yield* notFound(id));
     });
 
+  /**
+   * Writes the record and tells the clients, uninterruptibly: a promise outlives its fiber's
+   * interruption, so a save cancelled mid-write must not give up the workspace's lock until the
+   * write has settled, or a later save could land first and be overwritten by it.
+   */
   const commit = (at: DocFolder, meta: DocMeta, content: string) =>
-    Effect.gen(function* () {
-      const record = yield* recordOf(meta, content);
-      yield* run(meta.id, () => writePinned(at, recordName(meta.id), record, hooks));
-    });
+    Effect.uninterruptible(
+      Effect.gen(function* () {
+        const record = yield* recordOf(meta, content);
+        yield* run(meta.id, () => writePinned(at, recordName(meta.id), record, hooks));
+        yield* publishChanged(meta.workspaceId);
+      }),
+    );
 
   const publish: DocsShape["publish"] = (input) =>
     locks.withLock(
@@ -312,7 +320,6 @@ export const makeDocs = (
             excerpt: docExcerpt(content),
           };
           yield* commit(at, meta, content);
-          yield* publishChanged(input.workspaceId);
           return { meta, action: "published" as const };
         }
         const id = yield* checkedId(input.id);
@@ -352,7 +359,6 @@ export const makeDocs = (
           excerpt: docExcerpt(content),
         };
         yield* commit(at, meta, content);
-        yield* publishChanged(input.workspaceId);
         return { meta, action: "updated" as const };
       }),
     );
@@ -384,7 +390,6 @@ export const makeDocs = (
           excerpt: docExcerpt(content),
         };
         yield* commit(at, meta, content);
-        yield* publishChanged(workspaceId);
         return meta;
       }),
     );

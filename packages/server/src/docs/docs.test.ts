@@ -8,10 +8,12 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -25,7 +27,7 @@ import {
 } from "node:fs";
 import { rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { DocFileHooks } from "./doc-files.ts";
 import { makeDocs, newDocId, type DocAuthor } from "./docs.ts";
 
@@ -490,6 +492,47 @@ describe("doc review findings", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect(
+    "P1 (re-review): a save cancelled mid-commit keeps the lock until its write settles",
+    () =>
+      Effect.gen(function* () {
+        // The first gated rename waits until released, as a slow disk would.
+        let gated = false;
+        const inRename = Promise.withResolvers<void>();
+        const released = Promise.withResolvers<void>();
+        const { docs } = yield* setupWith({
+          rename: async (from, to) => {
+            if (gated) {
+              gated = false;
+              inRename.resolve();
+              await released.promise;
+            }
+            await rename(from, to);
+          },
+        });
+        const { meta } = yield* docs.publish({
+          workspaceId: WS,
+          author: worker(1),
+          title: "Plan",
+          content: "rev 1",
+        });
+        gated = true;
+        const saveA = yield* Effect.forkScoped(docs.save(WS, meta.id, "A's edit", 1));
+        yield* Effect.promise(() => inRename.promise);
+        // Cancel A while its rename waits, then save B over the same revision.
+        const cancelA = yield* Effect.forkScoped(Fiber.interrupt(saveA));
+        const saveB = yield* Effect.forkScoped(Effect.exit(docs.save(WS, meta.id, "B's edit", 1)));
+        yield* Effect.sleep("50 millis");
+        released.resolve();
+        yield* Fiber.join(cancelA);
+        const b = yield* Fiber.join(saveB);
+        const final = yield* docs.read(WS, meta.id);
+        // A's write landed while it held the lock, so B, over revision 1, is refused, not lost.
+        expect(b._tag).toBe("Failure");
+        expect([final.revision, final.content]).toEqual([2, "A's edit"]);
+      }).pipe(Effect.scoped, TestClock.withLive),
+  );
+
   it.effect("P1: an unlocked read always sees one revision's text with that revision", () =>
     Effect.gen(function* () {
       const { docs } = yield* setup;
@@ -613,6 +656,38 @@ describe("doc review findings", () => {
         for (const name of readdirSync(outside)) {
           expect(readFileSync(join(outside, name), "utf8")).not.toContain("SECRET");
         }
+        swapBack(root);
+        expect((yield* docs.read(WS, meta.id)).content).toBe("mine");
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(process.platform === "win32")(
+    "P2 (re-review): a folder swapped just before the rename is caught before it, touching nothing outside",
+    () =>
+      Effect.gen(function* () {
+        let race: ((temp: string) => Promise<void>) | undefined;
+        const { dir, root, docs } = yield* setupWith({
+          beforeRename: async (temp) => race?.(temp),
+        });
+        const { meta } = yield* docs.publish({
+          workspaceId: WS,
+          author: worker(1),
+          title: "Plan",
+          content: "mine",
+        });
+        // Outside, a file of the doc's name the rename would replace, and the temp linked in too.
+        const outside = join(dir, "outside");
+        mkdirSync(outside);
+        const victim = join(outside, `${meta.id}.doc`);
+        writeFileSync(victim, "outside's own");
+        race = async (temp) => {
+          race = undefined;
+          linkSync(temp, join(outside, basename(temp)));
+          swap(root, outside);
+        };
+        const error = yield* Effect.flip(docs.save(WS, meta.id, "SECRET", 1));
+        expect(error.message).toContain("changed during the operation");
+        expect(readFileSync(victim, "utf8")).toBe("outside's own");
         swapBack(root);
         expect((yield* docs.read(WS, meta.id)).content).toBe("mine");
       }).pipe(Effect.scoped),
