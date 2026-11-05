@@ -46,8 +46,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     background on hover and focus. Its tooltip names it and its shortcut at once, and its
     accessible name says the same; a `title` on an icon `Button` becomes that tooltip.
   - The open tab, view or toggle shows a background or an underline, never colour alone.
-  - One meaning per glyph, and one glyph per meaning: Needs you is `Hand`, Waiting on you
-    `Inbox`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval
+  - One meaning per glyph, and one glyph per meaning: the Inbox (everything that needs you) is
+    `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval
     `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`.

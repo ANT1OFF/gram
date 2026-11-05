@@ -47,12 +47,11 @@ ask_question ──► triage ──answer_worker(questionId, source)──► a
   mid-turn to finish and read it. It also caps the user's extra wait behind a busy,
   limit-waiting or errored orchestrator. A paused workspace or a paused feature wakes no
   orchestrator, so the question forwards at once.
-- **The user answers** in one place: the workspace's Asks dock, or the ask sheet for a
-  question too long for the dock. The Board's Waiting on you band, the overview's
-  "N needs you" pill and an away notification (Open only, like the orchestrator's own
-  questions) all turn the dock to it rather than offer a second form; the band's card
-  says "In Asks" while the dock has it open, and the dock folds to one "N more waiting"
-  row while the sheet is open. The card shows the worker's words exactly, the worker's
+- **The user answers** in one place: the Inbox, where the question shows beside the list,
+  answered in place or, with **Write your own answer**, as its full card. A feature's sheet,
+  Memory, the Board's chip, the overview's "N needs you" pill and an away notification (Open
+  only, like the orchestrator's own questions) all open the Inbox on it rather than offer a
+  second form; the worker's own transcript card answers it in context. The card shows the worker's words exactly, the worker's
   recommendation (a "Recommended" tag on its choice, never a pre-picked one), and the
   orchestrator's line if there is one. Every surface follows one rule: pick a choice
   (a click, or 1–9) or write free text, then **Send answer** (or ⌘⏎). An approval's

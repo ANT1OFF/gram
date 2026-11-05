@@ -26,7 +26,7 @@ const entry = (id: string): InboxEntry => ({
 
 beforeEach(() => {
   vi.useFakeTimers();
-  useAskStackStore.setState({ held: [], sent: {}, problems: {}, replies: {}, focusKey: undefined });
+  useAskStackStore.setState({ held: [], sent: {}, problems: {}, replies: {} });
 });
 afterEach(() => vi.useRealTimers());
 

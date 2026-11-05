@@ -3,10 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
+import { showInboxAsk } from "@/inbox/inbox-store";
 import { checkAwayAction } from "@/orchestration/ask-actions";
 import { holdAnswer } from "@/orchestration/ask-answer";
 import { useOpenThread, useWorkspaceAsks } from "@/orchestration/ask-stack";
-import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { allWorkspacesPaused, setAllWorkspacesPaused } from "@/orchestration/pause-workspace";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useThreadsStore } from "@/stores/threads";
@@ -108,10 +108,10 @@ function MenuBarAsks() {
     }
     if (action.kind === "open") {
       if (shown.openThreadId === undefined) return;
-      // The stack shows that ask on top, as a notification's Open does.
-      useAskStackStore.getState().focus(shown.askKey);
-      useViewStore.getState().setQuiet(false);
-      return openThread(shown.openThreadId);
+      // The Inbox shows that ask over its thread, as a notification's Open does.
+      openThread(shown.openThreadId);
+      showInboxAsk(shown.askKey);
+      return;
     }
     const allow = checkAwayAction(all, shown);
     // Only the very ask that was shown, still waiting: anything else sends nothing.

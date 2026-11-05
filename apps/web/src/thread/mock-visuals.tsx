@@ -17,6 +17,7 @@ import { useState } from "react";
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
+import { useInboxStore } from "@/inbox/inbox-store";
 import { cn } from "@/lib/utils";
 import { imageDataUrl, useCheckoutImage } from "@/panels/files/image-preview";
 import { useFeature } from "@/settings/use-diagnostics";
@@ -42,13 +43,16 @@ const hasVisuals = (option: QuestionChoice): boolean =>
 
 /**
  * Opens a mock page in `threadId`'s Preview tab, at its board and in a theme, going to the thread
- * first: the tab sits beside it, wherever the click came from (the Board, the ask stack).
+ * first: the tab sits beside it, wherever the click came from (the Board, the Inbox, which closes
+ * so the mock is what is seen).
  */
 function useOpenMock() {
   const navigate = useNavigate();
   const previewPane = useFeature("previewPane");
   return (threadId: ThreadId, target: string, theme?: MockTheme) => {
     const { path, board } = splitPreviewTarget(target);
+    const inbox = useInboxStore.getState();
+    if (inbox.open) inbox.leave();
     const layout = useLayoutStore.getState();
     layout.openThread(threadId);
     void navigate({ to: "/t/$threadId", params: { threadId } });

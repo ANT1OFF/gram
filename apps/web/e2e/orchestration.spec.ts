@@ -1735,20 +1735,25 @@ test("a workspace's More… adds and removes repos, and a repo the orchestrator 
       window.gramMock?.simulateAddRepoRequest(workspaceId, "~/code/example-device-apps"),
     made.workspaceId,
   );
-  // The orchestrator's own request is an ask in its stack, with what the spawn would do behind
-  // Details, and nowhere else on its thread.
-  const stack = page.getByTestId("ask-stack");
-  const ask = stack.locator('li:not([inert]) [data-testid="ask-item"][data-current]');
+  // The orchestrator's own request is its card in its thread, and an ask in the Inbox, with what
+  // the spawn would do behind Details.
+  await expect(page.getByTestId("thread-view").getByTestId("approval-card")).toHaveCount(1);
+  await page.getByTestId("inbox-line-open").click();
+  await page.getByTestId("inbox-item").filter({ hasText: "Add example-device-apps" }).click();
+  const ask = page.getByTestId("inbox-detail").getByTestId("ask-item");
   await expect(ask.getByTestId("ask-title")).toContainText(
     'Add example-device-apps (/Users/dev/code/example-device-apps) to the "api" workspace, and spawn a worker there',
   );
-  await expect(page.getByTestId("thread-view").getByTestId("approval-card")).toHaveCount(0);
   await ask.getByTestId("ask-details").click();
   await expect(ask.getByTestId("ask-details-body")).toContainText("Deploy the release site");
   await ask.getByTestId("ask-option").first().click();
-  await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed");
+  const held = page.getByTestId("needs-you-undo-line");
+  await expect(held).toContainText("Allowed");
+  // Held, its card leaves the thread too: one answer, never two.
+  await expect(page.getByTestId("thread-view").getByTestId("approval-card")).toHaveCount(0);
   // Out once the undo window has passed.
-  await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0, { timeout: 10_000 * slowdown });
+  await expect(held).toHaveCount(0, { timeout: 10_000 * slowdown });
+  await page.keyboard.press("Escape");
   await expect(await removeRepo()).toHaveText(["agent-factory", "example-device-apps"]);
 });
 

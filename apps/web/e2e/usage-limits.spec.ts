@@ -152,8 +152,9 @@ test.describe("midday reset fixture", () => {
       { threadId: made.orchestratorThreadId },
     );
     await openOrchestrator(page, made.orchestratorThreadId);
-    const stack = page.getByTestId("ask-stack");
-    const ask = stack.getByTestId("ask-item").filter({ hasText: "Claude is at 92%" });
+    await page.getByTestId("inbox-line-open").click();
+    await page.getByTestId("inbox-item").filter({ hasText: "Claude is at 92%" }).click();
+    const ask = page.getByTestId("inbox-detail").getByTestId("ask-item");
     await expect(ask).toContainText("Claude is at 92% of its 5-hour limit");
     await expect(ask).toContainText(
       new RegExp(`Pause new workers until it resets at ${CLOCK}\\? Running ones finish\\.`),

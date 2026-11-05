@@ -29,16 +29,14 @@ import { NO_CHOICE, choiceAnswer, typeOther, type Choice } from "@/thread/choice
 import { OptionGallery } from "@/thread/mock-visuals";
 import { ChoiceList } from "@/thread/request-cards";
 
+import { showInbox, showInboxAsk } from "@/inbox/inbox-store";
 import { useLayoutStore } from "@/stores/layout";
 
 import type { MemoryQuestion } from "./memory-model";
 import { SendAnswer } from "./ask-choices";
 import { memoryId, workerQuestionId } from "./ask-model";
-import { openAskSheet, showAsk } from "./ask-sheet-store";
-import { useAskStackStore } from "./ask-stack-store";
 import { useDerivedAsks } from "./needs-you-store";
 import {
-  fitsInPlace,
   memoryQuestionCard,
   questionKind,
   questionOutcome,
@@ -144,10 +142,10 @@ function AskedBy({ asker }: { asker: NonNullable<QuestionCard["asker"]> }) {
 }
 
 /**
- * One open question. In the ask sheet (`sheet`) it is answered: its choices when it offers some, a
- * text box when not, then Send answer; a number key picks and ⌘⏎ sends, as in the Asks dock.
- * Anywhere else (the Board's band, a feature's sheet, Memory) it is only shown, and Answer takes it
- * to the one place it is answered (`onOpen`), so no two forms ask the same thing at once. A worker's
+ * One open question. In the Inbox's detail pane (`sheet`) it is answered: its choices when it offers
+ * some, a text box when not, then Send answer; a number key picks and ⌘⏎ sends. Anywhere else (a
+ * feature's sheet, Memory) it is only shown, and Answer takes it to the Inbox (`onOpen`), so no two
+ * forms ask the same thing at once. A worker's
  * question has Dismiss, with an optional reason, in both. The words are the asker's, exactly.
  */
 export function OpenQuestion({
@@ -410,28 +408,17 @@ export function OpenQuestion({
 }
 
 /**
- * Where a listed question's Answer goes: "dock", the Board's Asks dock turned to it (or the ask
- * sheet, for one too long for the dock), or "sheet", the ask sheet, where no dock is in sight.
+ * Answer for a listed question, by its hold id: the Inbox, opened on it, is where it is answered.
+ * One the Inbox doesn't list (put away for Later, say) opens the Inbox where it was left.
  */
-export type AnswerIn = "dock" | "sheet";
-
-/**
- * Answer for a listed question, by its hold id: the one place it is answered. And whether the dock
- * has it open now, so the list marks it instead of offering a second Answer.
- */
-function useAnswerIn(workspaceId: WorkspaceId, where: AnswerIn) {
+function useAnswerIn(workspaceId: WorkspaceId) {
   const asks = useDerivedAsks((s) => s.asks.find((w) => w.workspaceId === workspaceId)?.asks);
-  const current = useAskStackStore((s) => (where === "dock" ? s.current[workspaceId] : undefined));
   return {
-    open: (id: string, card: QuestionCard) => {
+    open: (id: string) => {
       const ask = asks?.find((each) => each.ids.includes(id));
-      if (where === "dock" && ask !== undefined && fitsInPlace(card)) {
-        showAsk(workspaceId, ask);
-        return;
-      }
-      openAskSheet(workspaceId, { ids: [id], key: id });
+      if (ask === undefined) showInbox({ workspaceId });
+      else showInboxAsk(ask.key);
     },
-    answering: (id: string) => current === id,
   };
 }
 
@@ -451,25 +438,23 @@ export function useMemoryQuestionAnswer(workspaceId: WorkspaceId) {
 }
 
 /**
- * The open questions, each with Answer to the one place it is answered (`where`); `compact` draws
+ * The open questions, each with Answer to the Inbox, where it is answered; `compact` draws
  * each as a card of its own, for the board.
  */
 export function OpenQuestionList({
   questions,
   workspaceId,
   orchestratorId,
-  where,
   compact = false,
   className,
 }: {
   questions: readonly MemoryQuestion[];
   workspaceId: WorkspaceId;
   orchestratorId: ThreadId | undefined;
-  where: AnswerIn;
   compact?: boolean;
   className?: string;
 }) {
-  const answerIn = useAnswerIn(workspaceId, where);
+  const answerIn = useAnswerIn(workspaceId);
   // An answered question closes and folds away, so what is below it doesn't jump.
   return (
     <ul className={className}>
@@ -482,8 +467,7 @@ export function OpenQuestionList({
               <OpenQuestion
                 card={card}
                 compact={compact}
-                onOpen={() => answerIn.open(id, card)}
-                answering={answerIn.answering(id)}
+                onOpen={() => answerIn.open(id)}
                 unavailable={
                   orchestratorId === undefined
                     ? "Open the orchestrator first: the answer is a message to it"
@@ -524,18 +508,16 @@ export function useWorkerQuestionActions(workspaceId: WorkspaceId) {
 export function WorkerQuestionList({
   questions,
   workspaceId,
-  where,
   compact = false,
   className,
 }: {
   questions: readonly WorkerQuestion[];
   workspaceId: WorkspaceId;
-  where: AnswerIn;
   compact?: boolean;
   className?: string;
 }) {
   const actions = useWorkerQuestionActions(workspaceId);
-  const answerIn = useAnswerIn(workspaceId, where);
+  const answerIn = useAnswerIn(workspaceId);
   return (
     <ul className={className}>
       <PresenceList>
@@ -547,8 +529,7 @@ export function WorkerQuestionList({
               <OpenQuestion
                 card={card}
                 compact={compact}
-                onOpen={() => answerIn.open(id, card)}
-                answering={answerIn.answering(id)}
+                onOpen={() => answerIn.open(id)}
                 onDismiss={actions.dismiss(question)}
               />
             </PresenceItem>

@@ -33,7 +33,7 @@ const start = async (page: Page) => {
   await flakyAsked(page);
   const made = await page.evaluate(() => window.gramMock!.simulateFailures());
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("ask-stack")).toBeVisible();
+  await expect(page.getByTestId("inbox-line")).toBeVisible();
   await page.getByTestId("titlebar-overflow").click();
   await page.getByTestId("folded-quiet").click();
   await expect(quiet(page)).toBeVisible();
@@ -111,9 +111,9 @@ test("one card at a time: 1 then ⌘⏎ answers it everywhere, and undo brings i
   }
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("quiet-layer")).toBeHidden();
-  const stack = page.getByTestId("ask-stack");
-  await stack.getByTestId("ask-expand").click();
-  await expect(stack.getByTestId("ask-command").filter({ hasText: PUSH })).toHaveCount(0);
+  await page.getByTestId("inbox-button").click();
+  await expect(page.getByTestId("inbox")).toBeVisible();
+  await expect(page.getByTestId("inbox-item").filter({ hasText: PUSH })).toHaveCount(0);
 });
 
 test("Later sends a card to the back, and O opens its thread out of Quiet", async ({ page }) => {

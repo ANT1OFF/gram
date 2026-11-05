@@ -11,6 +11,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import { useApi } from "@/api/context";
+import { showInboxAsk } from "@/inbox/inbox-store";
 import type { Api } from "@/api/types";
 import type { Ask } from "@/orchestration/ask-model";
 import {
@@ -21,7 +22,6 @@ import {
 } from "@/orchestration/ask-actions";
 import { holdAnswer } from "@/orchestration/ask-answer";
 import { useWorkspaceAsks, type WorkspaceAsks } from "@/orchestration/ask-stack";
-import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -164,13 +164,14 @@ export function AwayNotifications({
   useEffect(() => {
     const bridge = window.gram;
     if (!bridge?.onNotificationAction) return;
+    // The thread it came from, with the Inbox over it on that ask while it still waits.
     const open = (notice: AwayNotice) => {
-      if (findShownAsk(latest.current, notice) !== undefined)
-        useAskStackStore.getState().focus(notice.askKey);
       const threadId = notice.openThreadId;
-      if (threadId === undefined) return;
-      useLayoutStore.getState().openThread(threadId);
-      void navigate({ to: "/t/$threadId", params: { threadId } });
+      if (threadId !== undefined) {
+        useLayoutStore.getState().openThread(threadId);
+        void navigate({ to: "/t/$threadId", params: { threadId } });
+      }
+      if (findShownAsk(latest.current, notice) !== undefined) showInboxAsk(notice.askKey);
     };
     return bridge.onNotificationAction(({ id, action }) => {
       const notice = live.current.get(id);

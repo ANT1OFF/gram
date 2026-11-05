@@ -83,7 +83,7 @@ beforeEach(() => {
   onAction = undefined;
   respondMany.mockClear();
   asks.setState({ all: [] });
-  useAskStackStore.setState({ held: [], sent: {}, problems: {}, replies: {}, focusKey: undefined });
+  useAskStackStore.setState({ held: [], sent: {}, problems: {}, replies: {} });
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   vi.spyOn(document, "hasFocus").mockReturnValue(false);
   Object.defineProperty(window, "gram", {

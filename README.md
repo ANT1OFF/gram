@@ -17,8 +17,8 @@ in its own git worktree, from task to merged pull request.
   a pull request merges or a time it set comes round.
 - **Autonomy you choose.** Supervised asks before anything leaves your machine, Publish pushes
   and opens pull requests, and Full also merges on its own.
-- **One place for what needs you.** Questions, approvals and plans from every workspace collect
-  in one list.
+- **One Inbox for what needs you.** Questions, approvals, plans, reviews and failures from every
+  workspace collect in one list, each answered beside it.
 
 ## Requirements
 

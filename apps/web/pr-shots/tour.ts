@@ -206,18 +206,21 @@ const scenes: readonly Shot[] = [
   }),
   {
     name: "needs-you",
-    title: "Needs you: the one worker question waiting, from the sidebar's pill",
+    title: "Inbox: everything that needs you, by kind, the first shown beside the list",
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByTestId("overview-needs-you").click();
-      await page.getByTestId("needs-you-popover").getByTestId("needs-you-item").first().waitFor();
+      // The Inbox; on a base from before it, the popover.
+      await page
+        .locator('[data-testid="inbox-detail"], [data-testid="needs-you-popover"]')
+        .first()
+        .waitFor();
       await page.waitForTimeout(600);
     },
   },
   {
     name: "questions",
-    title:
-      "Questions: a worker's question in its orchestrator's Asks dock, with the orchestrator's view",
+    title: "Questions: a worker's question in the Inbox, opened from its orchestrator's line",
     open: async (page) => {
       const made = await openRealistic(page);
       const orchestrator = await page.evaluate(
@@ -227,6 +230,10 @@ const scenes: readonly Shot[] = [
         made.askingWorkspaceId,
       );
       await openOrchestrator(page, orchestrator);
+      // The line into the Inbox; on a base from before it, the Asks dock shows the ask itself.
+      const line = page.getByTestId("inbox-line-open");
+      await line.or(page.getByTestId("ask-stack")).first().waitFor();
+      if ((await line.count()) > 0) await line.click();
       await page.getByTestId("ask-item").first().waitFor();
       await page.waitForTimeout(600);
     },
@@ -393,7 +400,7 @@ const scenes: readonly Shot[] = [
   },
   {
     name: "stress-questions",
-    title: "Stress test: a forwarded question's Answer turns the Asks dock to it, among many asks",
+    title: "Stress test: a forwarded question in the Inbox, among many asks, from the Board's chip",
     open: async (page) => {
       await page.goto("/t/t-flaky");
       await threadRow(page, "t-flaky").waitFor();
@@ -401,14 +408,12 @@ const scenes: readonly Shot[] = [
       await openOrchestrator(page, made.orchestratorThreadId);
       await board(page);
       await page.getByTestId("rail-waiting-chip").click();
-      const question = page.locator('[data-testid="rail-waiting"] [data-question="WQ1"]');
-      await question.getByRole("button", { name: "Answer" }).click();
-      await expect(question.getByTestId("question-answering")).toBeVisible();
-      const item = page
-        .getByTestId("rail-board")
+      await page
         .locator(
-          `[data-testid="ask-item"][data-ask-key="worker-question:${made.workspaceId}:WQ1"]`,
-        );
+          `[data-testid="inbox-item"][data-key="ask:worker-question:${made.workspaceId}:WQ1"]`,
+        )
+        .click();
+      const item = page.getByTestId("inbox-detail").getByTestId("ask-item");
       await expect(item.getByTestId("ask-option").first()).toBeVisible();
     },
   },

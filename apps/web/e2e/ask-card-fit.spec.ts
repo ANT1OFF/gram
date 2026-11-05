@@ -3,9 +3,9 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { openOrchestratorTile } from "./overview-rail";
 
 // An orchestrator question with four long choices and a long context, in each place an ask is
-// answered: the stack over the composer and Quiet's card. Synthetic mock state; nothing reaches a provider.
+// answered: the Inbox's detail pane and Quiet's card. Synthetic mock state; nothing reaches a provider.
 
-/** Past the stack's settle time (`SETTLE_MS`), so a key isn't taken for a slip. */
+/** Past the settle time (`SETTLE_MS`), so a key isn't taken for a slip. */
 const SETTLED_MS = 400;
 
 const QUESTION = "Where should a running worker show while the orchestrator chat stays open?";
@@ -54,7 +54,7 @@ const start = async (page: Page) => {
     [QUESTION, CONTEXT, OPTIONS, RECOMMENDED] as const,
   );
   await openOrchestratorTile(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("ask-stack")).toBeVisible();
+  await expect(page.getByTestId("inbox-line")).toBeVisible();
   return made;
 };
 
@@ -98,18 +98,17 @@ const contextOpens = async (text: Locator, more: Locator) => {
   await expect(text).not.toHaveAttribute("data-open");
 };
 
-const currentAsk = (page: Page) =>
-  page.getByTestId("ask-stack").locator('li:not([inert]) [data-testid="ask-item"][data-current]');
+const currentAsk = (page: Page) => page.getByTestId("inbox-detail").getByTestId("ask-item");
+const show = (page: Page, text: string) =>
+  page.getByTestId("inbox-item").filter({ hasText: text }).first().click();
 
-test("in the stack, four long choices all show with their descriptions, and the context opens", async ({
+test("in the Inbox, four long choices all show with their descriptions, and the context opens", async ({
   page,
 }) => {
   await start(page);
-  const stack = page.getByTestId("ask-stack");
-  for (let tries = 0; tries < 8; tries++) {
-    if ((await currentAsk(page).getByTestId("ask-title").textContent())?.includes(QUESTION)) break;
-    await stack.getByTestId("ask-next").click();
-  }
+  await page.getByTestId("inbox-line-open").click();
+  const stack = page.getByTestId("inbox-detail-body");
+  await show(page, QUESTION);
   const ask = currentAsk(page);
   await expect(ask.getByTestId("ask-title")).toHaveText(QUESTION);
   await expect(ask.getByTestId("ask-choices")).toHaveAttribute("data-layout", "list");
@@ -117,27 +116,23 @@ test("in the stack, four long choices all show with their descriptions, and the 
   await contextOpens(ask.getByTestId("ask-description"), ask.getByTestId("ask-description-more"));
 
   // The keys still pick by number, ⌘⏎ sends, and an answer can still be taken back.
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.getByTestId("inbox-list").focus();
   await page.waitForTimeout(SETTLED_MS);
   await page.keyboard.press("4");
   await expect(ask.getByTestId("ask-option").nth(3)).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("ControlOrMeta+Enter");
-  await expect(stack.getByTestId("ask-undo-line")).toContainText(IN_ORDER[3]!.label);
+  await expect(page.getByTestId("needs-you-undo-line")).toContainText(IN_ORDER[3]!.label);
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(stack.getByTestId("ask-undo-line")).toHaveCount(0);
+  await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
   await expect(currentAsk(page).getByTestId("ask-title")).toHaveText(QUESTION);
 
   // A short two-way approval keeps its row of buttons.
-  for (let tries = 0; tries < 8; tries++) {
-    if ((await currentAsk(page).getByTestId("ask-title").textContent())?.includes("× 3")) break;
-    await stack.getByTestId("ask-next").click();
-  }
+  await show(page, "git push");
   await expect(currentAsk(page).getByTestId("ask-choices")).toHaveAttribute("data-layout", "row");
 });
 
 test("Quiet's card shows the same choices whole", async ({ page }) => {
   await start(page);
-  await expect(page.getByTestId("ask-stack")).toBeVisible();
   // By its key: at this width the title bar's usage meter overlaps the Quiet toggle.
   await page.keyboard.press("ControlOrMeta+Alt+4");
   const card = page.getByTestId("quiet-view").getByTestId("quiet-card");

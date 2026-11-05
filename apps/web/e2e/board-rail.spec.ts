@@ -65,32 +65,29 @@ test("each feature is a line, its workers on the stations their cards give them"
   }
 });
 
-test("the ask stack docks below the lines, and an answer there clears it everywhere", async ({
+test("the Board's chip opens the Inbox, and an answer there clears it everywhere", async ({
   page,
 }) => {
   const made = await start(page);
-  const stack = board(page).getByTestId("ask-stack");
-  await expect(stack).toBeVisible();
-  // Below the lines, not above them.
-  const lines = await board(page)
-    .getByRole("list", { name: "Features", exact: true })
-    .boundingBox();
-  const docked = await stack.boundingBox();
-  expect(docked!.y).toBeGreaterThan(lines!.y);
-
-  // The stack shows no count of its own; `data-count` is how many it holds.
-  const before = Number(await stack.getAttribute("data-count"));
-  await stack.getByTestId("ask-expand").click();
-  const push = stack.getByTestId("ask-item").filter({ hasText: "git push" });
+  // No dock below the lines: the header's chip is the Board's one way to what waits on you.
+  await expect(board(page).getByTestId("ask-stack")).toHaveCount(0);
+  const waiting = page.getByTestId("rail-waiting-chip");
+  const before = Number(await waiting.getAttribute("data-count"));
+  await waiting.click();
+  const push = page.getByTestId("inbox-item").filter({ hasText: "feat/mail-trigger" });
+  await push.click();
   // Approvals show the exact command.
-  await expect(push).toContainText("git push -u origin feat/mail-trigger");
-  await push.getByRole("button", { name: /^Allow/ }).click();
-  await expect(stack).toHaveAttribute("data-count", String(before - 1));
+  const ask = page.getByTestId("inbox-detail").getByTestId("ask-item");
+  await expect(ask).toContainText("git push -u origin feat/mail-trigger");
+  await ask.getByRole("button", { name: /^Allow/ }).click();
+  await expect(push).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(waiting).toHaveAttribute("data-count", String(before - 1));
   await expect(chip(page, made.pushers[0])).not.toHaveAttribute("data-tone", "needs");
 
-  // Back in Chat, the orchestrator's own stack has lost it too.
+  // Back in Chat, the orchestrator's line has lost it too.
   await page.keyboard.press("Escape");
-  await expect(page.locator("[data-pane-root]").getByTestId("ask-stack")).toHaveAttribute(
+  await expect(page.locator("[data-pane-root]").getByTestId("inbox-line")).toHaveAttribute(
     "data-count",
     String(before - 1),
   );
@@ -155,10 +152,6 @@ test("the grid is the default, its cells side by side, and Lanes is a remembered
       }),
     );
   expect(repeats).toEqual([]);
-  // Asks sits right under the rows, not at the foot of an empty pane.
-  const rows = await board(page).getByRole("list", { name: "Features", exact: true }).boundingBox();
-  const asks = await board(page).getByTestId("ask-stack").boundingBox();
-  expect(asks!.y - (rows!.y + rows!.height)).toBeLessThan(48);
 
   // Lanes: the stations as columns, kept for the next Board.
   const layouts = page.getByTestId("board-layout");

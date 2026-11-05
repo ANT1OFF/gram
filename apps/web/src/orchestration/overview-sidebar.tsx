@@ -102,7 +102,6 @@ import { peek } from "./peek-store";
 import { NESTED_TONE_DOT, type RailTone } from "./rail-model";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
-import { NeedsYouPopover } from "./needs-you-popover";
 import { useNeedsYou, useNeedsYouCounts } from "./use-needs-you";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
 import { WorkspaceMenuItems } from "./workspace-menu-items";
@@ -391,11 +390,11 @@ export function useCarryOverviewFocus(sidebar: ShellFit["sidebar"]): void {
 }
 
 /**
- * The pill: what needs you across every workspace, which opens the Needs you popover under it. Its
- * shortcut is on its hover.
+ * The pill: what needs you across every workspace, which opens the Inbox. Its shortcut is on its
+ * hover.
  */
 function NeedsYou() {
-  const { count, label, hint } = useNeedsYou();
+  const { count, label, hint, open } = useNeedsYou();
   // A true first run, with no thread yet, has nothing to need you: the welcome is the one thing
   // to look at, without a count beside it.
   const firstRun = useFirstRun();
@@ -404,30 +403,26 @@ function NeedsYou() {
   const words = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
   // Nothing waiting, it stays as quiet grey words, so the column doesn't jump.
   return (
-    <NeedsYouPopover
-      anchor="overview"
-      trigger={
-        <button
-          type="button"
-          {...{ [STOP]: "" }}
-          data-testid="overview-needs-you"
-          data-count={count}
-          aria-label={withHint(words, hint)}
-          title={withHint(label, hint)}
-          className={cn(
-            "flex w-full shrink-0 items-center gap-2 rounded-(--radius-md) border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            count > 0
-              ? "border-status-needs-mark/60 font-medium text-status-needs hover:bg-status-needs-mark/10"
-              : "border-transparent text-muted-foreground hover:bg-sidebar-row-hover",
-          )}
-        >
-          {count > 0 && (
-            <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs-mark" />
-          )}
-          <span className="min-w-0 flex-1 truncate">{words}</span>
-        </button>
-      }
-    />
+    <button
+      type="button"
+      {...{ [STOP]: "" }}
+      data-testid="overview-needs-you"
+      data-count={count}
+      aria-label={withHint(words, hint)}
+      title={withHint(label, hint)}
+      onClick={open}
+      className={cn(
+        "flex w-full shrink-0 items-center gap-2 rounded-(--radius-md) border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        count > 0
+          ? "border-status-needs-mark/60 font-medium text-status-needs hover:bg-status-needs-mark/10"
+          : "border-transparent text-muted-foreground hover:bg-sidebar-row-hover",
+      )}
+    >
+      {count > 0 && (
+        <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-needs-mark" />
+      )}
+      <span className="min-w-0 flex-1 truncate">{words}</span>
+    </button>
   );
 }
 

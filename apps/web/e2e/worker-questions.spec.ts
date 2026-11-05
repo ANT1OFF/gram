@@ -4,8 +4,8 @@ import { flakyAsked } from "./seed-asks";
 import { seedTheme } from "./seed-theme";
 import { openOrchestrator, threadRow } from "./thread-row";
 
-// Workers' own questions (docs/design/worker-questions.md) where the user meets them: the Board's
-// Waiting on you band, the overview's needs-you pill, the feature sheet and the worker's own thread.
+// Workers' own questions (docs/design/worker-questions.md) where the user meets them: the Inbox,
+// the overview's needs-you pill, the feature sheet and the worker's own thread.
 // Mock state lives in memory, so every step after the seed navigates inside the app.
 
 /** Where screenshots go when asked for (`WORKER_QUESTION_SHOTS=<dir>`); none otherwise. */
@@ -33,13 +33,31 @@ const start = async (page: Page): Promise<Seeded> => {
   return made;
 };
 
-const band = (page: Page) => page.getByTestId("rail-waiting");
-const openBand = async (page: Page) => {
+const inbox = (page: Page) => page.getByTestId("inbox");
+const detail = (page: Page) => page.getByTestId("inbox-detail");
+/** The Inbox's row for a worker's question, by its id. */
+const row = (page: Page, workspaceId: string, id: string) =>
+  inbox(page).locator(
+    `[data-testid="inbox-item"][data-key="ask:worker-question:${workspaceId}:${id}"]`,
+  );
+/** The Board's one way into the Inbox: its header's chip. */
+const openInbox = async (page: Page) => {
   await page.getByTestId("rail-waiting-chip").click();
-  await expect(band(page)).toBeVisible();
+  await expect(inbox(page)).toBeVisible();
 };
-const card = (page: Page, id: string) =>
-  band(page).locator(`[data-testid="worker-question"][data-question="${id}"]`);
+/** Opens the feature sheet of the feature question `id` was asked for. */
+const openFeatureOf = async (page: Page, id: string) => {
+  const feature = await page.evaluate(async (question) => {
+    const [state] = await window.gramMock!.listWorkspaces();
+    const ledger = await window.gramMock!.orchestratorLedger(state!.workspace.id);
+    return ledger.questions?.find((each) => each.id === question)?.feature;
+  }, id);
+  await page
+    .getByTestId("rail-board")
+    .locator(`[data-testid="rail-row"][data-feature="${feature}"]`)
+    .getByTestId("rail-feature")
+    .click();
+};
 const needsYou = (page: Page) => page.getByTestId("overview-needs-you");
 const countOf = async (page: Page) => Number(await needsYou(page).getAttribute("data-count"));
 
@@ -52,70 +70,57 @@ const stageOf = (page: Page, workspaceId: string, id: string) =>
     [workspaceId, id] as const,
   );
 
-test("the band shows forwarded questions as the worker wrote them; Answer turns the dock to one", async ({
+test("the Inbox lists forwarded questions; one is answered there, another dismissed with a reason", async ({
   page,
 }) => {
   const made = await start(page);
-  await openBand(page);
+  // The pill counts them with everything else that needs the user.
+  const before = await countOf(page);
+  expect(before).toBeGreaterThanOrEqual(2);
+  await openInbox(page);
 
   // The two forwarded to the user; the one still in triage and the closed ones aren't here.
-  await expect(band(page).getByTestId("worker-question")).toHaveCount(2);
-  await expect(card(page, "WQ3")).toHaveCount(0);
-  const first = card(page, "WQ1");
-  await expect(first).toContainText(
+  await expect(row(page, made.workspaceId, "WQ1")).toHaveCount(1);
+  await expect(row(page, made.workspaceId, "WQ2")).toHaveCount(1);
+  await expect(row(page, made.workspaceId, "WQ3")).toHaveCount(0);
+  await row(page, made.workspaceId, "WQ1").click();
+  await expect(detail(page)).toContainText(
     "Should the retry queue drop a job after three attempts, or keep it for a manual replay?",
   );
-  await expect(first).toContainText("A dropped job is lost for good");
-  await expect(first.getByTestId("question-note")).toHaveText(
-    "Orchestrator: I'd keep them: the relay worker reads the same queue, so its brief changes too.",
-  );
-  await expect(first.getByTestId("question-status")).toHaveText(/^Forwarded to you · \d\d:\d\d$/);
-  const second = card(page, "WQ2");
-  await expect(second.getByTestId("question-note")).toHaveCount(0);
+  // Picked, then sent: it leaves the Inbox and goes straight to the worker.
+  await detail(page).getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+  await expect(row(page, made.workspaceId, "WQ1")).toHaveCount(1);
+  await detail(page).getByTestId("ask-send").click();
+  await expect(row(page, made.workspaceId, "WQ1")).toHaveCount(0);
+  await expect.poll(() => countOf(page)).toBe(before - 1);
+  // Sent once the undo window is past.
+  await expect
+    .poll(() => stageOf(page, made.workspaceId, "WQ1"), { timeout: 15_000 })
+    .toMatchObject({ stage: "answered", closedBy: "user", answer: "Keep for replay" });
+  await page.keyboard.press("Escape");
+
+  // Its feature's sheet shows it as the worker wrote it, with the orchestrator's note; Dismiss
+  // takes a reason, which the worker is told.
+  await openFeatureOf(page, "WQ2");
+  const second = page.locator('[data-testid="worker-question"][data-question="WQ2"]');
   await expect(second.getByTestId("question-status")).toHaveText(
     /^Forwarded to you, untriaged · \d\d:\d\d$/,
   );
   await expect(second.getByTestId("question-recommendation")).toHaveText(
     "Recommends: Yes: 3.9 is past end of life and CI no longer runs it.",
   );
-
-  // The pill counts them with everything else that needs the user.
-  const before = await countOf(page);
-  expect(before).toBeGreaterThanOrEqual(2);
-
-  // Answer opens no second form: the Board's dock turns to it, and the card says it is there.
-  await first.getByRole("button", { name: "Answer" }).click();
-  const dock = page.getByTestId("rail-board").getByTestId("ask-stack");
-  const item = dock.locator(
-    `[data-testid="ask-item"][data-ask-key="worker-question:${made.workspaceId}:WQ1"]`,
-  );
-  await expect(item).toBeFocused();
-  await expect(first.getByTestId("question-answering")).toHaveText("In Asks");
-  await expect(first.getByRole("button", { name: "Answer" })).toHaveCount(0);
-  await expect(band(page).getByRole("radio")).toHaveCount(0);
-  // Picked, then sent: it leaves the band and goes straight to the worker.
-  await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
-  await expect(card(page, "WQ1")).toHaveCount(1);
-  await item.getByTestId("ask-send").click();
-  await expect(card(page, "WQ1")).toHaveCount(0);
-  await expect.poll(() => countOf(page)).toBe(before - 1);
-  // Sent once the undo window is past.
-  await expect
-    .poll(() => stageOf(page, made.workspaceId, "WQ1"), { timeout: 15_000 })
-    .toMatchObject({ stage: "answered", closedBy: "user", answer: "Keep for replay" });
-
-  // Dismissed with a reason: gone too, and the worker is told why.
   await second.getByTestId("question-dismiss").click();
   // The reason is focused as it opens, and typed into once it has.
   await expect(second.getByTestId("question-dismiss-reason")).toBeFocused();
   await second.getByTestId("question-dismiss-reason").fill("Ask again after the release.");
   await second.getByTestId("question-dismiss-confirm").click();
-  await expect(card(page, "WQ2")).toHaveCount(0);
+  await expect(second).toHaveCount(0);
   await expect.poll(() => countOf(page)).toBe(before - 2);
   expect(await stageOf(page, made.workspaceId, "WQ2")).toMatchObject({
     stage: "dismissed",
     reason: "Ask again after the release.",
   });
+  await page.keyboard.press("Escape");
 
   // The worker's own thread: its card moved on in place, and the answer reached it.
   await page.evaluate((to) => {
@@ -149,6 +154,13 @@ test("the feature sheet keeps each question's history: who answered and when", a
     .click();
   const questions = page.getByTestId("feature-sheet-questions");
   await expect(questions.getByTestId("worker-question")).toHaveCount(1);
+  const forwarded = questions.getByTestId("worker-question");
+  await expect(forwarded.getByTestId("question-note")).toHaveText(
+    "Orchestrator: I'd keep them: the relay worker reads the same queue, so its brief changes too.",
+  );
+  await expect(forwarded.getByTestId("question-status")).toHaveText(
+    /^Forwarded to you · \d\d:\d\d$/,
+  );
   const dismissed = questions.locator(
     '[data-testid="worker-question-history"][data-question="WQ5"]',
   );
@@ -177,55 +189,71 @@ test("the feature sheet keeps each question's history: who answered and when", a
   );
 });
 
+test("a forwarded question's Answer, on its feature's sheet, opens the Inbox on it", async ({
+  page,
+}) => {
+  const made = await start(page);
+  await openFeatureOf(page, "WQ1");
+  await page
+    .locator('[data-testid="worker-question"][data-question="WQ1"]')
+    .getByRole("button", { name: "Answer" })
+    .click();
+  await expect(inbox(page)).toBeVisible();
+  await expect(detail(page)).toHaveAttribute(
+    "data-key",
+    `ask:worker-question:${made.workspaceId}:WQ1`,
+  );
+});
+
 for (const mode of ["dark", "light"] as const) {
-  test(`the question card and the needs-you pill read in ${mode} mode`, async ({ page }) => {
+  test(`the question in the Inbox and the needs-you pill read in ${mode} mode`, async ({
+    page,
+  }) => {
     await seedTheme(page, {
       mode,
       motion: "off",
       palette: mode === "light" ? "catppuccin-latte" : "catppuccin-mocha",
     });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await start(page);
+    const made = await start(page);
     await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
-    await openBand(page);
-    const first = card(page, "WQ1");
-    await first.getByRole("button", { name: "Answer" }).click();
-    await expect(first.getByTestId("question-answering")).toBeVisible();
-    await expect(
-      page
-        .getByTestId("rail-board")
-        .getByTestId("ask-option")
-        .filter({ hasText: "Keep for replay" }),
-    ).toBeVisible();
     await expect(needsYou(page)).toContainText(/need(s)? you/);
+    await openInbox(page);
+    await row(page, made.workspaceId, "WQ1").click();
+    await expect(
+      detail(page).getByTestId("ask-option").filter({ hasText: "Keep for replay" }),
+    ).toBeVisible();
     if (SHOTS !== undefined) {
-      await band(page).screenshot({ path: `${SHOTS}/band-${mode}.png` });
+      await inbox(page).screenshot({ path: `${SHOTS}/inbox-${mode}.png` });
+      await page.keyboard.press("Escape");
       await needsYou(page).screenshot({ path: `${SHOTS}/needs-you-${mode}.png` });
     }
   });
 }
 
-test("on the Board, a worker that asks is a click from its ask in the dock", async ({ page }) => {
+test("on the Board, a worker that asks is a click from its ask in the Inbox", async ({ page }) => {
   const made = await start(page);
   const chip = page
     .getByTestId("rail-worker")
     .and(page.locator(`[data-thread-id="${made.working}"]`));
   await expect(chip).toHaveAttribute("data-asking", "true");
   await chip.getByTestId("rail-worker-open").click();
-  // Still on the Board, its dock turned to that worker's question, focused for its keys.
+  // The Inbox opens over the Board, on that worker's question.
+  await expect(inbox(page)).toBeVisible();
+  await expect(detail(page)).toHaveAttribute(
+    "data-key",
+    `ask:worker-question:${made.workspaceId}:WQ1`,
+  );
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("rail-board")).toBeVisible();
-  // The Board's own dock: the chat's under it is laid out but inert.
-  const item = page
-    .getByTestId("rail-board")
-    .locator(`[data-testid="ask-item"][data-ask-key="worker-question:${made.workspaceId}:WQ1"]`);
-  await expect(item).toBeInViewport();
-  await expect(item).toBeFocused();
 });
 
-test("a long question's Answer opens the ask sheet, its answer row in sight", async ({ page }) => {
+test("a long question's own card, a click away in the Inbox, keeps its answer row in sight", async ({
+  page,
+}) => {
   const made = await start(page);
   await page.setViewportSize({ width: 1280, height: 560 });
-  // WQ1 grows past what the band holds in place: a fifth choice and a long context.
+  // WQ1 grows long: a fifth choice and a long context.
   await page.evaluate(
     async ([workspace]) => {
       const mock = window.gramMock!;
@@ -245,33 +273,26 @@ test("a long question's Answer opens the ask sheet, its answer row in sight", as
     },
     [made.workspaceId] as const,
   );
-  await openBand(page);
-  // The longer question has reached the band before its Answer is pressed.
-  await expect(card(page, "WQ1")).toContainText("The relay retries on its own schedule.");
-  await card(page, "WQ1").getByTestId("question-answer").click();
-  const sheet = page.getByTestId("ask-sheet");
-  await expect(sheet).toBeVisible();
-  // The sheet is the one answer surface now: the dock under it folds to one row.
-  const dock = page.getByTestId("rail-board").getByTestId("ask-stack");
-  await expect(dock).toHaveAttribute("data-compact", "true");
-  await expect(dock.getByTestId("ask-stack-waiting")).toHaveText(/^\d+ more waiting$/);
-  await expect(dock.getByTestId("ask-item")).toHaveCount(0);
+  await openInbox(page);
+  await row(page, made.workspaceId, "WQ1").click();
+  await detail(page).getByTestId("inbox-read-full").click();
+  const full = detail(page).getByTestId("inbox-ask");
+  await expect(full).toHaveAttribute("data-full", "true");
+  await expect(full).toContainText("The relay retries on its own schedule.");
   // Every choice is there, and the answer row stays on screen whatever the scroll.
-  await expect(sheet.getByRole("radio")).toHaveCount(6);
-  const row = sheet.getByTestId("ask-sheet-answer-row");
-  await expect(row).toBeInViewport();
-  await expect(row.getByTestId("question-send")).toBeDisabled();
-  await sheet.getByRole("radio", { name: /^Retry with backoff/ }).click();
-  await expect(row).toBeInViewport();
-  // The same keys as the dock: a number picks, ⌘⏎ sends.
+  await expect(full.getByRole("radio")).toHaveCount(6);
+  const answerRow = full.getByTestId("ask-sheet-answer-row");
+  await expect(answerRow).toBeInViewport();
+  await expect(answerRow.getByTestId("question-send")).toBeDisabled();
+  await full.getByRole("radio", { name: /^Retry with backoff/ }).click();
+  await expect(answerRow).toBeInViewport();
+  // The same keys as everywhere: a number picks, ⌘⏎ sends.
   await page.keyboard.press("2");
-  await expect(sheet.getByRole("radio", { name: /^Keep for replay/ })).toBeChecked();
+  await expect(full.getByRole("radio", { name: /^Keep for replay/ })).toBeChecked();
   await page.keyboard.press("5");
-  await expect(sheet.getByRole("radio", { name: /^Retry with backoff/ })).toBeChecked();
+  await expect(full.getByRole("radio", { name: /^Retry with backoff/ })).toBeChecked();
   await page.keyboard.press("ControlOrMeta+Enter");
-  await expect(sheet).toBeHidden();
-  // Gone, the dock is whole again.
-  await expect(dock).not.toHaveAttribute("data-compact");
+  await expect(row(page, made.workspaceId, "WQ1")).toHaveCount(0);
   await expect
     .poll(async () => (await stageOf(page, made.workspaceId, "WQ1"))?.stage)
     .toBe("answered");

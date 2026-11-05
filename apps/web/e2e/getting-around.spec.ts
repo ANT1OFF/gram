@@ -104,23 +104,18 @@ const openAsks = async (page: Page) => {
   return made;
 };
 
-const boardAsk = (page: Page) =>
-  page
-    .getByTestId("rail-board")
-    .getByTestId("ask-stack")
-    .locator('li:not([inert]) [data-testid="ask-item"][data-current]')
-    .getByTestId("ask-title");
-
-/** → steps the docked stack: the first key after picking Board reaches it. */
+/** The first keys after picking Board reach the window: ⌘⇧I opens the Inbox, and j moves in it. */
 const arrowSteps = async (page: Page) => {
-  await expect(boardAsk(page)).toBeVisible();
-  const first = await boardAsk(page).textContent();
   await page.waitForTimeout(SETTLED_MS);
-  await page.keyboard.press("ArrowRight");
-  await expect(boardAsk(page)).not.toHaveText(first!);
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  const detail = page.getByTestId("inbox-detail");
+  await expect(detail).toBeVisible();
+  const first = await detail.getAttribute("data-key");
+  await page.keyboard.press("j");
+  await expect(detail).not.toHaveAttribute("data-key", first!);
 };
 
-test("Board's ask keys work right after a click on Board", async ({ page }) => {
+test("Keys reach the Inbox right after a click on Board", async ({ page }) => {
   await openAsks(page);
   await page
     .getByRole("radiogroup", { name: "View" })
@@ -130,7 +125,7 @@ test("Board's ask keys work right after a click on Board", async ({ page }) => {
   await arrowSteps(page);
 });
 
-test("Board's ask keys work right after ⌘⌥2 from the composer", async ({ page }) => {
+test("Keys reach the Inbox right after ⌘⌥2 from the composer", async ({ page }) => {
   await openAsks(page);
   await composer(page).focus();
   await page.keyboard.press("ControlOrMeta+Alt+Digit2");
@@ -143,9 +138,7 @@ const viewRadio = (page: Page, name: string) =>
     .getByRole("radiogroup", { name: "View" })
     .getByRole("radio", { name: new RegExp(`^${name}\\b`) });
 
-test("Board's ask keys work right after picking it with the switcher's arrows", async ({
-  page,
-}) => {
+test("Keys reach the Inbox right after picking it with the switcher's arrows", async ({ page }) => {
   await openAsks(page);
   await viewRadio(page, "Chat").focus();
   await page.keyboard.press("ArrowRight");
@@ -154,7 +147,7 @@ test("Board's ask keys work right after picking it with the switcher's arrows", 
   await arrowSteps(page);
 });
 
-test("Board's ask keys work after clicking Board again while it shows", async ({ page }) => {
+test("Keys reach the Inbox after clicking Board again while it shows", async ({ page }) => {
   await openAsks(page);
   await viewRadio(page, "Board").click();
   await expect(page.getByTestId("rail-board")).toBeFocused();
@@ -167,14 +160,9 @@ test("Board's ask keys work after clicking Board again while it shows", async ({
 test("picking Board again never takes focus from a field being typed in", async ({ page }) => {
   await openAsks(page);
   await viewRadio(page, "Board").click();
-  const stack = page.getByTestId("rail-board").getByTestId("ask-stack");
-  for (let tries = 0; tries < 8; tries++) {
-    if ((await boardAsk(page).textContent())?.includes("registry page")) break;
-    await stack.getByTestId("ask-next").click();
-  }
-  const reply = stack
-    .locator('li:not([inert]) [data-testid="ask-item"][data-current]')
-    .getByTestId("ask-reply-input");
+  await page.getByTestId("rail-waiting-chip").click();
+  await page.getByTestId("inbox-item").filter({ hasText: "registry page" }).click();
+  const reply = page.getByTestId("inbox-detail").getByTestId("ask-reply-input");
   await reply.fill("No packages yet");
   await page.keyboard.press("ControlOrMeta+Alt+Digit2");
   await expect(reply).toBeFocused();

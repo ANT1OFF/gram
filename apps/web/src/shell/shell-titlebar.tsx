@@ -1,11 +1,11 @@
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState } from "react";
 
+import { InboxButton } from "@/inbox/inbox-button";
 import { cn } from "@/lib/utils";
 import { TitlebarTidyUp } from "@/orchestration/tidy-up-button";
 import { WorkersButton } from "@/orchestration/workers-list";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
-import { NotificationsBell } from "@/panels/notifications-panel";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { ShellToggle } from "@/shell/shell-toggle";
 import { Foldable } from "@/shell/foldable";
@@ -160,7 +160,7 @@ export function ShellTitlebar({
           className="[-webkit-app-region:no-drag]"
           textClassName="@max-2xl/titlebar:hidden"
         />
-        <NotificationsBell />
+        <InboxButton />
       </div>
       <div
         role="group"

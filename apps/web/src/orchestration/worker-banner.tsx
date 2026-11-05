@@ -15,6 +15,7 @@ import { useApi } from "@/api/context";
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { Hint } from "@/components/hint";
 import { focusOtherWindow } from "@/desktop/open-thread";
+import { showInbox } from "@/inbox/inbox-store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import {
@@ -177,12 +178,12 @@ export function OrchestratorChips({
       )}
       {questions.length > 0 && (
         <Hint
-          label={`${questions.length} ${noun} to make on the board`}
+          label={`${questions.length} ${noun} to make in the Inbox`}
           side="bottom"
           render={
             <button
               type="button"
-              onClick={() => openBoard(workspaceId, { waiting: true })}
+              onClick={() => showInbox({ workspaceId })}
               data-testid="banner-questions"
               className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-status-needs outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
             />

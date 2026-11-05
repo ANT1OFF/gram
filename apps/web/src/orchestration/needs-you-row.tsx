@@ -1,43 +1,35 @@
 import type { WaitViewKind, WorkspaceId } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  AlarmClock,
   Check,
   CircleAlert,
   Eye,
   Footprints,
-  Inbox,
+  Hand,
   ListChecks,
   MessageCircleQuestion,
   PenLine,
   Scale,
   ShieldQuestion,
-  X,
   type LucideIcon,
 } from "lucide-react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
-import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
-import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { useSaveSettings } from "@/settings/use-save-settings";
-import { MockThumb } from "@/thread/mock-visuals";
 
 import { holdAnswer, type SendAction } from "./ask-answer";
-import { answerKey } from "./ask-keys";
 import type { AskOption } from "./ask-model";
 import { useAskStackStore } from "./ask-stack-store";
 import { saveSetAside, SNOOZE_MS } from "./inbox-set-aside";
-import { itemText, type NeedsYouItem } from "./needs-you-items";
-import { opensThread } from "./use-needs-you";
+import type { NeedsYouItem } from "./needs-you-items";
 
-// One row of Needs you, as the popover and the panel list it (needs-you-home mock, C Hybrid): what
-// kind it is, its words, its thread and age, and the answers it takes in place. A click on its words
-// opens its thread at the turn that asked. Every answer goes through its source's own path: an
-// ask's through `holdAnswer` with the stack's Undo, a wait's Done through `resolveWait`, a dismissed
-// failure into `inbox.cleared` and Later into `inbox.snoozed`.
+// What the Inbox draws and does for a Needs you item beyond its answer form: the kind's glyph and
+// words, a section's heading, the Undo line, and the item's actions. Every answer goes through its
+// source's own path: an ask's through `holdAnswer` with Undo, a wait's Done through `resolveWait`, a
+// dismissed failure into `inbox.cleared` and Later into `inbox.snoozed`.
 
 const WAIT_ICONS: Partial<Record<WaitViewKind, LucideIcon>> = {
   draft: PenLine,
@@ -75,7 +67,7 @@ export const kindOf = (
     case "wait": {
       const kind = item.wait?.view.kind;
       return {
-        icon: (kind === undefined ? undefined : WAIT_ICONS[kind]) ?? Inbox,
+        icon: (kind === undefined ? undefined : WAIT_ICONS[kind]) ?? Hand,
         label: (kind === undefined ? undefined : WAIT_LABELS[kind]) ?? "Waiting on you",
       };
     }
@@ -87,53 +79,9 @@ export const kindOf = (
   }
 };
 
-/** At most this many options answer from a row; more open the thread. */
-const QUICK_MAX = 4;
-
-/** The options a row answers with in place, or none when its ask must be read in full. */
-const quickOptions = (item: NeedsYouItem): readonly AskOption[] => {
-  const options = item.ask?.options ?? [];
-  if (options.length === 0 || options.length > QUICK_MAX) return [];
-  return options.every((option) => option.action.kind !== "open" && option.action.kind !== "board")
-    ? options
-    : [];
-};
-
-/**
- * The screenshots of a row's quick options that have one (`QuestionChoice.image`), each
- * with the number its answer button carries.
- */
-export const optionThumbs = (
-  item: NeedsYouItem,
-): readonly { readonly number: number; readonly label: string; readonly image: string }[] => {
-  const visuals = item.ask?.visuals;
-  if (visuals === undefined) return [];
-  return quickOptions(item).flatMap((option, index) => {
-    const image = visuals.options.find((choice) => choice.label === option.label)?.image;
-    return image === undefined ? [] : [{ number: index + 1, label: option.label, image }];
-  });
-};
-
-/** An Allow or a Deny, drawn as a check or a cross; anything else by its number and words. */
-const glyphOf = (option: AskOption): LucideIcon | undefined =>
-  option.action.kind === "group"
-    ? /^Allow\b/u.test(option.label)
-      ? Check
-      : /^Deny\b/u.test(option.label)
-        ? X
-        : undefined
-    : undefined;
-
 /** Whether Dismiss applies: a failure until it fails again, or a worker's question. */
-const canDismiss = (item: NeedsYouItem): boolean =>
+export const canDismiss = (item: NeedsYouItem): boolean =>
   item.kind === "failure" || item.ask?.worker !== undefined;
-
-/**
- * Whether a row's options are all an Allow or a Deny, which its icons say beside its text; any
- * other option is said in words on a line of its own under it (`OptionAnswers`).
- */
-const glyphsOnly = (options: readonly AskOption[]): boolean =>
-  options.every((option) => glyphOf(option) !== undefined);
 
 /** What a row's buttons do, each through its source's own path. */
 export function useNeedsYouActions() {
@@ -198,336 +146,17 @@ export function useNeedsYouActions() {
   };
 }
 
-const ICON_BUTTON = "size-6 text-muted-foreground hover:text-foreground";
-
-/** What an option's hint says: its words, and what choosing it means when the asker said. */
-const optionHint = (option: AskOption): string =>
-  option.description === undefined || option.description.trim() === ""
-    ? option.label
-    : `${option.label}: ${option.description.trim()}`;
-
-/** A row's answers in place: its options, or Done for a wait. */
-function QuickAnswers({
-  item,
-  actions,
-  full,
-}: {
-  item: NeedsYouItem;
-  actions: ReturnType<typeof useNeedsYouActions>;
-  /** The options spelled out under the focused request, rather than numbered beside it. */
-  full: boolean;
-}) {
-  if (item.kind === "wait") {
-    return (
-      <Hint
-        label="Done"
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`Done: ${itemText(item)}`}
-            data-testid="needs-you-done"
-            className={ICON_BUTTON}
-            onClick={() => actions.done(item)}
-          />
-        }
-      >
-        <Check aria-hidden className="size-3.5" />
-      </Hint>
-    );
-  }
-  const options = quickOptions(item);
-  if (full || !glyphsOnly(options)) return null;
-  return options.map((option, index) => {
-    const Glyph = glyphOf(option)!;
-    return (
-      <Hint
-        key={option.label}
-        label={optionHint(option)}
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`${option.label}: ${itemText(item)}`}
-            aria-keyshortcuts={String(index + 1)}
-            data-testid="needs-you-answer"
-            data-option={option.label}
-            data-choice-index={index}
-            className={ICON_BUTTON}
-            onClick={() => actions.answer(item, option)}
-          />
-        }
-      >
-        <Glyph aria-hidden className="size-3.5" />
-      </Hint>
-    );
-  });
-}
-
-/** Later and Dismiss, which the panel adds to a row's answers. */
-function SetAside({
-  item,
-  actions,
-}: {
-  item: NeedsYouItem;
-  actions: ReturnType<typeof useNeedsYouActions>;
-}) {
-  return (
-    <>
-      <Hint
-        label="Later (1 hour)"
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`Later: ${itemText(item)}`}
-            data-testid="needs-you-later"
-            className={ICON_BUTTON}
-            onClick={() => actions.later(item)}
-          />
-        }
-      >
-        <AlarmClock aria-hidden className="size-3.5" />
-      </Hint>
-      {canDismiss(item) && (
-        <Hint
-          label={item.kind === "failure" ? "Dismiss until it fails again" : "Dismiss"}
-          render={
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label={`Dismiss: ${itemText(item)}`}
-              data-testid="needs-you-dismiss"
-              className={ICON_BUTTON}
-              onClick={() => actions.dismiss(item)}
-            />
-          }
-        >
-          <X aria-hidden className="size-3.5" />
-        </Hint>
-      )}
-    </>
-  );
-}
-
-/**
- * A request's options with their words, under its text, each numbered by the key that picks it
- * while the row has focus (1–9, as in the Asks dock). Each says its words on one line, cut short
- * with the whole on hover; the focused request's say them in full (`full`). A row whose options are
- * all an Allow or a Deny has its icons beside its text instead.
- */
-function OptionAnswers({
-  item,
-  actions,
-  full,
-}: {
-  item: NeedsYouItem;
-  actions: ReturnType<typeof useNeedsYouActions>;
-  full: boolean;
-}) {
-  const options = quickOptions(item);
-  if (options.length === 0 || (!full && glyphsOnly(options))) return null;
-  return (
-    <span
-      data-testid={full ? "needs-you-full-answers" : "needs-you-answers"}
-      className={cn("col-start-2 col-end-4 flex flex-wrap gap-1", full ? "pt-1.5" : "pt-1")}
-    >
-      {options.map((option, index) => {
-        const Glyph = glyphOf(option);
-        return (
-          <Hint
-            key={option.label}
-            label={optionHint(option)}
-            render={
-              <Button
-                size="xs"
-                variant="outline"
-                aria-label={`${option.label}: ${itemText(item)}`}
-                aria-keyshortcuts={String(index + 1)}
-                data-testid="needs-you-answer"
-                data-option={option.label}
-                data-choice-index={index}
-                className={cn(
-                  "max-w-full text-left",
-                  full ? "h-auto min-h-6 py-0.5 whitespace-normal" : "h-6 max-w-48",
-                )}
-                onClick={() => actions.answer(item, option)}
-              />
-            }
-          >
-            {Glyph === undefined ? (
-              <span aria-hidden className="font-mono text-[11px] text-muted-foreground">
-                {index + 1}
-              </span>
-            ) : (
-              <Glyph aria-hidden className="size-3.5" />
-            )}
-            <span
-              data-testid="needs-you-answer-label"
-              className={cn("min-w-0", full ? "break-words" : "truncate")}
-            >
-              {option.label}
-            </span>
-          </Hint>
-        );
-      })}
-    </span>
-  );
-}
-
-/** A section's heading in the popover and the panel: its kind, and how many. */
+/** A section's heading in the Inbox's list: its kind, and how many. */
 export function SectionHead({ label, count }: { label: string; count: number }) {
   return (
-    <h3 className="flex items-center gap-2 px-2 pt-2.5 pb-1 text-xs font-semibold text-muted-foreground">
+    <h3 className="flex items-center gap-2 px-2 pt-2.5 pb-1 text-meta font-semibold text-muted-foreground">
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="font-normal tabular-nums">{count}</span>
     </h3>
   );
 }
 
-/** A row's option screenshots, small, numbered as its answers are; a click enlarges one. */
-function OptionThumbs({ item }: { item: NeedsYouItem }) {
-  const thumbs = optionThumbs(item);
-  const threadId = item.ask?.visuals?.threadId;
-  if (thumbs.length === 0 || threadId === undefined) return null;
-  return (
-    <ul
-      data-testid="needs-you-thumbs"
-      aria-label="Options as pictures"
-      className="col-start-2 col-end-4 flex gap-1.5 pt-1 pb-0.5"
-    >
-      {thumbs.map((thumb) => (
-        <li
-          key={thumb.label}
-          data-testid="needs-you-thumb"
-          data-option={thumb.label}
-          className="relative w-16 shrink-0"
-        >
-          <MockThumb threadId={threadId} path={thumb.image} label={thumb.label} />
-          <span
-            aria-hidden
-            className="pointer-events-none absolute top-0.5 left-0.5 rounded-sm bg-background/85 px-1 font-mono text-[10px] leading-4 text-foreground"
-          >
-            {thumb.number}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-export function NeedsYouRow({
-  item,
-  now,
-  current,
-  variant,
-  onOpen,
-  actions,
-}: {
-  item: NeedsYouItem;
-  now: number;
-  /** The item last opened from here, which the next step moves on from. */
-  current: boolean;
-  variant: "popover" | "panel";
-  onOpen: (item: NeedsYouItem) => void;
-  actions: ReturnType<typeof useNeedsYouActions>;
-}) {
-  const kind = kindOf(item);
-  // Its workspace, then the thread it came from: where it is, whichever section lists it.
-  const where = [
-    item.workspace,
-    item.where === "" ? undefined : item.where,
-    item.owned || item.kind !== "failure" ? undefined : "no live worker",
-  ]
-    .filter((part) => part !== undefined)
-    .join(" · ");
-  const full = current && quickOptions(item).length > 0;
-  return (
-    <li
-      data-testid="needs-you-item"
-      data-kind={item.kind}
-      data-key={item.key}
-      data-thread-id={item.threadId}
-      data-opens={opensThread(item)}
-      data-workspace={item.workspaceId}
-      data-current={current || undefined}
-      // A number picks that option while the row has focus, as the Asks dock's keys do.
-      onKeyDown={(event) => {
-        if (answerKey(event.nativeEvent, event.currentTarget)) event.preventDefault();
-      }}
-      className={cn(
-        "group/row grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-(--radius-md) px-2 py-1.5 hover:bg-muted/60 focus-within:bg-muted/60",
-        current && "bg-muted/60",
-      )}
-    >
-      <Hint
-        label={kind.label}
-        render={
-          <span
-            aria-label={kind.label}
-            role="img"
-            className={cn(
-              "mt-0.5 flex",
-              item.kind === "failure"
-                ? "text-destructive"
-                : item.kind === "wait"
-                  ? "text-muted-foreground"
-                  : "text-status-needs-mark",
-            )}
-          />
-        }
-      >
-        <kind.icon aria-hidden className="size-4" />
-      </Hint>
-      <button
-        type="button"
-        data-testid="needs-you-open"
-        title={item.threadId === undefined ? "No thread to open" : `Open ${item.where} at it`}
-        disabled={item.threadId === undefined}
-        onClick={() => onOpen(item)}
-        className="flex min-w-0 flex-col gap-0.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
-      >
-        <span className="line-clamp-2 text-[13px] break-words text-foreground">
-          {item.title}
-          {item.command !== undefined && (
-            <>
-              {" "}
-              <code className="font-mono text-[12px]">{item.command}</code>
-            </>
-          )}
-        </span>
-        <span
-          data-testid="needs-you-where"
-          className={cn("truncate text-xs text-muted-foreground", !item.owned && "italic")}
-        >
-          {where}
-        </span>
-      </button>
-      <span className="flex flex-col items-end gap-0.5">
-        {item.at !== undefined && (
-          <span className="text-xs leading-5 text-muted-foreground tabular-nums">
-            {formatRelative(item.at, now)}
-          </span>
-        )}
-        <span
-          className={cn(
-            "flex items-center gap-0.5",
-            variant === "panel" &&
-              "opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100",
-            variant === "panel" && current && "opacity-100",
-          )}
-        >
-          <QuickAnswers item={item} actions={actions} full={full} />
-          {variant === "panel" && <SetAside item={item} actions={actions} />}
-        </span>
-      </span>
-      <OptionAnswers item={item} actions={actions} full={full} />
-      <OptionThumbs item={item} />
-    </li>
-  );
-}
-
-/** The newest answer still held, with Undo: an answer from a row can be taken back, as in the stack. */
+/** The newest answer still held, with Undo: an answer from the Inbox can be taken back. */
 export function NeedsYouUndo({ className }: { className?: string }) {
   const held = useAskStackStore((s) => s.held);
   const undo = useAskStackStore((s) => s.undo);
@@ -536,7 +165,7 @@ export function NeedsYouUndo({ className }: { className?: string }) {
   return (
     <div
       data-testid="needs-you-undo-line"
-      className={cn("flex items-center gap-2 px-2 text-xs text-muted-foreground", className)}
+      className={cn("flex items-center gap-2 px-2 text-meta text-muted-foreground", className)}
     >
       <Check aria-hidden className="size-3.5 text-success" />
       <span className="min-w-0 flex-1 truncate">{last.done}</span>

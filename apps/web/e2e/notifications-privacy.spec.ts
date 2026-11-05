@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { openNotifications } from "./open-notifications";
 import { seedTheme } from "./seed-theme";
 
 test("unsafe cached notification text is omitted and rewritten on reload while read and quieting survive", async ({
@@ -7,7 +8,7 @@ test("unsafe cached notification text is omitted and rewritten on reload while r
 }) => {
   await seedTheme(page, { palette: "tokyo-night", mode: "dark", motion: "off" });
   await page.goto("/");
-  await expect(page.getByTestId("notifications-bell")).toBeVisible();
+  await expect(page.getByTestId("inbox-button")).toBeVisible();
   await page.evaluate(() => {
     for (let i = 0; i < 3; i++)
       window.gramMock?.simulateNotification({
@@ -17,7 +18,7 @@ test("unsafe cached notification text is omitted and rewritten on reload while r
         startupDiagnostic: { key: "a".repeat(64), source: "Codex MCP startup" },
       });
   });
-  await page.getByTestId("notifications-bell").click();
+  await openNotifications(page);
   const center = page.getByRole("region", { name: "Notification history" });
   await expect(center).toContainText("Seen 3 times");
   await center.getByRole("button", { name: "Mark all read" }).click();
@@ -30,12 +31,12 @@ test("unsafe cached notification text is omitted and rewritten on reload while r
     localStorage.setItem("gram.notifications.v1", JSON.stringify(state));
   });
   await page.reload();
-  await page.getByTestId("notifications-bell").click();
+  await openNotifications(page);
   await expect(
     center.getByText("Sensitive notification details omitted", { exact: true }),
   ).toHaveCount(3);
   await expect(center).toContainText("Seen 3 times");
-  await expect(page.getByTestId("notifications-bell")).toHaveAccessibleName("Notifications");
+  await expect(center).toContainText("All caught up");
   expect(await page.evaluate(() => localStorage.getItem("gram.notifications.v1"))).not.toContain(
     "invented-",
   );
@@ -49,7 +50,7 @@ test("unsafe cached notification text is omitted and rewritten on reload while r
   );
   await expect(center).toContainText("Seen 4 times");
   await expect(page.getByTestId("toast")).toHaveCount(0);
-  await expect(page.getByTestId("notifications-bell")).toHaveAccessibleName("Notifications");
+  await expect(center).toContainText("All caught up");
   expect(await page.evaluate(() => localStorage.getItem("gram.notifications.v1"))).not.toContain(
     "invented-",
   );

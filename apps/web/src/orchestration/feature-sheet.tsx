@@ -663,7 +663,7 @@ function QuestionsSection({ workspaceId, feature }: { workspaceId: WorkspaceId; 
     >
       <h3 className={SHEET_LABEL}>Questions</h3>
       {forwarded.length > 0 && (
-        <WorkerQuestionList questions={forwarded} workspaceId={workspaceId} where="sheet" compact />
+        <WorkerQuestionList questions={forwarded} workspaceId={workspaceId} compact />
       )}
       {rest.length > 0 && (
         <ul className="flex flex-col gap-2">

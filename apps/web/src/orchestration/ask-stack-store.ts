@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-// Answers from the ask stack wait `UNDO_MS` before they go out, so one key can be taken back. Kept
+// Answers from the Inbox wait `UNDO_MS` before they go out, so one key can be taken back. Kept
 // outside React: moving to another thread doesn't cancel an answer, and coming back finds it. What
 // an answer hides is its requests' ids (or a question's), never an ask's key: a group that gains or
 // loses a member meanwhile keeps the answered ones out.
@@ -34,20 +34,11 @@ interface AskStackState {
   readonly problems: Readonly<Record<string, string>>;
   /** A free-form reply typed and not sent, by its ask's first id. */
   readonly replies: Readonly<Record<string, string>>;
-  /** The ask a notification's Open asked to show, by key, until a stack showing it takes it. */
-  readonly focusKey: string | undefined;
-  /**
-   * The ask each workspace's dock has open, by key: the one answer surface. The Board's band marks
-   * its question as being answered there rather than offering a second form.
-   */
-  readonly current: Readonly<Record<string, string>>;
   /** Holds `send` for `UNDO_MS`, then runs it. */
   readonly hold: (answer: HeldAnswer, send: () => Promise<SendResult>) => void;
   /** Takes back `key`'s held answer, or the newest; `undefined` when none is held any more. */
   readonly undo: (key?: string) => HeldAnswer | undefined;
   readonly setReply: (id: string, text: string) => void;
-  readonly focus: (key: string | undefined) => void;
-  readonly setCurrent: (workspaceId: string, key: string | undefined) => void;
 }
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -60,8 +51,6 @@ export const useAskStackStore = create<AskStackState>()((set, get) => ({
   sent: {},
   problems: {},
   replies: {},
-  focusKey: undefined,
-  current: {},
   hold: (answer, send) => {
     if (timers.has(answer.key)) return;
     set((s) => ({
@@ -107,15 +96,22 @@ export const useAskStackStore = create<AskStackState>()((set, get) => ({
     return target;
   },
   setReply: (id, text) => set((s) => ({ replies: { ...s.replies, [id]: text } })),
-  focus: (focusKey) => set({ focusKey }),
-  setCurrent: (workspaceId, key) =>
-    set((s) => {
-      if (s.current[workspaceId] === key) return s;
-      if (key === undefined) return { current: without(s.current, [workspaceId]) };
-      return { current: { ...s.current, [workspaceId]: key } };
-    }),
 }));
 
 /** Every id an answer from here hides: held, being sent, or sent a moment ago. */
 export const hiddenIds = (state: Pick<AskStackState, "held" | "sent">): ReadonlySet<string> =>
   new Set([...state.held.flatMap((h) => h.ids), ...Object.keys(state.sent)]);
+
+/** Which of `requests` an answer from here hides, by id: what their cards leave out. */
+export const answeredAmong = (
+  state: Pick<AskStackState, "held" | "sent">,
+  requests: readonly { readonly id: string }[],
+): readonly string[] => {
+  if (requests.length === 0 || (state.held.length === 0 && Object.keys(state.sent).length === 0)) {
+    return NONE;
+  }
+  const hidden = hiddenIds(state);
+  return requests.flatMap((request) => (hidden.has(request.id) ? [request.id] : []));
+};
+
+const NONE: readonly string[] = [];

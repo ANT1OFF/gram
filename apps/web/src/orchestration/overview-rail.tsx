@@ -62,7 +62,6 @@ import {
 import { ROW } from "./overview-section";
 import { peek } from "./peek-store";
 import { workingWorkerThreads } from "./tree-model";
-import { NeedsYouPopover } from "./needs-you-popover";
 import { useNeedsYou, useNeedsYouCounts } from "./use-needs-you";
 import { ledgerSlotsText } from "./overview-extras-model";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
@@ -147,31 +146,27 @@ const Separator = () => <span aria-hidden className="h-px w-6 shrink-0 bg-border
  * the open overview's opens.
  */
 function RailNeedsYou() {
-  const { count, label: action, hint } = useNeedsYou();
+  const { count, label: action, hint, open } = useNeedsYou();
   const label = count > 0 ? `${count} ${count === 1 ? "needs" : "need"} you` : "Nothing needs you";
   // Nothing waiting, it stays as a quiet grey pill, so the tiles don't jump.
   return (
-    <NeedsYouPopover
-      anchor="rail"
-      trigger={
-        <button
-          type="button"
-          {...STOP}
-          data-testid="overview-rail-needs-you"
-          data-count={count}
-          aria-label={label}
-          title={withHint(action, hint)}
-          className={cn(
-            "h-5 min-w-7 shrink-0 rounded-full px-1.5 text-[11px] leading-5 font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            count > 0
-              ? "bg-status-needs text-background hover:bg-status-needs/85"
-              : "bg-sidebar-block text-muted-foreground hover:bg-sidebar-row-hover",
-          )}
-        >
-          {count}
-        </button>
-      }
-    />
+    <button
+      type="button"
+      {...STOP}
+      data-testid="overview-rail-needs-you"
+      data-count={count}
+      aria-label={label}
+      title={withHint(action, hint)}
+      onClick={open}
+      className={cn(
+        "h-5 min-w-7 shrink-0 rounded-full px-1.5 text-[11px] leading-5 font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        count > 0
+          ? "bg-status-needs text-background hover:bg-status-needs/85"
+          : "bg-sidebar-block text-muted-foreground hover:bg-sidebar-row-hover",
+      )}
+    >
+      {count}
+    </button>
   );
 }
 

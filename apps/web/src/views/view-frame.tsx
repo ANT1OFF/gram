@@ -9,7 +9,6 @@ import { radioGroupKeyDown } from "@/lib/list-keys";
 import { cn } from "@/lib/utils";
 import { SegmentSlab, Swap } from "@/motion";
 import {
-  openNeedsYou,
   setNeedsYouStepper,
   useNeedsYouList,
   useNeedsYouStep,
@@ -226,10 +225,9 @@ export function useViewShortcuts(): void {
 }
 
 /**
- * ⌘⌥3, where the Inbox's key was: opens and closes the Needs you popover. ⌘⇧U and ⌘⇧Y open the
- * next and previous item at the turn that asked, from anywhere; with nothing listed, ⌘⇧U still goes
- * to the next thread the sidebar marks as needing you. A component of its own, so the list's every
- * change re-renders only it, never the shell that mounts it.
+ * ⌘⇧U and ⌘⇧Y open the Inbox's next and previous item at the turn that asked, from anywhere; with
+ * nothing listed, ⌘⇧U still goes to the next thread the sidebar marks as needing you. A component
+ * of its own, so the list's every change re-renders only it, never the shell that mounts it.
  */
 export function NeedsYouShortcut(): null {
   const { items } = useNeedsYouList();
@@ -246,15 +244,6 @@ export function NeedsYouShortcut(): null {
     if (next) void navigate({ to: "/t/$threadId", params: { threadId: next } });
   };
   useEffect(() => setNeedsYouStepper(stepOrThread));
-  useShortcut({
-    id: "view.needsYou",
-    keys: "mod+alt+3",
-    label: "Needs you",
-    group: "Navigation",
-    // Again from inside the popover closes it.
-    allowInDialogs: true,
-    run: openNeedsYou,
-  });
   useShortcut({
     id: "thread.nextNeedsYou",
     keys: "mod+shift+u",

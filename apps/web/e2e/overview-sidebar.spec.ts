@@ -485,17 +485,16 @@ test("Needs you counts the asks across every workspace, and lists them by worksp
   const count = Number(await needs.getAttribute("data-count"));
   expect(count).toBeGreaterThan(1);
   await expect(needs).toContainText(`${count} need you`);
-  await expect(needs).toHaveAttribute("title", /^Needs you/);
+  await expect(needs).toHaveAttribute("title", /^Inbox/);
   await needs.click();
-  const popover = page.getByTestId("needs-you-popover");
-  await expect(popover).toBeVisible();
-  await expect(needs).toHaveAttribute("aria-expanded", "true");
+  const inbox = page.getByTestId("inbox");
+  await expect(inbox).toBeVisible();
   // By kind: the approvals the threads and workspaces ask lead.
-  await expect(popover.getByRole("region", { name: "Approvals" })).toBeVisible();
-  await expect(popover.getByTestId("needs-you-item")).toHaveCount(Math.min(count, 6));
+  await expect(inbox.getByRole("region", { name: "Approvals" })).toBeVisible();
+  await expect(inbox.getByTestId("inbox-item")).toHaveCount(count);
   // Esc closes it, and the focus goes back to the pill.
   await page.keyboard.press("Escape");
-  await expect(popover).toBeHidden();
+  await expect(inbox).toBeHidden();
   await expect(needs).toBeFocused();
 });
 
@@ -523,22 +522,24 @@ test("Needs you counts what the agents left waiting on you too, and goes to it",
   await expect(needs).toHaveAttribute("data-count", "1");
   await expect(needs).toContainText("1 needs you");
 
-  // Its row goes to the thread it lives in, at the message that added it.
+  // Its Open thread goes to the thread it lives in, at the message that added it.
   await needs.click();
-  const row = page.getByTestId("needs-you-popover").getByTestId("needs-you-item");
+  const row = page.getByTestId("inbox").getByTestId("inbox-item");
   await expect(row).toContainText("Set up Developer ID signing credentials");
   await expect(row).toContainText("Fix flaky");
-  await row.getByTestId("needs-you-open").click();
+  await row.click();
+  await page.getByTestId("inbox-open-thread").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
-  await expect(page.getByTestId("needs-you-popover")).toBeHidden();
+  await expect(page.getByTestId("inbox")).toBeHidden();
   await expect(page.getByTestId("wait-chip")).toBeInViewport();
   const tray = page.getByTestId("waiting-tray");
   await expect(tray.getByTestId("waiting-count")).toContainText("1 waiting on you");
 
-  // Done from the popover, it goes from both; what is left is the approval t-flaky's opening turn
+  // Done from the Inbox, it goes from both; what is left is the approval t-flaky's opening turn
   // raised.
   await needs.click();
-  await page.getByTestId("needs-you-popover").getByTestId("needs-you-done").click();
+  await row.and(page.locator('[data-kind="wait"]')).click();
+  await page.getByTestId("inbox-detail").getByTestId("waiting-done").click();
   await expect(tray).toBeHidden();
   await expect(row.and(page.locator('[data-kind="wait"]'))).toHaveCount(0);
   await expect
@@ -903,6 +904,8 @@ test("Automatic is open at 1440 px and compact at 1100 px, its tiles saying what
     asks.push((await badge.count()) > 0 ? await badge.textContent() : null);
   }
   expect(asks.some((each) => each !== null)).toBe(true);
+  // Read once t-flaky's opening turn has raised its approval, which Needs you counts too.
+  await flakyAsked(page);
   const needs = await overview(page).getByTestId("overview-needs-you").getAttribute("data-count");
   // As its title counts them: the rows draw only near the view.
   const title = overview(page).getByTestId("overview-section-solo").getByRole("button").first();
@@ -934,14 +937,14 @@ test("Automatic is open at 1440 px and compact at 1100 px, its tiles saying what
   // The current one is marked; the name's first two letters mark each.
   await expect(tile(page, made.workspaceId)).toHaveAttribute("aria-current", "true");
   await expect(tile(page, made.asks.other.workspaceId)).not.toHaveAttribute("aria-current");
-  // Needs you as the open overview counts it, opening its popover beside; then the solo threads' tile.
+  // Needs you as the open overview counts it, opening the Inbox; then the solo threads' tile.
   const pill = rail(page).getByTestId("overview-rail-needs-you");
   await expect(pill).toHaveAttribute("data-count", needs!);
   await expect(pill).toHaveText(needs!);
   await expect(soloTile(page).getByTestId("overview-tile-count")).toHaveText(String(solo));
   await pill.click();
-  await expect(page.getByTestId("needs-you-popover")).toBeVisible();
-  await expect(page.getByTestId("needs-you-item")).not.toHaveCount(0);
+  await expect(page.getByTestId("inbox")).toBeVisible();
+  await expect(page.getByTestId("inbox-item")).not.toHaveCount(0);
 });
 
 test("a tile's flyout lists the current workspace's workers: a click opens one, ⌥-click peeks, ⌘-click keeps beside", async ({

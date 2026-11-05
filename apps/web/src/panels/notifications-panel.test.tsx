@@ -10,7 +10,20 @@ import { useNotificationHistory } from "@/stores/notifications";
 import { useThreadsStore } from "@/stores/threads";
 import { Toasts } from "@/shell/toasts";
 
-import { NotificationsBell, NotificationsPanel } from "./notifications-panel";
+import { NotificationsPanel } from "./notifications-panel";
+
+/** What opens the history: the Inbox's Notifications link, here a button standing in for it. */
+function Opener() {
+  return (
+    <button
+      type="button"
+      data-testid="inbox-button"
+      onClick={() => useLayoutStore.getState().revealPanel("notifications")}
+    >
+      Inbox
+    </button>
+  );
+}
 
 const navigate = vi.fn();
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
@@ -34,8 +47,8 @@ afterEach(() => {
 
 describe("Notifications center", () => {
   it("opens explicitly from a closed panel without a thread and formats 24-hour timestamps", () => {
-    render(<NotificationsBell />);
-    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    render(<Opener />);
+    fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
     expect(useLayoutStore.getState().panelTab).toBe("notifications");
     expect(fitShell(useLayoutStore.getState()).panel).toBe("side");
     expect(notificationTime(new Date(2026, 9, 10, 23, 15).getTime())).toContain("23:15");
@@ -44,7 +57,7 @@ describe("Notifications center", () => {
   it("reads and clears plain text history with truthful unavailable thread targets", () => {
     render(
       <>
-        <NotificationsBell />
+        <Opener />
         <NotificationsPanel />
         <Toasts />
       </>,
@@ -58,14 +71,14 @@ describe("Notifications center", () => {
         threadId: "deleted" as never,
       }),
     );
-    expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy();
+    expect(screen.getByText("1 unread")).toBeTruthy();
     expect(screen.getByTestId("notification-entry").querySelector("script")).toBeNull();
     expect(screen.getByText("Thread no longer available")).toBeTruthy();
     expect(screen.queryByRole("link")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.getByTestId("notification-entry")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Mark all read" }));
-    expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
+    expect(screen.getByText("All caught up")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
     expect(screen.queryByTestId("notification-entry")).toBeNull();
     expect(screen.getByText("No notifications yet")).toBeTruthy();
@@ -120,7 +133,7 @@ describe("Notifications center", () => {
     try {
       render(
         <>
-          <NotificationsBell />
+          <Opener />
           <NotificationsPanel />
           <Toasts />
         </>,
@@ -133,13 +146,14 @@ describe("Notifications center", () => {
       vi.useRealTimers();
       expect(screen.queryByTestId("toast")).toBeNull();
       expect(screen.getByTestId("notification-entry")).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "Notifications, 1 unread" }));
+      expect(useNotificationHistory.getState().entries.filter((entry) => !entry.read)).toHaveLength(
+        1,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
       const read = screen.getByRole("button", { name: "Mark all read" });
       read.focus();
       fireEvent.keyDown(read, { key: "Escape" });
-      await waitFor(() =>
-        expect(document.activeElement).toBe(screen.getByTestId("notifications-bell")),
-      );
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("inbox-button")));
       expect(fitShell(useLayoutStore.getState()).panel).toBe("none");
       expect(deny).not.toHaveBeenCalled();
     } finally {

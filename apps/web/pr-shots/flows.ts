@@ -31,22 +31,32 @@ const retryableError = async (page: Page) => {
   await expect(page.getByTestId("agent-error").last()).toBeVisible();
 };
 
-/** From the Needs you pill, the refund worker's question: its ask turned to in its orchestrator's dock. */
+/** From the Needs you pill, the refund worker's question, shown in the Inbox's detail pane. */
 const questionInDock = async (page: Page) => {
   await openRealisticOrchestrator(page);
   await page.getByTestId("overview-needs-you").click();
+  await page.locator('[data-testid="inbox"], [data-testid="needs-you-popover"]').first().waitFor();
+  // On a base from before the Inbox, the popover's row opens the ask in the dock.
+  if ((await page.getByTestId("needs-you-popover").count()) > 0) {
+    await page
+      .getByTestId("needs-you-item")
+      .filter({ hasText: "A refund webhook that keeps failing" })
+      .getByTestId("needs-you-open")
+      .click();
+    const docked = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
+    await expect(docked).toBeFocused();
+    return docked;
+  }
   await page
-    .getByTestId("needs-you-popover")
-    .getByTestId("needs-you-item")
+    .getByTestId("inbox-item")
     .filter({ hasText: "A refund webhook that keeps failing" })
-    .getByTestId("needs-you-open")
     .click();
-  const item = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
-  await expect(item).toBeFocused();
+  const item = page.getByTestId("inbox-detail").getByTestId("ask-item");
+  await expect(item).toContainText("A refund webhook");
   return item;
 };
 
-/** The billing-api orchestrator, its one ask in the Asks dock. */
+/** The billing-api orchestrator, its line into the Inbox, open on its one ask. */
 const questionInBilling = async (page: Page) => {
   const made = await openRealistic(page);
   const orchestrator = await page.evaluate(
@@ -56,6 +66,10 @@ const questionInBilling = async (page: Page) => {
     made.askingWorkspaceId,
   );
   await openOrchestrator(page, orchestrator);
+  // On a base from before the Inbox, the ask is in the orchestrator's dock.
+  const line = page.getByTestId("inbox-line-open");
+  await line.or(page.getByTestId("ask-stack")).first().waitFor();
+  if ((await line.count()) > 0) await line.click();
   const item = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
   await item.getByTestId("ask-option").first().waitFor();
   return item;
@@ -121,7 +135,8 @@ const steps: readonly Shot[] = [
   },
   {
     name: "question",
-    title: "Answer: a worker's question in its orchestrator's Asks dock; a choice is picked",
+    title:
+      "Answer: a worker's question in the Inbox, from its orchestrator's line; a choice is picked",
     open: async (page) => {
       const item = await questionInBilling(page);
       const option = item.getByTestId("ask-option").filter({ hasText: "72 hours" });
@@ -137,27 +152,31 @@ const steps: readonly Shot[] = [
       await item.getByTestId("ask-option").filter({ hasText: "72 hours" }).click();
       await item.getByTestId("ask-send").click();
       await expect(
-        page.getByTestId("ask-item").filter({ hasText: "A refund webhook" }),
+        page
+          .locator('[data-testid="inbox-item"], [data-testid="ask-item"]')
+          .filter({ hasText: "A refund webhook" }),
       ).toHaveCount(0);
       await page.waitForTimeout(600);
     },
   },
   {
     name: "question-dock",
-    title: "Answer: the Needs you row opens the forwarded question in the Asks dock",
+    title: "Answer: the Needs you pill opens the Inbox on the forwarded question",
     open: async (page) => {
       await questionInDock(page);
     },
   },
   {
     name: "question-dock-answered",
-    title: "Answer: a choice picked in the dock, then Send answer, sends it to the worker",
+    title: "Answer: a choice picked in the Inbox, then Send answer, sends it to the worker",
     open: async (page) => {
       const item = await questionInDock(page);
       await item.getByTestId("ask-option").filter({ hasText: "72 hours" }).click();
       await item.getByTestId("ask-send").click();
       await expect(
-        page.getByTestId("ask-item").filter({ hasText: "A refund webhook" }),
+        page
+          .locator('[data-testid="inbox-item"], [data-testid="ask-item"]')
+          .filter({ hasText: "A refund webhook" }),
       ).toHaveCount(0);
       await page.waitForTimeout(600);
     },
@@ -165,7 +184,7 @@ const steps: readonly Shot[] = [
   {
     name: "stress-question-sheet",
     title:
-      "Stress test: a long question opens in the ask sheet among many asks; the dock folds to one row",
+      "Stress test: a long question's own card in the Inbox, among many asks, its answer row in sight",
     open: async (page) => {
       await page.goto("/t/t-flaky");
       await threadRow(page, "t-flaky").waitFor();
@@ -192,15 +211,14 @@ const steps: readonly Shot[] = [
         });
       }, made.workspaceId);
       await page.getByTestId("rail-waiting-chip").click();
-      const card = page.locator('[data-testid="rail-waiting"] [data-question="WQ1"]');
-      // The longer question has reached the band before its Answer is pressed.
-      await expect(card).toContainText("30 days");
-      await card.getByTestId("question-answer").click();
+      await page
+        .locator(
+          `[data-testid="inbox-item"][data-key="ask:worker-question:${made.workspaceId}:WQ1"]`,
+        )
+        .click();
+      await expect(page.getByTestId("inbox-detail")).toContainText("30 days");
+      await page.getByTestId("inbox-read-full").click();
       await expect(page.getByTestId("ask-sheet-answer-row")).toBeInViewport();
-      await expect(page.getByTestId("rail-board").getByTestId("ask-stack")).toHaveAttribute(
-        "data-compact",
-        "true",
-      );
     },
   },
   {

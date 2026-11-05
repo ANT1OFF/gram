@@ -1,13 +1,14 @@
 import type { WorkspaceState } from "@gram/contracts";
-import { Archive, Columns3, Inbox, Pause, Rows3 } from "lucide-react";
+import { Archive, Columns3, Hand, Pause, Rows3 } from "lucide-react";
 import { createPortal } from "react-dom";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
+import { showInbox } from "@/inbox/inbox-store";
 import { cn } from "@/lib/utils";
-import { WAITING_BAND } from "@/orchestration/board-waiting";
 import { midTurnWorkers } from "@/orchestration/tree-model";
+import { useNeedsYouCounts } from "@/orchestration/use-needs-you";
 import { Foldable } from "@/shell/foldable";
 import { useTitlebarSlot } from "@/shell/titlebar-slot";
 import { useLayoutStore, type BoardLayout } from "@/stores/layout";
@@ -16,9 +17,8 @@ import { pauseClock, pauseLeavesRunning, pauseText } from "@/thread/orchestratio
 
 import { useViewStore } from "./view-store";
 
-// The Board's header: what waits on you, Show finished, and Grid or Lanes; the rows below say who
-// works. It
-// is the window's title bar's, one bar not two: the switcher there names the workspace, and Tidy up
+// The Board's header: what waits on you (a link into the Inbox), Show finished, and Grid or Lanes;
+// the rows below say who works. It is the window's title bar's, one bar not two: the switcher there names the workspace, and Tidy up
 // and Pause or Resume are the bar's own. A pause says so in a line under it, in the shared pause
 // words.
 
@@ -99,19 +99,14 @@ function LayoutToggle() {
 export function BoardHeader({
   state,
   hidden,
-  waiting,
-  waitingOpen,
-  onWaiting,
 }: {
   state: WorkspaceState;
   /** Workers the Board leaves out until finished work is shown. */
   hidden: number;
-  /** What Waiting on you holds. */
-  waiting: number;
-  waitingOpen: boolean;
-  onWaiting: () => void;
 }) {
   const { workspace, paused } = state;
+  // The workspace's share of the Inbox, as its badge counts it (`needsYouCounts`).
+  const waiting = useNeedsYouCounts().byWorkspace.get(workspace.id) ?? 0;
   const working = useThreadsStore((s) => midTurnWorkers(s.byId, workspace.id));
   const slot = useTitlebarSlot((s) => s.slot);
   // Leaving for Chat, Board stays a moment for its exit while the thread's header moves in.
@@ -125,21 +120,20 @@ export function BoardHeader({
         slot === null ? "h-12 shrink-0 px-4" : "pl-2",
       )}
     >
-      {/* No number: the workspace's badge and Needs you count it with the asks (`needsYouCounts`). */}
+      {/* The Board's one way to what the workspace needs from you: the Inbox, on its first item. */}
       {waiting > 0 && (
         <button
           type="button"
           data-testid="rail-waiting-chip"
           data-count={waiting}
-          aria-expanded={waitingOpen}
-          aria-controls={WAITING_BAND}
-          aria-label="Waiting on you"
-          title="What the orchestrator and its workers left for you: drafts, links, steps, decisions and questions"
-          onClick={onWaiting}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-needs-mark/60 px-2 py-0.5 text-xs text-status-needs outline-none [-webkit-app-region:no-drag] hover:bg-status-needs-mark/10 focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-status-needs-mark/10"
+          aria-label={`${waiting} waiting. Open Inbox`}
+          title="Open the Inbox on what this workspace needs from you"
+          onClick={() => showInbox({ workspaceId: workspace.id })}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-needs-mark/60 px-2 py-0.5 text-xs text-status-needs outline-none [-webkit-app-region:no-drag] hover:bg-status-needs-mark/10 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Inbox aria-hidden className="size-3.5" />
-          <span className="@max-2xl/titlebar:sr-only">Waiting on you</span>
+          <Hand aria-hidden className="size-3.5" />
+          <span className="tabular-nums">{waiting}</span>
+          <span className="@max-2xl/titlebar:sr-only">waiting · Open Inbox</span>
         </button>
       )}
       <span data-titlebar-room="0" className="flex-1" />

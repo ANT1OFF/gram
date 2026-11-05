@@ -11,16 +11,15 @@ import { useServerSettings } from "@/settings-sync/store";
 import { useServerEvents } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
 
-import { useBoardWaiting } from "./board-waiting";
 import { useRailFacts } from "./feature-sheet";
 import { resetDerivedAsks } from "./needs-you-store";
-import { NeedsYouSource } from "./use-needs-you";
+import { NeedsYouSource, useNeedsYouCounts } from "./use-needs-you";
 import { useWorkspaces } from "./use-orchestration";
 import { WorkersButton } from "./workers-list";
 
 // The always-mounted views that derive a little from the whole thread map re-render only when what
 // they derive changes, not on every change to any thread: the title bar's Workers button, the
-// Board's chips and its Waiting on you.
+// Board's chips and its count of what waits on you.
 
 const route = vi.hoisted(() => ({ workspaceId: "" }));
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -40,10 +39,10 @@ const counted = (id: string, children: ReactNode) => (
 function BoardReads({ state }: { state: WorkspaceState }) {
   commits.set("board", (commits.get("board") ?? 0) + 1);
   const facts = useRailFacts(state.workspace.id);
-  const waiting = useBoardWaiting(state);
+  const waiting = useNeedsYouCounts().byWorkspace.get(state.workspace.id) ?? 0;
   return (
     <span data-testid="board">
-      {facts.status(worker) ?? "none"} {facts.asking.size}/{waiting.count}
+      {facts.status(worker) ?? "none"} {facts.asking.size}/{waiting}
     </span>
   );
 }

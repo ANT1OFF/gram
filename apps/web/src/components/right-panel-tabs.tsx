@@ -1,7 +1,6 @@
 import type { ThreadId } from "@gram/contracts";
 
 import { TabsContent } from "@/components/ui/tabs";
-import { NeedsYouPanel } from "@/orchestration/needs-you-panel";
 import { ConnectorsPanel } from "@/panels/connectors-panel";
 import { DiffPanel } from "@/panels/diff-panel";
 import { FilesPanel } from "@/panels/files/files-panel";
@@ -60,9 +59,6 @@ export function RightPanelTabs({
       )}
       <TabsContent value="notifications" className="flex min-h-0 flex-col">
         <NotificationsPanel />
-      </TabsContent>
-      <TabsContent value="needsYou" className="flex min-h-0 flex-col">
-        <NeedsYouPanel />
       </TabsContent>
     </>
   );

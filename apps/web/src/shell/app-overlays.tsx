@@ -1,7 +1,7 @@
 import { AwayNotifications } from "@/desktop/away-notifications";
 import { HistoryView } from "@/history/history-view";
+import { InboxView } from "@/inbox/inbox-view";
 import { LinkQuestion } from "@/links/link-dialog";
-import { AskSheet } from "@/orchestration/ask-sheet";
 import { FeatureSheet } from "@/orchestration/feature-sheet";
 import { FreshSessionDialog } from "@/orchestration/fresh-session";
 import { PeekSheet } from "@/orchestration/peek-sheet";
@@ -31,10 +31,10 @@ export function AppOverlays() {
       <ThreadSwitcher />
       <WorkersList />
       <HistoryView />
+      <InboxView />
       <WorkspaceSheet />
       <FeatureSheet />
       <PeekSheet />
-      <AskSheet />
       <WhatsNewDialog />
       <ReportIssueDialog />
       <ShortcutOverlay />

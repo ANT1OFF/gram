@@ -7,9 +7,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { parkSeedAsks } from "./seed-asks";
 import { threadRow } from "./thread-row";
 
-// Needs you's popover and panel (docs/design/mocks/needs-you-home, C Hybrid): every workspace's
-// asks, failures and waits in one list, each a click from its thread at the turn that asked, with
-// quick answers, the ⌘⇧U / ⌘⇧Y stepper, See all, Later and Dismiss. Mock state lives in memory, so
+// The Inbox: every workspace's asks, failures and waits in one list by kind, the picked one in a
+// pane beside it with its answers, Open thread, Later and Dismiss; the ⌘⇧U / ⌘⇧Y stepper. The
+// title bar's button, the sidebar's pill, ⌘⇧I and ⌘⌥3 open it. Mock state lives in memory, so
 // every step after the seed navigates inside the app; nothing reloads.
 
 /** The stack's undo window (`UNDO_MS`) and then some, for an answer to have gone out. */
@@ -52,24 +52,25 @@ const sent = (page: Page) =>
   page.evaluate(() => [...(window as unknown as { sent: string[] }).sent]);
 
 const pill = (page: Page) => page.getByTestId("overview-needs-you");
-const popover = (page: Page) => page.getByTestId("needs-you-popover");
-const panel = (page: Page) => page.getByTestId("needs-you-panel");
-const row = (scope: ReturnType<Page["getByTestId"]>, text: string | RegExp) =>
-  scope.getByTestId("needs-you-item").filter({ hasText: text });
+const inbox = (page: Page) => page.getByTestId("inbox");
+const detail = (page: Page) => page.getByTestId("inbox-detail");
+const row = (page: Page, text: string | RegExp) =>
+  inbox(page).getByTestId("inbox-item").filter({ hasText: text });
 
-const openPopover = async (page: Page) => {
+const openInbox = async (page: Page) => {
   await pill(page).click();
-  await expect(popover(page)).toBeVisible();
+  await expect(inbox(page)).toBeVisible();
 };
 
-const seeAll = async (page: Page) => {
-  await openPopover(page);
-  await popover(page).getByTestId("needs-you-see-all").click();
-  await expect(popover(page)).toBeHidden();
-  await expect(panel(page)).toBeVisible();
+/** Picks the row holding `text`, and waits for the detail pane to show it. */
+const show = async (page: Page, text: string | RegExp) => {
+  const picked = row(page, text);
+  await picked.click();
+  await expect(detail(page)).toHaveAttribute("data-key", (await picked.getAttribute("data-key"))!);
+  return picked;
 };
 
-test("the pill opens every workspace's items, and a row opens its ask in that workspace's dock", async ({
+test("the pill opens every workspace's items by kind, and Open thread lands on the card that asked", async ({
   page,
 }) => {
   const made = await start(page);
@@ -78,14 +79,26 @@ test("the pill opens every workspace's items, and a row opens its ask in that wo
   // are up first, so the count is read once the scenario's have arrived too.
   const count = 11;
   await expect(pill(page)).toHaveAttribute("data-count", String(count));
-  await openPopover(page);
+  // The title bar's Inbox button counts the same, in its name.
+  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-count", String(count));
+  await expect(page.getByTestId("inbox-button")).toHaveAccessibleName(
+    new RegExp(`^Inbox, ${count} need you`),
+  );
+  await openInbox(page);
+  await expect(inbox(page).getByTestId("inbox-count")).toHaveText(`${count} need you`);
+  await expect(inbox(page).getByTestId("inbox-item")).toHaveCount(count);
   // Grouped by kind, what stops work first: errors, then approvals.
-  const sections = popover(page).getByTestId("needs-you-section");
+  const sections = inbox(page).getByTestId("inbox-section");
   await expect(sections.first()).toHaveAttribute("data-section", "errors");
   await expect(sections.nth(1)).toHaveAttribute("data-section", "approvals");
-  await expect(popover(page).getByTestId("needs-you-see-all")).toHaveText(`See all ${count}`);
-  // More than it shows, so a strip heads it with every category and its count, in the list's order.
-  const categories = popover(page).getByTestId("needs-you-strip").getByTestId("needs-you-category");
+  // The list has focus, its first item shown beside it.
+  await expect(inbox(page).getByTestId("inbox-list")).toBeFocused();
+  await expect(detail(page)).toHaveAttribute(
+    "data-key",
+    (await inbox(page).getByTestId("inbox-item").first().getAttribute("data-key"))!,
+  );
+  // A strip heads it with every category and its count, in the list's order.
+  const categories = inbox(page).getByTestId("needs-you-strip").getByTestId("needs-you-category");
   await expect(categories.nth(0)).toHaveAttribute("data-category", "errors");
   await expect(categories.nth(0)).toHaveAccessibleName("Errors, 2");
   await expect(categories.nth(1)).toHaveAttribute("data-category", "approvals");
@@ -94,38 +107,45 @@ test("the pill opens every workspace's items, and a row opens its ask in that wo
   // A pick lists that category alone.
   await categories.and(page.locator('[data-category="approvals"]')).click();
   await expect(sections).toHaveCount(1);
-  await expect(popover(page).getByRole("region", { name: "Approvals" })).toBeVisible();
+  await expect(inbox(page).getByRole("region", { name: "Approvals" })).toBeVisible();
   await expect(categories.first()).toHaveAttribute("data-category", "all");
-  // Each row says its kind, behind a hint, its workspace and its thread.
-  const merge = row(popover(page), "gh pr merge 91 --squash");
-  await expect(merge.getByTestId("needs-you-where")).toHaveText("billing · Export invoices as CSV");
-  await expect(merge.getByRole("img", { name: "Approval" })).toBeVisible();
-
-  // A worker's request is answered in its workspace's Asks dock, on its orchestrator, like the rest.
-  await merge.getByTestId("needs-you-open").click();
-  await expect(popover(page)).toBeHidden();
-  await expect(page).not.toHaveURL(new RegExp(`/t/${made.other.asking}$`));
-  const ask = page.locator(
-    `[data-testid="ask-item"][data-ask-key*="r-merge-${made.other.asking}"]`,
+  // Each row says its kind, its workspace and its thread.
+  const merge = await show(page, "gh pr merge 91 --squash");
+  await expect(merge.getByTestId("inbox-item-where")).toHaveText(
+    "billing · Export invoices as CSV",
   );
-  await expect(ask).toBeInViewport();
-  await expect(ask).toHaveAttribute("data-needs-you-flash", "true");
-  await expect(ask).toBeFocused();
-  await expect(ask.getByTestId("ask-option").first()).toHaveText(/Allow/);
+  await expect(merge.getByRole("img", { name: "Approval" })).toBeVisible();
+  await expect(detail(page).getByTestId("inbox-detail-where")).toContainText(
+    "billing · Export invoices as CSV",
+  );
+
+  // Open thread: the worker that asked, its card ringed and in view; the Inbox closes.
+  await detail(page).getByTestId("inbox-open-thread").click();
+  await expect(inbox(page)).toBeHidden();
+  await expect(page).toHaveURL(new RegExp(`/t/${made.other.asking}$`));
+  const card = page.locator(`[data-request-id="r-merge-${made.other.asking}"]`);
+  await expect(card).toBeInViewport();
+  await expect(card).toHaveAttribute("data-needs-you-flash", "true");
+  // Reopened, it is where it was left.
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(inbox(page)).toBeVisible();
+  await expect(detail(page)).toHaveAttribute("data-key", (await merge.getAttribute("data-key"))!);
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(inbox(page)).toBeHidden();
 });
 
-test("quick answers: an option, Allow and Deny go out through the stack's path, with Undo", async ({
+test("answers in the detail go out through the one path, with Undo, and nothing twice", async ({
   page,
 }) => {
   // The undo window runs on the installed clock, so waiting past it takes no real time.
   await page.clock.install();
   const made = await start(page);
-  await seeAll(page);
-  const question = row(panel(page), "Keep both, or uv only?");
-  await question
-    .getByTestId("needs-you-answer")
-    .and(page.locator('[data-option="uv only"]'))
-    .click();
+  await openInbox(page);
+  const question = await show(page, "Keep both, or uv only?");
+  // Pick, then Send answer: a pick alone sends nothing.
+  await detail(page).getByTestId("ask-option").filter({ hasText: "uv only" }).click();
+  await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
+  await detail(page).getByTestId("ask-send").click();
   await expect(question).toHaveCount(0);
   await expect(page.getByTestId("needs-you-undo-line")).toContainText("uv only");
 
@@ -133,12 +153,16 @@ test("quick answers: an option, Allow and Deny go out through the stack's path, 
   await page.getByTestId("needs-you-undo").click();
   await expect(question).toHaveCount(1);
 
-  const merge = row(panel(page), "gh pr merge 91 --squash");
-  await merge.getByTestId("needs-you-answer").and(page.locator('[data-option="Allow"]')).click();
-  await expect(merge).toHaveCount(0);
-  const push = row(panel(page), "git push -u origin feat/mail-trigger");
-  await push.getByTestId("needs-you-answer").and(page.locator('[data-option="Deny"]')).click();
-  await expect(push).toHaveCount(0);
+  // An approval's verbs act on a click.
+  await show(page, "gh pr merge 91 --squash");
+  await detail(page)
+    .getByTestId("ask-option")
+    .filter({ hasText: /^Allow/ })
+    .click();
+  await expect(row(page, "gh pr merge 91 --squash")).toHaveCount(0);
+  await show(page, "git push -u origin feat/mail-trigger");
+  await detail(page).getByTestId("ask-option").filter({ hasText: /^Deny/ }).click();
+  await expect(row(page, "git push -u origin feat/mail-trigger")).toHaveCount(0);
 
   await page.clock.runFor(SENT_MS);
   await expect
@@ -149,46 +173,54 @@ test("quick answers: an option, Allow and Deny go out through the stack's path, 
         expect.stringMatching(/^r-push-again-.* deny$/),
       ]),
     );
-  expect((await sent(page)).some((line) => line.startsWith(`r-question-${made.choosing}`))).toBe(
-    false,
-  );
+  // Each once, and the question taken back never.
+  const lines = await sent(page);
+  expect(lines.filter((line) => line.startsWith(`r-merge-${made.other.asking}`))).toHaveLength(1);
+  expect(lines.some((line) => line.startsWith(`r-question-${made.choosing}`))).toBe(false);
 });
 
-test("a question's quick answers say each option's words, cut short with the whole on hover, and 2 picks the second", async ({
+test("keys: j and k move, 2 picks, ⌘⏎ sends, ⌘Z takes it back, ⏎ opens the thread", async ({
   page,
 }) => {
   await page.clock.install();
   const made = await start(page);
-  await seeAll(page);
-  const question = row(panel(page), "Keep both, or uv only?");
-  const answers = question.getByTestId("needs-you-answer");
-  // Words on the chips, not bare numbers; the number is the key that picks it.
-  await expect(answers).toHaveCount(2);
-  await expect(question.getByTestId("needs-you-answer-label")).toHaveText(["uv only", "Keep both"]);
-  await expect(answers.first()).toHaveText(/^1\s*uv only$/);
-  await expect(answers.first()).toHaveAttribute("aria-keyshortcuts", "1");
-  // A label too long for its chip is cut short, never wraps the row; the hint has it whole.
-  const label = question.getByTestId("needs-you-answer-label").first();
-  await expect(label).toHaveCSS("text-overflow", "ellipsis");
-  await expect(label).toHaveCSS("white-space", "nowrap");
-  await answers.first().hover();
-  await page.clock.runFor(2_000);
-  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
-    "uv only: What the repo's own scripts use.",
-  );
+  await openInbox(page);
+  const items = inbox(page).getByTestId("inbox-item");
+  const key = (index: number) => items.nth(index).getAttribute("data-key");
+  await expect(detail(page)).toHaveAttribute("data-key", (await key(0))!);
+  await page.keyboard.press("j");
+  await expect(detail(page)).toHaveAttribute("data-key", (await key(1))!);
+  await page.keyboard.press("ArrowDown");
+  await expect(detail(page)).toHaveAttribute("data-key", (await key(2))!);
+  await page.keyboard.press("k");
+  await expect(detail(page)).toHaveAttribute("data-key", (await key(1))!);
 
-  // With focus in the row, 2 answers it with the second option, through the stack's path.
-  await question.getByTestId("needs-you-open").focus();
+  // A question's options carry their words and the number that picks them.
+  await show(page, "Keep both, or uv only?");
+  await inbox(page).getByTestId("inbox-list").focus();
+  const options = detail(page).getByTestId("ask-option");
+  await expect(options).toHaveText([/uv only/, /Keep both/]);
+  await page.clock.runFor(1_000);
   await page.keyboard.press("2");
-  await expect(question).toHaveCount(0);
+  await expect(options.nth(1)).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+Enter");
   await expect(page.getByTestId("needs-you-undo-line")).toContainText("Keep both");
-  await page.clock.runFor(SENT_MS);
-  await expect
-    .poll(() => sent(page))
-    .toEqual(expect.arrayContaining([expect.stringMatching(`^r-question-${made.choosing}`)]));
+  await expect(row(page, "Keep both, or uv only?")).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(row(page, "Keep both, or uv only?")).toHaveCount(1);
+  await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
+  // The ask taken back is shown again.
+  await expect(detail(page)).toContainText("Keep both, or uv only?");
+
+  // ⏎ opens its thread at the turn that asked.
+  await inbox(page).getByTestId("inbox-list").focus();
+  await page.keyboard.press("Enter");
+  await expect(inbox(page)).toBeHidden();
+  await expect(page).toHaveURL(new RegExp(`/t/${made.choosing}$`));
 });
 
-test("a wait's Done resolves it, and a jump lands on the message that added it", async ({
+test("a wait's Done resolves it, and Open thread lands on the message that added it", async ({
   page,
 }) => {
   await start(page);
@@ -198,97 +230,92 @@ test("a wait's Done resolves it, and a jump lands on the message that added it",
       title: "Review the mock: needs-you-home v1",
     }),
   );
-  await openPopover(page);
-  const review = row(popover(page), "Review the mock: needs-you-home v1");
+  await openInbox(page);
+  const review = await show(page, "Review the mock: needs-you-home v1");
   await expect(review.getByRole("img", { name: "Review" })).toBeVisible();
-  await review.getByTestId("needs-you-open").click();
+  await expect(detail(page)).toHaveAttribute("data-kind", "wait");
+  await expect(detail(page).getByTestId("waiting-done")).toBeVisible();
+  await detail(page).getByTestId("inbox-open-thread").click();
   await expect(page).toHaveURL(/\/t\/t-deps$/);
   await expect(page.getByTestId("wait-chip")).toBeInViewport();
 
   const before = Number(await pill(page).getAttribute("data-count"));
-  await openPopover(page);
-  await row(popover(page), "Review the mock").getByTestId("needs-you-done").click();
+  await openInbox(page);
+  await show(page, "Review the mock");
+  await detail(page).getByTestId("waiting-done").click();
   await expect(pill(page)).toHaveAttribute("data-count", String(before - 1));
-  await expect(row(popover(page), "Review the mock")).toHaveCount(0);
+  await expect(row(page, "Review the mock")).toHaveCount(0);
 });
 
 test("⌘⇧U and ⌘⇧Y step through what needs you, each at its thread", async ({ page }) => {
   await start(page);
-  await seeAll(page);
-  const rows = panel(page).getByTestId("needs-you-item");
-  const threads = await rows.evaluateAll((all) =>
-    all.map((each) => each.getAttribute("data-thread-id")),
-  );
-  // Where each step lands: an ask in a workspace's dock opens its orchestrator, the rest their own.
-  const opens = await rows.evaluateAll((all) => all.map((each) => each.getAttribute("data-opens")));
+  await openInbox(page);
+  const threads = await inbox(page)
+    .getByTestId("inbox-item")
+    .evaluateAll((all) => all.map((each) => each.getAttribute("data-thread-id")));
   expect(threads.length).toBeGreaterThan(2);
-  const at = (index: number) => new RegExp(`/t/${opens[index]}$`);
+  await page.keyboard.press("Escape");
+  await expect(inbox(page)).toBeHidden();
+  const at = (index: number) => new RegExp(`/t/${threads[index]}$`);
 
-  await page.keyboard.press("ControlOrMeta+Shift+U");
-  await expect(page).toHaveURL(at(0));
-
-  const current = panel(page).locator('[data-testid="needs-you-item"][data-current="true"]');
-  await expect(current).toHaveAttribute("data-thread-id", threads[0]!);
+  // From the first shown, the next.
   await page.keyboard.press("ControlOrMeta+Shift+U");
   await expect(page).toHaveURL(at(1));
+  await page.keyboard.press("ControlOrMeta+Shift+U");
+  await expect(page).toHaveURL(at(2));
   await page.keyboard.press("ControlOrMeta+Shift+Y");
-  await expect(page).toHaveURL(at(0));
-  // From the first, back wraps to the last.
-  await page.keyboard.press("ControlOrMeta+Shift+Y");
-  await expect(page).toHaveURL(at(threads.length - 1));
-  // The panel stays open through every step.
-  await expect(panel(page)).toBeVisible();
+  await expect(page).toHaveURL(at(1));
+  // The Inbox opens on the item the steps landed on.
+  await pill(page).click();
+  await expect(detail(page)).toHaveAttribute(
+    "data-key",
+    (await inbox(page).getByTestId("inbox-item").nth(1).getAttribute("data-key"))!,
+  );
 });
 
-test("See all: the panel filters by category, puts an item away for Later, and dismisses a failure", async ({
+test("Later puts an item away, Back now brings it, and Dismiss holds a failure behind Undo", async ({
   page,
 }) => {
   const made = await start(page);
-  // Errors picked in the popover's strip: See all keeps it, the stopped worker and the red build.
-  await openPopover(page);
-  await popover(page).locator('[data-testid="needs-you-category"][data-category="errors"]').click();
-  await popover(page).getByTestId("needs-you-see-all").click();
-  await expect(panel(page)).toBeVisible();
-  const items = panel(page).getByTestId("needs-you-item");
-  await expect(
-    panel(page).locator('[data-testid="needs-you-category"][data-category="errors"]'),
-  ).toHaveAttribute("aria-pressed", "true");
+  await openInbox(page);
+  // Errors picked: the stopped worker and the red build.
+  await inbox(page).locator('[data-testid="needs-you-category"][data-category="errors"]').click();
+  const items = inbox(page).getByTestId("inbox-item");
   await expect(items).toHaveCount(2);
   await expect(items.and(page.locator(`[data-thread-id="${made.failing}"]`))).toHaveCount(1);
-  await panel(page).locator('[data-testid="needs-you-category"][data-category="all"]').click();
+  await inbox(page).locator('[data-testid="needs-you-category"][data-category="all"]').click();
   await expect(items).toHaveCount(11);
 
   // Later: away from the list and the count, in the Later list until it wakes or is brought back.
   const before = Number(await pill(page).getAttribute("data-count"));
-  const merge = row(panel(page), "gh pr merge 91 --squash");
-  await merge.hover();
-  await merge.getByTestId("needs-you-later").click();
+  const merge = await show(page, "gh pr merge 91 --squash");
+  await detail(page).getByTestId("inbox-later").click();
   await expect(merge).toHaveCount(0);
   await expect(pill(page)).toHaveAttribute("data-count", String(before - 1));
-  await panel(page).getByTestId("needs-you-show-later").click();
-  const later = panel(page).getByTestId("needs-you-later-item");
+  await inbox(page).getByTestId("inbox-show-later").click();
+  const later = inbox(page).getByTestId("inbox-later-item");
   await expect(later).toHaveCount(1);
   // A wake on another day than today carries its weekday ("back at Sun 00:24").
   await expect(later).toContainText(/back at (?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) )?\d{2}:\d{2}/);
-  await later.getByTestId("needs-you-wake").click();
+  await later.getByTestId("inbox-wake").click();
   await expect(later).toHaveCount(0);
-  await panel(page).getByTestId("needs-you-show-later").click();
+  await inbox(page).getByTestId("inbox-show-later").click();
   await expect(merge).toHaveCount(1);
   await expect(pill(page)).toHaveAttribute("data-count", String(before));
 
+  // An approval offers no Dismiss: it is answered, or put away.
+  await show(page, "gh pr merge 91 --squash");
+  await expect(detail(page).getByTestId("inbox-dismiss")).toHaveCount(0);
   // Dismiss holds a failure until it fails again, behind Undo; the Board's strip loses it too.
   const red = items.and(page.locator(`[data-thread-id="${made.failing}"][data-kind="failure"]`));
-  await red.hover();
-  await red.getByTestId("needs-you-dismiss").click();
+  await red.click();
+  await detail(page).getByTestId("inbox-dismiss").click();
   await expect(red).toHaveCount(0);
   await expect(page.getByTestId("needs-you-undo-line")).toContainText("Dismissed");
   await expect(pill(page)).toHaveAttribute("data-count", String(before - 1));
-  // An approval offers no Dismiss: it is answered, or put away.
-  await merge.hover();
-  await expect(merge.getByTestId("needs-you-dismiss")).toHaveCount(0);
 });
 
-test("with nothing waiting, the popover and the panel say so", async ({ page }) => {
+test("with nothing waiting, the Inbox says so", async ({ page }) => {
   await page.goto("/t/t-deps");
   await expect(threadRow(page, "t-deps")).toBeVisible();
   // The seed's threads outside any workspace that need the user count until parked or seen: a
@@ -297,9 +324,9 @@ test("with nothing waiting, the popover and the panel say so", async ({ page }) 
   await expect(page).toHaveTitle("(3) Gram");
   await parkSeedAsks(page);
   await expect(pill(page)).toHaveText("Nothing needs you");
-  await openPopover(page);
-  await expect(popover(page).getByTestId("needs-you-empty")).toHaveText("Nothing needs you");
-  await expect(popover(page).getByTestId("needs-you-see-all")).toHaveCount(0);
+  await expect(page.getByTestId("inbox-button")).toHaveAccessibleName(/^Inbox\b(?!,)/);
+  await page.getByTestId("inbox-button").click();
+  await expect(inbox(page).getByTestId("inbox-empty")).toContainText("Nothing needs you");
   await page.keyboard.press("Escape");
   await page.evaluate(() =>
     window.gramMock!.simulateWaitOnUser("t-deps" as never, {
@@ -307,64 +334,54 @@ test("with nothing waiting, the popover and the panel say so", async ({ page }) 
       title: "Rotate the deploy key",
     }),
   );
-  await openPopover(page);
-  await row(popover(page), "Rotate the deploy key").getByTestId("needs-you-done").click();
-  await expect(popover(page).getByTestId("needs-you-empty")).toBeVisible();
+  await openInbox(page);
+  await show(page, "Rotate the deploy key");
+  await detail(page).getByTestId("waiting-done").click();
+  await expect(inbox(page).getByTestId("inbox-empty")).toBeVisible();
 });
 
-test("a worker's question opens at its ask in the orchestrator's dock: pick, then Send answer", async ({
-  page,
-}) => {
+test("a worker's question is answered in the Inbox: pick, then Send answer", async ({ page }) => {
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
-  const made = await page.evaluate(() => window.gramMock!.simulateWorkerQuestions());
-  // Step 1, from the pill's popover: the forwarded question's row opens it in the Asks dock.
-  await openPopover(page);
-  const asked = row(popover(page), "Should the retry queue drop a job");
+  await page.evaluate(() => window.gramMock!.simulateWorkerQuestions());
+  await openInbox(page);
+  const asked = await show(page, "Should the retry queue drop a job");
   await expect(asked).toHaveAttribute("data-kind", "question");
-  await asked.getByTestId("needs-you-open").click();
-  await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  const item = page
-    .getByTestId("ask-item")
-    .and(page.locator(`[data-ask-key="worker-question:${made.workspaceId}:WQ1"]`));
-  await expect(item).toBeInViewport();
-  await expect(item).toBeFocused();
-  // Step 2: its choice, the orchestrator's pick first, then Send answer: straight to the worker.
-  await item.getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
-  await expect(page.getByTestId("ask-undo-line")).toHaveCount(0);
-  await item.getByTestId("ask-send").click();
-  await expect(page.getByTestId("ask-undo-line")).toContainText("Keep for replay");
+  // Its choice, the orchestrator's pick first, then Send answer: straight to the worker.
+  await detail(page).getByTestId("ask-option").filter({ hasText: "Keep for replay" }).click();
+  await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
+  await detail(page).getByTestId("ask-send").click();
+  await expect(page.getByTestId("needs-you-undo-line")).toContainText("Keep for replay");
+  await expect(asked).toHaveCount(0);
 });
 
-test("narrow: the rail's pill opens a popover that fits, and with no pill ⌘⌥3 opens the panel", async ({
+test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3 opens it", async ({
   page,
 }) => {
   // Below the open overview's width, the compact rail carries the pill.
   await page.setViewportSize({ width: 1000, height: 800 });
   await start(page);
-  const railPill = page.getByTestId("overview-rail-needs-you");
-  await railPill.click();
-  await expect(popover(page)).toBeVisible();
-  const box = (await popover(page).boundingBox())!;
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(1000);
-  await expect(popover(page).getByTestId("needs-you-item")).toHaveCount(6);
+  await page.getByTestId("overview-rail-needs-you").click();
+  await expect(inbox(page)).toBeVisible();
+  const fits = async (width: number) => {
+    const box = (await inbox(page).boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+  };
+  await fits(1000);
+  await expect(inbox(page).getByTestId("inbox-item")).toHaveCount(11);
   await page.keyboard.press("Escape");
-  await expect(popover(page)).toBeHidden();
+  await expect(inbox(page)).toBeHidden();
 
-  // Narrower, no pill is on screen: ⌘⌥3 opens the whole list as the panel, rows within it.
+  // Narrower, no pill is on screen: ⌘⌥3 opens it, within the window.
   await page.setViewportSize({ width: 520, height: 800 });
-  await expect(railPill).toBeHidden();
+  await expect(page.getByTestId("overview-rail-needs-you")).toBeHidden();
   await page.keyboard.press("ControlOrMeta+Alt+3");
-  await expect(panel(page)).toBeVisible();
-  const edge = (await panel(page).boundingBox())!;
-  for (const each of await panel(page).getByTestId("needs-you-item").all()) {
-    const rowBox = (await each.boundingBox())!;
-    expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(edge.x + edge.width);
-  }
+  await expect(inbox(page)).toBeVisible();
+  await fits(520);
 });
 
-test("a question whose options carry screenshots shows them on its row, numbered as its answers", async ({
+test("a question whose options carry screenshots shows them in the detail, beside its answers", async ({
   page,
 }) => {
   const fixture = fileURLToPath(
@@ -392,19 +409,16 @@ test("a question whose options carry screenshots shows them on its row, numbered
       ],
     });
   }, files);
-  await seeAll(page);
-  const question = row(panel(page), "Which needs-you direction should we build?");
-  const thumbs = question.getByTestId("needs-you-thumb");
-  await expect(thumbs).toHaveCount(3);
-  // The orchestrator's pick first, numbered as the stack numbers it, a picture each.
-  await expect(thumbs.first()).toHaveAttribute("data-option", "C Hybrid");
-  await expect(thumbs.first()).toContainText("1");
-  // Its answer carries the same number, with the option's words.
-  await expect(
-    question.locator('[data-testid="needs-you-answer"][data-option="C Hybrid"]'),
-  ).toHaveText(/^1\s*C Hybrid$/);
-  await expect(thumbs.first().locator("img")).toBeVisible();
-  // A click enlarges it, as the stack's gallery does.
-  await thumbs.first().locator("button").first().click();
+  await openInbox(page);
+  await show(page, "Which needs-you direction should we build?");
+  const visuals = detail(page).getByTestId("option-visual");
+  await expect(visuals).toHaveCount(3);
+  // A picture each, in the asker's order, the orchestrator's pick starred; its answer is first.
+  const hybrid = visuals.and(page.locator('[data-option="C Hybrid"]'));
+  await expect(hybrid.getByText("(recommended)")).toHaveCount(1);
+  await expect(detail(page).getByTestId("ask-option").first()).toContainText("C Hybrid");
+  await expect(hybrid.locator("img")).toBeVisible();
+  // A click enlarges it.
+  await hybrid.locator("button").first().click();
   await expect(page.getByRole("dialog", { name: /C Hybrid/ })).toBeVisible();
 });
