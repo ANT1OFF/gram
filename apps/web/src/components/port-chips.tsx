@@ -84,7 +84,7 @@ export function PortChips({
         if (event.key === "Enter" || event.key === " ") open(event, port);
       }}
     >
-      {glyph && <Globe aria-hidden className="size-3.5" />}
+      {glyph && <Globe aria-hidden className="size-icon-row" />}
       <span className={cn(glyph && "sr-only")}>:{port}</span>
     </span>
   ));

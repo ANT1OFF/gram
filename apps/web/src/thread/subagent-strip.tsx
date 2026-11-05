@@ -110,12 +110,12 @@ export function SubagentStrip({
                   />
                 }
               >
-                <Layers aria-hidden className="size-3.5 shrink-0 text-status-working" />
+                <Layers aria-hidden className="size-icon-row shrink-0 text-status-working" />
                 <span className="shrink-0 font-medium">{rows.length} running</span>
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">
                   {open ? "" : newest.label}
                 </span>
-                <Chevron aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+                <Chevron aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
               </Hint>
             </PresenceItem>
           )}
@@ -141,12 +141,12 @@ export function SubagentStrip({
                         )
                       }
                     >
-                      <Icon aria-hidden className="size-3.5 shrink-0 text-status-working" />
+                      <Icon aria-hidden className="size-icon-row shrink-0 text-status-working" />
                       <span className="sr-only">{KIND_WORD[row.kind]}, running:</span>
                       <span
                         className={cn(
                           "min-w-0 shrink truncate",
-                          row.command ? "font-mono text-caption" : "font-medium",
+                          row.command ? "font-mono text-meta" : "font-medium",
                         )}
                       >
                         {row.label}
@@ -231,7 +231,7 @@ function WorkHint({
 }
 
 const code = (text: string) => (
-  <code className="block min-w-0 truncate font-mono text-caption opacity-80">{text}</code>
+  <code className="block min-w-0 truncate font-mono text-meta opacity-80">{text}</code>
 );
 
 /** Copies a task's whole command, which the line and its tooltip show only the start of. */
@@ -260,9 +260,9 @@ function CopyButton({ command }: { command: string }) {
     >
       <Swap swapKey={copied ? "copied" : "copy"}>
         {copied ? (
-          <DrawnCheck className="size-3 text-success" />
+          <DrawnCheck className="size-icon-chip text-success" />
         ) : (
-          <Copy aria-hidden className="size-3.5" />
+          <Copy aria-hidden className="size-icon-row" />
         )}
       </Swap>
       <span aria-live="polite" className="sr-only">

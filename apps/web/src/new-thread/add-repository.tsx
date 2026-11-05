@@ -218,7 +218,7 @@ export function CloneOffer({
   return (
     <div className="flex flex-col gap-1" data-testid="clone-offer">
       <p className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground">
-        <BookMarked aria-hidden className="size-3.5 shrink-0" />
+        <BookMarked aria-hidden className="size-icon-row shrink-0" />
         <span className="min-w-0 truncate">
           {cloneFolder === undefined
             ? `${input.label} isn't a folder here.`
@@ -457,7 +457,10 @@ export function AddRepository({
                           onMouseEnter={() => setActive(i)}
                           className="flex h-7 cursor-default items-center gap-2 rounded-md px-2 aria-selected:bg-accent"
                         >
-                          <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                          <Icon
+                            aria-hidden
+                            className="size-icon-row shrink-0 text-muted-foreground"
+                          />
                           <span className="min-w-0 flex-1 truncate font-mono text-meta">
                             {suggestion.label}
                           </span>
@@ -502,7 +505,7 @@ export function AddRepository({
           data-testid="folder-check"
           className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground"
         >
-          <FolderCheck aria-hidden className="size-3.5 shrink-0 text-success-text" />
+          <FolderCheck aria-hidden className="size-icon-row shrink-0 text-success-text" />
           <span className="truncate font-mono">{tildify(typed.path, home)}</span>
           <GitBadge />
         </p>
@@ -512,7 +515,7 @@ export function AddRepository({
           data-testid="folder-check"
           className="flex items-start gap-1.5 text-meta text-warning-text"
         >
-          <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+          <TriangleAlert aria-hidden className="mt-px size-icon-row shrink-0" />
           {typed.message}
         </p>
       ) : loadingRepos ? (

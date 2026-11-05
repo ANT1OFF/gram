@@ -161,7 +161,7 @@ export function KeyCaptureDialog({
           data-testid="key-capture-clash"
           className="flex items-start gap-1.5 text-meta text-warning"
         >
-          <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          <AlertTriangle aria-hidden className="mt-0.5 size-icon-row shrink-0" />
           Same keys as {clashes.map((other) => other.label).join(", ")}. Replace turns{" "}
           {clashes.length === 1 ? "it" : "them"} off.
         </p>
@@ -171,7 +171,7 @@ export function KeyCaptureDialog({
           data-testid="key-capture-system"
           className="flex items-start gap-1.5 text-meta text-warning"
         >
-          <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          <AlertTriangle aria-hidden className="mt-0.5 size-icon-row shrink-0" />
           macOS uses {shown} for itself ({systemUse}), so Gram may never see it.
         </p>
       )}
@@ -180,7 +180,7 @@ export function KeyCaptureDialog({
           data-testid="key-capture-caveat"
           className="flex items-start gap-1.5 text-meta text-warning"
         >
-          <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          <AlertTriangle aria-hidden className="mt-0.5 size-icon-row shrink-0" />
           {caveat}
         </p>
       )}

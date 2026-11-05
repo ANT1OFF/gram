@@ -154,9 +154,9 @@ function ToolShell({
           <span title={display.label} className="flex shrink-0">
             <Swap swapKey={isMarkPhase(phase) ? "mark" : phase}>
               {isMarkPhase(phase) ? (
-                <StatusMark phase={phase} className={cn("size-3.5", display.tone)} />
+                <StatusMark phase={phase} className={cn("size-icon-row", display.tone)} />
               ) : (
-                <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
+                <display.icon aria-hidden className={cn("size-icon-row", display.tone)} />
               )}
             </Swap>
           </span>
@@ -177,7 +177,7 @@ function ToolShell({
           </span>
           <ChevronDown
             aria-hidden
-            className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) in-data-panel-open:rotate-180"
+            className="size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) in-data-panel-open:rotate-180"
           />
         </CollapsibleTrigger>
         {showApproval !== undefined && (

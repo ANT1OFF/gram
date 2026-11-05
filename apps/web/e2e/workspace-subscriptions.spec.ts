@@ -67,7 +67,7 @@ for (const agent of ["claude", "codex"] as const) {
     const picker = page
       .locator("[data-pane-root]")
       .getByTestId("composer-toolbar")
-      .getByRole("combobox", { name: "Model" });
+      .getByRole("combobox", { name: "Model", exact: true });
     await expect(picker).toHaveAttribute(
       "title",
       new RegExp(`^${agent === "claude" ? "Claude Code" : "Codex"} · `),

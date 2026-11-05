@@ -53,7 +53,7 @@ export function MentionMenu({
               index === activeIndex && "text-accent-foreground",
             )}
           >
-            <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <Icon aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
             <span className="truncate font-mono text-meta">
               <span className="text-muted-foreground">{path.slice(0, name)}</span>
               {path.slice(name)}

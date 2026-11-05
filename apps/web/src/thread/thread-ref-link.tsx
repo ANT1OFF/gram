@@ -38,7 +38,7 @@ function ThreadRefChip({
         title="Thread not found"
         className={cn(CHIP, "border-dashed border-border text-muted-foreground")}
       >
-        <MessagesSquare aria-hidden className="size-3.5 shrink-0" />
+        <MessagesSquare aria-hidden className="size-icon-row shrink-0" />
         <span className="truncate">{label}</span>
       </span>
     );
@@ -54,7 +54,7 @@ function ThreadRefChip({
         "border-border bg-muted/50 text-foreground no-underline hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring",
       )}
     >
-      <MessagesSquare aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <MessagesSquare aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
       <span className="truncate">{target.title}</span>
     </Link>
   );

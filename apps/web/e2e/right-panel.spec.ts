@@ -96,10 +96,13 @@ test("a narrower panel names Diff, PR, Files and Terminal, the rest named in Mor
   const connectors = panel.getByRole("tab", { name: "Connectors", exact: true });
   await expect(connectors).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => named(page)).toContain("connectors");
-  await more.click();
-  await expect(menu.getByRole("menuitem", { name: "Connectors" })).toHaveCount(0);
-  await expect(menu.getByRole("menuitem", { name: "Notifications" })).toBeVisible();
-  await page.keyboard.press("Escape");
+  // The two rare tabs left take less room as 28 px glyphs than More with its word, so they come
+  // back to the strip, each named on hover, and More goes (the fold rule in panel-tab-labels.ts).
+  await expect(more).toHaveCount(0);
+  for (const name of ["Preview", "Notifications"]) {
+    await expect(panel.getByRole("tab", { name, exact: true })).toBeVisible();
+  }
+  await expect(panel.getByRole("tab", { name: "Connectors", exact: true })).toHaveCount(1);
   expect(await overflows(page)).toBe(false);
 });
 

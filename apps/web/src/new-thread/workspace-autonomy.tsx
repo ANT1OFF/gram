@@ -154,7 +154,10 @@ export function WorkspaceAutonomy({
                   className="flex flex-col gap-2 rounded-md border border-warning/50 p-2"
                 >
                   <p className="flex items-start gap-1.5">
-                    <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
+                    <TriangleAlert
+                      aria-hidden
+                      className="mt-px size-icon-row shrink-0 text-warning"
+                    />
                     <span>
                       <span className="font-medium">Turn on Full autonomy?</span>{" "}
                       {autonomyLevel("full").description}

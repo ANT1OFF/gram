@@ -25,7 +25,7 @@ export function UndoLine({ testId = "inbox-line" }: { testId?: string }) {
           data-testid={`${testId}-undo`}
           className="flex min-w-0 items-center gap-1 text-foreground"
         >
-          <DrawnCheck className="size-3.5 text-success-text" />
+          <DrawnCheck className="size-icon-row text-success-text" />
           <span className="truncate">{last.done}</span>
           <button
             type="button"

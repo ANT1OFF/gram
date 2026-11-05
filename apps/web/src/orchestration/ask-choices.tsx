@@ -125,6 +125,7 @@ export function SendAnswer({
   label = "Send answer",
   title,
   type = "button",
+  form,
 }: {
   disabled: boolean;
   hint?: string | undefined;
@@ -134,6 +135,8 @@ export function SendAnswer({
   label?: string;
   title?: string | undefined;
   type?: "button" | "submit";
+  /** The form a submit button sends, when it sits outside that form. */
+  form?: string | undefined;
 }) {
   const whyId = useId();
   const why = disabled && title !== undefined && title !== "" ? title : undefined;
@@ -141,6 +144,7 @@ export function SendAnswer({
     <>
       <Button
         type={type}
+        form={form}
         size={size}
         data-testid={testId}
         data-send-answer
@@ -161,7 +165,8 @@ export function SendAnswer({
         <span
           id={whyId}
           data-testid="send-answer-why"
-          className="min-w-0 text-meta text-muted-foreground"
+          // Why Send waits stays on one line beside it: what is left of the row gives way first.
+          className="shrink-0 text-meta whitespace-nowrap text-muted-foreground"
         >
           {why}
         </span>

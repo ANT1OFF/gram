@@ -20,4 +20,8 @@ export async function openNotifications(page: Page): Promise<void> {
   await page.getByTestId("inbox-notifications").click();
   await expect(page.getByTestId("inbox")).toBeHidden();
   await expect(page.getByRole("region", { name: "Notification history" })).toBeVisible();
+  // The panel opens its tab strip where the Inbox's link was: a pointer left resting there hovers
+  // the Notifications tab, whose tooltip then covers the history's first row. Move it off, as a
+  // hand does after the click.
+  await page.mouse.move(0, 0);
 }

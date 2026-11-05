@@ -344,9 +344,9 @@ describe("AgentFields speed", () => {
   it("keeps Speed's slot in the prompt box, its value in a word, while there is nothing to pick", async () => {
     // The CLI decides, though Fast is there: the slot stays, so the row reads as a thread's does.
     renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
-    const decides = await screen.findByRole("combobox", { name: "Speed: Default" });
+    const decides = await screen.findByRole("combobox", { name: "Speed: CLI default" });
     expect(decides.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
-    expect(decides.textContent).toContain("Default");
+    expect(decides.textContent).toContain("CLI default");
     cleanup();
     // Standard is all the model offers.
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard"], true);

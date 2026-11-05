@@ -349,7 +349,7 @@ function InboxBody({
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <InboxIcon aria-hidden className="size-4 text-muted-foreground" />
+        <InboxIcon aria-hidden className="size-icon-row text-muted-foreground" />
         {docked ? (
           <h2 id={titleId} className="text-title">
             Inbox
@@ -610,7 +610,7 @@ function InboxRow({
         aria-label={kind.label}
         role="img"
         className={cn(
-          "mt-0.5 size-3.5",
+          "mt-0.5 size-icon-row",
           item.kind === "failure"
             ? "text-destructive"
             : item.kind === "wait"
@@ -678,7 +678,10 @@ function LaterList({
             data-testid="inbox-later-item"
             className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-(--radius-md) px-2 py-1.5 hover:bg-muted/60"
           >
-            <kind.icon aria-label={kind.label} className="mt-0.5 size-4 text-muted-foreground" />
+            <kind.icon
+              aria-label={kind.label}
+              className="mt-0.5 size-icon-row text-muted-foreground"
+            />
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className="line-clamp-2 text-body break-words">{item.title}</span>
               <span className="truncate text-meta text-muted-foreground">

@@ -126,7 +126,7 @@ export function NewWorkspaceSheet({
             </div>
           ) : !shown || settings === undefined ? (
             <p role="status" className="flex items-center gap-2 text-muted-foreground">
-              <Spinner aria-hidden className="size-3.5" />
+              <Spinner aria-hidden className="size-icon-row" />
               {settings !== undefined && !explicitModel && !modelsSettled
                 ? "Finding your agents…"
                 : "Loading…"}
@@ -431,7 +431,7 @@ function ReposField({
                 className="flex size-4 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                 onClick={() => onChange((current) => toggleRepo(current, projectId, false))}
               >
-                <X aria-hidden className="size-3.5" />
+                <X aria-hidden className="size-icon-row" />
               </button>
             </span>
           );

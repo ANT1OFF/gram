@@ -67,6 +67,13 @@
   --spacing-list: calc(var(--spacing) * 3);
   --spacing-section: calc(var(--spacing) * 4);
 
+  /* Icon sizes, one per context (DESIGN.md → Icons), as size-icon-*: a chip's or badge's glyph
+     beside meta text, a row's, card's or menu's glyph beside the UI text, and a toolbar's (the
+     title bar, the sidebar's header, the panel's tabs, the composer's toolbar). */
+  --spacing-icon-chip: calc(var(--spacing) * 3.5);
+  --spacing-icon-row: calc(var(--spacing) * 4);
+  --spacing-icon-bar: calc(var(--spacing) * 4.5);
+
   /* Elevation: a raised card, a floating overlay (menu, popover, dialog) and the composer slab. */
   --shadow-raised: var(--elevation-raised);
   --shadow-overlay: var(--elevation-overlay);
@@ -263,6 +270,11 @@
     [data-streamdown="heading-6"]
   ) {
   font-size: var(--transcript-text-size, 0.875rem);
+}
+/* Its line height follows its own size, 20 px at the default 14 px, rather than text-reading's,
+   which is set for the interface's larger reading step. */
+[data-transcript] [data-slot="message-content"] {
+  line-height: calc(20 / 14);
 }
 [data-transcript] [data-streamdown="heading-5"] {
   font-size: calc(1rem * var(--transcript-scale, 1));

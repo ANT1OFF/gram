@@ -13,11 +13,13 @@ const OVERFLOW_WIDTH = 32;
 /** What a label adds besides its text: the trigger's gap between glyph and label. */
 const LABEL_GAP = 6;
 /**
- * What a control carries only while it says its value in full: the chevron after its words (14 px
- * and its gap), and the rule before it (1 px, its margins and the block's gap). Short of room both
- * go, so the words keep the space. Constant, as the measure can't see what isn't drawn.
+ * What a control carries only while it says its value in full: the chevron after its words (14 px,
+ * `size-icon-chip`, and its gap), and the rule before it (1 px, its margins and the block's gap).
+ * Short of room both go, so the words keep the space. Constant, as the measure can't see what isn't
+ * drawn: a chevron of another size makes the full and short estimates disagree with what is drawn,
+ * and the row flips between them for ever (`toolbar-chevron.test.tsx` holds the two together).
  */
-const CHEVRON = 20;
+export const CHEVRON = 20;
 const SEPARATOR = 9;
 /** Slack for rounding and the gaps between groups, so a fit is never a pixel short. */
 const SLACK = 6;

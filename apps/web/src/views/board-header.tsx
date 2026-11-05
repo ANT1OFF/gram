@@ -131,7 +131,7 @@ export function BoardHeader({
           onClick={() => showInbox({ workspaceId: workspace.id })}
           className="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-needs-mark/60 px-2 py-0.5 text-meta text-status-needs outline-none [-webkit-app-region:no-drag] hover:bg-status-needs-mark/10 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Hand aria-hidden className="size-3.5" />
+          <Hand aria-hidden className="size-icon-row" />
           <span className="tabular-nums">{waiting}</span>
           <span className="@max-2xl/titlebar:sr-only">waiting · Open Inbox</span>
         </button>
@@ -154,7 +154,7 @@ export function BoardHeader({
           data-testid="rail-paused-line"
           className="mx-4 my-2 flex shrink-0 items-center gap-2 rounded-(--radius-md) border border-border px-2.5 py-1.5 text-meta"
         >
-          <Pause aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <Pause aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           <span className="min-w-0">
             {pauseText(paused)} since {pauseClock(paused.at)}.{" "}
             <span className="text-muted-foreground">{pauseLeavesRunning(working, paused)}</span>

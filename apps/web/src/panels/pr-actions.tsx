@@ -50,7 +50,7 @@ const STRATEGY_LABEL: Record<MergeStrategy, string> = {
 const POPUP =
   "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-3.5 [&_svg]:shrink-0";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-icon-row [&_svg]:shrink-0";
 
 /**
  * Why merging an open PR wouldn't go through yet, as GitHub's merge state and the PR's reviews and
@@ -210,7 +210,7 @@ export function PrActions({
             data-testid="pr-merge-blocked"
             className="flex min-w-0 items-baseline gap-1.5 text-reading"
           >
-            <Ban aria-hidden className="size-3.5 shrink-0 self-center" />
+            <Ban aria-hidden className="size-icon-row shrink-0 self-center" />
             <span className="shrink-0 font-medium">Merge blocked</span>{" "}
             <span className="min-w-0 truncate text-muted-foreground">
               · <span data-testid="pr-blocker-count">{summary.count}</span>: {summary.categories}
@@ -228,7 +228,7 @@ export function PrActions({
                   data-blocker={blocker.kind}
                   className="flex min-w-0 items-center gap-1.5"
                 >
-                  <mark.icon aria-hidden className={cn("size-3.5 shrink-0", mark.tone)} />
+                  <mark.icon aria-hidden className={cn("size-icon-row shrink-0", mark.tone)} />
                   <span className="min-w-0 truncate">{blocker.detail}</span>
                 </li>
               );

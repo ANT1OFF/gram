@@ -76,7 +76,10 @@ function useWorkerFacts(thread: Thread) {
 
 /** The › between crumbs, dropped with the crumb before it. */
 const crumbSeparator = (drop?: string) => (
-  <ChevronRight aria-hidden className={cn("size-3.5 shrink-0 text-muted-foreground/60", drop)} />
+  <ChevronRight
+    aria-hidden
+    className={cn("size-icon-chip shrink-0 text-muted-foreground/60", drop)}
+  />
 );
 
 /**
@@ -225,7 +228,7 @@ function HoldChip({
           />
         }
       >
-        <HandGrab aria-hidden className="size-3.5 text-muted-foreground" />
+        <HandGrab aria-hidden className="size-icon-row text-muted-foreground" />
         <span className={cn(compact && "sr-only")}>Under your control</span>
       </Hint>
       <Hint
@@ -319,7 +322,7 @@ export function WorkerActions({
             />
           }
         >
-          <PanelRight aria-hidden className={inTitlebar ? "size-4" : "size-3.5"} />
+          <PanelRight aria-hidden className={inTitlebar ? "size-icon-bar" : "size-icon-row"} />
           <span className={inTitlebar ? "sr-only" : "@max-md:sr-only"}>Keep beside</span>
         </Hint>
       )}
@@ -378,7 +381,7 @@ export function WorkerMenuItems({
           className={itemClassName}
           onClick={actions.keepBeside}
         >
-          <PanelRight aria-hidden className="size-3.5" />
+          <PanelRight aria-hidden className="size-icon-row" />
           Keep beside
         </Menu.Item>
       )}
@@ -389,7 +392,7 @@ export function WorkerMenuItems({
           className={cn(itemClassName, "items-start")}
           onClick={actions.takeOver}
         >
-          <HandGrab aria-hidden className="mt-0.5 size-3.5" />
+          <HandGrab aria-hidden className="mt-0.5 size-icon-row" />
           <span className="flex max-w-64 min-w-0 flex-col">
             Take over
             <span aria-hidden className="text-meta whitespace-normal text-muted-foreground">

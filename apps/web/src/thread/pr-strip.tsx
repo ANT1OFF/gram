@@ -170,7 +170,7 @@ export function PrStrip({ threadId, focused }: { threadId: ThreadId; focused: bo
                 })
               }
             >
-              <EyeOff aria-hidden className="size-3.5" />
+              <EyeOff aria-hidden className="size-icon-row" />
               {hidden} hidden
             </button>
           )}
@@ -299,7 +299,7 @@ function CleanupChip({ cleanup }: { cleanup: MergedCleanup }) {
       className={cn(CHIP, FOCUS, "hover:bg-accent")}
       onClick={cleanup.open}
     >
-      <FolderX aria-hidden className="size-3.5 text-muted-foreground" />
+      <FolderX aria-hidden className="size-icon-row text-muted-foreground" />
       <span className="@max-lg:hidden">Clean up</span>
     </button>
   );
@@ -354,7 +354,9 @@ function ReviewChip({
 /** The row's one glyph (`prGlyphOf`), the sidebar's for the same PR; grey until the badge lands. */
 function StateIcon({ facts }: { facts: PrFacts | undefined }) {
   if (!facts) {
-    return <GitPullRequest aria-hidden className="mr-1 size-4 shrink-0 text-muted-foreground" />;
+    return (
+      <GitPullRequest aria-hidden className="mr-1 size-icon-row shrink-0 text-muted-foreground" />
+    );
   }
   const glyph = prGlyphOf(facts);
   const display = PR_GLYPH_DISPLAY[glyph.kind];
@@ -363,7 +365,7 @@ function StateIcon({ facts }: { facts: PrFacts | undefined }) {
       role="img"
       aria-label={prGlyphWords(facts)}
       data-kind={glyph.kind}
-      className={cn("mr-1 size-4 shrink-0", display.tone)}
+      className={cn("mr-1 size-icon-row shrink-0", display.tone)}
     />
   );
 }
@@ -387,7 +389,7 @@ function RowClose({ label, run }: { label: string; run: () => Promise<unknown> }
         })
       }
     >
-      <X aria-hidden className="size-3.5" />
+      <X aria-hidden className="size-icon-row" />
     </button>
   );
 }
@@ -406,7 +408,7 @@ function ExtraCiMenu({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow })
       >
         <span aria-hidden className={cn("size-1.5 rounded-full bg-current", tone)} />
         CI
-        <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
+        <ChevronDown aria-hidden className="size-icon-chip text-muted-foreground" />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="end" sideOffset={6} className="isolate z-50">
@@ -440,7 +442,7 @@ function ExtraCiMenu({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow })
                   })
                 }
               >
-                <ArrowUpToLine aria-hidden className="size-3.5" />
+                <ArrowUpToLine aria-hidden className="size-icon-row" />
                 Make #{row.number} this thread's PR
               </button>
               <button
@@ -454,7 +456,7 @@ function ExtraCiMenu({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow })
                   })
                 }
               >
-                <Unlink aria-hidden className="size-3.5" />
+                <Unlink aria-hidden className="size-icon-row" />
                 Stop following #{row.number}
               </button>
             </div>
@@ -505,7 +507,7 @@ function CiMenu({
       >
         <span aria-hidden className={cn("size-1.5 rounded-full bg-current", tone)} />
         CI
-        <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
+        <ChevronDown aria-hidden className="size-icon-chip text-muted-foreground" />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="top" align="end" sideOffset={6} className="isolate z-50">
@@ -525,7 +527,7 @@ function CiMenu({
                   className={cn("rounded-sm p-0.5 outline-none hover:text-foreground", FOCUS)}
                   onClick={() => void openExternalUrl(api, url)}
                 >
-                  <ExternalLink aria-hidden className="size-3.5" />
+                  <ExternalLink aria-hidden className="size-icon-row" />
                 </button>
               )}
             </div>
@@ -541,7 +543,7 @@ function CiMenu({
                       data-testid="pr-ci-bucket"
                       className="flex items-center gap-2"
                     >
-                      <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
+                      <display.icon aria-hidden className={cn("size-icon-row", display.tone)} />
                       {bucket.label}
                       <span className="ml-auto text-muted-foreground tabular-nums">
                         {bucket.count}
@@ -601,7 +603,7 @@ function CiMenu({
                   })
                 }
               >
-                <Unlink aria-hidden className="size-3.5" />
+                <Unlink aria-hidden className="size-icon-row" />
                 Unbind #{row.number}
               </button>
             )}

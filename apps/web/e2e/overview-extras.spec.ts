@@ -140,7 +140,7 @@ test("Pull requests starts folded and lists the PR lists' PRs, opening one on Gi
   await expect(first.locator("[data-pr-mark]")).toHaveCount(1);
   await expect(first.getByTestId("overview-pr-sub")).toHaveText(/^[\w.-]+#\d+( · .+)?$/);
   const rowHeight = (await first.boundingBox())!.height;
-  expect(rowHeight).toBe(44);
+  expect(rowHeight).toBe(48);
 
   // A click opens it on GitHub, as the lists' rows do.
   const url = await page.evaluate(async (pr) => {

@@ -63,7 +63,7 @@ export function AttachmentChips({
               )}
               onClick={() => onRemove(item.key)}
             >
-              <X className="size-3.5" />
+              <X className="size-icon-row" />
             </button>
           );
           return item.previewUrl ? (
@@ -84,13 +84,13 @@ export function AttachmentChips({
               />
               {item.status === "uploading" && (
                 <span className="absolute inset-0 grid place-items-center bg-background/50">
-                  <Spinner aria-label="Uploading" className="size-4" />
+                  <Spinner aria-label="Uploading" className="size-icon-row" />
                 </span>
               )}
               {failed && (
                 <AlertCircle
                   aria-label="Failed"
-                  className="absolute bottom-1 left-1 size-4 rounded-full bg-card text-destructive"
+                  className="absolute bottom-1 left-1 size-icon-row rounded-full bg-card text-destructive"
                 />
               )}
               {remove}
@@ -106,9 +106,11 @@ export function AttachmentChips({
                 failed ? "border-destructive text-destructive" : "border-border",
               )}
             >
-              <Paperclip aria-hidden className="size-3.5" />
+              <Paperclip aria-hidden className="size-icon-row" />
               {item.name}
-              {item.status === "uploading" && <Spinner aria-label="Uploading" className="size-3" />}
+              {item.status === "uploading" && (
+                <Spinner aria-label="Uploading" className="size-icon-chip" />
+              )}
               {remove}
             </ChipItem>
           );

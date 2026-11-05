@@ -22,12 +22,12 @@ test("effort says its value, checks it in the list, and confirms a pick in words
   const toolbar = page.getByTestId("composer-toolbar");
   const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
   // No effort chosen: the model's own default, said as such.
-  await expect(effort).toHaveAccessibleName("Effort: Default");
-  await expect(effort).toHaveText(/^Default/);
+  await expect(effort).toHaveAccessibleName("Effort: Model default");
+  await expect(effort).toHaveText(/^Model default/);
 
   await effort.hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
-    /^Effort: Default \(.+\)$/,
+    /^Effort: Model default \(.+\)$/,
   );
 
   await effort.click();

@@ -64,7 +64,7 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   const more = toolbar.getByRole("button", { name: "More composer controls" });
   const speed = toolbar.getByRole("combobox", { name: /^Speed/ });
   await expect(speed).toBeVisible();
-  await expect(speed).toHaveAccessibleName("Speed: Default");
+  await expect(speed).toHaveAccessibleName("Speed: CLI default");
   await expect(more).toHaveCount(0);
 
   // The context gauge beside Send keeps the ring's 32 px: the steps below are measured against
@@ -92,8 +92,9 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   const stopBox = await stop.boundingBox();
   expect(stopBox!.y).toBeGreaterThanOrEqual(modeBox!.y + modeBox!.height);
 
-  // Only at the narrowest do glyphs stand in, on one row, and the pickers fold into "…".
-  await squeeze(page, 280);
+  // Only at the narrowest do glyphs stand in, on one row, and the pickers fold into "…". Effort's
+  // default, like Speed's, gives up its word first, so the words hold on to 270 px.
+  await squeeze(page, 260);
   await expect(toolbar).not.toHaveAttribute("data-wrapped");
   await expect(mode).toHaveCount(0);
   await expect(more).toBeVisible();
@@ -105,9 +106,12 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await message.fill("use the fake clock");
   await squeeze(page, 230);
   await expect(toolbar.getByRole("button", { name: "Steer now" })).toHaveCount(0);
-  expect(await right(page.getByRole("button", { name: "Queue", exact: true }))).toBeLessThanOrEqual(
-    await right(message),
-  );
+  // Once the toolbar has laid itself out for the new width, a frame after the resize: at 260 px
+  // the draft's narrower Queue let every picker back as a glyph, and 230 px folds them again.
+  const edge230 = await right(message);
+  await expect
+    .poll(() => right(page.getByRole("button", { name: "Queue", exact: true })))
+    .toBeLessThanOrEqual(edge230);
   await more.click();
   await page
     .getByTestId("composer-overflow-menu")
@@ -119,7 +123,7 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await speedMenu.getByRole("menuitemradio", { name: "Standard", exact: true }).click();
   await page.keyboard.press("Escape");
   await message.fill("");
-  await squeeze(page, 280);
+  await squeeze(page, 260);
 
   // A folded picker is a submenu of "…", and its shortcut opens it there.
   await message.focus();

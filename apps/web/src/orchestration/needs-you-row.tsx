@@ -178,7 +178,7 @@ export function NeedsYouUndo({ className }: { className?: string }) {
       data-testid="needs-you-undo-line"
       className={cn("flex items-center gap-2 px-2 text-meta text-muted-foreground", className)}
     >
-      <Check aria-hidden className="size-3.5 text-success" />
+      <Check aria-hidden className="size-icon-row text-success" />
       <span className="min-w-0 flex-1 truncate">{last.done}</span>
       <Button size="xs" variant="ghost" data-testid="needs-you-undo" onClick={() => undo(last.key)}>
         Undo

@@ -388,7 +388,7 @@ function DiffViewMenu({
         }
       >
         View
-        <ChevronDown aria-hidden className="size-3.5" />
+        <ChevronDown aria-hidden className="size-icon-chip" />
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
@@ -415,7 +415,7 @@ function DiffViewMenu({
                       <option.icon aria-hidden className="text-muted-foreground" />
                       {option.label}
                       {narrow && (
-                        <span className="ml-auto text-caption text-muted-foreground">
+                        <span className="ml-auto text-meta text-muted-foreground">
                           Needs a wider panel
                         </span>
                       )}
@@ -493,7 +493,7 @@ function ViewCheck({
       <Icon aria-hidden className="text-muted-foreground" />
       {label}
       {fixed !== undefined && (
-        <span className="ml-auto text-caption text-muted-foreground">{fixed}</span>
+        <span className="ml-auto text-meta text-muted-foreground">{fixed}</span>
       )}
     </Menu.CheckboxItem>
   );
@@ -652,7 +652,7 @@ function DiffBody({
         <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 text-meta text-muted-foreground">
           {diff.branch && (
             <span className="flex min-w-0 items-center gap-1 font-mono">
-              <GitBranch aria-hidden className="size-3.5 shrink-0" />
+              <GitBranch aria-hidden className="size-icon-row shrink-0" />
               <span className="truncate">{diff.branch}</span>
             </span>
           )}

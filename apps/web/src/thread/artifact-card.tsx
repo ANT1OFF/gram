@@ -35,7 +35,7 @@ export function ArtifactCard({
       className="my-2 flex max-w-md items-center gap-3 rounded-lg border border-edge bg-card px-3 py-2"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        <AppWindow aria-hidden className="size-4" />
+        <AppWindow aria-hidden className="size-icon-row" />
       </span>
       <div className="min-w-0 flex-1" title={artifact.url}>
         <span className="block truncate text-reading font-medium">{name}</span>

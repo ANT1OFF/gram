@@ -31,9 +31,9 @@ const doneWord = (done: boolean, held: boolean) =>
 /** Mark done's tick, or Reopen's arrow back for a thread already done. */
 const DoneIcon = ({ done }: { done: boolean }) =>
   done ? (
-    <RotateCcw aria-hidden className="size-3.5" />
+    <RotateCcw aria-hidden className="size-icon-row" />
   ) : (
-    <CircleCheck aria-hidden className="size-3.5" />
+    <CircleCheck aria-hidden className="size-icon-row" />
   );
 
 /**
@@ -47,7 +47,7 @@ export function MoreContextMenuItem({ scope }: { scope: PaletteScope }) {
       // After the menu has closed and given focus back, so the palette's field keeps it.
       onClick={() => setTimeout(() => useLayoutStore.getState().openPalette("", scope))}
     >
-      <Ellipsis aria-hidden className="size-3.5" />
+      <Ellipsis aria-hidden className="size-icon-row" />
       More…
     </ContextMenuItem>
   );
@@ -74,7 +74,7 @@ export function ThreadContextMenuItems({
     <>
       {separated && SEPARATOR}
       <ContextMenuItem onClick={actions.rename}>
-        <Pencil aria-hidden className="size-3.5" />
+        <Pencil aria-hidden className="size-icon-row" />
         Rename…
         <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
           {shortcutHint("thread.rename")}
@@ -84,18 +84,18 @@ export function ThreadContextMenuItems({
       {!orchestrator && (
         <ContextMenuItem onClick={actions.togglePin}>
           {thread.pinned ? (
-            <PinOff aria-hidden className="size-3.5" />
+            <PinOff aria-hidden className="size-icon-row" />
           ) : (
-            <Pin aria-hidden className="size-3.5" />
+            <Pin aria-hidden className="size-icon-row" />
           )}
           {thread.pinned ? "Unpin" : "Pin"}
         </ContextMenuItem>
       )}
       <ContextMenuItem onClick={actions.togglePark}>
         {thread.parked ? (
-          <ArchiveRestore aria-hidden className="size-3.5" />
+          <ArchiveRestore aria-hidden className="size-icon-row" />
         ) : (
-          <Archive aria-hidden className="size-3.5" />
+          <Archive aria-hidden className="size-icon-row" />
         )}
         {thread.parked ? "Unarchive" : "Archive"}
       </ContextMenuItem>
@@ -112,7 +112,7 @@ export function ThreadContextMenuItems({
       {/* An orchestrator follows no PR of its own; its workers carry theirs. */}
       {!orchestrator && <PrContextMenuItems threadId={threadId} />}
       <ContextMenuItem className={DANGER} onClick={actions.close}>
-        <X aria-hidden className="size-3.5" />
+        <X aria-hidden className="size-icon-row" />
         Close thread…
         <kbd className="ml-auto pl-3 font-mono text-caption">{shortcutHint("thread.close")}</kbd>
       </ContextMenuItem>
@@ -127,7 +127,7 @@ export function ReleaseContextMenuItem({ threadId }: { threadId: ThreadId }) {
   const { release } = useThreadActions(threadId);
   return (
     <ContextMenuItem data-testid="menu-release-worker" onClick={release}>
-      <Hand aria-hidden className="size-3.5" />
+      <Hand aria-hidden className="size-icon-row" />
       Hand back to orchestrator
     </ContextMenuItem>
   );
@@ -153,24 +153,24 @@ export function ThreadMenuItems({
     <>
       {SEPARATOR}
       <Menu.Item className={itemClassName} onClick={actions.rename}>
-        <Pencil aria-hidden className="size-3.5" />
+        <Pencil aria-hidden className="size-icon-row" />
         Rename…
       </Menu.Item>
       {!orchestrator && (
         <Menu.Item className={itemClassName} onClick={actions.togglePin}>
           {thread.pinned ? (
-            <PinOff aria-hidden className="size-3.5" />
+            <PinOff aria-hidden className="size-icon-row" />
           ) : (
-            <Pin aria-hidden className="size-3.5" />
+            <Pin aria-hidden className="size-icon-row" />
           )}
           {thread.pinned ? "Unpin" : "Pin"}
         </Menu.Item>
       )}
       <Menu.Item className={itemClassName} onClick={actions.togglePark}>
         {thread.parked ? (
-          <ArchiveRestore aria-hidden className="size-3.5" />
+          <ArchiveRestore aria-hidden className="size-icon-row" />
         ) : (
-          <Archive aria-hidden className="size-3.5" />
+          <Archive aria-hidden className="size-icon-row" />
         )}
         {thread.parked ? "Unarchive" : "Archive"}
       </Menu.Item>
@@ -185,7 +185,7 @@ export function ThreadMenuItems({
         </Menu.Item>
       )}
       <Menu.Item className={`${itemClassName} ${DANGER}`} onClick={actions.close}>
-        <X aria-hidden className="size-3.5" />
+        <X aria-hidden className="size-icon-row" />
         Close thread…
       </Menu.Item>
       {SEPARATOR}
@@ -195,7 +195,7 @@ export function ThreadMenuItems({
         // After the menu has closed and given focus back, so the palette's field keeps it.
         onClick={() => setTimeout(() => useLayoutStore.getState().openPalette("", scope))}
       >
-        <Ellipsis aria-hidden className="size-3.5" />
+        <Ellipsis aria-hidden className="size-icon-row" />
         More…
       </Menu.Item>
     </>

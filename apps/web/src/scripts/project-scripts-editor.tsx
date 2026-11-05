@@ -200,7 +200,7 @@ export function ProjectScriptsEditor({ projectId }: { projectId: ProjectId }) {
                     {suggestion.command}
                   </span>
                 </div>
-                <span className="shrink-0 text-caption text-muted-foreground">
+                <span className="shrink-0 text-meta text-muted-foreground">
                   {suggestion.source}
                 </span>
                 <Button

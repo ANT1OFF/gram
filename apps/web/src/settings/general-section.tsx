@@ -553,10 +553,15 @@ function SectionChecks({
       role="group"
       aria-label="Sidebar sections"
       data-testid="overview-sections-setting"
-      className="flex flex-wrap justify-end gap-x-4 gap-y-1.5"
+      className="flex flex-wrap justify-end gap-x-4 gap-y-2"
     >
+      {/* A list of small switches, so a step under a row's main control: body text, the box at a
+          row icon's size, the unchecked ones muted. */}
       {OVERVIEW_OPTIONAL_SECTIONS.map((section) => (
-        <label key={section} className="flex cursor-pointer items-center gap-1.5 text-reading">
+        <label
+          key={section}
+          className="flex cursor-pointer items-center gap-1.5 text-body text-muted-foreground has-checked:text-foreground"
+        >
           <input
             type="checkbox"
             data-section={section}
@@ -568,7 +573,7 @@ function SectionChecks({
                   : [...hidden, section],
               )
             }
-            className="size-3.5 accent-primary"
+            className="size-icon-row accent-primary"
           />
           {OVERVIEW_SECTION_LABELS[section]}
         </label>

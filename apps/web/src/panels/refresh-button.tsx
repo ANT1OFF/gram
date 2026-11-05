@@ -49,7 +49,7 @@ export function RefreshButton({
       onClick={refresh}
       className={cn("shrink-0", className)}
     >
-      <RefreshCw aria-hidden ref={fetching ? spin : undefined} className="size-3.5" />
+      <RefreshCw aria-hidden ref={fetching ? spin : undefined} className="size-icon-row" />
     </Button>
   );
 }

@@ -32,7 +32,7 @@ export function BookmarkToggle({ project, className }: { project: Project; class
         className,
       )}
     >
-      <Bookmark aria-hidden className={cn("size-3.5", on && "fill-current")} />
+      <Bookmark aria-hidden className={cn("size-icon-row", on && "fill-current")} />
     </button>
   );
 }

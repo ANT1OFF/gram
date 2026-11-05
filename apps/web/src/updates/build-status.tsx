@@ -64,7 +64,7 @@ export function BuildStatus({
             aria-label="About running and released changes"
             className="rounded-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <Info aria-hidden className="size-4" />
+            <Info aria-hidden className="size-icon-row" />
           </TooltipTrigger>
           <TooltipContent role="tooltip">{PROVENANCE_NOTE}</TooltipContent>
         </Tooltip>

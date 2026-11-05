@@ -70,7 +70,7 @@ const DOT: Readonly<Record<DotTone, string>> = {
 const MENU_POPUP =
   "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -314,7 +314,7 @@ export function QuietView({ workspaceId }: ViewProps) {
             data-testid="quiet-undo-line"
             className="mt-4 flex items-center gap-1 text-body"
           >
-            <DrawnCheck className="size-3.5 text-success-text" />
+            <DrawnCheck className="size-icon-row text-success-text" />
             {last.done}
             <button
               type="button"
@@ -380,7 +380,7 @@ function QuietCard({
       {/* Where the question is from and the way back to it, at its head rather than in the strip
           at the window's foot: the workspace, its workers at work, and Open thread. */}
       <header className="flex min-w-0 items-center gap-2 text-body text-muted-foreground">
-        <Icon aria-hidden className="size-4 shrink-0 text-status-needs-mark" />
+        <Icon aria-hidden className="size-icon-row shrink-0 text-status-needs-mark" />
         <span data-testid="quiet-workspace" className="truncate font-medium text-foreground">
           {card.workspace}
         </span>

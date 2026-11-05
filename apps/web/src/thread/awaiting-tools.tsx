@@ -99,7 +99,7 @@ export function ApprovalLink({ onShow, label }: { onShow: () => void; label: str
       className="flex shrink-0 items-center gap-1 rounded-sm text-meta text-status-needs underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
     >
       {label}
-      <ArrowDown aria-hidden className="size-3.5" />
+      <ArrowDown aria-hidden className="size-icon-row" />
     </button>
   );
 }

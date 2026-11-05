@@ -162,7 +162,7 @@ export function SettingsSearchBox({
     <div data-search className="relative mb-2">
       <Search
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 start-2 my-auto size-3.5 text-muted-foreground"
+        className="pointer-events-none absolute inset-y-0 start-2 my-auto size-icon-row text-muted-foreground"
       />
       <input
         ref={inputRef}
@@ -194,7 +194,7 @@ export function SettingsSearchBox({
           }}
           className="absolute inset-y-0 end-1 my-auto flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
         >
-          <X aria-hidden className="size-3.5" />
+          <X aria-hidden className="size-icon-row" />
         </button>
       )}
     </div>

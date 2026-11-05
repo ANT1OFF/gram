@@ -81,13 +81,13 @@ export function DictationButton({
         }
       >
         {state.phase === "error" ? (
-          <MicOff aria-hidden className="size-4" />
+          <MicOff aria-hidden className="size-icon-bar" />
         ) : busy ? (
-          <Spinner aria-hidden className="size-4" />
+          <Spinner aria-hidden className="size-icon-bar" />
         ) : state.phase === "listening" ? (
           <LevelBars level={level} />
         ) : (
-          <Mic aria-hidden className="size-4" />
+          <Mic aria-hidden className="size-icon-bar" />
         )}
       </Swap>
     </Hint>

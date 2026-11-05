@@ -70,17 +70,17 @@ export function PrListControls({
     <div className="px-2 pb-1" data-testid="pr-list-controls">
       <div className="flex min-w-0 items-center gap-1">
         <label className="flex min-w-0 flex-1 items-center gap-1 rounded-sm border border-border px-1.5 focus-within:ring-2 focus-within:ring-ring">
-          <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <Search aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           <input
             aria-label={`Search ${label}`}
             placeholder="Search PRs…"
             value={options.search}
             onChange={(e) => setOptions({ ...options, search: e.target.value })}
-            className="h-6 min-w-0 w-full bg-transparent text-caption outline-none placeholder:text-muted-foreground"
+            className="h-6 min-w-0 w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground"
           />
         </label>
         <Hint label={`Sort: ${sortLabels[options.sort]}`} render={<span className={control} />}>
-          <ArrowDownWideNarrow aria-hidden className="size-3.5" />
+          <ArrowDownWideNarrow aria-hidden className="size-icon-row" />
           <select
             aria-label={`Sort ${label}`}
             value={options.sort}
@@ -98,7 +98,7 @@ export function PrListControls({
         >
           <Filter
             aria-hidden
-            className={options.filter === "all" ? "size-3.5" : "size-3.5 text-info"}
+            className={options.filter === "all" ? "size-icon-row" : "size-icon-row text-info"}
           />
           <select
             aria-label={`Filter ${label}`}
@@ -127,11 +127,11 @@ export function PrListControls({
             />
           }
         >
-          <RefreshCw aria-hidden ref={refreshing ? spin : undefined} className="size-3.5" />
+          <RefreshCw aria-hidden ref={refreshing ? spin : undefined} className="size-icon-row" />
         </Hint>
       </div>
       {active && (
-        <div className="mt-1 flex items-center justify-between text-caption text-muted-foreground">
+        <div className="mt-1 flex items-center justify-between text-meta text-muted-foreground">
           <span role="status">
             {shown} of {total} · {sortLabels[options.sort]}
             {options.filter !== "all" ? ` · ${filterLabels[options.filter]}` : ""}
@@ -147,12 +147,12 @@ export function PrListControls({
               />
             }
           >
-            <X aria-hidden className="size-3.5" />
+            <X aria-hidden className="size-icon-row" />
           </Hint>
         </div>
       )}
       {error && (
-        <p role="status" className="text-caption text-muted-foreground">
+        <p role="status" className="text-meta text-muted-foreground">
           Refresh failed. Showing last known list.
         </p>
       )}

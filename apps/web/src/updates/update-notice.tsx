@@ -91,12 +91,12 @@ export function UpdateNotice() {
     >
       {targetTag ? (
         progress?.stage === "failed" ? (
-          <CircleAlert aria-hidden className="size-4 shrink-0 text-destructive" />
+          <CircleAlert aria-hidden className="size-icon-row shrink-0 text-destructive" />
         ) : (
-          <Clock aria-hidden className="size-4 shrink-0 text-primary" />
+          <Clock aria-hidden className="size-icon-row shrink-0 text-primary" />
         )
       ) : (
-        <ArrowUpCircle aria-hidden className="size-4 shrink-0 text-primary" />
+        <ArrowUpCircle aria-hidden className="size-icon-row shrink-0 text-primary" />
       )}
       <p className="min-w-0 basis-48 flex-1">
         {targetTag ? (

@@ -100,7 +100,7 @@ export function PrChip({ pr, threadId }: { pr: FeatureCardPr; threadId?: ThreadI
     </>
   );
   const chip =
-    "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1 font-mono text-caption leading-5";
+    "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1 font-mono text-meta leading-5";
   const live = cn(
     chip,
     "text-foreground no-underline outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
@@ -167,7 +167,7 @@ function StageLine({ card }: { card: FeatureCard }) {
     <ol
       aria-label={`Stage: ${STATION_LABELS[card.station]}`}
       data-testid="feature-card-stations"
-      className="flex items-center gap-1 text-caption"
+      className="flex items-center gap-1 text-meta"
     >
       {FEATURE_STATIONS.map((station, i) => {
         const count = card.workers.filter((worker) => worker.station === station).length;
@@ -353,7 +353,7 @@ export function FeatureCardView({
           <span
             data-testid="feature-card-stage"
             title={card.stage.note}
-            className="max-w-40 truncate rounded-sm bg-muted px-1 text-caption text-muted-foreground"
+            className="max-w-40 truncate rounded-sm bg-muted px-1 text-meta text-muted-foreground"
           >
             {card.stage.current}
           </span>
@@ -386,7 +386,7 @@ export function FeatureCardView({
         <ul data-testid="feature-card-overlap" className="flex flex-col gap-0.5 text-meta">
           {overlaps.map(({ key, a, b, files }) => (
             <li key={key} className="flex min-w-0 items-center gap-1 text-status-needs">
-              <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+              <CircleAlert aria-hidden className="size-icon-row shrink-0" />
               <WorkerLink threadId={a.threadId} className="text-status-needs">
                 {a.title}
               </WorkerLink>
@@ -402,7 +402,7 @@ export function FeatureCardView({
               key={`${worker.threadId} ${other}`}
               className="flex min-w-0 items-center gap-1 text-status-needs"
             >
-              <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+              <CircleAlert aria-hidden className="size-icon-row shrink-0" />
               <WorkerLink threadId={worker.threadId} className="text-status-needs">
                 {worker.title}
               </WorkerLink>
@@ -436,7 +436,7 @@ export function StreamLineView({ line, at }: { line: StreamLine; at?: number | u
       data-kind={line.kind}
       className="flex min-w-0 items-center gap-1.5 py-0.5 text-meta"
     >
-      <tone.icon aria-hidden className={cn("size-3.5 shrink-0", tone.className)} />
+      <tone.icon aria-hidden className={cn("size-icon-row shrink-0", tone.className)} />
       {line.feature !== "" && <span className="text-muted-foreground">{line.feature}</span>}
       {line.threadId !== undefined && (
         <WorkerLink threadId={line.threadId}>{line.title ?? "worker"}</WorkerLink>

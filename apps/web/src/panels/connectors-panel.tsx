@@ -383,7 +383,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
                   <ChevronRight
                     aria-hidden
                     className={cn(
-                      "size-3.5 shrink-0 motion-safe:transition-transform",
+                      "size-icon-chip shrink-0 motion-safe:transition-transform",
                       showSignedOut && "rotate-90",
                     )}
                   />
@@ -630,9 +630,9 @@ function ConnectorRow({
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {waiting ? (
-            <Spinner aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <Spinner aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           ) : (
-            <state.icon aria-hidden className={cn("size-3.5 shrink-0", state.tone)} />
+            <state.icon aria-hidden className={cn("size-icon-row shrink-0", state.tone)} />
           )}
           <span className="min-w-0 truncate font-mono">{connector.name}</span>
           {scopeBadge}
@@ -682,7 +682,7 @@ function ConnectorRow({
       className="flex flex-col gap-1 px-3 py-2 text-meta"
     >
       <div className="flex items-center gap-2">
-        <state.icon aria-hidden className={cn("size-3.5 shrink-0", state.tone)} />
+        <state.icon aria-hidden className={cn("size-icon-row shrink-0", state.tone)} />
         <span className="min-w-0 truncate font-mono">{connector.name}</span>
         {connector.builtIn && <Badge variant="secondary">built-in</Badge>}
         {scopeBadge}

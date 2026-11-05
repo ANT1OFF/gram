@@ -96,7 +96,7 @@ export function PrRowInformation({
           <GlyphIcon
             aria-hidden
             className={cn(
-              "size-3.5",
+              "size-icon-row",
               PR_GLYPH_DISPLAY[glyph.kind].tone,
               statusCached(pr) && "opacity-60",
             )}
@@ -106,19 +106,19 @@ export function PrRowInformation({
           {pr.title || ref}
         </span>
       </span>
-      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-5 text-caption text-muted-foreground">
+      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-5 text-meta text-muted-foreground">
         <span className="min-w-0 flex-1 truncate">
           <span>{grouped ? `#${pr.number}` : ref}</span>
           {author && (
             <span aria-label={`Author ${pr.author}${pr.isBot ? " (bot)" : ""}`}>
               {" "}
-              · {pr.isBot === true && <Bot aria-hidden className="mr-0.5 inline size-3.5" />}
+              · {pr.isBot === true && <Bot aria-hidden className="mr-0.5 inline size-icon-row" />}
               {author}
             </span>
           )}
         </span>
       </span>
-      <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 pl-5 text-caption text-muted-foreground">
+      <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 pl-5 text-meta text-muted-foreground">
         <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
           {pr.labels?.slice(0, 1).map((label) => (
             <span key={label} className="max-w-24 truncate rounded-sm bg-muted px-1" title={label}>
@@ -143,7 +143,7 @@ export function PrRowInformation({
               />
             }
           >
-            <Clock3 aria-hidden className="size-3.5" />
+            <Clock3 aria-hidden className="size-icon-row" />
             {formatRelative(activity)}
           </Hint>
         )}
@@ -162,7 +162,7 @@ function PrDiffStats({ pr }: { pr: PrInformation }) {
         <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1 font-mono tabular-nums" />
       }
     >
-      {cached && <Clock3 aria-hidden className="size-3.5" />}
+      {cached && <Clock3 aria-hidden className="size-icon-row" />}
       {pr.additions !== undefined && (
         <span
           aria-label={`${pr.additions} lines added${cached ? " (cached)" : ""}`}
@@ -190,9 +190,9 @@ export function PrInformationDetails({ pr }: { pr: PrInformation }) {
       {pr.author && (
         <p className="flex items-center gap-1 break-all">
           {pr.isBot ? (
-            <Bot aria-hidden className="size-3.5 shrink-0" />
+            <Bot aria-hidden className="size-icon-row shrink-0" />
           ) : (
-            <UserRound aria-hidden className="size-3.5 shrink-0" />
+            <UserRound aria-hidden className="size-icon-row shrink-0" />
           )}
           {pr.author}
           {pr.isBot && " · Bot"}

@@ -256,7 +256,7 @@ export function RecapCard({
           data-testid="recap-pending"
           className="my-2 flex items-center gap-2 px-3.5 py-1 text-meta text-muted-foreground"
         >
-          <History aria-hidden className="size-3.5 text-primary" />
+          <History aria-hidden className="size-icon-row text-primary" />
           <Shimmer>Where you left off…</Shimmer>
         </div>
       )}
@@ -281,7 +281,7 @@ export function RecapCard({
             className="my-2 max-h-[calc(var(--pane-height,100vh)*0.4)] overflow-y-auto rounded-(--radius-md) border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-reading"
           >
             <div className="flex items-center gap-2 text-meta text-muted-foreground">
-              <History aria-hidden className="size-3.5 shrink-0 text-primary" />
+              <History aria-hidden className="size-icon-row shrink-0 text-primary" />
               <span className="font-medium text-foreground">Where you left off</span>
               <span className="min-w-0 truncate">· Last active {agoText(shown.lastActiveAt)}</span>
               {progress !== undefined && progress.total > 0 && (
@@ -300,7 +300,7 @@ export function RecapCard({
                   />
                 }
               >
-                <X aria-hidden className="size-3.5" />
+                <X aria-hidden className="size-icon-row" />
               </Hint>
             </div>
             <RecapText
@@ -472,7 +472,7 @@ function NextStep({ threadId, next }: { threadId: ThreadId; next: string }) {
           />
         }
       >
-        <TextCursorInput aria-hidden className="size-3.5" />
+        <TextCursorInput aria-hidden className="size-icon-row" />
       </Hint>
     </>
   );
@@ -522,9 +522,9 @@ function WrapUpBox({
     >
       <div className="flex items-center gap-2 text-meta text-muted-foreground">
         {leftOff === undefined ? (
-          <ListChecks aria-hidden className="size-3.5 shrink-0 text-primary" />
+          <ListChecks aria-hidden className="size-icon-row shrink-0 text-primary" />
         ) : (
-          <History aria-hidden className="size-3.5 shrink-0 text-primary" />
+          <History aria-hidden className="size-icon-row shrink-0 text-primary" />
         )}
         <span className="font-medium text-foreground">
           {leftOff === undefined ? "Recap" : "Where you left off"}
@@ -543,7 +543,7 @@ function WrapUpBox({
             />
           }
         >
-          <X aria-hidden className="size-3.5" />
+          <X aria-hidden className="size-icon-row" />
         </Hint>
       </div>
       <p data-testid="wrap-up-recap" className="mt-1.5 leading-relaxed text-foreground/90">

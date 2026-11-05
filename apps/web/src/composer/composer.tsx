@@ -936,8 +936,8 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
       .catch((error: unknown) => flash(`Couldn't switch mode: ${errorMessage(error)}`));
   };
   // The toolbar is chrome: its glyphs are 16 px, as the title bar's are.
-  const modeIcon = <ModeIcon aria-hidden className="size-4" />;
-  const effortIcon = <EffortGauge variant={model?.variant} className="size-4" />;
+  const modeIcon = <ModeIcon aria-hidden className="size-icon-bar" />;
+  const effortIcon = <EffortGauge variant={model?.variant} className="size-icon-bar" />;
 
   // One order everywhere, the orchestrator's chat, a solo thread's and `/new` alike: model ·
   // effort · mode · speed, then "…". A control that doesn't apply keeps its slot, greyed, rather
@@ -945,7 +945,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   // Opus", "Extra high", "Plan"); short of it, in a compact word ("Opus", "X-high"); then the
   // pickers take a row of their own; and only at the narrowest do they give up their words for
   // glyphs named in their tooltips, then fold into "…" from the right. Speed says its value in a
-  // word too ("Default", "Standard", "Fast"), its category on hover, as the others do.
+  // word too ("CLI default", "Standard", "Fast"), its category on hover, as the others do.
   const hasEffort = efforts.length > 0;
   const speedApplies = model !== undefined && (model.agent === "claude" || model.agent === "codex");
   const blocks = useMemo(
@@ -1023,7 +1023,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
         onArrived={() => useSlabHandoff.getState().done()}
         data-surface="composer"
         data-dragging={dragging ? "true" : undefined}
-        className={cn(SLAB, "group/composer thread-column")}
+        className={cn(SLAB, "group/composer @container/composer thread-column")}
         onDragOver={(event) => event.preventDefault()}
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}
@@ -1165,14 +1165,14 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               focused={focused}
               value={model?.model}
               options={modelChoices}
-              icon={model && <AgentIcon agent={model.agent} className="size-4" />}
+              icon={model && <AgentIcon agent={model.agent} className="size-icon-bar" />}
               iconLabel={model && agentLabel(model.agent)}
               warning={modelWarning}
               onOpen={refreshModels}
               labelled={labelOf("model")}
               search={
                 model && {
-                  rowIcon: <AgentIcon agent={model.agent} className="size-3.5" />,
+                  rowIcon: <AgentIcon agent={model.agent} className="size-icon-row" />,
                   favourite: isFavourite,
                   onToggleFavourite: (value) =>
                     useModelFavourites.getState().toggle(model.agent, value),
@@ -1242,7 +1242,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                   label="Speed"
                   reason={`${model ? agentLabel(model.agent) : "This agent"} has one speed`}
                 >
-                  <SpeedGlyph speed={undefined} className="size-4" />
+                  <SpeedGlyph speed={undefined} className="size-icon-bar" />
                 </UnavailableSlot>
               )}
             </ToolbarBlock>
@@ -1289,14 +1289,16 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
             {/* Stop's key, beside it while you're in the composer, as it is in its tooltip. Its
-                room is kept, so focusing the composer doesn't shift the row. */}
+                room is kept, so focusing the composer doesn't shift the row. In a composer under
+                18 rem it goes, by width alone (never the toolbar's own fold, which measures it), so
+                a wide key such as "Ctrl+." can't push Stop out of the box; the tooltip keeps it. */}
             {action === "stop" && stopHint && (
               <kbd
                 aria-hidden
                 data-testid="stop-key"
                 className={cn(
                   KBD,
-                  "text-muted-foreground opacity-0 transition-opacity group-focus-within/composer:opacity-100",
+                  "text-muted-foreground opacity-0 transition-opacity group-focus-within/composer:opacity-100 @max-[18rem]/composer:hidden",
                 )}
               >
                 {stopHint}
@@ -1343,7 +1345,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                   </Hint>
                 </PressScale>
               </ContextMenuTrigger>
-              <ContextMenuContent data-testid="send-menu" className="[&_svg]:size-3.5">
+              <ContextMenuContent data-testid="send-menu" className="[&_svg]:size-icon-row">
                 <ContextMenuItem disabled={!canSend} onClick={() => void send()}>
                   {busy ? <ListPlus aria-hidden /> : <ArrowUp aria-hidden />}
                   {busy ? "Queue" : "Send"}
@@ -1386,11 +1388,11 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
 function SendGlyph({ action }: { action: Exclude<SendAction, "stop"> }) {
   switch (action) {
     case "queue":
-      return <ListPlus aria-hidden className="size-4" />;
+      return <ListPlus aria-hidden className="size-icon-row" />;
     case "steer":
-      return <Send aria-hidden className="size-4" />;
+      return <Send aria-hidden className="size-icon-row" />;
     case "send":
-      return <ArrowUp aria-hidden className="size-4" strokeWidth={2.25} />;
+      return <ArrowUp aria-hidden className="size-icon-row" strokeWidth={2.25} />;
   }
 }
 

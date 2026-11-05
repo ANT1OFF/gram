@@ -45,32 +45,42 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   workspace, a worker, a solo thread, a PR, a Done item), takes two lines (`ROW`, `ROW_STATUS`):
   its mark and title, with a count, time or mark at the right edge, then one muted status line
   with its badges (a worker's PR chips) at the right edge only while they fit beside the words:
-  the status wins, and the row's hover names the PR. What needs you is listed first, and Done
+  the status wins, and the row's hover names the PR. Both lines are 20 px (48 px a row with its
+  padding). A long title is cut in the middle (`MiddleTruncate`), so the ending that tells two
+  similar titles apart stays in view. What needs you is listed first, and Done
   shows five rows before the rest fold behind "N more". Marks centre on one column and titles
   start on one edge, the pill, Search, section titles and Open History included.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings, 16 px between sections and at a pane's edges.
 - **Settings descriptions** (a setting's or a group's line under its name) are `text-body` in
   `text-description` (`--fg-description`, a step nearer `fg` than `fg-muted`), no wider than
-  `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`).
-- **Titles and metadata:** a title at 13 to 14 px in `fg` (`text-body-strong` or `text-reading`),
-  its metadata (where it is from, its state, a time or a count) at 12 px in `fg-muted`
-  (`text-meta`), never smaller. A title wraps to two lines before it is cut short, except in the sidebar's two-line rows, where
-  it takes one and its hover says the whole of it. Metadata a
-  heading or the whole list already says is left out: no repo on each row when every row has the
-  same one, no workspace under its own heading.
+  `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`). A row takes
+  16 px above and below. Its main control (a segment, a field, a switch) leads; a row of small
+  secondary toggles beside it (Sidebar sections' checkboxes) is `text-body`, muted until checked.
+- **Titles and metadata:** a title at 14 to 15 px in `fg` (`text-body-strong` or `text-reading`),
+  its metadata (where it is from, its state, a time, a chip's word) at 13 px in `fg-muted`
+  (`text-meta`), never smaller. `text-caption` is only for what is never read for meaning: a key
+  cap, a count badge, a footer's key legend. A title wraps to two lines before it is cut short,
+  except in the sidebar's two-line rows, where it takes one, cut in the middle, and its hover says
+  the whole of it. Metadata a heading or the whole list already says is left out: no repo on each
+  row when every row has the same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.
 - **The reading column** (`thread-column`) is as wide as Settings → Appearance → Reading says and
   leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). Memory's rendered
-  files use it too; Settings' pages take `settings-column` (60 rem, leaning `--settings-lean`).
+  files and its draft review (Dreams) use it too, the review widening to `--settings-column-wide`
+  while a diff is open; Settings' pages take `settings-column` (60 rem, leaning `--settings-lean`).
   The sidebar keeps the width the user gives it, and its edge shows a grip while the pointer is
   over the column.
-- **Icons: Lucide** at a 1.75 stroke, never as decoration and never emoji. Two sizes: 16 px in
-  chrome (the title bar, the sidebar's header, the panel's tabs and the composer's toolbar) and
-  14 px inline (rows, chips, cards, menus and docks). A disclosure chevron beside a glyph or a
-  value, and a menu's check, are inline glyphs (14 px) wherever they sit.
-  - An icon button is at least 28 px square (`icon-sm` for chrome, `icon-xs` inline), with a
+- **Icons: Lucide** at one 1.75 stroke (`--icon-stroke`), never as decoration and never emoji.
+  One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
+  sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
+  menus, docks, buttons, the panel's tabs and its action, which give way to glyphs by width), and `size-icon-chip` 14 px beside meta text (a chip,
+  a badge, a status line). A disclosure chevron is 14 px (`size-icon-chip`) wherever it sits:
+  the composer's toolbar counts it at that width while it isn't drawn. A glyph beside a line of
+  text is centred on that line (`h-lh` on its box, or `mt-*` to its first line when the text
+  wraps), never on the block.
+  - An icon button is at least 28 px square (`icon-sm` for a toolbar, `icon-xs` in a row), with a
     background on hover and focus. Its tooltip names it and its shortcut at once, and its
     accessible name says the same; a `title` on an icon `Button` becomes that tooltip. Its hover
     and open fill is `bg-accent` (`surface-hover`), the row hover's, so the target shows in dark.
@@ -82,6 +92,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`.
+- **A list row's trailing slot is its status, never an action:** History says what happened
+  ("Merged", "Stopped", "Imported"), and what Enter does ("Open ⏎", "Resume ⏎") shows only on the
+  cursor row, ahead of the status so the status column stays aligned.
 - **One selection and focus style.**
   - The row the pointer or the arrow keys are on, in every menu, list, the palette and History,
     takes `row-cursor`: a fill and an accent bar at its start.
@@ -101,7 +114,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   what each costs, and a pick is confirmed in words for a moment. Every target on the row is 32 px
   tall, and words keep 48 px clear of Send and Stop. Stop is a solid pill reading "Stop" beside
   its square, the square inside the running ring, right-aligned where Send sits; its key shows
-  beside it while the composer has focus.
+  beside it while the composer has focus. A default says whose it is ("Model default" for effort,
+  "CLI default" for speed), never a bare "Default".
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
   the instant tooltip (`Hint`), never a native title, with the shortcut where there is one.
 - **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title, then
@@ -120,15 +134,20 @@ selection are in [globals.css](apps/web/src/styles/globals.css) and
 **Type scale.** Seven steps, each with its line height; three carry a default weight that a
 `font-*` class can still override.
 
-| Class              | Size / line | Weight   | For                                                          |
-| ------------------ | ----------- | -------- | ------------------------------------------------------------ |
-| `text-caption`     | 11 / 16 px  | inherits | Counts, badges, key caps. Never prose or a heading.          |
-| `text-meta`        | 12 / 16 px  | inherits | Metadata, help text, chips, a row's second line.             |
-| `text-body`        | 13 / 20 px  | inherits | UI text: rows, menus, buttons, labels, settings.             |
-| `text-body-strong` | 13 / 20 px  | 500      | A row's or card's title; an emphasised label.                |
-| `text-reading`     | 14 / 20 px  | inherits | Content: messages, descriptions, inputs, a dialog's body.    |
-| `text-title`       | 16 / 24 px  | 600      | Dialog, pane and section titles.                             |
-| `text-heading`     | 20 / 28 px  | 600      | A page's heading (a Settings page, an empty state, Welcome). |
+| Class              | Size / line | Weight   | For                                                               |
+| ------------------ | ----------- | -------- | ----------------------------------------------------------------- |
+| `text-caption`     | 11 / 16 px  | inherits | Key caps, count badges, a key legend. Never meaning or a heading. |
+| `text-meta`        | 13 / 20 px  | inherits | Metadata, timestamps, chips, help, a row's second line.           |
+| `text-body`        | 14 / 20 px  | inherits | UI text: rows, menus, buttons, labels, settings.                  |
+| `text-body-strong` | 14 / 20 px  | 500      | A row's or card's title; an emphasised label.                     |
+| `text-reading`     | 15 / 24 px  | inherits | Content: messages, descriptions, inputs, a dialog's body.         |
+| `text-title`       | 17 / 24 px  | 600      | Dialog, pane and section titles.                                  |
+| `text-heading`     | 22 / 28 px  | 600      | A page's heading (a Settings page, an empty state, Welcome).      |
+
+Every step but body-strong is a size of its own, every line height is on the 4 px grid, and meta
+sits two pixels above caption, so incidental text never passes for metadata. `fg-muted` is a third
+of the way from the text to the palette's muted seed: well over AA in every palette, still a clear
+step below `fg`.
 
 Markdown in the transcript keeps its own scale, sized by Settings → Appearance → Reading.
 

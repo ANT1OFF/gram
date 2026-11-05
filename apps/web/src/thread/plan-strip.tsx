@@ -166,7 +166,7 @@ function StepPr({
         state === "merged" ? "text-merged" : "text-muted-foreground",
       )}
     >
-      <Icon aria-hidden className="size-3.5" />#{step.pr.number}
+      <Icon aria-hidden className="size-icon-row" />#{step.pr.number}
     </span>
   );
 }
@@ -184,9 +184,9 @@ function TurnTodos({ items }: { items: readonly PlanItem[] }) {
           <li key={`${index}-${item.content}`} className="flex items-center gap-1.5">
             <Swap swapKey={display.mark === undefined ? item.status : "mark"} className="shrink-0">
               {display.mark === undefined ? (
-                <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
+                <display.icon aria-hidden className={cn("size-icon-row", display.tone)} />
               ) : (
-                <StatusMark phase={display.mark} className={cn("size-3", display.tone)} />
+                <StatusMark phase={display.mark} className={cn("size-icon-chip", display.tone)} />
               )}
             </Swap>
             <span className={cn(item.status === "completed" && "line-through")}>
@@ -195,8 +195,8 @@ function TurnTodos({ items }: { items: readonly PlanItem[] }) {
           </li>
         );
       })}
-      <li className="flex items-center gap-1 text-caption text-muted-foreground/70">
-        <Bot aria-hidden className="size-3.5" /> the agent's todo list for this turn
+      <li className="flex items-center gap-1 text-meta text-muted-foreground/70">
+        <Bot aria-hidden className="size-icon-row" /> the agent's todo list for this turn
       </li>
     </ul>
   );
@@ -247,7 +247,7 @@ function StepRow({
         >
           <Swap swapKey={STEP_MARK[step.status] === undefined ? step.status : "mark"}>
             {STEP_MARK[step.status] === undefined ? (
-              <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
+              <display.icon aria-hidden className={cn("size-icon-row", display.tone)} />
             ) : (
               <StatusMark
                 phase={STEP_MARK[step.status]!}
@@ -295,7 +295,7 @@ function StepRow({
               onClick={() => setEditing(true)}
               className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
             >
-              <Pencil aria-hidden className="size-3.5" />
+              <Pencil aria-hidden className="size-icon-row" />
             </button>
             {!first && (
               <button
@@ -304,7 +304,7 @@ function StepRow({
                 onClick={() => onEdit((edit) => moveStep(edit, step.id, -1))}
                 className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
               >
-                <ArrowUp aria-hidden className="size-3.5" />
+                <ArrowUp aria-hidden className="size-icon-row" />
               </button>
             )}
             {!last && (
@@ -314,7 +314,7 @@ function StepRow({
                 onClick={() => onEdit((edit) => moveStep(edit, step.id, 1))}
                 className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
               >
-                <ArrowDown aria-hidden className="size-3.5" />
+                <ArrowDown aria-hidden className="size-icon-row" />
               </button>
             )}
             <button
@@ -323,7 +323,7 @@ function StepRow({
               onClick={() => onEdit((edit) => withStep(edit, step.id, () => undefined))}
               className="rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
             >
-              <X aria-hidden className="size-3.5" />
+              <X aria-hidden className="size-icon-row" />
             </button>
           </span>
         )}
@@ -337,11 +337,11 @@ function StepRow({
             }
             className="mt-0.5 flex shrink-0 items-center gap-0.5 text-muted-foreground/70 hover:text-foreground"
           >
-            <source.icon aria-hidden className="size-3.5" />
+            <source.icon aria-hidden className="size-icon-row" />
           </button>
         ) : (
           <span title={source.label} className="mt-0.5 shrink-0 text-muted-foreground/70">
-            <source.icon aria-hidden className="size-3.5" />
+            <source.icon aria-hidden className="size-icon-row" />
             <span className="sr-only">{source.label}</span>
           </span>
         )}
@@ -380,7 +380,7 @@ function FooterAction({
         />
       }
     >
-      <Icon aria-hidden ref={spinning ? spin : undefined} className="size-3.5" />
+      <Icon aria-hidden ref={spinning ? spin : undefined} className="size-icon-row" />
     </Hint>
   );
 }
@@ -490,7 +490,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
             aria-hidden
             data-testid="plan-strip-glyph"
             data-glyph="failed"
-            className={cn("size-3.5 shrink-0", STATUS_DISPLAY.error.tone)}
+            className={cn("size-icon-row shrink-0", STATUS_DISPLAY.error.tone)}
           />
         ) : glyph === "stopped" ? (
           <span
@@ -534,7 +534,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
         <ChevronDown
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+            "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
             (progress.total === 0 || state?.count === false) && "ml-auto",
             open && "rotate-180",
           )}
@@ -578,7 +578,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
           </ol>
           {adding && (
             <div className="mt-1 flex items-center gap-2">
-              <Circle aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <Circle aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
               <TextEdit
                 value=""
                 label="New step"
@@ -599,15 +599,15 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
               />
             </div>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-muted-foreground">
             <span className="flex min-w-0 items-center gap-1">
               {plan === undefined || fromTodo ? (
                 <>
-                  <Bot aria-hidden className="size-3.5" /> The agent's todo list
+                  <Bot aria-hidden className="size-icon-row" /> The agent's todo list
                 </>
               ) : (
                 <>
-                  <Sparkles aria-hidden className="size-3.5" />
+                  <Sparkles aria-hidden className="size-icon-row" />
                   {updatedText(plan.updatedBy, agoText(plan.updatedAt, now))}
                 </>
               )}

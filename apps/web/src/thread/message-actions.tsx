@@ -32,7 +32,7 @@ const BUSY: ReadonlySet<ThreadStatus> = new Set([
 const ACTION =
   "rounded-(--radius-sm) text-muted-foreground aria-disabled:opacity-50 [@media(pointer:coarse)]:size-9";
 const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
 
 export const messageText = (message: GramUIMessage): string =>
   message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n");
@@ -193,7 +193,7 @@ function WaitAction({ threadId, message }: { threadId: ThreadId; message: GramUI
         />
       }
     >
-      <Inbox aria-hidden className={cn("size-3.5", kept && "text-status-needs-mark")} />
+      <Inbox aria-hidden className={cn("size-icon-row", kept && "text-status-needs-mark")} />
     </Hint>
   );
 }
@@ -222,9 +222,9 @@ function CopyAction({
     <>
       <Swap swapKey={copied ? "copied" : "copy"}>
         {copied ? (
-          <DrawnCheck className="size-3.5 text-success" />
+          <DrawnCheck className="size-icon-row text-success" />
         ) : (
-          <Copy aria-hidden className="size-3.5" />
+          <Copy aria-hidden className="size-icon-row" />
         )}
       </Swap>
       <span aria-live="polite" className="sr-only">
@@ -357,7 +357,7 @@ function RewindAction({ threadId, message }: { threadId: ThreadId; message: Gram
           />
         }
       >
-        <Icon aria-hidden className="size-3.5" />
+        <Icon aria-hidden className="size-icon-row" />
       </Hint>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align={isUser ? "end" : "start"} sideOffset={4}>
@@ -451,7 +451,7 @@ function ForkActions({
           />
         }
       >
-        <GitFork aria-hidden className="size-3.5" />
+        <GitFork aria-hidden className="size-icon-row" />
       </Hint>
       <MoreActions>
         {turnEnd && <TurnCopyAction threadId={threadId} message={message} />}
@@ -463,7 +463,7 @@ function ForkActions({
           onClick={() => setDialog({})}
           className={MENU_ITEM}
         >
-          <FolderGit2 aria-hidden className="size-3.5" />
+          <FolderGit2 aria-hidden className="size-icon-row" />
           <span>
             <span className="block">Fork into worktree…</span>
             <span className="block text-meta text-muted-foreground">
@@ -507,7 +507,7 @@ function MoreActions({ children }: { children: ReactNode }) {
           />
         }
       >
-        <Ellipsis aria-hidden className="size-3.5" />
+        <Ellipsis aria-hidden className="size-icon-row" />
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="start" sideOffset={4} className="isolate z-50 outline-none">

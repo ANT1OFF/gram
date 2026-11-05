@@ -42,7 +42,7 @@ export function PendingRestart({ threadId }: { threadId: ThreadId }) {
         />
       }
     >
-      <RotateCw aria-hidden className="size-3.5" />
+      <RotateCw aria-hidden className="size-icon-row" />
     </Hint>
   );
 }

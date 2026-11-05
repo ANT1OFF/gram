@@ -369,7 +369,7 @@ export function AiHelpersSection() {
             <div className="flex flex-col gap-1.5" data-testid="helper-usage">
               {source === "gateway" && pause !== undefined && (
                 <p role="status" className="flex items-start gap-1.5 text-meta text-warning">
-                  <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+                  <TriangleAlert aria-hidden className="mt-px size-icon-row shrink-0" />
                   {pause}
                 </p>
               )}

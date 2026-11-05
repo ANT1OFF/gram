@@ -72,7 +72,7 @@ export function TurnFilesChip({
             />
           }
         >
-          <FileDiff aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+          <FileDiff aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           {files(count)} changed
         </Hint>
         <span
@@ -88,7 +88,7 @@ export function TurnFilesChip({
               data-testid="turn-undone"
               className="inline-flex items-center gap-1 px-2 text-meta text-muted-foreground"
             >
-              <Undo2 aria-hidden className="size-3.5" />
+              <Undo2 aria-hidden className="size-icon-row" />
               {undone.failed === undefined ? "Undone" : "Undo failed"} at {formatStamp(undone.at)}
             </span>
           ) : confirming ? (

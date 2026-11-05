@@ -93,7 +93,7 @@ export function WorkerMenuItems({
             })
           }
         >
-          <GitMerge aria-hidden className="size-3.5" />
+          <GitMerge aria-hidden className="size-icon-row" />
           Clean up worktree…
         </ContextMenuItem>
       )}

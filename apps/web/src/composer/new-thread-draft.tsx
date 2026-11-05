@@ -386,7 +386,7 @@ function ConfiguredNewThreadDraft() {
         labelled={labelOf("mode")}
         icon={
           <Swap swapKey={mode}>
-            <ModeIcon aria-hidden className="size-4" />
+            <ModeIcon aria-hidden className="size-icon-bar" />
           </Swap>
         }
         confirm={modeConfirm.landed}
@@ -657,7 +657,7 @@ function ConfiguredNewThreadDraft() {
                   key={step}
                   className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-muted-foreground"
                 >
-                  {stage === "creating" && <Spinner aria-hidden className="size-3" />}
+                  {stage === "creating" && <Spinner aria-hidden className="size-icon-chip" />}
                   {step}
                 </li>
               ))}

@@ -241,8 +241,9 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     "surface-3": surface3,
     "surface-hover": surfaceHover,
     fg,
-    // Metadata and second lines: well clear of the floor, still a step below the text.
-    "fg-muted": onDiff(text(mix(s.text, s.muted, contrast === "more" ? 0.25 : 0.4))),
+    // Metadata and second lines: well clear of the floor, still a step below the text. A third of
+    // the way to the muted seed, so a row's status reads at a glance beside its title.
+    "fg-muted": onDiff(text(mix(s.text, s.muted, contrast === "more" ? 0.2 : 0.32))),
     "fg-subtle": fgSubtle,
     // Card and control edges: visible against the page in both modes, still a hairline.
     "border-subtle": mix(surface2, s.text, 0.14),

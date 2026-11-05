@@ -37,7 +37,7 @@ export function ControlDetails({
       >
         <ChevronRight
           aria-hidden
-          className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-icon-chip shrink-0 transition-transform group-data-[panel-open]:rotate-90"
         />
         {label}
       </CollapsibleTrigger>

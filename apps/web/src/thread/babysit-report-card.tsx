@@ -34,13 +34,13 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
       className="my-2 flex flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3 text-reading"
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <GitPullRequest aria-hidden className="size-4 text-success" />
+        <GitPullRequest aria-hidden className="size-icon-row text-success" />
         <OutboundLink
           href={report.url}
           className="flex items-center gap-1 font-medium text-link underline-offset-4 hover:underline"
         >
           #{report.number} ready to merge
-          <ExternalLink aria-hidden className="size-3.5" />
+          <ExternalLink aria-hidden className="size-icon-row" />
         </OutboundLink>
         <span className="font-mono text-meta text-muted-foreground">
           {report.headRefOid.slice(0, 7)}
@@ -49,7 +49,7 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta">
         <VerdictLabel verdict={report.verdict} />
         <span className={cn("flex items-center gap-1", checks.tone)}>
-          <checks.icon aria-hidden className="size-3.5" />
+          <checks.icon aria-hidden className="size-icon-row" />
           {checks.label}
         </span>
         <span className="text-muted-foreground">
@@ -61,7 +61,7 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
       </p>
       <FindingList label="Declined" findings={report.declined} tone="text-muted-foreground" />
       <p data-testid="babysit-not-merged" className="flex items-center gap-1 text-meta font-medium">
-        <Hand aria-hidden className="size-3.5" />
+        <Hand aria-hidden className="size-icon-row" />
         Not merged: merging is up to you
       </p>
     </article>

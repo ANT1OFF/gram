@@ -41,4 +41,15 @@ describe("looks", () => {
       }
     }
   });
+
+  it("keeps each step apart from the next, and metadata a step above caption", () => {
+    for (const id of LOOK_IDS) {
+      const { type } = LOOKS[id];
+      // Body-strong is body at a heavier weight; every other step is a size of its own.
+      const sizes = TYPE_STEPS.filter((step) => step !== "body-strong").map((s) => type[s].size);
+      for (let i = 1; i < sizes.length; i++) expect(sizes[i]).toBeGreaterThan(sizes[i - 1]!);
+      expect(type.meta.size - type.caption.size).toBeGreaterThanOrEqual(2);
+      expect(type.title.size - type.reading.size).toBeGreaterThanOrEqual(2);
+    }
+  });
 });

@@ -524,7 +524,7 @@ export function ThreadView({
               data-testid="status-icon"
               data-working={display.working}
               data-running={display.running}
-              className={cn("size-4", display.tone)}
+              className={cn("size-icon-row", display.tone)}
             />
           </Swap>
           <RunningCount count={display.running} />
@@ -656,7 +656,7 @@ function ForkedFrom({
   const className = cn("flex shrink-0 items-center text-muted-foreground", hideClass);
   const body = (
     <>
-      <GitFork aria-hidden className="size-3.5" />
+      <GitFork aria-hidden className="size-icon-row" />
       <span className="sr-only">{label}</span>
     </>
   );

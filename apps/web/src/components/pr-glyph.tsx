@@ -181,12 +181,12 @@ export function PrGlyphCardEntry({
       className="flex w-full min-w-0 flex-col gap-0.5 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="flex w-full min-w-0 items-center gap-1.5">
-        <PrMarkIcon group="state" mark={marks.state} className="size-3.5" />
+        <PrMarkIcon group="state" mark={marks.state} className="size-icon-row" />
         <span className="min-w-0 truncate text-body font-medium">
           {entry.title ?? `#${entry.number}`}
         </span>
       </span>
-      <span className="flex w-full min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
+      <span className="flex w-full min-w-0 items-center gap-1.5 text-meta text-muted-foreground">
         {/* Failing CI its worker is fixing is the worker's to act on: the working tone, not red. */}
         <span
           className={cn(
@@ -218,7 +218,7 @@ export function PrGlyphCardEntry({
       </span>
       <PrMarkLines marks={marks} className="mt-0.5" />
       {notes.map((note) => (
-        <span key={note} className="w-full text-caption text-muted-foreground">
+        <span key={note} className="w-full text-meta text-muted-foreground">
           {note}
         </span>
       ))}

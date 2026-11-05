@@ -319,7 +319,7 @@ export function InboxDetail({
         <kind.icon
           aria-hidden
           className={cn(
-            "mt-0.5 size-4 shrink-0",
+            "mt-0.5 size-icon-row shrink-0",
             item.kind === "failure" ? "text-destructive" : "text-status-needs-mark",
           )}
         />

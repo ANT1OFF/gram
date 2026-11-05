@@ -57,7 +57,7 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      className="w-56 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex @max-2xl/settings:w-auto @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible @max-2xl/settings:border-r-0 @max-2xl/settings:border-b @max-2xl/settings:py-2 @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1"
+      className="w-60 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex @max-2xl/settings:w-auto @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible @max-2xl/settings:border-r-0 @max-2xl/settings:border-b @max-2xl/settings:py-2 @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1"
     >
       <h1
         ref={headingRef}
@@ -82,7 +82,7 @@ export function SettingsNav({
                 onClick={onNavigate}
                 className="flex items-center gap-2 rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground aria-[current=true]:text-foreground"
               >
-                <Icon aria-hidden className="size-3.5 shrink-0" />
+                <Icon aria-hidden className="size-icon-row shrink-0" />
                 {group.label}
                 {badges?.[group.id] !== undefined && (
                   <span className="ms-auto flex items-center">{badges[group.id]}</span>

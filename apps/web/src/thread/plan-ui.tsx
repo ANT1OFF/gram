@@ -82,7 +82,7 @@ export function PlanRing({
         aria-hidden
         data-testid="plan-ring"
         data-share={1}
-        className={cn("size-3.5 shrink-0 text-success", className)}
+        className={cn("size-icon-row shrink-0 text-success", className)}
       />
     );
   }

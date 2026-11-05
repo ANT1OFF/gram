@@ -58,7 +58,7 @@ export function WorkerFields({
           }}
         >
           <SelectTrigger size="sm" aria-label="Worker agent" className={GHOST_TRIGGER}>
-            <AgentIcon agent={agent} className="size-4" />
+            <AgentIcon agent={agent} className="size-icon-bar" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent side="top">
@@ -66,7 +66,7 @@ export function WorkerFields({
               const usable = firstWorkerChoiceOf(choices, item.value) !== undefined;
               return (
                 <SelectItem key={item.value} value={item.value} disabled={!usable}>
-                  <AgentIcon agent={item.value} className="size-3.5 text-muted-foreground" />
+                  <AgentIcon agent={item.value} className="size-icon-row text-muted-foreground" />
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{item.label}</span>
                     {!usable && (
@@ -82,7 +82,7 @@ export function WorkerFields({
         </Select>
       ) : (
         <span className="flex h-7 items-center gap-1.5 px-2 text-meta font-medium text-muted-foreground">
-          <AgentIcon agent={agent} className="size-4" />
+          <AgentIcon agent={agent} className="size-icon-bar" />
           {agentLabel(agent)}
         </span>
       )}

@@ -94,18 +94,18 @@ function WorktreeOption({
       disabled={entry.isOpen}
       title={entry.isOpen ? "A thread is already open in this worktree" : entry.path}
       onClick={onPick}
-      className="flex min-w-0 items-center gap-2 rounded-md border border-transparent px-2 py-1 text-left text-reading outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 disabled:hover:bg-transparent aria-checked:border-ring aria-checked:bg-accent"
+      className="flex min-w-0 items-center gap-2 rounded-md border border-transparent px-2 py-1 text-left text-body outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 disabled:hover:bg-transparent aria-checked:border-ring aria-checked:bg-accent"
     >
-      <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
       <span className="shrink-0 font-mono text-meta">{name}</span>
-      <span className="min-w-0 flex-1 truncate font-mono text-caption text-muted-foreground">
+      <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
         {entry.path}
       </span>
       {entry.isOpen ? (
-        <span className="shrink-0 text-caption text-muted-foreground">open in a thread</span>
+        <span className="shrink-0 text-meta text-muted-foreground">open in a thread</span>
       ) : (
         entry.lastActivity > 0 && (
-          <time className="shrink-0 text-caption text-muted-foreground tabular-nums">
+          <time className="shrink-0 text-meta text-muted-foreground tabular-nums">
             {formatRelative(entry.lastActivity)}
           </time>
         )

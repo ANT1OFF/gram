@@ -59,7 +59,9 @@ export function FolderBrowser({ onChoose }: { onChoose: (path: string) => void }
           {folder &&
             breadcrumbs(folder.path, home).map((crumb, i, crumbs) => (
               <Fragment key={crumb.path}>
-                {i > 0 && <ChevronRight aria-hidden className="size-3.5 shrink-0 text-subtle" />}
+                {i > 0 && (
+                  <ChevronRight aria-hidden className="size-icon-chip shrink-0 text-subtle" />
+                )}
                 <button
                   type="button"
                   aria-current={i === crumbs.length - 1 ? "location" : undefined}
@@ -83,7 +85,7 @@ export function FolderBrowser({ onChoose }: { onChoose: (path: string) => void }
       ) : query.status === "error" ? (
         <div className="flex items-center gap-2 p-3 text-meta">
           <p role="alert" className="flex items-center gap-1.5 text-danger-text">
-            <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+            <CircleAlert aria-hidden className="size-icon-row shrink-0" />
             {folderProblem(query.error).message}
           </p>
           <Button type="button" size="xs" variant="ghost" onClick={() => browseTo("~")}>
@@ -196,9 +198,9 @@ function FolderList({
           className="flex h-(--space-row) cursor-default items-center gap-2 rounded-md px-2 text-reading aria-selected:bg-accent"
         >
           {entry.isGitRepo ? (
-            <FolderGit2 aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           ) : (
-            <Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            <Folder aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           )}
           <span className="min-w-0 flex-1 truncate">{entry.name}</span>
           {entry.isGitRepo && <GitBadge />}

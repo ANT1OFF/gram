@@ -45,7 +45,7 @@ export function TaskChip({ threadId, chip }: { threadId: ThreadId; chip: TaskChi
       data-status={chip.status}
       className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-dashed border-border p-2.5 text-reading data-[status=dismissed]:opacity-60"
     >
-      <ListPlus aria-hidden className="mt-0.5 size-4 shrink-0 text-highlight" />
+      <ListPlus aria-hidden className="mt-0.5 size-icon-row shrink-0 text-highlight" />
       <div className="min-w-0 flex-1">
         <p className="font-medium">{chip.title}</p>
         <p className="line-clamp-2 text-meta text-muted-foreground">{chip.prompt}</p>
@@ -58,7 +58,7 @@ export function TaskChip({ threadId, chip }: { threadId: ThreadId; chip: TaskChi
           data-testid="task-chip-where"
           className="mt-1 flex items-center gap-1 font-mono text-meta text-muted-foreground"
         >
-          <GitBranch aria-hidden className="size-3.5" />
+          <GitBranch aria-hidden className="size-icon-row" />
           {taskStartLabel(taskStart(chip, git))}
         </p>
       </div>

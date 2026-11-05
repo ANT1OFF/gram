@@ -747,8 +747,9 @@ export function NewTaskDraft({
             </PressScale>
             {target !== undefined && (
               // Beside Start, wrapping in its own column rather than under the button: who acts
-              // and what still needs you, whatever is folded below.
-              <span className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-1.5 text-meta text-muted-foreground">
+              // and what still needs you, whatever is folded below. At the Task/Team/Chat
+              // choice's own size, since it says what that choice commits to.
+              <span className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-1.5 text-reading text-muted-foreground">
                 {autonomy === undefined ? (
                   <span data-testid="task-authority-pending">
                     Reading this workspace's autonomy…
@@ -766,7 +767,7 @@ export function NewTaskDraft({
                 {way === "plan" && budget !== undefined && (
                   <span
                     data-testid="task-workers"
-                    className="rounded-sm border border-border px-1 tabular-nums"
+                    className="rounded-sm border border-border px-1 text-meta tabular-nums"
                   >
                     {budget.liveWorkers} of {budget.maxConcurrentWorkers} workers
                   </span>

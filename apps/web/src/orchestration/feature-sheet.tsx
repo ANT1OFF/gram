@@ -492,7 +492,7 @@ function FeatureMenuList({
                     className={cn(MENU_ITEM, "data-[popup-open]:bg-accent")}
                   >
                     {featureMenuLabel(item, state)}
-                    <ChevronRight aria-hidden className="ml-auto size-3.5" />
+                    <ChevronRight aria-hidden className="ml-auto size-icon-chip" />
                   </Menu.SubmenuTrigger>
                   <Menu.Portal>
                     <Menu.Positioner side="right" alignOffset={-4} className="isolate z-50">
@@ -617,9 +617,9 @@ function StageSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feat
             type="button"
             data-testid="feature-sheet-plan"
             onClick={() => editStage(true)}
-            className="inline-flex items-center gap-1 rounded-sm text-caption text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Pencil aria-hidden className="size-3.5" />
+            <Pencil aria-hidden className="size-icon-row" />
             {stage === undefined ? "Set stage" : "Edit plan"}
           </button>
         )}

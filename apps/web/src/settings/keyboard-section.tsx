@@ -126,7 +126,7 @@ export function KeyboardSection() {
                   <span className="min-w-0 flex-1 truncate">{row.label}</span>
                   {row.conflicts.length > 0 && (
                     <span className="flex items-center gap-1 text-meta text-warning">
-                      <AlertTriangle aria-hidden className="size-3.5" />
+                      <AlertTriangle aria-hidden className="size-icon-row" />
                       Same keys as {row.conflicts.join(", ")}
                     </span>
                   )}
@@ -239,7 +239,7 @@ function BindingFilterBar({
       <div className="relative">
         <Search
           aria-hidden
-          className="pointer-events-none absolute inset-y-0 start-2 my-auto size-3.5 text-muted-foreground"
+          className="pointer-events-none absolute inset-y-0 start-2 my-auto size-icon-row text-muted-foreground"
         />
         <input
           ref={inputRef}
@@ -271,7 +271,7 @@ function BindingFilterBar({
             }}
             className="absolute inset-y-0 end-1 my-auto flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
           >
-            <X aria-hidden className="size-3.5" />
+            <X aria-hidden className="size-icon-row" />
           </button>
         )}
       </div>
@@ -311,7 +311,7 @@ function BindingFilterBar({
             className={CHIP}
             onClick={() => set({ conflicts: !filter.conflicts })}
           >
-            <AlertTriangle aria-hidden className="size-3.5 text-warning" />
+            <AlertTriangle aria-hidden className="size-icon-row text-warning" />
             Conflicts
             <span className="tabular-nums">{counts.conflicts}</span>
           </button>

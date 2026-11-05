@@ -25,7 +25,7 @@ export function FolderMissingNotice({ threadId }: { threadId: ThreadId }) {
       data-testid="folder-missing-notice"
       className="flex w-full thread-column shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-6 py-2 text-reading"
     >
-      <FolderX aria-hidden className="size-4 shrink-0 text-warning-text" />
+      <FolderX aria-hidden className="size-icon-row shrink-0 text-warning-text" />
       <p className="min-w-0 flex-1">
         This thread's {what} was deleted outside Gram, so its agent can't run.{" "}
         <span className="text-muted-foreground">

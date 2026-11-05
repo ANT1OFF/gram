@@ -131,7 +131,9 @@ test("History filters by title and repo as you type, and by kind with its chips"
   // The search works within a chip.
   await search.fill("tracing");
   await expect(rows(page)).toHaveCount(1);
-  await expect(rows(page).first().getByTestId("history-outcome")).toHaveText("resume");
+  // Its status says what it is; what Enter does is the cursor row's action, apart from it.
+  await expect(rows(page).first().getByTestId("history-outcome")).toHaveText("imported");
+  await expect(rows(page).first().getByTestId("history-action")).toHaveText(/^Resume/);
 
   // The chip is kept for the next opening.
   await page.keyboard.press("Escape");

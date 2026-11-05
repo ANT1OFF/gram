@@ -107,13 +107,16 @@ const glass: Look = {
     label: '"Inter Variable", ui-sans-serif, system-ui, sans-serif',
   },
   type: {
+    // Each step clearly apart from the next, every line height on the 4 px grid. Caption is only
+    // for what is never read for meaning (a key cap, a count badge, an overline); metadata,
+    // timestamps and chips are meta, a step under the UI text and a step above caption.
     caption: { size: 11, lineHeight: 16 },
-    meta: { size: 12, lineHeight: 16 },
-    body: { size: 13, lineHeight: 20 },
-    "body-strong": { size: 13, lineHeight: 20, weight: 500 },
-    reading: { size: 14, lineHeight: 20 },
-    title: { size: 16, lineHeight: 24, weight: 600 },
-    heading: { size: 20, lineHeight: 28, weight: 600 },
+    meta: { size: 13, lineHeight: 20 },
+    body: { size: 14, lineHeight: 20 },
+    "body-strong": { size: 14, lineHeight: 20, weight: 500 },
+    reading: { size: 15, lineHeight: 24 },
+    title: { size: 17, lineHeight: 24, weight: 600 },
+    heading: { size: 22, lineHeight: 28, weight: 600 },
   },
   radii: { "2xs": 4, xs: 8, sm: 12, md: 14, lg: 16, xl: 16, composer: 22 },
   density: {

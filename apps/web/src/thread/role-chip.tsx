@@ -68,7 +68,7 @@ export function RoleChip({
         className,
       )}
     >
-      <Icon aria-hidden className="size-3.5 shrink-0" />
+      <Icon aria-hidden className="size-icon-row shrink-0" />
       <span className="truncate">{info.label}</span>
     </span>
   );
@@ -102,7 +102,7 @@ export function RoleGlyph({
       }
     >
       {/* A header's mark, so a chrome glyph. */}
-      <Icon aria-hidden className="size-4" />
+      <Icon aria-hidden className="size-icon-row" />
       <span className="sr-only">{info.name}</span>
     </Hint>
   );

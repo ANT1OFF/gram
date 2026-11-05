@@ -30,7 +30,7 @@ export function VerdictLabel({ verdict }: { verdict: ReviewVerdict | undefined }
   const display = verdict ? NOTICE_VERDICT[verdict] : NO_VERDICT;
   return (
     <span data-testid="notice-verdict" className={cn("flex items-center gap-1", display.tone)}>
-      <display.icon aria-hidden className="size-3.5" />
+      <display.icon aria-hidden className="size-icon-row" />
       {display.label}
     </span>
   );
@@ -107,7 +107,7 @@ export function ReviewNoticeCard({ notice, text }: { notice: ReviewNotice; text:
               key={name}
               className="flex items-center gap-1 rounded-sm border border-destructive/40 px-1 text-meta text-destructive"
             >
-              <CircleX aria-hidden className="size-3.5" />
+              <CircleX aria-hidden className="size-icon-row" />
               <span>Failing: {name}</span>
             </li>
           ))}
@@ -127,7 +127,7 @@ function NoticeText({ text }: { text: string }) {
       <CollapsibleTrigger className="group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground">
         <ChevronRight
           aria-hidden
-          className="size-3.5 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-icon-chip transition-transform group-data-[panel-open]:rotate-90"
         />
         Text sent to the agent
       </CollapsibleTrigger>

@@ -97,7 +97,7 @@ test("Claude Code and Codex use a gateway only after explicit selection, offered
     await form.getByLabel("Gateway profile").click();
     await page.getByRole("option", { name: "Team Gateway", exact: true }).click();
     await expect(form.getByLabel("Gateway profile")).toContainText("Team Gateway");
-    await expect(form.getByLabel("Model")).toContainText("GPT-5.5");
+    await expect(form.getByLabel("Model", { exact: true })).toContainText("GPT-5.5");
     await expect(form.getByRole("link", { name: "Add your gateway key" })).toHaveCount(0);
   }
 
@@ -110,7 +110,7 @@ test("Claude Code and Codex use a gateway only after explicit selection, offered
 
   await openNewThread(page);
   await pickAgent(page, "Claude Code");
-  await expect(form.getByLabel("Model")).toBeVisible();
+  await expect(form.getByLabel("Model", { exact: true })).toBeVisible();
   await expect(form.getByLabel("Gateway profile")).toHaveCount(0);
 
   await page.goBack();

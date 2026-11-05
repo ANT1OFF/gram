@@ -1093,7 +1093,7 @@ function PaletteBody({
     <>
       <Dialog.Title className="sr-only">Command palette</Dialog.Title>
       <div className="flex items-center gap-2 border-b border-border px-3">
-        <Search aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <Search aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         {scopeTitle !== undefined && (
           <span
             data-testid="palette-scope"
@@ -1107,7 +1107,7 @@ function PaletteBody({
               onClick={() => enterScope(undefined)}
               className="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
             >
-              <X aria-hidden className="size-3.5" />
+              <X aria-hidden className="size-icon-row" />
             </button>
           </span>
         )}
@@ -1201,7 +1201,7 @@ function PaletteBody({
           )}
           {sections.map((section) => (
             <div key={section.id} role="group" aria-label={section.label} className="mb-1">
-              <div className="px-2 py-1 text-meta font-medium text-muted-foreground">
+              <div className="px-2 pt-1 text-meta font-medium text-muted-foreground">
                 {section.label}
               </div>
               {section.id === "filtered" && section.items.length === 0 && (
@@ -1222,12 +1222,12 @@ function PaletteBody({
                     onClick={() => run(item)}
                     data-more={item.more || undefined}
                     className={cn(
-                      "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-reading",
+                      "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-body",
                       itemIndex === activeIndex && "row-cursor",
                       (item.unavailable !== undefined || item.more) && "text-muted-foreground",
                     )}
                   >
-                    {item.more && <ChevronDown aria-hidden className="size-3.5 shrink-0" />}
+                    {item.more && <ChevronDown aria-hidden className="size-icon-chip shrink-0" />}
                     {item.snippet ? (
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate">{item.label}</span>

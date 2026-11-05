@@ -103,11 +103,11 @@ export function TaskAuthorityLine({
       data-testid="task-authority"
       data-autonomy={autonomy}
       data-hold={hold ? "true" : undefined}
-      className="flex min-w-0 items-start gap-1.5 text-meta text-muted-foreground"
+      className="flex min-w-0 items-start gap-1.5 text-reading text-muted-foreground"
     >
       {createElement(icon, {
         "aria-hidden": true,
-        className: cn("mt-px size-3.5 shrink-0", level.warn && "text-warning"),
+        className: cn("mt-1 size-icon-row shrink-0", level.warn && "text-warning"),
       })}
       <span className="min-w-0">
         <span className="text-foreground">{summary.where}</span>
@@ -153,11 +153,11 @@ export function ChatAuthorityLine({ mode }: { mode: PermissionMode }) {
     <p
       data-testid="chat-authority"
       data-mode={mode}
-      className="flex min-w-0 items-start gap-1.5 text-meta text-muted-foreground"
+      className="flex min-w-0 items-start gap-1.5 text-reading text-muted-foreground"
     >
       {createElement(MODE_ICONS[mode], {
         "aria-hidden": true,
-        className: cn("mt-px size-3.5 shrink-0", warned && "text-warning"),
+        className: cn("mt-1 size-icon-row shrink-0", warned && "text-warning"),
       })}
       <span className="min-w-0">
         <span className={cn("font-medium", warned ? "text-warning" : "text-foreground")}>

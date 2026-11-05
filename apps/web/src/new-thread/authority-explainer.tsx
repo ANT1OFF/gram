@@ -34,7 +34,10 @@ export function AuthorityExplainer({ className }: { className?: string }) {
       {ROWS.map(({ icon: Icon, term, line }) => (
         <div key={term} className="contents">
           <dt className="flex items-center gap-1.5 font-medium whitespace-nowrap text-foreground">
-            <Icon aria-hidden className="size-3.5 shrink-0 self-center text-muted-foreground" />
+            <Icon
+              aria-hidden
+              className="size-icon-row shrink-0 self-center text-muted-foreground"
+            />
             {term}:
           </dt>
           <dd>{line}</dd>

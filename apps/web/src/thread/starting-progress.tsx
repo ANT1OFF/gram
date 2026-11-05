@@ -47,7 +47,10 @@ export function StartingProgress({
         {steps.map((step, index) => (
           <Fragment key={step.key}>
             {index > 0 && (
-              <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground/70" />
+              <ChevronRight
+                aria-hidden
+                className="size-icon-chip shrink-0 text-muted-foreground/70"
+              />
             )}
             <li
               data-step={step.key}
@@ -67,11 +70,11 @@ export function StartingProgress({
               )}
             >
               {step.state === "done" ? (
-                <Check aria-hidden className="size-3 shrink-0 text-success" />
+                <Check aria-hidden className="size-icon-chip shrink-0 text-success" />
               ) : step.state === "active" ? (
-                <Spinner aria-hidden className="size-3 shrink-0 text-status-working" />
+                <Spinner aria-hidden className="size-icon-chip shrink-0 text-status-working" />
               ) : (
-                <Circle aria-hidden className="size-3 shrink-0" />
+                <Circle aria-hidden className="size-icon-chip shrink-0" />
               )}
               <span className="max-w-64 truncate">{stepText(step)}</span>
               <span className="sr-only">

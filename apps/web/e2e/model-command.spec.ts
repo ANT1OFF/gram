@@ -5,7 +5,7 @@ test("a /model typed into a thread moves its model picker, and is offered in Set
 }) => {
   await page.goto("/t/t-deps");
   const composer = page.getByLabel("Message", { exact: true });
-  const picker = page.getByRole("combobox", { name: "Model" });
+  const picker = page.getByRole("combobox", { name: "Model", exact: true });
   await expect(picker).not.toHaveText(/claude-preview/);
 
   await composer.fill("/model claude-preview[1m]");
@@ -29,7 +29,7 @@ test("a /model typed into a thread moves its model picker, and is offered in Set
   await page.goto("/new");
   await page
     .getByRole("form", { name: "New thread" })
-    .getByRole("combobox", { name: "Model" })
+    .getByRole("combobox", { name: "Model", exact: true })
     .click();
   await expect(page.getByRole("option", { name: "claude-preview[1m]" })).toBeVisible();
 });

@@ -200,6 +200,7 @@ export function OpenQuestion({
     if (unavailable !== undefined || answer === "" || onAnswer === undefined) return;
     run(() => onAnswer(answer));
   };
+  const answerFormId = useId();
   const answerRow = sheet
     ? "sticky bottom-0 -mx-4 mt-1 border-t border-edge bg-popover px-4 py-2.5"
     : undefined;
@@ -223,9 +224,12 @@ export function OpenQuestion({
       {card.asker !== undefined && (
         <p
           data-testid="question-asker"
-          className="flex min-w-0 items-center gap-1 text-caption text-muted-foreground"
+          className="flex min-w-0 items-center gap-1 text-meta text-muted-foreground"
         >
-          <MessageCircleQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
+          <MessageCircleQuestion
+            aria-hidden
+            className="size-icon-row shrink-0 text-status-needs-mark"
+          />
           <span className="min-w-0 flex-1 truncate">
             <AskedBy asker={card.asker} />
           </span>
@@ -248,7 +252,7 @@ export function OpenQuestion({
                 data-testid="question-answering"
                 className="inline-flex h-6 items-center gap-1 px-1 text-meta text-muted-foreground"
               >
-                <ArrowDown aria-hidden className="size-3.5" />
+                <ArrowDown aria-hidden className="size-icon-row" />
                 In Asks
               </span>
             ) : (
@@ -298,7 +302,7 @@ export function OpenQuestion({
           data-testid="question-note"
           className="flex items-start gap-1 text-meta text-muted-foreground"
         >
-          <Bot aria-hidden className="mt-px size-3.5 shrink-0" />
+          <Bot aria-hidden className="mt-px size-icon-row shrink-0" />
           <span>
             <span className="font-medium text-foreground">Orchestrator:</span> {card.note}
           </span>
@@ -306,6 +310,7 @@ export function OpenQuestion({
       )}
       <ExpandPresence open={sheet && mode === "answering"}>
         <form
+          id={answerFormId}
           className="flex flex-col gap-1.5 pt-1 text-reading"
           onSubmit={(event) => {
             event.preventDefault();
@@ -336,35 +341,40 @@ export function OpenQuestion({
               />
             </fieldset>
           )}
-          <div
-            data-testid={sheet ? "ask-sheet-answer-row" : undefined}
-            className={cn("flex items-center gap-2", answerRow)}
-          >
-            <SendAnswer
-              type="submit"
-              testId="question-send"
-              disabled={busy || answer === "" || unavailable !== undefined}
-              title={unavailable ?? (answer === "" ? "Pick an answer" : undefined)}
-              hint={formatKeys("mod+enter")}
-            />
-            <span className="min-w-0 truncate text-meta text-muted-foreground">
-              {worker ? "Goes straight to the worker" : "Goes to the orchestrator"}
-            </span>
-            <span className="flex-1" />
-            {card.dismissable && onDismiss !== undefined && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                data-testid="question-dismiss"
-                onClick={() => setMode("dismissing")}
-              >
-                Dismiss…
-              </Button>
-            )}
-          </div>
         </form>
       </ExpandPresence>
+      {/* Outside the form, so it sticks to the foot of the whole question rather than only the
+          form: a long question pushes the form below the fold, and its Send must stay in sight. */}
+      {sheet && mode === "answering" && (
+        <div
+          data-testid={sheet ? "ask-sheet-answer-row" : undefined}
+          className={cn("flex items-center gap-2", answerRow)}
+        >
+          <SendAnswer
+            type="submit"
+            form={answerFormId}
+            testId="question-send"
+            disabled={busy || answer === "" || unavailable !== undefined}
+            title={unavailable ?? (answer === "" ? "Pick an answer" : undefined)}
+            hint={formatKeys("mod+enter")}
+          />
+          <span className="min-w-0 truncate text-meta text-muted-foreground">
+            {worker ? "Goes straight to the worker" : "Goes to the orchestrator"}
+          </span>
+          <span className="flex-1" />
+          {card.dismissable && onDismiss !== undefined && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              data-testid="question-dismiss"
+              onClick={() => setMode("dismissing")}
+            >
+              Dismiss…
+            </Button>
+          )}
+        </div>
+      )}
       <ExpandPresence open={mode === "dismissing"}>
         <form
           className="flex flex-col gap-1.5 pt-1 text-reading"
@@ -566,16 +576,13 @@ export function WorkerQuestionHistory({ question }: { question: WorkerQuestion }
       className="flex min-w-0 items-start gap-2"
     >
       <span title={status} className="mt-0.5 inline-flex shrink-0">
-        <Icon aria-hidden className={cn("size-3.5", look.className)} />
+        <Icon aria-hidden className={cn("size-icon-row", look.className)} />
       </span>
       <IdChip id={question.id} />
       <div className="min-w-0 flex-1">
         <p className="text-reading break-words text-muted-foreground">{question.question}</p>
         {outcome !== undefined && <p className="text-meta break-words">{outcome}</p>}
-        <p
-          data-testid="question-status"
-          className="text-caption text-muted-foreground tabular-nums"
-        >
+        <p data-testid="question-status" className="text-meta text-muted-foreground tabular-nums">
           {status}
         </p>
       </div>
@@ -619,7 +626,7 @@ export function ClosedQuestion({ question }: { question: MemoryQuestion }) {
       className="flex min-w-0 items-start gap-2"
     >
       <span title={look.label} className="mt-0.5 inline-flex shrink-0">
-        <Icon aria-hidden className={cn("size-3.5", look.className)} />
+        <Icon aria-hidden className={cn("size-icon-row", look.className)} />
         <span className="sr-only">{look.label}</span>
       </span>
       {question.id !== undefined && <IdChip id={question.id} />}

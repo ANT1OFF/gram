@@ -108,7 +108,7 @@ export function SavedMark({ row }: { row: string }) {
             exit={{ opacity: 0 }}
             transition={{ duration: fade }}
           >
-            <DrawnCheck className="size-3.5" />
+            <DrawnCheck className="size-icon-row" />
             Saved
           </m.span>
         )}

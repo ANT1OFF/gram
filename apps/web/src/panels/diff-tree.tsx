@@ -86,14 +86,14 @@ export function DiffTree({
               <ChevronRight
                 aria-hidden
                 className={cn(
-                  "size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-move-fast)",
+                  "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-move-fast)",
                   open && "rotate-90",
                 )}
               />
               {open ? (
-                <FolderOpen aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                <FolderOpen aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
               ) : (
-                <Folder aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                <Folder aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
               )}
               <span className="min-w-0 truncate">{node.name}</span>
             </Row>
@@ -183,7 +183,7 @@ function FileRow({
   return (
     <Row depth={depth} title={`${file.path} · ${status.label}`} selected={selected}>
       <span aria-hidden className="size-3 shrink-0" />
-      <status.icon aria-hidden className={cn("size-3.5 shrink-0", status.tone)} />
+      <status.icon aria-hidden className={cn("size-icon-row shrink-0", status.tone)} />
       <span className="sr-only">{status.label}</span>
       <span className="min-w-0 flex-1 truncate font-mono">{name}</span>
       {(file.additions > 0 || file.deletions > 0) && (

@@ -72,7 +72,7 @@ export function NativeUpdatesSection({
       <div className="rounded-md border border-edge bg-card p-3" data-testid="native-status">
         <p className="font-medium">Running Gram {state.currentVersion}</p>
         <p className="mt-1 flex items-center gap-1.5 text-muted-foreground" aria-live="polite">
-          {busy && <Spinner aria-hidden className="size-3.5" />}
+          {busy && <Spinner aria-hidden className="size-icon-row" />}
           {statusLine(state)}
         </p>
         {state.status === "downloading" && (
@@ -98,7 +98,7 @@ export function NativeUpdatesSection({
           data-testid="not-applied"
           className="flex flex-wrap items-start gap-x-3 gap-y-1.5 rounded-md border border-border p-3"
         >
-          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+          <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
           <p className="min-w-0 flex-1">
             Gram {state.notApplied.version} wasn't applied. {state.notApplied.reason}
           </p>
@@ -148,7 +148,7 @@ export function NativeUpdatesSection({
 
       {problem && (
         <p role="alert" className="flex items-start gap-1.5 text-warning">
-          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+          <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0" />
           {problem}
         </p>
       )}

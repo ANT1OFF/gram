@@ -165,7 +165,7 @@ export function StageEditor({
                     disabled={index === 0}
                     onClick={() => move(index, index - 1)}
                   >
-                    <ArrowUp aria-hidden className="size-3.5" />
+                    <ArrowUp aria-hidden className="size-icon-row" />
                   </button>
                   <button
                     type="button"
@@ -174,7 +174,7 @@ export function StageEditor({
                     disabled={index === draft.steps.length - 1}
                     onClick={() => move(index, index + 1)}
                   >
-                    <ArrowDown aria-hidden className="size-3.5" />
+                    <ArrowDown aria-hidden className="size-icon-row" />
                   </button>
                   <button
                     type="button"
@@ -187,7 +187,7 @@ export function StageEditor({
                       )
                     }
                   >
-                    <X aria-hidden className="size-3.5" />
+                    <X aria-hidden className="size-icon-row" />
                   </button>
                 </PresenceItem>
               ))}

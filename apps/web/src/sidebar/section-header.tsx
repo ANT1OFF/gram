@@ -92,12 +92,12 @@ export function SectionToggle({
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
+            "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
             expanded && "rotate-90",
           )}
         />
       )}
-      <Icon aria-hidden className="size-3.5 shrink-0 text-(--section-icon)" />
+      <Icon aria-hidden className="size-icon-row shrink-0 text-(--section-icon)" />
       <span className="min-w-0 truncate text-left">{label}</span>
       {children}
       <span
@@ -139,7 +139,7 @@ export function SubgroupToggle({
       <ChevronRight
         aria-hidden
         className={cn(
-          "size-3.5 shrink-0 text-subtle transition-transform duration-(--dur-fast)",
+          "size-icon-chip shrink-0 text-subtle transition-transform duration-(--dur-fast)",
           expanded && "rotate-90",
         )}
       />

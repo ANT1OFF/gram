@@ -276,7 +276,7 @@ function NowCell({
               />
             }
           >
-            <Layers aria-hidden className="size-3.5" />
+            <Layers aria-hidden className="size-icon-row" />
             <span className="sr-only">{overlap}</span>
           </Hint>
         )}
@@ -445,7 +445,7 @@ export function GridLine({
               <CircleAlert
                 aria-label="Needs you"
                 data-testid="rail-needs"
-                className="mt-1 size-3.5 shrink-0 text-status-needs-mark"
+                className="mt-1 size-icon-row shrink-0 text-status-needs-mark"
               />
             )}
             <FeatureMenu

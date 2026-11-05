@@ -106,7 +106,7 @@ export function MergedCleanupNotice({ threadId }: { threadId: ThreadId }) {
       data-testid="merged-cleanup-notice"
       className="flex w-full thread-column shrink-0 items-center gap-3 px-6 py-2 text-reading"
     >
-      <GitMerge aria-hidden className="size-4 shrink-0 text-merged" />
+      <GitMerge aria-hidden className="size-icon-row shrink-0 text-merged" />
       <p className="min-w-0 flex-1">{cleanup.status}</p>
       <Button size="sm" variant="outline" onClick={cleanup.open}>
         {cleanup.actionLabel}

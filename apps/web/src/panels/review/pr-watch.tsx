@@ -149,12 +149,12 @@ export function PrWatch({
             )}
           >
             {babysit.phase === "watching" && (
-              <Shield aria-hidden className="mt-0.5 size-3 shrink-0" />
+              <Shield aria-hidden className="mt-0.5 size-icon-chip shrink-0" />
             )}
             {babysit.phase === "done" && (
-              <CircleCheck aria-hidden className="mt-0.5 size-3 shrink-0 text-success" />
+              <CircleCheck aria-hidden className="mt-0.5 size-icon-chip shrink-0 text-success" />
             )}
-            {stopped && <CircleAlert aria-hidden className="mt-0.5 size-3 shrink-0" />}
+            {stopped && <CircleAlert aria-hidden className="mt-0.5 size-icon-chip shrink-0" />}
             <Shimmer active={babysit.phase === "watching" && roundInFlight}>
               {babysitStatusText(babysit)}
             </Shimmer>
@@ -171,7 +171,7 @@ export function PrWatch({
           data-testid="pr-watch-hint"
           className="flex items-start gap-1.5 border-t border-border px-2 py-1.5 text-muted-foreground"
         >
-          <Info aria-hidden className="mt-0.5 size-3 shrink-0" />
+          <Info aria-hidden className="mt-0.5 size-icon-chip shrink-0" />
           {hint}
         </p>
       )}

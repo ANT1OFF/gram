@@ -16,7 +16,7 @@ export const MENU_POPUP =
 
 /** A menu's row: the row cursor where the pointer or the arrow keys are. */
 export const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-3.5 [&_svg]:shrink-0";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor [&_svg]:size-icon-row [&_svg]:shrink-0";
 
 /** A menu's group heading. */
 export const MENU_LABEL = "px-2 pt-1.5 pb-0.5 text-caption font-medium text-muted-foreground";

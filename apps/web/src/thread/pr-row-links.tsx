@@ -85,7 +85,7 @@ export function PrNumberLink({
                     display.tone,
                   )}
                 >
-                  <display.icon aria-hidden className="size-3.5" />
+                  <display.icon aria-hidden className="size-icon-row" />
                   {prGlyphWords(facts)}
                 </span>
               )}
@@ -181,7 +181,7 @@ function OpenTerminalItem({ threadId, folder }: { threadId: ThreadId; folder: st
         );
       }}
     >
-      <SquareTerminal aria-hidden className="size-3.5" />
+      <SquareTerminal aria-hidden className="size-icon-row" />
       Open in terminal
     </Menu.Item>
   );
@@ -208,13 +208,13 @@ export function RepoLink({ threadId, place }: { threadId: ThreadId; place: PrRow
     >
       {local !== undefined && (
         <Menu.Item className={ITEM} onClick={() => void reveal(local, { threadId })}>
-          <FolderOpen aria-hidden className="size-3.5" />
+          <FolderOpen aria-hidden className="size-icon-row" />
           {revealLabel()}
         </Menu.Item>
       )}
       {repoUrl !== undefined && (
         <Menu.Item className={ITEM} onClick={() => void openExternalUrl(api, repoUrl)}>
-          <ExternalLink aria-hidden className="size-3.5" />
+          <ExternalLink aria-hidden className="size-icon-row" />
           Open repository on GitHub
         </Menu.Item>
       )}
@@ -224,13 +224,13 @@ export function RepoLink({ threadId, place }: { threadId: ThreadId; place: PrRow
           className={ITEM}
           onClick={() => void copyText(fullRepo ?? repo).catch(() => undefined)}
         >
-          <Copy aria-hidden className="size-3.5" />
+          <Copy aria-hidden className="size-icon-row" />
           Copy repository name
         </Menu.Item>
       ) : (
         <>
           <Menu.Item className={ITEM} onClick={() => void copyText(local).catch(() => undefined)}>
-            <Copy aria-hidden className="size-3.5" />
+            <Copy aria-hidden className="size-icon-row" />
             Copy path
           </Menu.Item>
           <Separator />
@@ -254,7 +254,7 @@ export function BranchLink({ threadId, place }: { threadId: ThreadId; place: PrR
       trigger={branch}
     >
       <Menu.Item className={ITEM} onClick={() => void copyText(branch).catch(() => undefined)}>
-        <Copy aria-hidden className="size-3.5" />
+        <Copy aria-hidden className="size-icon-row" />
         Copy branch name
       </Menu.Item>
       {place.localBranch && folder !== undefined && (

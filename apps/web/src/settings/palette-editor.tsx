@@ -134,7 +134,7 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
             >
               {warnings.map((w) => (
                 <li key={w.label} className="flex items-center gap-1.5">
-                  <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+                  <TriangleAlert aria-hidden className="size-icon-row shrink-0" />
                   {w.label} is {w.ratio.toFixed(1)}:1, below {w.target}:1
                 </li>
               ))}

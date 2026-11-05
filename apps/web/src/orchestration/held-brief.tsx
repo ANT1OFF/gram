@@ -64,7 +64,7 @@ export function HeldBriefLine({
       title={reason}
       className="flex min-w-0 items-center gap-2 text-meta"
     >
-      <Hourglass aria-hidden className="-mx-0.75 size-3.5 shrink-0 text-muted-foreground" />
+      <Hourglass aria-hidden className="-mx-0.75 size-icon-row shrink-0 text-muted-foreground" />
       <span className="w-36 min-w-0 shrink-0 truncate font-medium">{held.title}</span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
         <span data-testid="held-until" className="tabular-nums">
@@ -108,7 +108,7 @@ export function HeldBriefChip({
       className="flex w-full max-w-72 min-w-0 flex-col items-start gap-1 rounded-(--radius-md) border border-dashed border-edge bg-card px-2.5 py-2 text-meta"
     >
       <span className="flex w-full min-w-0 items-start gap-1.5">
-        <Hourglass aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        <Hourglass aria-hidden className="mt-0.5 size-icon-row shrink-0 text-muted-foreground" />
         <span className="line-clamp-2 min-w-0 font-medium break-words">{held.title}</span>
       </span>
       {/* A station is narrow: "until 18:00" on a line of its own, Release now under it. */}

@@ -112,7 +112,7 @@ export function StatePill({
       className={cn("inline-flex shrink-0 items-center gap-1 text-meta", tone.className, className)}
     >
       <Swap swapKey={state.label}>
-        <tone.icon aria-hidden className="size-3.5" />
+        <tone.icon aria-hidden className="size-icon-row" />
       </Swap>
       {iconOnly ? <span className="sr-only">{state.label}</span> : state.label}
     </span>
@@ -139,7 +139,7 @@ function Disclosure({
       <CollapsibleTrigger className={TRIGGER}>
         <ChevronRight
           aria-hidden
-          className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-icon-chip shrink-0 transition-transform group-data-[panel-open]:rotate-90"
         />
         {label}
       </CollapsibleTrigger>
@@ -170,7 +170,7 @@ function PrLink({ url, children }: { url: string | undefined; children: ReactNod
       className="inline-flex w-fit items-center gap-1 font-mono text-meta text-link underline-offset-4 hover:underline"
     >
       {children}
-      <ExternalLink aria-hidden className="size-3.5" />
+      <ExternalLink aria-hidden className="size-icon-row" />
     </OutboundLink>
   );
 }
@@ -340,7 +340,7 @@ function LedgerTable({
             <tr className="border-t border-border bg-muted/30">
               <th scope="rowgroup" colSpan={5} className="px-1 py-1 font-medium">
                 <span className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                  <Layers aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
                   {group.group}
                   <StatePill state={presentState(group.state)} />
                   {group.stage !== undefined && (
@@ -397,7 +397,7 @@ export function OrchestrationDigestCard({
       className={cn(CARD, "flex w-full max-w-2xl flex-col gap-2.5", arriving && "gram-arrive")}
     >
       <header className="flex flex-wrap items-center gap-x-2">
-        <Network aria-hidden className="size-3.5 text-muted-foreground" />
+        <Network aria-hidden className="size-icon-row text-muted-foreground" />
         <h3 className="font-medium">{title}</h3>
         <span className="text-meta text-muted-foreground">{digest.workspaceName}</span>
       </header>
@@ -424,7 +424,7 @@ export function DigestDetails({ digest, text }: { digest: OrchestrationDigest; t
           data-testid="digest-paused"
           className="flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-meta text-foreground"
         >
-          <CirclePause aria-hidden className="size-3.5 shrink-0" />
+          <CirclePause aria-hidden className="size-icon-row shrink-0" />
           {pauseText(digest.paused)}. Nothing is spawned or sent until you resume it.
         </p>
       )}
@@ -528,7 +528,7 @@ export function WorkerReportCard({ report }: { report: WorkerReport }) {
       className={cn(CARD, "my-2 flex flex-col gap-2")}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Megaphone aria-hidden className="size-3.5 text-muted-foreground" />
+        <Megaphone aria-hidden className="size-icon-row text-muted-foreground" />
         <h3 className="font-medium">
           Reported to <OrchestratorOf worker={report.threadId} />
         </h3>
@@ -565,7 +565,7 @@ export function MemoryWriteCard({ write }: { write: MemoryWrite }) {
       className={cn(CARD, "my-2 flex flex-col gap-2")}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <NotebookPen aria-hidden className="size-3.5 text-muted-foreground" />
+        <NotebookPen aria-hidden className="size-icon-row text-muted-foreground" />
         <h3 className="font-medium">Memory</h3>
         <span className="text-meta text-muted-foreground">{verb}</span>
         <span className="font-mono text-meta">{write.path}</span>
@@ -632,7 +632,7 @@ export function WorkerAnswerCard({
       className={cn(CARD, "my-2 flex flex-col gap-1.5 p-2.5")}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
-        <MessageCircleReply aria-hidden className="size-3.5 text-muted-foreground" />
+        <MessageCircleReply aria-hidden className="size-icon-row text-muted-foreground" />
         <h3 className="font-medium">
           {inWorker ? (
             <>
@@ -658,7 +658,7 @@ export function WorkerAnswerCard({
           <WorkerText text={answer.answer} />
         </dd>
       </dl>
-      <p className="text-caption text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         Allowed because this workspace is at Full autonomy. Write to the{" "}
         {inWorker ? "worker" : "worker's thread"} if you would have said otherwise.
       </p>
@@ -695,7 +695,7 @@ export function WorkerQuestionCard({
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
         <MessageCircleQuestion
           aria-hidden
-          className={cn("size-3.5", open ? "text-status-needs-mark" : "text-muted-foreground")}
+          className={cn("size-icon-row", open ? "text-status-needs-mark" : "text-muted-foreground")}
         />
         <h3 className="font-medium">
           {inWorker ? (
@@ -762,7 +762,7 @@ export function DreamReportCard({
       className={cn(CARD, "my-2 flex flex-col gap-2")}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <MoonStar aria-hidden className="size-3.5 text-muted-foreground" />
+        <MoonStar aria-hidden className="size-icon-row text-muted-foreground" />
         <h3 className="font-medium">Dream</h3>
         <StatePill state={dreamStatus(report)} testId="dream-report-status" />
         <span className="text-meta text-muted-foreground">{reviewSummary(report.files)}</span>
@@ -773,7 +773,7 @@ export function DreamReportCard({
           {changed.map((file) => (
             <li key={file.path} className="flex items-center gap-2">
               <span className="min-w-0 truncate font-mono">{file.path}</span>
-              <StatePill state={presentFileStatus(file.status)} className="text-caption" />
+              <StatePill state={presentFileStatus(file.status)} className="text-meta" />
             </li>
           ))}
         </ul>

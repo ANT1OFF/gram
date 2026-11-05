@@ -120,7 +120,7 @@ it("says the effort in short, and checks the current one in a list that says wha
 it("checks Default effort while the model's own level applies", async () => {
   const user = userEvent.setup();
   render(efforts(DEFAULT_EFFORT, false));
-  const trigger = screen.getByRole("combobox", { name: "Effort: Default" });
+  const trigger = screen.getByRole("combobox", { name: "Effort: Model default" });
   await user.click(trigger);
   expect(screen.getByRole("option", { name: "Default effort" }).getAttribute("aria-selected")).toBe(
     "true",

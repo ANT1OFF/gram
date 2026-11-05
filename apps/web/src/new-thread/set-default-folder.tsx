@@ -26,7 +26,7 @@ export function SetDefaultFolder({ path, home }: { path: string; home: string | 
   if (current !== undefined && [value, path].includes(trimSlash(current))) {
     return (
       <span className="ml-auto flex shrink-0 items-center gap-1">
-        <Check aria-hidden className="size-3.5" />
+        <Check aria-hidden className="size-icon-row" />
         Default folder
       </span>
     );

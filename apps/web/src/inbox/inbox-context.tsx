@@ -30,14 +30,14 @@ export function InboxContext({ threadId }: { threadId: ThreadId }) {
     >
       <h3 className="flex items-center gap-2 text-meta text-muted-foreground">
         Recent in the thread
-        {empty && <Spinner aria-hidden className="size-3" />}
+        {empty && <Spinner aria-hidden className="size-icon-chip" />}
       </h3>
       {context.files > 0 && (
         <p
           data-testid="inbox-context-changes"
           className="flex items-center gap-1.5 text-meta text-muted-foreground tabular-nums"
         >
-          <FileDiff aria-hidden className="size-3.5 shrink-0" />
+          <FileDiff aria-hidden className="size-icon-row shrink-0" />
           {context.files === 1 ? "1 file changed" : `${context.files} files changed`}
           <span className="text-success">+{context.additions}</span>
           <span className="text-destructive">−{context.deletions}</span>

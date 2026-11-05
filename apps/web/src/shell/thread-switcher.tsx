@@ -177,12 +177,12 @@ export function ThreadSwitcher() {
                 selected && "bg-accent text-accent-foreground",
               )}
             >
-              <display.icon aria-hidden className={cn("size-3.5 shrink-0", display.tone)} />
+              <display.icon aria-hidden className={cn("size-icon-row shrink-0", display.tone)} />
               <span className="min-w-0 flex-1 truncate">{summary.thread.title}</span>
               <AgentIcon
                 agent={summary.thread.model.agent}
                 labelled
-                className="size-3.5 text-muted-foreground"
+                className="size-icon-row text-muted-foreground"
               />
             </li>
           );

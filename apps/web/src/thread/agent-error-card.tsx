@@ -95,7 +95,7 @@ function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
       <CollapsibleTrigger className="group inline-flex items-center gap-1 rounded-sm text-meta text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-9">
         <ChevronRight
           aria-hidden
-          className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-icon-chip shrink-0 transition-transform group-data-[panel-open]:rotate-90"
         />
         {count}
       </CollapsibleTrigger>
@@ -203,7 +203,7 @@ function ErrorCard({
         data-recovered={retried.recovered || undefined}
         className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-border p-2.5 text-reading text-muted-foreground"
       >
-        <RotateCw aria-hidden className="mt-0.5 size-4 shrink-0" />
+        <RotateCw aria-hidden className="mt-0.5 size-icon-row shrink-0" />
         <div className="min-w-0 flex-1">
           {/* What it is now leads; the failure it got past is the line under it. */}
           <p data-testid="agent-error-retried" className="text-meta font-medium text-foreground">
@@ -242,7 +242,7 @@ function ErrorCard({
       {...{ [HOLD_UNDER_POINTER]: "" }}
       className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-destructive/40 p-2.5 text-reading"
     >
-      <CircleX aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <CircleX aria-hidden className="mt-0.5 size-icon-row shrink-0 text-destructive" />
       <div className="min-w-0 flex-1">
         <p className="text-meta font-medium text-destructive">
           {failureLabel(error.kind)}
@@ -363,7 +363,7 @@ function RetryTime({
       className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta"
     >
       <span className="inline-flex items-center gap-1 font-medium text-foreground">
-        <Clock aria-hidden className="size-3.5 text-muted-foreground" />
+        <Clock aria-hidden className="size-icon-row text-muted-foreground" />
         Try again at {time}
       </span>
       <span className="text-muted-foreground">when the provider's limit resets</span>

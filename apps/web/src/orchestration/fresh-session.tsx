@@ -29,7 +29,7 @@ export function HandingOff({
         className,
       )}
     >
-      <RefreshCw aria-hidden ref={spin} className="size-3.5" />
+      <RefreshCw aria-hidden ref={spin} className="size-icon-row" />
       {compact ? <span className="sr-only">Handing off…</span> : <Shimmer>Handing off…</Shimmer>}
     </span>
   );
@@ -68,7 +68,7 @@ export function ContextChip({
         />
       }
     >
-      <ChartPie aria-hidden className="size-4 shrink-0" />
+      <ChartPie aria-hidden className="size-icon-row shrink-0" />
     </Hint>
   );
 }

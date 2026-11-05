@@ -32,14 +32,14 @@ export function WorkspaceMenuItems({ state }: { state: WorkspaceState }) {
         data-testid="menu-workspace-settings"
         onClick={() => openWorkspaceSettings(workspace.id)}
       >
-        <Settings2 aria-hidden className="size-3.5" />
+        <Settings2 aria-hidden className="size-icon-row" />
         Workspace settings
       </ContextMenuItem>
       <ContextMenuItem data-testid="menu-workspace-pause" onClick={setPaused}>
         {pause ? (
-          <CirclePause aria-hidden className="size-3.5" />
+          <CirclePause aria-hidden className="size-icon-row" />
         ) : (
-          <CirclePlay aria-hidden className="size-3.5" />
+          <CirclePlay aria-hidden className="size-icon-row" />
         )}
         {pause ? "Pause workspace" : "Resume workspace"}
       </ContextMenuItem>
@@ -50,7 +50,7 @@ export function WorkspaceMenuItems({ state }: { state: WorkspaceState }) {
           useThreadDialogs.getState().open({ kind: "removeWorkspace", workspaceId: workspace.id })
         }
       >
-        <Trash2 aria-hidden className="size-3.5" />
+        <Trash2 aria-hidden className="size-icon-row" />
         Remove workspace…
       </ContextMenuItem>
       {SEPARATOR}

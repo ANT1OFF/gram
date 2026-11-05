@@ -71,7 +71,7 @@ export function StashMenu({
           />
         }
       >
-        <Archive aria-hidden className="size-4" />
+        <Archive aria-hidden className="size-icon-bar" />
         {stashes.length}
       </Hint>
       <Popover.Portal>
@@ -91,7 +91,7 @@ export function StashMenu({
                     <button
                       type="button"
                       aria-label={`Restore draft: ${stashPreview(stash)}`}
-                      className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm px-2 py-1.5 text-left text-reading outline-none hover:bg-accent focus-visible:bg-accent"
+                      className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm px-2 py-1.5 text-left text-body outline-none hover:bg-accent focus-visible:bg-accent"
                       onClick={() => {
                         setOpen(false);
                         onRestore(stash);
@@ -116,7 +116,7 @@ export function StashMenu({
                         />
                       }
                     >
-                      <Trash2 aria-hidden className="size-3.5" />
+                      <Trash2 aria-hidden className="size-icon-row" />
                     </Hint>
                   </li>
                 ))}

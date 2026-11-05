@@ -64,7 +64,7 @@ export function BriefingPlaceholder({ thread }: { thread: Thread }) {
               {PHASE_LABEL[current.phase]}
             </Shimmer>
           </div>
-          <ol aria-hidden className="flex items-center gap-1 text-caption text-muted-foreground">
+          <ol aria-hidden className="flex items-center gap-1 text-meta text-muted-foreground">
             {FEATURE_STATIONS.map((station, i) => (
               <li key={station} className="flex items-center gap-1">
                 {i > 0 && <span className="h-px w-3 bg-border" />}

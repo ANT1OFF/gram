@@ -37,7 +37,7 @@ export function AutonomyChip({
         className,
       )}
     >
-      {createElement(icon, { "aria-hidden": true, className: "size-3 shrink-0" })}
+      {createElement(icon, { "aria-hidden": true, className: "size-icon-chip shrink-0" })}
       {level.label}
     </span>
   );

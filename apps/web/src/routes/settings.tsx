@@ -226,7 +226,7 @@ function PageSection({
                 data-testid="settings-subpage-back"
                 className="inline-flex w-fit items-center gap-0.5 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <ChevronLeft aria-hidden className="size-3.5" />
+                <ChevronLeft aria-hidden className="size-icon-chip" />
                 {group.label}
               </Link>
             )}
@@ -244,13 +244,13 @@ function PageSection({
                   {sub && (
                     <>
                       <span className="text-muted-foreground">{group.label}</span>
-                      <ChevronRight aria-hidden className="size-4 text-muted-foreground" />
+                      <ChevronRight aria-hidden className="size-icon-chip text-muted-foreground" />
                     </>
                   )}
                   {page.label}
                   <ArrowRight
                     aria-hidden
-                    className="size-4 text-muted-foreground group-hover:text-link"
+                    className="size-icon-row text-muted-foreground group-hover:text-link"
                   />
                 </Link>
               ) : (

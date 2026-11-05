@@ -160,7 +160,7 @@ function CustomModelsEditor({
             error={rows[i]}
             summary={
               <>
-                <AgentIcon agent={draft.agent} className="size-4" />
+                <AgentIcon agent={draft.agent} className="size-icon-row" />
                 <span className="truncate font-medium">
                   {draft.name.trim() || draft.id.trim() || "New model"}
                 </span>

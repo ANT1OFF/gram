@@ -47,7 +47,7 @@ export function SubpageRow({
         )}
       </span>
       <span className="ms-auto shrink-0 text-muted-foreground tabular-nums">{summary}</span>
-      <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <ChevronRight aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
     </Link>
   );
 }

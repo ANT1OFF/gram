@@ -138,7 +138,7 @@ export function ReviewGlyph({
       className={cn("inline-flex shrink-0 items-center gap-0.5", display.tone, className)}
     >
       <Swap swapKey={state.kind}>
-        <display.icon aria-hidden className="size-3" />
+        <display.icon aria-hidden className="size-icon-chip" />
       </Swap>
       {state.count !== undefined && <span className="tabular-nums">{state.count}</span>}
     </span>
@@ -157,7 +157,7 @@ export function ReviewStatusLabel({
   const display = DISPLAY[status.kind];
   return (
     <>
-      <display.icon aria-hidden className={cn("size-3.5 shrink-0", display.tone)} />
+      <display.icon aria-hidden className={cn("size-icon-row shrink-0", display.tone)} />
       <span className={textClassName}>{status.text}</span>
     </>
   );
