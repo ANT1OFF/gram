@@ -3,9 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { MOCK_STUCK_TEXT, type MockReachingSimulation } from "../src/api/mock-reaching";
 import { openOrchestrator, threadRow } from "./thread-row";
 
-// Reaching workers beyond ⌘J: keeping one beside the chat (⌘\), Take over, a worker whose worktree
+// Reaching workers beyond ⌘J: opening one beside the chat (⌘\), Take over, a worker whose worktree
 // was cleaned up, and "Why is it stuck?". None of the ways to look at a worker holds it, and nothing
-// here sends a message: a nudge or "Ask about it" only fills a composer.
+// here sends a message but the one typed into a worker beside the chat, which is the user's own.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
@@ -17,7 +17,7 @@ const withSettings = (page: Page, settings: object) =>
 
 const open = async (page: Page, helpers: object = {}): Promise<MockReachingSimulation> => {
   await withSettings(page, { helpers });
-  // Wide enough that the title bar keeps Workers, Keep beside and Take over out of its folded "…".
+  // Wide enough that the title bar keeps Workers, Open beside and Take over out of its folded "…".
   await page.setViewportSize({ width: 1680, height: 900 });
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
@@ -63,7 +63,7 @@ const openWorker = async (page: Page, threadId: string) => {
   await expect(pane(page, threadId)).toBeVisible();
 };
 
-test("⌘\\ keeps a worker beside the chat without holding it or taking typing", async ({ page }) => {
+test("⌘\\ opens a worker beside the chat without holding it or taking typing", async ({ page }) => {
   const made = await open(page);
   await openWorker(page, made.live);
 
@@ -76,14 +76,24 @@ test("⌘\\ keeps a worker beside the chat without holding it or taking typing",
   await expect(composer).toBeFocused();
   await page.keyboard.type("Tell me when it's green");
   await expect(composer).toHaveValue("Tell me when it's green");
-  // The dock watches: its log, its last command, its changes, and no composer of its own.
-  await expect(dock.getByLabel("Message", { exact: true })).toHaveCount(0);
+  // It sits in the right panel's Thread tab, on the worker's conversation, with the worker's own
+  // composer; its last command and its changes are a view away. None of it takes the typing.
+  await expect(
+    page.getByTestId("right-panel").getByRole("tab", { name: "Thread", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(dock.getByTestId("beside-tab-thread")).toHaveAttribute("aria-selected", "true");
+  await expect(dock.getByTestId("transcript")).toBeVisible();
+  await expect(dock.getByLabel("Message", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "Steer this thread…",
+  );
   await dock.getByTestId("beside-tab-terminal").click();
   await expect(composer).toHaveValue("Tell me when it's green");
-  await dock.getByTestId("beside-tab-log").click();
+  await dock.getByTestId("beside-tab-thread").click();
+  await expect(composer).toBeFocused();
   expect(await isHeld(page, made, made.live)).toBe(false);
 
-  // ⌘\ again undocks; from the orchestrator it brings the same worker back; Close undocks too.
+  // ⌘\ again closes it; from the orchestrator it brings the same worker back; Close closes it too.
   await page.keyboard.press("ControlOrMeta+Backslash");
   await expect(dock).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Backslash");
@@ -91,13 +101,48 @@ test("⌘\\ keeps a worker beside the chat without holding it or taking typing",
   await dock.getByTestId("beside-close").click();
   await expect(dock).toHaveCount(0);
 
-  // ⌘⏎ in the Workers list docks the selected worker.
+  // ⌘⏎ in the Workers list opens the selected worker beside the chat.
   await openList(page);
   await row(page, made.asking).hover();
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(dock).toHaveAttribute("data-thread-id", made.asking);
   expect(await isHeld(page, made, made.live)).toBe(false);
   expect(await isHeld(page, made, made.asking)).toBe(false);
+});
+
+test("what you send beside the chat is you typing into the worker", async ({ page }) => {
+  const made = await open(page);
+  await openWorker(page, made.live);
+  await page.keyboard.press("ControlOrMeta+Backslash");
+  const dock = page.getByTestId("beside-dock");
+  await expect(dock).toHaveAttribute("data-thread-id", made.live);
+  const orchestrator = composerOf(page, made.orchestratorThreadId);
+  await expect(orchestrator).toBeFocused();
+  expect(await isHeld(page, made, made.live)).toBe(false);
+
+  // A click in the Thread tab gives it the keys; what is typed goes to the worker's draft alone.
+  const steer = dock.getByLabel("Message", { exact: true });
+  await steer.click();
+  await page.keyboard.type("Use the retry helper");
+  await expect(steer).toHaveValue("Use the retry helper");
+  await expect(orchestrator).toHaveValue("");
+  await page.keyboard.press("Enter");
+  await expect(steer).toHaveValue("");
+  await expect(
+    dock.getByTestId("message-user").filter({ hasText: "Use the retry helper" }),
+  ).toHaveCount(1);
+  // The worker has it as the user's own words, and holds off its orchestrator, as in its own view.
+  await expect.poll(() => isHeld(page, made, made.live)).toBe(true);
+  await expect(
+    pane(page, made.orchestratorThreadId)
+      .getByTestId("message-user")
+      .filter({ hasText: "retry helper" }),
+  ).toHaveCount(0);
+
+  // Open full view swaps the chat for the worker, and the panel's Thread tab goes.
+  await dock.getByTestId("beside-open").click();
+  await expect(page).toHaveURL(new RegExp(`/t/${made.live}$`));
+  await expect(dock).toHaveCount(0);
 });
 
 test("Take over holds a worker without a message, and Hand back returns it", async ({ page }) => {

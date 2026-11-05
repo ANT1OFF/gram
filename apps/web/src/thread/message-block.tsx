@@ -285,7 +285,7 @@ export const MessageBlock = memo(function MessageBlock({
             title={topLevel ? undefined : sentAt}
             className="contents"
           >
-            <ThreadMessage origin={origin.data}>
+            <ThreadMessage origin={origin.data} messageId={message.id} text={messageText(message)}>
               <ThreadLinkedText text={messageText(message)} />
               {attached}
             </ThreadMessage>

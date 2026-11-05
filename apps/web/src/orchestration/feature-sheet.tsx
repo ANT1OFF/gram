@@ -33,6 +33,7 @@ import { useSame } from "@/stores/use-same";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 import { useViewStore } from "@/views/view-store";
 
+import { keepBeside } from "./beside-store";
 import { useAnsweredWorkers } from "./needs-you-store";
 import { startOrchestratorMessage } from "./ask-about";
 import { useWorkspaceAsks } from "./ask-stack";
@@ -173,12 +174,15 @@ export function useRailFacts(workspaceId: WorkspaceId | undefined): RailFacts {
   );
 }
 
-/** A worker's name opens it; ⌘-click keeps it beside the chat, as ⌘\ does. */
+/** A worker's name opens it; ⌘-click opens it beside its orchestrator's chat, as ⌘\ does. */
 export function useOpenWorker() {
   const open = useOpenThread();
   return (threadId: ThreadId, event: MouseEvent) => {
     useFeatureSheet.getState().close(false);
     if (event.metaKey || event.ctrlKey) {
+      useViewStore.getState().setView("chat");
+      // A worker opens beside its orchestrator's chat, as ⌘-click on its row does elsewhere.
+      if (keepBeside(threadId, open)) return;
       const layout = useLayoutStore.getState();
       if (layout.grid.preset === "1") layout.toggleSplit(threadId);
       else layout.openInPane(threadId, 1);

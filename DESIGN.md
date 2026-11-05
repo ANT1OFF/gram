@@ -102,7 +102,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     accessible name says the same; a `title` on an icon `Button` becomes that tooltip. Its hover
     and open fill is `bg-accent` (`surface-hover`), the row hover's, so the target shows in dark.
   - Chrome glyphs are `fg-muted` until hovered, focused or open, in the title bar's slot too (a
-    thread's role glyph, Keep beside); colour on a glyph is a status it means, never decoration.
+    thread's role glyph, Open beside); colour on a glyph is a status it means, never decoration.
   - The open tab, view or toggle shows a background or an underline, never colour alone.
   - One meaning per glyph, and one glyph per meaning: the Inbox (everything that needs you) is
     `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval

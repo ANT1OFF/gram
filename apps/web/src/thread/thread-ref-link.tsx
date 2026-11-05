@@ -4,6 +4,7 @@ import { MessagesSquare } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { useBesideLink } from "@/orchestration/beside-link";
 import { useThreadsStore } from "@/stores/threads";
 
 import { THREAD_REF_TAG, resolveThreadRef, splitThreadLinks } from "./thread-refs";
@@ -29,6 +30,7 @@ function ThreadRefChip({
   const title = useThreadsStore((s) => s.byId[id]?.thread.title);
   const ready = useThreadsStore((s) => s.ready);
   const target = resolveThreadRef(id, () => title, ready);
+  const beside = useBesideLink(id as ThreadId);
   if (target.kind === "none") return <>{fallback}</>;
   if (target.kind === "gone") {
     return (
@@ -47,6 +49,7 @@ function ThreadRefChip({
     <Link
       to="/t/$threadId"
       params={{ threadId: id as ThreadId }}
+      onClick={beside}
       data-testid="thread-ref"
       title={target.title}
       className={cn(

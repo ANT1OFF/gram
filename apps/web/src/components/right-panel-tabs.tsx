@@ -3,6 +3,7 @@ import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { TabsContent } from "@/components/ui/tabs";
 import { DocsPanel } from "@/docs/docs-panel";
 import { WorkersPanel } from "@/orchestration/workers-panel";
+import { BesidePanel } from "@/orchestration/beside-dock";
 import { ConnectorsPanel } from "@/panels/connectors-panel";
 import { DiffPanel } from "@/panels/diff-panel";
 import { FilesPanel } from "@/panels/files/files-panel";
@@ -19,6 +20,7 @@ import { ReviewRequestsPanel } from "@/reviews/review-requests";
 export function RightPanelTabs({
   threadId,
   workspaceId,
+  besideWorker,
   previewHere,
   reviewsHere,
   requestsHere,
@@ -27,6 +29,8 @@ export function RightPanelTabs({
   threadId: ThreadId | undefined;
   /** The thread's workspace, whose workers the Workers tab lists. */
   workspaceId: WorkspaceId | undefined;
+  /** The worker open beside the chat, which the Thread tab shows. */
+  besideWorker: ThreadId | undefined;
   previewHere: boolean;
   reviewsHere: boolean;
   requestsHere: boolean;
@@ -37,6 +41,11 @@ export function RightPanelTabs({
       {workspaceId !== undefined && (
         <TabsContent value="workers" className="flex min-h-0 flex-col">
           <WorkersPanel key={workspaceId} workspaceId={workspaceId} />
+        </TabsContent>
+      )}
+      {besideWorker !== undefined && (
+        <TabsContent value="thread" className="flex min-h-0 flex-col">
+          <BesidePanel key={besideWorker} worker={besideWorker} />
         </TabsContent>
       )}
       <TabsContent value="diff" className="flex min-h-0 flex-col">

@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { useApi } from "@/api/context";
-import { BesideDock } from "@/orchestration/beside-dock";
+import { useBesideSync } from "@/orchestration/beside-dock";
 import { ThreadGrid } from "@/shell/thread-grid";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -20,6 +20,7 @@ function ThreadPage() {
   const unread = useThreadsStore((s) => s.byId[id]?.thread.unread ?? false);
   const focusedThread = useLayoutStore((s) => s.grid.panes[s.grid.focused] ?? null);
   const routeShown = useLayoutStore((s) => s.grid.panes.includes(id));
+  useBesideSync();
 
   useEffect(() => {
     if (unread) void api.markUnread(id, false);
@@ -46,7 +47,6 @@ function ThreadPage() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <ThreadGrid />
-      <BesideDock />
     </div>
   );
 }
