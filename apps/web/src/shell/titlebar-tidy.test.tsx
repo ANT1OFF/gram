@@ -7,12 +7,12 @@ import { create } from "zustand";
 
 import type { Api } from "@/api/types";
 import { EXPLAIN } from "@/lib/explain";
-import { TIDY_UP_MESSAGE } from "@/orchestration/board-model";
+import { DISCOVER_MESSAGE, TIDY_UP_MESSAGE } from "@/orchestration/board-model";
 import { TIDY_SENT_MS } from "@/orchestration/use-board-actions";
 import { renderWithApi } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
-import { TidyItem, TidyScope } from "./titlebar-fold";
+import { DiscoverItem, TidyItem, TidyScope } from "./titlebar-fold";
 
 // The title bar's "…" Tidy up against a workspace set by hand. The bar holds its state, so a menu
 // that closes and opens again still says it asked.
@@ -44,6 +44,7 @@ const Bar = ({ state }: { state: WorkspaceState }) => (
         <Menu.Positioner>
           <Menu.Popup>
             <TidyItem />
+            <DiscoverItem />
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
@@ -130,4 +131,44 @@ it("says so when the message couldn't be sent", async () => {
   );
   expect(item().hasAttribute("data-sent")).toBe(false);
   expect(item().getAttribute("aria-disabled")).not.toBe("true");
+});
+
+const discover = () => screen.getByTestId("folded-discover");
+
+it("offers Discover beside Tidy up, off with the same reason while there is no orchestrator", () => {
+  const send = vi.fn<Api["send"]>();
+  renderWithApi(<Bar state={workspace()} />, { send });
+  expect(discover().getAttribute("aria-disabled")).toBe("true");
+  expect(discover().textContent).toBe("Discover workspaceNo orchestrator yet: open it first");
+  fireEvent.click(discover());
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("sends the discover message, says so, and rests on its own, apart from Tidy up", async () => {
+  vi.useFakeTimers();
+  withOrchestrator("idle");
+  const applyEvent = vi.spyOn(useThreadsStore.getState(), "applyEvent");
+  const send = vi.fn<Api["send"]>(async () => ({ queued: false }) as never);
+  renderWithApi(<Bar state={workspace(ORCH)} />, { send });
+  expect(discover().textContent).toBe(`Discover workspace${EXPLAIN.discover}`);
+
+  await act(async () => {
+    fireEvent.click(discover());
+  });
+  expect(send).toHaveBeenCalledExactlyOnceWith(ORCH, { text: DISCOVER_MESSAGE });
+  expect(applyEvent).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "notify",
+      title: "Asked the orchestrator to discover the workspace",
+      body: "It asks which starter tasks to start once the survey is done.",
+    }),
+  );
+  expect(discover().getAttribute("data-sent")).toBe("sent");
+  expect(discover().textContent).toBe("Asked to discover");
+  expect(discover().getAttribute("aria-disabled")).toBe("true");
+  // Tidy up is not resting on Discover's send.
+  expect(item().getAttribute("aria-disabled")).not.toBe("true");
+
+  act(() => vi.advanceTimersByTime(TIDY_SENT_MS));
+  expect(discover().hasAttribute("data-sent")).toBe(false);
 });

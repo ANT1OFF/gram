@@ -11,6 +11,7 @@ import { useThreadsStore } from "@/stores/threads";
 
 import {
   freshSessionPct,
+  DISCOVER_MESSAGE,
   handoffRunning,
   TIDY_UP_MESSAGE,
   tidyUpBlocked,
@@ -217,21 +218,33 @@ export function useHandoff(state: WorkspaceState | undefined) {
 }
 
 /**
- * Asks the orchestrator to tidy up, as a message of the user's: queued behind its current turn
- * when it is busy, never steered into it. Resolves to whether it was queued.
+ * Sends the orchestrator one of the board's requests as a message of the user's: queued behind its
+ * current turn when it is busy, never steered into it. Resolves to whether it was queued.
  */
-export const sendTidyUp = async (api: Api, orchestratorId: ThreadId): Promise<boolean> =>
-  (await api.send(orchestratorId, { text: TIDY_UP_MESSAGE })).queued;
+const sendRequest = async (api: Api, orchestratorId: ThreadId, text: string): Promise<boolean> =>
+  (await api.send(orchestratorId, { text })).queued;
 
-/** How long Tidy up shows that it went, before it can be pressed again. */
+/** Asks the orchestrator to tidy up. Resolves to whether it was queued. */
+export const sendTidyUp = (api: Api, orchestratorId: ThreadId): Promise<boolean> =>
+  sendRequest(api, orchestratorId, TIDY_UP_MESSAGE);
+
+/** Asks the orchestrator to discover the workspace. Resolves to whether it was queued. */
+export const sendDiscover = (api: Api, orchestratorId: ThreadId): Promise<boolean> =>
+  sendRequest(api, orchestratorId, DISCOVER_MESSAGE);
+
+/** How long Tidy up or Discover shows that it went, before it can be pressed again. */
 export const TIDY_SENT_MS = 2_500;
 
 /**
- * The board's Tidy up: why it can't be sent, if it can't, whether it has just gone (`sent` or
- * `queued`, for `TIDY_SENT_MS`), whether it is resting (pending or just gone, so a second press
- * can't queue a second sweep), and the call. A failure is a toast.
+ * A board request (Tidy up, Discover): why it can't be sent, if it can't, whether it has just gone
+ * (`sent` or `queued`, for `TIDY_SENT_MS`), whether it is resting (pending or just gone, so a
+ * second press can't queue a second one), and the call. A failure is a toast.
  */
-export function useTidyUp(state: WorkspaceState) {
+function useOrchestratorRequest(
+  state: WorkspaceState,
+  send: (api: Api, orchestratorId: ThreadId) => Promise<boolean>,
+  failure: string,
+) {
   const api = useApi();
   const orchestratorId = state.workspace.orchestratorThreadId;
   const summary = useThreadsStore((s) =>
@@ -248,21 +261,33 @@ export function useTidyUp(state: WorkspaceState) {
 
   const blocked = tidyUpBlocked(summary);
   const resting = pending || sent !== undefined;
-  const send = async () => {
+  const run = async () => {
     if (blocked !== undefined || orchestratorId === undefined || resting || sending.current) return;
     sending.current = true;
     setPending(true);
     try {
-      setSent((await sendTidyUp(api, orchestratorId)) ? "queued" : "sent");
+      setSent((await send(api, orchestratorId)) ? "queued" : "sent");
     } catch (error) {
-      notifyError("Couldn't ask the orchestrator to tidy up", error);
+      notifyError(failure, error);
     } finally {
       sending.current = false;
       setPending(false);
     }
   };
-  return { blocked, sent, resting, send };
+  return { blocked, sent, resting, send: run };
 }
+
+/** The board's Tidy up. */
+export const useTidyUp = (state: WorkspaceState) =>
+  useOrchestratorRequest(state, sendTidyUp, "Couldn't ask the orchestrator to tidy up");
+
+/** The board's Discover. */
+export const useDiscover = (state: WorkspaceState) =>
+  useOrchestratorRequest(
+    state,
+    sendDiscover,
+    "Couldn't ask the orchestrator to discover the workspace",
+  );
 
 const NO_QUESTIONS: readonly MemoryQuestion[] = [];
 

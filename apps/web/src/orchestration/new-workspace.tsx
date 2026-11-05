@@ -47,6 +47,7 @@ import {
   type NewWorkspaceDraft,
 } from "./new-workspace-model";
 import { RepositoryChecklist } from "./repository-checklist";
+import { sendDiscover } from "./use-board-actions";
 import { useWorkspacesQuery } from "./use-orchestration";
 import { parentFolder } from "./workspace-repos";
 
@@ -203,6 +204,8 @@ function SheetForm({
   // With nothing picked yet, adding a repository is the first thing to do.
   const [adding, setAdding] = useState(initial.projectIds.length === 0);
   const repositoryRef = useRef<AddRepositoryHandle>(null);
+  // Discover goes once per workspace made here, however many times opening it is retried.
+  const discovered = useRef(false);
   const taskId = useId();
   // With a repo picked, focus goes to the task: what is next.
   const focusTask = useCallback(
@@ -226,6 +229,14 @@ function SheetForm({
         text === undefined
           ? await api.openOrchestrator({ workspaceId: state.workspace.id })
           : await api.startTask({ target: { workspaceId: state.workspace.id }, input: { text } });
+      // A new workspace starts by discovering itself, as the Discover menu item asks: queued
+      // behind the first message, if there is one. A failure here costs only the survey.
+      if (!discovered.current) {
+        discovered.current = true;
+        await sendDiscover(api, thread.id).catch((e: unknown) =>
+          console.error("new workspace: discover", e),
+        );
+      }
       useLayoutStore.getState().openThread(thread.id);
       await navigate({ to: "/t/$threadId", params: { threadId: thread.id } });
     } catch (e) {
