@@ -67,6 +67,9 @@ test("the right panel widens past 960 px, expands over the chat and fits a narro
   // This scenario keeps the full overview beside the chat, including in narrow windows.
   // Automatic mode instead becomes a 60 px rail below 1280 px.
   await page.getByRole("button", { name: "Compact overview", exact: true }).click();
+  // The pointer, left where Compact was, now rests on the title bar beside the narrower rail, whose
+  // hover label can lie over Expand: moved off first, as a person's would be.
+  await page.mouse.move(1000, 600);
   await page.getByRole("button", { name: "Expand overview", exact: true }).click();
   await expect.poll(() => widthOf(page.getByTestId("overview-sidebar"))).toBe(248);
 
