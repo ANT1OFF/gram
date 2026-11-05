@@ -904,6 +904,8 @@ test("Automatic is open at 1440 px and compact at 1100 px, its tiles saying what
     asks.push((await badge.count()) > 0 ? await badge.textContent() : null);
   }
   expect(asks.some((each) => each !== null)).toBe(true);
+  // Read once t-flaky's opening turn has raised its approval, which Needs you counts too.
+  await flakyAsked(page);
   const needs = await overview(page).getByTestId("overview-needs-you").getAttribute("data-count");
   // As its title counts them: the rows draw only near the view.
   const title = overview(page).getByTestId("overview-section-solo").getByRole("button").first();

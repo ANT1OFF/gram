@@ -74,7 +74,7 @@ test("the Board's chip opens the Inbox, and an answer there clears it everywhere
   const waiting = page.getByTestId("rail-waiting-chip");
   const before = Number(await waiting.getAttribute("data-count"));
   await waiting.click();
-  const push = page.getByTestId("inbox-item").filter({ hasText: "git push" });
+  const push = page.getByTestId("inbox-item").filter({ hasText: "feat/mail-trigger" });
   await push.click();
   // Approvals show the exact command.
   const ask = page.getByTestId("inbox-detail").getByTestId("ask-item");

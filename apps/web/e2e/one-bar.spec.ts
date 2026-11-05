@@ -134,7 +134,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
     await page.mouse.move(0, 400);
     await expect(tooltip).toHaveCount(0);
   }
-  await expect(bar.getByRole("button", { name: /^Notifications/ })).toBeVisible();
+  await expect(bar.getByRole("button", { name: /^Inbox/ })).toBeVisible();
   await expect(bar.getByRole("button", { name: /right panel$/ })).toBeVisible();
   await expect(header.getByTestId("pane-status")).toBeVisible();
   // Chat · Board are right there, so the header has no board button of its own.

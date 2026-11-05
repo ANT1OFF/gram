@@ -78,8 +78,11 @@ const inbox = (page: Page) => page.getByTestId("inbox");
 const currentAsk = (page: Page) => page.getByTestId("inbox-detail").getByTestId("ask-item");
 const undoLine = (page: Page) => page.getByTestId("needs-you-undo-line");
 
-/** Everything that needs you, as the title bar's button counts it. */
-const count = (page: Page) => page.getByTestId("inbox-button");
+/**
+ * The workspace's share of what needs you, as the orchestrator's line counts it: unlike the total,
+ * it doesn't move when t-flaky's own turn raises its approval.
+ */
+const count = (page: Page) => page.getByTestId("inbox-line");
 
 /** Picks the Inbox's row whose words hold `text`, so the detail shows it. */
 const goTo = async (page: Page, text: string) => {
