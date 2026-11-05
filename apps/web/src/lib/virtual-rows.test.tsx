@@ -73,9 +73,113 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("VirtualRows", () => {
+  it.each([
+    { userScroll: false, remeasure: false },
+    { userScroll: true, remeasure: false },
+    { userScroll: false, remeasure: true },
+  ])(
+    "anchors consecutive growth across queued events (user scroll: $userScroll, row resize: $remeasure)",
+    async ({ userScroll, remeasure }) => {
+      let offset = 100;
+      const observers: {
+        callback: ResizeObserverCallback;
+        targets: Set<Element>;
+      }[] = [];
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          targets = new Set<Element>();
+          constructor(callback: ResizeObserverCallback) {
+            observers.push({ callback, targets: this.targets });
+          }
+          observe(target: Element) {
+            this.targets.add(target);
+          }
+          unobserve(target: Element) {
+            this.targets.delete(target);
+          }
+          disconnect() {
+            this.targets.clear();
+          }
+        },
+      );
+      vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+        new DOMRect(),
+      ] as unknown as DOMRectList);
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        return new DOMRect(
+          0,
+          this.hasAttribute("data-virtual-list") ? offset - this.parentElement!.scrollTop : 0,
+          240,
+          ROW,
+        );
+      });
+      if (remeasure) {
+        // Native scroll writes are synchronous, but their scroll event arrives in a later frame.
+        vi.spyOn(HTMLElement.prototype, "scrollTo").mockImplementation(function (
+          this: HTMLElement,
+          options?: ScrollToOptions | number,
+        ) {
+          if (typeof options === "object" && options.top !== undefined)
+            this.scrollTop = options.top;
+        });
+      }
+      const { scroller, list } = renderList();
+      const resize = () => {
+        for (const observer of observers) {
+          if (observer.targets.has(list)) observer.callback([], {} as ResizeObserver);
+        }
+      };
+      await scrollTo(scroller, 1000);
+      act(() => {
+        offset += 40;
+        resize();
+      });
+      expect(scroller.scrollTop).toBe(1040);
+      if (remeasure) {
+        // A late row measurement must not overwrite the compensation with a stale offset.
+        const row = list.querySelector<HTMLElement>("[data-index]")!;
+        const size = { blockSize: ROW + 1, inlineSize: 240 };
+        act(() => {
+          for (const observer of observers) {
+            if (observer.targets.has(row))
+              observer.callback(
+                [
+                  {
+                    target: row,
+                    borderBoxSize: [size],
+                    contentBoxSize: [size],
+                    devicePixelContentBoxSize: [size],
+                    contentRect: new DOMRect(0, 0, 240, ROW + 1),
+                  },
+                ],
+                {} as ResizeObserver,
+              );
+          }
+        });
+        expect(scroller.scrollTop).toBe(1041);
+      }
+      act(() => {
+        // The next section grows before the first compensation's scroll event is delivered.
+        // A real user scroll between changes still establishes a new viewport position.
+        if (userScroll) {
+          scroller.scrollTop += 100;
+          scroller.dispatchEvent(new Event("scroll"));
+        }
+        offset += 34;
+        scroller.dispatchEvent(new Event("scroll"));
+        resize();
+      });
+      expect(scroller.scrollTop).toBe((userScroll ? 1174 : 1074) + (remeasure ? 1 : 0));
+    },
+  );
+
   it("draws the rows in view and a few more, not all of them", () => {
     const { list } = renderList();
     const rows = drawn(list);
