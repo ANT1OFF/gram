@@ -67,7 +67,7 @@ export function PrManage({
         <button
           type="button"
           aria-expanded={open}
-          aria-controls={contentId}
+          aria-controls={open ? contentId : undefined}
           data-testid="pr-manage-toggle"
           onClick={() => setChoice(!open)}
           className="flex w-full min-w-0 items-center gap-1.5 rounded-sm px-3 py-1.5 text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"

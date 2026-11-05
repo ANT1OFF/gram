@@ -283,7 +283,9 @@ export function NewTaskDraft({
     !preflight.blocked &&
     (way !== "direct" || (workerModel !== undefined && !workerPreflight.blocked)) &&
     (!hasImages || !imagePreflight.blocked) &&
-    (way === "plan" || repo !== undefined);
+    (way === "plan" || repo !== undefined) &&
+    // The line beside Start names the workspace's autonomy: never start on a level not yet read.
+    (target.kind !== "workspace" || workspace !== undefined);
 
   const send = async () => {
     // A final still on its way would land after the draft is gone: stop, keeping what was heard,
@@ -375,9 +377,12 @@ export function NewTaskDraft({
         : "Start worker";
   const budget = ledger?.budget;
   // The level the line beside Start names: the new workspace's pick, else the workspace's own.
+  // Undefined while a named workspace hasn't loaded: the line waits rather than show the default.
   const autonomy = makesOne
     ? (pickedAutonomy ?? autonomyOf(DEFAULT_CHARTER))
-    : autonomyOf(workspace?.charter ?? DEFAULT_CHARTER);
+    : workspace === undefined
+      ? undefined
+      : autonomyOf(workspace.charter);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -700,7 +705,17 @@ export function NewTaskDraft({
               // Beside Start, wrapping in its own column rather than under the button: who acts
               // and what still needs you, whatever is folded below.
               <span className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-1.5 text-meta text-muted-foreground">
-                <TaskAuthorityLine way={way} autonomy={autonomy} hold={way === "direct" && hold} />
+                {autonomy === undefined ? (
+                  <span data-testid="task-authority-pending">
+                    Reading this workspace's autonomy…
+                  </span>
+                ) : (
+                  <TaskAuthorityLine
+                    way={way}
+                    autonomy={autonomy}
+                    hold={way === "direct" && hold}
+                  />
+                )}
                 {way === "plan" && budget !== undefined && (
                   <span
                     data-testid="task-workers"
@@ -736,7 +751,10 @@ export function NewTaskDraft({
             {target !== undefined && !makesOne && (
               <div className="flex flex-col gap-1">
                 <span className={labelCls}>Workspace autonomy</span>
-                <WorkspaceAutonomy state={workspace} autonomy={autonomy} />
+                <WorkspaceAutonomy
+                  state={workspace}
+                  autonomy={autonomy ?? autonomyOf(DEFAULT_CHARTER)}
+                />
               </div>
             )}
             <AuthorityExplainer />
