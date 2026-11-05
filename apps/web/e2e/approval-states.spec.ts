@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 // A tool call held at an approval card waits, rather than runs, until the user answers; the card's
-// "Always allow…" shows the exact rule and where it is kept before anything is saved. Synthetic
+// "Always allow this rule…" shows the exact rule and where it is kept before anything is saved. Synthetic
 // mock state (the scripted `t-flaky` thread); nothing reaches a provider.
 
 test("a call held at its approval waits, then runs and finishes once allowed", async ({ page }) => {
@@ -12,7 +12,7 @@ test("a call held at its approval waits, then runs and finishes once allowed", a
   await expect(row).toContainText("Waiting for your approval");
   await expect(row).not.toContainText("Running");
 
-  // The buttons say what they do; "Always allow…" saves nothing on its first press.
+  // The buttons say what they do; "Always allow this rule…" saves nothing on its first press.
   await expect(card.getByTestId("approval-allow")).toContainText("Allow once");
   await card.getByTestId("approval-always").click();
   const rule = card.getByTestId("approval-always-rule");

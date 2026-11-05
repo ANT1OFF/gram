@@ -359,7 +359,9 @@ function MoreTabs({
     <Menu.Root>
       <Hint
         label={`More tabs: ${faces.map((f) => f.tab.label).join(", ")}`}
-        side="bottom"
+        // Beside it, not under it: back on the trigger after its menu closes, the hint stays open,
+        // and under it it would cover the review bar's View menu.
+        side="left"
         render={
           <Menu.Trigger
             data-panel-more

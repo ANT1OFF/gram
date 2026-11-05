@@ -486,7 +486,8 @@ const steps: readonly Shot[] = [
   },
   {
     name: "approval-always",
-    title: "Answer: Always allow… shows the exact rule and how far it reaches before saving",
+    title:
+      "Answer: Always allow this rule… shows the exact rule and how far it reaches before saving",
     open: async (page) => {
       await openApproval(page);
       const card = page.getByTestId("approval-card");
