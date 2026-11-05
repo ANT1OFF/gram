@@ -339,7 +339,7 @@ function bannerOutcome(
   if (state.problem === "failed")
     return {
       tone: "error",
-      text: `\`${state.command}\` failed. Settings → Agents shows its output.`,
+      text: `\`${state.command}\` failed. Settings → Agents & models shows its output.`,
     };
   return { tone: state.problem === "cancelled" ? "warning" : "error", text: state.message };
 }

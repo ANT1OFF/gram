@@ -195,7 +195,7 @@ export function registerIpc({
     if (native)
       return {
         updating: false,
-        error: "This Gram updates from the update button or Settings → Updates.",
+        error: "This Gram updates from the update button or Settings → About.",
       };
     const intent = parseInstallIntent(input);
     return intent

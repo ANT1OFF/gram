@@ -54,7 +54,7 @@ export function createOrchestrationMock(
       charter.orchestratorModel;
     if (orchestrator === undefined)
       throw new MockInvalidState(
-        "This synthetic workspace has no model choice. Select one in Settings → Workspaces.",
+        "This synthetic workspace has no model choice. Select one in Settings → Workspaces & merging.",
       );
     const { variant: _variant, ...bare } = orchestrator;
     const roster: readonly WorkerModel[] = charter.workerModels ?? [bare];

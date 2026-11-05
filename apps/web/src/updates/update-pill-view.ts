@@ -33,8 +33,8 @@ const RESTART_NOTE = "Gram saves sessions and stops running agents first.";
 /** Why this install can't replace itself, and what a click does then. */
 const elsewhere = (state: AppUpdateState) =>
   state.target === "appimage"
-    ? "Gram updates only an AppImage file it can replace. Click for Settings → Updates."
-    : "Gram updates itself only from Applications. Click for Settings → Updates.";
+    ? "Gram updates only an AppImage file it can replace. Click for Settings → About."
+    : "Gram updates itself only from Applications. Click for Settings → About.";
 
 /** What the last step of a download checks, as the pill says it. */
 const verifying = (state: AppUpdateState, version: string | undefined) =>
@@ -152,7 +152,7 @@ export function pillView(
           kind: "error",
           hint: lines(
             state.message ?? "The restart was refused.",
-            state.canInstall ? "Click to try again." : "Click for Settings → Updates.",
+            state.canInstall ? "Click to try again." : "Click for Settings → About.",
           ),
           action: state.canInstall ? "install" : "settings",
           ...(downloaded ? { version: downloaded } : {}),
