@@ -167,7 +167,9 @@ export function ShellTitlebar({
         {/* What needs you has one way in: the sidebar's pill, open or compact; with no pill on
             screen (the sidebar hidden, or Settings' strip in its place), this button, wearing the
             count. */}
-        {!needsYouPill && <InboxButton />}
+        {/* Before setup the sidebar hides its pill (the welcome is the one thing to look at), so
+            the quiet Inbox icon here is the way to what arrived meanwhile, startup notices say. */}
+        {(!needsYouPill || beforeSetup) && <InboxButton />}
       </div>
       <div
         role="group"

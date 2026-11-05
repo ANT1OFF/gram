@@ -344,8 +344,10 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await expect(agents.nth(0).getByRole("button", { name: "Check again" })).toBeVisible();
   await expect(agents.nth(1)).toContainText("Ready");
   await expect(agents.nth(1).getByRole("button", { name: "Check again" })).toHaveCount(0);
-  // A true first run: nothing in the sidebar can need anyone yet.
+  // A true first run: nothing in the sidebar can need anyone yet. The Inbox is still a quiet icon
+  // in the title bar, the way to what arrives meanwhile (a startup notice, say).
   await expect(page.getByTestId("overview-needs-you")).toHaveCount(0);
+  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-count", "0");
   // Past CLI sessions can be picked up from here, as ⌘K's Resume past session lists them.
   await welcome.getByRole("button", { name: "Import past CLI sessions" }).click();
   await expect(welcome.getByTestId("resume-sessions")).toBeVisible();
