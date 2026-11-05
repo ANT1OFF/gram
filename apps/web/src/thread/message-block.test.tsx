@@ -1067,57 +1067,74 @@ describe("MessageBlock agent errors", () => {
     expect(unknownResetText("gateway", false)).toBe("The gateway gave no reset time. Check");
   });
 
-  it("names the provider's reset as the time to try again, and retries then on request", async () => {
-    const resetsAt = Date.now() + 60 * 60 * 1000;
-    useUsageLimits.setState({
-      limits: {
-        claude: { fiveHour: { utilization: 1, status: "rejected", resetsAt, expiresAt: resetsAt } },
-      },
-    });
-    const limit = { ...error, retryable: false, text: "The usage limit is reached (HTTP 429)." };
-    const send = vi.fn(async () => ({ queued: false }));
-    feed.set(E, [sent, { ...failed, parts: [{ ...failed.parts[0], data: limit } as never] }]);
-    useThreadsStore.setState({
-      byId: {
-        [E]: {
-          status: "error",
-          thread: {
-            id: E,
-            lastError: limit,
-            model: { agent: "claude", model: "opus" },
-            checkout: { kind: "main", path: "/r" },
+  it.each([
+    { when: "before midnight", now: new Date(2026, 10, 5, 23, 59, 55), stamp: "6 Nov 00:59" },
+    { when: "after midnight", now: new Date(2026, 10, 6, 0, 0, 5), stamp: "01:00" },
+  ])(
+    "names the provider's reset as the time to try again, and retries then on request ($when)",
+    ({ now, stamp }) => {
+      // Local calendar dates exercise midnight in any host zone. Only Date is faked, so the
+      // router and user interactions keep their real timers.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      vi.setSystemTime(now);
+      const resetsAt = Date.now() + 60 * 60 * 1000;
+      useUsageLimits.setState({
+        limits: {
+          claude: {
+            fiveHour: { utilization: 1, status: "rejected", resetsAt, expiresAt: resetsAt },
           },
         },
-      },
-    } as never);
-    renderWithApi(
-      <MessageBlock
-        threadId={E}
-        message={{ ...failed, parts: [{ ...failed.parts[0], data: limit } as never] }}
-        streamingIds={new Set()}
-        subagents={new Map()}
-        subagentUsage={new Map()}
-      />,
-      { send } as never,
-    );
-    const time = screen.getByTestId("agent-error-retry-time");
-    expect(time.dataset["known"]).toBe("true");
-    expect(time.textContent).toMatch(/Try again at (\w{3} )?\d\d:\d\d/);
-    // A spent usage limit is named for what it is, with its reset, never "Rate limited".
-    expect(screen.getByTestId("agent-error-title").textContent).toMatch(
-      /^Usage limit reached · resets (\w{3} )?\d\d:\d\d$/,
-    );
-    // Sending now would only repeat the refusal: no Retry, only Retry then.
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
-    fireEvent.click(screen.getByTestId("agent-error-retry-then"));
-    expect(screen.getByTestId("agent-error-retry-scheduled").textContent).toContain("Retrying at");
-    expect(Object.keys(useRetrySchedule.getState().due)).toEqual([`${E}:${limit.at}`]);
-    expect(send).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(useRetrySchedule.getState().due).toEqual({});
-    expect(screen.getByTestId("agent-error-retry-then")).toBeTruthy();
-    useUsageLimits.setState({ limits: {} });
-  });
+      });
+      const limit = { ...error, retryable: false, text: "The usage limit is reached (HTTP 429)." };
+      const send = vi.fn(async () => ({ queued: false }));
+      feed.set(E, [sent, { ...failed, parts: [{ ...failed.parts[0], data: limit } as never] }]);
+      useThreadsStore.setState({
+        byId: {
+          [E]: {
+            status: "error",
+            thread: {
+              id: E,
+              lastError: limit,
+              model: { agent: "claude", model: "opus" },
+              checkout: { kind: "main", path: "/r" },
+            },
+          },
+        },
+      } as never);
+      renderWithApi(
+        <MessageBlock
+          threadId={E}
+          message={{ ...failed, parts: [{ ...failed.parts[0], data: limit } as never] }}
+          streamingIds={new Set()}
+          subagents={new Map()}
+          subagentUsage={new Map()}
+        />,
+        { send } as never,
+      );
+      const time = screen.getByTestId("agent-error-retry-time");
+      expect(time.dataset["known"]).toBe("true");
+      expect(screen.getByText(`Try again at ${stamp}`, { exact: true })).toBeTruthy();
+      // A spent usage limit is named for what it is, with its reset, never "Rate limited".
+      expect(screen.getByTestId("agent-error-title").textContent).toBe(
+        `Usage limit reached · resets ${stamp}`,
+      );
+      // Sending now would only repeat the refusal: no Retry, only Retry then.
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+      fireEvent.click(screen.getByTestId("agent-error-retry-then"));
+      expect(screen.getByTestId("agent-error-retry-scheduled").textContent).toContain(
+        `Retrying at ${stamp} while Gram is open`,
+      );
+      expect(Object.keys(useRetrySchedule.getState().due)).toEqual([`${E}:${limit.at}`]);
+      expect(send).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(useRetrySchedule.getState().due).toEqual({});
+      expect(screen.getByTestId("agent-error-retry-then")).toBeTruthy();
+      useUsageLimits.setState({ limits: {} });
+    },
+  );
 
   it("offers no retry once a later turn has moved on, or for a refusal that would only repeat", () => {
     show(vi.fn(), { ...error, at: 8 });

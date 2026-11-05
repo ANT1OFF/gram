@@ -12,6 +12,8 @@ const seed = (page: Page, flags: Record<string, string>) =>
     }
   }, flags);
 
+test.use({ timezoneId: "UTC" });
+
 const CLOCK = "\\d{2}:\\d{2}";
 
 test("the meter shows the kept readings again after a reload", async ({ page }) => {
@@ -39,6 +41,8 @@ test("the meter shows the kept readings again after a reload", async ({ page }) 
 test("the popover forecasts a window that is filling, and dates a reading gone quiet", async ({
   page,
 }) => {
+  // The forecast is ahead of now; keep its bare-clock assertion on the same day.
+  await page.clock.setFixedTime(new Date("2026-10-18T12:00:00Z"));
   await page.goto("/t/t-flaky");
   await page.getByTestId("usage-meter").click();
   const popover = page.getByRole("dialog", { name: "Subscription usage" });
@@ -74,6 +78,8 @@ test("the popover forecasts a window that is filling, and dates a reading gone q
 test("the popover says each row's use and reset, and shows the credits an agent reports", async ({
   page,
 }) => {
+  // This checks a same-day reset alongside the dated weekly reset.
+  await page.clock.setFixedTime(new Date("2026-10-18T12:00:00Z"));
   await page.goto("/t/t-flaky");
   await page.waitForFunction(() => window.gramMock !== undefined);
   await page.evaluate(() =>
