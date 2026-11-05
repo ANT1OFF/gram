@@ -71,6 +71,7 @@
   --shadow-raised: var(--elevation-raised);
   --shadow-overlay: var(--elevation-overlay);
   --shadow-composer: var(--elevation-composer);
+  --shadow-modal: var(--elevation-modal);
 
   /* shadcn names → semantic tokens */
   --color-background: var(--surface-2);
@@ -85,6 +86,7 @@
   --color-secondary-foreground: var(--fg);
   --color-muted: var(--surface-3);
   --color-muted-foreground: var(--fg-muted);
+  --color-description: var(--fg-description);
   --color-accent: var(--surface-hover);
   --color-accent-foreground: var(--fg);
   --color-destructive: var(--danger-text);

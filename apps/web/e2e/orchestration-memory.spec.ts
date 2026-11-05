@@ -874,9 +874,9 @@ test("a long synthetic dream review stays within the application viewport", asyn
   );
   const sidebarAfter = await readSidebarAncestry();
   expect(sidebarAfter).toEqual(sidebarBefore);
-  await memory.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
+  // Bring the open review into view: run cards after it in the list can follow it, so the pane's
+  // end is not where the review is.
+  await review.evaluate((element) => element.scrollIntoView({ block: "start" }));
   await expect(review.getByTestId("dream-adopt")).toBeVisible();
   const capture = async (name: string) => {
     await page.evaluate(() => {
@@ -1008,9 +1008,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
   });
 
   await page.setViewportSize({ width: 1280, height: 600 });
-  await memory.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
+  await review.evaluate((element) => element.scrollIntoView({ block: "start" }));
   await capture("short");
   await expect(review.getByRole("button", { name: "Close review" })).toBeVisible();
   await expect(review.getByTestId("dream-adopt")).toBeVisible();
@@ -1019,9 +1017,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
     .toBeGreaterThan(0);
 
   await page.setViewportSize({ width: 1600, height: 1100 });
-  await memory.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
+  await review.evaluate((element) => element.scrollIntoView({ block: "start" }));
   await capture("large-window");
 
   // Closing review leaves ordinary MemoryView with its usual, uncontained scroll behavior.

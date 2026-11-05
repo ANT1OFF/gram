@@ -104,8 +104,8 @@ describe("limit formatting", () => {
       window: "fiveHour",
       limit: { utilization: 0.42, status: "allowed", expiresAt: NOW + 3_600_000 },
     };
-    expect(meterText(tightest)).toBe("Claude 42%");
-    expect(meterText({ ...tightest, provider: "codex" })).toBe("Codex 42%");
+    expect(meterText(tightest)).toBe("Claude 42% used");
+    expect(meterText({ ...tightest, provider: "codex" })).toBe("Codex 42% used");
     expect(meterHint({ ...tightest, provider: "codex" })).toBe(
       "Highest usage: Codex 5-hour limit, 42%",
     );
@@ -120,7 +120,7 @@ describe("limit formatting", () => {
       window: "fiveHour",
       limit: { utilization: 1, status: "allowed", credits: true, expiresAt: NOW + 3_600_000 },
     };
-    expect(meterText(tightest)).toBe("Claude 100% · credits");
+    expect(meterText(tightest)).toBe("Claude 100% used · credits");
     expect(meterLabel(tightest)).toBe(
       "Highest subscription usage: Claude Code 5-hour limit 100% used, continuing on credits",
     );

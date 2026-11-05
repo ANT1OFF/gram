@@ -25,7 +25,7 @@ import type { DreamPreviewInput } from "@/api/types";
 import { AgentFields, choiceModel, type AgentChoice } from "@/composer/agent-fields";
 import { choiceFromModel } from "@/composer/default-choice";
 import { QueryError } from "@/components/not-available";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useModelNames } from "@/composer/models";
 import { EXPLAIN } from "@/lib/explain";
 import { agoText, formatDay } from "@/lib/time";
@@ -1064,14 +1064,21 @@ function Review({
   );
 }
 
+/**
+ * One run as a card: its state and when, then where it reads from, where its result goes and what
+ * ran it, and one primary next action (watch it, review it, or open its thread), the rest quieter.
+ */
 function DreamRow({
   dream,
+  workspaceName,
   now,
   reviewing,
   onReview,
   children,
 }: {
   dream: Dream;
+  /** Whose memory the run updates. */
+  workspaceName: string;
   now: number;
   reviewing: boolean;
   onReview: () => void;
@@ -1099,6 +1106,17 @@ function DreamRow({
       .finally(() => setBusy(false));
   };
 
+  // The one next action that leads: watch a run, review a finished one, else open its thread.
+  const primary = actions.cancel
+    ? threadId === undefined
+      ? undefined
+      : "watch"
+    : actions.review
+      ? "review"
+      : threadId === undefined
+        ? undefined
+        : "thread";
+
   return (
     <PresenceItem
       as="li"
@@ -1106,92 +1124,109 @@ function DreamRow({
       data-testid="dream-row"
       data-dream={dream.id}
       data-status={dream.status}
-      className="flex flex-col gap-1 border-t border-border pt-2 first:border-t-0 first:pt-0"
+      className={cn(
+        "flex flex-col gap-2.5 rounded-(--radius-md) border border-edge bg-card px-4 py-3 shadow-raised",
+        !reviewing && "max-w-3xl",
+      )}
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <StatePill state={dreamStatus(dream)} testId="dream-status" />
-        <span className="font-medium">{dreamKindLabel(dream)}</span>
-        <span className="text-muted-foreground">
-          {dream.mode === "auto" ? "Saved if it checks out" : "You review it"}
-        </span>
-        <span className="text-muted-foreground">
-          {agentLabel(dream.model.agent)} · {nameOf(dream.model)}
-        </span>
-        {showCost && dream.usage?.costUsd !== undefined && (
-          <span data-testid="dream-cost" className="text-muted-foreground tabular-nums">
-            {usd(dream.usage.costUsd)}
-          </span>
-        )}
-        <span className="text-muted-foreground">
-          started {agoText(dream.createdAt, now)}
+        <span className="ms-auto text-meta text-muted-foreground tabular-nums">
+          Started {agoText(dream.createdAt, now)}
           {dream.endedAt !== undefined && ` · ended ${agoText(dream.endedAt, now)}`}
         </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {threadId !== undefined && (
-            <Link
-              to="/t/$threadId"
-              params={{ threadId }}
-              data-testid="dream-thread"
-              onClick={() => useLayoutStore.getState().openThread(threadId)}
-              className="rounded-sm px-1 text-foreground/80 underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {actions.cancel ? "Watch it run" : "Open thread"}
-            </Link>
-          )}
-          {actions.cancel && (
-            <Button
-              size="xs"
-              variant="outline"
-              data-testid="dream-cancel"
-              disabled={busy}
-              onClick={() => run(() => api.cancelDream(dream.id))}
-            >
-              Cancel
-            </Button>
-          )}
-          {actions.review && (
-            <Button
-              size="xs"
-              variant={dream.adoptedVersion === undefined ? "default" : "outline"}
-              data-testid="dream-review-open"
-              aria-expanded={reviewing}
-              onClick={onReview}
-            >
-              {dream.mode === "auto" ? "Inspect" : "Review"}
-            </Button>
-          )}
-          {actions.discard && !actions.review && (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              data-testid="dream-row-discard"
-              aria-expanded={discarding}
-              disabled={busy}
-              onClick={() => setDiscarding(!discarding)}
-            >
-              Discard
-            </Button>
-          )}
-        </span>
       </div>
+      <dl data-testid="dream-facts" className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body">
+        <dt className="text-muted-foreground">Source</dt>
+        <dd className="min-w-0">{dreamKindLabel(dream)}</dd>
+        <dt className="text-muted-foreground">Destination</dt>
+        <dd className="min-w-0">
+          {workspaceName} memory ·{" "}
+          {dream.mode === "auto" ? "saved if it checks out" : "you review it"}
+        </dd>
+        <dt className="text-muted-foreground">Agent</dt>
+        <dd className="min-w-0">
+          {agentLabel(dream.model.agent)} · {nameOf(dream.model)}
+          {showCost && dream.usage?.costUsd !== undefined && (
+            <span data-testid="dream-cost" className="text-muted-foreground tabular-nums">
+              {" "}
+              · {usd(dream.usage.costUsd)}
+            </span>
+          )}
+        </dd>
+      </dl>
       {failure !== undefined && (
         <p
           data-testid="dream-failure"
           className={cn(
-            "text-meta",
+            "text-body",
             // Cancelling was the user's own doing, so it is said without alarm.
-            dream.status === "failed" ? "text-destructive" : "text-muted-foreground",
+            dream.status === "failed" ? "text-destructive" : "text-description",
           )}
         >
           {failure}
         </p>
       )}
       {(dream.notes ?? []).map((note) => (
-        <p key={note} className="text-meta text-muted-foreground">
+        <p key={note} className="text-body text-description">
           {note}
         </p>
       ))}
+      <div data-testid="dream-row-actions" className="flex flex-wrap items-center gap-2">
+        {actions.review && (
+          <Button
+            size="sm"
+            variant={dream.adoptedVersion === undefined ? "default" : "outline"}
+            data-testid="dream-review-open"
+            aria-expanded={reviewing}
+            onClick={onReview}
+          >
+            {dream.mode === "auto" ? "Inspect" : "Review"}
+          </Button>
+        )}
+        {threadId !== undefined && (
+          <Link
+            to="/t/$threadId"
+            params={{ threadId }}
+            data-testid="dream-thread"
+            onClick={() => useLayoutStore.getState().openThread(threadId)}
+            // Merged as `Button` merges, so the small size's text wins over the base's.
+            className={cn(
+              buttonVariants({
+                size: "sm",
+                variant:
+                  primary === "watch" ? "default" : primary === "thread" ? "outline" : "ghost",
+              }),
+            )}
+          >
+            {actions.cancel ? "Watch it run" : "Open thread"}
+          </Link>
+        )}
+        {actions.cancel && (
+          <Button
+            size="sm"
+            variant={primary === undefined ? "outline" : "ghost"}
+            data-testid="dream-cancel"
+            disabled={busy}
+            onClick={() => run(() => api.cancelDream(dream.id))}
+          >
+            Cancel
+          </Button>
+        )}
+        {actions.discard && !actions.review && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            data-testid="dream-row-discard"
+            aria-expanded={discarding}
+            disabled={busy}
+            onClick={() => setDiscarding(!discarding)}
+          >
+            Discard
+          </Button>
+        )}
+      </div>
       <InlineConfirm
         open={discarding}
         label="Discard this update?"
@@ -1220,11 +1255,8 @@ function DreamRow({
 function ModeChoice({ mode, onChange }: { mode: DreamMode; onChange: (mode: DreamMode) => void }) {
   const name = useId();
   return (
-    <fieldset
-      data-testid="dream-mode"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta"
-    >
-      <legend className="float-left me-1 text-muted-foreground">When this update is ready</legend>
+    <fieldset data-testid="dream-mode" className="flex flex-col gap-1.5 text-body">
+      <legend className="mb-1 font-medium">When this update is ready</legend>
       <label className="flex items-center gap-1.5">
         <input
           type="radio"
@@ -1297,13 +1329,26 @@ export function DreamsSection({
   const [mode, setMode] = useState<DreamMode>("review");
 
   return (
-    <section ref={ref} aria-label="Dreams" data-testid="dreams" className={SECTION}>
-      <h2 className="sr-only">Draft memory update</h2>
-      <p className="text-meta text-muted-foreground">
-        Dreams: {EXPLAIN.dreams} One runs at a time.
-      </p>
-      <div data-testid="dream-actions" className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="flex flex-wrap gap-2">
+    <section ref={ref} aria-label="Dreams" data-testid="dreams" className="flex flex-col gap-5">
+      <div
+        data-testid="dream-form"
+        className="flex max-w-2xl flex-col gap-3 rounded-(--radius-md) border border-edge bg-card px-4 py-3.5"
+      >
+        <h2 className="text-body-strong">Draft memory update</h2>
+        <p className="max-w-(--description-measure) text-body text-pretty text-description">
+          Dreams: {EXPLAIN.dreams} One runs at a time.
+        </p>
+        <ModeChoice mode={mode} onChange={setMode} />
+        <p
+          role="status"
+          data-testid="dream-mode-note"
+          className="max-w-(--description-measure) text-body text-pretty text-description"
+        >
+          {mode === "auto"
+            ? "This update is saved to memory without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore. The agent still keeps to its sandbox and asks before anything it would normally ask about."
+            : "Memory changes only after you review the draft and adopt it. The agent still keeps to its sandbox and asks before anything it would normally ask about."}
+        </p>
+        <div data-testid="dream-actions" className="flex flex-wrap gap-2">
           <Button
             size="sm"
             data-testid="dream-now"
@@ -1327,23 +1372,17 @@ export function DreamsSection({
             <Download data-icon="inline-start" />
             Draft from past sessions
           </Button>
-        </span>
-        <ModeChoice mode={mode} onChange={setMode} />
+        </div>
+        {running && (
+          <p data-testid="dream-busy" className="text-body text-description">
+            A run is under way; the next can start once it ends or you cancel it below.
+          </p>
+        )}
       </div>
-      {running && (
-        <p data-testid="dream-busy" className="text-meta text-muted-foreground">
-          A run is under way; the next can start once it ends or you cancel it below.
-        </p>
-      )}
-      <p role="status" data-testid="dream-mode-note" className="text-meta text-muted-foreground">
-        {mode === "auto"
-          ? "This update is saved to memory without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore. The agent still keeps to its sandbox and asks before anything it would normally ask about."
-          : "Memory changes only after you review the draft and adopt it. The agent still keeps to its sandbox and asks before anything it would normally ask about."}
-      </p>
       {suggestion !== undefined && starting === undefined && (
         <p
           data-testid="dream-backlog"
-          className="flex flex-wrap items-center gap-2 rounded-(--radius-sm) border border-border px-2 py-1.5 text-meta"
+          className="flex max-w-2xl flex-wrap items-center gap-2 rounded-(--radius-sm) border border-border px-3 py-2 text-body"
         >
           <span className="min-w-0 flex-1">{suggestion}</span>
           <Button
@@ -1373,19 +1412,20 @@ export function DreamsSection({
       ) : dreams.data === undefined ? (
         <PanelMessage loading>Loading memory updates…</PanelMessage>
       ) : dreams.data.length === 0 ? (
-        <p className="text-meta text-muted-foreground">
+        <p className="text-body text-description">
           No updates drafted yet. Draft memory update rereads finished threads and drafts changes
           for you to review.
         </p>
       ) : (
-        <div className="flex flex-col gap-2 border-t border-border pt-3">
-          <h3 className="text-meta font-medium text-muted-foreground">Drafted updates</h3>
-          <ul className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2.5">
+          <h3 className="text-body-strong">Drafted updates</h3>
+          <ul className="flex flex-col gap-2.5">
             <PresenceList>
               {dreams.data.map((dream) => (
                 <DreamRow
                   key={dream.id}
                   dream={dream}
+                  workspaceName={state.workspace.name}
                   now={now}
                   reviewing={reviewing === dream.id}
                   onReview={() => review(reviewing === dream.id ? undefined : dream.id)}

@@ -12,7 +12,7 @@ import { SegmentSlab } from "@/motion";
 import { HelpTip, SettingDescription } from "./help-tip";
 import { isLongError } from "./long-error";
 import { parseNumberDraft } from "./number-draft";
-import { SaveHint } from "./save-hint";
+import { DraftActions, dropUndo, offerUndo, SaveHint, UndoSave } from "./save-hint";
 import { SavedMark, touchHandlers } from "./saved-mark";
 import { useSettingSearch } from "./search-scope";
 
@@ -77,6 +77,7 @@ export function Field({
   learnMore,
   action,
   status,
+  undoKey,
   children,
 }: {
   label: string;
@@ -91,6 +92,8 @@ export function Field({
   action?: ReactNode;
   /** Beside the name, where "Saved" shows: such as how to save a draft not saved yet. */
   status?: ReactNode;
+  /** A typed setting's key for `offerUndo`, whose Undo shows after "Saved". */
+  undoKey?: string;
   children: ReactNode;
 }) {
   const search = useSettingSearch({ label, description, keywords });
@@ -101,6 +104,7 @@ export function Field({
         <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
           {status}
           <SavedMark row={row} />
+          {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
         </RowLabel>
         {action !== undefined && <div className="ms-auto flex items-center">{action}</div>}
       </div>
@@ -126,6 +130,7 @@ export function SettingRow({
   detail,
   learnMore,
   status,
+  undoKey,
   children,
 }: {
   label: string;
@@ -146,6 +151,8 @@ export function SettingRow({
   disabledReason?: string | undefined;
   /** Full-width content under the row, such as a list the setting edits. */
   detail?: ReactNode;
+  /** A typed setting's key for `offerUndo`, whose Undo shows after "Saved". */
+  undoKey?: string;
   children?: ReactNode;
 }) {
   const search = useSettingSearch({ label, description, keywords });
@@ -163,6 +170,7 @@ export function SettingRow({
             {onReset && <ResetButton label={label} onReset={onReset} />}
             {status}
             <SavedMark row={row} />
+            {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
           </RowLabel>
         </div>
         {children !== undefined && (
@@ -277,6 +285,12 @@ export const SEGMENT =
  */
 export const SEGMENT_SLAB = "choice-selected";
 
+/**
+ * A settings segment's size: a full 32 px target with room either side of its word, since these are
+ * the choices a page is mostly changed through.
+ */
+export const SEGMENT_ROOMY = "h-8 px-3";
+
 /** One choice out of a few, as a row of radio buttons. */
 export function OptionGroup<T extends string>({
   label,
@@ -301,7 +315,7 @@ export function OptionGroup<T extends string>({
           role="radio"
           aria-checked={option.value === value}
           variant="ghost"
-          className={SEGMENT}
+          className={cn(SEGMENT, SEGMENT_ROOMY)}
           disabled={disabled}
           onClick={() => {
             if (option.value !== value) onChange(option.value);
@@ -405,7 +419,11 @@ export function NumberField({
     if (draft === undefined) return;
     const next = parseNumberDraft(draft, { min, integer: Number.isInteger(step) });
     setDraft(undefined);
-    if (next !== undefined && next !== value) onCommit(next);
+    if (next !== undefined && next !== value) {
+      const before = value;
+      offerUndo(id, () => onCommit(before));
+      onCommit(next);
+    }
   };
   return (
     <Field
@@ -414,6 +432,7 @@ export function NumberField({
       {...(description === undefined ? {} : { description })}
       {...(keywords === undefined ? {} : { keywords })}
       status={dirty ? <SaveHint id={hintId} /> : undefined}
+      undoKey={id}
     >
       <span className="flex items-center gap-1">
         {prefix !== undefined && (
@@ -431,7 +450,10 @@ export function NumberField({
           className={cn(inputCls, "max-w-28 tabular-nums")}
           value={draft ?? String(value)}
           aria-describedby={dirty ? hintId : undefined}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            dropUndo(id);
+          }}
           onBlur={commit}
           onKeyDown={(event) => {
             // The enclosing form or Create shortcut reads the committed value in this same event.
@@ -439,6 +461,9 @@ export function NumberField({
             if (event.key === "Escape") setDraft(undefined);
           }}
         />
+        {dirty && (
+          <DraftActions label={label} onSave={commit} onCancel={() => setDraft(undefined)} />
+        )}
       </span>
     </Field>
   );

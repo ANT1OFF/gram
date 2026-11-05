@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { errorMessage } from "@/api/errors";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { SaveHint } from "./save-hint";
+import { DraftActions, dropUndo, offerUndo, SaveHint } from "./save-hint";
 import { FONTS_DEFAULTS, resetFor } from "./defaults";
 import { rowInputCls, SettingRow } from "./fields";
 import { useInstalledFonts } from "./installed-fonts";
@@ -121,8 +121,12 @@ function TextSetting({
   const dirty = draft.trim() !== (value ?? "");
   const commit = () => {
     const next = draft.trim();
-    if (next !== (value ?? "")) onSave(next);
+    if (next === (value ?? "")) return;
+    const before = value ?? "";
+    offerUndo(id, () => onSave(before));
+    onSave(next);
   };
+  const cancel = () => setDraft(value ?? "");
   const listId = `${id}-suggestions`;
   return (
     <SettingRow
@@ -132,6 +136,7 @@ function TextSetting({
       onReset={onReset}
       error={error}
       status={dirty ? <SaveHint id={hintId} /> : undefined}
+      undoKey={id}
     >
       <input
         id={id}
@@ -142,13 +147,17 @@ function TextSetting({
         {...(inputMode === undefined ? {} : { inputMode })}
         {...(suggestions === undefined ? {} : { list: listId })}
         aria-describedby={dirty ? hintId : undefined}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          dropUndo(id);
+        }}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === "Enter") commit();
-          if (event.key === "Escape") setDraft(value ?? "");
+          if (event.key === "Escape") cancel();
         }}
       />
+      {dirty && <DraftActions label={label} onSave={commit} onCancel={cancel} />}
       {suggestions !== undefined && (
         <datalist id={listId} data-testid={listId}>
           {suggestions.map((family) => (

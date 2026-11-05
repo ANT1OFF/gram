@@ -1,10 +1,11 @@
 import { APP_ICONS, type AppIconId } from "@gram/contracts";
-import { PRESET_PALETTES, type Palette } from "@gram/themes";
+import { derivePalette, PRESET_PALETTES, type Palette, type SemanticColors } from "@gram/themes";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronRight, CircleDashed, CircleDot, Play, SquareTerminal } from "lucide-react";
 import {
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -35,7 +36,7 @@ import {
 } from "@/theme/theme";
 import { switchTheme, type Point } from "@/theme/transition";
 
-import { LONG_COPY, SEGMENT, SEGMENT_SLAB, SEGMENT_TRACK } from "./fields";
+import { LONG_COPY, SEGMENT, SEGMENT_ROOMY, SEGMENT_SLAB, SEGMENT_TRACK } from "./fields";
 import { FontsSection } from "./fonts-section";
 import { PaletteEditor } from "./palette-editor";
 import { paletteChoices, type PaletteChoice } from "./palette-choices";
@@ -147,9 +148,10 @@ const READING_KEYWORDS = ["transcript", "conversation", "text size", "line width
 const PALETTE_EDITOR_KEYWORDS = ["custom palette", "edit palette", "colour", "color", "seed"];
 
 function AppearanceControls({ onEditColours }: { onEditColours: () => void }) {
-  const { prefs, attrs } = useThemeAttributes();
+  const { prefs, attrs, palettes } = useThemeAttributes();
   const customPalettes = useThemeStore((s) => s.customPalettes);
   const choices = paletteChoices(prefs.palette, customPalettes);
+  const shownMode = attrs["data-mode"];
   return (
     <SearchScope label="Theme" className="flex flex-col gap-5">
       <Segmented
@@ -166,11 +168,12 @@ function AppearanceControls({ onEditColours }: { onEditColours: () => void }) {
         hint={PALETTE_HINT}
         hintFirst
       >
-        <div className="grid grid-cols-2 gap-1.5 @md:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 @md:grid-cols-3">
           {choices.map((choice) => (
             <PaletteCard
               key={choice.id}
               choice={choice}
+              palette={palettes.find((p) => p.id === shownHalf(choice, shownMode))}
               selected={
                 choice.ids.includes(prefs.palette) || choice.ids.includes(attrs["data-palette"])
               }
@@ -284,34 +287,115 @@ const shownHalf = (choice: PaletteChoice, mode: string) =>
 
 function PaletteCard({
   choice,
+  palette,
   selected,
   onSelect,
 }: {
   choice: PaletteChoice;
+  /** The half the screen's mode shows, which the sample is drawn in. */
+  palette: Palette | undefined;
   selected: boolean;
   onSelect: (event: MouseEvent<HTMLElement>) => void;
 }) {
+  const colors = useMemo(
+    () => (palette === undefined ? undefined : derivePalette(palette).colors),
+    [palette],
+  );
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
+      data-palette-choice={choice.id}
       className={cn(
-        "flex flex-col gap-1.5 rounded-md border border-border p-2 text-left outline-none hover:bg-accent focus-visible:focus-ring",
+        "flex flex-col gap-1.5 rounded-md border border-border p-1.5 text-left outline-none hover:bg-accent focus-visible:focus-ring",
         selected && "choice-selected hover:choice-selected",
       )}
     >
-      <span aria-hidden className="flex h-3.5 overflow-hidden rounded-xs">
-        {choice.swatch.map((hex, i) => (
-          <span key={i} className="flex-1" style={{ backgroundColor: hex }} />
-        ))}
-      </span>
-      <span className="flex items-center gap-1 text-meta font-medium">
+      {colors === undefined ? (
+        <span aria-hidden className="flex h-3.5 overflow-hidden rounded-xs">
+          {choice.swatch.map((hex, i) => (
+            <span key={i} className="flex-1" style={{ backgroundColor: hex }} />
+          ))}
+        </span>
+      ) : (
+        <PaletteSample colors={colors} />
+      )}
+      <span className="flex items-center gap-1 px-0.5 text-body font-medium">
         {choice.name}
         <ChoiceCheck checked={selected} className="ml-auto" />
       </span>
-      {choice.note && <span className="text-caption text-muted-foreground">{choice.note}</span>}
+      {choice.note && <span className="px-0.5 text-meta text-muted-foreground">{choice.note}</span>}
     </button>
+  );
+}
+
+/** A thin line standing for text, in a palette's own colour. */
+function SampleLine({ color, width }: { color: string; width: string }) {
+  return <span className="block h-1 rounded-full" style={{ backgroundColor: color, width }} />;
+}
+
+/** A status dot, in a palette's own colour. */
+function SampleDot({ color }: { color: string }) {
+  return <span className="size-1 shrink-0 rounded-full" style={{ backgroundColor: color }} />;
+}
+
+/**
+ * A palette in miniature, in its own colours rather than the page's: a sidebar with its current
+ * row and status dots, a conversation with a message and a reply, and a diff's added and removed
+ * lines.
+ */
+function PaletteSample({ colors }: { colors: SemanticColors }) {
+  return (
+    <span
+      aria-hidden
+      data-testid="palette-sample"
+      className="flex h-14 overflow-hidden rounded-xs border border-border"
+      style={{ backgroundColor: colors["surface-2"] }}
+    >
+      <span
+        className="flex w-[30%] flex-col gap-1 p-1"
+        style={{ backgroundColor: colors["surface-1"] }}
+      >
+        <span
+          className="flex items-center gap-0.5 rounded-2xs p-0.5"
+          style={{ backgroundColor: colors.selection }}
+        >
+          <SampleDot color={colors["status-working"]} />
+          <SampleLine color={colors.fg} width="70%" />
+        </span>
+        <span className="flex items-center gap-0.5 px-0.5">
+          <SampleDot color={colors["status-needs-mark"]} />
+          <SampleLine color={colors["fg-muted"]} width="60%" />
+        </span>
+        <span className="flex items-center gap-0.5 px-0.5">
+          <SampleDot color={colors["fg-subtle"]} />
+          <SampleLine color={colors["fg-muted"]} width="50%" />
+        </span>
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1 p-1">
+        <span
+          className="ms-auto block h-2 w-3/5 rounded-2xs"
+          style={{ backgroundColor: colors["surface-3"] }}
+        />
+        <SampleLine color={colors.fg} width="85%" />
+        <SampleLine color={colors["fg-muted"]} width="65%" />
+        <span className="mt-auto flex flex-col overflow-hidden rounded-2xs">
+          <span
+            className="flex h-2 items-center px-0.5"
+            style={{ backgroundColor: colors["diff-add-bg"] }}
+          >
+            <SampleLine color={colors["diff-add-fg"]} width="70%" />
+          </span>
+          <span
+            className="flex h-2 items-center px-0.5"
+            style={{ backgroundColor: colors["diff-del-bg"] }}
+          >
+            <SampleLine color={colors["diff-del-fg"]} width="55%" />
+          </span>
+        </span>
+      </span>
+    </span>
   );
 }
 
@@ -336,9 +420,9 @@ function Control({
       <h3 className="font-caption text-meta font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </h3>
-      {hintFirst && hint && <p className="text-meta text-muted-foreground">{hint}</p>}
+      {hintFirst && hint && <p className="text-body text-pretty text-description">{hint}</p>}
       {children}
-      {!hintFirst && hint && <p className="text-meta text-muted-foreground">{hint}</p>}
+      {!hintFirst && hint && <p className="text-body text-pretty text-description">{hint}</p>}
     </section>
   );
 }
@@ -365,10 +449,10 @@ function Segmented<T extends string>({
         {options.map((option) => (
           <Button
             key={option}
-            size="xs"
+            size="sm"
             variant="ghost"
             aria-pressed={option === value}
-            className={cn(SEGMENT, "flex-1 capitalize")}
+            className={cn(SEGMENT, SEGMENT_ROOMY, "flex-1 capitalize")}
             onClick={(event) => onSelect(option, event)}
           >
             {option === value && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}

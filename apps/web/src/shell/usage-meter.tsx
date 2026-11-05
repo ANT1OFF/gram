@@ -93,7 +93,8 @@ export function UsageMeter({
         hint={meterHint(tightest)}
         label="Subscription usage"
         testId="usage-limits"
-        className="w-[21rem] p-2.5"
+        className="w-[23rem] p-3"
+        keepClearBelow={ACTION_AREA_CLEARANCE}
         trigger={
           <button
             type="button"
@@ -120,22 +121,21 @@ export function UsageMeter({
 }
 
 /**
- * The popover's body, ticking each minute while open so ages and forecasts stay true. The window
+ * How much of the window's foot the popover leaves clear, in CSS px: the composer and an approval
+ * or question card above it, the conversation's action area. A short window scrolls the popover
+ * rather than laying it over them.
+ */
+const ACTION_AREA_CLEARANCE = 360;
+
+/**
+ * The popover's body, ticking each minute while open so ages and forecasts stay true: a block per
+ * provider, a row per window saying its period, how much is used and when it resets. The window
  * the title bar shows is marked, and named at the foot.
  */
 function LimitsPopover({ shown }: { shown: Pick<TightestLimit, "provider" | "window"> }) {
   const now = useMinuteNow();
   return (
-    <div className="grid gap-1.5 text-body">
-      <div
-        aria-hidden
-        data-testid="usage-limit-headings"
-        className={cn(LIMIT_ROW, "text-caption text-muted-foreground")}
-      >
-        <span />
-        <span className="col-span-2 text-right">Used</span>
-        <span className="text-right">Resets at</span>
-      </div>
+    <div className="grid gap-3 text-body">
       {LIMIT_PROVIDERS.map((provider) => (
         <ProviderLimits
           key={provider}
@@ -144,7 +144,10 @@ function LimitsPopover({ shown }: { shown: Pick<TightestLimit, "provider" | "win
           shown={shown.provider === provider ? shown.window : undefined}
         />
       ))}
-      <p data-testid="usage-limits-foot" className="mt-1 text-meta text-muted-foreground">
+      <p
+        data-testid="usage-limits-foot"
+        className="border-t border-border pt-2.5 text-meta text-muted-foreground"
+      >
         The title bar shows the highest: {agentLabel(shown.provider)}{" "}
         {WINDOW_LABEL[shown.window].toLowerCase()}. Includes your own use outside Gram.
       </p>
@@ -152,8 +155,8 @@ function LimitsPopover({ shown }: { shown: Pick<TightestLimit, "provider" | "win
   );
 }
 
-/** The popover's columns: the window, its bar and share used, and when it resets. */
-const LIMIT_ROW = "grid grid-cols-[3.75rem_1fr_2.25rem_7.25rem] items-center gap-2";
+/** The popover's columns: the period, its bar, the share used ("85% used") and when it resets. */
+const LIMIT_ROW = "grid grid-cols-[3.75rem_1fr_4.25rem_7.75rem] items-center gap-x-2";
 
 /**
  * A provider's 5-hour and weekly rows under its name and when it was last updated, its credits
@@ -181,8 +184,12 @@ function ProviderLimits({
   const stale = current.every((limit) => limitStale(limit, now));
   const credits = creditsText(newest);
   return (
-    <section aria-label={agentLabel(provider)} data-provider={provider} className="contents">
-      <div className="mt-1 flex items-baseline justify-between gap-2 first:mt-0">
+    <section
+      aria-label={agentLabel(provider)}
+      data-provider={provider}
+      className="grid gap-1.5 not-first:border-t not-first:border-border not-first:pt-3"
+    >
+      <div className="flex items-baseline justify-between gap-2">
         <h3 className="font-medium">{agentLabel(provider)}</h3>
         <span
           data-testid="usage-limit-age"
@@ -227,12 +234,16 @@ function ProviderLimits({
               ) : (
                 <>
                   <LimitBar limit={limit} />
-                  <span className="text-right">{limitPercent(limit.utilization)}%</span>
+                  <span data-testid="usage-limit-used" className="text-right whitespace-nowrap">
+                    {limitPercent(limit.utilization)}% used
+                  </span>
                   <span
                     data-testid="usage-limit-reset"
                     className="text-right text-meta whitespace-nowrap"
                   >
-                    {limit.resetsAt === undefined ? "" : resetAtText(limit.resetsAt, now)}
+                    {limit.resetsAt === undefined
+                      ? ""
+                      : `Resets ${resetAtText(limit.resetsAt, now)}`}
                   </span>
                 </>
               )}
@@ -246,12 +257,16 @@ function ProviderLimits({
               </p>
             )}
             {forecast !== undefined && (
+              // A muted sub-row under the bar, in the bar's column, so the rows keep their columns.
               <p
                 data-testid="usage-limit-forecast"
-                className="-mt-1 text-meta text-muted-foreground"
+                className={cn(LIMIT_ROW, "-mt-1 text-meta text-muted-foreground")}
               >
-                {forecastText(forecast)}
-                {stale && " · from an older reading"}
+                <span aria-hidden />
+                <span className="col-span-3">
+                  {forecastText(forecast)}
+                  {stale && " · from an older reading"}
+                </span>
               </p>
             )}
           </Fragment>

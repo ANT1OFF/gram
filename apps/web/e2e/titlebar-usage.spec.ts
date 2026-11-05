@@ -10,14 +10,14 @@ const seed = (page: Page, flags: Record<string, string>) =>
 
 const WELCOME_UNSEEN = JSON.stringify({ onboarding: { welcomeSeen: false } });
 
-const CLOCK = /^(\d{1,2} [A-Z][a-z]{2}( \d{4})? )?\d{2}:\d{2}$/;
+const RESETS = /^Resets (\d{1,2} [A-Z][a-z]{2}( \d{4})? )?\d{2}:\d{2}$/;
 
 test("the meter shows the tightest limit and opens onto both providers", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const meter = page.getByTestId("usage-meter");
   // Codex's 5-hour window is at 85%: the highest, and still short of the warning, so the title
   // bar's only amber stays what needs you.
-  await expect(meter).toHaveText("Codex 85%");
+  await expect(meter).toHaveText("Codex 85% used");
   await expect(meter).not.toHaveAttribute("data-warn");
   await expect(meter).toHaveAccessibleName(
     "Highest subscription usage: Codex 5-hour limit 85% used",
@@ -36,10 +36,11 @@ test("the meter shows the tightest limit and opens onto both providers", async (
     await expect(windows).toHaveCount(2);
     for (const [i, label] of ["5-hour", "Weekly"].entries()) {
       const cells = windows.nth(i).locator(":scope > span:not([aria-hidden])");
+      // Each row says its period, the share used and when it resets, in words.
       await expect(cells.nth(0)).toHaveText(label);
-      await expect(cells.nth(1)).toHaveText(rows[i]!);
+      await expect(cells.nth(1)).toHaveText(`${rows[i]!} used`);
       // Resets on a 24-hour clock: today's as a time, later ones with their date before it.
-      await expect(cells.nth(2)).toHaveText(CLOCK);
+      await expect(cells.nth(2)).toHaveText(RESETS);
     }
   }
   await expect(popover).toContainText("Includes your own use outside Gram.");
@@ -67,7 +68,7 @@ test("the meter waits for a limit, warns from 90% once, and ignores gateways", a
     );
 
   await report(0.5);
-  await expect(meter).toHaveText("Claude 50%");
+  await expect(meter).toHaveText("Claude 50% used");
   await expect(meter).not.toHaveAttribute("data-warn");
   const fill = meter.getByTestId("usage-meter-fill");
   await expect(fill).toHaveAttribute("style", /width: 50%/);
@@ -75,20 +76,20 @@ test("the meter waits for a limit, warns from 90% once, and ignores gateways", a
 
   // 85% is close, not yet a warning: the meter stays neutral.
   await report(0.85);
-  await expect(meter).toHaveText("Claude 85%");
+  await expect(meter).toHaveText("Claude 85% used");
   await expect(meter).not.toHaveAttribute("data-warn");
   await expect(page.getByTestId("pulse-once")).toHaveCount(0);
 
   // Crossing 90% turns it warning-coloured, with one pulse.
   await report(0.92, { status: "warning" });
-  await expect(meter).toHaveText("Claude 92%");
+  await expect(meter).toHaveText("Claude 92% used");
   await expect(meter).toHaveAttribute("data-warn", "true");
   await expect(fill).toHaveAttribute("style", /width: 92%/);
   await expect(page.getByTestId("pulse-once")).toHaveCount(1);
 
   // A gateway's limit is its own quota, not the subscription's.
   await report(0.99, { gateway: true });
-  await expect(meter).toHaveText("Claude 92%");
+  await expect(meter).toHaveText("Claude 92% used");
 
   // Codex hasn't reported, so the popover has Claude alone.
   await meter.click();

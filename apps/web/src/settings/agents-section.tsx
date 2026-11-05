@@ -24,7 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { SaveHint } from "./save-hint";
+import { DraftActions, dropUndo, offerUndo, SaveHint } from "./save-hint";
 import { AGENTS_DEFAULTS, resetFor } from "./defaults";
 import { inputCls, SettingRow, Toggle } from "./fields";
 import { SettingsGroup } from "./settings-group";
@@ -154,6 +154,9 @@ export function AgentsSection() {
   );
 }
 
+/** The idle timeout's field, and the key its Undo outlives the field's remount by. */
+const IDLE_MINUTES_ID = "settings-idle-minutes";
+
 function IdleMinutesField({
   value,
   onSave,
@@ -178,7 +181,15 @@ function IdleMinutesField({
       return;
     }
     setInvalid(undefined);
-    if (minutes !== value) onSave(minutes);
+    if (minutes !== value) {
+      const before = value;
+      offerUndo(IDLE_MINUTES_ID, () => onSave(before));
+      onSave(minutes);
+    }
+  };
+  const cancel = () => {
+    setDraft(String(value));
+    setInvalid(undefined);
   };
   return (
     <SettingRow
@@ -188,10 +199,11 @@ function IdleMinutesField({
       onReset={onReset}
       error={invalid ?? saveError}
       status={dirty ? <SaveHint id={hintId} /> : undefined}
+      undoKey={IDLE_MINUTES_ID}
     >
       <span className="flex items-center gap-1.5">
         <input
-          id="settings-idle-minutes"
+          id={IDLE_MINUTES_ID}
           className={cn(inputCls, "w-20 tabular-nums")}
           value={draft}
           inputMode="numeric"
@@ -200,19 +212,20 @@ function IdleMinutesField({
           onChange={(event) => {
             setDraft(event.target.value);
             setInvalid(undefined);
+            dropUndo(IDLE_MINUTES_ID);
           }}
           onBlur={commit}
           onKeyDown={(event) => {
             if (event.key === "Enter") commit();
-            if (event.key === "Escape") {
-              setDraft(String(value));
-              setInvalid(undefined);
-            }
+            if (event.key === "Escape") cancel();
           }}
         />
         <span aria-hidden className="text-muted-foreground">
           min
         </span>
+        {dirty && (
+          <DraftActions label="Close idle sessions after" onSave={commit} onCancel={cancel} />
+        )}
       </span>
     </SettingRow>
   );

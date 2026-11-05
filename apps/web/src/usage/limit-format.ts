@@ -46,9 +46,12 @@ export const windowWord = (window: string): string => {
 export const limitPercent = (utilization: number): number =>
   utilization >= 1 ? 100 : Math.min(99, Math.round(utilization * 100));
 
-/** "Claude 42%", or "Claude 100% · credits" past a window the agent goes on from on credits. */
+/**
+ * "Claude 42% used", or "Claude 100% used · credits" past a window the agent goes on from on
+ * credits: "used", so the share never reads as what is left.
+ */
 export const meterText = ({ provider, limit }: TightestLimit): string =>
-  `${PROVIDER_SHORT[provider]} ${limitPercent(limit.utilization)}%${limit.credits === true ? " · credits" : ""}`;
+  `${PROVIDER_SHORT[provider]} ${limitPercent(limit.utilization)}% used${limit.credits === true ? " · credits" : ""}`;
 
 /**
  * The meter's hover, saying what its number is: "Highest usage: Codex 5-hour limit, 85%". Its

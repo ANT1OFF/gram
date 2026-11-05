@@ -58,7 +58,7 @@ test("captured CLI windows show the same percentages and 24-hour resets on Usage
   }, records);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/usage");
-  await expect(page.getByTestId("usage-meter")).toHaveText("Codex 100%");
+  await expect(page.getByTestId("usage-meter")).toHaveText("Codex 100% used");
   for (const [provider, window, percent, reset] of [
     ["claude", "fiveHour", "44%", "Resets 15:39"],
     ["claude", "weekly", "96%", "Resets 21:59"],
