@@ -14,6 +14,7 @@ import {
   Minimize2,
   Plug,
   SquareTerminal,
+  MessagesSquare,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -68,7 +69,12 @@ const TABS: PanelTab[] = [
 ];
 
 /** First while a worker is open beside the chat (`beside-store`), and only then. */
-const THREAD_TAB: PanelTab = { value: "thread", label: "Thread", icon: Workflow, primary: true };
+const THREAD_TAB: PanelTab = {
+  value: "thread",
+  label: "Thread",
+  icon: MessagesSquare,
+  primary: true,
+};
 
 let tabsLoad: Promise<typeof PanelTabs> | undefined;
 
