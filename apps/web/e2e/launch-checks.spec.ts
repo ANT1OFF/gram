@@ -115,7 +115,7 @@ test("launch checks show what's missing, link to details and dismiss for the ses
   // reload; the chip shows it again.
   const chip = page.getByTestId("launch-issues-chip");
   await expect(banner).toBeHidden();
-  await expect(chip).toHaveText("Setup · 2");
+  await expect(chip).toHaveAccessibleName("2 setup problems. Show them");
   await page.reload();
   await expect(chip).toBeVisible();
   await expect(banner).toBeHidden();

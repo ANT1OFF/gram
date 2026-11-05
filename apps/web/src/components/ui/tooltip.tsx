@@ -1,18 +1,97 @@
 "use client";
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
+import { createContext, useContext, useEffect, useState } from "react";
+
+import { pointerMovedFor, trackPointerMoves } from "@/lib/pointer-moved";
 import { cn } from "@/lib/utils";
 
 function TooltipProvider({ delay = 0, ...props }: TooltipPrimitive.Provider.Props) {
   return <TooltipPrimitive.Provider data-slot="tooltip-provider" delay={delay} {...props} />;
 }
 
-function Tooltip({ ...props }: TooltipPrimitive.Root.Props) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
+/** A hover open the gate held back, so the trigger's next real movement can ask again. */
+interface HeldOpen {
+  hold(): void;
+  /** Whether a hover open was held back, forgetting it. */
+  take(): boolean;
+  release(): void;
 }
 
-function TooltipTrigger({ ...props }: TooltipPrimitive.Trigger.Props) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
+const HeldOpenContext = createContext<HeldOpen | null>(null);
+
+function heldOpen(): HeldOpen {
+  let held = false;
+  return {
+    hold: () => {
+      held = true;
+    },
+    take: () => {
+      const was = held;
+      held = false;
+      return was;
+    },
+    release: () => {
+      held = false;
+    },
+  };
+}
+
+/**
+ * A hover opens it only when the pointer moved onto its trigger: a trigger that appears, or moves,
+ * under a pointer already resting there stays closed until the pointer moves within it
+ * (`pointerMovedFor`), so a panel that opens or a row that folds never pops a hint over the
+ * controls beside it. Focus and a moving pointer open it as before.
+ */
+function Tooltip({ onOpenChange, children, ...props }: TooltipPrimitive.Root.Props) {
+  useEffect(trackPointerMoves, []);
+  const [held] = useState(heldOpen);
+  return (
+    <TooltipPrimitive.Root
+      data-slot="tooltip"
+      onOpenChange={(open, details) => {
+        if (open && details.reason === "trigger-hover" && !pointerMovedFor(details.event)) {
+          held.hold();
+          details.cancel();
+          return;
+        }
+        held.release();
+        onOpenChange?.(open, details);
+      }}
+      {...props}
+    >
+      {typeof children === "function" ? (
+        (payload) => (
+          <HeldOpenContext.Provider value={held}>{children(payload)}</HeldOpenContext.Provider>
+        )
+      ) : (
+        <HeldOpenContext.Provider value={held}>{children}</HeldOpenContext.Provider>
+      )}
+    </TooltipPrimitive.Root>
+  );
+}
+
+function TooltipTrigger({ onMouseMove, onMouseLeave, ...props }: TooltipPrimitive.Trigger.Props) {
+  const held = useContext(HeldOpenContext);
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      // The hover hook opens on entering only; once the pointer really moves over a trigger whose
+      // hover the gate held back, it enters again, as the user's own move.
+      onMouseMove={(event) => {
+        onMouseMove?.(event);
+        if (held === null || !pointerMovedFor(event.nativeEvent) || !held.take()) return;
+        event.currentTarget.dispatchEvent(
+          new MouseEvent("mouseenter", { clientX: event.clientX, clientY: event.clientY }),
+        );
+      }}
+      onMouseLeave={(event) => {
+        onMouseLeave?.(event);
+        held?.release();
+      }}
+      {...props}
+    />
+  );
 }
 
 function TooltipContent({

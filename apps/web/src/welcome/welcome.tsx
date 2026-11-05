@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
+  Check,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -177,18 +178,19 @@ function FirstRun() {
     <section
       aria-labelledby="welcome-title"
       data-testid="welcome"
-      className="flex w-full max-w-xl flex-col gap-5 rounded-lg border border-edge bg-card p-5 text-reading text-card-foreground"
+      className="flex w-full max-w-3xl flex-col gap-6 rounded-xl border border-edge bg-card p-6 text-reading text-card-foreground shadow-raised"
     >
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-0.5">
-          <h2 id="welcome-title" className="font-heading text-title">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 id="welcome-title" className="font-heading text-heading">
             Pick a repository to start
           </h2>
-          <p data-testid="welcome-line" className="text-meta text-muted-foreground">
+          <p data-testid="welcome-line" className="text-reading text-muted-foreground">
             A workspace groups your repositories, and its orchestrator coordinates the agents that
             work in them.
           </p>
         </div>
+        <StartSteps picked={picked} />
         {searchable && (
           <RepoSearch
             query={query}
@@ -285,6 +287,13 @@ function FirstRun() {
             Skip
           </Button>
         </div>
+        {picked !== undefined && (
+          // What Open leads to, so the first click holds no surprise.
+          <p data-testid="welcome-next" className="text-meta text-muted-foreground">
+            Next: a new workspace on {picked.name}, where you choose how much it may do on its own
+            and, if you like, what it should work on first.
+          </p>
+        )}
         <Expand open={adding}>
           {adding && <AddRepository onAdded={(project) => start(project)} />}
         </Expand>
@@ -297,6 +306,64 @@ function FirstRun() {
       <HowItWorks />
       <ImportSessions />
     </section>
+  );
+}
+
+/**
+ * The first run's three steps across the top, each with where it stands: the repository picked,
+ * the agent its work runs on (or what to do first), and the workspace Open makes. A step that is
+ * settled takes a check; nothing here acts, the controls under it do.
+ */
+function StartSteps({ picked }: { picked: RepositoryCandidate | undefined }) {
+  const { checks } = useLaunchChecks();
+  const agent = checks === undefined ? undefined : runsWith(toolRows(checks));
+  const steps: readonly { label: string; value: string; done: boolean }[] = [
+    { label: "Repository", value: picked?.name ?? "Pick one below", done: picked !== undefined },
+    {
+      label: "Agent",
+      value:
+        agent === undefined
+          ? "Checking…"
+          : agent.ready
+            ? agent.words.replace(/^Runs with /, "")
+            : agent.words,
+      done: agent?.ready === true,
+    },
+    {
+      label: "Workspace",
+      value: picked === undefined ? "Opens next" : `Opens on ${picked.name}`,
+      done: false,
+    },
+  ];
+  return (
+    <ol
+      aria-label="Steps to start"
+      data-testid="welcome-start-steps"
+      className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+    >
+      {steps.map((step, index) => (
+        <li
+          key={step.label}
+          data-done={step.done}
+          className="flex min-w-0 items-start gap-2 rounded-md border border-edge px-3 py-2"
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-edge text-caption text-muted-foreground",
+              step.done && "choice-selected text-foreground",
+            )}
+          >
+            {step.done ? <Check className="size-icon-chip" /> : index + 1}
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <span className="text-body-strong">{step.label}</span>
+            <span className="truncate text-meta text-muted-foreground">{step.value}</span>
+          </span>
+          <span className="sr-only">{step.done ? ", done" : ""}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -587,14 +654,14 @@ function RecentRepos({
             onClick={() => onSelect(repo.root)}
             onDoubleClick={() => onOpen(repo)}
             onKeyDown={(event) => move(event, index)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:row-cursor focus-visible:focus-ring-inset disabled:opacity-60 aria-checked:choice-selected"
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left outline-none hover:row-cursor focus-visible:focus-ring-inset disabled:opacity-60 aria-checked:choice-selected"
           >
             {pending === repo.root ? (
               <Spinner aria-hidden className="size-icon-row shrink-0" />
             ) : (
               <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
             )}
-            <span className="shrink-0 font-medium whitespace-nowrap">{repo.name}</span>
+            <span className="shrink-0 text-body-strong whitespace-nowrap">{repo.name}</span>
             <span className="min-w-0 truncate font-mono text-meta text-muted-foreground">
               {tildify(repo.root, home)}
             </span>

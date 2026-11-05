@@ -582,7 +582,7 @@ export function ThreadView({
       <WorkerBanner thread={thread} />
       <CatchUpCard thread={thread} />
       <StuckCard thread={thread} />
-      <OrchestratorBanner thread={thread} />
+      <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />
       {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
         <FailuresCard
           workspaceId={thread.workspaceId}
@@ -730,7 +730,12 @@ function PaneHeading({
       }
     >
       <RoleGlyph thread={thread} testId="pane-role" />
-      <span className={titleShown ? "truncate" : "sr-only"}>{title}</span>
+      <span
+        data-titlebar-title={titleShown ? "" : undefined}
+        className={titleShown ? "truncate" : "sr-only"}
+      >
+        {title}
+      </span>
     </h1>
   );
 }

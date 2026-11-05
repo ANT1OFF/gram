@@ -14,6 +14,7 @@ import {
   useTitlebarSlot,
   useTitlebarThread,
 } from "@/shell/titlebar-slot";
+import { SettingsTitle } from "@/shell/settings-title";
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
@@ -39,14 +40,17 @@ const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
 export function ShellTitlebar({
   sidebarShown,
   needsYouPill,
+  settings,
   compactRail,
   panelShown,
   panelLeft,
 }: {
   /** The overview, open or compact, is to the bar's left. */
   sidebarShown: boolean;
-  /** The overview to the bar's left shows the needs-you pill (Settings' Back strip doesn't). */
+  /** The overview to the bar's left shows the needs-you pill. */
   needsYouPill: boolean;
+  /** Settings is open: Back and its name in place of the workspace and its views. */
+  settings: boolean;
   /** The overview is the compact rail. */
   compactRail: boolean;
   /** The right panel is shown. */
@@ -91,42 +95,48 @@ export function ShellTitlebar({
         compactRail && "pl-[max(--spacing(2),calc(var(--window-lights-inset)-60px+--spacing(1)))]",
       )}
     >
-      <div className={cn("mr-auto flex min-w-0 items-center gap-1", carried && "flex-1")}>
-        {/* Hidden, the overview comes back from here as from ⌘B; shown, its own button hides it. */}
-        {!sidebarShown && (
-          <ShellToggle
-            icon={PanelLeftOpen}
-            label="Show sidebar"
-            shortcutId="sidebar.toggle"
-            testId="overview-show"
-            onClick={toggleOverviewSidebar}
-          />
-        )}
-        {/* Settings follows the toggle, as it does in the overview's header. */}
-        {!sidebarShown && <TopLeftNav className="mr-2" />}
-        <WorkspaceSwitcher
-          className={cn(
-            "shrink-0 [-webkit-app-region:no-drag]",
-            carried && "@max-2xl/titlebar:max-w-28",
-            folded && "max-w-20",
+      {settings ? (
+        <div className="mr-auto flex min-w-0 items-center">
+          <SettingsTitle />
+        </div>
+      ) : (
+        <div className={cn("mr-auto flex min-w-0 items-center gap-1", carried && "flex-1")}>
+          {/* Hidden, the overview comes back from here as from ⌘B; shown, its own button hides it. */}
+          {!sidebarShown && (
+            <ShellToggle
+              icon={PanelLeftOpen}
+              label="Show sidebar"
+              shortcutId="sidebar.toggle"
+              testId="overview-show"
+              onClick={toggleOverviewSidebar}
+            />
           )}
-        />
-        {/* Chat · Board are the workspace's views: a solo thread in Chat is no part of it. */}
-        {!soloBar && (
-          <>
-            <ViewSwitcher className="shrink-0 [-webkit-app-region:no-drag]" />
-            <FakeAgentBadge className="[-webkit-app-region:no-drag]" />
-          </>
-        )}
-        {/* The thread's header or Board's controls, title first: it truncates before
-            anything else gives way. */}
-        <div
-          ref={setTitlebarSlot}
-          data-testid="titlebar-slot"
-          className={cn("flex min-w-0 self-stretch", carried && "flex-1")}
-        />
-      </div>
-      {carried && (
+          {/* Settings follows the toggle, as it does in the overview's header. */}
+          {!sidebarShown && <TopLeftNav className="mr-2" />}
+          <WorkspaceSwitcher
+            className={cn(
+              "shrink-0 [-webkit-app-region:no-drag]",
+              carried && "@max-2xl/titlebar:max-w-28",
+              folded && "max-w-20",
+            )}
+          />
+          {/* Chat · Board are the workspace's views: a solo thread in Chat is no part of it. */}
+          {!soloBar && (
+            <>
+              <ViewSwitcher className="shrink-0 [-webkit-app-region:no-drag]" />
+              <FakeAgentBadge className="[-webkit-app-region:no-drag]" />
+            </>
+          )}
+          {/* The thread's header or Board's controls, title first: it truncates before
+              anything else gives way. */}
+          <div
+            ref={setTitlebarSlot}
+            data-testid="titlebar-slot"
+            className={cn("flex min-w-0 self-stretch", carried && "flex-1")}
+          />
+        </div>
+      )}
+      {carried && !settings && (
         <span
           aria-hidden
           data-testid="titlebar-divider"
@@ -144,7 +154,7 @@ export function ShellTitlebar({
       >
         {/* A setup problem seen once in its banner, folded here until dismissed. */}
         <LaunchIssuesChip className="[-webkit-app-region:no-drag]" />
-        {!soloBar && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
+        {!soloBar && !settings && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
         {/* Before any setup there is no work of Gram's to meter. Narrow, the title needs the room
             more than the meter needs its words: it keeps its share ("85%"), its hover the rest. */}
         {!beforeSetup && (

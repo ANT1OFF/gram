@@ -107,10 +107,20 @@ describe("first run", () => {
     // moves the check and the button with it.
     expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("true");
     expect(welcome.getByTestId("welcome-open").textContent).toContain("Open api");
+    // Three steps across the top say where each stands, and a line under Open says what it opens.
+    const steps = within(welcome.getByRole("list", { name: "Steps to start" })).getAllByRole(
+      "listitem",
+    );
+    expect(steps.map((step) => step.getAttribute("data-done"))).toEqual(["true", "true", "false"]);
+    expect(steps[0]!.textContent).toContain("api");
+    expect(steps[1]!.textContent).toContain("Claude Code or Codex");
+    expect(steps[2]!.textContent).toContain("Opens on api");
+    expect(welcome.getByTestId("welcome-next").textContent).toContain("a new workspace on api");
     fireEvent.click(welcome.getByRole("radio", { name: /^web/ }));
     expect(welcome.getByRole("radio", { name: /^web/ }).getAttribute("aria-checked")).toBe("true");
     expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("false");
     expect(welcome.getByTestId("welcome-open").textContent).toContain("Open web");
+    expect(steps[2]!.textContent).toContain("Opens on web");
     expect(welcome.getByRole("button", { name: "Import past CLI sessions" })).toBeTruthy();
     // The other ways in are behind one named action beside Open, not a row of their own.
     expect(welcome.queryByRole("button", { name: "Open a folder…" })).toBeNull();

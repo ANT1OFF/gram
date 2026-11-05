@@ -57,17 +57,17 @@ export function useShellLayout() {
     select: (state) => shellPage((state.resolvedLocation ?? state.location).pathname),
   });
 
-  // Settings is focused: the overview gives its column to a narrow strip with Back, the compact
-  // rail's width, and its stored mode stays as it was for when Settings closes.
-  const settingsStrip = page === "/settings" && !focusMode;
+  // Settings is a place of its own: the overview steps aside (the title bar has Back and the
+  // page's name), and its stored mode stays as it was for when Settings closes.
+  const settings = page === "/settings";
   const input = {
     windowWidth,
     threadInView: hasThread,
     threadQuiet,
     focusMode,
     sidebarWidth,
-    sidebarPeek: settingsStrip ? false : sidebarPeek,
-    overviewSidebar: settingsStrip ? "compact" : overviewSidebar,
+    sidebarPeek: settings ? false : sidebarPeek,
+    overviewSidebar: settings ? "hidden" : overviewSidebar,
     panelOpen,
     panelWidth,
     panelExpanded,
@@ -104,7 +104,8 @@ export function useShellLayout() {
   return {
     fit: dock === undefined ? fit : { ...fit, sidebar },
     focusMode,
-    settingsStrip: settingsStrip && sidebar !== "none",
+    /** Settings is open: the title bar carries Back and its name, and no overview shows. */
+    settings,
     panelLeft,
     hasThread,
     windowResizing,

@@ -12,7 +12,7 @@ import { useViewStore } from "@/views/view-store";
 
 import { Foldable } from "./foldable";
 import { TitlebarOverflow } from "./titlebar-fold";
-import { nextFold, useTitlebarSlot } from "./titlebar-slot";
+import { nextFold, titleRoomNeed, useTitlebarSlot } from "./titlebar-slot";
 import { ThreadGrid } from "./thread-grid";
 
 const route = vi.hoisted(() => ({ threadId: "t-flaky" as string | undefined }));
@@ -249,5 +249,27 @@ describe("when the title bar folds", () => {
     expect(nextFold({ ...lesser, spare: 136 })).toBe(0);
     // With room for both steps, both come back at once.
     expect(nextFold({ ...workers, spare: 200 })).toBe(0);
+  });
+});
+
+describe("the room a title in the bar needs", () => {
+  it("is its least plus as much of the title's whole width as the cap allows", () => {
+    // No title to ask: the least alone.
+    expect(titleRoomNeed(96, undefined)).toBe(96);
+    // A title the least already holds needs nothing more.
+    expect(titleRoomNeed(96, 40)).toBe(96);
+    // "Search in Settings", 134 px whole, past the 48 its few letters take.
+    expect(titleRoomNeed(96, 134)).toBe(96 + 86);
+    // A long title is held to the cap and truncates past it.
+    expect(titleRoomNeed(96, 900)).toBe(96 + 192);
+  });
+
+  it("folds a worker's actions for a title the bar would cut, and keeps them folded once it shows", () => {
+    // Before: 112 px of room for a 134 px title, the actions 114 px with their gap.
+    const need = titleRoomNeed(96, 134);
+    const at = { fold: 0, barWidth: 800, overflow: false, widths: [0, 114] } as const;
+    expect(nextFold({ ...at, spare: 112 - need })).toBe(2);
+    // Folded, the room is 226 px: giving the actions back would cut the title again.
+    expect(nextFold({ ...at, fold: 2, spare: 226 - need })).toBe(2);
   });
 });

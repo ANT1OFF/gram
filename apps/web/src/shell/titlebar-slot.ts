@@ -32,6 +32,21 @@ const TITLEBAR_FOLD = "data-titlebar-fold";
 const TITLEBAR_FOLD_LEVEL = "data-titlebar-fold-level";
 /** Room to spare before folded buttons come back, so they never fold again at once. */
 const UNFOLD_SLACK_PX = 16;
+/** The title itself, inside the room: its whole width is what the bar folds for, up to a cap. */
+const TITLEBAR_TITLE = "data-titlebar-title";
+/** The few letters of the title the room's least already holds. */
+const TITLE_LEAST_PX = 48;
+/** Past the least, the most the bar folds for the title: a long one still truncates. */
+const TITLE_WANTS_PX = 192;
+
+/**
+ * The room a header in the bar needs: its least, plus as much of its title's whole width as the
+ * cap allows. From the title's full width, not what it shows, so folding for it never unfolds.
+ */
+export function titleRoomNeed(least: number, titleWidth: number | undefined): number {
+  if (titleWidth === undefined) return least;
+  return least + Math.min(TITLE_WANTS_PX, Math.max(0, titleWidth - TITLE_LEAST_PX));
+}
 
 /**
  * How far the bar folds, from what it has now. Narrow, it folds all; with anything spilling out of
@@ -133,7 +148,13 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
         widths[level - 1]! +=
           part.getBoundingClientRect().width + Number(part.getAttribute(TITLEBAR_FOLD));
       }
-      const least = Number(room?.getAttribute(TITLEBAR_ROOM) ?? 0);
+      // The title before the bar's lesser buttons: it folds them to show the title whole (up to
+      // a cap), not only its few letters.
+      const title = room?.querySelector(`[${TITLEBAR_TITLE}]`) ?? null;
+      const least = titleRoomNeed(
+        Number(room?.getAttribute(TITLEBAR_ROOM) ?? 0),
+        title?.scrollWidth,
+      );
       // The header itself: what rings it, a needs-you pulse say, may stand past it on purpose.
       const header = slot?.querySelector("header") ?? null;
       setFold(

@@ -3,15 +3,18 @@ import { CircleCheck, GitMerge, GitPullRequest } from "lucide-react";
 import { useState, type MouseEvent } from "react";
 
 import { Button } from "@/components/ui/button";
+import { formatStamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { RailRow } from "@/orchestration/rail-model";
+import { useThreadsStore } from "@/stores/threads";
 
-import { GRID_COLUMNS } from "./board-grid";
+import { GRID_COLUMNS, useLatestReport } from "./board-grid";
 
 // The Board's Done band: under the lines at work, the features whose work is over and that have
 // left the Board, as Done lists them in the sidebar. A line each, newest first, on the grid's
-// columns with the PR it ended with; "Show N more" unfolds the rest in place, and the header's
-// Show finished brings them back among the lines.
+// columns: how it ended and when (Stage), what its last report said (Now) and the PR it ended with;
+// "Show N more" unfolds the rest in place, and the header's Show finished brings them back among
+// the lines.
 
 /** The most finished features the band lists before it says how many more there are. */
 export const DONE_BAND_MAX = 5;
@@ -65,57 +68,9 @@ export function DoneBand({
         </h3>
       </div>
       <ul aria-label="Done">
-        {shown.map((row) => {
-          const pr = donePr(row);
-          const first = row.card.workers[0];
-          return (
-            <li
-              key={row.feature}
-              data-testid="board-done-row"
-              data-feature={row.feature}
-              className={cn(
-                GRID_COLUMNS,
-                "items-center border-b border-border/40 py-1.5 text-meta last:border-b-0",
-              )}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <CircleCheck aria-hidden className="size-icon-row shrink-0 text-success" />
-                {first === undefined ? (
-                  <span className="min-w-0 truncate text-foreground">{row.title}</span>
-                ) : (
-                  <button
-                    type="button"
-                    title={row.title}
-                    onClick={(event) => onOpen(first.threadId, event)}
-                    className="min-w-0 truncate rounded-sm text-left text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {row.title}
-                  </button>
-                )}
-              </span>
-              <span className="text-muted-foreground">Done</span>
-              <span className="min-w-0 truncate text-muted-foreground">
-                {repos ? row.projects.join(" · ") : null}
-              </span>
-              <span className="min-w-0">
-                {pr !== undefined && (
-                  <span
-                    data-testid="board-done-pr"
-                    className="flex items-center gap-1 text-muted-foreground tabular-nums"
-                  >
-                    {pr.state === "merged" ? (
-                      <GitMerge aria-hidden className="size-icon-row text-merged" />
-                    ) : (
-                      <GitPullRequest aria-hidden className="size-icon-row" />
-                    )}
-                    #{pr.number}
-                    {pr.state !== undefined && ` ${pr.state}`}
-                  </span>
-                )}
-              </span>
-            </li>
-          );
-        })}
+        {shown.map((row) => (
+          <DoneRow key={row.feature} row={row} repos={repos} onOpen={onOpen} />
+        ))}
       </ul>
       {more > 0 && (
         <Button
@@ -129,5 +84,83 @@ export function DoneBand({
         </Button>
       )}
     </section>
+  );
+}
+
+/**
+ * One finished line: its title (a click from its thread), how it ended and when, the first line of
+ * its last report with its repos, and its PR under Pull request.
+ */
+function DoneRow({
+  row,
+  repos,
+  onOpen,
+}: {
+  row: RailRow;
+  repos: boolean;
+  onOpen: (threadId: ThreadId, event: MouseEvent) => void;
+}) {
+  const pr = donePr(row);
+  const first = row.card.workers[0];
+  const ended = useThreadsStore((s) =>
+    first === undefined ? undefined : s.byId[first.threadId]?.thread.completedAt,
+  );
+  const report = useLatestReport(row.card.workspaceId, first?.threadId ?? ("" as ThreadId));
+  const outcome = pr?.state === "merged" ? "Merged" : "Done";
+  const where = repos ? row.projects.join(" · ") : undefined;
+  return (
+    <li
+      data-testid="board-done-row"
+      data-feature={row.feature}
+      className={cn(
+        GRID_COLUMNS,
+        "items-start border-b border-border/40 py-2 text-meta last:border-b-0",
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <CircleCheck aria-hidden className="size-icon-row shrink-0 text-success" />
+        {first === undefined ? (
+          <span className="min-w-0 truncate text-body text-foreground">{row.title}</span>
+        ) : (
+          <button
+            type="button"
+            title={row.title}
+            onClick={(event) => onOpen(first.threadId, event)}
+            className="min-w-0 truncate rounded-sm text-left text-body text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {row.title}
+          </button>
+        )}
+      </span>
+      <span data-testid="board-done-ended" className="text-muted-foreground tabular-nums">
+        {outcome}
+        {ended !== undefined && (
+          <time dateTime={new Date(ended).toISOString()}> {formatStamp(ended)}</time>
+        )}
+      </span>
+      <span
+        data-testid="board-done-report"
+        title={report?.summary}
+        className="line-clamp-2 min-w-0 break-words text-muted-foreground"
+      >
+        {[where, report?.summary].filter((part) => part !== undefined && part !== "").join(" · ")}
+      </span>
+      <span className="min-w-0">
+        {pr !== undefined && (
+          <span
+            data-testid="board-done-pr"
+            className="flex items-center gap-1 text-muted-foreground tabular-nums"
+          >
+            {pr.state === "merged" ? (
+              <GitMerge aria-hidden className="size-icon-row text-merged" />
+            ) : (
+              <GitPullRequest aria-hidden className="size-icon-row" />
+            )}
+            #{pr.number}
+            {pr.state !== undefined && ` ${pr.state}`}
+          </span>
+        )}
+      </span>
+    </li>
   );
 }

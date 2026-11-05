@@ -19,9 +19,21 @@ export function inertWrapped(row: HTMLElement): void {
  * chip to another line with the row's size unchanged). Attribute changes aren't watched, so setting
  * `inert` doesn't loop.
  */
-export const trackWrappedChips = (row: HTMLDivElement | null) => {
+export const trackWrappedChips = (row: HTMLDivElement | null) => trackWrappedRow(row);
+
+/**
+ * `trackWrappedChips`, then `after` once each update has marked what wrapped, for a row whose
+ * neighbours follow what it still shows.
+ */
+export function trackWrappedRow(
+  row: HTMLDivElement | null,
+  after?: (row: HTMLDivElement) => void,
+): (() => void) | undefined {
   if (row === null) return;
-  const update = () => inertWrapped(row);
+  const update = () => {
+    inertWrapped(row);
+    after?.(row);
+  };
   const resize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
   const observe = () => {
     if (resize === undefined) return;
@@ -40,4 +52,4 @@ export const trackWrappedChips = (row: HTMLDivElement | null) => {
     resize?.disconnect();
     mutations.disconnect();
   };
-};
+}

@@ -170,3 +170,43 @@ test("one row above the chat: counts, Since you left on request, no second usage
   await expect(page.getByTestId("status-header")).toBeVisible();
   await expect(page.getByTestId("since-you-left")).toHaveCount(0);
 });
+
+test("short of room the strip drops whole items, never their words, and the switch follows the counts", async ({
+  page,
+}) => {
+  await openRealistic(page);
+  const header = page.getByTestId("status-header");
+  await expect(header.getByTestId("since-you-left")).toBeVisible();
+  /** The items a user can see and reach, by their words. */
+  const shown = () =>
+    header.evaluate((strip) =>
+      [...strip.querySelectorAll<HTMLElement>('[data-testid="status-items"] > *')]
+        .filter((item) => !item.inert)
+        .map((item) => item.innerText.replace(/\s+/g, " ").trim()),
+    );
+  const wide = await shown();
+  expect(wide).toEqual([
+    expect.stringMatching(/^\d+ running$/),
+    expect.stringMatching(/^\d+ in review$/),
+    expect.stringMatching(/^\d+ merged today$/),
+    expect.stringMatching(/^Since you left 2 merged/),
+  ]);
+
+  // As the Inbox docks beside it, the chat narrows: the last items go whole.
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await expect.poll(async () => (await shown()).length).toBeLessThan(wide.length);
+  const narrow = await shown();
+  for (const item of narrow) expect(item).toMatch(/^\d+ [a-z]|^Since you left/);
+  // No two counts read the same: a bare "merged" never stands beside "merged today".
+  expect(narrow.filter((item) => /^\d+ merged$/.test(item))).toEqual([]);
+  // The switch sits after the last count shown, clear of the title bar's "…" over the row's end.
+  const items = await header.getByTestId("status-items").evaluate((row) => {
+    const last = [...row.children].filter((child) => !(child as HTMLElement).inert).at(-1)!;
+    return last.getBoundingClientRect().right;
+  });
+  const control = (await header.getByTestId("status-all-activity-control").boundingBox())!;
+  expect(control.x).toBeGreaterThan(items);
+  expect(control.x - items).toBeLessThanOrEqual(16);
+  // Its words shorten but stay.
+  expect(await header.locator("label").innerText()).toMatch(/^(Show all activity|All activity)$/);
+});

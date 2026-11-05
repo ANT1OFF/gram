@@ -134,8 +134,9 @@ test("top navigation explains real keyboard focus and preserves routes and modif
   await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   await settings.click();
   await expect(page).toHaveURL(/\/settings\/general$/);
-  // Settings is focused: the overview, its header with it, gives way to a strip with Back.
-  await expect(page.getByTestId("settings-strip")).toBeVisible();
+  // Settings is a place of its own: the overview, its header with it, steps aside, and the title
+  // bar has Back and the page's name.
+  await expect(page.getByTestId("settings-title")).toHaveText("Settings");
   await expect(sidebar).toHaveCount(0);
   await expect(page.getByTestId("general-settings")).toBeVisible();
   const after = await page.evaluate(async () => ({

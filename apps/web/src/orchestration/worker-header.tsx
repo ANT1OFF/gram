@@ -168,6 +168,8 @@ export function WorkerCrumbs({
             <button
               type="button"
               data-testid="worker-crumb-worker"
+              // The title the title bar folds its lesser buttons for.
+              data-titlebar-title=""
               // In the title bar the worker's name keeps a few letters, however short of room.
               className={cn(CRUMB, "text-foreground", inTitlebar && "min-w-12")}
               onClick={() => useWorkersListStore.getState().toggle()}

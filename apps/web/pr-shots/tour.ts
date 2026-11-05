@@ -25,11 +25,22 @@ export const SET_SIZE = (() => {
 
 /**
  * From the next load on, the mock starts with the realistic scenario, and the sidebar is folded as
- * a working window's is: Solo threads folded, and History (Done) grouped by workspace.
+ * a working window's is: Solo threads folded, and History (Done) grouped by workspace. It is a
+ * working day, not a first launch, so a setup problem the day's window has already shown (gh
+ * signed out, say) is folded to the title bar's chip, as the app keeps it from one load to the
+ * next; the first-run shots stage no scenario and still show the banner.
  */
 export const stageRealistic = (page: Page) =>
   page.addInitScript(() => {
     sessionStorage.setItem("gram.mock.orchestration", "realistic");
+    if (localStorage.getItem("gram.launch-banner") === null) {
+      // `useBannerFold`'s keys: the mock app's version and the problem.
+      const seen = ["gh-signed-out", "gh-missing", "claude-signed-out", "codex-signed-out"];
+      localStorage.setItem(
+        "gram.launch-banner",
+        JSON.stringify({ version: 0, state: { folded: seen.map((id) => `1.0.0-mock:${id}`) } }),
+      );
+    }
     if (localStorage.getItem("gram.layout") === null) {
       localStorage.setItem(
         "gram.layout",

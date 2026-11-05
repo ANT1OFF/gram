@@ -148,7 +148,9 @@ describe("LaunchChecksBanner", () => {
     );
     const chip = await screen.findByTestId("launch-issues-chip");
     expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
-    expect(chip.getAttribute("aria-label")).toBe("Setup problems: 2. Show them");
+    // Icon-only, like the rest of the title bar: its name and hover say how many.
+    expect(chip.textContent).toBe("");
+    expect(chip.getAttribute("aria-label")).toBe("2 setup problems. Show them");
     expect(useBannerFold.getState().folded).toEqual([
       "0.4.0:claude-signed-out",
       "0.4.0:gh-missing",

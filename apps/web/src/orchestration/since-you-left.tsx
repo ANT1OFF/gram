@@ -94,16 +94,18 @@ export function SinceYouLeft({
     <section
       aria-label="Since you left"
       data-testid="since-you-left"
-      className="flex min-w-0 shrink items-center"
+      // Whole or not at all: the status strip drops it from its end rather than cut its words.
+      className="flex shrink-0 items-center"
     >
       <Popover.Root>
         <Popover.Trigger
           data-testid="since-you-left-open"
           aria-label={`Since you left: ${words}. Show what happened`}
-          className="flex h-7 min-w-0 items-center gap-1.5 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-7 items-center gap-1.5 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <History aria-hidden className="size-icon-row shrink-0" />
-          <span className="shrink-0 @max-4xl:hidden">Since you left</span>
+          {/* Always said: without it, "2 merged" would read like the strip's "merged today". */}
+          <span className="shrink-0">Since you left</span>
           {merged > 0 && (
             <span data-testid="since-merged" className="shrink-0">
               <span className="font-medium text-foreground tabular-nums">{merged}</span> merged

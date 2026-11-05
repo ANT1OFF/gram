@@ -145,7 +145,7 @@ for (const link of ["/t/t-flaky", "/settings/general"]) {
     // The workspace is listed, so a landing on its orchestrator could have happened. Settings has
     // no overview to show it in, so there the app's own list is asked.
     if (link.startsWith("/settings")) {
-      await expect(page.getByTestId("settings-strip")).toBeVisible();
+      await expect(page.getByTestId("settings-title")).toBeVisible();
       await expect
         .poll(() => page.evaluate(async () => (await window.gramMock!.listWorkspaces()).length))
         .toBeGreaterThan(0);

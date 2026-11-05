@@ -15,7 +15,6 @@ import { OverviewSidebar, useCarryOverviewFocus } from "@/orchestration/overview
 import { ConnectionBanner } from "@/shell/connection-banner";
 import { ReviewStrip } from "@/shell/review-strip";
 import { ShellTitlebar } from "@/shell/shell-titlebar";
-import { SettingsStrip } from "@/shell/settings-strip";
 import { SideResizeHandle } from "@/shell/side-resize";
 import { useShellLayout } from "@/shell/use-shell-layout";
 import { useWorkspaceKeys } from "@/shell/workspace-switcher";
@@ -42,7 +41,7 @@ export function AppShell() {
   const {
     fit,
     focusMode,
-    settingsStrip,
+    settings,
     panelLeft,
     hasThread,
     windowResizing,
@@ -57,8 +56,8 @@ export function AppShell() {
     dock,
   } = useShellLayout();
   useWorkspaceKeys();
-  // The strip in Settings is no overview: entering or leaving Settings swaps nothing to carry.
-  useCarryOverviewFocus(settingsStrip ? "none" : fit.sidebar);
+  // Settings has no overview: entering or leaving it swaps nothing to carry.
+  useCarryOverviewFocus(settings ? "none" : fit.sidebar);
   // A review that runs too narrow to read beside the conversation takes the window on its own.
   useAutoReviewFocus();
 
@@ -112,11 +111,7 @@ export function AppShell() {
         }}
       >
         <div className="group/side relative order-1 flex min-h-0 min-w-0 flex-col overflow-hidden">
-          {settingsStrip ? (
-            <SettingsStrip />
-          ) : (
-            sidebarShown && (fit.sidebar === "compact" ? <OverviewRail /> : <OverviewSidebar />)
-          )}
+          {sidebarShown && (fit.sidebar === "compact" ? <OverviewRail /> : <OverviewSidebar />)}
           {fit.sidebar === "full" && (
             <SideResizeHandle
               side="left"
@@ -139,7 +134,8 @@ export function AppShell() {
         >
           <ShellTitlebar
             sidebarShown={sidebarShown}
-            needsYouPill={sidebarShown && !settingsStrip}
+            needsYouPill={sidebarShown}
+            settings={settings}
             compactRail={fit.sidebar === "compact"}
             panelShown={panelShown}
             panelLeft={panelLeft}

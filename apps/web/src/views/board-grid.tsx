@@ -126,15 +126,21 @@ export function StationSteps({
 
 /**
  * The Pull request cell: the worker's chips, then what its first PR waits on in words (its checks,
- * its review, its merge), so the state reads without decoding the glyphs; "No PR yet" before one.
+ * its review, its merge), so the state reads without decoding the glyphs. Before one, a quiet dash
+ * that says "No PR yet" to a screen reader and on hover: the same words on every row read as noise.
  */
 function PrCell({ worker }: { worker: RailWorker }) {
   const chips = useWorkerPrChips(worker.threadId, worker.prs);
   const first = chips[0];
   if (first === undefined) {
     return (
-      <span data-testid="grid-pr-none" className="pt-px text-meta text-muted-foreground">
-        No PR yet
+      <span
+        data-testid="grid-pr-none"
+        title="No PR yet"
+        className="pt-px text-meta text-muted-foreground"
+      >
+        <span aria-hidden>—</span>
+        <span className="sr-only">No PR yet</span>
       </span>
     );
   }
@@ -300,7 +306,7 @@ function NowCell({
 }
 
 /** A worker's latest report from its workspace's ledger, if it has made one. */
-function useLatestReport(
+export function useLatestReport(
   workspaceId: WorkspaceId,
   threadId: ThreadId,
 ): { readonly summary: string; readonly at: number } | undefined {

@@ -228,31 +228,32 @@ function useFoldAfterShowing(expanded: boolean, keys: readonly string[]) {
 }
 
 /**
- * The banner folded: one small chip in the title bar while a problem stands that the user has seen
- * and not dismissed. Its hover names the problems; a click shows the banner again.
+ * The banner folded: one icon in the title bar, which is icon-only, while a problem stands that the
+ * user has seen and not dismissed. Its hover says how many and names them; a click shows the banner
+ * again. The banner and the chip never show at once: the chip is the banner's folded self.
  */
 export function LaunchIssuesChip({ className }: { className?: string }) {
   const { shown, expanded } = useLaunchBanner();
   if (shown.length === 0 || expanded) return null;
-  const words = shown.length === 1 ? "Setup" : `Setup · ${shown.length}`;
+  const heading = shown.length === 1 ? "Setup problem" : `${shown.length} setup problems`;
   const list = shown.map((issue) => issue.text.replaceAll("`", "")).join("\n");
   return (
     <Hint
-      label={`${list}\nClick to show`}
+      label={`${heading}\n${list}\nClick to show`}
       side="bottom"
       render={
         <Button
           variant="ghost"
-          size="sm"
+          size="icon-sm"
           data-testid="launch-issues-chip"
-          aria-label={`Setup problems: ${shown.length}. Show them`}
+          data-count={shown.length}
+          aria-label={`${heading}. Show them`}
           onClick={() => useBannerFold.getState().setOpen(true)}
-          className={cn("gap-1.5 px-2 text-meta text-muted-foreground", className)}
+          className={cn("shrink-0 text-muted-foreground", className)}
         />
       }
     >
-      <TriangleAlert aria-hidden className="size-icon-row" />
-      {words}
+      <TriangleAlert aria-hidden />
     </Hint>
   );
 }

@@ -1,5 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
-import type { WorkspaceId } from "@gram/contracts";
+import type { FinishedWorker, OrchestratorLedger, WorkspaceId } from "@gram/contracts";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -52,6 +52,7 @@ import {
   type HistoryOutcome,
   type HistorySession,
 } from "./history-model";
+import { HistoryPreview, previewFacts } from "./history-preview";
 
 /** The History dialog, which its shortcut may close from inside while no other dialog lets it open. */
 export const HISTORY_TEST_ID = "history";
@@ -127,7 +128,7 @@ export function HistoryView() {
           aria-label="History"
           // A thread just opened takes focus in its pane; only a dismissal hands it back.
           finalFocus={() => (picked ? false : returnFocusTo(opener)())}
-          className="fixed top-[10%] left-1/2 z-50 flex max-h-[76vh] w-[min(46rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-modal transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[6%] left-1/2 z-50 flex h-[86vh] w-[min(72rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-modal transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && <HistoryBody onPicked={() => setPicked(true)} />}
         </Dialog.Popup>
@@ -227,6 +228,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
   }, [waitsOn, busy, loadMore]);
   const rows = shown.groups.flatMap((group) => group.rows);
   const activeIndex = Math.min(active, rows.length - 1);
+  const cursorEntry = activeIndex < 0 ? undefined : rows[activeIndex];
 
   const pick = (entry: HistoryEntry | undefined) => {
     if (entry === undefined || resuming !== undefined) return;
@@ -273,7 +275,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
 
   let index = -1;
   return (
-    <div className="flex min-h-0 flex-col" onKeyDown={onKeyDown}>
+    <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
       <div className="flex items-center gap-2 border-b border-border px-3">
         <Search aria-hidden className="size-icon-row text-muted-foreground" />
         <Dialog.Title className="sr-only">History</Dialog.Title>
@@ -313,64 +315,69 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
         </div>
         <DoneGroupingMenu className="ml-auto" />
       </div>
-      <div
-        role="listbox"
-        aria-label="History"
-        tabIndex={-1}
-        aria-activedescendant={activeIndex < 0 ? undefined : `history-row-${activeIndex}`}
-        className="min-h-0 overflow-y-auto p-1 outline-none"
-      >
-        {rows.length === 0 && (
-          <p
-            data-testid="history-empty"
-            className="px-3 py-8 text-center text-reading text-muted-foreground"
-          >
-            {query.trim() !== ""
-              ? "No matches"
-              : filter === "imported" && past.loading
-                ? "Looking for past sessions…"
-                : EMPTY[filter]}
-          </p>
-        )}
-        {shown.groups.map((group) => (
-          <Fragment key={group.key}>
-            <h3
-              data-testid="history-group"
-              data-grouping={by}
-              className="px-2 pt-2 pb-0.5 text-meta font-medium text-muted-foreground"
+      <div className="flex min-h-0 flex-1">
+        <div
+          role="listbox"
+          aria-label="History"
+          tabIndex={-1}
+          aria-activedescendant={activeIndex < 0 ? undefined : `history-row-${activeIndex}`}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1 outline-none"
+        >
+          {rows.length === 0 && (
+            <p
+              data-testid="history-empty"
+              className="px-3 py-8 text-center text-reading text-muted-foreground"
             >
-              {group.label}
-            </h3>
-            {group.rows.map((entry) => {
-              index++;
-              const at = index;
-              return (
-                <HistoryRow
-                  key={entry.threadId}
-                  entry={entry}
-                  index={at}
-                  active={at === activeIndex}
-                  resuming={resuming === entry.threadId}
-                  grouped={by === "orchestrator"}
-                  when={historyWhen(entry.finishedAt, now)}
-                  whenLong={doneWhenLong(entry.finishedAt, now)}
-                  onHover={() => setActive(at)}
-                  onOpen={() => pick(entry)}
-                />
-              );
-            })}
-          </Fragment>
-        ))}
-        {shown.more && (
-          <button
-            type="button"
-            data-testid="history-more"
-            aria-busy={busy || undefined}
-            onClick={() => setLimit((current) => current + DONE_PAGE)}
-            className="mx-1 rounded-md px-2 py-1 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring"
-          >
-            Show more
-          </button>
+              {query.trim() !== ""
+                ? "No matches"
+                : filter === "imported" && past.loading
+                  ? "Looking for past sessions…"
+                  : EMPTY[filter]}
+            </p>
+          )}
+          {shown.groups.map((group) => (
+            <Fragment key={group.key}>
+              <h3
+                data-testid="history-group"
+                data-grouping={by}
+                className="px-2 pt-2 pb-0.5 text-meta font-medium text-muted-foreground"
+              >
+                {group.label}
+              </h3>
+              {group.rows.map((entry) => {
+                index++;
+                const at = index;
+                return (
+                  <HistoryRow
+                    key={entry.threadId}
+                    entry={entry}
+                    index={at}
+                    active={at === activeIndex}
+                    resuming={resuming === entry.threadId}
+                    grouped={by === "orchestrator"}
+                    when={historyWhen(entry.finishedAt, now)}
+                    whenLong={doneWhenLong(entry.finishedAt, now)}
+                    onHover={() => setActive(at)}
+                    onOpen={() => pick(entry)}
+                  />
+                );
+              })}
+            </Fragment>
+          ))}
+          {shown.more && (
+            <button
+              type="button"
+              data-testid="history-more"
+              aria-busy={busy || undefined}
+              onClick={() => setLimit((current) => current + DONE_PAGE)}
+              className="mx-1 rounded-md px-2 py-1 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring"
+            >
+              Show more
+            </button>
+          )}
+        </div>
+        {cursorEntry !== undefined && (
+          <Preview entry={cursorEntry} now={now} ledgers={ledgers} finished={finished} />
         )}
       </div>
       {error !== undefined && (
@@ -396,6 +403,23 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
   );
 }
 
+/**
+ * How a row reads: its glyph and outcome word, a status, apart from what Enter does to it, an
+ * action (an imported session is "imported" and resumes; everything else opens), and where it ran,
+ * a workspace named for its one repo said once, whatever its case ("Gram · gram" is "Gram").
+ */
+const rowWords = (entry: HistoryEntry) => ({
+  glyph: entry.outcome === undefined ? IMPORTED_GLYPH : OUTCOME_GLYPH[entry.outcome],
+  word: entry.outcome === undefined ? "imported" : OUTCOME_LABEL[entry.outcome],
+  action: entry.outcome === undefined ? "Resume" : "Open",
+  full: [entry.place, entry.repo]
+    .filter(
+      (part, i, parts) =>
+        part !== "" && (i === 0 || part.toLowerCase() !== parts[0]!.toLowerCase()),
+    )
+    .join(" · "),
+});
+
 function HistoryRow({
   entry,
   index,
@@ -418,18 +442,7 @@ function HistoryRow({
   onHover: () => void;
   onOpen: () => void;
 }) {
-  const glyph = entry.outcome === undefined ? IMPORTED_GLYPH : OUTCOME_GLYPH[entry.outcome];
-  // What happened to it, a status, apart from what Enter does to it, an action: an imported session
-  // is "imported" and resumes; everything else opens.
-  const word = entry.outcome === undefined ? "imported" : OUTCOME_LABEL[entry.outcome];
-  const action = entry.outcome === undefined ? "Resume" : "Open";
-  // A workspace named for its one repo says it once, whatever its case ("Gram · gram" is "Gram").
-  const full = [entry.place, entry.repo]
-    .filter(
-      (part, i, parts) =>
-        part !== "" && (i === 0 || part.toLowerCase() !== parts[0]!.toLowerCase()),
-    )
-    .join(" · ");
+  const { glyph, word, action, full } = rowWords(entry);
   // Under the workspace's own heading, only the repo, and nothing where the repo is the workspace.
   const where = grouped
     ? entry.repo.toLowerCase() === entry.place.toLowerCase()
@@ -494,5 +507,39 @@ function HistoryRow({
         </span>
       </span>
     </div>
+  );
+}
+
+/** The cursor row's preview, from its workspace's ledger and finished workers and its thread. */
+function Preview({
+  entry,
+  now,
+  ledgers,
+  finished,
+}: {
+  entry: HistoryEntry;
+  now: number;
+  ledgers: ReadonlyMap<WorkspaceId, OrchestratorLedger>;
+  finished: ReadonlyMap<WorkspaceId, readonly FinishedWorker[] | undefined>;
+}) {
+  const startedAt = useThreadsStore((s) =>
+    entry.session === undefined ? s.byId[entry.threadId]?.thread.createdAt : undefined,
+  );
+  const { glyph, word, action, full } = rowWords(entry);
+  const facts = previewFacts(entry, {
+    ledger: entry.workspaceId === undefined ? undefined : ledgers.get(entry.workspaceId),
+    finished: entry.workspaceId === undefined ? undefined : finished.get(entry.workspaceId),
+    startedAt,
+  });
+  return (
+    <HistoryPreview
+      entry={entry}
+      facts={facts}
+      glyph={glyph}
+      word={word}
+      when={doneWhenLong(entry.finishedAt, now)}
+      where={full}
+      action={action}
+    />
   );
 }

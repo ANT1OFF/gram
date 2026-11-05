@@ -40,9 +40,12 @@ test("Settings sits at the top left, in the overview or the title bar", async ({
   await expect(hint).toHaveText(/^Settings \(.+\)$/);
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/general$/);
-  // Settings is focused: its strip with Back takes the overview's place, the nav with it. With the
-  // pill gone too, the title bar's Inbox button is the way in; beside the pill there is none.
-  await expect(page.getByTestId("settings-strip")).toBeVisible();
+  // Settings is a place of its own: the overview steps aside, the nav with it, and the title bar
+  // has Back and the page's name in place of the workspace and its views. With the pill gone too,
+  // the title bar's Inbox button is the way in; beside the pill there is none.
+  await expect(titlebar(page).getByTestId("settings-title")).toHaveText("Settings");
+  await expect(titlebar(page).getByTestId("workspace-switcher-button")).toHaveCount(0);
+  await expect(titlebar(page).getByTestId("view-switcher")).toHaveCount(0);
   await expect(page.getByTestId("top-left-nav")).toHaveCount(0);
   await expect(titlebar(page).getByTestId("inbox-button")).toBeVisible();
   await page.getByTestId("settings-back").click();

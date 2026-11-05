@@ -243,8 +243,17 @@ export function OrchestratorChips({
  * Under an orchestrator's header, only while it applies: the offer of an import into an empty
  * memory, which is never started unasked, and a paused workspace, in the attention colour, with the
  * way to resume it: the orchestrator's own thread is where a user looks when it stops answering.
+ * The offer waits for what it is about to be known: the memory's files, and the chat itself
+ * (`loaded`), so arriving in a workspace never shows the offer first and the chat after it.
  */
-export function OrchestratorBanner({ thread }: { thread: Thread }) {
+export function OrchestratorBanner({
+  thread,
+  loaded = true,
+}: {
+  thread: Thread;
+  /** The chat's first page is in: until then the offer stays out of the way. */
+  loaded?: boolean;
+}) {
   const api = useApi();
   const { state, workspaceId } = useOrchestratorWorkspace(thread);
   const resume = useResume(workspaceId);
@@ -263,7 +272,7 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
 
   return (
     <>
-      {files !== undefined && memoryIsEmpty(files) && (
+      {loaded && files !== undefined && memoryIsEmpty(files) && (
         <p
           data-testid="banner-import-offer"
           className="border-b border-edge bg-card/40 px-3 py-1 text-meta text-muted-foreground"

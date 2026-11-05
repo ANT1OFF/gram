@@ -185,14 +185,24 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
     }
   };
 
+  // When it happened, from what Gram kept: started, last reported, and how it ended.
+  const times: readonly { term: string; at: number }[] = [
+    { term: "Started", at: thread.createdAt },
+    ...(report === undefined ? [] : [{ term: "Last report", at: report.at }]),
+    ...(thread.completedAt === undefined
+      ? []
+      : [{ term: pr?.state === "merged" ? "Merged" : "Completed", at: thread.completedAt }]),
+  ];
+  const evidence = report?.evidence;
+
   return (
     <section
       data-testid="thread-outcome"
       aria-labelledby={`${threadId}-outcome`}
-      className="mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-3 p-6 text-reading"
+      className="mx-auto grid w-full max-w-(--settings-column-wide) grid-cols-1 content-start gap-x-8 gap-y-6 p-6 text-reading lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]"
     >
-      <div className="flex flex-col gap-1">
-        <h2 id={`${threadId}-outcome`} className="font-medium">
+      <header className="flex flex-col gap-1 lg:col-span-2">
+        <h2 id={`${threadId}-outcome`} className="font-heading text-title">
           Outcome
           {ended !== undefined && (
             <span className="ms-2 text-meta font-normal text-muted-foreground tabular-nums">
@@ -204,122 +214,161 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
           This thread&apos;s conversation isn&apos;t available on this computer, so this is what
           Gram saved about its work.
         </p>
+      </header>
+      {/* The story, read first: its last report in full, what it was checked with, and what next. */}
+      <div className="flex min-w-0 flex-col gap-4">
+        {report === undefined ? (
+          <p data-testid="thread-outcome-no-report" className="text-muted-foreground">
+            It left no report.
+          </p>
+        ) : (
+          <div data-testid="thread-outcome-report" className="flex flex-col gap-1">
+            <p className="text-meta text-muted-foreground tabular-nums">
+              Last report · {formatStamp(report.at)}
+            </p>
+            <p className="whitespace-pre-line">{reportLine(report.summary, SUMMARY_MAX)}</p>
+          </div>
+        )}
+        {evidence !== undefined && (
+          <dl
+            aria-label="What it was checked with"
+            data-testid="thread-outcome-evidence"
+            className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2"
+          >
+            <Fact term="Checked with" testId="thread-outcome-gate">
+              {evidence.gate}
+            </Fact>
+            <Fact term="Head" testId="thread-outcome-head">
+              <span className="font-mono text-meta">{evidence.headSha.slice(0, 7)}</span>
+            </Fact>
+            <Fact term="Next step" testId="thread-outcome-next">
+              {evidence.nextStep}
+            </Fact>
+          </dl>
+        )}
+        <div
+          role="group"
+          aria-label="What to do next"
+          data-testid="thread-outcome-actions"
+          className="flex flex-wrap items-center gap-2"
+        >
+          <Button
+            type="button"
+            size="sm"
+            data-testid="thread-outcome-resume"
+            title="Opens New with its last report as the brief. Nothing starts until you start it."
+            onClick={resume}
+          >
+            <Play data-icon="inline-start" />
+            Resume from report
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="thread-outcome-history"
+            onClick={() => useHistoryStore.getState().show("all", thread.title)}
+          >
+            <History data-icon="inline-start" />
+            Find in History
+          </Button>
+        </div>
       </div>
-      {/* What Gram saved of how it ended: its PR and checks, its branch and its files. */}
-      <dl
-        aria-label="Saved outcome"
-        data-testid="thread-outcome-facts"
-        className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2"
+      {/* Beside it, the facts Gram saved of how it ended, and when each thing happened. */}
+      <aside
+        aria-label="What it left"
+        className="flex min-w-0 flex-col gap-6 lg:border-s lg:border-border lg:ps-8"
       >
-        {pr !== undefined && (
-          <Fact term="Pull request" testId="thread-outcome-fact-pr">
-            <span className="tabular-nums">
-              #{pr.number}
-              {pr.repo !== undefined && (
-                <span className="text-muted-foreground"> {pr.repo.split("/").at(-1)}</span>
+        <dl
+          aria-label="Saved outcome"
+          data-testid="thread-outcome-facts"
+          className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2"
+        >
+          {pr !== undefined && (
+            <Fact term="Pull request" testId="thread-outcome-fact-pr">
+              <span className="tabular-nums">
+                #{pr.number}
+                {pr.repo !== undefined && (
+                  <span className="text-muted-foreground"> {pr.repo.split("/").at(-1)}</span>
+                )}
+              </span>
+              {pr.state !== undefined && (
+                <span data-testid="thread-outcome-pr-state">· {PR_STATE[pr.state]}</span>
               )}
-            </span>
-            {pr.state !== undefined && (
-              <span data-testid="thread-outcome-pr-state">· {PR_STATE[pr.state]}</span>
-            )}
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              data-testid="thread-outcome-pr"
-              onClick={() => show("pr")}
-            >
-              <GitPullRequest data-icon="inline-start" />
-              Open PR #{pr.number}
-            </Button>
-          </Fact>
-        )}
-        {checks !== undefined && (
-          <Fact term="Checks" testId="thread-outcome-checks">
-            <span className="flex items-center gap-1.5">
-              <checks.icon aria-hidden className={cn("size-icon-row shrink-0", checks.tone)} />
-              {checks.word}
-            </span>
-          </Fact>
-        )}
-        {review !== undefined && (
-          <Fact term="Review" testId="thread-outcome-review">
-            {review}
-          </Fact>
-        )}
-        {branch !== undefined && (
-          <Fact term="Branch" testId="thread-outcome-branch">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <GitBranch aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-              <span className="truncate font-mono text-meta">{branch}</span>
-              {base !== undefined && (
-                <span className="text-meta text-muted-foreground">
-                  into <span className="font-mono">{base}</span>
-                </span>
-              )}
-            </span>
-          </Fact>
-        )}
-        <Fact term="Files" testId="thread-outcome-changed">
-          {changed > 0 ? (
-            <>
-              <span className="tabular-nums">{files(changed)}</span>
               <Button
                 type="button"
                 size="xs"
                 variant="outline"
-                data-testid="thread-outcome-files"
-                onClick={() => show("diff")}
+                data-testid="thread-outcome-pr"
+                onClick={() => show("pr")}
               >
-                <FileDiff data-icon="inline-start" />
-                Show changes
+                <GitPullRequest data-icon="inline-start" />
+                Open PR #{pr.number}
               </Button>
-            </>
-          ) : (
-            <span className="text-muted-foreground">
-              {pr === undefined
-                ? "None left in its worktree"
-                : `None left in its worktree; its changes are in PR #${pr.number}`}
-            </span>
+            </Fact>
           )}
-        </Fact>
-      </dl>
-      {report !== undefined && (
-        <div data-testid="thread-outcome-report" className="flex flex-col gap-0.5">
-          <p className="text-meta text-muted-foreground tabular-nums">
-            Last report · {formatStamp(report.at)}
-          </p>
-          <p className="whitespace-pre-line">{reportLine(report.summary, SUMMARY_MAX)}</p>
-        </div>
-      )}
-      <div
-        role="group"
-        aria-label="What to do next"
-        data-testid="thread-outcome-actions"
-        className="flex flex-wrap items-center gap-2"
-      >
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          data-testid="thread-outcome-history"
-          onClick={() => useHistoryStore.getState().show("all", thread.title)}
+          {checks !== undefined && (
+            <Fact term="Checks" testId="thread-outcome-checks">
+              <span className="flex items-center gap-1.5">
+                <checks.icon aria-hidden className={cn("size-icon-row shrink-0", checks.tone)} />
+                {checks.word}
+              </span>
+            </Fact>
+          )}
+          {review !== undefined && (
+            <Fact term="Review" testId="thread-outcome-review">
+              {review}
+            </Fact>
+          )}
+          {branch !== undefined && (
+            <Fact term="Branch" testId="thread-outcome-branch">
+              <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">
+                <GitBranch aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
+                <span className="truncate font-mono text-meta">{branch}</span>
+                {base !== undefined && (
+                  <span className="text-meta text-muted-foreground">
+                    into <span className="font-mono">{base}</span>
+                  </span>
+                )}
+              </span>
+            </Fact>
+          )}
+          <Fact term="Files" testId="thread-outcome-changed">
+            {changed > 0 ? (
+              <>
+                <span className="tabular-nums">{files(changed)}</span>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  data-testid="thread-outcome-files"
+                  onClick={() => show("diff")}
+                >
+                  <FileDiff data-icon="inline-start" />
+                  Show changes
+                </Button>
+              </>
+            ) : (
+              <span className="text-muted-foreground">
+                {pr === undefined
+                  ? "None left in its worktree"
+                  : `None left in its worktree; its changes are in PR #${pr.number}`}
+              </span>
+            )}
+          </Fact>
+        </dl>
+        <dl
+          aria-label="When"
+          data-testid="thread-outcome-times"
+          className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2 border-t border-border pt-4"
         >
-          <History data-icon="inline-start" />
-          Find in History
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          data-testid="thread-outcome-resume"
-          title="Opens New with its last report as the brief. Nothing starts until you start it."
-          onClick={resume}
-        >
-          <Play data-icon="inline-start" />
-          Resume from report
-        </Button>
-      </div>
+          {times.map((time) => (
+            <Fact key={time.term} term={time.term} testId="thread-outcome-time">
+              <span className="tabular-nums">{formatStamp(time.at)}</span>
+            </Fact>
+          ))}
+        </dl>
+      </aside>
     </section>
   );
 }
