@@ -62,10 +62,10 @@ const start = async (page: Page, settings: Record<string, unknown> = {}) => {
   await page.evaluate(() => {
     (window as unknown as { sentAnswers: unknown[] }).sentAnswers.length = 0;
   });
-  // In the app, as a user would: the workspace's row in the overview, then its header's Waiting on you into the Inbox.
+  // In the app, as a user would: the workspace's row in the overview, then the sidebar's pill into the Inbox.
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-waiting")).toBeVisible();
-  await page.getByTestId("status-waiting").click();
+  await expect(page.getByTestId("status-header")).toBeVisible();
+  await page.getByTestId("overview-needs-you").click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   return made;
 };
@@ -79,10 +79,10 @@ const currentAsk = (page: Page) => page.getByTestId("inbox-detail").getByTestId(
 const undoLine = (page: Page) => page.getByTestId("needs-you-undo-line");
 
 /**
- * The workspace's share of what needs you, as the orchestrator's status header counts it: unlike the total,
- * it doesn't move when t-flaky's own turn raises its approval.
+ * The workspace's share of what needs you, as its sidebar line counts it (`data-asks`, its badge):
+ * unlike the total, it doesn't move when t-flaky's own turn raises its approval.
  */
-const count = (page: Page) => page.getByTestId("status-waiting");
+const count = (page: Page) => page.locator('[data-testid="overview-workspace"][data-current]');
 
 /** Picks the Inbox's row whose words hold `text`, so the detail shows it. */
 const goTo = async (page: Page, text: string) => {
@@ -132,7 +132,7 @@ test("each ask shows once with what its Allow covers, and 1 then ⌘⏎ allows a
   await expect(page.getByTestId("ask-stack")).toHaveCount(0);
 
   await settle(page);
-  const before = Number(await count(page).getAttribute("data-count"));
+  const before = Number(await count(page).getAttribute("data-asks"));
   // A number picks, and ⌘⏎ sends what is picked.
   await page.keyboard.press("1");
   await expect(top.getByTestId("ask-option").first()).toHaveAttribute("data-picked", "true");
@@ -142,7 +142,7 @@ test("each ask shows once with what its Allow covers, and 1 then ⌘⏎ allows a
   await expect(undoLine(page)).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(undoLine(page)).toContainText("Allowed 3");
-  await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
+  await expect(count(page)).toHaveAttribute("data-asks", String(before - 1));
   // Held for the undo window, then sent to all three at once, as Allow, once.
   expect(await pending(page, made.pushers[0])).toHaveLength(1);
   await page.clock.runFor(SENT_MS);
@@ -157,7 +157,7 @@ test("each ask shows once with what its Allow covers, and 1 then ⌘⏎ allows a
   );
   // Sent, the undo line goes: there is nothing left to take back.
   await expect(undoLine(page)).toHaveCount(0);
-  await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
+  await expect(count(page)).toHaveAttribute("data-asks", String(before - 1));
 });
 
 test("the orchestrator's composer is its own: no key there answers, and Enter sends the draft", async ({
@@ -167,7 +167,7 @@ test("the orchestrator's composer is its own: no key there answers, and Enter se
   await page.keyboard.press("Escape");
   await expect(inbox(page)).toBeHidden();
   const composer = page.getByLabel("Message", { exact: true });
-  const before = await count(page).getAttribute("data-count");
+  const before = await count(page).getAttribute("data-asks");
   await composer.focus();
   await page.waitForTimeout(SETTLED_MS);
   await page.keyboard.type("2 tests fail");
@@ -177,7 +177,7 @@ test("the orchestrator's composer is its own: no key there answers, and Enter se
   await page.keyboard.press("ControlOrMeta+Enter");
   await page.waitForTimeout(SETTLED_MS);
   await expect(page.getByTestId("inbox-line-undo")).toHaveCount(0);
-  await expect(count(page)).toHaveAttribute("data-count", before!);
+  await expect(count(page)).toHaveAttribute("data-asks", before!);
 
   // With only an attachment, Enter sends the draft.
   await composer.evaluate((element, base64) => {
@@ -192,7 +192,7 @@ test("the orchestrator's composer is its own: no key there answers, and Enter se
   await expect(chip).toHaveAttribute("data-status", "ready");
   await page.keyboard.press("Enter");
   await expect(chip).toHaveCount(0);
-  await expect(count(page)).toHaveAttribute("data-count", before!);
+  await expect(count(page)).toHaveAttribute("data-asks", before!);
   expect(await sentAnswers(page)).toEqual([]);
 });
 
@@ -250,13 +250,13 @@ test("j and k move; 1 and 2 pick an option and Send answer sends exactly it", as
 test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async ({ page }) => {
   const made = await start(page);
   await goTo(page, "git push");
-  const before = await count(page).getAttribute("data-count");
+  const before = await count(page).getAttribute("data-asks");
   await settle(page);
   await page.keyboard.press("1");
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(undoLine(page)).toContainText("Allowed 3");
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(count(page)).toHaveAttribute("data-count", before!);
+  await expect(count(page)).toHaveAttribute("data-asks", before!);
   await expect(undoLine(page)).toHaveCount(0);
   // The ask taken back is the one shown again.
   await expect(currentAsk(page).getByTestId("ask-command")).toHaveText(
@@ -267,7 +267,7 @@ test("an answer can be taken back with ⌘Z or Undo, and nothing is sent", async
   await currentAsk(page).getByTestId("ask-option").nth(1).click();
   await expect(undoLine(page)).toContainText("Denied 3");
   await page.getByTestId("needs-you-undo").click();
-  await expect(count(page)).toHaveAttribute("data-count", before!);
+  await expect(count(page)).toHaveAttribute("data-asks", before!);
 
   // Past the window, the pushes still wait on the user, and nothing went out.
   await page.clock.runFor(SENT_MS);
@@ -282,7 +282,12 @@ test("an answer held in the Inbox hides the worker's own card until Undo brings 
   await goTo(page, "git push");
   await currentAsk(page).getByTestId("ask-option").first().click();
   await expect(undoLine(page)).toContainText("Allowed 3");
+  // One receipt, in the surface where it was answered: the Inbox's foot, not the composer's too.
+  await expect(page.getByTestId("inbox-line-undo")).toHaveCount(0);
   await page.keyboard.press("Escape");
+  // The Inbox closed, the composer's line has it, alone.
+  await expect(page.getByTestId("inbox-line-undo")).toContainText("Allowed 3");
+  await expect(undoLine(page)).toHaveCount(0);
   // The worker's own card: answered, so not offered a second time while Undo stands.
   await openOrchestrator(page, made.orchestratorThreadId);
   await threadRow(page, made.pushers[0]).click();
@@ -302,17 +307,17 @@ test("a second key right after an answer, or after the shown ask changed by itse
 }) => {
   const made = await start(page);
   await goTo(page, "git push");
-  const before = Number(await count(page).getAttribute("data-count"));
+  const before = Number(await count(page).getAttribute("data-asks"));
   await settle(page);
   // The second key would pick on the next ask: on the first answer's heels, it doesn't.
   await page.keyboard.press("1");
   await page.keyboard.press("ControlOrMeta+Enter");
   await page.keyboard.press("1");
   await expect(undoLine(page)).toContainText("Allowed 3");
-  await expect(count(page)).toHaveAttribute("data-count", String(before - 1));
+  await expect(count(page)).toHaveAttribute("data-asks", String(before - 1));
   await expect(currentAsk(page).locator("[data-picked]")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(count(page)).toHaveAttribute("data-count", String(before));
+  await expect(count(page)).toHaveAttribute("data-asks", String(before));
 
   // Closed somewhere else, the question gives way to the next, and a pick and a send on its heels
   // don't answer the ask they never saw.
@@ -428,15 +433,15 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
     page.locator(`[data-testid="overview-workspace"][data-workspace-id="${id}"]`);
   const badge = async (id: string) =>
     Number((await workspace(id).getByTestId("overview-workspace-asks").textContent()) ?? "0");
-  // The status header counts the workspace's share, as its badge does.
-  await expect(page.getByTestId("status-waiting")).toHaveAttribute(
-    "data-count",
-    String(await badge(made.workspaceId)),
-  );
+  // The orchestrator's header doesn't repeat what needs you: the pill and the badges count it.
+  await expect(page.getByTestId("status-header")).toBeVisible();
+  await expect(page.getByTestId("status-waiting")).toHaveCount(0);
   const needsYou = page.getByTestId("overview-needs-you");
   const all = Number(await needsYou.getAttribute("data-count"));
   await expect(needsYou).toContainText(`${all} need you`);
+  // The title bar's Inbox button says the count in its name, but beside the pill wears no badge.
   await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-count", String(all));
+  await expect(page.getByTestId("inbox-button")).not.toHaveAttribute("data-badge");
 
   // The list the pill opens has `all` items, by kind; each workspace's rows as many as its badge,
   // and the threads outside any workspace the rest.
@@ -486,10 +491,10 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   // Away on a solo thread, the workspace's row brings back its orchestrator and its header.
   await threadRow(page, "t-flaky").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
-  await expect(page.getByTestId("status-waiting")).toHaveCount(0);
+  await expect(page.getByTestId("status-header")).toHaveCount(0);
   await workspace(made.workspaceId).getByRole("button").first().click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await expect(page.getByTestId("status-waiting")).toBeVisible();
+  await expect(page.getByTestId("status-header")).toBeVisible();
 });
 
 test("Send answer turns the worker's row, card and chip to answered with the count, not asks you", async ({
@@ -519,7 +524,7 @@ test("Send answer turns the worker's row, card and chip to answered with the cou
   const pill = page.getByTestId("overview-needs-you");
   const before = Number((await pill.textContent())?.match(/\d+/)?.[0]);
 
-  await page.getByTestId("status-waiting").click();
+  await page.getByTestId("overview-needs-you").click();
   await goTo(page, "A refund webhook");
   await currentAsk(page).getByTestId("ask-option").filter({ hasText: "72 hours" }).click();
   await currentAsk(page).getByTestId("ask-send").click();

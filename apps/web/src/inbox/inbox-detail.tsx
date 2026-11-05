@@ -26,13 +26,15 @@ import {
 import { RequestCards, SheetRequestCards } from "@/thread/request-cards";
 import { WaitingItemRow } from "@/thread/waiting-tray";
 
+import { InboxContext } from "./inbox-context";
+
 // The Inbox's detail pane: the item picked in its list, with everything it takes to answer it. An
 // ask answered in place (an approval's verbs, a question's choices or a reply) is drawn as the Asks
 // dock drew it, under the one answer rule: a click or 1–9 picks, Send answer or ⌘⏎ sends, and an
 // approval's verbs act on a click; the answer waits out Undo before it goes. An ask read in full (a
 // plan, a long request, an open or forwarded question) is its own card, as its thread draws it. A
 // wait has Done, Copy or Open; a failure its next step. Each has Open thread, Later and, where it
-// applies, Dismiss.
+// applies, Dismiss. Under it, what its thread said last and what it changed (`InboxContext`).
 
 /** The Inbox's dialog: the pane's keys answer only from inside it. */
 const INBOX = '[data-testid="inbox"]';
@@ -343,6 +345,10 @@ export function InboxDetail({
             <FailureRowView item={item.failure} />
           </ul>
         ) : null}
+        {/* A thread gone with its worker has nothing to read. */}
+        {item.threadId !== undefined && item.owned && (
+          <InboxContext key={item.threadId} threadId={item.threadId} />
+        )}
       </div>
     </section>
   );

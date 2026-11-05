@@ -49,19 +49,24 @@ test("the header counts what runs, waits, is in review and merged, and opens eac
   await expect(page.getByTestId("workers-list")).toHaveCount(0);
 
   // Nothing in Gram waits on the user: the ask is billing-api's and the error a solo thread's.
-  // The header says so beside the sidebar's count across every workspace, and the two add up.
-  const waiting = header.getByTestId("status-waiting");
-  await expect(waiting).toHaveAccessibleName("0 need you here, 2 elsewhere, open Inbox");
-  await expect(waiting).toHaveAttribute("data-count", "0");
-  await expect(waiting.getByTestId("status-elsewhere")).toHaveAttribute("data-count", "2");
-  await expect(page.getByTestId("overview-needs-you")).toHaveAttribute("data-count", "2");
-  await waiting.hover();
-  const hint = page.getByTestId("status-waiting-hint");
-  await expect(hint).toContainText("Here: nothing needs you");
-  await expect(hint).toContainText("billing-api: 1 question");
-  await expect(hint).toContainText("1 error");
-  // It opens the Inbox on the newest ask elsewhere, not on the error listed first.
-  await waiting.click();
+  // The header doesn't repeat it: the sidebar's pill is the one count across every workspace,
+  // with here and elsewhere on its hover, and each workspace's line its own share.
+  await expect(header.getByTestId("status-waiting")).toHaveCount(0);
+  await expect(header).not.toContainText("need you");
+  const pill = page.getByTestId("overview-needs-you");
+  await expect(pill).toHaveAttribute("data-count", "2");
+  await expect(pill).toHaveAttribute("title", /\nHere \(Gram\): nothing needs you\n/);
+  await expect(pill).toHaveAttribute("title", /\nbilling-api: 1 question/);
+  await expect(pill).toHaveAttribute("title", /\nThreads outside a workspace: 1 error/);
+  const gram = page.locator(
+    `[data-testid="overview-workspace"][data-workspace-id="${made.workspaceId}"]`,
+  );
+  await expect(gram).toHaveAttribute("data-asks", "0");
+  // Beside the pill, the title bar's Inbox button wears no second count.
+  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-count", "2");
+  await expect(page.getByTestId("inbox-button")).not.toHaveAttribute("data-badge");
+  // The pill opens the Inbox on the newest ask elsewhere, not on the error listed first.
+  await pill.click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   await expect(page.getByTestId("inbox-detail")).toContainText("refund webhook");
   await page.keyboard.press("Escape");

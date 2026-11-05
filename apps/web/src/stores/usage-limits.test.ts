@@ -202,15 +202,16 @@ describe("the tightest limit", () => {
     expect(nextExpiry({}, NOW)).toBeUndefined();
   });
 
-  it("warns from 80% and at a rejection", () => {
-    expect(limitWarns(limitAt(0.79, "allowed"))).toBe(false);
-    expect(limitWarns(limitAt(0.8, "allowed"))).toBe(true);
+  it("warns from 90% and at a rejection", () => {
+    expect(limitWarns(limitAt(0.85, "allowed"))).toBe(false);
+    expect(limitWarns(limitAt(0.89, "allowed"))).toBe(false);
+    expect(limitWarns(limitAt(0.9, "allowed"))).toBe(true);
     expect(limitWarns(limitAt(0.4, "rejected"))).toBe(true);
   });
 
-  it("is neutral below 80%, amber from there, and red once spent with no credits", () => {
-    expect(limitTone(limitAt(0.79, "allowed"))).toBe("neutral");
-    expect(limitTone(limitAt(0.85, "allowed"))).toBe("warning");
+  it("is neutral below 90%, amber from there, and red once spent with no credits", () => {
+    expect(limitTone(limitAt(0.85, "allowed"))).toBe("neutral");
+    expect(limitTone(limitAt(0.92, "allowed"))).toBe("warning");
     expect(limitTone(limitAt(1, "allowed"))).toBe("spent");
     expect(limitTone(limitAt(0.4, "rejected"))).toBe("spent");
     // On credits a full window is no stop: it stays a warning.

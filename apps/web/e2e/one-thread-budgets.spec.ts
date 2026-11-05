@@ -21,7 +21,7 @@ const start = async (page: Page) => {
   // The way home: the workspace's ⌘1.
   await pressFirstWorkspaceKey(page);
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await expect(page.getByTestId("status-waiting")).toBeVisible();
+  await expect(page.getByTestId("status-header")).toBeVisible();
   await expect(page.getByTestId("feature-card").first()).toBeVisible();
   return made;
 };
@@ -64,9 +64,13 @@ const visibleWords = (page: Page, selector: string, except?: string) =>
     [selector, except] as const,
   );
 
-/** How much of the workspace needs you, as the orchestrator's status header counts it. */
+/** How much of the workspace needs you, as its sidebar line's badge counts it. */
 const askCount = async (page: Page) =>
-  Number(await page.getByTestId("status-waiting").getAttribute("data-count"));
+  Number(
+    await page
+      .locator('[data-testid="overview-workspace"][data-current]')
+      .getAttribute("data-asks"),
+  );
 
 test("the orchestrator's home stays under 150 words", async ({ page }) => {
   await start(page);
@@ -116,8 +120,8 @@ test("an ask takes one pick and one send: a number, then ⌘⏎", async ({ page 
   await start(page);
   const before = await askCount(page);
   expect(before).toBeGreaterThan(1);
-  // One step to the Inbox, open on the workspace's first ask.
-  await page.getByTestId("status-waiting").click();
+  // One step to the Inbox, from the sidebar's pill, open on the workspace's newest ask.
+  await page.getByTestId("overview-needs-you").click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   await page.waitForTimeout(400);
   // One rule on every surface: a number picks, ⌘⏎ sends it.

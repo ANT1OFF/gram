@@ -7,6 +7,7 @@ import { useLimitsNow, useMinuteNow } from "@/shell/usage-meter";
 import {
   currentLimit,
   LIMIT_PROVIDERS,
+  LIMIT_WARN_AT,
   LIMIT_WINDOWS,
   limitSpent,
   limitStale,
@@ -233,7 +234,7 @@ const SPARK_W = 200,
 
 /**
  * A window's share used over its span, as local snapshots recorded it: a thin line that drops at
- * each reset, with the 80% mark beneath. Drawn once, never animated.
+ * each reset, with the warning mark (90%) beneath. Drawn once, never animated.
  */
 function LimitSpark({
   observations,
@@ -266,8 +267,8 @@ function LimitSpark({
       <line
         x1={0}
         x2={SPARK_W}
-        y1={y(0.8)}
-        y2={y(0.8)}
+        y1={y(LIMIT_WARN_AT)}
+        y2={y(LIMIT_WARN_AT)}
         className="stroke-warning/35"
         strokeWidth={1}
         vectorEffect="non-scaling-stroke"

@@ -15,10 +15,13 @@ const CLOCK = /^(\d{2}:\d{2}|[A-Z][a-z]{2}\D*\d{1,2}\D+\d{2}:\d{2})$/;
 test("the meter shows the tightest limit and opens onto both providers", async ({ page }) => {
   await page.goto("/t/t-flaky");
   const meter = page.getByTestId("usage-meter");
-  // Codex's 5-hour window is at 85%, past the warning.
+  // Codex's 5-hour window is at 85%: the highest, and still short of the warning, so the title
+  // bar's only amber stays what needs you.
   await expect(meter).toHaveText("Codex 85%");
-  await expect(meter).toHaveAttribute("data-warn", "true");
-  await expect(meter).toHaveAccessibleName("Subscription usage: Codex 5-hour limit 85% used");
+  await expect(meter).not.toHaveAttribute("data-warn");
+  await expect(meter).toHaveAccessibleName(
+    "Highest subscription usage: Codex 5-hour limit 85% used",
+  );
 
   await meter.click();
   const popover = page.getByRole("dialog", { name: "Subscription usage" });
@@ -44,7 +47,7 @@ test("the meter shows the tightest limit and opens onto both providers", async (
   await expect(popover).toBeHidden();
 });
 
-test("the meter waits for a limit, warns from 80% once, and ignores gateways", async ({ page }) => {
+test("the meter waits for a limit, warns from 90% once, and ignores gateways", async ({ page }) => {
   await seed(page, { "gram.mock.limits": "none" });
   await page.goto("/t/t-flaky");
   await expect(page.getByTestId("shell-titlebar")).toBeVisible();
@@ -70,16 +73,22 @@ test("the meter waits for a limit, warns from 80% once, and ignores gateways", a
   await expect(fill).toHaveAttribute("style", /width: 50%/);
   await expect(page.getByTestId("pulse-once")).toHaveCount(0);
 
-  // Crossing 80% turns it warning-coloured, with one pulse.
-  await report(0.82, { status: "warning" });
-  await expect(meter).toHaveText("Claude 82%");
+  // 85% is close, not yet a warning: the meter stays neutral.
+  await report(0.85);
+  await expect(meter).toHaveText("Claude 85%");
+  await expect(meter).not.toHaveAttribute("data-warn");
+  await expect(page.getByTestId("pulse-once")).toHaveCount(0);
+
+  // Crossing 90% turns it warning-coloured, with one pulse.
+  await report(0.92, { status: "warning" });
+  await expect(meter).toHaveText("Claude 92%");
   await expect(meter).toHaveAttribute("data-warn", "true");
-  await expect(fill).toHaveAttribute("style", /width: 82%/);
+  await expect(fill).toHaveAttribute("style", /width: 92%/);
   await expect(page.getByTestId("pulse-once")).toHaveCount(1);
 
   // A gateway's limit is its own quota, not the subscription's.
   await report(0.99, { gateway: true });
-  await expect(meter).toHaveText("Claude 82%");
+  await expect(meter).toHaveText("Claude 92%");
 
   // Codex hasn't reported, so the popover has Claude alone.
   await meter.click();

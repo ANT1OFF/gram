@@ -48,8 +48,13 @@ configured pass.
 - **Inbox.** Questions, approvals, plans, review requests, drafts, errors and steps from every
   workspace and solo thread collect in one list by kind, each answered in a pane beside it. The
   title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it; <kbd>⌘⇧U</kbd> steps
-  through its items at the turn that asked. The thread that asks keeps its own card too.
-- **Usage limits.** The Usage page shows Claude and Codex five-hour and weekly limits (see
+  through its items at the turn that asked. Under each item the pane shows the asking thread's
+  last few turns and what its edits changed. An answer can be taken back for a few seconds from
+  one receipt: the Inbox's foot while it is open, above the orchestrator's composer after. The
+  thread that asks keeps its own card too.
+- **Usage limits.** The title bar's meter shows the highest usage of any provider's window
+  (its hover names which), neutral until 90% so amber stays for what needs you. The Usage page
+  shows Claude and Codex five-hour and weekly limits (see
   [accounts, models and speed](#accounts-models-and-speed)). A workspace can pause new workers
   near a limit, hold low-priority briefs until it resets and, if you turn it on,
   [offer another model](#offering-another-worker-model-at-a-limit).
@@ -217,12 +222,12 @@ that history. Current questions, failures, blockers and PR changes stay visible.
 
 The orchestrator's chat opens on a status header: one compact row of live counts.
 **Running** opens Workers, **In review** opens the Board and **Merged today** opens
-History; hovering a count names its workers. **Need you here** counts this
-workspace's share of the Inbox and how many items wait elsewhere ("0 need you here
-· 2 elsewhere"), so the two numbers add up to the sidebar's count across every
-workspace. Errors are counted apart from asks, and hovering the count breaks each
-workspace's share down by kind. Clicking it opens the Inbox on the newest ask, as
-the sidebar's count does. Opened from the title bar or ⌘⇧I, the Inbox returns to
+History; hovering a count names its workers. What needs you is not repeated in the
+header: the sidebar's pill is the one count across every workspace, and each
+workspace's line carries its own share as a badge. Hovering the pill says how much is
+here and how much is in each other workspace, by kind, and clicking it opens the Inbox
+on the newest ask here, or anywhere when nothing here asks. With the sidebar hidden,
+the title bar's Inbox button wears the count instead. Opened from the title bar or ⌘⇧I, the Inbox returns to
 the item you left, or to the newest of the kind you last looked at. When you come
 back after merges or failures, **Since you left** sits in the same row: click it
 for the time range and each pull request, or dismiss it for that absence. The

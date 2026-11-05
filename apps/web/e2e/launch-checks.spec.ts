@@ -237,6 +237,54 @@ test("a dismissed problem shows again when the check result changes", async ({ p
   await expect(banner).not.toContainText("gh isn't installed");
 });
 
+test("a dismissed problem that still stands leaves the row for a dot on Settings", async ({
+  page,
+}) => {
+  await page.addInitScript((key) => {
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        tools: [
+          { tool: "claude", found: true, path: "/mock/bin/claude", version: "2.1.273" },
+          { tool: "git", found: true, path: "/usr/bin/git", version: "2.47.1" },
+          { tool: "gh", found: true, path: "/mock/bin/gh", version: "2.63.0" },
+        ],
+        ghSignedIn: false,
+      }),
+    );
+  }, MOCK_LAUNCH_CHECKS_KEY);
+  await page.goto("/t/t-flaky");
+
+  const banner = page.getByTestId("launch-checks-banner");
+  const dot = page.getByTestId("top-left-settings-dot");
+  const settings = page
+    .getByTestId("top-left-nav")
+    .getByRole("button", { name: /^Settings\b/ })
+    .first();
+  await expect(banner).toContainText("gh isn't signed in. Run gh auth login");
+  // While the banner says it, Settings carries no second mark.
+  await expect(dot).toHaveCount(0);
+  await expect(settings).toHaveAccessibleName("Settings");
+
+  await banner.getByRole("button", { name: "Dismiss" }).click();
+  await expect(banner).toBeHidden();
+  // Dismissed, it still stands: a small dot on Settings, named on hover, opening Diagnostics.
+  await expect(dot).toBeVisible();
+  await expect(settings).toHaveAccessibleName("Settings, 1 setup problem");
+  await settings.hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
+    "gh isn't signed in. Run gh auth login to turn on PR badges and reviews.",
+  );
+  await settings.click();
+  await expect(page).toHaveURL(/\/settings\/diagnostics$/);
+  await expect(page.getByTestId("tool-checks")).toBeVisible();
+
+  // Across a reload the row stays gone and the dot stays.
+  await page.goto("/t/t-flaky");
+  await expect(dot).toBeVisible();
+  await expect(banner).toBeHidden();
+});
+
 test("first run is one screen: how Gram works, the agents, a repository and past sessions", async ({
   page,
 }) => {

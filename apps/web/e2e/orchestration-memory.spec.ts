@@ -348,9 +348,9 @@ test("the Board's chip and the orchestrator's banner open the Inbox on the open 
   await expect(item("Q3")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // The status header counts what is left; its tray doesn't repeat it.
-  await expect(page.getByTestId("status-waiting")).toHaveAttribute(
-    "data-count",
+  // The workspace's line counts what is left; the chat's tray doesn't repeat it.
+  await expect(page.locator('[data-testid="overview-workspace"][data-current]')).toHaveAttribute(
+    "data-asks",
     String(before - 1),
   );
   await expect(page.getByTestId("waiting-questions")).toHaveCount(0);

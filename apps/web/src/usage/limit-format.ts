@@ -51,6 +51,13 @@ export const limitPercent = (utilization: number): number =>
 export const meterText = ({ provider, limit }: TightestLimit): string =>
   `${PROVIDER_SHORT[provider]} ${limitPercent(limit.utilization)}%${limit.credits === true ? " · credits" : ""}`;
 
+/**
+ * The meter's hover, saying what its number is: "Highest usage: Codex 5-hour limit, 85%". Its
+ * popover has every provider's windows.
+ */
+export const meterHint = ({ provider, window, limit }: TightestLimit): string =>
+  `Highest usage: ${agentLabel(provider)} ${windowWord(window)} limit, ${limitPercent(limit.utilization)}%`;
+
 /** "Claude 42% of the weekly limit": the tightest limit in a line, for a hint or a summary. */
 export const limitSummaryText = ({ provider, window, limit }: TightestLimit): string =>
   `${PROVIDER_SHORT[provider]} ${limitPercent(limit.utilization)}% of the ${windowWord(window)} limit`;
@@ -108,9 +115,12 @@ export const creditsText = (
     : `On credits · ${creditBalanceText(limit.creditsBalance)} left`;
 };
 
-/** What the meter's name says to a screen reader: the tightest limit and its window. */
+/**
+ * What the meter's name says to a screen reader: that its number is the highest usage of any
+ * provider's window, and which one it is.
+ */
 export const meterLabel = (tightest: TightestLimit): string =>
-  `Subscription usage: ${agentLabel(tightest.provider)} ${windowWord(
+  `Highest subscription usage: ${agentLabel(tightest.provider)} ${windowWord(
     tightest.window,
   )} limit ${limitPercent(tightest.limit.utilization)}% used${
     tightest.limit.credits === true ? ", continuing on credits" : ""

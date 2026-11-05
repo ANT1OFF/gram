@@ -114,9 +114,6 @@ export const showInbox = (target: InboxTarget = {}) => {
   });
 };
 
-/** Opens the Inbox from a needs-you count: on the newest ask, an error only when nothing asks. */
-export const showInboxAsks = () => showInbox({ ask: true });
-
 /** Opens the Inbox on the ask `askKey` (`Ask.key`): a notification's Open, a Board line's chip. */
 export const showInboxAsk = (askKey: string) => showInbox({ key: `ask:${askKey}` });
 

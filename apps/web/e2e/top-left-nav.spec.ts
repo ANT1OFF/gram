@@ -104,6 +104,18 @@ test("Usage carries a dot only once a window is nearly used, and names it on hov
       resetsAt: Date.now() + 2 * 3_600_000,
     }),
   );
+  // Close, but short of the warning: no dot yet.
+  await expect(page.getByTestId("usage-meter")).toHaveText("Claude 86%");
+  await expect(dot).toHaveCount(0);
+
+  await page.evaluate(() =>
+    window.gramMock!.simulateUsageLimit({
+      agent: "claude",
+      window: "five_hour",
+      utilization: 0.93,
+      resetsAt: Date.now() + 2 * 3_600_000,
+    }),
+  );
   await expect(dot).toBeVisible();
   await expect(usage).toHaveAttribute("data-warn", "true");
 });

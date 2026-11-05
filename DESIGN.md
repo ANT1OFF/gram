@@ -28,7 +28,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   - An orchestrator's sidebar line carries at most one amber marker, its count; its workers'
     rows say "asks you" in plain text.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
-    purpose), Full autonomy, a key clash, and the usage meter from 80% of a limit (red once
+    purpose), Full autonomy, a key clash, and the usage meter from 90% of a limit (red once
     spent with no credits).
 - **Radii are soft:** 8 to 16 px (`radius-xs` to `radius-xl`); the composer is rounder (22 px);
   small marks (a key cap, a bar, a swatch) take 4 px (`radius-2xs`).

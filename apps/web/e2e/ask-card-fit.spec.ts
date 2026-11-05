@@ -54,7 +54,7 @@ const start = async (page: Page) => {
     [QUESTION, CONTEXT, OPTIONS, RECOMMENDED] as const,
   );
   await openOrchestratorTile(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("status-waiting")).toBeVisible();
+  await expect(page.getByTestId("status-header")).toBeVisible();
   return made;
 };
 
@@ -106,7 +106,7 @@ test("in the Inbox, four long choices all show with their descriptions, and the 
   page,
 }) => {
   await start(page);
-  await page.getByTestId("status-waiting").click();
+  await page.getByTestId("inbox-button").click();
   const stack = page.getByTestId("inbox-detail-body");
   await show(page, QUESTION);
   const ask = currentAsk(page);

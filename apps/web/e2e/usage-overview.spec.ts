@@ -331,7 +331,8 @@ test.describe("midday reset fixture", () => {
     const cards = page.getByTestId("usage-limit-card");
     await expect(cards).toHaveCount(4);
     const codex = page.getByRole("group", { name: "Codex 5-hour limit" });
-    await expect(codex).toHaveAttribute("data-warn", "true");
+    // 85% is close, not yet a warning: the card warns from 90%, as the title bar's meter does.
+    await expect(codex).not.toHaveAttribute("data-warn");
     await expect(codex.getByTestId("usage-limit-percent")).toHaveText("85%");
     await expect(codex.getByRole("meter")).toHaveAttribute("aria-valuenow", "85");
     await expect(codex.getByTestId("usage-limit-reset")).toHaveText(/^Resets \d{2}:\d{2}$/);

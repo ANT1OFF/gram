@@ -9,39 +9,40 @@ import { useServerSettings } from "@/settings-sync/store";
 
 import { BannerCliUpdate } from "./cli-update";
 import { CommandText } from "./command-text";
-import { launchIssues } from "./issues";
+import { launchIssues, type LaunchIssue } from "./issues";
 import { useLaunchChecks } from "./use-launch-checks";
 
 /** A dismissal as `onboarding.dismissedLaunchIssues` stores it. */
 const dismissalKey = (version: string, issueId: string): string => `${version}:${issueId}`;
 
 /**
- * Mount once in the root layout: what's missing or signed out on this machine, until dismissed. A
- * dismissal is saved in settings per problem and app version, so it survives restarts; a different
- * check result or an update shows the problem again.
+ * The launch checks' problems as the banner and the Settings dot read them: `shown`, the ones not
+ * dismissed, which the banner lists; `dismissed`, the ones dismissed that still stand, which Settings
+ * carries as a dot until a re-check clears them; and `dismiss`, which saves a dismissal per problem
+ * and app version, so it survives restarts; a different check result or an update shows it again.
+ * Nothing until the checks, settings and version are in, so a dismissed problem never flashes up.
  */
-export function LaunchChecksBanner() {
-  const { checks, recheck } = useLaunchChecks();
+export function useLaunchIssues(): {
+  shown: readonly LaunchIssue[];
+  dismissed: readonly LaunchIssue[];
+  dismiss: () => void;
+} {
+  const { checks } = useLaunchChecks();
   const diagnostics = useDiagnostics();
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
   // Hides at once, before the save lands or when it fails.
   const [dismissedHere, setDismissedHere] = useState<ReadonlySet<string>>(new Set());
-  const [checking, setChecking] = useState(false);
-  const cliUpdates = useFeature("cliUpdates", { settled: true });
-
-  // Waiting for settings and the version keeps a dismissed problem from flashing up at launch.
-  if (!checks || settings === undefined || diagnostics.isPending) return null;
+  const ready = checks !== undefined && settings !== undefined && !diagnostics.isPending;
   const version = diagnostics.data?.version ?? "";
-  const saved = settings.onboarding.dismissedLaunchIssues ?? [];
-  const dismissed = new Set([...saved, ...dismissedHere]);
-  const issues = launchIssues(checks).filter(
-    (issue) => !dismissed.has(dismissalKey(version, issue.id)),
-  );
-  if (issues.length === 0) return null;
-
+  const saved = settings?.onboarding.dismissedLaunchIssues ?? [];
+  const all = ready ? launchIssues(checks) : [];
+  const gone = new Set([...saved, ...dismissedHere]);
+  const isDismissed = (issue: LaunchIssue) => gone.has(dismissalKey(version, issue.id));
+  const shown = all.filter((issue) => !isDismissed(issue));
+  const dismissed = all.filter(isDismissed);
   const dismiss = () => {
-    const keys = issues.map((issue) => dismissalKey(version, issue.id));
+    const keys = shown.map((issue) => dismissalKey(version, issue.id));
     setDismissedHere(new Set([...dismissedHere, ...keys]));
     // Dismissals from other versions no longer apply, so they're dropped.
     const kept = saved.filter((key) => key.startsWith(`${version}:`));
@@ -49,6 +50,21 @@ export function LaunchChecksBanner() {
       (error: unknown) => console.error("launch checks: save dismissal", error),
     );
   };
+  return { shown, dismissed, dismiss };
+}
+
+/**
+ * Mount once in the root layout: what's missing or signed out on this machine, until dismissed.
+ * Dismissed, a problem that still stands leaves the full-width row for a dot on Settings (the
+ * window's top left), whose hover names it and whose Diagnostics page has it in full.
+ */
+export function LaunchChecksBanner() {
+  const { recheck } = useLaunchChecks();
+  const { shown: issues, dismiss } = useLaunchIssues();
+  const [checking, setChecking] = useState(false);
+  const cliUpdates = useFeature("cliUpdates", { settled: true });
+
+  if (issues.length === 0) return null;
 
   const runRecheck = async () => {
     setChecking(true);

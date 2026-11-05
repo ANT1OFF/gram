@@ -4,17 +4,19 @@ import { useNavigate } from "@tanstack/react-router";
 import { useLayoutEffect, useMemo } from "react";
 
 import { useApi } from "@/api/context";
-import { showInboxAsks, toggleInbox, useInboxStore } from "@/inbox/inbox-store";
+import { showInbox, toggleInbox, useInboxStore } from "@/inbox/inbox-store";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { useLayoutStore } from "@/stores/layout";
 import { useRequestRevealStore, useRevealStore } from "@/stores/reveal";
 import { useTrayUnfold } from "@/thread/waiting-tray";
 import { useViewStore } from "@/views/view-store";
+import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 
 import { useDerivedAsks } from "./needs-you-store";
 import {
   kindsText,
   needsYouCounts,
+  scopeLines,
   stepItem,
   type NeedsYouGroup,
   type NeedsYouCounts,
@@ -195,13 +197,40 @@ export function useNeedsYouCounts(): NeedsYouCounts {
 
 /**
  * Needs you's count across every workspace, what it is by kind ("1 question, 1 error") and the
- * Inbox's toggle, for the title bar's button, and `openAsks` for the sidebar's pills: a count opens
- * on the newest ask, not the first error.
+ * Inbox's toggle, for the title bar's button. Reads no route: the pills' own here/elsewhere is
+ * `useNeedsYouPill`'s.
  */
 export function useNeedsYou() {
   const { total } = useNeedsYouCounts();
   const { items } = useNeedsYouList();
   const kinds = useMemo(() => kindsText(items), [items]);
   const hint = useShortcutHint("inbox.open");
-  return { count: total, kinds, open: toggleInbox, openAsks: showInboxAsks, label: "Inbox", hint };
+  return { count: total, kinds, open: toggleInbox, label: "Inbox", hint };
+}
+
+/**
+ * The sidebar's pills: `useNeedsYou`, plus how much of the count is here and how much elsewhere
+ * (`scopeLines`, for the hover) and `openAsks`, which opens on the newest ask in the workspace in
+ * view, or anywhere when nothing here asks, and never on the first error.
+ */
+export function useNeedsYouPill() {
+  const needs = useNeedsYou();
+  const { groups } = useNeedsYouList();
+  const solo = useViewSolo();
+  const viewed = useViewWorkspace()?.workspace;
+  const hereId = solo ? undefined : viewed?.id;
+  const hereName = viewed?.name;
+  const scope = useMemo(
+    () =>
+      scopeLines(
+        groups,
+        hereId === undefined ? undefined : { workspaceId: hereId, name: hereName ?? "" },
+      ).join("\n"),
+    [groups, hereId, hereName],
+  );
+  return {
+    ...needs,
+    scope,
+    openAsks: () => showInbox(hereId === undefined ? { ask: true } : { workspaceId: hereId }),
+  };
 }

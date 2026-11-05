@@ -51,12 +51,11 @@ describe("the status header's counts", () => {
         { feature: "f", rows: [row("e", { tab: "done", glyph: "merged", finishedAt: MORNING })] },
       ],
     };
-    const counts = statusHeaderCounts(tabs, 2, NOW);
+    const counts = statusHeaderCounts(tabs, NOW);
     expect(counts.running.map((w) => [w.title, w.now])).toEqual([
       ["Worker a", "Running tests"],
       ["Worker b", "Editing code"],
     ]);
-    expect(counts.waiting).toBe(2);
     expect(counts.inReview.map((w) => w.threadId)).toEqual(["c"]);
     expect(counts.mergedToday.map((w) => w.threadId)).toEqual(["e"]);
   });

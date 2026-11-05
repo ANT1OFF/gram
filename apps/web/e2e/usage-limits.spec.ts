@@ -56,6 +56,19 @@ test("the popover forecasts a window that is filling, and dates a reading gone q
   await expect(claude.getByTestId("usage-limit-age")).toHaveText("Updated 40m ago");
   await expect(claude.getByTestId("usage-limit-age")).toHaveAttribute("data-stale", "true");
   await expect(claude.getByTestId("usage-limit-forecast")).toHaveCount(0);
+
+  // Each provider dates its reading the same way, in muted words: an old one is no amber alarm.
+  const ages = popover.getByTestId("usage-limit-age");
+  const colours = await ages.evaluateAll((all) => all.map((el) => getComputedStyle(el).color));
+  expect(new Set(colours).size).toBe(1);
+  // The window the title bar shows is marked, and named at the foot.
+  await expect(codex.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveAttribute(
+    "data-window",
+    "fiveHour",
+  );
+  await expect(popover.getByTestId("usage-limits-foot")).toContainText(
+    "The title bar shows the highest: Codex 5-hour.",
+  );
 });
 
 test("the popover heads its columns and shows the credits an agent reports", async ({ page }) => {
@@ -152,7 +165,7 @@ test.describe("midday reset fixture", () => {
       { threadId: made.orchestratorThreadId },
     );
     await openOrchestrator(page, made.orchestratorThreadId);
-    await page.getByTestId("status-waiting").click();
+    await page.getByTestId("overview-needs-you").click();
     await page.getByTestId("inbox-item").filter({ hasText: "Claude is at 92%" }).click();
     const ask = page.getByTestId("inbox-detail").getByTestId("ask-item");
     await expect(ask).toContainText("Claude is at 92% of its 5-hour limit");

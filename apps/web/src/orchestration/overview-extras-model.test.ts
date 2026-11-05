@@ -89,9 +89,10 @@ const reading = (utilization: number, resetsAt: number) => ({
 
 describe("the overview's foot", () => {
   it("has a 5-hour meter for each provider with a reading, warning as the title bar's does", () => {
+    // Warning from 90%, as the title bar's: 85% stays neutral, 92% warns.
     const limits = {
       claude: { fiveHour: reading(0.42, at(18)), weekly: reading(0.9, at(18) + 86_400_000) },
-      codex: { fiveHour: reading(0.85, at(16, 30)) },
+      codex: { fiveHour: reading(0.92, at(16, 30)) },
     } as unknown as UsageLimits;
     expect(
       footMeters(limits, NOW).map(({ name, percent, resets, warns }) => ({
@@ -102,8 +103,12 @@ describe("the overview's foot", () => {
       })),
     ).toEqual([
       { name: "Claude", percent: 42, resets: "18:00", warns: false },
-      { name: "Codex", percent: 85, resets: "16:30", warns: true },
+      { name: "Codex", percent: 92, resets: "16:30", warns: true },
     ]);
+    const below = {
+      codex: { fiveHour: reading(0.85, at(16, 30)) },
+    } as unknown as UsageLimits;
+    expect(footMeters(below, NOW).map(({ warns }) => warns)).toEqual([false]);
   });
 
   it("leaves out a provider with only a weekly reading, or one that ran out", () => {
