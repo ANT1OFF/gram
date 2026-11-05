@@ -15,7 +15,7 @@ export function UndoLine({ testId = "inbox-line" }: { testId?: string }) {
     <div className="shrink-0 bg-thread px-3 pt-2" data-testid={`${testId}-dock`}>
       <div
         data-testid={testId}
-        className="mx-auto flex w-full max-w-(--thread-max-width) items-center gap-2 rounded-md border border-border px-3 py-1 text-meta text-muted-foreground"
+        className="flex w-full thread-column items-center gap-2 rounded-md border border-border px-3 py-1 text-meta text-muted-foreground"
       >
         <span
           key={last.key}

@@ -596,7 +596,7 @@ export function ThreadView({
       {thread.role === "orchestrator" && thread.workspaceId !== undefined && (
         <FailuresCard
           workspaceId={thread.workspaceId}
-          className="mx-auto w-full max-w-(--thread-max-width) shrink-0 px-6 pt-2 pb-2"
+          className="w-full thread-column shrink-0 px-6 pt-2 pb-2"
         />
       )}
       {finding && (
@@ -625,7 +625,7 @@ export function ThreadView({
           live={thread.spawnedBy !== undefined}
         />
       </OrchestratorStreamProvider>
-      <div className="mx-auto w-full max-w-(--thread-max-width) shrink-0 px-6">
+      <div className="w-full thread-column shrink-0 px-6">
         {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
         {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
         <StopReceiptLine threadId={threadId} />

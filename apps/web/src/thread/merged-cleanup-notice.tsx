@@ -104,7 +104,7 @@ export function MergedCleanupNotice({ threadId }: { threadId: ThreadId }) {
     <aside
       aria-label="Merged pull request cleanup"
       data-testid="merged-cleanup-notice"
-      className="mx-auto flex w-full max-w-(--thread-max-width) shrink-0 items-center gap-3 px-6 py-2 text-reading"
+      className="flex w-full thread-column shrink-0 items-center gap-3 px-6 py-2 text-reading"
     >
       <GitMerge aria-hidden className="size-4 shrink-0 text-merged" />
       <p className="min-w-0 flex-1">{cleanup.status}</p>

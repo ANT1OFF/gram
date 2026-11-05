@@ -95,7 +95,7 @@ export function ModelCombobox({
       <span data-toolbar-label className={cn("min-w-0 truncate", !labelled && "sr-only")}>
         {shown}
       </span>
-      <ChevronDownIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
     </>
   );
 

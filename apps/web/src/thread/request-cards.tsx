@@ -101,7 +101,7 @@ export function SheetRequestCards({ children }: { children: ReactNode }) {
 
 /** A card's shortcut hint, which the inbox leaves out as its cards own no shortcuts. */
 function CardKbd({ id }: { id: string }) {
-  return useContext(CompactContext) ? null : <ShortcutKbd id={id} className="opacity-70" />;
+  return useContext(CompactContext) ? null : <ShortcutKbd id={id} cap />;
 }
 
 /**
@@ -925,7 +925,7 @@ export function QuestionCard({
             >
               <Send data-icon="inline-start" />
               {count > 1 ? "Send answers" : "Send answer"}
-              <Kbd hidden className="border-primary-foreground/30 text-primary-foreground/80">
+              <Kbd hidden className="border-current/40 text-current">
                 {formatKeys("mod+enter")}
               </Kbd>
             </Button>

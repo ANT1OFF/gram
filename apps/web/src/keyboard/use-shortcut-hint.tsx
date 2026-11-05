@@ -13,9 +13,27 @@ export function useShortcutHint(id: string): string {
 export const withHint = (label: string, hint: string): string =>
   hint ? `${label} (${hint})` : label;
 
-/** A shortcut's keys as a `<kbd>`; nothing for a shortcut that's turned off. */
-export function ShortcutKbd({ id, className }: { id: string; className?: string }) {
+/**
+ * A key cap inside a button or beside a choice: the button's own text colour at full strength, in a
+ * hairline outline of it, so the hint reads on a primary fill as well as on a ghost button.
+ */
+export const KEY_CAP =
+  "inline-flex items-center rounded-2xs border border-current/40 px-1 font-mono text-caption leading-4";
+
+/**
+ * A shortcut's keys as a `<kbd>`; nothing for a shortcut that's turned off. `cap` draws it as a key
+ * cap, for a hint inside a button.
+ */
+export function ShortcutKbd({
+  id,
+  className,
+  cap = false,
+}: {
+  id: string;
+  className?: string;
+  cap?: boolean;
+}) {
   const hint = useShortcutHint(id);
   if (!hint) return null;
-  return <kbd className={cn("font-mono text-caption", className)}>{hint}</kbd>;
+  return <kbd className={cn("font-mono text-caption", cap && KEY_CAP, className)}>{hint}</kbd>;
 }

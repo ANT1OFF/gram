@@ -1006,7 +1006,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
         onArrived={() => useSlabHandoff.getState().done()}
         data-surface="composer"
         data-dragging={dragging ? "true" : undefined}
-        className={cn(SLAB, "mx-auto max-w-(--thread-max-width)")}
+        className={cn(SLAB, "thread-column")}
         onDragOver={(event) => event.preventDefault()}
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}

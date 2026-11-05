@@ -231,7 +231,7 @@ function FeatureLine({
   row: RailRow;
   /** The workers waiting on an ask in the dock. */
   asking: ReadonlySet<ThreadId>;
-  /** Whether it names its repos: only where the workspace has more than one. */
+  /** Whether it names its repos: only where the Board's rows span more than one. */
   repos: boolean;
   /**
    * Its stage from the workspace, which carries who set it and when: a chip, as the stations already
@@ -538,6 +538,9 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   const listed = !grid && width !== undefined && width < lanesMinWidth(counts);
   // Every open editor keeps its group's local draft mounted, even after another row takes focus.
   const [editingGroups, setEditingGroups] = useState<ReadonlySet<string>>(() => new Set());
+  // Rows name their repos only when they differ: a workspace whose work is all in one repo (or
+  // that has one) says nothing a row would repeat on every line.
+  const repos = useMemo(() => new Set(rows.flatMap((row) => row.projects)).size > 1, [rows]);
   const line = (row: RailRow, place?: RowPlace) =>
     grid ? (
       <GridLine
@@ -545,7 +548,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
         row={row}
         stage={state.stages?.[row.feature]}
         needsMark={row.group === undefined}
-        repos={state.workspace.projectIds.length > 1}
+        repos={repos}
         asking={asking}
         onOpen={onOpen}
         place={place}
@@ -556,7 +559,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
         row={row}
         stage={state.stages?.[row.feature]}
         needsMark={row.group === undefined}
-        repos={state.workspace.projectIds.length > 1}
+        repos={repos}
         asking={asking}
         onOpen={onOpen}
         place={place}

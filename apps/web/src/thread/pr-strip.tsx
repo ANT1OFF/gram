@@ -122,7 +122,7 @@ export function PrStrip({ threadId, focused }: { threadId: ThreadId; focused: bo
   return (
     <div
       data-testid="pr-strip"
-      className="@container mx-auto flex w-full max-w-(--thread-max-width) shrink-0 flex-col gap-1 px-6 pb-2"
+      className="@container flex w-full thread-column shrink-0 flex-col gap-1 px-6 pb-2"
     >
       {shown.map((item) =>
         item.kind === "own" ? (

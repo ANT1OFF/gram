@@ -134,6 +134,9 @@
   /* The thread column: the transcript, the composer and the strips beside them. Settings →
      Appearance → Reading sets --transcript-max-width (thread/reading.ts); 48rem is Comfortable. */
   --thread-max-width: var(--transcript-max-width, 48rem);
+  /* How the column sits in a pane wider than it: this share of the spare room before it, the rest
+     after (globals.css thread-column). */
+  --thread-lean: 0.4;
 
   /* The composer slab (its radius is per look): a faint outline with the shadow tucked under it, so
      it floats without a frame. Focus darkens the outline to border-strong, which the contrast

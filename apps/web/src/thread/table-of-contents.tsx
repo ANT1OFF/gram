@@ -105,11 +105,14 @@ export function ConversationRail({
   chapters,
   currentId,
   onJump,
+  scrollable = true,
   ...history
 }: {
   chapters: readonly Chapter[];
   currentId: string | undefined;
   onJump: (messageId: string) => void;
+  /** Whether the transcript runs past its window; a thread that fits has nowhere to jump to. */
+  scrollable?: boolean;
 } & OutlineHistory) {
   const railRef = useRef<HTMLElement>(null);
   const pagingFromRail = useRef<string>(undefined);
@@ -123,8 +126,9 @@ export function ConversationRail({
   const firstId = chapters[0]?.id;
   const { earlier, loadingEarlier, earlierFailed } = history;
   // One mark has nowhere to jump to, and alone in the gutter it reads as a stray dash: the rail
-  // shows from the second prompt or chapter on, or while earlier history waits to load.
-  const available = chapters.length > 1 || earlier === true;
+  // shows from the second prompt or chapter on while the transcript scrolls, or while earlier
+  // history waits to load.
+  const available = (chapters.length > 1 && scrollable) || earlier === true;
   // Disabling the loading button can blur it to body. That is not a new focus owner;
   // deliberate focus/input elsewhere retires this request's keyboard continuation.
   useEffect(() => {
@@ -217,9 +221,11 @@ export function ConversationRail({
       {/* Auto margins center fitting lists; an overflowing list grows from its top, so both ends remain reachable. */}
       <div className="flex min-h-full flex-col">
         <div className="relative my-auto shrink-0">
+          {/* The track the marks sit on, so they read as one outline rather than stray dashes;
+              each mark names its prompt or chapter on hover and to a screen reader. */}
           <span
             aria-hidden
-            className="pointer-events-none absolute top-3 bottom-3 left-3 w-px bg-border/20"
+            className="pointer-events-none absolute top-3 bottom-3 left-3 w-px bg-border"
           />
           {history.earlier && history.onLoadEarlier && (
             <Hint
@@ -296,7 +302,7 @@ const RailChapters = memo(function RailChapters({
               chapter.id === currentId
                 ? "scale-x-[0.667] bg-foreground/75"
                 : cn(
-                    "bg-muted-foreground/45",
+                    "bg-muted-foreground/70",
                     chapter.kind === "chapter" ? "scale-x-[0.5]" : "scale-x-[0.333]",
                   ),
             )}

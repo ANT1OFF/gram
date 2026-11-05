@@ -26,7 +26,7 @@ export function Kbd({
       data-testid="ask-kbd"
       aria-hidden={hidden || undefined}
       className={cn(
-        "rounded-sm border border-border/70 px-1 font-mono text-caption leading-4 text-muted-foreground",
+        "rounded-2xs border border-border-strong/60 px-1 font-mono text-caption leading-4 text-muted-foreground",
         className,
       )}
     >
@@ -147,7 +147,7 @@ export function SendAnswer({
       <Send data-icon="inline-start" />
       {label}
       {hint !== undefined && (
-        <Kbd hidden className="border-primary-foreground/30 text-primary-foreground/80">
+        <Kbd hidden className="border-current/40 text-current">
           {hint}
         </Kbd>
       )}
@@ -297,13 +297,7 @@ export function AskChoices({
               {option.label}
               {option.recommended === true && <RecommendedTag />}
               {hint !== undefined && (
-                <Kbd
-                  className={cn(
-                    index === 0 && "border-primary-foreground/30 text-primary-foreground/80",
-                  )}
-                >
-                  {hint}
-                </Kbd>
+                <Kbd className={cn(index === 0 && "border-current/40 text-current")}>{hint}</Kbd>
               )}
             </Button>
           );

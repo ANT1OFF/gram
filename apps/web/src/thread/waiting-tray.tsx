@@ -456,7 +456,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         aria-expanded={open}
         aria-label={views.length === 0 ? "Nothing waits on you" : trayLabel(views)}
         onClick={() => setOpen(!open)}
-        className="mx-auto flex h-8 w-full max-w-(--thread-max-width) items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
+        className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
       >
         <PulseOnce trigger={additions} tone="needs">
           <Inbox aria-hidden className="size-3.5 text-status-needs-mark" />
@@ -491,7 +491,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         <div className="max-h-[calc(var(--pane-height,100vh)*0.4)] overflow-y-auto">
           <ul
             aria-label="Waiting on you"
-            className="mx-auto flex max-w-(--thread-max-width) flex-col gap-0.5 px-4 pb-2 @max-sm:px-1"
+            className="flex thread-column flex-col gap-0.5 px-4 pb-2 @max-sm:px-1"
           >
             {items.map((item) => (
               <Row
