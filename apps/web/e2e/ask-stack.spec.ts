@@ -62,10 +62,10 @@ const start = async (page: Page, settings: Record<string, unknown> = {}) => {
   await page.evaluate(() => {
     (window as unknown as { sentAnswers: unknown[] }).sentAnswers.length = 0;
   });
-  // In the app, as a user would: the workspace's row in the overview, then its line into the Inbox.
+  // In the app, as a user would: the workspace's row in the overview, then its header's Waiting on you into the Inbox.
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("inbox-line")).toBeVisible();
-  await page.getByTestId("inbox-line-open").click();
+  await expect(page.getByTestId("status-waiting")).toBeVisible();
+  await page.getByTestId("status-waiting").click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   return made;
 };
@@ -79,10 +79,10 @@ const currentAsk = (page: Page) => page.getByTestId("inbox-detail").getByTestId(
 const undoLine = (page: Page) => page.getByTestId("needs-you-undo-line");
 
 /**
- * The workspace's share of what needs you, as the orchestrator's line counts it: unlike the total,
+ * The workspace's share of what needs you, as the orchestrator's status header counts it: unlike the total,
  * it doesn't move when t-flaky's own turn raises its approval.
  */
-const count = (page: Page) => page.getByTestId("inbox-line");
+const count = (page: Page) => page.getByTestId("status-waiting");
 
 /** Picks the Inbox's row whose words hold `text`, so the detail shows it. */
 const goTo = async (page: Page, text: string) => {
@@ -288,7 +288,7 @@ test("an answer held in the Inbox hides the worker's own card until Undo brings 
   await threadRow(page, made.pushers[0]).click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.pushers[0]}$`));
   await expect(page.getByTestId("approval-card")).toHaveCount(0);
-  // The orchestrator's line keeps the Undo; taken back, the card is there again.
+  // The Undo line above the orchestrator's composer keeps it; taken back, the card is there again.
   await openOrchestrator(page, made.orchestratorThreadId);
   await page.getByTestId("inbox-line-undo-button").click();
   await threadRow(page, made.pushers[0]).click();
@@ -428,8 +428,8 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
     page.locator(`[data-testid="overview-workspace"][data-workspace-id="${id}"]`);
   const badge = async (id: string) =>
     Number((await workspace(id).getByTestId("overview-workspace-asks").textContent()) ?? "0");
-  // The orchestrator's line counts the workspace's share, as its badge does.
-  await expect(page.getByTestId("inbox-line")).toHaveAttribute(
+  // The status header counts the workspace's share, as its badge does.
+  await expect(page.getByTestId("status-waiting")).toHaveAttribute(
     "data-count",
     String(await badge(made.workspaceId)),
   );
@@ -483,13 +483,13 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   }
   await page.keyboard.press("Escape");
 
-  // Away on a solo thread, the workspace's row brings back its orchestrator and its line.
+  // Away on a solo thread, the workspace's row brings back its orchestrator and its header.
   await threadRow(page, "t-flaky").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
-  await expect(page.getByTestId("inbox-line")).toHaveCount(0);
+  await expect(page.getByTestId("status-waiting")).toHaveCount(0);
   await workspace(made.workspaceId).getByRole("button").first().click();
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await expect(page.getByTestId("inbox-line")).toBeVisible();
+  await expect(page.getByTestId("status-waiting")).toBeVisible();
 });
 
 test("Send answer turns the worker's row, card and chip to answered with the count, not asks you", async ({
@@ -519,7 +519,7 @@ test("Send answer turns the worker's row, card and chip to answered with the cou
   const pill = page.getByTestId("overview-needs-you");
   const before = Number((await pill.textContent())?.match(/\d+/)?.[0]);
 
-  await page.getByTestId("inbox-line-open").click();
+  await page.getByTestId("status-waiting").click();
   await goTo(page, "A refund webhook");
   await currentAsk(page).getByTestId("ask-option").filter({ hasText: "72 hours" }).click();
   await currentAsk(page).getByTestId("ask-send").click();

@@ -56,7 +56,7 @@ const questionInDock = async (page: Page) => {
   return item;
 };
 
-/** The billing-api orchestrator, its line into the Inbox, open on its one ask. */
+/** The billing-api orchestrator, its header's Waiting on you, open on its one ask. */
 const questionInBilling = async (page: Page) => {
   const made = await openRealistic(page);
   const orchestrator = await page.evaluate(
@@ -67,7 +67,7 @@ const questionInBilling = async (page: Page) => {
   );
   await openOrchestrator(page, orchestrator);
   // On a base from before the Inbox, the ask is in the orchestrator's dock.
-  const line = page.getByTestId("inbox-line-open");
+  const line = page.getByTestId("status-waiting");
   await line.or(page.getByTestId("ask-stack")).first().waitFor();
   if ((await line.count()) > 0) await line.click();
   const item = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
@@ -136,7 +136,7 @@ const steps: readonly Shot[] = [
   {
     name: "question",
     title:
-      "Answer: a worker's question in the Inbox, from its orchestrator's line; a choice is picked",
+      "Answer: a worker's question in the Inbox, from its orchestrator's header; a choice is picked",
     open: async (page) => {
       const item = await questionInBilling(page);
       const option = item.getByTestId("ask-option").filter({ hasText: "72 hours" });

@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { VirtualRows, type RowPlace } from "@/lib/virtual-rows";
 import { drawOn, GlideItem, GlideList } from "@/motion";
 import { askKeysByThread } from "@/orchestration/ask-model";
-import { InboxLine } from "@/inbox/inbox-line";
+import { UndoLine } from "@/inbox/inbox-line";
 import { showInboxAsk } from "@/inbox/inbox-store";
 import { useWorkspaceAsks } from "@/orchestration/ask-stack";
 import { laneCounts, lanesMinWidth, laneTemplate } from "@/orchestration/board-lanes";
@@ -660,7 +660,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
           </GlideList>
         )}
       </div>
-      <InboxLine workspaceId={workspaceId} counted={false} testId="board-undo" />
+      <UndoLine testId="board-undo" />
     </div>
   );
 }
