@@ -315,13 +315,16 @@ describe("merge_when_ready", () => {
                   sentTo(fake, worker.thread.id).find((text) => text.includes("was dropped:")),
                 ),
               );
+              // Ownership in plain words, with what the worker can do about it.
               const reasons = {
                 "head branch changed":
-                  "head branch is no longer a worktree branch held by this worker",
-                "repo removed": "repo is no longer one of the worker's workspace projects",
+                  "no longer this worker's own: its branch isn't checked out in a worktree Gram gave the worker. Ask for it again if it should still merge. Check the branch out inside the worktree Gram gave you (or ask your orchestrator to start a fresh worker for the follow-up), then call again. Gram can then merge it without asking.",
+                "repo removed":
+                  "no longer this worker's own: its repository isn't a workspace project the worker has a worktree in.",
                 "autonomy lowered": "the workspace's autonomy is no longer full",
-                closed: "it is closed",
-                "head moved": "head moved since the reviewed head was checked",
+                closed: "no longer this worker's own: it is closed, not open.",
+                "head moved":
+                  "no longer this worker's own: its head moved after Gram checked it. Ask for it again if it should still merge. Call again so Gram checks the new head.",
               };
               expect(told).toContain(reasons[scenario]);
               expect(told).not.toContain("or the pull request");
@@ -1080,7 +1083,8 @@ describe("merge_when_ready", () => {
             // The user is asked, and even an approved call runs none of its code.
             expect(yield* pr.tool("local_check").delegatedAtFullAutonomy!({})).toBe(false);
             expect(yield* merges.runLocalCheck(pr.threadId)).toEqual({
-              refused: expect.stringContaining("isn't this worker's own pull request"),
+              refused:
+                "acme/app#12 isn't this worker's own pull request: its branch is on a fork, not in the repository itself. Push the branch to the repository from the worktree Gram gave you and open the pull request from there",
             });
 
             // Its own again, but the workspace paused.

@@ -19,6 +19,19 @@ export interface AppToolCall {
 }
 
 /**
+ * Why a call the workspace's `full` autonomy would otherwise make without a card still asks the
+ * user (a merge on a PR Gram couldn't confirm is the worker's own), said to each who reads it.
+ */
+export interface AskedDespiteAutonomy {
+  /** Under the card's text: what full auto covers, why this call isn't covered, what approving does. */
+  readonly user: string;
+  /** For the calling agent, in its result however the card is answered: the reason and its fix. */
+  readonly agent: string;
+  /** A few words for the orchestrator's ledger line, ahead of the card's text so they survive a cut. */
+  readonly tag: string;
+}
+
+/**
  * A tool definition before it's bound to a thread. `T` is what a call acts on: its decoded input,
  * or what `resolve` makes of it.
  */
@@ -63,6 +76,11 @@ export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Typ
    * that class.
    */
   delegatedAtFullAutonomy?(threadId: ThreadId, input: S["Type"], target: T): Effect.Effect<boolean>;
+  /**
+   * When `delegatedAtFullAutonomy` said no and a card is raised: why, if full autonomy would have
+   * covered the call but for something about it. Messaging only; it never changes the verdict.
+   */
+  whyAsked?(threadId: ThreadId, target: T): Effect.Effect<AskedDespiteAutonomy | undefined>;
   /**
    * Every call raises a card for that call alone, in every mode, for every audience and at every
    * autonomy: `bypassPermissions`, an earlier answer and `delegatedAtFullAutonomy` don't lift it,

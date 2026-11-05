@@ -249,12 +249,59 @@ describe("merge_when_ready", () => {
               store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
             );
             expect(card).toMatchObject({ displayName: "merge_when_ready", scopes: ["once"] });
+            // Only ownership is explained as an exception to full auto; other cards say nothing more.
+            const explained: Partial<Record<typeof scenario, string>> = {
+              fork: "its branch is on a fork, not in the repository itself",
+              "other worker": "its branch isn't checked out in a worktree Gram gave the worker",
+              "never held": "its branch isn't checked out in a worktree Gram gave the worker",
+              "outside repo":
+                "its repository isn't a workspace project the worker has a worktree in",
+              closed: "it is closed, not open",
+            };
+            const reason = explained[scenario];
+            if (card.kind !== "approval") throw new Error("not an approval");
+            expect(card.description).not.toContain("ownership");
+            if (reason === undefined) {
+              expect(card.decisionReason).toBeUndefined();
+              expect(card.autonomyNote).toBeUndefined();
+            } else {
+              expect(card.decisionReason).toBe(
+                `Full auto merges a worker's own pull requests without asking, but Gram couldn't confirm this one is the worker's own: ${reason}. Approve to merge it once checks pass.`,
+              );
+              expect(card.autonomyNote).toBe(`full auto, PR ownership unverified: ${reason}`);
+              // The orchestrator's ledger line leads with the tag, inside what the line keeps.
+              const ledger = yield* (yield* Orchestration).ledger(thread.workspaceId!);
+              const row = ledger.features
+                .flatMap((feature) => feature.workers)
+                .find((w) => w.threadId === worker.thread.id);
+              expect(row?.pendingRequests[0]?.summary?.slice(0, 200)).toContain(
+                `merge_when_ready (full auto, PR ownership unverified: ${reason}): Merge ${scenario === "outside repo" ? "elsewhere/tools" : "acme/app"}#12`,
+              );
+            }
             yield* runtimes.respond(worker.thread.id, card.id, {
               kind: "approval",
               decision: "deny",
               scope: "once",
             });
-            expect(yield* Fiber.join(call)).toMatchObject({ approvalRequired: true });
+            const refused = yield* Fiber.join(call);
+            expect(refused).toMatchObject({ approvalRequired: true });
+            if (reason === undefined)
+              expect(refused.message).toBe("The user declined merge_when_ready.");
+            else
+              expect(refused.message).toBe(
+                `The user declined merge_when_ready. It needed the user: Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: ${reason}. ${
+                  {
+                    fork: "Push the branch to the repository from the worktree Gram gave you and open the pull request from there. Gram can then merge it without asking.",
+                    "other worker":
+                      "Check the branch out inside the worktree Gram gave you (or ask your orchestrator to start a fresh worker for the follow-up), then call again. Gram can then merge it without asking.",
+                    "never held":
+                      "Check the branch out inside the worktree Gram gave you (or ask your orchestrator to start a fresh worker for the follow-up), then call again. Gram can then merge it without asking.",
+                    "outside repo":
+                      "Open the pull request from the worktree Gram gave you; for a repository outside the workspace, the user has to add it or approve this.",
+                    closed: "There is nothing to merge; check it with pr_status.",
+                  }[scenario as "fork"]
+                }`,
+              );
             expect((yield* store.getThread(worker.thread.id)).boundPr).toEqual(before);
             expect(world.ghCalls.filter((c) => c[2] === "merge")).toEqual([]);
           }),
@@ -262,6 +309,50 @@ describe("merge_when_ready", () => {
       }).pipe(Effect.scoped),
     );
   }
+
+  it.effect.skipIf(!hasGit)("tells a worker approved past full auto why it was asked", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const runtimes = yield* ThreadRuntimes;
+          const registry = yield* AppToolRegistry;
+          const { session, thread } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "own-worktree" });
+          yield* completeTurn(worker.session);
+          yield* atAutonomy(thread, "full");
+          // The follow-up's branch was checked out in a worktree the worker made for itself.
+          world.prHeads.set(12, { headRefName: "feat/self-made" });
+          yield* runtimes.updateThread(worker.thread.id, (t) => ({
+            ...t,
+            boundPr: { repo: "acme/app", number: 12, monitor: false },
+          }));
+          const merge = registry
+            .forTransport(worker.thread.id, "worker")
+            .find((t) => t.descriptor.name === "merge_when_ready")!;
+          const call = yield* Effect.forkScoped(merge.run({}));
+          const card = yield* waitReal(
+            "the approval card",
+            store.listRequests(worker.thread.id).pipe(Effect.map((all) => all[0])),
+          );
+          yield* runtimes.respond(worker.thread.id, card.id, {
+            kind: "approval",
+            decision: "allow",
+            scope: "once",
+          });
+          expect(yield* Fiber.join(call)).toMatchObject({
+            approvalNeededBecause:
+              "Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: its branch isn't checked out in a worktree Gram gave the worker. Check the branch out inside the worktree Gram gave you (or ask your orchestrator to start a fresh worker for the follow-up), then call again. Gram can then merge it without asking.",
+          });
+          expect((yield* store.getThread(worker.thread.id)).boundPr?.mergeWhenReady).toMatchObject({
+            allowedBy: "user",
+          });
+        }),
+      );
+    }).pipe(Effect.scoped),
+  );
 
   for (const registered of [true, false]) {
     it.effect.skipIf(!hasGit)(
@@ -354,15 +445,18 @@ describe("merge_when_ready", () => {
                   displayName: "merge_when_ready",
                   scopes: ["once"],
                 });
-                if (card.kind === "approval")
-                  expect(card.description).toContain("ownership could not be verified");
+                if (card.kind !== "approval") throw new Error("not an approval");
+                expect(card.decisionReason).toBe(
+                  "Full auto merges a worker's own pull requests without asking, but Gram couldn't confirm this one is the worker's own: its branch isn't checked out in a worktree Gram gave the worker. Approve to merge it once checks pass.",
+                );
                 yield* runtimes.respond(thread.id, card.id, {
                   kind: "approval",
                   decision: "deny",
                   scope: "once",
                 });
                 expect(yield* Fiber.join(call)).toMatchObject({
-                  message: "The user declined merge_when_ready.",
+                  message:
+                    "The user declined merge_when_ready. It needed the user: Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: its branch isn't checked out in a worktree Gram gave the worker. Have the worker check the branch out inside the worktree Gram gave it, or start a fresh worker for the follow-up. Gram can then merge it without asking.",
                   approvalResolution: { origin: "user", reason: "rejected", requestId: card.id },
                 });
                 expect((yield* store.getThread(worker.thread.id)).boundPr).toEqual(before);
@@ -381,7 +475,11 @@ describe("merge_when_ready", () => {
                 // The orchestrator may immediately start a delivery turn; waiting for idle is
                 // not the synchronization point. Await the cancelled request's own receipt.
                 yield* rootSession.emit({ type: "turnEnd", reason: "completed" });
-                expect(yield* Fiber.join(pending)).toMatchObject({
+                const withdrawn = yield* Fiber.join(pending);
+                expect(withdrawn.message).toContain(
+                  "It needed the user: Full auto covers only a worker's own pull request",
+                );
+                expect(withdrawn).toMatchObject({
                   approvalResolution: {
                     origin: "runtime",
                     reason: "turn-completed",

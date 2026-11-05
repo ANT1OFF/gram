@@ -276,7 +276,10 @@ and preparation/rule installation failures still stop thread startup.
 
 Gram's app-tool approvals are separate from a CLI's native permissions. Full Auto
 waives an own-worker merge card only after verifying the held workspace worktree
-and branch; following a PR or checkout grants no ownership. Explicitly name a
+and branch; following a PR or checkout grants no ownership. When that check fails,
+the card says why under its summary, the orchestrator's ledger line leads with a
+`full auto, PR ownership unverified` tag, and the calling agent's result (declined,
+withdrawn or approved) carries the reason and the fix. Explicitly name a
 follow-on PR when the thread still binds an older main PR. Root pauses, user/worker
 holds, scoped approval provenance and current-head merge checks remain authoritative.
 

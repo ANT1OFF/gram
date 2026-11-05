@@ -218,6 +218,41 @@ describe("app tool policy", () => {
     }),
   );
 
+  it.effect("says why full autonomy asked, without changing whether it asks", () =>
+    Effect.gen(function* () {
+      const why = { user: "for the user", agent: "for the agent", tag: "a tag" };
+      const asked: Array<unknown> = [];
+      const [merge] = bindAppTools(
+        [
+          defineAppTool({
+            descriptor: { name: "merge", class: "outward", description: "" },
+            input: Schema.Struct({ n: Schema.Number }),
+            handle: (_threadId, { n }) => Effect.succeed({ merged: n }),
+            delegatedAtFullAutonomy: (_threadId, { n }) => Effect.succeed(n > 1),
+            // Read only when a card is up; a failing one is no reason at all.
+            whyAsked: (_threadId, { n }) =>
+              n === 0 ? Effect.die(new Error("boom")) : Effect.succeed(why),
+          }),
+        ],
+        "t1" as ThreadId,
+        {
+          approve: (_threadId, _descriptor, input, _description, _forced, _claims, reason) =>
+            Effect.sync(() => void asked.push([input, reason])),
+        },
+      );
+      expect(yield* merge!.run({ n: 2 })).toEqual({ merged: 2 });
+      expect(yield* merge!.run({ n: 1 })).toEqual({
+        merged: 1,
+        approvalNeededBecause: "for the agent",
+      });
+      expect(yield* merge!.run({ n: 0 })).toEqual({ merged: 0 });
+      expect(asked).toEqual([
+        [{ n: 1 }, why],
+        [{ n: 0 }, undefined],
+      ]);
+    }),
+  );
+
   it.effect(
     "asks the delegation about the resolved target, and refuses a key an outward tool doesn't take",
     () =>
