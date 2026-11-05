@@ -1,4 +1,4 @@
-import type { ThreadId, ThreadSummary } from "@gram/contracts";
+import type { ThreadId, ThreadSummary, WorkspaceId } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
 import {
   Bell,
@@ -13,6 +13,7 @@ import {
   Minimize2,
   Plug,
   SquareTerminal,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { Menu } from "@base-ui/react/menu";
@@ -48,6 +49,8 @@ interface PanelTab {
  * fold; the rest fold into More once not every name fits.
  */
 const TABS: PanelTab[] = [
+  // A workspace's workers by where they stand: only beside a thread of a workspace.
+  { value: "workers", label: "Workers", icon: Workflow, primary: true },
   { value: "diff", label: "Diff", icon: FileDiff, primary: true },
   { value: "pr", label: "PR", icon: GitPullRequest, primary: true },
   { value: "files", label: "Files", icon: FolderTree, primary: true },
@@ -106,6 +109,8 @@ export function RightPanel() {
   const requestsHere = useLayoutStore((s) => s.reviewRequestsPlacement === "panel");
   const openPrsHere = useLayoutStore((s) => s.openPrsPlacement === "panel");
   const previewHere = useFeature("previewPane");
+  const workspaceId = useRouteWorkspace();
+  const workersHere = workspaceId !== undefined;
   // Only review requests count as waiting: the user's own open PRs wait on others.
   const notificationCount = useNotificationHistory(unreadNotifications);
   const reviewCount = useReviewRequests().data?.requests.length ?? 0;
@@ -115,13 +120,17 @@ export function RightPanel() {
   const tab =
     (storedTab === "reviews" && !reviewsHere) ||
     (storedTab === "preview" && !previewHere) ||
+    (storedTab === "workers" && !workersHere) ||
     storedTab === "needsYou"
       ? "diff"
       : storedTab;
   const setTab = useLayoutStore((s) => s.setPanelTab);
   const tabList = useRef<HTMLDivElement>(null);
   const shownTabs = TABS.filter(
-    (t) => (t.value !== "reviews" || reviewsHere) && (t.value !== "preview" || previewHere),
+    (t) =>
+      (t.value !== "reviews" || reviewsHere) &&
+      (t.value !== "preview" || previewHere) &&
+      (t.value !== "workers" || workersHere),
   );
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const focused = useLayoutStore((s) => s.reviewFocus);
@@ -263,6 +272,7 @@ export function RightPanel() {
         <Suspense fallback={null}>
           <RightPanelTabs
             threadId={threadId}
+            workspaceId={workspaceId}
             previewHere={previewHere}
             reviewsHere={reviewsHere}
             requestsHere={requestsHere}
@@ -476,3 +486,11 @@ const terminalsBusyText = (processes: ThreadSummary["terminalProcesses"]): strin
   processes === undefined || processes.length === 0
     ? ""
     : `${processes.map((p) => p.command).join(" and ")} running`;
+
+/** The workspace of the thread in view, whose workers the Workers tab lists; none for a solo one. */
+function useRouteWorkspace(): WorkspaceId | undefined {
+  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  return useThreadsStore((s) =>
+    threadId === undefined ? undefined : (s.byId[threadId]?.thread.workspaceId ?? undefined),
+  );
+}
