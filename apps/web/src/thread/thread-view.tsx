@@ -427,6 +427,7 @@ export function ThreadView({
           <div
             ref={trackWrappedChips}
             data-testid="pane-header-chips"
+            data-titlebar-gives={inTitlebar ? "" : undefined}
             className={cn(
               "flex h-6 max-w-[60%] min-w-0 shrink-[0.01] flex-wrap items-center gap-x-2 gap-y-4 overflow-hidden",
               // Chips that wrapped out of sight still widen the row, so in the title bar, which it
@@ -434,6 +435,10 @@ export function ThreadView({
               // the chips go: the PR row, the right panel and the thread menu have the rest.
               inTitlebar && "[-webkit-app-region:no-drag]",
               inTitlebar && titleShown && "max-w-[45%] @max-sm:max-w-[30%]",
+              // Short of room the chips give way before the title: a chip that wrapped out of
+              // sight keeps no share of the room the title needs. Shrinking is weighed by width,
+              // so only a factor this large leaves the title whole until the chips are gone.
+              inTitlebar && titleShown && "shrink-[10000]",
               // An orchestrator's title is the switcher's, so its chips have the room.
               inTitlebar && !titleShown && "max-w-none shrink",
               // Wrapped, the first line is as tall as the row, so its chips stay centred on it.

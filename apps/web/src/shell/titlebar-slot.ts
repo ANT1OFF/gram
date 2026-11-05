@@ -34,18 +34,32 @@ const TITLEBAR_FOLD_LEVEL = "data-titlebar-fold-level";
 const UNFOLD_SLACK_PX = 16;
 /** The title itself, inside the room: its whole width is what the bar folds for, up to a cap. */
 const TITLEBAR_TITLE = "data-titlebar-title";
-/** The few letters of the title the room's least already holds. */
-const TITLE_LEAST_PX = 48;
-/** Past the least, the most the bar folds for the title: a long one still truncates. */
-const TITLE_WANTS_PX = 192;
+/** What in the room gives way before the title (the header's chips): no share of what it needs. */
+const TITLEBAR_GIVES = "data-titlebar-gives";
+/** The most of a title the bar folds its buttons for: a longer one still truncates. */
+const TITLE_WANTS_PX = 240;
+
+/** A header's title in the bar, as laid out now. */
+export interface TitleInRoom {
+  /** The width the room's contents take, from its start to the end of the last: free room past
+      them is no part of what it needs. */
+  readonly content: number;
+  /** The title's whole width, and what of it shows. */
+  readonly whole: number;
+  readonly shown: number;
+  /** What gives way before the title, the chips. */
+  readonly gives: number;
+}
 
 /**
- * The room a header in the bar needs: its least, plus as much of its title's whole width as the
- * cap allows. From the title's full width, not what it shows, so folding for it never unfolds.
+ * The room a header in the bar needs: its least, or what else the room holds (a glyph, the gaps)
+ * and the title whole, up to a cap, whichever is more. The rest of the room keeps its size as the
+ * bar folds and the title's whole width doesn't change, so folding for it never unfolds.
  */
-export function titleRoomNeed(least: number, titleWidth: number | undefined): number {
-  if (titleWidth === undefined) return least;
-  return least + Math.min(TITLE_WANTS_PX, Math.max(0, titleWidth - TITLE_LEAST_PX));
+export function titleRoomNeed(least: number, title: TitleInRoom | undefined): number {
+  if (title === undefined) return least;
+  const rest = Math.max(0, title.content - title.shown - title.gives);
+  return Math.max(least, Math.ceil(rest + Math.min(title.whole, TITLE_WANTS_PX)));
 }
 
 /**
@@ -122,6 +136,14 @@ export function useSoloRoute(): boolean {
   });
 }
 
+/** From `room`'s start to the far edge of its furthest child. */
+function contentWidth(room: Element): number {
+  const start = room.getBoundingClientRect().left;
+  let end = start;
+  for (const child of room.children) end = Math.max(end, child.getBoundingClientRect().right);
+  return end - start;
+}
+
 /**
  * Folds `bar` as `nextFold` says, as it resizes and as what its place carries comes, goes or
  * changes size. Measured a frame later: folding moves the chips, whose own observers would see it
@@ -151,9 +173,17 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
       // The title before the bar's lesser buttons: it folds them to show the title whole (up to
       // a cap), not only its few letters.
       const title = room?.querySelector(`[${TITLEBAR_TITLE}]`) ?? null;
+      const gives = room?.querySelector(`[${TITLEBAR_GIVES}]`) ?? null;
       const least = titleRoomNeed(
         Number(room?.getAttribute(TITLEBAR_ROOM) ?? 0),
-        title?.scrollWidth,
+        room === null || title === null
+          ? undefined
+          : {
+              content: contentWidth(room),
+              whole: title.scrollWidth,
+              shown: title.getBoundingClientRect().width,
+              gives: gives?.getBoundingClientRect().width ?? 0,
+            },
       );
       // The header itself: what rings it, a needs-you pulse say, may stand past it on purpose.
       const header = slot?.querySelector("header") ?? null;
@@ -175,11 +205,16 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
     resize.observe(bar);
     // What the place carries: another thread's header, Board's, a chip that came.
     const mutations = new MutationObserver(later);
-    mutations.observe(bar, { childList: true, subtree: true });
+    mutations.observe(bar, { childList: true, subtree: true, characterData: true });
+    // A font arriving widens the title's whole width with nothing resized: measure it again.
+    const fonts = typeof document === "undefined" ? undefined : document.fonts;
+    fonts?.addEventListener("loadingdone", later);
+    void fonts?.ready.then(later);
     fit();
     return () => {
       resize.disconnect();
       mutations.disconnect();
+      fonts?.removeEventListener("loadingdone", later);
       cancelAnimationFrame(frame);
     };
   }, [bar]);

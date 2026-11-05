@@ -253,23 +253,31 @@ describe("when the title bar folds", () => {
 });
 
 describe("the room a title in the bar needs", () => {
-  it("is its least plus as much of the title's whole width as the cap allows", () => {
+  // "Search in Settings" beside a worker's actions, as the review shot lays it out: a 190 px room
+  // filled with the role glyph and gaps, the chips given way, and 133 of the title's 134 px showing.
+  const cramped = { content: 190, whole: 134, shown: 133, gives: 0 } as const;
+
+  it("is what else the room holds and the title whole, up to a cap, or its least", () => {
     // No title to ask: the least alone.
     expect(titleRoomNeed(96, undefined)).toBe(96);
-    // A title the least already holds needs nothing more.
-    expect(titleRoomNeed(96, 40)).toBe(96);
-    // "Search in Settings", 134 px whole, past the 48 its few letters take.
-    expect(titleRoomNeed(96, 134)).toBe(96 + 86);
+    // The glyph and gaps (57 px) and the whole title.
+    expect(titleRoomNeed(96, cramped)).toBe(57 + 134);
+    // The chips give way first: they hold no share of it.
+    expect(titleRoomNeed(96, { ...cramped, content: 250, gives: 60 })).toBe(57 + 134);
     // A long title is held to the cap and truncates past it.
-    expect(titleRoomNeed(96, 900)).toBe(96 + 192);
+    expect(titleRoomNeed(96, { content: 300, whole: 900, shown: 243, gives: 0 })).toBe(57 + 240);
+    // A short one needs no more than the least.
+    expect(titleRoomNeed(96, { content: 60, whole: 20, shown: 20, gives: 0 })).toBe(96);
   });
 
-  it("folds a worker's actions for a title the bar would cut, and keeps them folded once it shows", () => {
-    // Before: 112 px of room for a 134 px title, the actions 114 px with their gap.
-    const need = titleRoomNeed(96, 134);
-    const at = { fold: 0, barWidth: 800, overflow: false, widths: [0, 114] } as const;
-    expect(nextFold({ ...at, spare: 112 - need })).toBe(2);
-    // Folded, the room is 226 px: giving the actions back would cut the title again.
-    expect(nextFold({ ...at, fold: 2, spare: 226 - need })).toBe(2);
+  it("folds a worker's actions for a title the bar would cut, and gives them back with room", () => {
+    const at = { fold: 0, barWidth: 800, overflow: false, widths: [0, 122] } as const;
+    expect(nextFold({ ...at, spare: 190 - titleRoomNeed(96, cramped) })).toBe(2);
+    // Folded, the room grows by the actions' width and the title shows whole, the rest free:
+    // giving the actions back would cut the title again, so they stay.
+    const folded = { content: 191, whole: 134, shown: 134, gives: 0 } as const;
+    expect(nextFold({ ...at, fold: 2, spare: 312 - titleRoomNeed(96, folded) })).toBe(2);
+    // With the room to spare (a wider window), they come back.
+    expect(nextFold({ ...at, fold: 2, spare: 400 - titleRoomNeed(96, folded) })).toBe(0);
   });
 });
