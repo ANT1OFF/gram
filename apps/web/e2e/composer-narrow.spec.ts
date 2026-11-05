@@ -187,9 +187,9 @@ test("beside a review in a 1024 px window, effort keeps a short word", async ({ 
   await expect(mode).toHaveText(/^Ask/);
   // A readable value of three letters or more, the compact one or the whole: never the gauge alone.
   await expect.poll(() => shownWords(effort)).toMatch(/^(Model|Model default)$/);
-  await expect.poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Model/ }))).toMatch(
-    /^(Opus|Claude Opus)$/,
-  );
+  await expect
+    .poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Model/ })))
+    .toMatch(/^(Opus|Claude Opus)$/);
   await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
 });
 
