@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { waitForBoardLayout } from "./board-layout";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // The Board view as feature lines. Mock state lives in
@@ -122,11 +123,20 @@ test("the grid is the default, its cells side by side, and Lanes is a remembered
   );
   // A one-worker feature is one row: its name, its stage and what it does on one line.
   const docs = line(page, "docs-refresh");
-  const name = await docs.getByTestId("rail-feature").boundingBox();
+  await waitForBoardLayout(board(page));
+  // Read the cells together: separate calls can compare different frames of the entrance scale.
+  const { nameY, stageY, nowY } = await docs.evaluate((row) => {
+    const y = (testId: string) =>
+      row.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!.getBoundingClientRect().y;
+    return {
+      nameY: y("rail-feature"),
+      stageY: y("grid-stage"),
+      nowY: y("rail-worker"),
+    };
+  });
   const stage = docs.getByTestId("grid-stage").first();
-  const now = await docs.getByTestId("rail-worker").first().boundingBox();
-  expect(Math.abs(now!.y - name!.y)).toBeLessThan(12);
-  expect(Math.abs((await stage.boundingBox())!.y - name!.y)).toBeLessThan(12);
+  expect(Math.abs(nowY - nameY)).toBeLessThan(12);
+  expect(Math.abs(stageY - nameY)).toBeLessThan(12);
   // The Stage cell names the station the worker stands on, as the lanes place it.
   await expect(stage).toHaveAttribute(
     "data-station",
