@@ -28,7 +28,7 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { Composer } from "@/composer/composer";
 import { EditBanner } from "@/composer/edit-banner";
-import { InboxLine } from "@/inbox/inbox-line";
+import { UndoLine } from "@/inbox/inbox-line";
 import { useShortcut } from "@/keyboard/registry";
 import { targetBadge } from "@/panels/pr-identity";
 import { turnEndMessages } from "@/panels/turn-diff";
@@ -625,7 +625,7 @@ export function ThreadView({
       <EditBanner threadId={threadId} />
       <PrStrip threadId={threadId} focused={focused} />
       <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
-      {thread.role === "orchestrator" && <InboxLine workspaceId={thread.workspaceId} />}
+      {thread.role === "orchestrator" && <UndoLine />}
       <TurnCompleteSheen key={threadId} status={status}>
         <Composer threadId={threadId} focused={focused} />
       </TurnCompleteSheen>

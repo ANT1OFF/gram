@@ -146,7 +146,7 @@ const start = async (page: Page, visuals: boolean, mode: "dark" | "light" = "dar
     },
   );
   await openOrchestratorTile(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("inbox-line")).toBeVisible();
+  await expect(page.getByTestId("status-waiting")).toBeVisible();
   return made;
 };
 
@@ -154,7 +154,7 @@ const currentAsk = (page: Page) => page.getByTestId("inbox-detail").getByTestId(
 
 /** Opens the Inbox on the question that picks a direction. */
 const toQuestion = async (page: Page) => {
-  await page.getByTestId("inbox-line-open").click();
+  await page.getByTestId("status-waiting").click();
   await page.getByTestId("inbox-item").filter({ hasText: QUESTION }).click();
   await expect(currentAsk(page).getByTestId("ask-title")).toHaveText(QUESTION);
   return currentAsk(page);

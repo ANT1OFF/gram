@@ -1675,9 +1675,9 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateAsks());
       const chip = page.getByTestId("ask-reply-chip").first();
-      // After the Inbox: its line opens it, and the free-form question shows its drafted replies.
-      if ((await page.getByTestId("inbox-line-open").count()) > 0) {
-        await page.getByTestId("inbox-line-open").click();
+      // After the Inbox: the header's Waiting on you opens it, and the free-form question shows its drafted replies.
+      if ((await page.getByTestId("status-waiting").count()) > 0) {
+        await page.getByTestId("status-waiting").click();
         await page.getByTestId("inbox-item").filter({ hasText: "registry page" }).click();
         await chip.waitFor();
         await page.waitForTimeout(800);

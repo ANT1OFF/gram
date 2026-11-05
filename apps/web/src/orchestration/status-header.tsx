@@ -70,9 +70,12 @@ function Item({
   label,
   hint,
   onClick,
+  count,
   children,
 }: {
   testId: string;
+  /** The count it shows, as `data-count`, where one count is this view's only one. */
+  count?: number | undefined;
   /** The accessible name: the count and what it opens. */
   label: string;
   hint: ReactNode;
@@ -87,6 +90,7 @@ function Item({
         <button
           type="button"
           data-testid={testId}
+          data-count={count}
           aria-label={label}
           className={ITEM}
           onClick={onClick}
@@ -168,6 +172,7 @@ function StatusStrip({
         </Item>
         <Item
           testId="status-waiting"
+          count={waiting}
           label={`${waiting} waiting on you, open Inbox`}
           hint={
             waiting === 0

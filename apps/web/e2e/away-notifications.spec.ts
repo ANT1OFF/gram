@@ -134,7 +134,7 @@ test("Allow on a notification answers the ask through the one path, and it is go
   // A pressed button closes its notification in the shell; the page sends no withdraw for it.
 
   await openOrchestrator(page, made.orchestratorThreadId);
-  // The orchestrator's line keeps the Undo: the same held answer, not a second path.
+  // The Undo line above the orchestrator's composer keeps it: the same held answer, not a second path.
   await expect(page.getByTestId("inbox-line-undo")).toContainText("Allowed 3");
   const listed = page.getByTestId("inbox-item").filter({ hasText: PUSH });
   await page.getByTestId("inbox-button").click();

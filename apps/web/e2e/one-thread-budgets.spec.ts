@@ -21,7 +21,7 @@ const start = async (page: Page) => {
   // The way home: the workspace's ⌘1.
   await pressFirstWorkspaceKey(page);
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  await expect(page.getByTestId("inbox-line")).toBeVisible();
+  await expect(page.getByTestId("status-waiting")).toBeVisible();
   await expect(page.getByTestId("feature-card").first()).toBeVisible();
   return made;
 };
@@ -64,14 +64,14 @@ const visibleWords = (page: Page, selector: string, except?: string) =>
     [selector, except] as const,
   );
 
-/** How much of the workspace needs you, as the orchestrator's line into the Inbox counts it. */
+/** How much of the workspace needs you, as the orchestrator's status header counts it. */
 const askCount = async (page: Page) =>
-  Number(await page.getByTestId("inbox-line").getAttribute("data-count"));
+  Number(await page.getByTestId("status-waiting").getAttribute("data-count"));
 
 test("the orchestrator's home stays under 150 words", async ({ page }) => {
   await start(page);
   await settle(page);
-  // Home is the orchestrator's pane: its live cards, events, the line into the Inbox and the composer. The
+  // Home is the orchestrator's pane: its live cards, events, its status header and the composer. The
   // title bar, a side panel the user keeps open and the overview sidebar down the window's left,
   // which the user can hide, are the window's, not the home's: the overview's words are the
   // workspaces, its workers' titles and the cards' now lines, held to their own limit below. Its
@@ -117,7 +117,7 @@ test("an ask takes one pick and one send: a number, then ⌘⏎", async ({ page 
   const before = await askCount(page);
   expect(before).toBeGreaterThan(1);
   // One step to the Inbox, open on the workspace's first ask.
-  await page.getByTestId("inbox-line-open").click();
+  await page.getByTestId("status-waiting").click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   await page.waitForTimeout(400);
   // One rule on every surface: a number picks, ⌘⏎ sends it.

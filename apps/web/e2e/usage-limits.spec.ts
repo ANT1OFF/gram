@@ -152,7 +152,7 @@ test.describe("midday reset fixture", () => {
       { threadId: made.orchestratorThreadId },
     );
     await openOrchestrator(page, made.orchestratorThreadId);
-    await page.getByTestId("inbox-line-open").click();
+    await page.getByTestId("status-waiting").click();
     await page.getByTestId("inbox-item").filter({ hasText: "Claude is at 92%" }).click();
     const ask = page.getByTestId("inbox-detail").getByTestId("ask-item");
     await expect(ask).toContainText("Claude is at 92% of its 5-hour limit");

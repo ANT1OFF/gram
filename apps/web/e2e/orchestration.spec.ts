@@ -1738,7 +1738,7 @@ test("a workspace's More… adds and removes repos, and a repo the orchestrator 
   // The orchestrator's own request is its card in its thread, and an ask in the Inbox, with what
   // the spawn would do behind Details.
   await expect(page.getByTestId("thread-view").getByTestId("approval-card")).toHaveCount(1);
-  await page.getByTestId("inbox-line-open").click();
+  await page.getByTestId("status-waiting").click();
   await page.getByTestId("inbox-item").filter({ hasText: "Add example-device-apps" }).click();
   const ask = page.getByTestId("inbox-detail").getByTestId("ask-item");
   await expect(ask.getByTestId("ask-title")).toContainText(
