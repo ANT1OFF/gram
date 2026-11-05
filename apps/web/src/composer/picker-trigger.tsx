@@ -22,51 +22,53 @@ export function usePickConfirm(value: string | undefined) {
 }
 
 /**
- * A toolbar select's trigger: its glyph, then the value when `labelled`. Without the label the glyph
- * stands alone, so its name says the value ("Mode: Bypass") and a tooltip says it the moment it is
- * hovered; the value stays in the trigger for screen readers, and the open list spells out every
- * option. Shared by the thread's composer and the new-thread draft so both read alike.
+ * A select's trigger. On a toolbar (the thread's composer and the new-thread prompt box) it is its
+ * glyph, then the chosen value in a word or two when `labelled`: "Extra high", "Plan". The value
+ * gives way to the glyph alone when the row runs short (`useToolbarLayout`), and either way the
+ * trigger's name and its tooltip say both, "Effort: Extra high", with the shortcut. As a form's
+ * `field` it names what it picks and shows the value in full.
  */
 export function PickerTrigger({
   label,
   value,
   labelled,
+  field = false,
   icon,
   title,
   tip,
   confirm,
   ...props
 }: Omit<ComponentProps<typeof SelectTrigger>, "children" | "title"> & {
-  /** What the picker picks: the trigger's name while labelled. */
+  /** What the picker picks: "Effort", "Mode". */
   label: string;
-  /** The words for the chosen value, named after `label` while the glyph stands alone. */
+  /** The chosen value in short: the toolbar's text, and named after `label`. */
   value: string;
+  /** Shows `value` beside the glyph; without it the glyph stands alone. */
   labelled: boolean;
+  /** A form's select: named `label`, with the full value from the list in the trigger. */
+  field?: boolean;
   icon?: ReactNode;
-  /** The labelled trigger's native title. */
+  /** The field's native title. */
   title?: string | undefined;
-  /** The glyph's tooltip, when it says more than its name, such as a shortcut or a warning. */
+  /** The tooltip, when it says more than "Label: value", such as a shortcut or a warning. */
   tip?: string | undefined;
   /** `usePickConfirm`'s count: each rise rings the glyph once, so a pick shows it took. */
   confirm?: number | undefined;
 }) {
-  const glyph = (
-    <>
-      {icon &&
-        (confirm === undefined ? (
-          icon
-        ) : (
-          <PulseOnce trigger={confirm} when={confirm > 0}>
-            {icon}
-          </PulseOnce>
-        ))}
-      <SelectValue data-toolbar-label placeholder={label} className={cn(!labelled && "sr-only")} />
-    </>
-  );
-  if (labelled)
+  const glyph =
+    icon &&
+    (confirm === undefined ? (
+      icon
+    ) : (
+      <PulseOnce trigger={confirm} when={confirm > 0}>
+        {icon}
+      </PulseOnce>
+    ));
+  if (field)
     return (
       <SelectTrigger aria-label={label} title={title} {...props}>
         {glyph}
+        <SelectValue placeholder={label} />
       </SelectTrigger>
     );
   const named = `${label}: ${value}`;
@@ -74,6 +76,10 @@ export function PickerTrigger({
     // A native title would wait a second before saying what the glyph means.
     <Hint label={tip ?? named} render={<SelectTrigger aria-label={named} {...props} />}>
       {glyph}
+      {/* Measured by `useToolbarLayout`, hidden or not, to know what showing it would take. */}
+      <span data-toolbar-label className={cn("min-w-0 truncate", !labelled && "sr-only")}>
+        {value}
+      </span>
     </Hint>
   );
 }

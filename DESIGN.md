@@ -67,6 +67,13 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     current value is its check.
   - Keyboard focus is the `focus-ring` outline (`--focus-ring`, `--focus-width`); a menu, list or
     dialog never rings as a whole.
+- **The composer's toolbar says its values while it has room:** the model's name, then effort
+  and mode in a word or two beside their glyphs ("Extra high", "Plan"), giving way to glyphs alone
+  from the right as the row narrows, then folding into "…". Each trigger's tooltip and name say
+  the value and its shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current
+  value with a line on what each costs, and a pick is confirmed in words for a moment. Every
+  target on the row is 32 px tall. Stop is a solid disc inside the running ring, and its key
+  shows beside it while the composer has focus.
 - **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title, then
   what wants you (a paused workspace, usage, the bell), one "…" with everything else in words and
   shortcuts, and the panel. A new control goes in the "…" unless it is needed at a glance.

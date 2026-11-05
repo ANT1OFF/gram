@@ -45,7 +45,7 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
         data-testid="usage-ring"
         data-level={level}
         aria-label={ringLabel(percent)}
-        className="grid size-7 shrink-0 place-items-center rounded-full outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="grid size-8 shrink-0 place-items-center rounded-full outline-none hover:bg-accent focus-visible:focus-ring"
       >
         <svg aria-hidden viewBox="0 0 20 20" className="size-5 -rotate-90">
           <circle

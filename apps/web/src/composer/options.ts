@@ -50,14 +50,59 @@ export const MODE_ICONS: Readonly<Record<PermissionMode, LucideIcon>> = {
   bypassPermissions: LockOpen,
 };
 
+/**
+ * The reasoning efforts, lowest first. `short` is the value on the composer's trigger and in its
+ * tooltip ("Effort: Extra high"); the open list reads the label, then what the level costs.
+ */
 export const EFFORT_OPTIONS: readonly PickerOption<ReasoningVariant>[] = [
-  { value: "none", label: "No thinking" },
-  { value: "low", label: "Low effort" },
-  { value: "medium", label: "Medium effort" },
-  { value: "high", label: "High effort" },
-  { value: "xhigh", label: "Extra high effort" },
-  { value: "max", label: "Max effort" },
+  {
+    value: "none",
+    label: "No thinking",
+    short: "No thinking",
+    description: "Answers without reasoning first. The fastest.",
+  },
+  {
+    value: "low",
+    label: "Low effort",
+    short: "Low",
+    description: "Brief reasoning, for quick and simple steps.",
+  },
+  {
+    value: "medium",
+    label: "Medium effort",
+    short: "Medium",
+    description: "Balances speed and depth for everyday work.",
+  },
+  {
+    value: "high",
+    label: "High effort",
+    short: "High",
+    description: "Reasons longer before acting on harder problems.",
+  },
+  {
+    value: "xhigh",
+    label: "Extra high effort",
+    short: "Extra high",
+    description: "Reasons at length. Slower, and uses more of your plan.",
+  },
+  {
+    value: "max",
+    label: "Max effort",
+    short: "Max",
+    description: "Reasons as long as it needs. The slowest and costliest.",
+  },
 ];
+
+/** The effort pickers' "no explicit effort" value, which leaves the level to the model. */
+export const DEFAULT_EFFORT = "default";
+
+/** The effort pickers' first row: no explicit effort, so the model's own default applies. */
+export const DEFAULT_EFFORT_OPTION: PickerOption<typeof DEFAULT_EFFORT> = {
+  value: DEFAULT_EFFORT,
+  label: "Default effort",
+  short: "Default",
+  description: "Whatever level the model uses on its own.",
+};
 
 /** Claude models offered before a session exists to report its own list. */
 export const DEFAULT_MODEL_OPTIONS: readonly PickerOption<string>[] = [

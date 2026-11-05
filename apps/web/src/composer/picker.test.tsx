@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { modeWarning } from "@/thread/mode-warning";
 
-import { MODE_OPTIONS } from "./options";
+import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, EFFORT_OPTIONS, MODE_OPTIONS } from "./options";
 import { Picker } from "./picker";
 import { EffortGauge } from "./picker-glyphs";
 
@@ -51,11 +51,80 @@ it("as a glyph alone names the mode on hover and keeps its warning tint", async 
   }
 });
 
-it("with its label shows the value and keeps the plain name", () => {
+it("with its label shows the value beside the glyph, named and tooltipped with it", async () => {
+  const user = userEvent.setup();
   render(mode("plan", true));
-  const trigger = screen.getByRole("combobox", { name: "Mode" });
-  expect(trigger.textContent).toContain("Plan");
-  expect(trigger.getAttribute("title")).toMatch(/^Mode( \(.+\))?$/);
+  const trigger = screen.getByRole("combobox", { name: "Mode: Plan" });
+  const text = trigger.querySelector("[data-toolbar-label]");
+  expect(text?.className).not.toContain("sr-only");
+  expect(text?.textContent).toBe("Plan");
+  expect(trigger.getAttribute("title")).toBeNull();
+  await user.hover(trigger);
+  expect((await screen.findByText(/^Mode: Plan/)).textContent).toMatch(/^Mode: Plan \(.+\)$/);
+});
+
+it("as a settings field keeps its plain name and the value in full", () => {
+  render(
+    <Picker
+      field
+      label="Helper effort"
+      shortcutId="helper.effort"
+      keys=""
+      focused={false}
+      value="xhigh"
+      options={EFFORT_OPTIONS}
+      onChange={() => {}}
+    />,
+  );
+  const trigger = screen.getByRole("combobox", { name: "Helper effort" });
+  expect(trigger.textContent).toContain("Extra high effort");
+});
+
+const efforts = (
+  value: string,
+  labelled: boolean,
+  onChange: (value: string) => void = () => {},
+) => (
+  <Picker
+    label="Effort"
+    shortcutId="composer.effort"
+    keys="mod+shift+e"
+    focused={false}
+    value={value}
+    options={[DEFAULT_EFFORT_OPTION, ...EFFORT_OPTIONS]}
+    icon={<EffortGauge variant={value === DEFAULT_EFFORT ? undefined : (value as "xhigh")} />}
+    labelled={labelled}
+    onChange={onChange}
+  />
+);
+
+it("says the effort in short, and checks the current one in a list that says what each costs", async () => {
+  const user = userEvent.setup();
+  render(efforts("xhigh", true));
+  const trigger = screen.getByRole("combobox", { name: "Effort: Extra high" });
+  expect(trigger.querySelector("[data-toolbar-label]")?.textContent).toBe("Extra high");
+  await user.click(trigger);
+  for (const option of [DEFAULT_EFFORT_OPTION, ...EFFORT_OPTIONS]) {
+    const row = screen.getByRole("option", { name: option.label });
+    expect(option.description).toBeTruthy();
+    expect(row.getAttribute("aria-description")).toBe(option.description);
+    expect(row.getAttribute("aria-selected")).toBe(String(option.value === "xhigh"));
+  }
+  // The checked row is the only one with its check drawn.
+  expect(screen.getByRole("option", { name: "Extra high effort" }).querySelector("svg")).not.toBe(
+    null,
+  );
+  expect(screen.getByRole("option", { name: "Low effort" }).querySelector("svg")).toBeNull();
+});
+
+it("checks Default effort while the model's own level applies", async () => {
+  const user = userEvent.setup();
+  render(efforts(DEFAULT_EFFORT, false));
+  const trigger = screen.getByRole("combobox", { name: "Effort: Default" });
+  await user.click(trigger);
+  expect(screen.getByRole("option", { name: "Default effort" }).getAttribute("aria-selected")).toBe(
+    "true",
+  );
 });
 
 const effort = (value: string | undefined, onChange: (value: string) => void = () => {}) => (

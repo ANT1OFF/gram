@@ -28,6 +28,7 @@ import { ModelSelect, type ModelPick } from "./model-select";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { EffortGauge } from "./picker-glyphs";
 import { defaultModelId, effortOptions, useModels } from "./models";
+import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION } from "./options";
 import { GHOST_TRIGGER } from "./styles";
 
 /** What a new thread runs on; `profileId` only when the user explicitly selects a gateway. */
@@ -51,9 +52,6 @@ const withVariant = (choice: AgentChoice, variant: ReasoningVariant | undefined)
 
 /** The `ModelRef` a choice starts a thread on. */
 export const choiceModel = (choice: AgentChoice): ModelRef => withVariant(choice, choice.variant);
-
-/** The effort picker's "no explicit effort" choice. */
-const DEFAULT_EFFORT = "default";
 
 /** Every harness is offered, including when signed out. */
 export function useAvailableAgents(): readonly AgentKind[] {
@@ -140,7 +138,8 @@ export function AgentFields({
     !ghost ||
     value.speed === "fast" ||
     (value.speed !== undefined && modelSpeeds(models, shownModel).includes("fast"));
-  const effortItems = [{ value: DEFAULT_EFFORT, label: "Default effort" }, ...efforts];
+  const effortItems = [DEFAULT_EFFORT_OPTION, ...efforts];
+  const effortShown = effortItems.find((o) => o.value === (value.variant ?? DEFAULT_EFFORT));
   const effortConfirm = usePickConfirm(value.variant ?? DEFAULT_EFFORT);
   useEffect(() => {
     if (initializeDefault && value.model === "" && listedDefault && !needsKey) {
@@ -292,11 +291,9 @@ export function AgentFields({
         >
           <PickerTrigger
             label="Effort"
-            value={
-              effortItems.find((o) => o.value === (value.variant ?? DEFAULT_EFFORT))?.label ??
-              "Default effort"
-            }
-            labelled={!ghost}
+            value={effortShown?.short ?? effortShown?.label ?? "Default"}
+            labelled={false}
+            field={!ghost}
             icon={
               ghost && (
                 <Swap swapKey={value.variant ?? DEFAULT_EFFORT}>
@@ -309,7 +306,7 @@ export function AgentFields({
           />
           <SelectContent>
             {effortItems.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
+              <SelectItem key={o.value} value={o.value} description={o.description}>
                 {o.label}
               </SelectItem>
             ))}

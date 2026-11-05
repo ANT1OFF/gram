@@ -47,7 +47,7 @@ export function ToolbarOverflow({
         data-testid="composer-overflow"
         render={
           <Button
-            size="icon-sm"
+            size="icon"
             variant="ghost"
             aria-label="More composer controls"
             title="More composer controls"

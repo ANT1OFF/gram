@@ -15,6 +15,12 @@ const at = (space: number) => {
   return { labelled: [...layout.labelled].toSorted(), folded: layout.folded };
 };
 
+/** `at` with 20 px kept free beside any label. */
+const roomy = (space: number) => {
+  const layout = toolbarLayout(space, BLOCKS, OVERFLOW, 20);
+  return { labelled: [...layout.labelled].toSorted(), folded: layout.folded };
+};
+
 describe("toolbarLayout", () => {
   it("keeps every label when everything fits", () => {
     expect(at(342)).toEqual({ labelled: ["effort", "mode", "model"], folded: [] });
@@ -38,6 +44,16 @@ describe("toolbarLayout", () => {
 
   it("never folds the model picker, and settles on the narrowest when nothing fits", () => {
     expect(at(10)).toEqual({ labelled: [], folded: ["steer", "effort", "mode"] });
+  });
+
+  it("keeps room free beside labels, and none for glyphs alone", () => {
+    // Every label: 120 + 32 + 110 + 80 = 342, plus 20 of room.
+    expect(roomy(362)).toEqual({ labelled: ["effort", "mode", "model"], folded: [] });
+    expect(roomy(361)).toEqual({ labelled: ["effort", "model"], folded: [] });
+    // The last label, the model's, needs 120 + 32 + 44 + 44 + 20 = 260; glyphs alone need 160.
+    expect(roomy(260)).toEqual({ labelled: ["model"], folded: [] });
+    expect(roomy(259)).toEqual({ labelled: [], folded: [] });
+    expect(roomy(160)).toEqual({ labelled: [], folded: [] });
   });
 
   it("gives no label to a block without one", () => {

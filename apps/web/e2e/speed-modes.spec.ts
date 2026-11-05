@@ -74,7 +74,7 @@ for (const agent of ["claude", "codex"] as const)
     ).toBeVisible();
     await page.getByRole("option", { name: "Fast", exact: true }).click();
     await expect(speed).toHaveAccessibleName("Speed: Fast");
-    await expect(form.getByRole("combobox", { name: "Effort: High effort" })).toBeVisible();
+    await expect(form.getByRole("combobox", { name: "Effort: High" })).toBeVisible();
     await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
     await form.getByLabel("First prompt").fill("Synthetic speed preference test.");
     await form.getByRole("button", { name: /Create thread/ }).click();
@@ -88,7 +88,7 @@ for (const agent of ["claude", "codex"] as const)
     await page.getByRole("combobox", { name: "Model", exact: true }).click();
     await page.getByRole("option", { name: "Synthetic Standard model", exact: true }).click();
     await expect(currentSpeed).toHaveAccessibleName("Speed: Standard");
-    await expect(page.getByRole("combobox", { name: "Effort: High effort" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Effort: High" })).toBeVisible();
     await currentSpeed.click();
     await expect(page.getByRole("option", { name: "Fast", exact: true })).toHaveCount(0);
   });

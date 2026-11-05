@@ -18,20 +18,24 @@ export const SLAB_TEXTAREA =
 export const GHOST_MIRROR =
   "pointer-events-none absolute inset-0 overflow-hidden px-4 pt-3 pb-1 text-reading leading-relaxed break-words whitespace-pre-wrap";
 
-/** A toolbar control: no border, muted until hovered. */
+/**
+ * A toolbar control: no border, muted until hovered, and as tall as Send (32 px) so every target on
+ * the row is the same size, at least as wide as it is tall.
+ */
 export const GHOST_TRIGGER =
-  "gap-1.5 border-transparent px-2 text-meta font-medium text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent";
+  "h-8 min-w-8 gap-1.5 border-transparent px-2 text-meta font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:focus-ring data-[size=sm]:h-8 data-[popup-open]:bg-accent dark:hover:bg-accent";
 
 /** Send and Stop: a 32 px circle holding one glyph. */
 export const ROUND =
-  "grid size-8 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default";
+  "grid size-8 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:focus-ring disabled:cursor-default";
 
 /**
- * Stop while a turn runs: its square in the text colour inside a turning ring (drawn by the
- * composer), and danger only under the pointer.
+ * Stop while a turn runs: a solid disc in the text colour with the square cut out of it, so it reads
+ * as a stop button and never as Send's accent, inside a turning ring (drawn by the composer) that
+ * says the agent is at work. Danger only under the pointer.
  */
 export const STOP_RUNNING =
-  "relative text-foreground transition-colors hover:bg-destructive-tint hover:text-destructive";
+  "relative bg-foreground text-background transition-colors hover:bg-destructive";
 
 /** Send's fill: the accent with a faint gloss, flat while pressed or disabled. */
 export const SEND_FILL =

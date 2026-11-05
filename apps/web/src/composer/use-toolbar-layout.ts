@@ -8,6 +8,11 @@ const OVERFLOW_WIDTH = 32;
 const LABEL_GAP = 6;
 /** Slack for rounding and the gaps between groups, so a fit is never a pixel short. */
 const SLACK = 6;
+/**
+ * Space kept free while any control shows its words: past it they give way to glyphs, so the row
+ * never reads as one run of words into Send and Stop, and a flashed note still has room.
+ */
+const LABEL_ROOM = 48;
 
 /** Before the first measure: everything as wide as it wants, so the measure sees full widths. */
 const UNMEASURED: ToolbarLayout = { labelled: new Set(["*"]), folded: [] };
@@ -70,7 +75,7 @@ export function useToolbarLayout(
       const known = widths.current.get(block.id);
       return known === undefined ? [] : [{ ...block, ...known }];
     });
-    const next = toolbarLayout(inner - fixed - SLACK, measured, OVERFLOW_WIDTH);
+    const next = toolbarLayout(inner - fixed - SLACK, measured, OVERFLOW_WIDTH, LABEL_ROOM);
     if (!sameLayout(next, layout)) setLayout(next);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `tick` is the resize signal: something measured changed size
   }, [tick, blocks, layout]);

@@ -369,8 +369,10 @@ const steps: readonly Shot[] = [
       await page.getByLabel("Message", { exact: true }).focus();
       await page.keyboard.press("ControlOrMeta+Shift+KeyE");
       await page.getByRole("option", { name: "Extra high effort" }).click();
-      await expect(page.getByRole("combobox", { name: "Effort: Extra high effort" })).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "Effort: Extra high" })).toBeVisible();
       await expect(page.getByTestId("effort-gauge")).toHaveAttribute("data-level", "xhigh");
+      // Said in words for a moment, beside the glyph that changed.
+      await expect(page.getByText("Effort set to Extra high")).toBeVisible();
     },
   },
   // Later additions go last, so the frames before them keep their numbers between rounds.
@@ -458,6 +460,15 @@ const steps: readonly Shot[] = [
         );
       });
       await expect(page.getByTestId("agent-error-retry-time")).toContainText(/Try again at/);
+    },
+  },
+  {
+    name: "stop-key",
+    title: "Stop: while you're in the composer, its key shows beside it",
+    open: async (page) => {
+      await shot("send-button-running")(page);
+      await page.getByLabel("Message", { exact: true }).focus();
+      await expect(page.getByTestId("stop-key")).toHaveCSS("opacity", "1");
     },
   },
 ];
