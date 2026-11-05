@@ -614,6 +614,13 @@ test("a new workspace is one sheet, and what it should work on is briefed into a
   expect(cards.map((card) => [card.feature, card.station])).toEqual([["mail-trigger", "briefed"]]);
   await page.evaluate(() => window.gramMock!.release("orchestrator-turn"));
 
+  // Discover, queued behind the first message, is its next turn.
+  await expect(
+    page.getByText("Please discover this workspace now.", { exact: false }),
+  ).toBeVisible();
+  await page.evaluate(() => window.gramMock!.release("orchestrator-turn"));
+  await expect(briefing).toHaveCount(0);
+
   // A message it only answers shows the placeholder while it reads, and nothing after.
   const composer = page.getByLabel("Message", { exact: true });
   await composer.fill("What is left?");
