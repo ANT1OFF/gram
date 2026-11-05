@@ -102,7 +102,7 @@ test("Stop names its shortcut, and the shortcut stops the turn", async ({ page }
   await expect(page.getByTestId("stop-ring")).toBeVisible();
   await stop.hover();
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText(
-    /^Stop \((⌘|Ctrl\+)\.\)$/,
+    /^Stop · keeps the reply so far \((⌘|Ctrl\+)\.\)$/,
   );
 
   await page.getByLabel("Message", { exact: true }).focus();
