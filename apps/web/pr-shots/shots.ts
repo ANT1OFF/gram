@@ -2724,14 +2724,14 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "peek-worker",
-    title: "A worker's name on a live card, peeked at in a sheet over the orchestrator",
+    title: "A worker's name on a live card, peeked at (⌥-click) in a sheet over the orchestrator",
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateOneThread());
       await page
         .getByTestId("feature-card")
         .getByTestId("worker-link")
         .filter({ hasText: /^Retry with backoff$/ })
-        .click();
+        .click({ modifiers: ["Alt"] });
       await page.getByTestId("peek-sheet").waitFor();
       await page.waitForTimeout(600);
     },
