@@ -49,5 +49,11 @@ describe("RoutineSchedule", () => {
     expect(routineScheduleText({ kind: "interval", hours: 1 })).toBe("Every hour");
     expect(routineSlug("Daily CI triage!")).toBe("routine-daily-ci-triage");
     expect(routineSlug("???")).toBe("routine-run");
+    expect(routineSlug("--Nightly -- flake  sweep--")).toBe("routine-nightly-flake-sweep");
+    // Cut at 40 characters, never on a dash, and in linear time on a long run of dashes.
+    expect(routineSlug(`${"a".repeat(39)} b`)).toBe(`routine-${"a".repeat(39)}`);
+    const started = performance.now();
+    expect(routineSlug(`a${"-".repeat(100_000)}!`)).toBe("routine-a");
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });

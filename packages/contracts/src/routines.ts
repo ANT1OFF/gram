@@ -179,15 +179,19 @@ export const routineScheduleText = (schedule: RoutineSchedule): string => {
   }
 };
 
-/** A routine's slug, for the feature its workers go under: `routine-ci-triage`. */
+/**
+ * A routine's slug, for the feature its workers go under: `routine-ci-triage`. Split into words and
+ * cut by hand, with no anchored repetition: a name is input, and `-+$` backtracks on long dash runs.
+ */
 export const routineSlug = (name: string): string => {
-  const words = name
+  let words = name
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40)
-    .replace(/-+$/g, "");
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== "")
+    .join("-")
+    .slice(0, 40);
+  while (words.endsWith("-")) words = words.slice(0, -1);
   return `routine-${words === "" ? "run" : words}`;
 };
 
