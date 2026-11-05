@@ -146,7 +146,7 @@ export function useNeedsYouJump(): (item: NeedsYouItem) => void {
   return (item) => {
     const inbox = useInboxStore.getState();
     inbox.select(item.key);
-    inbox.close();
+    if (inbox.open) inbox.leave();
     const target = jumpTarget(item);
     const threadId = item.threadId;
     if (threadId === undefined) return;

@@ -19,10 +19,14 @@ interface InboxState {
   readonly category: NeedsYouCategory;
   /** Whether it lists what is put away for Later instead. */
   readonly later: boolean;
+  /** Whether it last closed for a thread it opened, which then keeps focus. */
+  readonly leftForThread: boolean;
   select(key: string | undefined): void;
   setCategory(category: NeedsYouCategory): void;
   setLater(later: boolean): void;
   close(): void;
+  /** Closes it for a thread it opens: focus stays with that thread. */
+  leave(): void;
 }
 
 export const useInboxStore = create<InboxState>()((set) => ({
@@ -30,10 +34,12 @@ export const useInboxStore = create<InboxState>()((set) => ({
   selected: undefined,
   category: "all",
   later: false,
+  leftForThread: false,
   select: (selected) => set({ selected }),
   setCategory: (category) => set({ category }),
   setLater: (later) => set({ later }),
   close: () => set({ open: false }),
+  leave: () => set({ open: false, leftForThread: true }),
 }));
 
 /** Where `showInbox` opens: an item by key, or a workspace's first item. */
@@ -57,12 +63,12 @@ export const showInbox = (target: InboxTarget = {}) => {
       ? undefined
       : items.find((item) => item.workspaceId === target.workspaceId);
   const item = byKey ?? inWorkspace;
-  useInboxStore.setState((s) => ({
+  useInboxStore.setState({
     open: true,
+    leftForThread: false,
     later: false,
     ...(item === undefined ? {} : { selected: item.key, category: "all" as const }),
-    ...(item === undefined && s.later ? { later: false } : {}),
-  }));
+  });
 };
 
 /** Opens the Inbox on the ask `askKey` (`Ask.key`): a notification's Open, a Board line's chip. */
