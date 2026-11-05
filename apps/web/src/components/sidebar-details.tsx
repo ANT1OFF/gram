@@ -61,7 +61,7 @@ export function SidebarDetails({
       {open && (
         <Dialog.Root open onOpenChange={(value) => setOpen(value)}>
           <Dialog.Portal>
-            <Dialog.Backdrop className="fixed inset-0 z-40 bg-scrim" />
+            <Dialog.Backdrop className="fixed inset-0 z-40 scrim" />
             <Dialog.Popup
               data-testid="sidebar-details"
               data-surface="overlay"

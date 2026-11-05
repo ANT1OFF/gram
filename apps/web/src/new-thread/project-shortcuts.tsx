@@ -110,7 +110,7 @@ function Section({
 }) {
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-1">
-      <h3 className="flex items-center gap-1.5 px-2 font-caption text-caption font-medium tracking-wide text-muted-foreground uppercase">
+      <h3 className="flex items-center gap-1.5 px-2 text-meta font-medium text-muted-foreground">
         <Icon className="size-3.5" />
         {title}
       </h3>

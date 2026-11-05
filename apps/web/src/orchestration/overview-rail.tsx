@@ -185,6 +185,30 @@ function RailNeedsYou() {
 const TILE =
   "relative grid size-9 shrink-0 place-items-center rounded-xs border border-sidebar-block-border bg-sidebar-block px-0.5 text-caption font-medium text-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring aria-current:border-foreground/35 aria-current:bg-sidebar-row-active aria-current:text-foreground";
 
+/** The most letters a tile's name shows whole, at its size. */
+const TILE_LETTERS = 5;
+
+/**
+ * A workspace's name as its tile says it: whole when it fits, else a short form that still reads as
+ * the name ("billing-api" is "BA", "frontend" "Fr") rather than a cut-off word ("billi…"). The
+ * tile's flyout and its accessible name say it in full.
+ */
+export function tileLabel(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length <= TILE_LETTERS) return trimmed;
+  const parts = trimmed.split(/[\s._/-]+/u).filter((part) => part !== "");
+  if (parts.length > 1) {
+    const [head] = parts;
+    if (head !== undefined && head.length <= TILE_LETTERS && parts.length === 2 && head.length >= 3)
+      return head;
+    return parts
+      .slice(0, 3)
+      .map((part) => part[0]!.toLocaleUpperCase())
+      .join("");
+  }
+  return trimmed[0]!.toLocaleUpperCase() + trimmed.slice(1, 2);
+}
+
 /** One tile per workspace, in the switcher's order, as the open overview's rows. */
 function WorkspaceTiles() {
   const workspaces = useWorkspaces();
@@ -276,7 +300,7 @@ function WorkspaceTile({
             )}
           />
           <span aria-hidden data-testid="overview-tile-name" className="max-w-full truncate">
-            {state.workspace.name}
+            {tileLabel(state.workspace.name)}
           </span>
           {asks > 0 && (
             <span

@@ -38,12 +38,12 @@ export const PANEL_WIDTH: WidthBounds = { min: 240, max: 4096, default: 352 };
  */
 export const REVIEW_WIDTH_SHARE = 0.55;
 /**
- * The chat a review leaves when it sizes itself: the transcript's reading width
- * (`--thread-max-width`, 48rem) and its gutters, so the review takes only the room the transcript
- * leaves empty, and the title bar keeps its chips and crumbs. A drag goes past it, down to
- * `CHAT_MIN_WIDTH`.
+ * The chat a review leaves when it sizes itself: a reading column (40rem) and its gutters, a step
+ * under the transcript's own width, so the code wins the width it needs beside the review's
+ * chrome while the conversation stays readable and the title bar keeps its chips and crumbs. A
+ * drag goes past it, down to `CHAT_MIN_WIDTH`.
  */
-export const REVIEW_CHAT_WIDTH = 800;
+export const REVIEW_CHAT_WIDTH = 640;
 /** What's left of the chat beside a review in focus: a strip that brings the conversation back. */
 export const REVIEW_STRIP_WIDTH = 48;
 /** The narrowest the chat (or grid) gets while the panel beside it is dragged wider. */

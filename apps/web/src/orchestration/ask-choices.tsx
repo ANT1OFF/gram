@@ -1,5 +1,5 @@
 import { Send } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { RecommendedTag } from "@/components/recommended-tag";
 import { Button } from "@/components/ui/button";
@@ -113,7 +113,8 @@ function RadioMark({ checked }: { checked: boolean }) {
 
 /**
  * Send answer: what sends a picked choice, on every surface. `hint` is the key that presses it
- * (⌘⏎), shown when keys reach it.
+ * (⌘⏎), shown when keys reach it. While it can't send, `title` says why in words beside it ("Pick
+ * an answer"): a disabled button takes no hover, so a tooltip would never show.
  */
 export function SendAnswer({
   disabled,
@@ -134,24 +135,38 @@ export function SendAnswer({
   title?: string | undefined;
   type?: "button" | "submit";
 }) {
+  const whyId = useId();
+  const why = disabled && title !== undefined && title !== "" ? title : undefined;
   return (
-    <Button
-      type={type}
-      size={size}
-      data-testid={testId}
-      data-send-answer
-      disabled={disabled}
-      title={title}
-      onClick={onSend}
-    >
-      <Send data-icon="inline-start" />
-      {label}
-      {hint !== undefined && (
-        <Kbd hidden className="border-current/40 text-current">
-          {hint}
-        </Kbd>
+    <>
+      <Button
+        type={type}
+        size={size}
+        data-testid={testId}
+        data-send-answer
+        disabled={disabled}
+        title={why === undefined ? title : undefined}
+        aria-describedby={why === undefined ? undefined : whyId}
+        onClick={onSend}
+      >
+        <Send data-icon="inline-start" />
+        {label}
+        {hint !== undefined && (
+          <Kbd hidden className="border-current/40 text-current">
+            {hint}
+          </Kbd>
+        )}
+      </Button>
+      {why !== undefined && (
+        <span
+          id={whyId}
+          data-testid="send-answer-why"
+          className="min-w-0 text-meta text-muted-foreground"
+        >
+          {why}
+        </span>
       )}
-    </Button>
+    </>
   );
 }
 

@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { openOrchestrator } from "./thread-row";
 
 // Under the Board's lines, the Done band: what has left the Board for Done, a line each with the PR
-// it ended with, and a way to bring it back as lines. Over the realistic scenario.
+// it ended with; the header's Show finished brings it back as lines. Over the realistic scenario.
 
 test("the Board lists finished work under its lines, and brings it back on asking", async ({
   page,
@@ -37,8 +37,21 @@ test("the Board lists finished work under its lines, and brings it back on askin
   const pr = (await heads.getByText("Pull request").boundingBox())!;
   expect(pr.x).toBeLessThan(1728 * 0.7);
 
-  // Show on the Board brings them back as lines, and the band gives way to them.
-  await done.getByTestId("board-done-show").click();
+  // On the grid's columns: a finished task's PR sits under Pull request.
+  const donePr = (await notes.getByTestId("board-done-pr").boundingBox())!;
+  expect(Math.abs(donePr.x - pr.x)).toBeLessThan(2);
+
+  // Five rows, then the rest unfold in place.
+  const rows = done.getByTestId("board-done-row");
+  await expect(rows).toHaveCount(5);
+  await done.getByTestId("board-done-more").click();
+  await expect(rows).toHaveCount(6);
+  await expect(done.getByTestId("board-done-more")).toHaveCount(0);
+
+  // The band names no place it is already in: the header's Show finished brings them back as
+  // lines, and the band gives way to them.
+  await expect(done).not.toContainText("on the Board");
+  await page.getByTestId("rail-show-archived").click();
   await expect(done).toHaveCount(0);
   await expect(board.locator('[data-testid="rail-row"][data-finished]').first()).toBeVisible();
 });

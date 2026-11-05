@@ -292,6 +292,7 @@ export function QuietView({ workspaceId }: ViewProps) {
           ) : (
             <QuietCard
               card={card}
+              workers={strip.find((w) => w.workspaceId === card.workspaceId)?.workers}
               total={deck.length}
               problem={problem}
               picked={picked}
@@ -341,6 +342,7 @@ export function QuietView({ workspaceId }: ViewProps) {
 
 function QuietCard({
   card,
+  workers,
   total,
   problem,
   picked,
@@ -352,6 +354,8 @@ function QuietCard({
   replyRef,
 }: {
   card: DeckCard;
+  /** Its workspace's workers at work, as the strip draws them: its context beside the question. */
+  workers: readonly WorkerRow[] | undefined;
   total: number;
   problem: string | undefined;
   picked: number | undefined;
@@ -377,13 +381,44 @@ function QuietCard({
       aria-label="Needs you"
       className="grid gap-3 rounded-lg border border-edge bg-card p-5 shadow-raised"
     >
-      <header className="flex items-center gap-2 text-body text-muted-foreground">
+      {/* Where the question is from and the way back to it, at its head rather than in the strip
+          at the window's foot: the workspace, its workers at work, and Open thread. */}
+      <header className="flex min-w-0 items-center gap-2 text-body text-muted-foreground">
         <Icon aria-hidden className="size-4 shrink-0 text-status-needs-mark" />
-        <span className="truncate">{card.workspace}</span>
+        <span data-testid="quiet-workspace" className="truncate font-medium text-foreground">
+          {card.workspace}
+        </span>
+        {workers !== undefined && workers.length > 0 && (
+          <span
+            data-testid="quiet-card-workers"
+            aria-label={`${workers.length} ${workers.length === 1 ? "worker" : "workers"} at work`}
+            className="flex shrink-0 items-center gap-0.5"
+          >
+            {workers.map((row) => (
+              <span
+                key={row.threadId}
+                data-tone={dotTone(row)}
+                className={cn("size-1.5 rounded-full", DOT[dotTone(row)])}
+              />
+            ))}
+          </span>
+        )}
         <span className="flex-1" />
-        <span data-testid="quiet-position" className="tabular-nums">
+        <span data-testid="quiet-position" className="shrink-0 tabular-nums">
           1 of {total}
         </span>
+        {onOpen !== undefined && (
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="quiet-open"
+            className="-my-1 shrink-0"
+            onClick={onOpen}
+          >
+            Open thread
+            <Kbd>O</Kbd>
+          </Button>
+        )}
       </header>
       <div className="grid gap-1.5">
         <p className="text-title font-normal break-words" data-testid="quiet-title">
@@ -443,7 +478,7 @@ function QuietCard({
           <SendAnswer
             testId="quiet-send"
             disabled={pickedOption === undefined}
-            title={pickedOption === undefined ? "Pick a choice first" : undefined}
+            title={pickedOption === undefined ? "Pick an answer" : undefined}
             hint={formatKeys("mod+enter")}
             onSend={() => {
               if (pickedOption !== undefined) onChoose(pickedOption);
@@ -458,7 +493,7 @@ function QuietCard({
             onChoose={onChoose}
             testId="quiet-option"
             size="default"
-            // Its buttons sit in this row, beside Later and Open thread.
+            // Its buttons sit in this row, beside Later.
             className="contents"
           />
         )}
@@ -467,12 +502,6 @@ function QuietCard({
           <Button variant="ghost" size="sm" data-testid="quiet-later" onClick={onLater}>
             Later
             <Kbd>→</Kbd>
-          </Button>
-        )}
-        {onOpen !== undefined && (
-          <Button variant="ghost" size="sm" data-testid="quiet-open" onClick={onOpen}>
-            Open thread
-            <Kbd>O</Kbd>
           </Button>
         )}
       </footer>

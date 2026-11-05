@@ -1,9 +1,10 @@
 import { Focus, X } from "lucide-react";
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, type RefObject } from "react";
+import { create } from "zustand";
 
 import { Button } from "@/components/ui/button";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
-import { fitShell, useLayoutStore } from "@/stores/layout";
+import { fitShell, useLayoutStore, type LayoutState } from "@/stores/layout";
 
 /** How long the reading place is held while the panel's width animates into focus and back. */
 const HOLD_MS = 600;
@@ -77,17 +78,92 @@ export function useKeepReadingPlace(root: RefObject<HTMLElement | null>) {
 }
 
 /**
- * Under a review's tabs while it is held too narrow to read beside the conversation: says so, and
- * offers Focus review, which gives the review the window and leaves the conversation a strip.
- * Dismissed, it stays away until the review has room again and runs short once more.
+ * How a review held too narrow is answered, for this run of the window: Focus review is entered for
+ * it until the user leaves focus or keeps it side by side (`declined`), and the offer under the tabs
+ * stays away once dismissed (`dismissed`); both last until the review has room again. Not
+ * remembered across launches.
+ */
+export const useReviewRoom = create<{ declined: boolean; dismissed: boolean }>()(() => ({
+  declined: false,
+  dismissed: false,
+}));
+
+/** How long the layout holds still before a cramped review takes focus: a drag or resize ends first. */
+const SETTLE_MS = 400;
+
+/**
+ * A review open in too little width to read beside the conversation goes into Focus review on its
+ * own, which gives it the window and leaves the conversation a strip (Esc or Restore gives it back).
+ * It waits for the layout to settle, so a drag of the panel's edge or the window's ends first. Left
+ * while still short of room, it is not taken again until the review has had room: the offer under
+ * the tabs says why and offers it.
+ */
+export function useAutoReviewFocus(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let pressed = false;
+    const due = () => {
+      const s = useLayoutStore.getState();
+      const fit = fitShell(s);
+      return !fit.reviewFocus && fit.reviewCramped && !useReviewRoom.getState().declined;
+    };
+    const take = () => {
+      timer = undefined;
+      // Still dragging: once the pointer lets go.
+      if (pressed) return;
+      if (due()) useLayoutStore.getState().setReviewFocus(true);
+    };
+    const schedule = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = due() ? setTimeout(take, SETTLE_MS) : undefined;
+    };
+    const apply = (s: LayoutState, prev?: LayoutState) => {
+      const fit = fitShell(s);
+      if (fit.reviewFocus) return;
+      const room = useReviewRoom.getState();
+      if (prev !== undefined && fitShell(prev).reviewFocus) {
+        // Left focus: side by side is the user's choice while the room stays short.
+        if (fit.reviewCramped && !room.declined) useReviewRoom.setState({ declined: true });
+        return;
+      }
+      if (!fit.reviewCramped && (room.declined || room.dismissed))
+        useReviewRoom.setState({ declined: false, dismissed: false });
+      schedule();
+    };
+    const down = () => {
+      pressed = true;
+    };
+    const up = () => {
+      pressed = false;
+      schedule();
+    };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+    apply(useLayoutStore.getState());
+    const unsubscribe = useLayoutStore.subscribe(apply);
+    return () => {
+      unsubscribe();
+      if (timer !== undefined) clearTimeout(timer);
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+    };
+  }, [active]);
+}
+
+/**
+ * Under a review's tabs while it is held too narrow to read beside the conversation and the user
+ * chose to keep it there: says so, and offers Focus review, which gives the review the window and
+ * leaves the conversation a strip. Dismissed, it stays away until the review has room again and runs
+ * short once more.
  */
 export function ReviewRoomOffer() {
   const cramped = useLayoutStore((s) => fitShell(s).reviewCramped);
   const toggle = useLayoutStore((s) => s.toggleReviewFocus);
   const hint = useShortcutHint("review.focus");
-  const [dismissed, setDismissed] = useState(false);
-  // Room again forgets the dismissal, so the next time it runs short it is offered again.
-  if (!cramped && dismissed) setDismissed(false);
+  const dismissed = useReviewRoom((s) => s.dismissed);
   if (!cramped || dismissed) return null;
   return (
     <div
@@ -115,7 +191,7 @@ export function ReviewRoomOffer() {
         className="shrink-0"
         aria-label="Keep side by side"
         title="Keep side by side"
-        onClick={() => setDismissed(true)}
+        onClick={() => useReviewRoom.setState({ declined: true, dismissed: true })}
       >
         <X aria-hidden />
       </Button>

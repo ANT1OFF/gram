@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import { Expand } from "@/motion";
 
-import { useAwaitingTools } from "./awaiting-tools";
+import { ApprovalLink, useAwaitingTools, useShowApproval } from "./awaiting-tools";
 import { ToolCard, type ToolCardProps } from "./tool-cards";
 import { EditCounts } from "./file-edit-card";
 import {
@@ -35,55 +35,59 @@ export function ToolGroup({
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
+  const showApproval = useShowApproval(waiting?.toolCallId);
 
   return (
     <div data-testid="tool-group" data-open={open}>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={bodyId}
-        className={cn(
-          "flex max-w-full items-center gap-1 rounded-sm py-0.5 text-left text-reading outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
-          active || waiting ? "text-foreground" : "text-muted-foreground",
-        )}
-        onClick={() => {
-          setToggled(!open);
-          setOpened(true);
-        }}
-      >
-        {waiting !== undefined && (
-          <ShieldQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
-        )}
-        <span className="truncate">
-          {waiting !== undefined
-            ? `Waiting for your approval · ${stepLabel(waiting)}`
-            : active
-              ? `${stepLabel(active)}…`
-              : runSummary(run)}
-        </span>
-        {!active && waiting === undefined && edits.length > 0 && (
-          <>
-            {" "}
-            <EditCounts
-              additions={edits.reduce((sum, edit) => sum + edit.additions, 0)}
-              deletions={edits.reduce((sum, edit) => sum + edit.deletions, 0)}
-            />
-          </>
-        )}
-        {failed > 0 && (
-          <span className="shrink-0 text-destructive">
-            · {failed === 1 ? "1 failed" : `${failed} failed`}
-          </span>
-        )}
-        {cancelled > 0 && <span className="shrink-0">· {cancelled} cancelled</span>}
-        <ChevronRight
-          aria-hidden
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={bodyId}
           className={cn(
-            "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
-            open && "rotate-90",
+            "flex max-w-full items-center gap-1 rounded-sm py-0.5 text-left text-reading outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+            active || waiting ? "text-foreground" : "text-muted-foreground",
           )}
-        />
-      </button>
+          onClick={() => {
+            setToggled(!open);
+            setOpened(true);
+          }}
+        >
+          {waiting !== undefined && (
+            <ShieldQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
+          )}
+          <span className="truncate">
+            {waiting !== undefined
+              ? `Waiting for your approval · ${stepLabel(waiting)}`
+              : active
+                ? `${stepLabel(active)}…`
+                : runSummary(run)}
+          </span>
+          {!active && waiting === undefined && edits.length > 0 && (
+            <>
+              {" "}
+              <EditCounts
+                additions={edits.reduce((sum, edit) => sum + edit.additions, 0)}
+                deletions={edits.reduce((sum, edit) => sum + edit.deletions, 0)}
+              />
+            </>
+          )}
+          {failed > 0 && (
+            <span className="shrink-0 text-destructive">
+              · {failed === 1 ? "1 failed" : `${failed} failed`}
+            </span>
+          )}
+          {cancelled > 0 && <span className="shrink-0">· {cancelled} cancelled</span>}
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+              open && "rotate-90",
+            )}
+          />
+        </button>
+        {showApproval !== undefined && <ApprovalLink onShow={showApproval} label="Show approval" />}
+      </div>
       <Expand open={open} id={bodyId}>
         {opened && (
           <div className="flex flex-col gap-2 pt-1.5">

@@ -74,10 +74,16 @@ export function useMinuteNow(): number {
 export function UsageMeter({
   className,
   textClassName,
+  shortTextClassName = "hidden",
 }: {
   className?: string;
-  /** For the reading beside the bar, which a narrow title bar can leave to the label and popover. */
+  /** For the reading beside the bar, which a narrow title bar trades for its short form. */
   textClassName?: string;
+  /**
+   * For the short reading ("85%"), shown where the full one is not: a narrow title bar keeps a
+   * number beside the bar, never a bare bar. Hidden unless the caller shows it.
+   */
+  shortTextClassName?: string;
 }) {
   const limits = useUsageLimits((s) => s.limits);
   const now = useLimitsNow(limits);
@@ -120,6 +126,13 @@ export function UsageMeter({
           >
             <LimitBar limit={tightest.limit} className="w-9" />
             <span className={textClassName}>{meterText(tightest)}</span>
+            {/* Drawn from its attribute, so the meter's words stay the one reading it has. */}
+            <span
+              aria-hidden
+              data-testid="usage-meter-short"
+              data-short={`${limitPercent(tightest.limit.utilization)}%`}
+              className={cn("after:content-[attr(data-short)]", shortTextClassName)}
+            />
           </button>
         }
       >

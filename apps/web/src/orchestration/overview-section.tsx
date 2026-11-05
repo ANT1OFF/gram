@@ -83,7 +83,7 @@ export function Section({
             onFocus={term === undefined ? undefined : () => seeTerm(term)}
             onClick={() => toggle(id)}
             // Its chevron centred on the rows' marks, its name where their titles start.
-            className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-caption font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-meta font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronDown
               aria-hidden

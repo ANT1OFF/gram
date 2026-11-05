@@ -21,9 +21,7 @@ export function ShortcutList() {
     <div className="grid gap-4 sm:grid-cols-2">
       {sections.map((section) => (
         <section key={section.group} aria-label={section.group}>
-          <h3 className="mb-1 text-caption font-medium tracking-wide text-muted-foreground uppercase">
-            {section.group}
-          </h3>
+          <h3 className="mb-1 text-meta font-medium text-muted-foreground">{section.group}</h3>
           <dl className="flex flex-col gap-1 text-reading">
             {section.rows.map((row) => (
               <div key={row.id} className="flex items-center gap-2">

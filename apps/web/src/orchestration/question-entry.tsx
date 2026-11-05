@@ -344,7 +344,7 @@ export function OpenQuestion({
               type="submit"
               testId="question-send"
               disabled={busy || answer === "" || unavailable !== undefined}
-              title={unavailable ?? (answer === "" ? "Pick a choice first" : undefined)}
+              title={unavailable ?? (answer === "" ? "Pick an answer" : undefined)}
               hint={formatKeys("mod+enter")}
             />
             <span className="min-w-0 truncate text-meta text-muted-foreground">

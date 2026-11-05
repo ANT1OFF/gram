@@ -423,7 +423,7 @@ export function AskItem({
             <SendAnswer
               testId="ask-send"
               disabled={pickedOption === undefined}
-              title={pickedOption === undefined ? "Pick a choice first" : undefined}
+              title={pickedOption === undefined ? "Pick an answer" : undefined}
               hint={sendHint}
               onSend={() => {
                 if (pickedOption !== undefined) onChoose(pickedOption);

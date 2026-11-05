@@ -64,7 +64,11 @@
 :root {
   --focus-width: 2px;
   --focus-offset: 2px;
-  --scrim-strength: 0.6;
+  /* Dark dims toward near-black: at 60% the transcript behind History, Workers or the palette stayed
+     legible enough to compete with the list in front, so it dims as firmly as light does (#177),
+     and blurs a little so what is left reads as a backdrop, not as text. */
+  --scrim-strength: 0.78;
+  --scrim-blur: 6px;
   --danger-tint-strength: 0.1;
   --danger-tint-hover-strength: 0.15;
   /* A sidebar section's count pill (sidebar/section-header.tsx); @gram/themes SECTION_TINT. */
@@ -75,7 +79,8 @@
   --surface-alpha: 1;
   --surface-blur: 0px;
   --focus-width: 3px;
-  --scrim-strength: 0.8;
+  --scrim-strength: 0.88;
+  --scrim-blur: 0px;
   --danger-tint-strength: 0;
   --danger-tint-hover-strength: 0;
   --section-tint-strength: 0;
@@ -86,6 +91,7 @@
   :root {
     --surface-alpha: 1;
     --surface-blur: 0px;
+    --scrim-blur: 0px;
   }
 }
 
@@ -93,6 +99,7 @@
   :root {
     --surface-alpha: 1;
     --surface-blur: 0px;
+    --scrim-blur: 0px;
     --shadow-raised: none;
     --shadow-overlay: none;
     --card-border-width: 1px;
