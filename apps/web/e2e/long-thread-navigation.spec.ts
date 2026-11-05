@@ -850,9 +850,14 @@ test("an earlier rail page preserves later composer focus and text", async ({ pa
 test("the current marker distinguishes the actual bottom from a 50 px reading edge", async ({
   page,
 }) => {
-  // A transcript 679 px tall puts the reading edge, 50 px up, well inside turn 6's prompt.
+  // A transcript 679 px tall puts the reading edge, 50 px up, well inside turn 6's prompt. Sized
+  // by the transcript itself, so chrome above it (the setup banner, folded once seen) can't move it.
   await open(page, 8, "dark", 900);
   const transcript = page.getByTestId("transcript");
+  const tall = await transcript.evaluate((el) => el.clientHeight);
+  await page.setViewportSize({ width: 1600, height: 900 - (tall - 679) });
+  await expect.poll(() => transcript.evaluate((el) => el.clientHeight)).toBe(679);
+  await transcript.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
   const current = page.getByTestId("conversation-rail").locator('[aria-current="location"]');
   await expect(current).toHaveAttribute("data-outline-anchor", "nav-u7");
   await transcript.hover();

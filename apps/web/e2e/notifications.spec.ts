@@ -32,7 +32,11 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
   await page.clock.install();
   await page.goto("/");
   await page.clock.pauseAt(Date.now() + 1_000);
-  await expect(inboxEntry(page)).toBeVisible();
+  // The sidebar's pill, the Inbox's way in, may wait on a frame the paused clock draws when stepped.
+  await expect(async () => {
+    await nextFrame(page);
+    await expect(inboxEntry(page)).toBeVisible({ timeout: 100 });
+  }).toPass();
   await expect(page.getByTestId("right-panel")).toBeHidden();
   await page.evaluate((key) => {
     for (const threadId of ["t-flaky", "synthetic-worker-2", "synthetic-worker-3"])
