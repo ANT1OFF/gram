@@ -10,13 +10,16 @@ import {
 } from "@gram/contracts";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { Search, X } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, isNotImplemented } from "@/api/errors";
 import { openExternalUrl } from "@/api/open-external";
+import { showInbox } from "@/inbox/inbox-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
+import { useOpenBoard } from "@/orchestration/open-board";
+import { useWorkersListStore } from "@/orchestration/workers-list";
 import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { hiddenIds, useAskStackStore } from "@/orchestration/ask-stack-store";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
@@ -61,6 +64,7 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useThreadSearch, type ThreadSearchState } from "@/thread/use-thread-search";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
+import { useViewStore } from "@/views/view-store";
 
 import { useReportIssueDialog } from "@/report-issue/report-issue-dialog";
 import { stepNeedsYou } from "@/orchestration/use-needs-you";
@@ -68,13 +72,18 @@ import { stepNeedsYou } from "@/orchestration/use-needs-you";
 import {
   buildScopedSections,
   buildSections,
+  effectiveKind,
   flattenSections,
   matchItems,
+  PALETTE_KINDS,
   type PaletteItem,
+  type PaletteKind,
   type PalettePicker,
   type PaletteSection,
+  type PaletteSectionId,
   threadScope,
 } from "./palette-items";
+import { useRecentDestinations } from "./recent-destinations";
 import { useScopeCommands, type ScopeSteps } from "./scope-commands";
 import { matchesWordFilters } from "./word-filters";
 import { useWordFilters, WordFilterControls } from "./word-filter-controls";
@@ -98,6 +107,12 @@ const shortcut = (id: string) => {
 
 const nonEmpty = (section: PaletteSection) => section.items.length > 0;
 
+/** A destination's run, remembered so the unfiltered palette leads with it next time. */
+const go = (id: string, open: () => void) => () => {
+  useRecentDestinations.getState().visit(id);
+  open();
+};
+
 const scopeKey = (scope: PaletteScope | undefined) =>
   scope === undefined
     ? "all"
@@ -105,7 +120,11 @@ const scopeKey = (scope: PaletteScope | undefined) =>
       ? `thread:${scope.threadId}`
       : `workspace:${scope.workspaceId}`;
 
-/** `⌘K`: go to threads, workers, features and PRs; `>` for commands; More… opens it scoped. */
+/**
+ * `⌘K`: go to places (Workers, Memory, Quiet, the Inbox…), threads, workers, features and PRs; `>`
+ * or the Actions filter for commands; More… opens it scoped. Unfiltered it opens short, recent
+ * destinations first, each group capped with Show more.
+ */
 export function CommandPalette() {
   const open = useLayoutStore((s) => s.paletteOpen);
   const initialQuery = useLayoutStore((s) => s.paletteQuery);
@@ -133,7 +152,7 @@ export function CommandPalette() {
             if (useThreadDialogs.getState().dialog !== undefined) return false;
             return returnFocusTo(opener)();
           }}
-          className="fixed top-[15%] left-1/2 z-50 flex max-h-[60vh] w-[min(36rem,90vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[15%] left-1/2 z-50 flex max-h-[70vh] w-[min(36rem,90vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && (
             <PaletteBody
@@ -192,6 +211,12 @@ function PaletteBody({
   );
   const [query, setQuery] = useState(initialQuery);
   const [active, setActive] = useState(0);
+  /** The filter under the field: everything, or only threads, workers or actions. */
+  const [picked, setPicked] = useState<PaletteKind>("all");
+  /** The groups opened in full with their Show more row. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const recentDestinations = useRecentDestinations((s) => s.ids);
+  const openBoard = useOpenBoard();
   /** The thread or workspace whose commands alone are listed: More… opens it, Tab enters one. */
   const [scope, setScope] = useState(initialScope);
   /** A command's second step: a layout, a label, a pane. */
@@ -207,7 +232,9 @@ function PaletteBody({
     picking !== undefined ||
     resumeRoot !== undefined ||
     reopenIn !== undefined;
-  const searchMode = !stepping && scope === undefined && !query.startsWith(">");
+  const listing = !stepping && scope === undefined;
+  const shownKind = effectiveKind(query, picked);
+  const searchMode = listing && shownKind === "all";
   const input = useRef<HTMLInputElement>(null);
   const namedWorkspaces = workspaces.map(({ workspace }) => ({
     id: workspace.id as string,
@@ -227,6 +254,15 @@ function PaletteBody({
   const fresh = () => {
     setQuery("");
     setActive(0);
+    setExpanded(new Set());
+  };
+  /** Picks a filter under the field; a `>` typed for actions goes with any other pick. */
+  const pickKind = (next: PaletteKind, typeOn = true) => {
+    setPicked(next);
+    if (next !== "actions" && query.startsWith(">")) setQuery(query.slice(1).trimStart());
+    setActive(0);
+    setExpanded(new Set());
+    if (typeOn) input.current?.focus();
   };
   const restart = (next: { threadId?: ThreadId }) => {
     setPicking(next);
@@ -369,6 +405,79 @@ function PaletteBody({
       void navigate({ to: "/new" });
     },
   }));
+
+  // The places the window goes, each with its key: first-class here, rather than only in "…".
+  const destinations: PaletteItem[] = [
+    ...(boardWorkspace === undefined
+      ? []
+      : [
+          {
+            id: "go:workers",
+            label: "Workers",
+            ...shortcut("workers.open"),
+            keywords: "workers list live running features",
+            run: go("go:workers", () => useWorkersListStore.getState().toggle()),
+          },
+          {
+            id: "go:memory",
+            label: "Memory",
+            keywords: "workspace memory dreams notes remember",
+            run: go(
+              "go:memory",
+              () =>
+                void navigate({
+                  to: "/w/$workspaceId/memory",
+                  params: { workspaceId: boardWorkspace },
+                }),
+            ),
+          },
+        ]),
+    {
+      id: "go:quiet",
+      label: "Quiet",
+      ...shortcut("view.quiet"),
+      keywords: "quiet calm hide activity",
+      run: go("go:quiet", () => useViewStore.getState().setQuiet(true)),
+    },
+    {
+      id: "go:inbox",
+      label: "Inbox",
+      ...shortcut("inbox.open"),
+      keywords: "needs you asks approvals questions errors attention",
+      run: go("go:inbox", () => showInbox()),
+    },
+    {
+      id: "go:history",
+      label: "History",
+      ...shortcut("history.open"),
+      keywords: "done finished archived parked past old threads workers sessions imported search",
+      run: go("go:history", () => useHistoryStore.getState().show()),
+    },
+    ...(boardWorkspace === undefined
+      ? []
+      : [
+          {
+            id: "go:board",
+            label: "Board",
+            ...shortcut("orchestration.board"),
+            keywords: "board kanban features lanes",
+            run: go("go:board", () => openBoard(boardWorkspace)),
+          },
+        ]),
+    {
+      id: "go:usage",
+      label: "Usage",
+      keywords: "subscription limits cost tokens spend",
+      run: go("go:usage", () => void navigate({ to: "/usage" })),
+    },
+    {
+      id: "go:settings",
+      label: "Settings",
+      ...shortcut("settings.open"),
+      keywords: "preferences options",
+      run: go("go:settings", () => void navigate({ to: "/settings" })),
+    },
+  ];
 
   const actions: PaletteItem[] = [
     ...(scriptThread === undefined
@@ -580,13 +689,6 @@ function PaletteBody({
       },
     },
     {
-      id: "action:history",
-      label: "History",
-      ...shortcut("history.open"),
-      keywords: "done finished archived parked past old threads workers sessions imported search",
-      run: () => useHistoryStore.getState().show(),
-    },
-    {
       id: "action:nextNeedsYou",
       label: "Next that needs you",
       ...shortcut("thread.nextNeedsYou"),
@@ -700,12 +802,6 @@ function PaletteBody({
       keywords: "bug feedback feature request github question",
       run: () => useReportIssueDialog.getState().show(currentId),
     },
-    {
-      id: "action:settings",
-      label: "Settings",
-      ...shortcut("settings.open"),
-      run: () => void navigate({ to: "/settings" }),
-    },
   ];
   // The workspace's own verbs, and its orchestrator's thread verbs only on the orchestrator itself;
   // the same command can come from the thread and from its workspace, so it is listed once.
@@ -720,7 +816,8 @@ function PaletteBody({
     (item, index, all) =>
       all.findIndex((other) => other.id === item.id) === index &&
       // A command the app has anyway, such as Open in pane…, is listed once, with the others.
-      !actions.some((action) => action.label === item.label),
+      !actions.some((action) => action.label === item.label) &&
+      !destinations.some((destination) => destination.label === item.label),
   );
 
   const pickedId = picking?.threadId;
@@ -822,16 +919,27 @@ function PaletteBody({
             : scope !== undefined
               ? buildScopedSections(query, scoped.sections)
               : [
-                  ...buildSections(query, {
-                    threads,
-                    workers,
-                    features,
-                    prs,
-                    projects: projectItems,
-                    actions,
-                    scoped: inView,
-                  }),
-                  ...(messageItems.length > 0
+                  ...buildSections(
+                    query,
+                    {
+                      destinations,
+                      threads,
+                      workers,
+                      features,
+                      prs,
+                      projects: projectItems,
+                      actions,
+                      scoped: inView,
+                    },
+                    {
+                      kind: picked,
+                      recent: recentDestinations,
+                      expanded,
+                      expand: (section: PaletteSectionId) =>
+                        setExpanded((open) => new Set([...open, section])),
+                    },
+                  ),
+                  ...(searchMode && messageItems.length > 0
                     ? [{ id: "messages" as const, label: "Messages", items: messageItems }]
                     : []),
                 ];
@@ -1031,6 +1139,47 @@ function PaletteBody({
           input={input}
         />
       )}
+      {listing && (
+        <div
+          role="radiogroup"
+          aria-label="Show"
+          data-testid="palette-kinds"
+          onKeyDown={(event) => {
+            const step =
+              event.key === "ArrowRight" || event.key === "ArrowDown"
+                ? 1
+                : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                  ? -1
+                  : 0;
+            if (step === 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const at = PALETTE_KINDS.findIndex((each) => each.kind === shownKind);
+            const next = PALETTE_KINDS[(at + step + PALETTE_KINDS.length) % PALETTE_KINDS.length]!;
+            pickKind(next.kind, false);
+            event.currentTarget.querySelector<HTMLElement>(`[data-kind="${next.kind}"]`)?.focus();
+          }}
+          className="flex items-center gap-1 border-b border-border px-2.5 py-1.5"
+        >
+          {PALETTE_KINDS.map((each) => (
+            <button
+              key={each.kind}
+              type="button"
+              role="radio"
+              aria-checked={shownKind === each.kind}
+              // One stop in the Tab order, the picked one; arrows move between them.
+              tabIndex={shownKind === each.kind ? 0 : -1}
+              data-kind={each.kind}
+              // The field keeps focus: a pick changes the list, not where typing goes.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => pickKind(each.kind)}
+              className="h-6 rounded-full px-2.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:bg-accent aria-checked:text-accent-foreground"
+            >
+              {each.label}
+            </button>
+          ))}
+        </div>
+      )}
       {/* A new scope or step swaps the list in where the old one stood. */}
       <Swap
         as="div"
@@ -1062,12 +1211,14 @@ function PaletteBody({
                     title={item.unavailable}
                     onMouseMove={() => setActive(itemIndex)}
                     onClick={() => run(item)}
+                    data-more={item.more || undefined}
                     className={cn(
                       "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-reading",
                       itemIndex === activeIndex && "row-cursor",
-                      item.unavailable !== undefined && "text-muted-foreground",
+                      (item.unavailable !== undefined || item.more) && "text-muted-foreground",
                     )}
                   >
+                    {item.more && <ChevronDown aria-hidden className="size-3.5 shrink-0" />}
                     {item.snippet ? (
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate">{item.label}</span>

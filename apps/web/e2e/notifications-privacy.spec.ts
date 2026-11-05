@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { openNotifications } from "./open-notifications";
+import { inboxEntry, openNotifications } from "./open-notifications";
 import { seedTheme } from "./seed-theme";
 
 test("unsafe cached notification text is omitted and rewritten on reload while read and quieting survive", async ({
@@ -8,7 +8,7 @@ test("unsafe cached notification text is omitted and rewritten on reload while r
 }) => {
   await seedTheme(page, { palette: "tokyo-night", mode: "dark", motion: "off" });
   await page.goto("/");
-  await expect(page.getByTestId("inbox-button")).toBeVisible();
+  await expect(inboxEntry(page)).toBeVisible();
   await page.evaluate(() => {
     for (let i = 0; i < 3; i++)
       window.gramMock?.simulateNotification({

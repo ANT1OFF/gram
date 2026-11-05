@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Usage and Settings at the window's top left in the Orchestrator layout: in the overview's header
-// while it is shown, in the title bar while it is hidden, never both. Usage's dot marks a nearly
-// used subscription window. Limits are the mock's invented readings, never a live account's.
+// Settings at the window's top left in the Orchestrator layout: in the overview's header while it is
+// shown, in the title bar while it is hidden, never both. Usage has one way in, the title bar's
+// meter: an icon until an agent reports a limit. Limits are the mock's invented readings, never a
+// live account's.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
 
@@ -26,74 +27,60 @@ const start = async (page: Page, flags: Record<string, string> = {}) => {
 const overview = (page: Page) => page.getByTestId("overview-sidebar");
 const titlebar = (page: Page) => page.getByTestId("shell-titlebar");
 
-test("Usage and Settings sit at the top left, in the overview or the title bar", async ({
-  page,
-}) => {
+test("Settings sits at the top left, in the overview or the title bar", async ({ page }) => {
   await start(page);
   await expect(overview(page)).toBeVisible();
   await expect(page.getByTestId("top-left-nav")).toHaveCount(1);
   const nav = overview(page).getByTestId("top-left-nav");
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
+  await expect(nav.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
+  await expect(titlebar(page).getByTestId("inbox-button")).toHaveCount(0);
 
   await nav.getByRole("button", { name: "Settings", exact: true }).hover();
   await expect(hint).toHaveText(/^Settings \(.+\)$/);
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/general$/);
-  // Settings is focused: its strip with Back takes the overview's place, the pair with it.
+  // Settings is focused: its strip with Back takes the overview's place, the nav with it. With the
+  // pill gone too, the title bar's Inbox button is the way in; beside the pill there is none.
   await expect(page.getByTestId("settings-strip")).toBeVisible();
   await expect(page.getByTestId("top-left-nav")).toHaveCount(0);
+  await expect(titlebar(page).getByTestId("inbox-button")).toBeVisible();
   await page.getByTestId("settings-back").click();
   await expect(page).not.toHaveURL(/\/settings/);
 
-  await nav.getByRole("button", { name: "Usage", exact: true }).click();
-  await expect(page).toHaveURL(/\/usage$/);
-  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
-
-  // Hidden, the pair moves to the title bar's left, still one of each.
+  // Hidden, it moves to the title bar's left, still one.
   await page.keyboard.press("ControlOrMeta+b");
   await expect(overview(page)).toHaveCount(0);
   await expect(page.getByTestId("top-left-nav")).toHaveCount(1);
   const moved = titlebar(page).getByTestId("top-left-nav");
-  await expect(moved.getByRole("button", { name: "Usage", exact: true })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
   await moved.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/general$/);
   await page.getByTestId("settings-back").click();
-  await expect(page).toHaveURL(/\/usage$/);
+  await expect(page).toHaveURL(/\/t\/t-flaky$/);
 
   await page.keyboard.press("ControlOrMeta+b");
   await expect(overview(page).getByTestId("top-left-nav")).toBeVisible();
   await expect(titlebar(page).getByTestId("top-left-nav")).toHaveCount(0);
 });
 
-test("Usage carries a dot only once a window is nearly used, and names it on hover", async ({
+test("usage has one way in: an icon before any reading, then the meter, which warns", async ({
   page,
 }) => {
   await start(page, { "gram.mock.limits": "none" });
   await page.waitForFunction(() => window.gramMock !== undefined);
-  const usage = overview(page).getByRole("button", { name: "Usage", exact: true });
-  const dot = page.getByTestId("top-left-usage-dot");
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
-  await expect(usage).toBeVisible();
-  await expect(dot).toHaveCount(0);
-  await usage.hover();
+  const link = titlebar(page).getByTestId("usage-link");
+  await expect(link).toBeVisible();
+  await expect(page.getByRole("button", { name: "Usage", exact: true })).toHaveCount(1);
+  await link.hover();
   await expect(hint).toHaveText("Usage");
-  await page.mouse.move(1000, 800);
-
-  await page.evaluate(() =>
-    window.gramMock!.simulateUsageLimit({
-      agent: "claude",
-      window: "five_hour",
-      utilization: 0.42,
-      resetsAt: Date.now() + 2 * 3_600_000,
-    }),
-  );
-  await expect(page.getByTestId("usage-meter")).toHaveText("Claude 42% used");
-  await expect(dot).toHaveCount(0);
-  await usage.hover();
-  await expect(hint).toHaveText(/^Usage\s+Claude 42% of the 5-hour limit$/);
+  const box = (await link.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(28);
+  expect(box.height).toBeGreaterThanOrEqual(28);
+  await link.click();
+  await expect(page).toHaveURL(/\/usage$/);
+  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+  await page.goBack();
   await page.mouse.move(1000, 800);
 
   await page.evaluate(() =>
@@ -104,9 +91,12 @@ test("Usage carries a dot only once a window is nearly used, and names it on hov
       resetsAt: Date.now() + 2 * 3_600_000,
     }),
   );
-  // Close, but short of the warning: no dot yet.
-  await expect(page.getByTestId("usage-meter")).toHaveText("Claude 86% used");
-  await expect(dot).toHaveCount(0);
+  // A reading in: the meter takes the icon's place, short of the warning.
+  const meter = page.getByTestId("usage-meter");
+  await expect(meter).toHaveText("Claude 86% used");
+  await expect(link).toHaveCount(0);
+  await expect(meter).not.toHaveAttribute("data-warn");
+  expect((await meter.boundingBox())!.height).toBeGreaterThanOrEqual(28);
 
   await page.evaluate(() =>
     window.gramMock!.simulateUsageLimit({
@@ -116,6 +106,5 @@ test("Usage carries a dot only once a window is nearly used, and names it on hov
       resetsAt: Date.now() + 2 * 3_600_000,
     }),
   );
-  await expect(dot).toBeVisible();
-  await expect(usage).toHaveAttribute("data-warn", "true");
+  await expect(meter).toHaveAttribute("data-warn", "true");
 });

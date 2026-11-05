@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { openOrchestratorTile } from "./overview-rail";
+import { inboxEntry } from "./open-notifications";
 
 // An orchestrator question with four long choices and a long context, in each place an ask is
 // answered: the Inbox's detail pane and Quiet's card. Synthetic mock state; nothing reaches a provider.
@@ -106,7 +107,7 @@ test("in the Inbox, four long choices all show with their descriptions, and the 
   page,
 }) => {
   await start(page);
-  await page.getByTestId("inbox-button").click();
+  await inboxEntry(page).click();
   const stack = page.getByTestId("inbox-detail-body");
   // Its row is called by its words cut at a word; the whole question is the detail's.
   await show(page, "Where should a running worker show while the");

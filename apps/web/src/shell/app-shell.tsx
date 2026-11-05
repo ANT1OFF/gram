@@ -136,6 +136,7 @@ export function AppShell() {
         >
           <ShellTitlebar
             sidebarShown={sidebarShown}
+            needsYouPill={sidebarShown && !settingsStrip}
             compactRail={fit.sidebar === "compact"}
             panelShown={panelShown}
             panelLeft={panelLeft}

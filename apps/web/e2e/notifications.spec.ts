@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { seedTheme } from "./seed-theme";
+import { inboxEntry } from "./open-notifications";
 
 const diagnosticKey = "a".repeat(64);
 
@@ -14,7 +15,7 @@ const history = (page: Page) => page.getByRole("region", { name: "Notification h
  * React reveals on a timer once their chunk arrives, so the paused clock steps until it shows.
  */
 const openHistory = async (page: Page) => {
-  await page.getByTestId("inbox-button").click();
+  await inboxEntry(page).click();
   await page.getByTestId("inbox-notifications").click();
   await expect(async () => {
     await nextFrame(page);
@@ -31,7 +32,7 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
   await page.clock.install();
   await page.goto("/");
   await page.clock.pauseAt(Date.now() + 1_000);
-  await expect(page.getByTestId("inbox-button")).toBeVisible();
+  await expect(inboxEntry(page)).toBeVisible();
   await expect(page.getByTestId("right-panel")).toBeHidden();
   await page.evaluate((key) => {
     for (const threadId of ["t-flaky", "synthetic-worker-2", "synthetic-worker-3"])
@@ -112,7 +113,7 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
   await center.getByRole("button", { name: "Mark all read" }).focus();
   await page.keyboard.press("Escape");
   await expect(center).toBeHidden();
-  await expect(page.getByTestId("inbox-button")).toBeFocused();
+  await expect(inboxEntry(page)).toBeFocused();
   await openHistory(page);
   await center.getByRole("button", { name: "Clear history" }).click();
   await expect(center).toContainText("No notifications yet");

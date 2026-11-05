@@ -1,4 +1,4 @@
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
@@ -30,9 +30,10 @@ interface BannerFoldState {
 }
 
 /**
- * Whether the banner shows in full or as the title bar's chip. A problem shows in full until the
- * user has seen it and moved on (opened another thread), then folds to the chip, on every launch
- * after; the chip opens it again until the next move. Dismiss still removes both.
+ * Whether the banner shows in full or as the title bar's chip. A problem shows in full once: the
+ * first time it is up, until the user does anything else (goes to another page, or clicks or types
+ * outside it). Then it folds to the chip, on every launch after; the chip opens it again until the
+ * next such move. Dismiss removes both.
  */
 export const useBannerFold = create<BannerFoldState>()(
   persist(
@@ -56,18 +57,26 @@ export const useBannerFold = create<BannerFoldState>()(
  * title bar's chip, with the keys that fold it.
  */
 export function useLaunchBanner() {
-  const { shown, shownKeys, dismiss } = useLaunchIssues();
+  const { shown, shownKeys, dismiss, cleared, dropCleared } = useLaunchIssues();
   const folded = useBannerFold((s) => s.folded);
   const open = useBannerFold((s) => s.open);
   const fresh = shownKeys.some((key) => !folded.includes(key));
-  return { shown, shownKeys, dismiss, expanded: shown.length > 0 && (open ?? fresh) };
+  return {
+    shown,
+    shownKeys,
+    dismiss,
+    cleared,
+    dropCleared,
+    expanded: shown.length > 0 && (open ?? fresh),
+  };
 }
 
 /**
  * The launch checks' problems as the banner and the Settings dot read them: `shown`, the ones not
  * dismissed, which the banner lists; `dismissed`, the ones dismissed that still stand, which Settings
  * carries as a dot until a re-check clears them; and `dismiss`, which saves a dismissal per problem
- * and app version, so it survives restarts; a different check result or an update shows it again.
+ * and app version, so it survives restarts; a different check result, an update, or the problem
+ * clearing and coming back shows it again.
  * Nothing until the checks, settings and version are in, so a dismissed problem never flashes up.
  */
 export function useLaunchIssues(): {
@@ -76,6 +85,9 @@ export function useLaunchIssues(): {
   shownKeys: readonly string[];
   dismissed: readonly LaunchIssue[];
   dismiss: () => void;
+  /** Whether a saved dismissal's problem has cleared, so `dropCleared` should forget it. */
+  cleared: boolean;
+  dropCleared: () => void;
 } {
   const { checks } = useLaunchChecks();
   const diagnostics = useDiagnostics();
@@ -91,31 +103,43 @@ export function useLaunchIssues(): {
   const isDismissed = (issue: LaunchIssue) => gone.has(dismissalKey(version, issue.id));
   const shown = all.filter((issue) => !isDismissed(issue));
   const dismissed = all.filter(isDismissed);
+  // A dismissal holds while its problem stands: one that cleared (gh signed in, say) is dropped,
+  // so the problem coming back later shows again. Dismissals from other versions are dropped too.
+  const standing = new Set(all.map((issue) => dismissalKey(version, issue.id)));
+  const kept = saved.filter((key) => standing.has(key));
+  const cleared = ready && kept.length < saved.length;
+  const dropCleared = () =>
+    save({ onboarding: { dismissedLaunchIssues: kept } }).catch((error: unknown) =>
+      console.error("launch checks: drop cleared dismissals", error),
+    );
   const dismiss = () => {
     const keys = shown.map((issue) => dismissalKey(version, issue.id));
     setDismissedHere(new Set([...dismissedHere, ...keys]));
-    // Dismissals from other versions no longer apply, so they're dropped.
-    const kept = saved.filter((key) => key.startsWith(`${version}:`));
     save({ onboarding: { dismissedLaunchIssues: [...new Set([...kept, ...keys])] } }).catch(
       (error: unknown) => console.error("launch checks: save dismissal", error),
     );
   };
   const shownKeys = shown.map((issue) => dismissalKey(version, issue.id));
-  return { shown, shownKeys, dismissed, dismiss };
+  return { shown, shownKeys, dismissed, dismiss, cleared, dropCleared };
 }
 
 /**
  * Mount once in the root layout: what's missing or signed out on this machine, until dismissed.
- * Seen once and left (another thread opened), it folds to the title bar's chip, which opens it again
+ * Shown once, it folds to the title bar's chip at the user's next move, which opens it again
  * (`useBannerFold`). Dismissed, a problem that still stands leaves both for a dot on Settings (the
  * window's top left), whose hover names it and whose Diagnostics page has it in full.
  */
 export function LaunchChecksBanner() {
   const { recheck } = useLaunchChecks();
-  const { shown: issues, shownKeys, dismiss, expanded } = useLaunchBanner();
+  const { shown: issues, shownKeys, dismiss, expanded, cleared, dropCleared } = useLaunchBanner();
   const [checking, setChecking] = useState(false);
   const cliUpdates = useFeature("cliUpdates", { settled: true });
-  useFoldOnMove(expanded, shownKeys);
+  useFoldAfterShowing(expanded, shownKeys);
+  // Once per change, from the one banner the shell mounts rather than every reader of the issues.
+  useEffect(() => {
+    if (cleared) dropCleared();
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleared]);
 
   if (!expanded) return null;
 
@@ -167,18 +191,40 @@ export function LaunchChecksBanner() {
   );
 }
 
-/** Folds the banner once the user opens another thread while it shows in full. */
-function useFoldOnMove(expanded: boolean, keys: readonly string[]) {
-  const threadId = useParams({ strict: false }).threadId as string | undefined;
-  const last = useRef(threadId);
+/** The banner, by the attribute only it carries. */
+const BANNER = '[data-testid="launch-checks-banner"]';
+
+/**
+ * Folds the banner at the user's first move once it has shown: another page, or a click or key
+ * outside it. The fold waits for the move's own handlers, so a click lands where it was aimed
+ * before the banner's row leaves the layout.
+ */
+function useFoldAfterShowing(expanded: boolean, keys: readonly string[]) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const shownOn = useRef<string | undefined>(undefined);
   // By value, so a fresh array of the same keys re-runs nothing.
   const joined = keys.join("\n");
   useEffect(() => {
-    const from = last.current;
-    last.current = threadId;
-    if (!expanded || from === undefined || threadId === undefined || from === threadId) return;
-    useBannerFold.getState().fold(joined.split("\n"));
-  }, [threadId, expanded, joined]);
+    if (!expanded) {
+      shownOn.current = undefined;
+      return;
+    }
+    const fold = () => useBannerFold.getState().fold(joined.split("\n"));
+    if (shownOn.current === undefined) shownOn.current = pathname;
+    else if (shownOn.current !== pathname) return fold();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const elsewhere = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest(BANNER) !== null) return;
+      timer ??= setTimeout(fold);
+    };
+    document.addEventListener("click", elsewhere, true);
+    document.addEventListener("keydown", elsewhere, true);
+    return () => {
+      document.removeEventListener("click", elsewhere, true);
+      document.removeEventListener("keydown", elsewhere, true);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [expanded, joined, pathname]);
 }
 
 /**

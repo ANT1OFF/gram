@@ -136,9 +136,9 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   }
   await expect(bar.getByRole("button", { name: /^Quiet|^Layout|^Focus mode/ })).toHaveCount(0);
   await expect(bar.getByRole("button", { name: /^More/ })).toHaveCount(1);
-  // Right of the title: usage and the bell, then the "…" and the panel, told apart by the room
-  // between them.
-  await expect(bar.getByTestId("titlebar-attention").getByRole("button")).toHaveCount(2);
+  // Right of the title: usage (the sidebar's pill is the Inbox's one way in beside it), then the
+  // "…" and the panel, told apart by the room between them.
+  await expect(bar.getByTestId("titlebar-attention").getByRole("button")).toHaveCount(1);
   await expect(bar.getByTestId("titlebar-view").getByRole("button")).toHaveCount(2);
   const box = async (testId: string) => (await bar.getByTestId(testId).boundingBox())!;
   const attention = await box("titlebar-attention");
@@ -151,7 +151,7 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
     [bar.getByRole("button", { name: /right panel$/ }), /^(Show|Hide) right panel \(.+\)$/],
     [
       bar.getByTestId("titlebar-overflow"),
-      /^More\s*The thread's, the workspace's and the window's controls$/,
+      /^More\s*The thread's, the workspace's and the window's controls\s*Every place and command: .+K$/,
     ],
   ] as const) {
     await control.hover();
@@ -192,7 +192,8 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   await expect(viewGroup.getByTestId("menu-history")).toContainText("H");
   await closeMenus(page);
   await expect(more).toBeHidden();
-  await expect(bar.getByRole("button", { name: /^Inbox/ })).toBeVisible();
+  // Beside the sidebar, its pill is the one way into the Inbox: the bar has none.
+  await expect(bar.getByRole("button", { name: /^Inbox/ })).toHaveCount(0);
   await expect(bar.getByRole("button", { name: /right panel$/ })).toBeVisible();
   await expect(header.getByTestId("pane-status")).toBeVisible();
   // Chat · Board are right there, so the header has no board button of its own.

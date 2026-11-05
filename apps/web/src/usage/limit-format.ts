@@ -60,10 +60,6 @@ export const meterText = ({ provider, limit }: TightestLimit): string =>
 export const meterHint = ({ provider, window, limit }: TightestLimit): string =>
   `Highest usage: ${agentLabel(provider)} ${windowWord(window)} limit, ${limitPercent(limit.utilization)}%`;
 
-/** "Claude 42% of the weekly limit": the tightest limit in a line, for a hint or a summary. */
-export const limitSummaryText = ({ provider, window, limit }: TightestLimit): string =>
-  `${PROVIDER_SHORT[provider]} ${limitPercent(limit.utilization)}% of the ${windowWord(window)} limit`;
-
 /** The line under a window spent but carried on credits: a full window here is no stop. */
 export const CREDITS_TEXT = "Past the limit on credits; turns go on";
 

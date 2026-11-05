@@ -2,6 +2,7 @@ import type { DesktopNotification, DesktopNotificationAction, RequestId } from "
 import { expect, test, type Page } from "@playwright/test";
 
 import { openOrchestrator, threadRow } from "./thread-row";
+import { inboxEntry } from "./open-notifications";
 
 // Asks as desktop notifications while the window is away.
 // The desktop shell is a fake: `window.gram` records what would be shown and plays back what the
@@ -137,7 +138,7 @@ test("Allow on a notification answers the ask through the one path, and it is go
   // The Undo line above the orchestrator's composer keeps it: the same held answer, not a second path.
   await expect(page.getByTestId("inbox-line-undo")).toContainText("Allowed 3");
   const listed = page.getByTestId("inbox-item").filter({ hasText: PUSH });
-  await page.getByTestId("inbox-button").click();
+  await inboxEntry(page).click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   await expect(listed).toHaveCount(0);
 

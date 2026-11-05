@@ -6,10 +6,10 @@ import { useNeedsYou } from "@/orchestration/use-needs-you";
 
 import { useInboxStore } from "./inbox-store";
 
-// The title bar's Inbox button, where the notifications bell was: everything that needs you. While
-// the sidebar is shown its pill is the window's one count, so the button carries none; with the
-// sidebar hidden the button wears the count, in amber while anything waits. Either way its name says
-// the count. Notification history is a link in the Inbox's header and a tab of the side panel.
+// The title bar's Inbox button, where the notifications bell was: everything that needs you. Only
+// while no pill is on screen (the sidebar hidden, or Settings' strip in its place): the open
+// sidebar's pill and the compact rail's are the one way in beside them. It wears the count, in amber while anything waits, and its name says it. Notification
+// history is a link in the Inbox's header and a tab of the side panel.
 
 export function InboxButton({
   badge = true,

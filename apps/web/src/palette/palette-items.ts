@@ -24,6 +24,8 @@ export interface PaletteItem {
   unavailable?: string;
   /** Runs without closing the palette: it shows a next step, or another scope. */
   stay?: boolean;
+  /** A capped group's last row, which lists the rest of the group in place. */
+  more?: boolean;
   run: () => void;
 }
 
@@ -33,7 +35,8 @@ export interface PalettePicker {
   items: PaletteItem[];
 }
 
-type PaletteSectionId =
+export type PaletteSectionId =
+  | "destinations"
   | "filtered"
   | "threads"
   | "workers"
@@ -57,6 +60,8 @@ export interface PaletteSection {
 }
 
 export interface PaletteSources {
+  /** The places the window goes: the Inbox, Workers, Memory, Quiet, History, Usage, Settings… */
+  destinations?: readonly PaletteItem[];
   threads: readonly PaletteItem[];
   /** Threads an orchestrator spawned. */
   workers?: readonly PaletteItem[];
@@ -98,27 +103,130 @@ export function matchItems(items: readonly PaletteItem[], text: string): Palette
     .map((m) => m.item);
 }
 
-const LIMITS = { threads: 8, workers: 6, features: 5, prs: 5, projects: 5 };
+/** What the palette lists, by the filter under its field; a leading `>` is Actions too. */
+export type PaletteKind = "all" | "threads" | "workers" | "actions";
 
-/** Go to first: threads, workers, features and PRs, then projects; commands behind `>`. */
-export function buildSections(raw: string, sources: PaletteSources): PaletteSection[] {
-  const { mode, text } = parsePaletteQuery(raw);
-  const found = (items: readonly PaletteItem[] | undefined, limit: number) =>
-    matchItems(items ?? [], text).slice(0, limit);
-  const sections: PaletteSection[] =
-    mode === "actions"
-      ? [
-          { id: "actions", label: "Commands", items: matchItems(sources.actions, text) },
-          // Typed, the thread's and workspace's own commands match too; More… lists them whole.
-          { id: "scoped", label: "In view", items: text ? found(sources.scoped, Infinity) : [] },
-        ]
-      : [
-          { id: "threads", label: "Threads", items: found(sources.threads, LIMITS.threads) },
-          { id: "workers", label: "Workers", items: found(sources.workers, LIMITS.workers) },
-          { id: "features", label: "Features", items: found(sources.features, LIMITS.features) },
-          { id: "prs", label: "Pull requests", items: found(sources.prs, LIMITS.prs) },
-          { id: "projects", label: "Projects", items: found(sources.projects, LIMITS.projects) },
-        ];
+/** The filters under the field, in order. */
+export const PALETTE_KINDS: readonly { kind: PaletteKind; label: string }[] = [
+  { kind: "all", label: "All" },
+  { kind: "threads", label: "Threads" },
+  { kind: "workers", label: "Workers" },
+  { kind: "actions", label: "Actions" },
+];
+
+/** The filter in effect: a leading `>` lists actions whatever is picked. */
+export const effectiveKind = (raw: string, kind: PaletteKind): PaletteKind =>
+  raw.startsWith(">") ? "actions" : kind;
+
+export interface PaletteView {
+  kind: PaletteKind;
+  /** Destination ids, the most recently gone to first. */
+  recent: readonly string[];
+  /** The groups the user opened in full with Show more. */
+  expanded: ReadonlySet<string>;
+  /** Opens a group in full, from its Show more row. */
+  expand: (section: PaletteSectionId) => void;
+}
+
+const ALL_VIEW: PaletteView = { kind: "all", recent: [], expanded: new Set(), expand: () => {} };
+
+/**
+ * How many rows each group shows before its Show more. Unfiltered, the palette opens short enough to
+ * fit a 1440 × 900 window: destinations, recent ones first, and the latest threads and workers;
+ * typed, more of each kind; one kind picked, a longer list of it.
+ */
+export const PALETTE_CAPS = {
+  idle: { destinations: 4, threads: 3, workers: 3, commands: 8 },
+  typed: { destinations: 4, threads: 6, workers: 5, features: 4, prs: 4, projects: 4 },
+  kind: 12,
+} as const;
+
+/**
+ * Destinations in recent-first order: those gone to lately, marked Recent, then the rest, the
+ * suggested ones, as given.
+ */
+export const byRecent = (
+  items: readonly PaletteItem[],
+  recent: readonly string[],
+): PaletteItem[] => {
+  const rank = (item: PaletteItem) => {
+    const at = recent.indexOf(item.id);
+    return at === -1 ? recent.length : at;
+  };
+  return items
+    .map((item, index) => ({ item, index }))
+    .toSorted((a, b) => rank(a.item) - rank(b.item) || a.index - b.index)
+    .map(({ item }) => (recent.includes(item.id) ? { ...item, hint: "Recent" } : item));
+};
+
+/**
+ * Go to first, commands behind `>` or the Actions filter. Unfiltered: destinations, the recent ones
+ * first and then the suggested (Workers, Memory, Quiet…), then the latest threads and workers, each
+ * group capped with a Show more row that lists the rest in place. Typed: destinations, threads, workers,
+ * features, PRs and projects that match, capped the same way.
+ */
+export function buildSections(
+  raw: string,
+  sources: PaletteSources,
+  view: PaletteView = ALL_VIEW,
+): PaletteSection[] {
+  const { text } = parsePaletteQuery(raw);
+  const kind = effectiveKind(raw, view.kind);
+  const capped = (id: PaletteSectionId, label: string, items: PaletteItem[], cap: number) => {
+    const section: PaletteSection = { id, label, items };
+    if (view.expanded.has(id) || items.length <= cap + 1) return section;
+    const rest = items.length - cap;
+    return {
+      ...section,
+      items: [
+        ...items.slice(0, cap),
+        {
+          id: `more:${id}`,
+          label: `Show ${rest} more`,
+          more: true,
+          stay: true,
+          run: () => view.expand(id),
+        },
+      ],
+    };
+  };
+  const found = (items: readonly PaletteItem[] | undefined) => matchItems(items ?? [], text);
+  const destinations = byRecent(sources.destinations ?? [], view.recent);
+  let sections: PaletteSection[];
+  if (kind === "actions") {
+    sections = [
+      { id: "destinations", label: "Go to", items: found(destinations) },
+      capped(
+        "actions",
+        "Commands",
+        found(sources.actions),
+        text ? Infinity : PALETTE_CAPS.idle.commands,
+      ),
+      // Typed, the thread's and workspace's own commands match too; More… lists them whole.
+      { id: "scoped", label: "In view", items: text ? found(sources.scoped) : [] },
+    ];
+  } else if (kind === "threads") {
+    sections = [capped("threads", "Threads", found(sources.threads), PALETTE_CAPS.kind)];
+  } else if (kind === "workers") {
+    sections = [capped("workers", "Workers", found(sources.workers), PALETTE_CAPS.kind)];
+  } else if (!text) {
+    const idle = PALETTE_CAPS.idle;
+    sections = [
+      capped("destinations", "Go to", destinations, idle.destinations),
+      capped("threads", "Threads", [...(sources.threads ?? [])], idle.threads),
+      capped("workers", "Workers", [...(sources.workers ?? [])], idle.workers),
+    ];
+  } else {
+    const typed = PALETTE_CAPS.typed;
+    sections = [
+      capped("destinations", "Go to", found(destinations), typed.destinations),
+      capped("threads", "Threads", found(sources.threads), typed.threads),
+      capped("workers", "Workers", found(sources.workers), typed.workers),
+      capped("features", "Features", found(sources.features), typed.features),
+      capped("prs", "Pull requests", found(sources.prs), typed.prs),
+      capped("projects", "Projects", found(sources.projects), typed.projects),
+    ];
+  }
   return sections.filter((s) => s.items.length > 0);
 }
 

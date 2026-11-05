@@ -22,12 +22,13 @@ import { useServerSettings } from "@/settings-sync/store";
 import { LaunchChecksBanner, LaunchIssuesChip, useBannerFold } from "./banner";
 import { AgentChecks, ToolChecks } from "./tool-checks";
 
-/** The thread the window shows, which the banner folds on leaving. */
-const route = vi.hoisted(() => ({ threadId: undefined as string | undefined }));
+/** The page the window shows, which the banner folds on leaving. */
+const route = vi.hoisted(() => ({ pathname: "/" }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-  useParams: () => ({ threadId: route.threadId }),
+  useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
+    select({ location: { pathname: route.pathname } }),
 }));
 
 const SIGNED_OUT: LaunchChecks = {
@@ -110,7 +111,7 @@ const outcome = () => screen.getByTestId("banner-cli-update");
 
 beforeEach(() => {
   watches.length = 0;
-  route.threadId = undefined;
+  route.pathname = "/";
   useBannerFold.setState({ folded: [], open: undefined });
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   vi.spyOn(console, "warn");
@@ -130,14 +131,14 @@ afterEach(async () => {
 
 describe("LaunchChecksBanner", () => {
   it("folds to the title bar's chip once seen and left, stays folded after a restart, and opens again from it", async () => {
-    route.threadId = "t-1";
+    route.pathname = "/t/t-1";
     const launchChecks = vi.fn(async () => SIGNED_OUT);
     const view = renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
     expect(await screen.findByTestId("launch-checks-banner")).toBeTruthy();
     expect(screen.queryByTestId("launch-issues-chip")).toBeNull();
 
     // Another thread opened: the banner has been seen, and folds to the chip.
-    route.threadId = "t-2";
+    route.pathname = "/t/t-2";
     view.rerender(
       <QueryClientProvider client={new QueryClient()}>
         <ApiProvider api={{ launchChecks, ...appAt("0.4.0") } as unknown as Api}>
@@ -210,22 +211,60 @@ describe("LaunchChecksBanner", () => {
     );
   });
 
-  it("drops other versions' dismissals when saving a new one", async () => {
+  it("drops other versions' dismissals and cleared problems' when saving a new one", async () => {
     seedDismissed(["0.3.0:gh-missing", "0.4.0:git-missing"]);
     const app = appAt("0.4.0");
     renderWith({ launchChecks: vi.fn(async () => SIGNED_OUT), ...app }, <LaunchChecksBanner />);
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
     await waitFor(() =>
-      expect(app.updateSettings).toHaveBeenCalledWith({
-        onboarding: {
-          dismissedLaunchIssues: [
-            "0.4.0:git-missing",
-            "0.4.0:claude-signed-out",
-            "0.4.0:gh-missing",
-          ],
-        },
+      expect(app.updateSettings).toHaveBeenLastCalledWith({
+        onboarding: { dismissedLaunchIssues: ["0.4.0:claude-signed-out", "0.4.0:gh-missing"] },
       }),
     );
+  });
+
+  it("forgets a dismissal once its problem clears, so the problem coming back shows again", async () => {
+    // gh was dismissed while signed out; it is signed in now, so the dismissal goes.
+    seedDismissed(["0.4.0:claude-signed-out", "0.4.0:gh-missing"]);
+    const app = appAt("0.4.0");
+    const ghFixed = {
+      ...SIGNED_OUT,
+      ghSignedIn: true,
+      tools: SIGNED_OUT.tools.map((tool) => ({ ...tool, found: true })),
+    };
+    renderWith({ launchChecks: vi.fn(async () => ghFixed), ...app }, <LaunchChecksBanner />);
+    await waitFor(() =>
+      expect(app.updateSettings).toHaveBeenCalledWith({
+        onboarding: { dismissedLaunchIssues: ["0.4.0:claude-signed-out"] },
+      }),
+    );
+    expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
+  });
+
+  it("folds at the first click or key outside it, but not at one inside it", async () => {
+    const launchChecks = vi.fn(async () => SIGNED_OUT);
+    renderWith(
+      { launchChecks, ...appAt("0.4.0") },
+      <>
+        <button type="button">Elsewhere</button>
+        {shell()}
+      </>,
+    );
+    const banner = await screen.findByTestId("launch-checks-banner");
+    // Re-check is the banner's own: it stays up.
+    fireEvent.click(screen.getByRole("button", { name: "Re-check" }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(banner.isConnected).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Elsewhere" }));
+    expect(await screen.findByTestId("launch-issues-chip")).toBeTruthy();
+    expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
+
+    // Opened again from the chip, a key elsewhere folds it again.
+    fireEvent.click(screen.getByTestId("launch-issues-chip"));
+    await screen.findByTestId("launch-checks-banner");
+    fireEvent.keyDown(document.body, { key: "a" });
+    await waitFor(() => expect(screen.queryByTestId("launch-checks-banner")).toBeNull());
   });
 
   it("re-checks on demand and hides once the problems are fixed", async () => {

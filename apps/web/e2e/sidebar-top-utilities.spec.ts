@@ -10,9 +10,9 @@ import { seedTheme } from "./seed-theme";
 // `playwright install chromium` already installs this pinned binary alongside the shell.
 test.use({ channel: "chromium" });
 
-// The overview's header row, left to right: Hide sidebar, Usage and Settings (the top-left nav),
-// Compact overview, and New at the far end.
-const names = ["Hide sidebar", "Usage", "Settings", "Compact overview", "New"];
+// The overview's header row, left to right: Hide sidebar, Settings (the top-left nav), Compact
+// overview, and New at the far end. Usage has its one way in at the title bar's meter.
+const names = ["Hide sidebar", "Settings", "Compact overview", "New"];
 
 for (const mode of ["light", "dark"] as const) {
   for (const width of [180, 280, 380]) {
@@ -67,8 +67,9 @@ for (const mode of ["light", "dark"] as const) {
         expect(action.drag, action.label).toBe("no-drag");
         expect(action.left).toBeGreaterThanOrEqual(0);
         expect(action.right).toBeLessThanOrEqual(width);
-        expect(action.width).toBeGreaterThanOrEqual(24);
-        expect(action.height).toBeGreaterThanOrEqual(24);
+        // A 28 px target, each.
+        expect(action.width).toBeGreaterThanOrEqual(28);
+        expect(action.height).toBeGreaterThanOrEqual(28);
         expect(action.top).toBeGreaterThanOrEqual(0);
         expect(action.bottom).toBeLessThanOrEqual(geometry.headerHeight);
       }
@@ -90,7 +91,9 @@ test("top navigation explains real keyboard focus and preserves routes and modif
   await seedTheme(page, { palette: "minimal-ocean", mode: "dark", motion: "off" });
   await openOverviewDensity(page, 180);
   const sidebar = page.getByTestId("overview-sidebar");
-  const usage = sidebar.getByRole("button", { name: "Usage", exact: true });
+  // Usage has one way in, the title bar's meter, and none in the sidebar's header.
+  await expect(sidebar.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
+  const usage = page.getByTestId("usage-meter");
   const settings = sidebar.getByRole("button", { name: "Settings", exact: true });
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
   const before = await page.evaluate(async () => ({
@@ -98,11 +101,9 @@ test("top navigation explains real keyboard focus and preserves routes and modif
     threads: window.gramMock!.world.threads().length,
     workspaces: (await window.gramMock!.listWorkspaces()).length,
   }));
-  for (const label of ["Usage", "Settings"]) {
-    await sidebar.getByRole("button", { name: label, exact: true }).hover();
-    await expect(hint).toContainText(label);
-    await page.mouse.move(1000, 1000);
-  }
+  await settings.hover();
+  await expect(hint).toContainText("Settings");
+  await page.mouse.move(1000, 1000);
   // Tab walks the header in order, each action with a visible ring, saying what it is at once.
   await sidebar.getByRole("button", { name: "Hide sidebar", exact: true }).focus();
   for (const label of names.slice(1)) {
@@ -117,18 +118,20 @@ test("top navigation explains real keyboard focus and preserves routes and modif
   await expect(hint).toContainText("Settings");
   await page.keyboard.press("Escape");
   await expect(hint).toBeHidden();
-  await page.keyboard.press("Shift+Tab");
-  await expect(usage).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/usage$/);
-  await expect(usage).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+  // The meter opens its popover, whose link goes on to the Usage page.
+  await usage.click();
+  const usagePage = page.getByTestId("usage-limits-page");
+  await expect(usagePage).toBeVisible();
   const popupPromise = context.waitForEvent("page");
-  await usage.click({ button: "middle" });
+  await usagePage.click({ button: "middle" });
   const popup = await popupPromise;
   await popup.waitForLoadState();
   await expect(popup).toHaveURL(/\/usage$/);
   await popup.close();
+  await usagePage.click();
+  await expect(page).toHaveURL(/\/usage$/);
+  await expect(page.getByRole("dialog", { name: "Subscription usage" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   await settings.click();
   await expect(page).toHaveURL(/\/settings\/general$/);
   // Settings is focused: the overview, its header with it, gives way to a strip with Back.
@@ -148,11 +151,10 @@ test("top navigation explains real keyboard focus and preserves routes and modif
   await sidebar.getByRole("button", { name: "Hide sidebar", exact: true }).click();
   await expect(sidebar).toHaveCount(0);
   await page.getByTestId("overview-show").click();
-  await expect(usage).toBeVisible();
   await expect(settings).toBeVisible();
 });
 
-test("empty sidebar keeps all five top actions reachable", async ({ page }) => {
+test("empty sidebar keeps all four top actions reachable", async ({ page }) => {
   await seedTheme(page, { palette: "minimal-ocean", mode: "light", motion: "off" });
   await openOverviewDensity(page, 180);
   await page.evaluate(async () => {
@@ -163,8 +165,8 @@ test("empty sidebar keeps all five top actions reachable", async ({ page }) => {
   await expect(sidebar.getByTestId("overview-section-solo")).toHaveCount(0);
   for (const name of names)
     await expect(sidebar.getByRole("button", { name, exact: true })).toBeVisible();
-  await sidebar.getByRole("button", { name: "Usage", exact: true }).click();
-  await expect(page).toHaveURL(/\/usage$/);
+  await sidebar.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings/);
 });
 
 // The header stays icons alone, so each says what it does the moment it's hovered, and its key where
@@ -176,7 +178,6 @@ test("each top-left icon names itself and its key on hover", async ({ page }) =>
   const tooltip = page.locator('[data-slot="tooltip-content"]');
   const expected: readonly [string, RegExp][] = [
     ["Hide sidebar", /^Hide sidebar \((⌘|Ctrl\+)B\)$/],
-    ["Usage", /^Usage/],
     ["Settings", /^Settings \((⌘|Ctrl\+),\)/],
     ["Compact overview", /^Compact overview$/],
     ["New", /^New: agent team, one worker or single agent chat \(/],

@@ -913,11 +913,13 @@ test("Settings → General's Overview sidebar row picks the mode the window lays
   await expect(overview(page)).toBeVisible();
 
   // Hidden with the focus inside it on a page without a pane, the focus goes to Show sidebar.
-  await overview(page)
-    .getByTestId("top-left-nav")
-    .getByRole("button", { name: "Usage", exact: true })
-    .click();
+  await page.getByTestId("usage-meter").click();
+  await page.getByTestId("usage-limits-page").click();
   await expect(page).toHaveURL(/\/usage$/);
+  // The Usage page is up, in the thread's place, and the popover gone with its focus handed back,
+  // before the focus goes into the overview.
+  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Subscription usage" })).toBeHidden();
   await overview(page).getByTestId("overview-needs-you").focus();
   await page.keyboard.press("ControlOrMeta+b");
   await expect(overview(page)).toHaveCount(0);
@@ -1199,10 +1201,10 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   await expect(rail(page)).toBeVisible();
   await expect.poll(() => storedOverview(page)).toBeUndefined();
 
-  // Usage and Settings sit in the rail, under its toggle, once; hidden, they go to the title bar.
+  // Settings sits in the rail, under its toggle, once; hidden, it goes to the title bar.
   await expect(page.getByTestId("top-left-nav")).toHaveCount(1);
   const nav = rail(page).getByTestId("top-left-nav");
-  await expect(nav.getByRole("button", { name: "Usage", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
   await expect(nav.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   expect((await nav.boundingBox())!.width).toBeLessThanOrEqual(60);
 
