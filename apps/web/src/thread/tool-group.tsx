@@ -39,55 +39,59 @@ export function ToolGroup({
 
   return (
     <div data-testid="tool-group" data-open={open}>
-      <div className="flex min-w-0 items-center gap-2">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={bodyId}
-          className={cn(
-            "flex max-w-full items-center gap-1 rounded-sm py-0.5 text-left text-reading outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
-            active || waiting ? "text-foreground" : "text-muted-foreground",
-          )}
-          onClick={() => {
-            setToggled(!open);
-            setOpened(true);
-          }}
-        >
-          {waiting !== undefined && (
-            <ShieldQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
-          )}
-          <span className="truncate">
-            {waiting !== undefined
-              ? `Waiting for your approval · ${stepLabel(waiting)}`
-              : active
-                ? `${stepLabel(active)}…`
-                : runSummary(run)}
+      {/* The toggle and, while a call waits, the link to its card share a line; the toggle stays
+          the group's own first child. */}
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        className={cn(
+          "inline-flex max-w-full items-center gap-1 rounded-sm py-0.5 align-middle text-left text-reading outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+          active || waiting ? "text-foreground" : "text-muted-foreground",
+        )}
+        onClick={() => {
+          setToggled(!open);
+          setOpened(true);
+        }}
+      >
+        {waiting !== undefined && (
+          <ShieldQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
+        )}
+        <span className="truncate">
+          {waiting !== undefined
+            ? `Waiting for your approval · ${stepLabel(waiting)}`
+            : active
+              ? `${stepLabel(active)}…`
+              : runSummary(run)}
+        </span>
+        {!active && waiting === undefined && edits.length > 0 && (
+          <>
+            {" "}
+            <EditCounts
+              additions={edits.reduce((sum, edit) => sum + edit.additions, 0)}
+              deletions={edits.reduce((sum, edit) => sum + edit.deletions, 0)}
+            />
+          </>
+        )}
+        {failed > 0 && (
+          <span className="shrink-0 text-destructive">
+            · {failed === 1 ? "1 failed" : `${failed} failed`}
           </span>
-          {!active && waiting === undefined && edits.length > 0 && (
-            <>
-              {" "}
-              <EditCounts
-                additions={edits.reduce((sum, edit) => sum + edit.additions, 0)}
-                deletions={edits.reduce((sum, edit) => sum + edit.deletions, 0)}
-              />
-            </>
+        )}
+        {cancelled > 0 && <span className="shrink-0">· {cancelled} cancelled</span>}
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+            open && "rotate-90",
           )}
-          {failed > 0 && (
-            <span className="shrink-0 text-destructive">
-              · {failed === 1 ? "1 failed" : `${failed} failed`}
-            </span>
-          )}
-          {cancelled > 0 && <span className="shrink-0">· {cancelled} cancelled</span>}
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
-              open && "rotate-90",
-            )}
-          />
-        </button>
-        {showApproval !== undefined && <ApprovalLink onShow={showApproval} label="Show approval" />}
-      </div>
+        />
+      </button>
+      {showApproval !== undefined && (
+        <span className="ml-2 inline-flex align-middle">
+          <ApprovalLink onShow={showApproval} label="Show approval" />
+        </span>
+      )}
       <Expand open={open} id={bodyId}>
         {opened && (
           <div className="flex flex-col gap-2 pt-1.5">
