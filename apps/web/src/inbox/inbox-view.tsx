@@ -72,7 +72,7 @@ export function InboxView() {
           finalFocus={() =>
             useInboxStore.getState().leftForThread ? false : returnFocusTo(opener)()
           }
-          className="fixed top-[6%] left-1/2 z-50 flex h-[min(44rem,86vh)] w-[min(68rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[6%] left-1/2 z-50 flex h-[min(44rem,86vh)] w-[min(68rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && <InboxBody />}
         </Dialog.Popup>
@@ -159,10 +159,10 @@ function InboxBody() {
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <InboxIcon aria-hidden className="size-4 text-muted-foreground" />
-        <Dialog.Title className="text-sm font-semibold">Inbox</Dialog.Title>
+        <Dialog.Title className="text-title">Inbox</Dialog.Title>
         <p
           data-testid="inbox-count"
-          className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+          className="min-w-0 flex-1 truncate text-meta text-muted-foreground"
         >
           {showLater
             ? `${later.length} for later`
@@ -269,7 +269,7 @@ function InboxBody() {
       <NeedsYouUndo className="shrink-0 border-t border-border py-1" />
       <div
         data-testid="inbox-keys"
-        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-xs text-muted-foreground"
+        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-meta text-muted-foreground"
       >
         <span>
           <kbd className="font-sans">j k</kbd> move
@@ -346,24 +346,24 @@ function InboxRow({
         )}
       />
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span data-testid="inbox-item-title" className="line-clamp-2 text-[13px] break-words">
+        <span data-testid="inbox-item-title" className="line-clamp-2 text-body break-words">
           {item.title}
           {item.command !== undefined && (
             <>
               {" "}
-              <code className="font-mono text-xs">{item.command}</code>
+              <code className="font-mono text-meta">{item.command}</code>
             </>
           )}
         </span>
         <span
           data-testid="inbox-item-where"
-          className={cn("truncate text-xs text-muted-foreground", !item.owned && "italic")}
+          className={cn("truncate text-meta text-muted-foreground", !item.owned && "italic")}
         >
           {where}
         </span>
       </span>
       {item.at !== undefined && (
-        <span className="text-xs leading-5 text-muted-foreground tabular-nums">
+        <span className="text-meta leading-5 text-muted-foreground tabular-nums">
           {formatRelative(item.at, now)}
         </span>
       )}
@@ -384,11 +384,11 @@ function LaterList({
     return (
       <div
         data-testid="inbox-empty"
-        className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center text-sm text-muted-foreground"
+        className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center text-reading text-muted-foreground"
       >
         <AlarmClock aria-hidden className="size-5" />
         <p className="font-medium text-foreground">Nothing for later</p>
-        <p className="text-xs">Later puts an item away for an hour.</p>
+        <p className="text-meta">Later puts an item away for an hour.</p>
       </div>
     );
   }
@@ -404,8 +404,8 @@ function LaterList({
           >
             <kind.icon aria-label={kind.label} className="mt-0.5 size-4 text-muted-foreground" />
             <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="line-clamp-2 text-[13px] break-words">{item.title}</span>
-              <span className="truncate text-xs text-muted-foreground">
+              <span className="line-clamp-2 text-body break-words">{item.title}</span>
+              <span className="truncate text-meta text-muted-foreground">
                 {[item.workspace, item.where].filter(Boolean).join(" · ")} · back at{" "}
                 {formatWakeTime(wakes, now)}
               </span>
@@ -424,11 +424,11 @@ function Empty({ laterCount }: { laterCount: number }) {
   return (
     <div
       data-testid="inbox-empty"
-      className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center text-sm text-muted-foreground"
+      className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center text-reading text-muted-foreground"
     >
       <CircleCheck aria-hidden className="size-5 text-success" />
       <p className="font-medium text-foreground">Nothing needs you</p>
-      <p className="text-xs">Every workspace is clear.</p>
+      <p className="text-meta">Every workspace is clear.</p>
       {laterCount > 0 && (
         <Button size="xs" variant="ghost" onClick={() => useInboxStore.getState().setLater(true)}>
           <AlarmClock aria-hidden data-icon="inline-start" />

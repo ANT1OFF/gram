@@ -261,16 +261,11 @@
       "text-size text-sm": 2,
       "text-size text-xs": 2
     },
-    "apps/web/src/orchestration/ask-sheet.tsx": {
-      "shadow shadow-lg": 1,
-      "text-size text-[15px]": 1,
-      "text-size text-xs": 1
-    },
     "apps/web/src/orchestration/ask-stack.tsx": {
       "text-size text-[0.8rem]": 1,
       "text-size text-[11px]": 3,
       "text-size text-sm": 2,
-      "text-size text-xs": 7
+      "text-size text-xs": 6
     },
     "apps/web/src/orchestration/autonomy-chip.tsx": {
       "text-size text-xs": 1
@@ -279,9 +274,6 @@
       "shadow shadow-sm": 1,
       "text-size text-sm": 2,
       "text-size text-xs": 4
-    },
-    "apps/web/src/orchestration/board-waiting.tsx": {
-      "text-size text-[11px]": 1
     },
     "apps/web/src/orchestration/briefing.tsx": {
       "text-size text-[0.7rem]": 1,
@@ -344,23 +336,6 @@
       "text-size text-base": 1,
       "text-size text-sm": 4,
       "text-size text-xs": 17
-    },
-    "apps/web/src/orchestration/needs-you-panel.tsx": {
-      "text-size text-[13px]": 1,
-      "text-size text-sm": 1,
-      "text-size text-xs": 3
-    },
-    "apps/web/src/orchestration/needs-you-popover.tsx": {
-      "shadow shadow-md": 1,
-      "text-size text-[13px]": 2,
-      "text-size text-xs": 2
-    },
-    "apps/web/src/orchestration/needs-you-row.tsx": {
-      "text-size text-[10px]": 1,
-      "text-size text-[11px]": 1,
-      "text-size text-[12px]": 1,
-      "text-size text-[13px]": 1,
-      "text-size text-xs": 4
     },
     "apps/web/src/orchestration/needs-you-strip.tsx": {
       "text-size text-xs": 1
@@ -541,7 +516,6 @@
     },
     "apps/web/src/panels/notifications-panel.tsx": {
       "text-size text-[11px]": 1,
-      "text-size text-[9px]": 1,
       "text-size text-sm": 2,
       "text-size text-xs": 7
     },

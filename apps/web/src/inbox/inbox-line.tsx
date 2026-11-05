@@ -35,7 +35,7 @@ export function InboxLine({
       <div
         data-testid={testId}
         data-count={count}
-        className="mx-auto flex w-full max-w-(--thread-max-width) items-center gap-2 rounded-(--radius-md) border border-border px-3 py-1 text-xs text-muted-foreground"
+        className="mx-auto flex w-full max-w-(--thread-max-width) items-center gap-2 rounded-(--radius-md) border border-border px-3 py-1 text-meta text-muted-foreground"
       >
         {count > 0 && (
           <button

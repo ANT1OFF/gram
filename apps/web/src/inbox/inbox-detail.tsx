@@ -267,10 +267,10 @@ export function InboxDetail({
           )}
         />
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold">{kind.label}</h2>
+          <h2 className="text-body-strong">{kind.label}</h2>
           <p
             data-testid="inbox-detail-where"
-            className={cn("text-xs break-words text-muted-foreground", !item.owned && "italic")}
+            className={cn("text-meta break-words text-muted-foreground", !item.owned && "italic")}
           >
             {[where, item.at === undefined ? undefined : formatRelative(item.at, now)]
               .filter((part) => part !== undefined && part !== "")

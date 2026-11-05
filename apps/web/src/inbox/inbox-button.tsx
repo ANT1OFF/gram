@@ -36,7 +36,7 @@ export function InboxButton() {
       {count > 0 && (
         <span
           aria-hidden
-          className="absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full border border-status-needs-mark bg-background px-0.5 text-center text-[10px] leading-3 font-semibold text-status-needs tabular-nums"
+          className="absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full border border-status-needs-mark bg-background px-0.5 text-center text-caption leading-3 font-semibold text-status-needs tabular-nums"
         >
           {count}
         </span>

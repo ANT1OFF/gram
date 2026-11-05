@@ -149,7 +149,7 @@ export function useNeedsYouActions() {
 /** A section's heading in the Inbox's list: its kind, and how many. */
 export function SectionHead({ label, count }: { label: string; count: number }) {
   return (
-    <h3 className="flex items-center gap-2 px-2 pt-2.5 pb-1 text-xs font-semibold text-muted-foreground">
+    <h3 className="flex items-center gap-2 px-2 pt-2.5 pb-1 text-meta font-semibold text-muted-foreground">
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="font-normal tabular-nums">{count}</span>
     </h3>
@@ -165,7 +165,7 @@ export function NeedsYouUndo({ className }: { className?: string }) {
   return (
     <div
       data-testid="needs-you-undo-line"
-      className={cn("flex items-center gap-2 px-2 text-xs text-muted-foreground", className)}
+      className={cn("flex items-center gap-2 px-2 text-meta text-muted-foreground", className)}
     >
       <Check aria-hidden className="size-3.5 text-success" />
       <span className="min-w-0 flex-1 truncate">{last.done}</span>
