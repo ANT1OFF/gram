@@ -123,6 +123,7 @@ export const PanelTab = Schema.Literals([
   "preview",
   "needsYou",
   "workers",
+  "docs",
 ]);
 export type PanelTab = typeof PanelTab.Type;
 

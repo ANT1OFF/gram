@@ -1,6 +1,7 @@
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 
 import { TabsContent } from "@/components/ui/tabs";
+import { DocsPanel } from "@/docs/docs-panel";
 import { WorkersPanel } from "@/orchestration/workers-panel";
 import { ConnectorsPanel } from "@/panels/connectors-panel";
 import { DiffPanel } from "@/panels/diff-panel";
@@ -57,6 +58,9 @@ export function RightPanelTabs({
           {threadId ? <PreviewPane key={threadId} threadId={threadId} /> : <NoThread />}
         </TabsContent>
       )}
+      <TabsContent value="docs" className="flex min-h-0 flex-col">
+        <DocsPanel key={workspaceId} workspaceId={workspaceId} />
+      </TabsContent>
       <TabsContent value="connectors" className="flex min-h-0 flex-col">
         {threadId ? <ConnectorsPanel key={threadId} threadId={threadId} /> : <NoThread />}
       </TabsContent>

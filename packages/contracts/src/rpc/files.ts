@@ -13,6 +13,7 @@ import {
 import { FsSearchFields, FsSearchResult } from "../fs-search.ts";
 import { FolderListing, FsListing, FsTree, FsFile } from "../fs.ts";
 import { ThreadId } from "../ids.ts";
+import { Doc, DocList, DocMeta, DocReadFields, DocSaveFields, DocsListFields } from "../docs.ts";
 import { WorkspaceOutputsFields, WorkspaceOutputsPage } from "../outputs.ts";
 import { FileImage } from "../thread-ui.ts";
 import { ProjectVocabulary, ProjectVocabularyFields } from "../vocabulary.ts";
@@ -160,5 +161,26 @@ export const FileRpcs = RpcGroup.make(
     payload: WorkspaceOutputsFields,
     success: WorkspaceOutputsPage,
     error: errors(InvalidState),
+  }),
+  /** The workspace's docs (`docs.ts`), newest first, without their text. */
+  Rpc.make("docs.list", {
+    payload: DocsListFields,
+    success: DocList,
+    error: errors(InvalidState, FsError),
+  }),
+  /** One doc with its Markdown. `NotFound` once it is gone. */
+  Rpc.make("docs.read", {
+    payload: DocReadFields,
+    success: Doc,
+    error: errors(NotFound, InvalidState, FsError),
+  }),
+  /**
+   * The user's edit from the doc pane, over the `revision` it opened; `InvalidState` when the doc
+   * moved on since, which the pane says rather than overwriting the newer text.
+   */
+  Rpc.make("docs.save", {
+    payload: DocSaveFields,
+    success: DocMeta,
+    error: errors(NotFound, InvalidState, FsError),
   }),
 );

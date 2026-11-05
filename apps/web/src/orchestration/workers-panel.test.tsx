@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import type {
+  DocId,
+  DocMeta,
   OrchestratorLedger,
   ProjectId,
   ThreadId,
@@ -9,9 +11,10 @@ import type {
   WorkerState,
   WorkspaceId,
 } from "@gram/contracts";
-import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Api } from "@/api/types";
 import { renderWithApi } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -21,6 +24,9 @@ const WORKSPACE = "ws-1" as WorkspaceId;
 const NOW = Date.now();
 
 const opened = vi.fn<(threadId: ThreadId) => void>();
+/** The workspace's docs, which the tab's Docs slot lists above the groups. */
+let docs: DocMeta[] = [];
+const api: Partial<Api> = { listDocs: vi.fn(async () => ({ docs })) };
 let ledger: Pick<OrchestratorLedger, "features"> | undefined;
 
 vi.mock("@tanstack/react-router", () => ({ useParams: () => ({}) }));
@@ -81,6 +87,7 @@ const group = (id: string) => screen.getByTestId(`workers-group-${id}`);
 const heading = (id: string) => within(group(id)).getAllByRole("button")[0]!;
 
 beforeEach(() => {
+  docs = [];
   opened.mockClear();
   useWorkersPanelStore.setState({ toggled: new Set(), shown: new Set(), doneAll: false });
 });
@@ -96,7 +103,7 @@ describe("the Workers tab", () => {
       [worker("run", "working", { status: "running" }), worker("shipped", "merged")],
       [summary("run", "running"), summary("shipped", "idle", NOW - 60 * 60_000)],
     );
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, {});
+    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
 
     expect(within(group("running")).getByTestId("workers-group-count").textContent).toBe("1");
     expect(within(group("running")).getByText("Title of run")).toBeTruthy();
@@ -116,9 +123,43 @@ describe("the Workers tab", () => {
     expect(within(group("waiting")).getByTestId("workers-group-count").textContent).toBe("0");
   });
 
+  it("lists the workspace's docs in the slot above the groups, and nothing there without any", async () => {
+    seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
+    docs = [
+      {
+        id: "gap-analysis-3f9a2c" as DocId,
+        workspaceId: WORKSPACE,
+        title: "Gap analysis",
+        authorThreadId: "run" as ThreadId,
+        authorTitle: "Title of run",
+        createdAt: NOW - 5 * 60_000,
+        updatedAt: NOW - 5 * 60_000,
+        updatedBy: "agent",
+        revision: 1,
+        bytes: 10,
+        excerpt: "What Gram lacks.",
+      },
+    ];
+    const { unmount } = renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    const strip = await screen.findByTestId("docs-strip");
+    expect(within(strip).getByTestId("doc-row").textContent).toContain("Gap analysis");
+    expect(within(strip).getByTestId("docs-view-all")).toBeTruthy();
+    // Above the status groups, in the tab's one scroll column.
+    expect(
+      strip.compareDocumentPosition(group("running")) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    unmount();
+
+    docs = [];
+    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    await waitFor(() => expect(api.listDocs).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("docs-strip")).toBeNull();
+    expect(group("running")).toBeTruthy();
+  });
+
   it("collapses a group from its heading", () => {
     seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, {});
+    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
     fireEvent.click(heading("running"));
     expect(heading("running").getAttribute("aria-expanded")).toBe("false");
     expect(within(group("running")).queryByText("Title of run")?.closest("[hidden]")).toBeTruthy();
@@ -126,7 +167,7 @@ describe("the Workers tab", () => {
 
   it("opens a worker from its row", () => {
     seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, {});
+    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
     fireEvent.click(screen.getByTestId("workers-panel-row"));
     expect(opened).toHaveBeenCalledWith("run");
   });
@@ -136,7 +177,7 @@ describe("the Workers tab", () => {
       [worker("run", "working", { status: "running" }), worker("rest", "working")],
       [summary("run", "running"), summary("rest", "idle")],
     );
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, {});
+    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
     fireEvent.click(screen.getByTestId("workers-panel-search-toggle"));
     const input = screen.getByTestId("workers-panel-search");
     fireEvent.change(input, { target: { value: "of run" } });
@@ -152,7 +193,7 @@ describe("the Workers tab", () => {
 
   it("shows only the groups the filter picks", () => {
     seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, {});
+    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
     act(() => useWorkersPanelStore.getState().setShown("running", true));
     expect(screen.queryByTestId("workers-group-needs")).toBeNull();
     expect(group("running")).toBeTruthy();

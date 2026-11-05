@@ -22,6 +22,7 @@ import type {
 } from "./orchestration.ts";
 import type { WaitData, WaitNoteData } from "./waits.ts";
 import type { WorkerQuestion } from "./worker-questions.ts";
+import type { DocCardData } from "./docs.ts";
 import type { MockCardData } from "./mock-visuals.ts";
 import type { WrapUpData } from "./wrap-up.ts";
 
@@ -261,6 +262,8 @@ export type DataParts = {
   "worker-question": WorkerQuestion;
   /** Where the agent called `show_mock`: the mock's title, version, direction shots and Open in Preview. */
   mock: MockCardData;
+  /** Where a thread published or updated a doc (`publish_doc`), and in its orchestrator's chat. */
+  doc: DocCardData;
   /** In a dream's own thread, where it ended: what the review will show, in short. */
   "dream-report": DreamReport;
   /** Where the agent called `wrap_up`; the card under the transcript shows it, not the message. */

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } 
 import { createPortal } from "react-dom";
 
 import { useApi } from "@/api/context";
+import { PinnedDocChip } from "@/docs/doc-chip";
 import { errorMessage } from "@/api/errors";
 import { needsYou } from "@/sidebar/grouping";
 import { activityLine, statusHint, threadStatusOf } from "@/sidebar/status";
@@ -641,6 +642,7 @@ export function ThreadView({
       <MergedCleanupNotice threadId={threadId} />
       <LapsedConnectorsNotice threadId={threadId} />
       <EditBanner threadId={threadId} />
+      <PinnedDocChip threadId={threadId} />
       <PrStrip threadId={threadId} focused={focused} />
       <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
       {thread.role === "orchestrator" && <UndoLine />}
