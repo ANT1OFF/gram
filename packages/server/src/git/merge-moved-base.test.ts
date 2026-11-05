@@ -415,6 +415,43 @@ describe("armed merges on a base that moved", () => {
     ),
   );
 
+  it.live("the next PR doesn't wait forever on a turn whose PR already merged", () =>
+    // #5 holds the turn with its check running. #6 queues behind it. Then #5 merges and its intent
+    // is cleared while the turn still lingers (the base moved before it was handed on): #6 must
+    // re-evaluate and take the turn, not keep waiting on a PR that is gone.
+    scenario({ numbers: [5, 6], passed: [] }, ({ service, store, threads, ensured, running }) =>
+      Effect.gen(function* () {
+        yield* service.check(threads[0]!);
+        yield* waitReal(
+          "the first's check runs and holds the turn",
+          Effect.sync(() => running().some((key) => ids(key) === 5)),
+        );
+        yield* service.check(threads[1]!);
+        yield* waitReal(
+          "the second waits on the first",
+          Effect.map(
+            store.getThread(threads[1]!),
+            (t) =>
+              t.boundPr?.mergeWaiting?.why.includes("whose merge would move the base") === true,
+          ),
+        );
+        expect(ensured.some(([head]) => ids(head) === 6)).toBe(false);
+        // The first merged and its intent cleared, but its check never ended: the turn lingers.
+        yield* store.updateThread(threads[0]!, (t) => {
+          if (t.boundPr === undefined) return t;
+          const { mergeWhenReady: _gone, ...rest } = t.boundPr;
+          return { ...t, boundPr: rest };
+        });
+        yield* service.check(threads[1]!);
+        yield* waitReal(
+          "the second takes the turn and runs its own check",
+          Effect.sync(() => ensured.some(([head]) => ids(head) === 6)),
+        );
+        expect((yield* store.getThread(threads[1]!)).boundPr?.mergeWaiting?.why).toBeUndefined();
+      }),
+    ),
+  );
+
   describe("a merge Gram can't say went through", () => {
     const both = [
       [5, RECORDED],

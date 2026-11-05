@@ -547,8 +547,12 @@ export const MergeWhenReadyLive = Layer.effect(
       Effect.gen(function* () {
         // Read again: the intent, its hold and the binding may have changed since the badge.
         const thread = yield* store.getThread(threadId).pipe(Effect.option);
-        // Babysitting hands the merge to the user.
-        if (Option.isNone(thread) || thread.value.parked || thread.value.babysit !== undefined)
+        // An active Watch PR hands the merge to the user; a stopped or done one no longer does.
+        if (
+          Option.isNone(thread) ||
+          thread.value.parked ||
+          thread.value.babysit?.phase === "watching"
+        )
           return;
         const bound = thread.value.boundPr;
         const intent = bound?.mergeWhenReady;
@@ -597,7 +601,7 @@ export const MergeWhenReadyLive = Layer.effect(
             if (
               Option.isNone(now) ||
               now.value.parked ||
-              now.value.babysit !== undefined ||
+              now.value.babysit?.phase === "watching" ||
               standing === undefined ||
               !samePr(standing, bound) ||
               standing.mergeWhenReady?.setAt !== intent.setAt ||
@@ -738,7 +742,7 @@ export const MergeWhenReadyLive = Layer.effect(
                     if (
                       latestWorkspace?.paused !== undefined ||
                       latest.parked ||
-                      latest.babysit !== undefined ||
+                      latest.babysit?.phase === "watching" ||
                       latestBound === undefined ||
                       !samePr(latestBound, bound) ||
                       latestBound.mergeWhenReady?.setAt !== intent.setAt ||
@@ -1063,8 +1067,21 @@ export const MergeWhenReadyLive = Layer.effect(
         const key = baseKey(bound.repo, badge.baseRef);
         const turn = turns.get(key);
         if (turn !== undefined && turn.threadId !== thread.id) {
-          turn.queued.add(thread.id);
-          return `its check waits for ${prName(turn.pr)}, whose merge would move the base`;
+          // Its turn holds only while it is still armed to merge the same PR: once that merged or
+          // closed, its intent is cleared, so a stale turn left after the merge (the base moved
+          // before the turn was handed on) never strands the next PR waiting on a PR already gone.
+          const holder = yield* store.getThread(turn.threadId).pipe(Effect.option);
+          const stillArmed =
+            Option.isSome(holder) &&
+            holder.value.boundPr !== undefined &&
+            samePr(holder.value.boundPr, turn.pr) &&
+            holder.value.boundPr.mergeWhenReady !== undefined;
+          if (stillArmed) {
+            turn.queued.add(thread.id);
+            return `its check waits for ${prName(turn.pr)}, whose merge would move the base`;
+          }
+          // Carry its queue forward, then take the turn below.
+          turns.delete(key);
         }
         // Its own older turn, on a head it has since pushed past, gives way.
         turns.set(key, {
@@ -1117,7 +1134,8 @@ export const MergeWhenReadyLive = Layer.effect(
         const intent = bound?.mergeWhenReady;
         if (bound === undefined || intent === undefined) return yield* stop(thread.id);
         if (thread.parked || badge === undefined || !isBadgeOf(badge, bound)) return;
-        if (thread.babysit !== undefined) return yield* stop(thread.id);
+        // An active Watch PR hands the merge to the user; once it stops or is done, Gram may merge.
+        if (thread.babysit?.phase === "watching") return yield* stop(thread.id);
         // Merged or closed some other way: nothing is left to do.
         if (badge.state !== "OPEN") {
           yield* stop(thread.id);

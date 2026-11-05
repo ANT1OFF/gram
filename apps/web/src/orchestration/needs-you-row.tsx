@@ -19,6 +19,7 @@ import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useSaveSettings } from "@/settings/use-save-settings";
+import { useThreadsStore } from "@/stores/threads";
 
 import { holdAnswer, type SendAction } from "./ask-answer";
 import type { AskOption } from "./ask-model";
@@ -76,12 +77,14 @@ export const kindOf = (
         icon: CircleAlert,
         label: item.owned ? "Failing" : "Failing, no live worker",
       };
+    case "watch":
+      return { icon: Eye, label: "Watch PR stopped" };
   }
 };
 
-/** Whether Dismiss applies: a failure until it fails again, or a worker's question. */
+/** Whether Dismiss applies: a failure or a stopped watch until it recurs, or a worker's question. */
 export const canDismiss = (item: NeedsYouItem): boolean =>
-  item.kind === "failure" || item.ask?.worker !== undefined;
+  item.kind === "failure" || item.kind === "watch" || item.ask?.worker !== undefined;
 
 /** What a row's buttons do, each through its source's own path. */
 export function useNeedsYouActions() {
@@ -135,13 +138,21 @@ export function useNeedsYouActions() {
         );
         return;
       }
-      if (item.kind !== "failure") return;
+      if (item.kind !== "failure" && item.kind !== "watch") return;
       hold({ key: item.key, ids: item.ids, done: "Dismissed" }, () =>
         saveSetAside(save, item.ids, "clear").then(
           () => ({}),
           (error: unknown) => ({ failed: item.ids, problem: errorMessage(error) }),
         ),
       );
+    },
+    /** Turns Watch PR back on for a stopped watch, keeping its round budget. */
+    resume: (item: NeedsYouItem) => {
+      if (item.threadId === undefined) return;
+      const budget = useThreadsStore.getState().byId[item.threadId]?.thread.babysit?.budget;
+      void api
+        .threadSetBabysit(item.threadId, true, budget)
+        .catch((error: unknown) => console.error("needs you: resume watch", error));
     },
   };
 }

@@ -11,6 +11,7 @@ import { useAttentionStore } from "@/sidebar/attention";
 import { needsYou, sectionOf } from "@/sidebar/grouping";
 import { useThreadsStore } from "@/stores/threads";
 
+import { sectionOf as sectionOfItem } from "./needs-you-items";
 import { needsYouCount, resetDerivedAsks, useDerivedAsks } from "./needs-you-store";
 
 // The window title, the dock badge and the sidebar's pill all show `needsYouCount`: Needs you's
@@ -99,7 +100,46 @@ describe("needsYouCount", () => {
     expect(sectionOf(babysat)).toBe("needsYou");
     showing(babysat, summary("g", "idle"));
     expect(needsYouCount()).toBe(1);
-    expect(useDerivedAsks.getState().needsYou.items[0]?.title).toBe("Watch PR stopped");
+  });
+
+  it("reads a stopped Watch PR as a stopped watch, not a failing PR", () => {
+    // A worker whose Watch PR turn ended: green, idle, needs a human to merge.
+    const stopped = {
+      ...initialBabysitState(0),
+      phase: "stopped" as const,
+      stopReason: "rounds" as const,
+    };
+    const quiet = summary("w", "idle");
+    const babysat = {
+      ...quiet,
+      thread: { ...quiet.thread, babysit: stopped },
+      git: {
+        repo: true,
+        branch: "fix",
+        pr: {
+          number: 172,
+          state: "OPEN",
+          url: "https://github.com/o/r/pull/172",
+          title: "Fix",
+          isDraft: false,
+          checks: "passing",
+          headMatches: true,
+          aheadOfPr: false,
+          headRefOid: "abc",
+        },
+      },
+    } as ThreadSummary;
+    showing(babysat);
+    const [item] = useDerivedAsks.getState().needsYou.items;
+    // Before the fix this was kind "failure" in the "errors" section, labelled "Failing".
+    expect(item?.kind).toBe("watch");
+    expect(sectionOfItem(item!)).toBe("steps");
+    expect(item?.title).toBe("Watching #172 stopped: round budget used");
+    // It is not counted among errors.
+    const errors = useDerivedAsks
+      .getState()
+      .needsYou.sections.find((section) => section.key === "errors");
+    expect(errors).toBeUndefined();
   });
 
   it("lists a solo thread whose PR's red build is unseen, so the pill says what the title says", () => {
