@@ -16,4 +16,6 @@ export const EXPLAIN = {
   pause:
     "The orchestrator and its workers finish their current step and stop. Nothing wakes them until you resume.",
   resume: "The orchestrator and its workers pick up where they stopped.",
+  quiet:
+    "Hides the busy work and shows only what needs you, one card at a time. Agents keep working; Esc leaves it.",
 } as const;

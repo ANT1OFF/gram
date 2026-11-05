@@ -4,7 +4,7 @@ import {
   type PermissionMode,
   type SettingsPatch,
 } from "@gram/contracts";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { useHarnessPreflight } from "@/agents/feature-preflight";
 import { HarnessSupportDetails } from "@/agents/support-details";
@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 
+import { SaveHint } from "./save-hint";
 import { AGENTS_DEFAULTS, resetFor } from "./defaults";
 import { inputCls, SettingRow, Toggle } from "./fields";
 import { SettingsGroup } from "./settings-group";
@@ -166,6 +167,8 @@ function IdleMinutesField({
 }) {
   const [draft, setDraft] = useState(String(value));
   const [invalid, setInvalid] = useState<string>();
+  const hintId = useId();
+  const dirty = draft.trim() !== String(value) && invalid === undefined;
   const commit = () => {
     const minutes = Number.parseInt(draft, 10);
     if (!Number.isInteger(minutes) || minutes < IDLE_MINUTES.min || minutes > IDLE_MINUTES.max) {
@@ -184,6 +187,7 @@ function IdleMinutesField({
       htmlFor="settings-idle-minutes"
       onReset={onReset}
       error={invalid ?? saveError}
+      status={dirty ? <SaveHint id={hintId} /> : undefined}
     >
       <span className="flex items-center gap-1.5">
         <input
@@ -192,10 +196,18 @@ function IdleMinutesField({
           value={draft}
           inputMode="numeric"
           aria-invalid={invalid !== undefined}
-          onChange={(event) => setDraft(event.target.value)}
+          aria-describedby={dirty ? hintId : undefined}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setInvalid(undefined);
+          }}
           onBlur={commit}
           onKeyDown={(event) => {
             if (event.key === "Enter") commit();
+            if (event.key === "Escape") {
+              setDraft(String(value));
+              setInvalid(undefined);
+            }
           }}
         />
         <span aria-hidden className="text-muted-foreground">

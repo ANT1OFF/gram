@@ -20,9 +20,13 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { Hint } from "@/components/hint";
 import { QueryError } from "@/components/not-available";
+import { Term } from "@/components/term";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EXPLAIN } from "@/lib/explain";
+import { seeTerm } from "@/lib/first-use";
 import { agoText } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -783,10 +787,19 @@ export function MemoryView({
           <TabsTrigger value="history" data-testid="memory-tab-history">
             History
           </TabsTrigger>
-          <TabsTrigger value="update" data-testid="memory-tab-update">
-            Draft memory update
+          {/* Dreams' tab, explained on hover: what a draft is, and that memory waits for adopting it. */}
+          <Hint
+            label={EXPLAIN.dreams}
+            side="bottom"
+            delay={300}
+            onOpenChange={(open) => {
+              if (open) seeTerm("dreams");
+            }}
+            render={<TabsTrigger value="update" data-testid="memory-tab-update" />}
+          >
+            <Term term="dreams">Draft memory update</Term>
             <UpdateTabMark workspaceId={workspaceId} />
-          </TabsTrigger>
+          </Hint>
         </TabsList>
         <div className="flex flex-col gap-3 p-4">
           {empty && starting === undefined && tab !== "update" && (

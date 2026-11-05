@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useMarkdown } from "@/components/ai-elements/markdown-loader";
+import { agentLabel } from "@/agents/agent-label";
 import { Button } from "@/components/ui/button";
 import { useShortcut } from "@/keyboard/registry";
 import { useStable } from "@/lib/use-stable";
@@ -25,6 +26,8 @@ import { isFoldOpen, useTurnFolds } from "@/stores/turn-folds";
 
 import { AwaitingToolsProvider } from "./awaiting-tools";
 import { CompactingLine } from "./compaction-marker";
+import { StartingProgress } from "./starting-progress";
+import { startingSteps } from "./starting-progress-model";
 import { EmptyThread } from "./empty-thread";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
 import { MessageBlock } from "./message-block";
@@ -226,6 +229,28 @@ export function Transcript({
   const held = useRef<string>(undefined);
   const inProgress = useThreadsStore((s) => TURN_IN_PROGRESS.has(s.byId[threadId]?.status ?? ""));
   const compaction = useThreadsStore((s) => s.byId[threadId]?.compaction);
+  // A fresh thread's start, Branch › Worktree › Starting its CLI › First tool, until it has output.
+  const orchestratedStream = useOrchestratorStreamContext() !== undefined;
+  const startStatus = useThreadsStore((s) => s.byId[threadId]?.status);
+  const startCheckout = useThreadsStore((s) => s.byId[threadId]?.thread.checkout);
+  const startAgent = useThreadsStore((s) => s.byId[threadId]?.thread.model.agent);
+  const startActivity = useThreadsStore(
+    (s) => s.byId[threadId]?.activity ?? s.statusDetail[threadId],
+  );
+  const startSteps = useMemo(
+    () =>
+      // An orchestrator's stream is a digest of its turns, which may say nothing for a while.
+      orchestratedStream
+        ? undefined
+        : startingSteps({
+            status: startStatus,
+            checkout: startCheckout,
+            agent: agentLabel(startAgent ?? "claude"),
+            activity: startActivity,
+            messages,
+          }),
+    [orchestratedStream, startStatus, startCheckout, startAgent, startActivity, messages],
+  );
   // Measured: in a narrow pane the line wraps, and the room under the last row must grow with it.
   const [compactingRow, setCompactingRow] = useState(COMPACTING_ROW);
   const measureCompacting = useCallback((element: HTMLDivElement | null) => {
@@ -234,7 +259,9 @@ export function Transcript({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const endRoom = FADE_PX + (compaction === undefined ? 0 : compactingRow);
+  // One line under the last row at a time: a compaction under way, else a fresh thread's start.
+  const tailLine = compaction !== undefined || startSteps !== undefined;
+  const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
   // An orchestrator's stream is its own digest of the thread, with no turns to fold.
   const orchestrated = useOrchestratorStreamContext() !== undefined;
   const background = useThreadsStore((s) => s.byId[threadId]?.background);
@@ -415,7 +442,7 @@ export function Transcript({
     if (following.current && held.current === undefined && messages.length > 0) {
       virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
     }
-  }, [messages, compactingSince, compactingRow, virtualizer]);
+  }, [messages, compactingSince, compactingRow, tailLine, virtualizer]);
 
   const appliedJump = useRef<JumpRequest>(undefined);
   const jumpIndex =
@@ -860,14 +887,20 @@ export function Transcript({
                       </div>
                     );
                   })}
-                  {compaction !== undefined && (
+                  {tailLine && (
                     <div
                       ref={measureCompacting}
                       // `flow-root` keeps the line's own margins inside what is measured.
                       className="absolute left-0 flow-root w-full px-6"
                       style={{ top: virtualizer.getTotalSize() - endRoom }}
                     >
-                      <CompactingLine compaction={compaction} />
+                      {compaction !== undefined ? (
+                        <CompactingLine compaction={compaction} />
+                      ) : (
+                        startSteps !== undefined && (
+                          <StartingProgress threadId={threadId} steps={startSteps} />
+                        )
+                      )}
                     </div>
                   )}
                 </div>

@@ -141,16 +141,19 @@ describe("mergeBlockedReason", () => {
   const failing = { name: "test", status: "failing", conclusion: "FAILURE", link: "" } as const;
   const passing = { name: "lint", status: "passing", conclusion: "SUCCESS", link: "" } as const;
 
-  it("says what blocks the merge: conflicts, changes requested and failing checks", () => {
+  it("says what blocks the merge, worst first: failing checks, conflicts, changes requested", () => {
     expect(
       mergeBlockedReason(
         { reviewDecision: "CHANGES_REQUESTED", checkRuns: [failing, passing] },
         "blocked",
       ),
-    ).toBe("Blocked: changes requested, 1 failing check");
+    ).toBe("Blocked: 1 failing check, changes requested");
     expect(
       mergeBlockedReason({ reviewDecision: "", checkRuns: [failing, failing] }, "conflicts"),
-    ).toBe("Blocked: conflicts, 2 failing checks");
+    ).toBe("Blocked: 2 failing checks, conflicts");
+    expect(
+      mergeBlockedReason({ reviewDecision: "CHANGES_REQUESTED", checkRuns: [] }, "conflicts"),
+    ).toBe("Blocked: conflicts, changes requested");
   });
 
   it("names a missing review when GitHub blocks for nothing else the panel sees", () => {
@@ -181,10 +184,71 @@ describe("PrActions when blocked", () => {
     const merge = screen.getByRole("button", { name: "Merge…" });
     expect(merge.dataset["blocked"]).toBe("true");
     const reason = screen.getByTestId("pr-merge-blocked");
-    expect(reason.textContent).toBe("Blocked: changes requested, 1 failing check");
+    expect(reason.textContent).toBe("Blocked: 1 failing check, changes requested");
     expect(merge.getAttribute("aria-describedby")).toBe(reason.id);
     fireEvent.click(merge);
     await screen.findByTestId("pr-merge-dialog");
+  });
+
+  it("names each blocker, then leads the action row with the worst one's next step", () => {
+    const onBlocker = vi.fn();
+    renderWithApi(
+      <PrActions
+        threadId={T}
+        detail={detail()}
+        merge="blocked"
+        bot={{ kind: "blockers", label: "Review bot: 2 blockers", text: "2 blockers" }}
+        onBlocker={onBlocker}
+      />,
+      { prMergeOptions: options() },
+    );
+    expect(screen.getByTestId("pr-merge-blocked").textContent).toBe(
+      "Blocked: 1 failing check, changes requested, review bot: 2 blockers",
+    );
+    const lines = within(screen.getByRole("list", { name: "What blocks the merge" }))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent);
+    expect(lines).toEqual([
+      "test (windows) failing",
+      "Changes requested by reviewer",
+      "Review bot: 2 blockers",
+    ]);
+    const row = within(screen.getByTestId("pr-actions")).getAllByRole("button");
+    expect(row.map((button) => button.textContent)).toEqual([
+      "Inspect test (windows) job",
+      "Merge…",
+    ]);
+    fireEvent.click(row[0]!);
+    expect(onBlocker).toHaveBeenCalledWith({
+      kind: "inspectCheck",
+      label: "Inspect test (windows) job",
+      check: "test (windows)",
+    });
+  });
+
+  it("asks the agent to fix conflicts when they are the worst blocker", async () => {
+    const send = vi.fn(async () => ({ queued: false }) as never);
+    const clean = { ...detail(), reviewDecision: "APPROVED", checkRuns: [] };
+    renderWithApi(<PrActions threadId={T} detail={clean} merge="conflicts" />, {
+      prMergeOptions: options(),
+      send,
+    });
+    expect(screen.getByTestId("pr-merge-blocked").textContent).toBe("Blocked: conflicts");
+    fireEvent.click(screen.getByRole("button", { name: "Ask agent to fix conflicts" }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(T, {
+        text: expect.stringContaining("PR #412 has merge conflicts with main."),
+      }),
+    );
+    expect((await screen.findByRole("status")).textContent).toBe("Sent to the agent");
+  });
+
+  it("offers no step it can't take: without onBlocker, a check's evidence isn't offered", () => {
+    renderWithApi(<PrActions threadId={T} detail={detail()} merge="blocked" />, {
+      prMergeOptions: options(),
+    });
+    expect(screen.queryByTestId("pr-next-action")).toBeNull();
+    expect(screen.getByRole("button", { name: "Merge…" })).toBeTruthy();
   });
 
   it("keeps Merge primary for a PR nothing blocks", () => {

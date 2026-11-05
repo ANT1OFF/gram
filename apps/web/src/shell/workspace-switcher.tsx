@@ -13,11 +13,14 @@ import {
 } from "react";
 
 import { useApi } from "@/api/context";
+import { Term } from "@/components/term";
 import { Button } from "@/components/ui/button";
 import { shortcutHint } from "@/keyboard/bindings";
 import { formatKeys, registerShortcut } from "@/keyboard/registry";
 import { effectiveKeys, useBindingsStore } from "@/keyboard/bindings-store";
 import { withHint } from "@/keyboard/use-shortcut-hint";
+import { EXPLAIN } from "@/lib/explain";
+import { seeTerm } from "@/lib/first-use";
 import { listIndexForKey } from "@/lib/list-keys";
 import { formatRelative } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
@@ -164,7 +167,12 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
           popup.querySelector<HTMLElement>(`[${ITEM}]`)
         )?.focus()
       }
-      hint={withHint("Switch workspace", switchKeys)}
+      // In a solo thread the bar names no workspace but Solo, so it says what Solo is.
+      hint={
+        inSolo
+          ? `Solo: ${EXPLAIN.solo}\n${withHint("Switch workspace", switchKeys)}`
+          : withHint("Switch workspace", switchKeys)
+      }
       trigger={
         <Button
           variant="ghost"
@@ -172,12 +180,16 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
           aria-label={`Workspace: ${name}`}
           data-testid="workspace-switcher-button"
           data-workspaces={workspaces.length}
+          onPointerEnter={inSolo ? () => seeTerm("solo") : undefined}
+          onFocus={inSolo ? () => seeTerm("solo") : undefined}
           className={cn(
             "max-w-48 gap-1 px-2 text-body font-medium data-popup-open:bg-muted",
             className,
           )}
         >
-          <span className="min-w-0 truncate">{name}</span>
+          <span className="min-w-0 truncate">
+            {inSolo ? <Term term="solo">{name}</Term> : name}
+          </span>
           <ChevronsUpDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         </Button>
       }

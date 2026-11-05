@@ -50,4 +50,29 @@ describe("NewFormHeader", () => {
     fireEvent.click(radios[1]!);
     expect(onWho).toHaveBeenCalledTimes(1);
   });
+
+  it("folds a repeat start to one line naming the same choices, which Change unfolds", () => {
+    const onExpand = vi.fn();
+    render(
+      <TooltipProvider>
+        <NewFormHeader
+          who="worker"
+          onWho={vi.fn()}
+          where={<span>Synthetic workspace</span>}
+          line="Synthetic line"
+          summary={{ places: ["Alpha", "alpha-repo", "New worktree, new branch"], onExpand }}
+        />
+      </TooltipProvider>,
+    );
+    // No choice cards and no Where it runs row while folded: one line says them.
+    expect(screen.queryByRole("radiogroup", { name: "Who does it" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Where it runs" })).toBeNull();
+    const summary = screen.getByRole("group", { name: "Who does it and where it runs" });
+    expect(summary.textContent).toContain("One worker to PR");
+    expect(screen.getByTestId("new-summary-where").textContent).toBe(
+      " · Alpha · alpha-repo · New worktree, new branch",
+    );
+    fireEvent.click(within(summary).getByRole("button", { name: /^Change/ }));
+    expect(onExpand).toHaveBeenCalledTimes(1);
+  });
 });

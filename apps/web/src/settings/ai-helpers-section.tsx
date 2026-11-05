@@ -22,7 +22,7 @@ import {
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useId, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
@@ -42,6 +42,7 @@ import { EFFORT_OPTIONS } from "@/composer/options";
 import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 
+import { SaveHint } from "./save-hint";
 import { HelperHarnessPicker, LocalHelperSettings } from "./local-helper-settings";
 import { AI_HELPERS_DEFAULTS, resetFor } from "./defaults";
 import { inputCls, LONG_COPY, SettingRow, Toggle } from "./fields";
@@ -406,6 +407,8 @@ function BudgetField({
 }) {
   const [draft, setDraft] = useState(String(value));
   const [invalid, setInvalid] = useState<string>();
+  const hintId = useId();
+  const dirty = draft.trim() !== String(value) && invalid === undefined;
   const commit = () => {
     const usd = Number(draft.trim());
     if (draft.trim() === "" || !Number.isFinite(usd) || usd <= 0) {
@@ -430,6 +433,7 @@ function BudgetField({
       htmlFor="settings-helper-budget"
       onReset={onReset}
       error={invalid ?? saveError}
+      status={dirty ? <SaveHint id={hintId} /> : undefined}
     >
       <span className="flex items-center gap-1.5">
         <span aria-hidden className="text-muted-foreground">
@@ -441,10 +445,18 @@ function BudgetField({
           value={draft}
           inputMode="decimal"
           aria-invalid={invalid !== undefined}
-          onChange={(event) => setDraft(event.target.value)}
+          aria-describedby={dirty ? hintId : undefined}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setInvalid(undefined);
+          }}
           onBlur={commit}
           onKeyDown={(event) => {
             if (event.key === "Enter") commit();
+            if (event.key === "Escape") {
+              setDraft(String(value));
+              setInvalid(undefined);
+            }
           }}
         />
       </span>

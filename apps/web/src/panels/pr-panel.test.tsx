@@ -231,6 +231,98 @@ describe("PrPanel", () => {
     second.resolve(mockPrDetail(T));
   });
 
+  it("leads the overview with what blocks the merge and its next step; people, labels and watching follow", async () => {
+    useThreadsStore.setState({
+      byId: {
+        [T]: { thread: { checkout: { path: "/repo" } }, git: mockGitState(T, undefined) },
+      } as never,
+    });
+    renderWithApi(<PrPanel threadId={T} />, withResult(mockPrDetail(T)));
+    const panel = await screen.findByTestId("pr-panel");
+
+    expect(within(panel).getByTestId("pr-merge-blocked").textContent).toBe(
+      "Blocked: 1 failing check, changes requested",
+    );
+    const next = within(panel).getByTestId("pr-next-action");
+    expect(next.textContent).toBe("Inspect test (windows) job");
+    // The next step leads the action row, Merge… stepping back beside it.
+    const row = within(within(panel).getByTestId("pr-actions")).getAllByRole("button");
+    expect(row.map((button) => button.textContent)).toEqual([
+      "Inspect test (windows) job",
+      "Merge…",
+    ]);
+    const order = [
+      within(panel).getByRole("heading", { name: "Make the retry test deterministic" }),
+      within(panel).getByTestId("pr-blockers"),
+      within(panel).getByTestId("pr-actions"),
+      within(panel).getByTestId("pr-reviewers"),
+      within(panel).getByRole("button", { name: "Add label…" }),
+      within(panel).getByTestId("pr-watch"),
+      within(panel).getByRole("region", { name: "Checks" }),
+    ];
+    for (const [i, el] of order.slice(1).entries()) {
+      const before = order[i]!;
+      expect(before.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
+  it("opens the failing check's job evidence from the summary, even with the checks folded", async () => {
+    useThreadsStore.setState({
+      byId: {
+        [T]: { thread: { checkout: { path: "/repo" } }, git: mockGitState(T, undefined) },
+      } as never,
+    });
+    const prCheckDiagnostic = vi.fn(() => new Promise<never>(() => {}));
+    renderWithApi(<PrPanel threadId={T} />, {
+      ...withResult(mockPrDetail(T)),
+      prCheckDiagnostic,
+    });
+    const panel = await screen.findByTestId("pr-panel");
+    const checks = within(panel).getByRole("region", { name: "Checks" });
+    fireEvent.click(within(checks).getByRole("button", { name: /Checks/, expanded: true }));
+    expect(within(checks).queryAllByTestId("check-run")).toHaveLength(0);
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Inspect test (windows) job" }));
+    const toggle = await within(checks).findByRole("button", {
+      name: "Hide test (windows) job",
+      expanded: true,
+    });
+    expect(document.activeElement).toBe(toggle);
+    await waitFor(() => expect(prCheckDiagnostic).toHaveBeenCalledTimes(1));
+
+    // Asked again, it leaves the evidence open rather than folding it.
+    fireEvent.click(within(panel).getByRole("button", { name: "Inspect test (windows) job" }));
+    expect(within(checks).getByRole("button", { name: "Hide test (windows) job" })).toBeTruthy();
+  });
+
+  it("takes the user to the requested changes when they are the worst blocker", async () => {
+    useThreadsStore.setState({
+      byId: {
+        [T]: { thread: { checkout: { path: "/repo" } }, git: mockGitState(T, undefined) },
+      } as never,
+    });
+    const seeded = mockPrDetail(T);
+    const passing = seeded.detail!.checkRuns.map((run) => ({ ...run, status: "passing" as const }));
+    renderWithApi(
+      <PrPanel threadId={T} />,
+      withResult({ ...seeded, detail: { ...seeded.detail!, checkRuns: passing } }),
+    );
+    const panel = await screen.findByTestId("pr-panel");
+    const conversation = within(panel).getByRole("region", { name: "Conversation" });
+    fireEvent.click(
+      within(conversation).getByRole("button", { name: /Conversation/, expanded: true }),
+    );
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Read requested changes" }));
+    await waitFor(() =>
+      expect((document.activeElement as HTMLElement | null)?.dataset["reviewState"]).toBe(
+        "CHANGES_REQUESTED",
+      ),
+    );
+    expect(document.activeElement?.textContent).toContain("restore the real timers");
+    expect(useLayoutStore.getState().prPanelTab).toBe("overview");
+  });
+
   it("says when the badge couldn't refresh from GitHub, and offers Refresh", async () => {
     const git = mockGitState(T, undefined)!;
     useThreadsStore.setState({

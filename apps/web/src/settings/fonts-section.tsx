@@ -1,9 +1,10 @@
 import type { SettingsPatch } from "@gram/contracts";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { errorMessage } from "@/api/errors";
 import { useServerSettings } from "@/settings-sync/store";
 
+import { SaveHint } from "./save-hint";
 import { FONTS_DEFAULTS, resetFor } from "./defaults";
 import { rowInputCls, SettingRow } from "./fields";
 import { useInstalledFonts } from "./installed-fonts";
@@ -116,6 +117,8 @@ function TextSetting({
   error: string | undefined;
 }) {
   const [draft, setDraft] = useState(value ?? "");
+  const hintId = useId();
+  const dirty = draft.trim() !== (value ?? "");
   const commit = () => {
     const next = draft.trim();
     if (next !== (value ?? "")) onSave(next);
@@ -128,6 +131,7 @@ function TextSetting({
       htmlFor={id}
       onReset={onReset}
       error={error}
+      status={dirty ? <SaveHint id={hintId} /> : undefined}
     >
       <input
         id={id}
@@ -137,10 +141,12 @@ function TextSetting({
         spellCheck={false}
         {...(inputMode === undefined ? {} : { inputMode })}
         {...(suggestions === undefined ? {} : { list: listId })}
+        aria-describedby={dirty ? hintId : undefined}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === "Enter") commit();
+          if (event.key === "Escape") setDraft(value ?? "");
         }}
       />
       {suggestions !== undefined && (

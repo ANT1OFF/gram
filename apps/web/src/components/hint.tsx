@@ -13,6 +13,7 @@ export function Hint({
   children,
   side = "top",
   delay,
+  onOpenChange,
 }: {
   /** Words, or for a list of them, a node. */
   label: ReactNode;
@@ -22,13 +23,16 @@ export function Hint({
   side?: "top" | "right" | "bottom" | "left";
   /** Ms before it shows, for marks met in passing, as a board's chips are; none by default. */
   delay?: number | undefined;
+  /** Told when it opens and closes, as a first-use explanation records that it was seen. */
+  onOpenChange?: ((open: boolean) => void) | undefined;
 }) {
   return (
     // A tooltip is no layer of its own: Escape closes it and still reaches what is under it, a
     // sheet or a dialog, as it did past a native title.
     <Tooltip
-      onOpenChange={(_open, details) => {
+      onOpenChange={(open, details) => {
         if (details.reason === "escape-key") details.allowPropagation();
+        onOpenChange?.(open);
       }}
     >
       <TooltipTrigger render={render} {...(delay === undefined ? {} : { delay })}>

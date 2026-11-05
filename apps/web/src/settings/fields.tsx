@@ -12,6 +12,7 @@ import { SegmentSlab } from "@/motion";
 import { HelpTip, SettingDescription } from "./help-tip";
 import { isLongError } from "./long-error";
 import { parseNumberDraft } from "./number-draft";
+import { SaveHint } from "./save-hint";
 import { SavedMark, touchHandlers } from "./saved-mark";
 import { useSettingSearch } from "./search-scope";
 
@@ -75,6 +76,7 @@ export function Field({
   htmlFor,
   learnMore,
   action,
+  status,
   children,
 }: {
   label: string;
@@ -87,6 +89,8 @@ export function Field({
   learnMore?: ReactNode;
   /** On the label's line, at its end. */
   action?: ReactNode;
+  /** Beside the name, where "Saved" shows: such as how to save a draft not saved yet. */
+  status?: ReactNode;
   children: ReactNode;
 }) {
   const search = useSettingSearch({ label, description, keywords });
@@ -95,6 +99,7 @@ export function Field({
     <div {...search} {...touchHandlers(row)} data-setting="" className="flex flex-col gap-1.5">
       <div className="flex items-start gap-1">
         <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
+          {status}
           <SavedMark row={row} />
         </RowLabel>
         {action !== undefined && <div className="ms-auto flex items-center">{action}</div>}
@@ -393,7 +398,9 @@ export function NumberField({
   disabled?: boolean;
 }) {
   const id = useId();
+  const hintId = useId();
   const [draft, setDraft] = useState<string>();
+  const dirty = draft !== undefined && draft !== String(value);
   const commit = () => {
     if (draft === undefined) return;
     const next = parseNumberDraft(draft, { min, integer: Number.isInteger(step) });
@@ -406,6 +413,7 @@ export function NumberField({
       htmlFor={id}
       {...(description === undefined ? {} : { description })}
       {...(keywords === undefined ? {} : { keywords })}
+      status={dirty ? <SaveHint id={hintId} /> : undefined}
     >
       <span className="flex items-center gap-1">
         {prefix !== undefined && (
@@ -422,6 +430,7 @@ export function NumberField({
           disabled={disabled}
           className={cn(inputCls, "max-w-28 tabular-nums")}
           value={draft ?? String(value)}
+          aria-describedby={dirty ? hintId : undefined}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {

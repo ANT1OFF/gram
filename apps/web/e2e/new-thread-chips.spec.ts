@@ -154,7 +154,19 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
     .getByRole("button", { name: "New", exact: true })
     .click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
+  // A repeat start to the same workspace folds who and where to one line; typing starts in the
+  // brief, and who the worker answers to is said beside Start.
+  const summary = page.getByRole("group", { name: "Who does it and where it runs" });
+  await expect(summary).toContainText("One worker to PR");
+  await expect(page.getByTestId("new-summary-where")).toContainText("New worktree, new branch");
+  await expect(page.getByRole("radiogroup", { name: "Who does it" })).toHaveCount(0);
+  await expect(page.getByLabel("What needs doing")).toBeFocused();
+  await expect(page.getByTestId("task-owner")).toHaveText("Its orchestrator directs it.");
   await page.getByRole("switch", { name: "Start under my control" }).click();
+  await expect(page.getByTestId("task-owner")).toHaveText("You direct it until you hand it back.");
+  // Change unfolds the full choice, with the line on what happens there.
+  await summary.getByRole("button", { name: /^Change/ }).click();
+  await expect(page.getByRole("radio", { name: "One worker to PR" })).toBeFocused();
   await expect(page.getByTestId("task-way-note")).toContainText("under your control");
   await page.getByLabel("What needs doing").fill("Rename the queue consumer");
   await page.getByRole("button", { name: /Start worker/ }).click();
@@ -163,9 +175,13 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByTestId("worker-banner-held")).not.toContainText("Paused");
   await expect(page.getByTestId("worker-hold")).toBeVisible();
 
-  // New opens on the choice used last.
+  // New opens on the choice used last, folded to its line, which unfolds on it.
   await add.click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
+  await page
+    .getByRole("group", { name: "Who does it and where it runs" })
+    .getByRole("button", { name: /^Change/ })
+    .click();
   await expect(page.getByRole("radio", { name: "One worker to PR" })).toBeChecked();
 });
 
