@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { feedMessages, useThreadFeed } from "@/stores/feeds";
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
@@ -72,7 +72,7 @@ function useAttempt(threadId: ThreadId, error: ThreadError): AttemptFacts | unde
 
 /** "Retried · 14:05", and how that went when it failed too. */
 const retriedLabel = (retried: RetryReceipt): string => {
-  const at = retried.at === undefined ? "" : ` · ${formatClockTime(retried.at)}`;
+  const at = retried.at === undefined ? "" : ` · ${formatStamp(retried.at)}`;
   return retried.failed ? `Retried${at} · failed again` : `Retried${at}`;
 };
 

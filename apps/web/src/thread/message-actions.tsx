@@ -363,7 +363,7 @@ function RewindAction({ threadId, message }: { threadId: ThreadId; message: Gram
         <Popover.Positioner side="bottom" align={isUser ? "end" : "start"} sideOffset={4}>
           <Popover.Popup
             data-testid="rewind-confirm"
-            className="z-50 flex w-64 flex-col gap-2 rounded-(--radius-lg) border border-border bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised) transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="z-50 flex w-64 flex-col gap-2 rounded-(--radius-lg) border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised) transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <Popover.Title className="font-medium">
               {isUser ? "Edit this message?" : "Rewind to this reply?"}
@@ -511,7 +511,7 @@ function MoreActions({ children }: { children: ReactNode }) {
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="start" sideOffset={4} className="isolate z-50 outline-none">
-          <Menu.Popup className="min-w-56 max-w-[calc(100vw-1rem)] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none">
+          <Menu.Popup className="min-w-56 max-w-[calc(100vw-1rem)] rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none">
             {children}
           </Menu.Popup>
         </Menu.Positioner>

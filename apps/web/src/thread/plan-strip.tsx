@@ -437,7 +437,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
     <div
       data-testid="plan-strip"
       data-open={open}
-      className="@container shrink-0 border-b border-border bg-card/30"
+      className="@container shrink-0 border-b border-edge bg-card/30"
     >
       <button
         type="button"

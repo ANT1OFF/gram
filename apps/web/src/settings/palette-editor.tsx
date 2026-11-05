@@ -112,7 +112,7 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
             data-testid="palette-preview"
             className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3 text-foreground"
           >
-            <div className="rounded-md border border-border bg-card p-2">
+            <div className="rounded-md border border-edge bg-card p-2">
               <p className="text-reading font-medium">fix-flaky-test</p>
               <p className="text-meta text-muted-foreground">api · fix/flaky · 2 files changed</p>
             </div>

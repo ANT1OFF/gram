@@ -8,7 +8,7 @@ import {
 import { History, X } from "lucide-react";
 import { Fragment, useState } from "react";
 
-import { formatClockTime } from "@/lib/time";
+import { formatClockTime, formatStamp } from "@/lib/time";
 
 import { PrChip, WorkerLink } from "./feature-card";
 
@@ -120,13 +120,13 @@ export function SinceYouLeft({
           <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50">
             <Popover.Popup
               data-testid="since-you-left-detail"
-              className="flex w-96 max-w-[90vw] origin-(--transform-origin) flex-col gap-1.5 rounded-md border border-border bg-popover p-3 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+              className="flex w-96 max-w-[90vw] origin-(--transform-origin) flex-col gap-1.5 rounded-md border border-edge bg-popover p-3 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
             >
               <Popover.Title className="flex items-baseline gap-1.5 font-medium">
                 Since you left
                 {since !== undefined && (
                   <span className="font-normal text-muted-foreground tabular-nums">
-                    {formatClockTime(since)} to {formatClockTime(now)}
+                    {formatStamp(since, now)} to {formatClockTime(now)}
                   </span>
                 )}
               </Popover.Title>

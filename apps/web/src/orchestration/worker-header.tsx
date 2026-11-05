@@ -249,6 +249,14 @@ function HoldChip({
 const HEADER_BUTTON =
   "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-meta text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
+/**
+ * In the title bar a worker's actions keep its other controls' shape: Keep beside an icon button of
+ * the chrome's size (28 px, its glyph 16 px), Take over a worded button as tall.
+ */
+const TITLEBAR_ICON =
+  "inline-flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+const TITLEBAR_WORDS = "h-7 px-2";
+
 /** A worker's end states, where there is nothing left to take over. */
 const FINISHED = new Set(["merged", "delivered", "archived"]);
 
@@ -306,12 +314,12 @@ export function WorkerActions({
             <button
               type="button"
               data-testid="worker-keep-beside"
-              className={HEADER_BUTTON}
+              className={inTitlebar ? TITLEBAR_ICON : HEADER_BUTTON}
               onClick={actions.keepBeside}
             />
           }
         >
-          <PanelRight aria-hidden className="size-3.5" />
+          <PanelRight aria-hidden className={inTitlebar ? "size-4" : "size-3.5"} />
           <span className={inTitlebar ? "sr-only" : "@max-md:sr-only"}>Keep beside</span>
         </Hint>
       )}
@@ -329,7 +337,7 @@ export function WorkerActions({
               <button
                 type="button"
                 data-testid="worker-take-over"
-                className={HEADER_BUTTON}
+                className={cn(HEADER_BUTTON, inTitlebar && TITLEBAR_WORDS)}
                 onClick={actions.takeOver}
               />
             }

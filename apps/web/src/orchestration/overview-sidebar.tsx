@@ -28,7 +28,7 @@ import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { keyLabel } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
-import { formatClockTime, formatRelative } from "@/lib/time";
+import { formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
@@ -97,7 +97,7 @@ import {
   type ReportNext,
   type RunningWorker,
 } from "./overview-model";
-import { ROW, RowMenu, Section, SETTLED, STOP } from "./overview-section";
+import { CURRENT_ROW, ROW, RowMenu, Section, SETTLED, STOP } from "./overview-section";
 import { WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
 import { NESTED_TONE_DOT, type RailTone } from "./rail-model";
@@ -740,6 +740,7 @@ export function WorkerRow({
   card?: boolean;
 }) {
   const openThread = useOpenThread();
+  const viewed = useParams({ strict: false }).threadId === row.threadId;
   const lastActivity = useThreadsStore((s) => s.byId[row.threadId]?.thread.lastActivityAt);
   const agent = useThreadsStore((s) => s.byId[row.threadId]?.thread.model?.agent);
   const status = useThreadsStore((s) => s.byId[row.threadId]?.status);
@@ -765,7 +766,7 @@ export function WorkerRow({
     ...(pause === undefined ? [] : [PAUSE_WORD[pause.state]]),
     starting ? STARTING : (waiting?.label ?? row.now),
     ...(agent === undefined ? [] : [agentLabel(agent)]),
-    ...(lastActivity === undefined ? [] : [`last active ${formatClockTime(lastActivity)}`]),
+    ...(lastActivity === undefined ? [] : [`last active ${formatStamp(lastActivity)}`]),
   ];
   const preview = usePickedPreview();
   const onClick = (event: MouseEvent<HTMLElement>) => {
@@ -781,6 +782,7 @@ export function WorkerRow({
     "data-testid": "overview-worker",
     "data-thread-id": row.threadId,
     "data-asking": asking || undefined,
+    "aria-current": viewed || undefined,
     "aria-label": facts.join(", "),
     // The compact rail's flyout has no card to say them.
     title: card
@@ -792,7 +794,7 @@ export function WorkerRow({
     ...threadDragProps(row.threadId),
     // Its title may take two lines, so a long one with an ask under it still reads whole; the dot
     // and marks sit on its first line.
-    className: cn(ROW, "items-start", settled && SETTLED),
+    className: cn(ROW, "items-start", CURRENT_ROW, settled && SETTLED),
   };
   const body = (
     <>
@@ -1014,7 +1016,7 @@ function WorkerCard({
   pause: WorkerPauseState | undefined;
   waiting: WaitingOn | undefined;
 }) {
-  const time = formatClockTime(lastActivity);
+  const time = formatStamp(lastActivity);
   return (
     <>
       <p
@@ -1345,7 +1347,7 @@ function AtWorkLines({
       data-testid="overview-at-work"
       data-thread-id={threadId}
       data-own={own || undefined}
-      title={at === undefined ? undefined : `Last activity ${formatClockTime(at)}`}
+      title={at === undefined ? undefined : `Last activity ${formatStamp(at)}`}
       onClick={onClick}
       className={cn(
         "flex w-full min-w-0 cursor-default flex-col rounded-(--radius-sm) text-left text-meta outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
@@ -1358,7 +1360,7 @@ function AtWorkLines({
           className="size-1.5 shrink-0 rounded-full bg-status-working gram-working"
         />
         <span className="truncate text-foreground">{own ? "Orchestrator" : title}</span>
-        {at !== undefined && <span className="sr-only">, last active {formatClockTime(at)}</span>}
+        {at !== undefined && <span className="sr-only">, last active {formatStamp(at)}</span>}
       </span>
       <span data-testid="overview-at-work-line" className="w-full truncate text-muted-foreground">
         <WorkLine threadId={threadId} />
@@ -1386,12 +1388,8 @@ export function SoloRow({
   const detail = useThreadsStore((s) => s.statusDetail[thread.id]);
   const display = threadStatusOf(summary, detail);
   const title = threadDisplayTitle(thread);
-  const lastActive = display.working
-    ? `Last activity ${formatClockTime(thread.lastActivityAt)}`
-    : "";
+  const lastActive = display.working ? `Last activity ${formatStamp(thread.lastActivityAt)}` : "";
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
-  // At work or needing you, its title may take two lines; at rest, one.
-  const active = display.working || display.tone === "text-status-needs";
   return (
     <RowMenu menu={<RowMenuItems threadId={thread.id} />}>
       <button
@@ -1403,11 +1401,11 @@ export function SoloRow({
         aria-current={viewed || undefined}
         data-settled={faded || undefined}
         aria-label={`${title}, ${display.label}${lastActive === "" ? "" : `, ${lastActive}`}`}
-        title={lastActive === "" ? undefined : lastActive}
+        title={lastActive === "" ? title : `${title}\n${lastActive}`}
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(thread.id)}
         onKeyDown={rowMenuKeys}
-        className={cn(ROW, "items-start aria-current:bg-sidebar-row-active", faded && SETTLED)}
+        className={cn(ROW, "items-start", CURRENT_ROW, faded && SETTLED)}
       >
         <span
           aria-hidden
@@ -1420,9 +1418,8 @@ export function SoloRow({
             display.working && "gram-working",
           )}
         />
-        <span className={active ? "line-clamp-2 [overflow-wrap:anywhere]" : "truncate"}>
-          {title}
-        </span>
+        {/* Two lines before it is cut short; its hover says the whole of it. */}
+        <span className="line-clamp-2 [overflow-wrap:anywhere]">{title}</span>
         {!display.working && (
           <span className="flex h-lh items-center">
             <span className="text-meta text-muted-foreground tabular-nums">

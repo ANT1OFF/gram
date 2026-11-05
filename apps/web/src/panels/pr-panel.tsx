@@ -606,7 +606,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
               data-review-state={comment.kind === "review" ? comment.state : undefined}
               // The summary's "Read requested changes" brings a review here and focuses it.
               tabIndex={comment.kind === "review" ? -1 : undefined}
-              className="rounded-(--radius-md) border border-border bg-card/40 p-2 outline-none focus-visible:focus-ring"
+              className="rounded-(--radius-md) border border-edge bg-card/40 p-2 outline-none focus-visible:focus-ring"
             >
               <p className="mb-1 flex items-center gap-1.5 text-meta text-muted-foreground">
                 <MessageSquare aria-hidden className="size-3.5" />

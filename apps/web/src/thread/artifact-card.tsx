@@ -32,7 +32,7 @@ export function ArtifactCard({
     <div
       data-testid="artifact-card"
       data-url={artifact.url}
-      className="my-2 flex max-w-md items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
+      className="my-2 flex max-w-md items-center gap-3 rounded-lg border border-edge bg-card px-3 py-2"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
         <AppWindow aria-hidden className="size-4" />

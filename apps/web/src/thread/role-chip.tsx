@@ -95,10 +95,9 @@ export function RoleGlyph({
       render={
         <span
           data-testid={testId}
-          className={cn(
-            "flex shrink-0",
-            info.role.kind === "orchestrator" ? "text-primary" : "text-muted-foreground",
-          )}
+          // Muted for every role, as the chrome's other glyphs are: the accent is the current
+          // place and the primary action, not a role.
+          className="flex shrink-0 text-muted-foreground"
         />
       }
     >

@@ -12,7 +12,7 @@ export const FOCUS_RING_INSET = "outline-none focus-visible:focus-ring-inset";
  * itself never rings.
  */
 export const MENU_POPUP =
-  "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 
 /** A menu's row: the row cursor where the pointer or the arrow keys are. */
 export const MENU_ITEM =

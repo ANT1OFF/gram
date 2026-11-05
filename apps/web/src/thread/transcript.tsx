@@ -1023,7 +1023,7 @@ function FollowingLive({
     />
   );
   const pill =
-    "absolute bottom-6 thread-column-center z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-meta shadow-raised";
+    "absolute bottom-6 thread-column-center z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-edge bg-popover px-2.5 py-1 text-meta shadow-raised";
   return following ? (
     <span role="status" data-testid="following-live" className={cn(pill, "text-muted-foreground")}>
       {dot}

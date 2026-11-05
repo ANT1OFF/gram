@@ -97,7 +97,7 @@ export function HeaderWakeChip({
         <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50">
           <Popover.Popup
             data-testid="pane-wake-popup"
-            className="w-72 origin-(--transform-origin) rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="w-72 origin-(--transform-origin) rounded-md border border-edge bg-popover p-2 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <Popover.Title className="px-1 pb-1.5 text-meta text-muted-foreground">
               The agent set these to wake itself with its note.

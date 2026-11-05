@@ -63,7 +63,7 @@ describe("Done's groups", () => {
     expect(labels(groupDone(rows, "date", NOW))).toEqual([
       ["Today", ["api-today", "solo-today"]],
       ["Yesterday", ["infra-yesterday"]],
-      ["Mon 12 Oct", ["api-mon"]],
+      ["12 Oct", ["api-mon"]],
       ["October 2026", ["solo-oct", "infra-oct"]],
       ["September 2026", ["api-sep"]],
       ["December 2025", ["solo-2025"]],
@@ -86,19 +86,17 @@ describe("Done's groups", () => {
     ]);
   });
 
-  it("says each row's time where its heading doesn't", () => {
-    // By date: the clock this week, the date before, the year once it isn't this one's.
-    expect(doneWhen(NOW - HOUR, "date", NOW)).toBe("13:40");
-    expect(doneWhen(NOW - 3 * DAY, "date", NOW)).toBe("14:40");
-    expect(doneWhen(NOW - 9 * DAY, "date", NOW)).toBe("6 Oct");
-    expect(doneWhen(new Date(2025, 11, 31, 23).getTime(), "date", NOW)).toBe("31 Dec 2025");
-    // By orchestrator: the clock today, the date before.
-    expect(doneWhen(NOW - HOUR, "orchestrator", NOW)).toBe("13:40");
-    expect(doneWhen(NOW - DAY, "orchestrator", NOW)).toBe("14 Oct");
-    expect(doneWhen(undefined, "orchestrator", NOW)).toBe("");
-    expect(doneWhenLong(NOW - HOUR, NOW)).toBe("Today 13:40");
-    expect(doneWhenLong(NOW - 3 * DAY, NOW)).toBe("Mon 12 Oct 14:40");
+  it("says each row's time as a stamp: the clock today, else the date and the clock", () => {
+    expect(doneWhen(NOW - HOUR, NOW)).toBe("13:40");
+    expect(doneWhen(NOW - 3 * DAY, NOW)).toBe("12 Oct 14:40");
+    expect(doneWhen(NOW - 9 * DAY, NOW)).toBe("6 Oct 14:40");
+    expect(doneWhen(new Date(2025, 11, 31, 23).getTime(), NOW)).toBe("31 Dec 2025 23:00");
+    expect(doneWhen(NOW - DAY, NOW)).toBe("14 Oct 14:40");
+    expect(doneWhen(undefined, NOW)).toBe("");
+    expect(doneWhenLong(NOW - HOUR, NOW)).toBe("13:40");
+    expect(doneWhenLong(NOW - 3 * DAY, NOW)).toBe("12 Oct 14:40");
     expect(doneWhenLong(new Date(2025, 11, 31, 23).getTime(), NOW)).toBe("31 Dec 2025 23:00");
+    expect(doneWhenLong(undefined, NOW)).toBe("no time on record");
   });
 });
 

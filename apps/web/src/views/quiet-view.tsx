@@ -67,7 +67,7 @@ const DOT: Readonly<Record<DotTone, string>> = {
 };
 
 const MENU_POPUP =
-  "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const MENU_ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[highlighted]:row-cursor";
 
@@ -375,7 +375,7 @@ function QuietCard({
       data-testid="quiet-card"
       data-key={ask.key}
       aria-label="Needs you"
-      className="grid gap-3 rounded-lg border border-border bg-card p-5 shadow-raised"
+      className="grid gap-3 rounded-lg border border-edge bg-card p-5 shadow-raised"
     >
       <header className="flex items-center gap-2 text-body text-muted-foreground">
         <Icon aria-hidden className="size-4 shrink-0 text-status-needs-mark" />
@@ -501,7 +501,7 @@ function Peek({
     <section
       data-testid="quiet-peek"
       aria-label={workspace.name}
-      className="mx-auto mb-2 grid w-[min(36rem,calc(100%-2rem))] gap-1 rounded-lg border border-border bg-card p-3 text-reading"
+      className="mx-auto mb-2 grid w-[min(36rem,calc(100%-2rem))] gap-1 rounded-lg border border-edge bg-card p-3 text-reading"
     >
       <header className="flex items-center gap-2">
         <h2 className="font-medium">{workspace.name}</h2>

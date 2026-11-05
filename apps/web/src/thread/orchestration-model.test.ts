@@ -1,5 +1,5 @@
 import { WorkerReportState, WorkerState, type BudgetMeters, type ThreadId } from "@gram/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   budgetLine,
@@ -161,16 +161,26 @@ describe("digest words", () => {
     expect(pauseConfirmText(3, true)).toMatch(/^The orchestrator and 3 workers are mid-turn\./);
     expect(pauseConfirmText(0, true)).toMatch(/^The orchestrator is mid-turn\./);
     const at = new Date(2026, 9, 18, 14, 2).getTime();
-    expect(pauseClock(at)).toBe("14:02");
-    expect(workerPauseHint("stopping", at)).toBe("Pausing since 14:02… finishing the current step");
-    expect(workerPauseHint("held", at)).toContain("yours: it keeps going with you");
-    expect(workerPauseHint("paused", at)).toContain("continues where it left off");
-    // A worker's band under its workspace's pause: since when, what it does, what resuming does.
-    expect(workerPauseLine("stopping", at)).toBe(
-      "since 14:02 · stops after its current step · resuming lets every worker go on",
-    );
-    expect(workerPauseLine("paused", at)).toContain("waits where it left off");
-    expect(workerPauseLine("held", at)).toBe("since 14:02 · yours, so it keeps going with you");
+    expect(pauseClock(at, at + 60_000)).toBe("14:02");
+    // A pause from another day says its date too, so "since 14:02" never reads as today's.
+    expect(pauseClock(at, new Date(2026, 9, 20, 9).getTime())).toBe("18 Oct 14:02");
+    // The words read the clock now, so pin it to the pause's day.
+    vi.useFakeTimers({ now: at + 60_000, toFake: ["Date"] });
+    try {
+      expect(workerPauseHint("stopping", at)).toBe(
+        "Pausing since 14:02… finishing the current step",
+      );
+      expect(workerPauseHint("held", at)).toContain("yours: it keeps going with you");
+      expect(workerPauseHint("paused", at)).toContain("continues where it left off");
+      // A worker's band under its workspace's pause: since when, what it does, what resuming does.
+      expect(workerPauseLine("stopping", at)).toBe(
+        "since 14:02 · stops after its current step · resuming lets every worker go on",
+      );
+      expect(workerPauseLine("paused", at)).toContain("waits where it left off");
+      expect(workerPauseLine("held", at)).toBe("since 14:02 · yours, so it keeps going with you");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("words the handoff divider and a file's size", () => {

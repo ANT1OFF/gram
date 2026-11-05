@@ -218,7 +218,7 @@ function VerdictBanner({ review, actions }: { review: PrReview; actions: ReviewA
         </p>
       )}
       {latest?.body && (
-        <div className="rounded-(--radius-md) border border-border bg-card/40 p-2">
+        <div className="rounded-(--radius-md) border border-edge bg-card/40 p-2">
           <MessageResponse>{latest.body}</MessageResponse>
         </div>
       )}

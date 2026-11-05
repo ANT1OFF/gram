@@ -299,9 +299,11 @@ describe("agent runtime rows", () => {
   it("says what a newer release means, the 24-hour wait first", () => {
     expect(newerNote(base)).toBeUndefined();
     expect(newerNote(newer({}))).toMatchObject({ kind: "update", summary: "0.159.4 available" });
-    expect(newerNote(newer({ eligible: false }))).toMatchObject({
+    // Released and eligible on other days than now's, so each carries its date before the clock.
+    const now = Date.UTC(2026, 9, 20, 12);
+    expect(newerNote(newer({ eligible: false }), now)).toMatchObject({
       kind: "waiting",
-      summary: expect.stringMatching(/^0\.159\.4 after 2 Oct, \d\d:12$/),
+      summary: expect.stringMatching(/^0\.159\.4 after 2 Oct \d\d:12$/),
       detail: expect.stringContaining("at least 24 hours"),
     });
     // Too fresh wins over anything said about its compatibility.

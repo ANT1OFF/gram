@@ -10,7 +10,7 @@ const seed = (page: Page, flags: Record<string, string>) =>
 
 const WELCOME_UNSEEN = JSON.stringify({ onboarding: { welcomeSeen: false } });
 
-const CLOCK = /^(\d{2}:\d{2}|[A-Z][a-z]{2}\D*\d{1,2}\D+\d{2}:\d{2})$/;
+const CLOCK = /^(\d{1,2} [A-Z][a-z]{2}( \d{4})? )?\d{2}:\d{2}$/;
 
 test("the meter shows the tightest limit and opens onto both providers", async ({ page }) => {
   await page.goto("/t/t-flaky");
@@ -38,7 +38,7 @@ test("the meter shows the tightest limit and opens onto both providers", async (
       const cells = windows.nth(i).locator(":scope > span:not([aria-hidden])");
       await expect(cells.nth(0)).toHaveText(label);
       await expect(cells.nth(1)).toHaveText(rows[i]!);
-      // Resets on a 24-hour clock: today's as a time, later ones with their weekday.
+      // Resets on a 24-hour clock: today's as a time, later ones with their date before it.
       await expect(cells.nth(2)).toHaveText(CLOCK);
     }
   }

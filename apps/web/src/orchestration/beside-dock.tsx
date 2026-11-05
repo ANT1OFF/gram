@@ -217,7 +217,7 @@ function WorkerLog({ threadId }: { threadId: ThreadId }) {
 const FOLLOW_SLACK = 24;
 
 const TERMINAL_PILL =
-  "absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-meta shadow-raised";
+  "absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-edge bg-popover px-2.5 py-1 text-meta shadow-raised";
 
 /**
  * The worker's terminal: its newest command, its output growing as the transcript brings it in. It

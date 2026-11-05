@@ -270,7 +270,7 @@ describe("the tabs", () => {
     // all Gram still has.
     expect(tabs.done.map((f) => [f.day?.label, f.feature, f.rows.map((r) => r.threadId)])).toEqual([
       ["Today", "mail-trigger", ["schema"]],
-      ["Mon 12 Oct", "tooling", ["uv"]],
+      ["12 Oct", "tooling", ["uv"]],
       ["October 2026", "tooling", ["py39"]],
       ["October 2026", "spike", ["spike"]],
     ]);
@@ -303,10 +303,11 @@ describe("the tabs", () => {
   it("says when a finished worker finished in 24-hour time, or its day", () => {
     expect(finishedWhen(startOfDay(NOW) + 9 * HOUR + 5 * 60_000, NOW)).toBe("09:05");
     expect(finishedWhen(NOW - 2 * 24 * HOUR, NOW)).toBe("13 Oct");
+    expect(finishedWhen(new Date(2025, 11, 30, 18).getTime(), NOW)).toBe("30 Dec 2025");
     expect(clockTime(NOW - 2 * 24 * HOUR)).toBe("14:40");
   });
 
-  it("heads Done's days at local midnight: Today, Yesterday, then the weekday and date", () => {
+  it("heads Done's days at local midnight: Today, Yesterday, then the date", () => {
     const midnight = startOfDay(NOW);
     const days = {
       features: [
@@ -335,8 +336,8 @@ describe("the tabs", () => {
     expect(tabs.done.map((f) => [f.day?.label, f.rows.map((r) => r.threadId)])).toEqual([
       ["Today", ["first", "midnight"]],
       ["Yesterday", ["late"]],
-      ["Tue 13 Oct", ["parked"]],
-      ["Fri 9 Oct", ["week"]],
+      ["13 Oct", ["parked"]],
+      ["9 Oct", ["week"]],
     ]);
     expect(tabs.done[0]!.day?.start).toBe(midnight);
     expect(tabs.done[1]!.day?.start).toBe(daysBefore(NOW, 1));
@@ -360,7 +361,7 @@ describe("the tabs", () => {
   it("heads Done by month before the week: this year's and earlier years' alike", () => {
     expect(doneDay(daysBefore(NOW, 6), NOW)).toEqual({
       start: daysBefore(NOW, 6),
-      label: "Fri 9 Oct",
+      label: "9 Oct",
     });
     // The minute before the week's first midnight is October's.
     expect(doneDay(daysBefore(NOW, 6) - 60_000, NOW)).toEqual({
@@ -444,7 +445,7 @@ describe("the tabs", () => {
     expect(all.find((row) => row.threadId === "live")?.cleanedUp).toBeUndefined();
     expect(tabs.done.map((f) => [f.day?.label, f.rows.map((r) => r.threadId)])).toEqual([
       ["Today", ["c1"]],
-      ["Mon 12 Oct", ["c2"]],
+      ["12 Oct", ["c2"]],
       ["Earlier", ["live"]],
     ]);
   });

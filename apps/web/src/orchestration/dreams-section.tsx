@@ -28,7 +28,7 @@ import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
 import { useModelNames } from "@/composer/models";
 import { EXPLAIN } from "@/lib/explain";
-import { agoText } from "@/lib/time";
+import { agoText, formatDay } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { ExpandPresence, PresenceItem, PresenceList, Shimmer } from "@/motion";
@@ -71,14 +71,9 @@ import {
 } from "./memory-model";
 import { InlineConfirm } from "./inline-confirm";
 
-const SECTION = "flex flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3";
+const SECTION = "flex flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3";
 const INPUT =
   "rounded-md border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
-const DATE = new Intl.DateTimeFormat(undefined, {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
 
 /**
  * Both confirmations say what the server does: a dream's thread runs in the dream's own folder, so
@@ -93,7 +88,7 @@ const discardWarning = () =>
 const dateRange = (oldest: number | undefined, newest: number | undefined): string =>
   oldest === undefined || newest === undefined
     ? "—"
-    : `${DATE.format(oldest)} – ${DATE.format(newest)}`;
+    : `${formatDay(oldest)} – ${formatDay(newest)}`;
 
 /**
  * What a dream or an import would read, and the choices that shape it, before anything is spent:
@@ -208,7 +203,7 @@ function StartFlow({
     <div
       data-testid="dream-start"
       data-kind={kind}
-      className="flex flex-col gap-3 rounded-(--radius-md) border border-border bg-card p-3 text-meta"
+      className="flex flex-col gap-3 rounded-(--radius-md) border border-edge bg-card p-3 text-meta"
     >
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

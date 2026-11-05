@@ -5,8 +5,7 @@ import { useRef, useState } from "react";
 
 import { Hint } from "@/components/hint";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { dateTimeFormat } from "@/lib/intl";
-import { CLOCK_TIME } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/motion/spinner";
@@ -16,17 +15,16 @@ import { IDLE_COMPACT_ANCHOR } from "@/settings/idle-compact-field";
 import { formatElapsed } from "./subagent-strip-model";
 
 const TOKENS = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 0 });
-const DATE = { day: "numeric", month: "short" } as const;
 
 /**
  * The marker's line: `Context compacted · 14:32 · 182K → 24K tokens`. The time is alone when it was
- * today and follows the date when not; a side the agent didn't report is left out. `intl` pins the
- * locale and zone, for tests.
+ * today and follows the date when not (`formatStamp`); a side the agent didn't report is left out.
+ * `intl` pins the zone, for tests.
  */
 export const compactionLabel = (
   compaction: CompactionData,
   now: number,
-  intl: { readonly locale?: string; readonly timeZone?: string } = {},
+  intl: { readonly timeZone?: string } = {},
 ): string => compactionParts(compaction, now, intl).join(" · ");
 
 /**
@@ -36,19 +34,10 @@ export const compactionLabel = (
 export const compactionParts = (
   compaction: CompactionData,
   now: number,
-  intl: { readonly locale?: string; readonly timeZone?: string } = {},
+  intl: { readonly timeZone?: string } = {},
 ): readonly string[] => {
-  const zone = intl.timeZone === undefined ? {} : { timeZone: intl.timeZone };
-  const format = (at: number, options: Intl.DateTimeFormatOptions) =>
-    dateTimeFormat(intl.locale, { ...options, ...zone }).format(at);
   const { at, preTokens: pre, postTokens: post } = compaction;
-  const when =
-    at === undefined
-      ? undefined
-      : format(
-          at,
-          format(at, DATE) === format(now, DATE) ? CLOCK_TIME : { ...DATE, ...CLOCK_TIME },
-        );
+  const when = at === undefined ? undefined : formatStamp(at, now, intl);
   const tokens =
     pre !== undefined && post !== undefined
       ? `${TOKENS.format(pre)} → ${TOKENS.format(post)} tokens`

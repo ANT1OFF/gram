@@ -3,7 +3,7 @@
 import { outputPreviewable, type OutputKind, type WorkspaceOutput } from "@gram/contracts";
 
 import { dateTimeFormat } from "@/lib/intl";
-import { formatClockTime } from "@/lib/time";
+import { formatDay, formatStamp } from "@/lib/time";
 
 /** The filter's choices: every kind, or one. */
 export type OutputFilter = "all" | OutputKind;
@@ -41,9 +41,12 @@ export interface OutputGroup {
 /** `path`'s last segment. */
 export const outputName = (path: string): string => path.split(/[\\/]/).at(-1) ?? path;
 
-/** When it was written, as a 24-hour clock. */
-export const outputTime = (output: Pick<WorkspaceOutput, "at">, timeZone?: string): string =>
-  formatClockTime(output.at, timeZone === undefined ? {} : { timeZone });
+/** When it was written: its 24-hour clock today, else its date before the clock (`formatStamp`). */
+export const outputTime = (
+  output: Pick<WorkspaceOutput, "at">,
+  now = Date.now(),
+  timeZone?: string,
+): string => formatStamp(output.at, now, timeZone === undefined ? {} : { timeZone });
 
 const dayKey = (at: number, timeZone: string | undefined) =>
   dateTimeFormat("en-CA", {
@@ -59,17 +62,15 @@ const dayBefore = (key: string): string => {
   return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
 };
 
-/** `Today`, `Yesterday`, else `Tue 14 Oct`, in the viewer's zone (or `timeZone`, for tests). */
+/**
+ * `Today`, `Yesterday`, else the date (`14 Oct`, `formatDay`), in the viewer's zone (or `timeZone`,
+ * for tests).
+ */
 export function dayLabel(at: number, now: number, timeZone?: string): string {
   const day = dayKey(at, timeZone);
   if (day === dayKey(now, timeZone)) return "Today";
   if (day === dayBefore(dayKey(now, timeZone))) return "Yesterday";
-  return dateTimeFormat("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    ...(timeZone === undefined ? {} : { timeZone }),
-  }).format(at);
+  return formatDay(at, now, timeZone === undefined ? {} : { timeZone });
 }
 
 /** The feature a worker's output belongs to; the orchestrator's own, and a plain thread's, by name. */

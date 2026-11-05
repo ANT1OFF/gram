@@ -95,7 +95,7 @@ export function StageEditor({
     <form
       aria-label={`Plan of ${subject}`}
       data-testid="stage-editor"
-      className="flex max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card p-2.5 text-meta"
+      className="flex max-w-xl flex-col gap-2 rounded-(--radius-md) border border-edge bg-card p-2.5 text-meta"
       onSubmit={(event) => {
         event.preventDefault();
         submit();

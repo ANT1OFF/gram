@@ -1,8 +1,7 @@
 import type { HeldBrief, LimitForecast } from "@gram/contracts";
 
 import { agentLabel } from "@/agents/agent-label";
-import { dateTimeFormat } from "@/lib/intl";
-import { CLOCK_TIME, formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import {
   limitWindowOf,
   type LimitProvider,
@@ -65,36 +64,15 @@ export const limitSummaryText = ({ provider, window, limit }: TightestLimit): st
 /** The line under a window spent but carried on credits: a full window here is no stop. */
 export const CREDITS_TEXT = "Past the limit on credits; turns go on";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** When a window resets, 24-hour: the time alone today, else the date before it (`formatStamp`). */
+export const resetText = (at: number, now: number, intl: IntlOptions = {}): string =>
+  formatStamp(at, now, intl);
 
 /**
- * When a window resets, on a 24-hour clock: the time alone today, the weekday and time within the
- * week ahead, and the date and time beyond it.
+ * When a window resets, for a column headed "Resets at": `resetText`, whose date before the time
+ * keeps a reset days off from being mistaken for today's.
  */
-export function resetText(at: number, now: number, intl: IntlOptions = {}): string {
-  const zone = intl.timeZone === undefined ? {} : { timeZone: intl.timeZone };
-  const format = (options: Intl.DateTimeFormatOptions, value = at) =>
-    dateTimeFormat(intl.locale, { ...options, ...zone }).format(value);
-  const day = { year: "numeric", month: "numeric", day: "numeric" } as const;
-  const time = formatClockTime(at, intl);
-  if (format(day) === format(day, now)) return time;
-  if (at - now < 6 * DAY_MS) return `${format({ weekday: "short" })} ${time}`;
-  return format({ day: "numeric", month: "short", ...CLOCK_TIME });
-}
-
-/**
- * When a window resets, for a column headed "Resets at": the time alone today, and otherwise the
- * day and date before it ("Thu 16 Oct 10:00"), so a reset days off is never mistaken for today's.
- */
-export function resetAtText(at: number, now: number, intl: IntlOptions = {}): string {
-  const zone = intl.timeZone === undefined ? {} : { timeZone: intl.timeZone };
-  const format = (options: Intl.DateTimeFormatOptions, value = at) =>
-    dateTimeFormat(intl.locale, { ...options, ...zone }).format(value);
-  const day = { year: "numeric", month: "numeric", day: "numeric" } as const;
-  const time = formatClockTime(at, intl);
-  if (format(day) === format(day, now)) return time;
-  return `${format({ weekday: "short", day: "numeric", month: "short" })} ${time}`;
-}
+export const resetAtText = resetText;
 
 /** "1,250": a credit balance as the agent gave it, its whole part grouped by thousands. */
 const creditBalanceText = (balance: string): string =>
@@ -129,13 +107,18 @@ export const meterLabel = (tightest: TightestLimit): string =>
 const FORECAST_ROUND_MS = 5 * 60 * 1000;
 
 /**
- * "Estimate at recent pace: 90% around 16:40": the forecast on a 24-hour clock, to the nearest five
- * minutes, since a pace from an hour's readings is no closer than that, and named an estimate so
- * it never reads as certain.
+ * "Estimate at recent pace: 90% around 16:40": the forecast on a 24-hour clock (`formatStamp`, so
+ * with its date when it isn't today), to the nearest five minutes, since a pace from an hour's
+ * readings is no closer than that, and named an estimate so it never reads as certain.
  */
-export const forecastText = (forecast: LimitForecast, intl: IntlOptions = {}): string =>
-  `Estimate at recent pace: ${Math.round(forecast.target * 100)}% around ${formatClockTime(
+export const forecastText = (
+  forecast: LimitForecast,
+  now = Date.now(),
+  intl: IntlOptions = {},
+): string =>
+  `Estimate at recent pace: ${Math.round(forecast.target * 100)}% around ${formatStamp(
     Math.round(forecast.at / FORECAST_ROUND_MS) * FORECAST_ROUND_MS,
+    now,
     intl,
   )}`;
 

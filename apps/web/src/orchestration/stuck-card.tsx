@@ -80,7 +80,7 @@ export function StuckCard({ thread }: { thread: Thread }) {
       <div
         data-testid="worker-stuck"
         data-source={source}
-        className="flex flex-col gap-1.5 border-b border-border bg-card/40 px-4 py-2 text-reading"
+        className="flex flex-col gap-1.5 border-b border-edge bg-card/40 px-4 py-2 text-reading"
       >
         <div className="flex items-start gap-2">
           <Clock aria-hidden className="mt-0.5 size-3.5 shrink-0 text-status-idle" />

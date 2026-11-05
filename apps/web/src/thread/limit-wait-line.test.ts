@@ -15,7 +15,7 @@ describe("limitWaitLabel", () => {
     );
   });
 
-  it("names the day of a resume that isn't today's", () => {
+  it("dates a resume that isn't today's", () => {
     const evening = Date.parse("2026-10-15T20:00:00Z");
     expect(
       limitWaitLabel(
@@ -23,7 +23,7 @@ describe("limitWaitLabel", () => {
         evening,
         intl,
       ),
-    ).toBe("Limit reached · resumes Sat 21:00");
+    ).toBe("Limit reached · resumes 17 Oct 21:00");
   });
 
   it("says auto-resume is off once the user cancelled the wait", () => {
@@ -46,8 +46,11 @@ describe("limitWaitLabel", () => {
         intl,
       ),
     ).toBe("Limit cleared · resumes 12:50");
-    expect(limitClearedLabel({ at: RESUME, resetsAt: RESUME + 3_600_000 }, intl)).toBe(
-      "Limit cleared · resumed 12:50",
+    const cleared = { at: RESUME, resetsAt: RESUME + 3_600_000 };
+    expect(limitClearedLabel(cleared, RESUME + 60_000, intl)).toBe("Limit cleared · resumed 12:50");
+    // Read on a later day, it says which day it resumed.
+    expect(limitClearedLabel(cleared, RESUME + 86_400_000, intl)).toBe(
+      "Limit cleared · resumed 15 Oct 12:50",
     );
   });
 });

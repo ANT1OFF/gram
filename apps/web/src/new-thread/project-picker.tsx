@@ -86,7 +86,7 @@ export function ProjectPicker({ value, onChange, status, debounceMs }: ProjectPi
         <FolderStatusLine status={status} />
       )}
       <Expand open={browserOpen} id={browserId}>
-        <div className="mt-1 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="mt-1 overflow-hidden rounded-lg border border-edge bg-card">
           {browserOpen && (
             <FolderBrowser
               onChoose={(path) => {
@@ -127,7 +127,7 @@ function FolderStatusLine({ status }: { status: FolderStatus }) {
       );
     case "invalid":
       return status.problem.access ? (
-        <div className="rounded-lg border border-border bg-card">
+        <div className="rounded-lg border border-edge bg-card">
           <FolderAccessRecovery
             denial={status.problem.access}
             message={status.problem.message}

@@ -112,6 +112,16 @@
   --elevation-overlay: var(--shadow-overlay);
   --elevation-composer: var(--shadow-composer);
 
+  /* One elevation step for every secondary surface: a card in the transcript or a pane, a panel's
+     block, a popover and a menu (bg-card, bg-popover) are surface-3. Its edge (border-edge) is a
+     shade firmer than a plain divider, which carries the step in dark where a shadow doesn't show,
+     and a row that opens or acts (border-edge-action) a shade firmer again, so what can be clicked
+     separates from the page. The fill stays surface-3: the palettes hold muted text at AA on it,
+     some exactly, so a lighter fill would break their floor. */
+  --surface-raised: var(--surface-3);
+  --edge-raised: color-mix(in srgb, var(--border-strong) 18%, var(--border-subtle));
+  --edge-action: color-mix(in srgb, var(--border-strong) 30%, var(--border-subtle));
+
   /* A control laid over a picture (an attachment's remove button): dark in every palette, since
      what is under it is the picture, not the theme. */
   --media-scrim: rgb(0 0 0 / 0.6);
@@ -137,6 +147,12 @@
   /* How the column sits in a pane wider than it: this share of the spare room before it, the rest
      after (globals.css thread-column). */
   --thread-lean: 0.4;
+  /* Settings' page column, and a wide page's (a table, a roster): wide enough that a row's label
+     and its control read together, and this share of the spare room before it, the rest after:
+     less than the thread's lean, so a page's name stays near the nav that opened it. */
+  --settings-column-width: 60rem;
+  --settings-column-wide: 68rem;
+  --settings-lean: 0.3;
 
   /* The composer slab (its radius is per look): a faint outline with the shadow tucked under it, so
      it floats without a frame. Focus darkens the outline to border-strong, which the contrast
@@ -194,6 +210,8 @@
 }
 
 [data-contrast="more"] {
+  --edge-raised: var(--border-strong);
+  --edge-action: var(--border-strong);
   --composer-outline: var(--border-strong);
   --composer-focus-width: var(--focus-width);
   --shadow-composer: none;
@@ -201,6 +219,8 @@
 
 @media (forced-colors: active) {
   :root {
+    --edge-raised: CanvasText;
+    --edge-action: CanvasText;
     --composer-outline: CanvasText;
     --composer-focus-width: var(--focus-width);
     --shadow-composer: none;

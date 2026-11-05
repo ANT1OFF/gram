@@ -201,7 +201,7 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
                       glide
                       key={item.id}
                       data-testid="queue-item"
-                      className="@container rounded-(--radius-sm) border border-border bg-card/40 px-2 py-1"
+                      className="@container rounded-(--radius-sm) border border-edge bg-card/40 px-2 py-1"
                     >
                       {/* In a narrow pane the controls go above the text rather than squeeze it
                           out, or sit below a screenful of it. */}

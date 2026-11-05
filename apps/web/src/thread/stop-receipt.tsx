@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { useThreadFeed } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -15,9 +15,10 @@ import { useStopStore } from "./stop-store";
 /** "Stopped by you · 14:05", or "Stopped · 14:05" for a stop the user didn't make from here. */
 export const stopLabel = (
   receipt: StopReceipt,
-  intl?: { readonly locale?: string; readonly timeZone?: string },
+  now = Date.now(),
+  intl: { readonly timeZone?: string } = {},
 ): string =>
-  `${receipt.byYou ? "Stopped by you" : "Stopped"} · ${formatClockTime(receipt.at, intl)}`;
+  `${receipt.byYou ? "Stopped by you" : "Stopped"} · ${formatStamp(receipt.at, now, intl)}`;
 
 /** What Continue sends: the agent picks up where it stopped. */
 const CONTINUE = "Continue";

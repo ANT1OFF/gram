@@ -16,6 +16,12 @@ export const STOP = OVERVIEW_STOP;
 export const ROW =
   "grid w-full cursor-default grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 py-1 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring";
 
+/**
+ * The thread open in the chat, as a row under its workspace: the chosen fill and edge, stronger than
+ * its workspace's `bg-sidebar-row-active`, so the place you are reads at its deepest level.
+ */
+export const CURRENT_ROW = "aria-current:choice-selected";
+
 /** A settled row: grey and a step back, until hovered, focused or open. */
 export const SETTLED =
   "opacity-75 grayscale transition-[opacity,filter] duration-(--dur-fast) hover:opacity-100 hover:grayscale-0 focus-visible:opacity-100 focus-visible:grayscale-0 aria-current:opacity-100 aria-current:grayscale-0";

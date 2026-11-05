@@ -251,7 +251,7 @@ function FileLink({
             data-surface="overlay"
             data-testid="file-ref-menu"
             aria-label="File"
-            className="flex max-w-md origin-(--transform-origin) items-center gap-1 rounded-md border border-border bg-popover py-0.5 ps-2 pe-0.5 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="flex max-w-md origin-(--transform-origin) items-center gap-1 rounded-md border border-edge bg-popover py-0.5 ps-2 pe-0.5 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <span
               className="min-w-0 flex-1 truncate font-mono text-muted-foreground"

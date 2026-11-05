@@ -101,7 +101,7 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
       </header>
       <div
         data-testid="finished-note"
-        className="flex shrink-0 items-center gap-2 border-b border-border bg-card/40 px-4 py-1.5 text-meta text-muted-foreground"
+        className="flex shrink-0 items-center gap-2 border-b border-edge bg-card/40 px-4 py-1.5 text-meta text-muted-foreground"
       >
         <Archive aria-hidden className="size-3.5 shrink-0" />
         <span className="min-w-0 flex-1 truncate">Worktree cleaned up · read-only</span>
@@ -171,7 +171,7 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
       className="flex w-full thread-column shrink-0 flex-col gap-2 px-6 py-3 text-reading"
     >
       {detail.brief !== undefined && (
-        <div className="rounded-md border border-border bg-card/40 px-3 py-2">
+        <div className="rounded-md border border-edge bg-card/40 px-3 py-2">
           <div className="text-meta text-muted-foreground">Brief</div>
           <p data-testid="finished-brief" className="line-clamp-3" title={detail.brief}>
             {detail.brief}

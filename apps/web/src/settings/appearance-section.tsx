@@ -385,7 +385,7 @@ function PreviewCard({ className, children }: { className?: string; children: Re
     <div
       {...{ [LONG_COPY]: "sample thread" }}
       className={cn(
-        "rounded-lg border-(length:--card-border-width) border-border bg-card p-3 shadow-raised backdrop-blur-(--surface-blur)",
+        "rounded-lg border-(length:--card-border-width) border-edge bg-card p-3 shadow-raised backdrop-blur-(--surface-blur)",
         className,
       )}
     >

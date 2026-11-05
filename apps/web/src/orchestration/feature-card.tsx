@@ -17,7 +17,7 @@ import { openExternalUrl } from "@/api/open-external";
 import { prFactsOfCard } from "@/components/pr-facts";
 import { PrMarkIcon } from "@/components/pr-marks";
 import { PR_STATE_DISPLAY, prMarksOf, prRefText, prTooltipOf } from "@/components/pr-marks-model";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { PulseOnce, Swap } from "@/motion";
@@ -325,7 +325,7 @@ export function FeatureCardView({
       data-feature={card.feature}
       data-version={card.version}
       data-station={card.station}
-      className="my-1 flex w-full max-w-2xl flex-col gap-1.5 rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading"
+      className="my-1 flex w-full max-w-2xl flex-col gap-1.5 rounded-(--radius-md) border border-edge bg-card/40 p-3 text-reading"
     >
       <header className="flex min-w-0 items-center gap-2">
         <PulseOnce
@@ -361,10 +361,10 @@ export function FeatureCardView({
         {stale && (
           <span
             data-testid="feature-card-updated"
-            title={`Last moved at ${formatClockTime(card.updatedAt)}`}
+            title={`Last moved at ${formatStamp(card.updatedAt)}`}
             className="ml-auto shrink-0 text-meta text-muted-foreground tabular-nums"
           >
-            {formatClockTime(card.updatedAt)}
+            {formatStamp(card.updatedAt)}
           </span>
         )}
       </header>
@@ -445,7 +445,7 @@ export function StreamLineView({ line, at }: { line: StreamLine; at?: number | u
       {line.pr !== undefined && <PrChip pr={line.pr} threadId={line.threadId} />}
       {at !== undefined && (
         <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
-          {formatClockTime(at)}
+          {formatStamp(at)}
         </span>
       )}
     </p>

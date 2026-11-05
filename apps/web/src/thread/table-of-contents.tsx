@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import type { Chapter } from "./parts";
 
 const POPUP =
-  "z-50 max-h-80 w-72 max-w-[calc(100vw-2rem)] origin-(--transform-origin) overflow-y-auto rounded-(--radius-md) border border-border bg-popover p-1 text-popover-foreground shadow-(--shadow-raised) outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 max-h-80 w-72 max-w-[calc(100vw-2rem)] origin-(--transform-origin) overflow-y-auto rounded-(--radius-md) border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
   "block w-full cursor-default rounded-(--radius-sm) px-2 py-1.5 text-left text-reading wrap-anywhere outline-none select-none data-[highlighted]:row-cursor";
 
@@ -97,9 +97,13 @@ export function TableOfContents({
   );
 }
 
+/** The fewest prompts or chapters that make the rail an outline rather than a stray mark. */
+export const RAIL_MIN_MARKS = 3;
+
 /**
  * Fits in the existing left gutter, leaving the transcript's reading width and scroll owner intact:
- * one mark per prompt or chapter, its title on hover, to jump between them. Hidden for a single one.
+ * one mark per prompt or chapter, its title on hover, to jump between them. Hidden for fewer than
+ * `RAIL_MIN_MARKS`.
  */
 export function ConversationRail({
   chapters,
@@ -125,10 +129,10 @@ export function ConversationRail({
   const jump = useCallback((messageId: string) => latestJump.current(messageId), []);
   const firstId = chapters[0]?.id;
   const { earlier, loadingEarlier, earlierFailed } = history;
-  // One mark has nowhere to jump to, and alone in the gutter it reads as a stray dash: the rail
-  // shows from the second prompt or chapter on while the transcript scrolls, or while earlier
-  // history waits to load.
-  const available = (chapters.length > 1 && scrollable) || earlier === true;
+  // One mark has nowhere to jump to, and two on their track read as a stray bracket in the gutter,
+  // not an outline: the rail shows from the third prompt or chapter on while the transcript
+  // scrolls, or while earlier history waits to load. Fewer are a click away in Contents.
+  const available = (chapters.length >= RAIL_MIN_MARKS && scrollable) || earlier === true;
   // Disabling the loading button can blur it to body. That is not a new focus owner;
   // deliberate focus/input elsewhere retires this request's keyboard continuation.
   useEffect(() => {

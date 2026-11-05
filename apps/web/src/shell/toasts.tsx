@@ -149,7 +149,7 @@ export function Toasts() {
                 dismissFocused(n, event.currentTarget, index);
               }}
               // The stack's gap is each toast's own margin, so a leaving toast folds its gap away too.
-              className="pointer-events-auto mb-2 flex items-start gap-2 rounded-(--radius-lg) border border-border bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised)"
+              className="pointer-events-auto mb-2 flex items-start gap-2 rounded-(--radius-lg) border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised)"
             >
               <kind.icon aria-hidden className={cn("mt-0.5 size-4 shrink-0", kind.tone)} />
               <button
@@ -201,7 +201,7 @@ function UndoItem({ toast }: { toast: UndoToast }) {
         event.stopPropagation();
         dismiss();
       }}
-      className="pointer-events-auto mb-2 flex items-center gap-2 rounded-(--radius-lg) border border-border bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised)"
+      className="pointer-events-auto mb-2 flex items-center gap-2 rounded-(--radius-lg) border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised)"
     >
       <span className="min-w-0 flex-1 font-medium">{toast.title}</span>
       <button

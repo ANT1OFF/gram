@@ -67,7 +67,7 @@ export function SidebarDetails({
               data-surface="overlay"
               initialFocus={body}
               finalFocus={returnFocusTo(opener)}
-              className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(32rem,90vw)] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-overlay"
+              className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(32rem,90vw)] -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-lg border border-edge bg-popover p-5 text-popover-foreground shadow-overlay"
             >
               <Dialog.Title className="shrink-0 font-heading text-title">
                 Sidebar details

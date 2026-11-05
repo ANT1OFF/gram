@@ -111,7 +111,7 @@ export function ThreadMessage({
   return (
     <div data-testid="message-thread" className="flex max-w-full min-w-0 flex-col gap-1">
       <MessageOriginLabel origin={origin} />
-      <MessageContent className="ml-6.5 rounded-lg border border-border bg-card/40 px-3 py-2 whitespace-pre-wrap">
+      <MessageContent className="ml-6.5 rounded-lg border border-edge bg-card/40 px-3 py-2 whitespace-pre-wrap">
         {children}
       </MessageContent>
     </div>

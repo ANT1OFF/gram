@@ -110,7 +110,7 @@ function WorkerChip({
       data-asking={asking || undefined}
       // The name's button stretches over the whole chip; the PR and the overlap sit above it.
       className={cn(
-        "relative flex w-full max-w-72 min-w-0 flex-col gap-1 rounded-(--radius-md) border border-border bg-card px-2.5 py-2 text-meta focus-within:ring-2 focus-within:ring-ring hover:border-ring/60",
+        "relative flex w-full max-w-72 min-w-0 flex-col gap-1 rounded-(--radius-md) border border-edge bg-card px-2.5 py-2 text-meta focus-within:ring-2 focus-within:ring-ring hover:border-ring/60",
         worker.tone === "needs" && "border-status-needs-mark/60",
       )}
     >

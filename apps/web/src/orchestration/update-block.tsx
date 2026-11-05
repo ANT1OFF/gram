@@ -3,7 +3,7 @@ import { ChevronRight, History } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { PR_STATE_DISPLAY } from "@/components/pr-marks-model";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Expand } from "@/motion";
 
@@ -51,7 +51,8 @@ export function UpdateBlock({
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
-  const box = "w-full rounded-(--radius-md) border border-border/70 bg-muted/20 px-2.5 py-1";
+  // An actionable secondary row: it opens, so its edge is the firmer one (border-edge-action).
+  const box = "w-full rounded-(--radius-md) border border-edge-action bg-card/40 px-2.5 py-1";
   if (quiet) {
     return (
       <QuietUpdate lines={lines} digests={digests} replies={replies} renderReply={renderReply} />
@@ -151,7 +152,7 @@ function QuietUpdate({
     ...digests.flatMap(({ at }) => (at === undefined ? [] : [at])),
     ...replies.flatMap((reply) => reply.metadata?.createdAt ?? []),
   );
-  const time = Number.isFinite(newest) ? formatClockTime(newest) : words.time;
+  const time = Number.isFinite(newest) ? formatStamp(newest) : words.time;
   const many = digests.length > 1 ? `${digests.length} digests` : undefined;
   const said = [...words.counts.map((count) => count.text), many, preview];
   return (

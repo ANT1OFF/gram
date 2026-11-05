@@ -14,8 +14,9 @@ const buttonVariants = cva(
           "border-border bg-background text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-transparent dark:hover:bg-muted",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--surface-3),var(--fg)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+        // The row hover's fill (surface-hover), so an icon button shows its 28 px target in dark too.
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
         destructive: "bg-destructive-tint text-destructive hover:bg-destructive-tint-hover",
         link: "text-link underline-offset-4 hover:underline",
       },

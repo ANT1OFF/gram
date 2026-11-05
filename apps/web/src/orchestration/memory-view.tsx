@@ -52,7 +52,7 @@ import { useQuestions } from "./use-board-actions";
 import { useFocusOnOpen } from "./use-focus-on-open";
 import { useWorkspacesQuery } from "./use-orchestration";
 
-const SECTION = "flex flex-col gap-3 rounded-(--radius-md) border border-border bg-card/40 p-3";
+const SECTION = "flex flex-col gap-3 rounded-(--radius-md) border border-edge bg-card/40 p-3";
 /** A tab's one line on what it is for, beside its action. */
 const LEAD = "min-w-0 flex-1 text-meta text-muted-foreground";
 /** A size beside its cap, the cap as short as it reads: 32 KB, not 32.0 KB. */

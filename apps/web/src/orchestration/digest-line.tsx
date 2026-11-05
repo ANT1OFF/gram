@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { messageText } from "@/thread/message-actions";
 import { DigestDetails } from "@/thread/orchestration-cards";
 import { digestTitle } from "@/thread/orchestration-model";
@@ -59,7 +59,7 @@ export function DigestLine({ digests }: { digests: readonly StreamDigest[] }) {
                     {title}
                     {at !== undefined && (
                       <span className="font-normal text-muted-foreground tabular-nums">
-                        {formatClockTime(at)}
+                        {formatStamp(at)}
                       </span>
                     )}
                   </h3>

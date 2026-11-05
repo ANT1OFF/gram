@@ -246,7 +246,7 @@ export function MockCard({ threadId, mock }: { threadId: ThreadId; mock: MockCar
       data-testid="mock-card"
       data-shots={theme}
       aria-label={`Mock: ${mock.title}`}
-      className="my-2 flex w-full max-w-xl min-w-0 flex-col gap-2.5 rounded-lg border border-border bg-card p-3"
+      className="my-2 flex w-full max-w-xl min-w-0 flex-col gap-2.5 rounded-lg border border-edge bg-card p-3"
     >
       <header className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <LayoutDashboard aria-hidden className="size-4 shrink-0 text-muted-foreground" />

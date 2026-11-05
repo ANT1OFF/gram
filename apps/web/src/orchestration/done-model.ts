@@ -1,9 +1,9 @@
 import type { WorkspaceId } from "@gram/contracts";
 
-import { dateTimeFormat } from "@/lib/intl";
+import { formatStamp } from "@/lib/time";
 import type { DoneGrouping } from "@/stores/layout";
 
-import { clockTime, DONE_DAYS, daysBefore, doneDay, startOfDay } from "./workers-model";
+import { doneDay } from "./workers-model";
 
 // Done, as the overview and ⌘J both list it: every finished chat, workers and solo threads alike,
 // latest first, grouped by date or by orchestrator, a page at a time. Pure, so the two lists group
@@ -143,32 +143,10 @@ export const doneWindow = <T extends DoneEntry>(
   };
 };
 
-/**
- * A finished row's time where its heading says the rest: on its clock by date for the last
- * `DONE_DAYS` days, its date before that ("30 Oct"); by orchestrator, on its clock today and its
- * date before, with the year when it isn't this year's ("30 Oct 2025").
- */
-export const doneWhen = (at: number | undefined, by: DoneGrouping, now: number): string => {
-  if (at === undefined) return "";
-  const recent = by === "date" ? at >= daysBefore(now, DONE_DAYS - 1) : at >= startOfDay(now);
-  if (recent) return clockTime(at);
-  const year = new Date(at).getFullYear() !== new Date(now).getFullYear();
-  return dateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    ...(year ? { year: "numeric" } : {}),
-  }).format(new Date(at));
-};
+/** A finished row's time: its 24-hour clock today, else its date before the clock (`formatStamp`). */
+export const doneWhen = (at: number | undefined, now: number): string =>
+  at === undefined ? "" : formatStamp(at, now);
 
-/** A finished row's time in full, for its name: `Today 14:12`, `Fri 30 Oct 14:12`, `12 Oct 2025 14:12`. */
-export const doneWhenLong = (at: number | undefined, now: number): string => {
-  if (at === undefined) return "no time on record";
-  const day = doneDay(at, now);
-  const date =
-    at >= daysBefore(now, DONE_DAYS - 1)
-      ? day.label
-      : dateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(
-          new Date(at),
-        );
-  return `${date} ${clockTime(at)}`;
-};
+/** A finished row's time for its name: `doneWhen`, or that none is on record. */
+export const doneWhenLong = (at: number | undefined, now: number): string =>
+  at === undefined ? "no time on record" : formatStamp(at, now);

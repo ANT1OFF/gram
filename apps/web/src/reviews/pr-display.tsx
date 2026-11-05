@@ -23,7 +23,7 @@ export const PLACEMENT_OPTIONS = [
 ] as const satisfies readonly { value: ReviewRequestsPlacement; label: string }[];
 
 export const CARD_SURFACE =
-  "origin-(--transform-origin) rounded-md border border-border bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "origin-(--transform-origin) rounded-md border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 
 /** Enter the scrollable preview without changing the row's Tab/owning-thread order. */
 export function usePrCardFocus() {

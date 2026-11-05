@@ -69,8 +69,10 @@ test("a held brief sits on the Board's Briefed station with its reset, and Relea
   await expect(chip).toBeVisible();
   await expect(chip).toHaveAttribute("data-held-id", id);
   await expect(chip).toContainText("Nightly docs");
-  // 24-hour, with the weekday only when the reset falls on another day.
-  await expect(chip.getByTestId("held-until")).toHaveText(new RegExp(`^until (\\w{3} )?${clock}$`));
+  // 24-hour, with the date only when the reset falls on another day.
+  await expect(chip.getByTestId("held-until")).toHaveText(
+    new RegExp(`^until (\\d{1,2} \\w{3} )?${clock}$`),
+  );
   await expect(chip.getByTestId("held-until")).not.toHaveText(/AM|PM/);
   await expect(chip).toHaveAttribute("title", /^Codex is at 85% of its 5-hour limit/);
   // It is on Briefed, and no worker exists for it yet.

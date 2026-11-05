@@ -15,7 +15,7 @@ import type {
 } from "@gram/contracts";
 
 import { prRefText } from "@/components/pr-marks-model";
-import { dateTimeFormat } from "@/lib/intl";
+import { formatStamp } from "@/lib/time";
 
 // Pure derivations for the orchestration UI: the role a thread plays, and the words and tones the
 // digest, worker report, memory write and handoff cards show. No React here, so it is all testable
@@ -203,9 +203,8 @@ export const pauseLeavesRunning = (
     : `Workers already running keep going (${working} now).`;
 };
 
-/** "14:02": when a pause began, on the 24-hour clock. */
-export const pauseClock = (at: number): string =>
-  dateTimeFormat([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at);
+/** "14:02": when a pause began, 24-hour, with its date when it wasn't today (`formatStamp`). */
+export const pauseClock = (at: number, now = Date.now()): string => formatStamp(at, now);
 
 /**
  * The confirm before pausing with work mid-flight: `working` workers and whether the orchestrator

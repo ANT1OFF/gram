@@ -84,7 +84,7 @@ export function ReviewNoticeCard({ notice, text }: { notice: ReviewNotice; text:
     <article
       aria-label={title}
       data-testid="review-notice"
-      className="flex w-full max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading"
+      className="flex w-full max-w-xl flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3 text-reading"
     >
       <header className="flex flex-wrap items-baseline gap-x-2">
         <h3 className="font-medium">{title}</h3>
@@ -157,7 +157,7 @@ export function HumanReviewNoticeCard({
     <article
       aria-label={title}
       data-testid="human-review-notice"
-      className="flex w-full max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading"
+      className="flex w-full max-w-xl flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3 text-reading"
     >
       <h3 className="font-medium">{title}</h3>
       <ul aria-label="Reviews" className="flex flex-col gap-1.5">

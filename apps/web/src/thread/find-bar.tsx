@@ -77,7 +77,7 @@ export function FindBar({
     <div
       role="search"
       data-testid="find-bar"
-      className="flex shrink-0 items-center gap-1 border-b border-border bg-card px-3 py-1"
+      className="flex shrink-0 items-center gap-1 border-b border-edge bg-card px-3 py-1"
     >
       <input
         autoFocus

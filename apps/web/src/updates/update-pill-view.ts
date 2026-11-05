@@ -1,6 +1,6 @@
 import type { AppUpdateState } from "@gram/contracts";
 
-import { formatClockTime, notificationTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 
 /** What clicking the pill does; `release` opens the release page, for a .deb install. */
 type PillAction = "check" | "download" | "install" | "settings" | "release" | "none";
@@ -42,10 +42,13 @@ const verifying = (state: AppUpdateState, version: string | undefined) =>
     ? `Verifying Gram ${version}: its checksums and version.`
     : `Verifying Gram ${version}: its signature, notarization and version.`;
 
-/** `Published 16 Oct, 10:00`, on a 24-hour clock; undefined for no or a malformed date. */
-function published(date: string | null, intl?: { timeZone?: string; locale?: string }) {
+/** The zone and moment the pill's times are read in, for tests; the viewer's own when absent. */
+type TimeOptions = { readonly timeZone?: string; readonly now?: number };
+
+/** `Published 16 Oct 10:00` (`formatStamp`); undefined for no or a malformed date. */
+function published(date: string | null, intl?: TimeOptions) {
   const at = date === null ? Number.NaN : Date.parse(date);
-  return Number.isFinite(at) ? `Published ${notificationTime(at, intl)}` : undefined;
+  return Number.isFinite(at) ? `Published ${formatStamp(at, intl?.now, intl)}` : undefined;
 }
 
 /** Release notes as the hover shows them: Markdown's marks dropped, blank runs collapsed. */
@@ -75,7 +78,7 @@ const lines = (...parts: Array<string | undefined | false>) =>
  */
 export function pillView(
   state: AppUpdateState | null | undefined,
-  intl?: { timeZone?: string; locale?: string },
+  intl?: TimeOptions,
 ): PillView | undefined {
   if (!state) return undefined;
   const notes = state.releaseNotes ? notesPreview(state.releaseNotes) || undefined : undefined;
@@ -192,12 +195,11 @@ export function pillView(
 }
 
 /** Settings → Updates' one-line status for the same state. */
-export function statusLine(
-  state: AppUpdateState,
-  intl?: { timeZone?: string; locale?: string },
-): string {
+export function statusLine(state: AppUpdateState, intl?: TimeOptions): string {
   const checked =
-    state.checkedAt === null ? undefined : `checked ${formatClockTime(state.checkedAt, intl)}`;
+    state.checkedAt === null
+      ? undefined
+      : `checked ${formatStamp(state.checkedAt, intl?.now, intl)}`;
   switch (state.status) {
     case "idle":
       return "Not checked yet";

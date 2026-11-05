@@ -201,7 +201,7 @@ export function OpenQuestion({
     run(() => onAnswer(answer));
   };
   const answerRow = sheet
-    ? "sticky bottom-0 -mx-4 mt-1 border-t border-border bg-popover px-4 py-2.5"
+    ? "sticky bottom-0 -mx-4 mt-1 border-t border-edge bg-popover px-4 py-2.5"
     : undefined;
   const dismiss = () => {
     if (onDismiss === undefined) return;

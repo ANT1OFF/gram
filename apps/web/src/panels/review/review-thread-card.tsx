@@ -111,7 +111,7 @@ export function ReviewThreadCard({
       data-severity={thread.severity}
       data-by-bot={thread.byBot}
       aria-label={`${severityLabel}: ${location(thread)}`}
-      className="flex flex-col gap-1.5 rounded-(--radius-md) border border-border bg-card/40 p-2"
+      className="flex flex-col gap-1.5 rounded-(--radius-md) border border-edge bg-card/40 p-2"
     >
       <p className="flex items-center gap-1.5 text-meta text-muted-foreground">
         <span className={cn("shrink-0 rounded-sm border px-1", SEVERITY_TONE[thread.severity])}>

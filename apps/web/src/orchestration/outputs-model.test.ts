@@ -49,15 +49,19 @@ describe("outputs model", () => {
   it("names a file by its last segment and its time on a 24-hour clock", () => {
     expect(outputName("/a/b/after.png")).toBe("after.png");
     expect(outputName("C:\\x\\shot.gif")).toBe("shot.gif");
-    expect(outputTime(output({ at: Date.UTC(2026, 9, 16, 20, 7) }), ZONE)).toBe("22:07");
-    expect(outputTime(output({ at: Date.UTC(2026, 9, 15, 22, 0) }), ZONE)).toBe("00:00");
+    expect(outputTime(output({ at: Date.UTC(2026, 9, 16, 20, 7) }), NOW, ZONE)).toBe("22:07");
+    expect(outputTime(output({ at: Date.UTC(2026, 9, 15, 22, 0) }), NOW, ZONE)).toBe("00:00");
+    // Another day carries its date before the clock.
+    expect(outputTime(output({ at: Date.UTC(2026, 9, 15, 21, 59) }), NOW, ZONE)).toBe(
+      "15 Oct 23:59",
+    );
   });
 
   it("says Today and Yesterday by the viewer's day, then the date", () => {
     expect(dayLabel(NOW - HOUR, NOW, ZONE)).toBe("Today");
     // 23:30 the day before in Oslo, though it is the same UTC date.
     expect(dayLabel(Date.UTC(2026, 9, 15, 21, 30), NOW, ZONE)).toBe("Yesterday");
-    expect(dayLabel(Date.UTC(2026, 9, 13, 9, 0), NOW, ZONE)).toBe("Tue 13 Oct");
+    expect(dayLabel(Date.UTC(2026, 9, 13, 9, 0), NOW, ZONE)).toBe("13 Oct");
   });
 
   // Yesterday is the previous calendar date in the zone, not 24 hours back: near midnight a 23-hour
@@ -66,7 +70,7 @@ describe("outputs model", () => {
     // 30 March 00:30 BST. 24 hours back is 28 March 23:30 GMT, so 29 March was Yesterday.
     const now = Date.parse("2026-03-29T23:30:00Z");
     expect(dayLabel(Date.parse("2026-03-29T12:00:00Z"), now, "Europe/London")).toBe("Yesterday");
-    expect(dayLabel(Date.parse("2026-03-28T12:00:00Z"), now, "Europe/London")).toBe("Sat 28 Mar");
+    expect(dayLabel(Date.parse("2026-03-28T12:00:00Z"), now, "Europe/London")).toBe("28 Mar");
     expect(dayLabel(Date.parse("2026-03-30T00:10:00Z"), now, "Europe/London")).toBe("Today");
   });
 
@@ -76,7 +80,7 @@ describe("outputs model", () => {
     const now = Date.parse("2026-10-25T23:30:00Z");
     expect(dayLabel(Date.parse("2026-10-24T11:00:00Z"), now, "Europe/London")).toBe("Yesterday");
     expect(dayLabel(Date.parse("2026-10-25T00:30:00Z"), now, "Europe/London")).toBe("Today");
-    expect(dayLabel(Date.parse("2026-10-23T11:00:00Z"), now, "Europe/London")).toBe("Fri 23 Oct");
+    expect(dayLabel(Date.parse("2026-10-23T11:00:00Z"), now, "Europe/London")).toBe("23 Oct");
   });
 
   it("groups by day or by feature in the order their newest came, newest first inside", () => {

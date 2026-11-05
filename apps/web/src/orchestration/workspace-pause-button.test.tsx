@@ -2,7 +2,7 @@
 import type { ThreadId, ThreadStatus, WorkspaceId, WorkspaceState } from "@gram/contracts";
 import { Menu } from "@base-ui/react/menu";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import { create } from "zustand";
 
 import type { Api } from "@/api/types";
@@ -120,6 +120,9 @@ it("asks first while a worker or the orchestrator is mid-turn, in the menu", asy
 });
 
 it("says since when it is paused, on the 24-hour clock, and resumes in one click", async () => {
+  // A pause from today reads as its clock alone; one from another day would carry its date.
+  const clock = vi.spyOn(Date, "now").mockReturnValue(PAUSED_AT + 60_000);
+  onTestFinished(() => clock.mockRestore());
   states.setState({ all: [workspace(true)] });
   threads("idle", "running");
   const setOrchestratorPaused = vi.fn<Api["setOrchestratorPaused"]>(

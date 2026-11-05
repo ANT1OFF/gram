@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { resetText } from "@/usage/limit-format";
 
 /**
@@ -28,8 +28,9 @@ export const limitWaitLabel = (
 /** "Limit cleared · resumed 11:04": a wait that ended early, as fresh data said it could. */
 export const limitClearedLabel = (
   cleared: NonNullable<Thread["limitCleared"]>,
-  intl?: { readonly locale?: string; readonly timeZone?: string },
-): string => `Limit cleared · resumed ${formatClockTime(cleared.at, intl)}`;
+  now = Date.now(),
+  intl: { readonly timeZone?: string } = {},
+): string => `Limit cleared · resumed ${formatStamp(cleared.at, now, intl)}`;
 
 /**
  * The one quiet line a thread waiting out a provider limit shows instead of an error: when it

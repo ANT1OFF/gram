@@ -9,7 +9,7 @@ import type {
 import { serializeReviewNotice } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { mockReviewNotice } from "@/api/mock-babysit";
 import { formatMessageTime, notificationTime } from "@/lib/time";
@@ -941,6 +941,9 @@ describe("MessageBlock agent errors", () => {
   });
 
   it("reads as a receipt once the message was sent again, linking the new attempt", () => {
+    // Read on the retry's own day, so it says its clock alone.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 10, 4, 14, 6));
+    onTestFinished(() => clock.mockRestore());
     const again: GramUIMessage = {
       id: "u2",
       role: "user",
@@ -1127,13 +1130,13 @@ describe("MessageBlock compaction marker", () => {
   afterEach(cleanup);
 
   const AT = Date.UTC(2026, 9, 1, 12, 32);
-  const UTC = { locale: "en-GB", timeZone: "UTC" };
+  const UTC = { timeZone: "UTC" };
 
-  it("uses a 24-hour compaction clock in locales that default to AM/PM", () => {
-    const intl = { locale: "en-US", timeZone: "Europe/Oslo" };
+  it("uses a 24-hour compaction clock, 00 at midnight, whatever the locale", () => {
+    const intl = { timeZone: "Europe/Oslo" };
     const data = { trigger: "auto", at: AT } as const;
     expect(compactionLabel(data, AT + 60_000, intl)).toBe("Context compacted · 14:32");
-    expect(compactionLabel(data, AT + 86_400_000, intl)).toBe("Context compacted · Oct 1, 14:32");
+    expect(compactionLabel(data, AT + 86_400_000, intl)).toBe("Context compacted · 1 Oct 14:32");
     const midnight = Date.UTC(2026, 9, 1, 22, 5);
     expect(compactionLabel({ ...data, at: midnight }, midnight, intl)).toBe(
       "Context compacted · 00:05",
@@ -1146,7 +1149,7 @@ describe("MessageBlock compaction marker", () => {
       "Context compacted · 12:32 · 182K → 24K tokens",
     );
     expect(compactionLabel(full, AT + 86_400_000, UTC)).toBe(
-      "Context compacted · 1 Oct, 12:32 · 182K → 24K tokens",
+      "Context compacted · 1 Oct 12:32 · 182K → 24K tokens",
     );
     expect(compactionLabel({ trigger: "auto", preTokens: 42 }, AT, UTC)).toBe(
       "Context compacted · from 42 tokens",
@@ -1154,7 +1157,7 @@ describe("MessageBlock compaction marker", () => {
     expect(compactionLabel({ trigger: "manual" }, AT, UTC)).toBe("Context compacted");
     // Halves a narrow thread can wrap between, so the tokens move down rather than off the edge.
     expect(compactionParts(full, AT + 86_400_000, UTC)).toEqual([
-      "Context compacted · 1 Oct, 12:32",
+      "Context compacted · 1 Oct 12:32",
       "182K → 24K tokens",
     ]);
   });
@@ -1181,14 +1184,11 @@ describe("MessageBlock compaction marker", () => {
   });
 
   it("marks a session restart with its time, and the date when it wasn't today", () => {
-    expect(sessionRestartLabel({ at: AT }, AT + 60_000, { ...UTC, locale: "en-US" })).toBe(
-      "Session restarted · config reloaded · 12:32",
-    );
     expect(sessionRestartLabel({ at: AT }, AT + 60_000, UTC)).toBe(
       "Session restarted · config reloaded · 12:32",
     );
     expect(sessionRestartLabel({ at: AT }, AT + 86_400_000, UTC)).toBe(
-      "Session restarted · config reloaded · 1 Oct, 12:32",
+      "Session restarted · config reloaded · 1 Oct 12:32",
     );
     expect(sessionRestartLabel({ at: AT, reason: "mcpConfig" }, AT + 60_000, UTC)).toBe(
       "Session restarted · MCP config changed · 12:32",

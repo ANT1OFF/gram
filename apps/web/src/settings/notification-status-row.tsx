@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 
 import { SettingRow } from "./fields";
 
@@ -15,7 +15,7 @@ import { SettingRow } from "./fields";
  */
 export function notificationStatusText(
   status: NotificationStatus,
-  clock: (at: number) => string = formatClockTime,
+  clock: (at: number) => string = (at) => formatStamp(at),
 ): string {
   if (!status.supported) return "Not supported on this system";
   const { last } = status;

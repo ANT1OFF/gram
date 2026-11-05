@@ -9,7 +9,7 @@ import type {
   WorkspaceId,
 } from "@gram/contracts";
 
-import { dateTimeFormat } from "@/lib/intl";
+import { formatStamp } from "@/lib/time";
 import {
   latestDoneFirst,
   SOLO_OWNER,
@@ -17,16 +17,11 @@ import {
   type DoneOwner,
 } from "@/orchestration/done-model";
 import {
-  clockTime,
-  DONE_DAYS,
-  daysBefore,
   searchRows,
-  startOfDay,
   workersByTab,
   type WorkerLiveFacts,
   type WorkerRow,
 } from "@/orchestration/workers-model";
-import type { DoneGrouping } from "@/stores/layout";
 import { threadDisplayTitle } from "@/thread/thread-title";
 import { soloDone } from "@/views/solo-threads";
 
@@ -305,23 +300,9 @@ export const searchHistory = (
     query,
   ).map(({ entry }) => entry);
 
-/**
- * A row's time, 24-hour, where its heading says the rest: on its clock alone under a day heading
- * (by date, the last `DONE_DAYS` days) and for today by orchestrator, else its date and clock
- * (`30 Oct 14:12`), with the year when it isn't this year's.
- */
-export const historyWhen = (at: number | undefined, by: DoneGrouping, now: number): string => {
-  if (at === undefined) return "";
-  const recent = by === "date" ? at >= daysBefore(now, DONE_DAYS - 1) : at >= startOfDay(now);
-  if (recent) return clockTime(at);
-  const year = new Date(at).getFullYear() !== new Date(now).getFullYear();
-  const date = dateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    ...(year ? { year: "numeric" } : {}),
-  }).format(new Date(at));
-  return `${date} ${clockTime(at)}`;
-};
+/** A row's time: its 24-hour clock today, else its date before the clock (`formatStamp`). */
+export const historyWhen = (at: number | undefined, now: number): string =>
+  at === undefined ? "" : formatStamp(at, now);
 
 /** The project roots whose past sessions History lists: most recently used first, at most `max`. */
 export const sessionRoots = (
@@ -381,14 +362,5 @@ export const recentDone = (
     })
     .slice(0, max);
 
-/** A Done row's time: its 24-hour clock today, else its day (`3 Nov`), with the year if not this one's. */
-export const recentWhen = (at: number | undefined, now: number): string => {
-  if (at === undefined) return "";
-  if (at >= startOfDay(now)) return clockTime(at);
-  const year = new Date(at).getFullYear() !== new Date(now).getFullYear();
-  return dateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    ...(year ? { year: "numeric" } : {}),
-  }).format(new Date(at));
-};
+/** A Done row's time, as History's rows have it (`historyWhen`). */
+export const recentWhen = historyWhen;

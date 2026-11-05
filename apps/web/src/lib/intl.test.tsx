@@ -54,12 +54,12 @@ describe("shared Intl formatters", () => {
     const at = Date.UTC(2026, 9, 6, 12, 37);
     // Warm: the first call of each kind builds its formatter.
     formatClockTime(at, intl);
-    notificationTime(at, intl);
+    notificationTime(at, at, intl);
     dayLabel("2026-10-06");
     const built = countBuilds(() => {
       for (let i = 0; i < 500; i++) {
         expect(formatClockTime(at + i * 60_000, intl)).toMatch(/^\d\d:\d\d$/);
-        notificationTime(at + i * 60_000, intl);
+        notificationTime(at + i * 60_000, at, intl);
         dayLabel("2026-10-06");
       }
     });

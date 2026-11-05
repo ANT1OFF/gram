@@ -116,7 +116,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
       {repos !== undefined && (
         <p
           data-testid="worker-banner-repos"
-          className="flex min-w-0 items-start gap-1.5 border-b border-border bg-card/40 px-3 py-1 text-meta text-muted-foreground"
+          className="flex min-w-0 items-start gap-1.5 border-b border-edge bg-card/40 px-3 py-1 text-meta text-muted-foreground"
         >
           <FolderGit2 aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0">
@@ -279,7 +279,7 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
       {files !== undefined && memoryIsEmpty(files) && (
         <p
           data-testid="banner-import-offer"
-          className="border-b border-border bg-card/40 px-3 py-1 text-meta text-muted-foreground"
+          className="border-b border-edge bg-card/40 px-3 py-1 text-meta text-muted-foreground"
         >
           Its memory is empty.{" "}
           <Link
