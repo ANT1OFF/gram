@@ -15,7 +15,7 @@ import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Expand, isMarkPhase, StatusMark, Swap } from "@/motion";
 
-import { ApprovalSlot } from "./approval-slots";
+import { ApprovalSlot, ApprovalSlotsOpen } from "./approval-slots";
 import { useAwaitingTools, withApproval } from "./awaiting-tools";
 import {
   basename,
@@ -201,7 +201,8 @@ function ToolShell({
                 Tool <code className="font-mono text-foreground">{words.raw}</code>
               </p>
             )}
-            {children}
+            {/* A subagent's calls inside hold their approvals only while this body is open. */}
+            <ApprovalSlotsOpen open={open}>{children}</ApprovalSlotsOpen>
             <ToolImages part={part} size="large" className="flex flex-wrap items-start gap-2" />
             {part.state === "output-error" && (
               <pre className="overflow-x-auto font-mono text-meta whitespace-pre-wrap text-destructive">

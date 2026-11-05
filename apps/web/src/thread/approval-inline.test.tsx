@@ -68,10 +68,19 @@ const pending = (requests: readonly PendingRequest[]) =>
     } as never,
   });
 
-/** What the browser says of each observed element: on screen unless the test says otherwise. */
+/** Where the browser draws each element: on screen unless the test says otherwise. */
 let onScreen = (_element: Element) => true;
+
+/**
+ * An observer that reports late, as a real one does, a frame or more after a card moves: its
+ * report lands only on `flushObservers`. Keys must never go by such a report.
+ */
 const observers = new Set<{ check: () => void }>();
-class FakeIntersectionObserver {
+const flushObservers = () =>
+  act(() => {
+    for (const observer of observers) observer.check();
+  });
+class LateIntersectionObserver {
   readonly #elements = new Set<Element>();
   readonly callback: IntersectionObserverCallback;
   constructor(callback: IntersectionObserverCallback) {
@@ -80,13 +89,12 @@ class FakeIntersectionObserver {
   observe(element: Element) {
     this.#elements.add(element);
     observers.add(this);
-    this.check();
   }
   check() {
     const entries = [...this.#elements].map(
       (target) => ({ target, isIntersecting: onScreen(target) }) as IntersectionObserverEntry,
     );
-    this.callback(entries, this as unknown as IntersectionObserver);
+    if (entries.length > 0) this.callback(entries, this as unknown as IntersectionObserver);
   }
   unobserve(element: Element) {
     this.#elements.delete(element);
@@ -100,16 +108,35 @@ class FakeIntersectionObserver {
   }
 }
 
+const rect = (top: number) =>
+  ({
+    x: 0,
+    y: top,
+    top,
+    left: 0,
+    width: 600,
+    height: 120,
+    bottom: top + 120,
+    right: 600,
+    toJSON: () => ({}),
+  }) as DOMRect;
+
 let uninstall: () => void;
 beforeEach(() => {
   uninstall = installKeyboard();
   onScreen = () => true;
-  vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+  vi.stubGlobal("IntersectionObserver", LateIntersectionObserver);
+  // On screen is in the window; off screen is far above it, scrolled away.
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    return onScreen(this) ? rect(100) : rect(-5000);
+  });
 });
 afterEach(() => {
   cleanup();
   uninstall();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  observers.clear();
   useThreadsStore.setState({ byId: {} as never });
   useApprovalReceipts.setState({ byThread: {} });
 });
@@ -332,11 +359,109 @@ describe("an approval drawn under its tool row", () => {
     expect(respond).not.toHaveBeenCalled();
     // Scrolled into view, it answers again.
     onScreen = () => true;
-    act(() => {
-      for (const observer of observers) observer.check();
-    });
+    flushObservers();
     fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
     await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+  });
+
+  it("answers no key once its card leaves the screen, before any observer says so", async () => {
+    pending([PUSH]);
+    const { api, respond } = fakeApi();
+    render(
+      <View api={api} requests={[PUSH]} rows={<ToolCard part={part(PUSH)} {...rowProps} />} />,
+    );
+    // On screen, and the observer has said so.
+    flushObservers();
+    // Scrolled away: the observer's report of it hasn't landed yet.
+    onScreen = () => false;
+    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    fireEvent.keyDown(window, { key: "Enter", code: "Enter", altKey: true });
+    expect(respond).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("approval-always-rule")).toBeNull();
+    // Back on screen, it answers at once, report or not.
+    onScreen = () => true;
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+    expect(respond).toHaveBeenCalledWith(T, PUSH.id, {
+      kind: "approval",
+      decision: "deny",
+      scope: "once",
+    });
+  });
+
+  it("gives the keys to no card paged out of sight above the composer, whatever was reported", async () => {
+    pending([PUSH, TAG]);
+    const { api, respond } = fakeApi();
+    render(<View api={api} requests={[PUSH, TAG]} rows={null} />);
+    flushObservers();
+    // Paged to the second card; the first is hidden, and only the shown one answers.
+    fireEvent.click(screen.getByRole("button", { name: "Next approval" }));
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+    expect(respond).toHaveBeenCalledWith(T, TAG.id, {
+      kind: "approval",
+      decision: "deny",
+      scope: "once",
+    });
+  });
+
+  it("waits above the composer, visible and answerable, when a collapsed parent Task holds its row", async () => {
+    const child = ask("r-child", "call-child", "git push origin sub/branch");
+    pending([child]);
+    const { api, respond } = fakeApi();
+    const task = {
+      type: "tool-Task",
+      toolCallId: "call-task",
+      state: "input-available",
+      input: { description: "Push from a subagent", prompt: "Push it", subagent_type: "general" },
+    } as unknown as AnyToolPart;
+    const subagent = { id: "m-sub", role: "assistant", parts: [] } as never;
+    const rows = (
+      <ToolCard
+        part={task}
+        {...rowProps}
+        subagents={new Map([["call-task", [subagent]]])}
+        renderSubagent={() => <ToolCard part={part(child)} {...rowProps} />}
+      />
+    );
+    render(<View api={api} requests={[child]} rows={rows} />);
+    // Open, the Task shows its subagent's call, and the card is under that call's row.
+    const slot = screen.getByTestId("approval-slot");
+    expect(slot.getAttribute("data-tool-call-id")).toBe("call-child");
+    expect(slot.contains(card())).toBe(true);
+    // Collapsed, the row is inert and clipped: the card must not stay with it.
+    const taskRow = screen
+      .getAllByTestId("tool-card")
+      .find((row) => row.getAttribute("data-tool") === "Task")!;
+    fireEvent.click(taskRow.querySelector("button[aria-expanded]")!);
+    expect(taskRow.querySelector("[inert]")).not.toBeNull();
+    expect(screen.queryByTestId("approval-slot")).toBeNull();
+    const fallback = screen.getByTestId("approval-fallback");
+    expect(fallback.contains(card())).toBe(true);
+    expect(card().closest("[hidden], [inert]")).toBeNull();
+    // And it answers there.
+    fireEvent.keyDown(window, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(respond).toHaveBeenCalledTimes(1));
+    expect(respond).toHaveBeenCalledWith(T, child.id, {
+      kind: "approval",
+      decision: "allow",
+      scope: "once",
+    });
+  });
+
+  it("keeps the focus on the control that had it when the card moves under its row", () => {
+    pending([PUSH]);
+    const { api } = fakeApi();
+    const { rerender } = render(<View api={api} requests={[PUSH]} rows={null} />);
+    const deny = screen.getByTestId("approval-deny");
+    deny.focus();
+    expect(document.activeElement).toBe(deny);
+    rerender(
+      <View api={api} requests={[PUSH]} rows={<ToolCard part={part(PUSH)} {...rowProps} />} />,
+    );
+    expect(screen.getByTestId("approval-slot").contains(deny)).toBe(true);
+    expect(document.activeElement).toBe(deny);
   });
 
   it("ignores the keys in an unfocused pane, as above the composer", () => {

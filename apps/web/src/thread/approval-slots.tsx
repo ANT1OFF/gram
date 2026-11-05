@@ -69,9 +69,14 @@ export function ApprovalSlotsProvider({
   return <SlotsContext value={value}>{children}</SlotsContext>;
 }
 
-/** Rows inside leave no slot while `open` is false: a closed run's line leaves it instead. */
+/**
+ * Rows inside leave no slot while `open` is false, or while any ancestor's is: a closed run, a
+ * collapsed tool body holding a subagent's transcript. A slot in a collapsed ancestor would hold
+ * its card where nobody can see it, so the card waits above the composer instead.
+ */
 export function ApprovalSlotsOpen({ open, children }: { open: boolean; children: ReactNode }) {
-  return <SlotsOpenContext value={open}>{children}</SlotsOpenContext>;
+  const outer = use(SlotsOpenContext);
+  return <SlotsOpenContext value={outer && open}>{children}</SlotsOpenContext>;
 }
 
 const EMPTY = createSlots();

@@ -27,6 +27,7 @@ import {
   useId,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
@@ -226,9 +227,10 @@ function Receipt({
  * slot draws it, so moving never resets it: its preview stays open and an answer in flight stays
  * in flight.
  *
- * Enter, ⌥Enter and Escape answer one card only, the one whose shortcut hints show: the card being
- * reviewed (the first, or the one a Needs you jump or a focus chose) while any of it is on screen,
- * else the first card that is. A card scrolled out of view answers no key.
+ * Enter, ⌥Enter and Escape answer one card only: the selected one (the first, or the one a Needs
+ * you jump, a focus or the pager chose), which alone shows their hints, and only while it is on
+ * screen when the key is pressed. That is measured at the press (`onScreen`), never from an
+ * earlier report, so a card scrolled away, paged out or folded into a collapsed row answers no key.
  */
 function PlacedApprovals({
   threadId,
@@ -266,25 +268,26 @@ function PlacedApprovals({
     if (revealAt >= 0 && revealAt === index) useRequestRevealStore.getState().clear();
   }, [revealAt, index]);
 
-  const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
-  const onSeen = useCallback((id: string, visible: boolean) => {
-    setSeen((before) => {
-      if (before.has(id) === visible) return before;
-      const next = new Set(before);
-      if (visible) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  // Read when a key is pressed: which card is selected now, and each card's element.
+  const selectedId = useRef(current?.id);
+  useLayoutEffect(() => {
+    selectedId.current = current?.id;
+  });
+  const elements = useRef(new Map<string, HTMLElement>());
+  const register = useCallback((id: string, element: HTMLElement | undefined) => {
+    if (element === undefined) elements.current.delete(id);
+    else elements.current.set(id, element);
+  }, []);
+  const mayAnswer = useCallback((id: string) => {
+    if (selectedId.current !== id) return false;
+    const element = elements.current.get(id);
+    return element !== undefined && onScreen(element);
   }, []);
   const slotOf = (request: ApprovalRequest) =>
     request.toolUseId === undefined ? undefined : slots.get(request.toolUseId);
   const waiting = requests.filter((request) => slotOf(request) === undefined);
   const shown = waiting.find((request) => request.id === current?.id) ?? waiting[0];
   const at = shown === undefined ? -1 : waiting.indexOf(shown);
-  const answering =
-    current !== undefined && seen.has(current.id)
-      ? current.id
-      : requests.find((request) => seen.has(request.id))?.id;
   return (
     <>
       {waiting.length > 1 && (
@@ -331,9 +334,10 @@ function PlacedApprovals({
             target={slot ?? host}
             inline={slot !== undefined}
             hidden={slot === undefined && request !== shown}
-            answering={request.id === answering}
+            selected={request.id === current?.id}
             focused={focused}
-            onSeen={onSeen}
+            register={register}
+            mayAnswer={mayAnswer}
             onSelect={select}
           />
         );
@@ -351,7 +355,37 @@ function place(element: HTMLElement, target: HTMLElement | null, inline: boolean
   element.dataset["inline"] = String(inline);
   element.className = inline ? "pt-1 pb-1" : "my-2";
   element.hidden = hidden;
-  if (target !== null && element.parentNode !== target) target.append(element);
+  if (target === null || element.parentNode === target) return;
+  // Moving an element drops the focus inside it; the control that had it keeps it.
+  const focused = document.activeElement;
+  const had = focused instanceof HTMLElement && element.contains(focused);
+  target.append(element);
+  if (had && !hidden) focused.focus({ preventScroll: true });
+}
+
+/**
+ * Whether any of `element` is on screen now: connected, in nothing hidden, collapsed or inert, and
+ * inside the window and every ancestor that clips it (the transcript's scroller, a folded body).
+ * Measured when asked, so it is never a stale report.
+ */
+export function onScreen(element: HTMLElement): boolean {
+  if (!element.isConnected || element.closest("[hidden], [inert]") !== null) return false;
+  const rect = element.getBoundingClientRect();
+  let top = Math.max(rect.top, 0);
+  let left = Math.max(rect.left, 0);
+  let bottom = Math.min(rect.bottom, window.innerHeight);
+  let right = Math.min(rect.right, window.innerWidth);
+  for (let node = element.parentElement; node !== null; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+    const clip = node.getBoundingClientRect();
+    top = Math.max(top, clip.top);
+    left = Math.max(left, clip.left);
+    bottom = Math.min(bottom, clip.bottom);
+    right = Math.min(right, clip.right);
+  }
+  return bottom > top && right > left;
 }
 
 /**
@@ -364,9 +398,10 @@ function PlacedApproval({
   target,
   inline,
   hidden,
-  answering,
+  selected,
   focused,
-  onSeen,
+  register,
+  mayAnswer,
   onSelect,
 }: {
   threadId: ThreadId;
@@ -374,10 +409,12 @@ function PlacedApproval({
   target: HTMLElement | null;
   inline: boolean;
   hidden: boolean;
-  /** Whether this card is the one the keys answer, and shows their hints. */
-  answering: boolean;
+  /** Whether this is the card the keys answer, while it is on screen; it alone shows their hints. */
+  selected: boolean;
   focused: boolean;
-  onSeen: (id: string, visible: boolean) => void;
+  register: (id: string, element: HTMLElement | undefined) => void;
+  /** Asked at each press: whether this card may answer it now. */
+  mayAnswer: (id: string) => boolean;
   onSelect: (id: ApprovalRequest["id"]) => void;
 }) {
   const [element] = useState(() => {
@@ -385,30 +422,25 @@ function PlacedApproval({
     div.setAttribute("data-testid", "approval-place");
     return div;
   });
-  useLayoutEffect(() => place(element, target, inline, hidden), [element, target, inline, hidden]);
-  useLayoutEffect(() => () => element.remove(), [element]);
-  // Keys answer a card only while some of it is on screen: one in a row drawn below the fold, or
-  // behind its queue's page, takes none.
   const id = request.id;
-  useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") {
-      onSeen(id, !hidden);
-      return;
-    }
-    const observer = new IntersectionObserver((entries) => {
-      const entry = entries.at(-1);
-      if (entry !== undefined) onSeen(id, entry.isIntersecting);
-    });
-    observer.observe(element);
+  useLayoutEffect(() => place(element, target, inline, hidden), [element, target, inline, hidden]);
+  useLayoutEffect(() => {
+    register(id, element);
     return () => {
-      observer.disconnect();
-      onSeen(id, false);
+      register(id, undefined);
+      element.remove();
     };
-  }, [element, id, hidden, onSeen]);
+  }, [element, id, register]);
+  const canAnswer = useCallback(() => mayAnswer(id), [mayAnswer, id]);
   return createPortal(
-    <HintsContext value={answering}>
+    <HintsContext value={selected}>
       <div onFocus={() => onSelect(id)}>
-        <ApprovalCard threadId={threadId} request={request} active={focused && answering} />
+        <ApprovalCard
+          threadId={threadId}
+          request={request}
+          active={focused && selected}
+          canAnswer={canAnswer}
+        />
       </div>
     </HintsContext>,
     element,
@@ -911,10 +943,17 @@ export function ApprovalCard({
   threadId,
   request,
   active,
+  canAnswer,
 }: {
   threadId: ThreadId;
   request: ApprovalRequest;
   active: boolean;
+  /**
+   * Asked at each press of Enter, ⌥Enter or Escape: whether this card may take it now. A card
+   * drawn under its row passes whether it is the selected card and on screen; without it, `active`
+   * alone decides, as above the composer.
+   */
+  canAnswer?: (() => boolean) | undefined;
 }) {
   const { respond, pending } = useRespond(threadId, request);
   const compact = useContext(CompactContext);
@@ -956,6 +995,7 @@ export function ApprovalCard({
       label: ALLOW_ONCE,
       group: "Thread",
       once: true,
+      when: () => canAnswer?.() ?? true,
       run: () => allow("once"),
     },
     active && pause === undefined,
@@ -966,7 +1006,7 @@ export function ApprovalCard({
       keys: "alt+enter",
       label: alwaysAllowOpenLabel(1),
       group: "Thread",
-      when: () => canAlways,
+      when: () => canAlways && (canAnswer?.() ?? true),
       // Once per press, for both steps: a held ⌥⏎ opens the preview and nothing more, so saving
       // takes a second, separate press, and a held key never reaches the next card in the queue.
       once: true,
@@ -975,7 +1015,15 @@ export function ApprovalCard({
     active && pause === undefined,
   );
   useShortcut(
-    { id: "approval.deny", keys: "escape", label: DENY, group: "Thread", once: true, run: deny },
+    {
+      id: "approval.deny",
+      keys: "escape",
+      label: DENY,
+      group: "Thread",
+      once: true,
+      when: () => canAnswer?.() ?? true,
+      run: deny,
+    },
     active && pause === undefined,
   );
 
