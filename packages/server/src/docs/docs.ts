@@ -118,7 +118,9 @@ const kb = (bytes: number) => `${Math.ceil(bytes / 1024)} KB`;
 
 /** `gap-analysis-3f9a2c`: the title's words, then six random hex digits. */
 export const newDocId = (title: string): DocId => {
+  // Bounded first, so the trims below never scan a long run of separators.
   const words = title
+    .slice(0, 200)
     .normalize("NFKD")
     .replace(/\p{M}+/gu, "")
     .toLowerCase()

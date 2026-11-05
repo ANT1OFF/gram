@@ -21,6 +21,18 @@ describe("docExcerpt", () => {
     expect(docExcerpt(markdown)).toBe("A quoted link and code. One item A · B 1 · 2");
   });
 
+  it("reads a hostile line in linear time", () => {
+    const started = performance.now();
+    for (const line of [
+      `|${" \t".repeat(100_000)}x`,
+      `${"- ".repeat(100_000)}x`,
+      `${"[".repeat(50_000)}`,
+    ]) {
+      docExcerpt(line);
+    }
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("cuts long prose at a word with an ellipsis", () => {
     const excerpt = docExcerpt("word ".repeat(200), 40);
     expect(excerpt.length).toBeLessThanOrEqual(40);

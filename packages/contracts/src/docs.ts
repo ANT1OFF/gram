@@ -101,21 +101,30 @@ export const docExcerpt = (markdown: string, max = DOC_EXCERPT_MAX): string => {
   const lines: string[] = [];
   let fenced = false;
   for (const raw of markdown.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (/^(```|~~~)/.test(line)) {
+    // Only a line's start can reach the excerpt, which bounds the work on a long one too.
+    const line = raw.slice(0, max * 4).trim();
+    if (line.startsWith("```") || line.startsWith("~~~")) {
       fenced = !fenced;
       continue;
     }
-    if (fenced || line === "" || /^#{1,6}\s/.test(line) || /^([-*_]\s*){3,}$/.test(line)) continue;
-    if (/^\|?\s*:?-{2,}/.test(line)) continue;
-    const plain = line
-      .replace(/^\|\s*|\s*\|$/g, "")
+    if (fenced || line === "" || /^#{1,6}\s/.test(line)) continue;
+    // A rule (`---`, `* * *`) or a table's frame (`| --- | :-: |`) says nothing.
+    const bare = line.replace(/\s+/g, "");
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(bare) || /^\|?:?-{2,}/.test(bare)) continue;
+    // A table row's cells, split rather than matched, so no pattern backtracks over its spaces.
+    const cells = line.includes("|")
+      ? line
+          .split("|")
+          .map((cell) => cell.trim())
+          .filter((cell) => cell !== "")
+          .join(" · ")
+      : line;
+    const plain = cells
       .replace(/^>\s?/, "")
       .replace(/^([-*+]|\d+[.)])\s+/, "")
       .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
       .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
       .replace(/[*_`~]+/g, "")
-      .replace(/\s*\|\s*/g, " · ")
       .trim();
     if (plain === "") continue;
     lines.push(plain);
