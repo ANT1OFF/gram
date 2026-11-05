@@ -11,12 +11,13 @@ import { useThreadsStore } from "@/stores/threads";
 
 import type { StartStep } from "./starting-progress-model";
 
-const baseName = (path: string) => path.replace(/\/+$/, "").split("/").at(-1) ?? path;
-
-/** What a step reads as: its label, then its object, a worktree by its folder's name. */
+/**
+ * What a step reads as: its label, then its object. A worktree's folder is named for its branch,
+ * so it reads as "Worktree" alone, its path on hover.
+ */
 function stepText(step: StartStep): string {
-  if (step.detail === undefined) return step.label;
-  return `${step.label} ${step.key === "worktree" ? baseName(step.detail) : step.detail}`;
+  if (step.detail === undefined || step.key === "worktree") return step.label;
+  return `${step.label} ${step.detail}`;
 }
 
 /**

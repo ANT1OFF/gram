@@ -719,7 +719,8 @@ export function NewTaskDraft({
               </Button>
             </PressScale>
             {target !== undefined && !makesOne && (
-              <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-meta text-muted-foreground">
+              // Beside Start, wrapping in its own column rather than under the button.
+              <span className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-1.5 text-meta text-muted-foreground">
                 <WorkspaceAutonomy
                   state={workspace}
                   autonomy={autonomyOf(workspace?.charter ?? DEFAULT_CHARTER)}

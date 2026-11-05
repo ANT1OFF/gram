@@ -141,6 +141,43 @@ const steps: readonly Shot[] = [
   },
   { name: "new-thread", title: "Start: one-off thread form", open: shot("new-thread") },
   {
+    name: "first-run-search",
+    title: "First run: a long repository list gets a focused search",
+    open: async (page) => {
+      // More repositories than the list shows, as a folder of many checkouts gives (synthetic):
+      // added to the mock's list as the page boots, before the first run asks for it.
+      await page.addInitScript(() => {
+        const more = ["billing", "mobile", "design-system", "data-pipeline", "status-page"];
+        Object.defineProperty(window, "gramMock", {
+          configurable: true,
+          get: () => undefined,
+          set(mock: NonNullable<Window["gramMock"]>) {
+            const listed = mock.listRepositories.bind(mock);
+            mock.listRepositories = async () => {
+              const { repos } = await listed();
+              return {
+                repos: [
+                  ...repos,
+                  ...more.map((name) => ({ name, root: `/Users/dev/src/${name}` })),
+                ],
+              };
+            };
+            Object.defineProperty(window, "gramMock", {
+              configurable: true,
+              writable: true,
+              value: mock,
+            });
+          },
+        });
+      });
+      await tour("01-first-run")(page);
+      const search = page.getByRole("searchbox", { name: "Find a repository" });
+      await search.waitFor();
+      await search.fill("bill");
+      await expect(page.getByTestId("welcome-open")).toContainText("Open billing");
+    },
+  },
+  {
     name: "needs-you",
     title: "Find what needs me: global Needs you popover",
     open: tour("08-needs-you"),
@@ -487,13 +524,15 @@ const steps: readonly Shot[] = [
 
 /**
  * Numbered steps at `SET_SIZE`, over the realistic scenario but for the `stress-` steps, which
- * stage the fixture scenes that pile every state on at once.
+ * stage the fixture scenes that pile every state on at once, and the `first-run` ones.
  */
 export const FLOW_SHOTS: readonly Shot[] = steps.map((step, index) => ({
   name: `${String(index + 1).padStart(2, "0")}-${step.name}`,
   title: step.title,
   open: async (page) => {
-    if (!step.name.startsWith("stress-")) await stageRealistic(page);
+    // A first run has no workspaces yet, which the realistic scenario would add.
+    if (!step.name.startsWith("stress-") && !step.name.startsWith("first-run"))
+      await stageRealistic(page);
     await step.open(page);
     await page.setViewportSize(SET_SIZE);
     await expect(page.getByTestId("app-shell")).toBeVisible();
