@@ -65,7 +65,7 @@
     "check:cancel": "node tools/check/run.mjs --cancel",
     "check:static": "bun run lint && bun run fmt:check && bun run typecheck",
     "check:ci": "bun run check && bun run build:bundles",
-    "lint": "node tools/check-dependency-pins.mjs && oxlint --deny-warnings",
+    "lint": "node tools/check-dependency-pins.mjs && node tools/design-tokens/check.mjs && oxlint --deny-warnings",
     "fmt": "bun fmt --no-script",
     "fmt:check": "bun fmt --no-script --check",
     "typecheck": "tsc -b",

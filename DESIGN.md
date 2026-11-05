@@ -30,14 +30,15 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
     purpose), Full autonomy, a key clash, and the usage meter from 80% of a limit (red once
     spent with no credits).
-- **Radii are soft:** 8 to 16 px (`radius-xs` to `radius-xl`); the composer is rounder (22 px).
+- **Radii are soft:** 8 to 16 px (`radius-xs` to `radius-xl`); the composer is rounder (22 px);
+  small marks (a key cap, a bar, a swatch) take 4 px (`radius-2xs`).
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
   Lists, menus and the sidebar share one row shape.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings, 16 px between sections and at a pane's edges.
-- **Titles and metadata:** a title at 13 to 14 px in `fg`, its metadata (where it is from, its
-  state, a time or a count) at 12 px in `fg-muted`, never smaller. A title wraps to two lines
-  before it is cut short.
+- **Titles and metadata:** a title at 13 to 14 px in `fg` (`text-body-strong` or `text-reading`),
+  its metadata (where it is from, its state, a time or a count) at 12 px in `fg-muted`
+  (`text-meta`), never smaller. A title wraps to two lines before it is cut short.
 - **Icons: Lucide** at a 1.75 stroke, never as decoration and never emoji. Two sizes: 16 px in
   chrome (the title bar, the sidebar's header, the panel's tabs and the composer's toolbar) and
   14 px inline (rows, chips, cards, menus and docks).
@@ -52,6 +53,55 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
+
+## Tokens
+
+Every size, space, radius, shadow and colour in `apps/web/src` comes from a token. The type scale
+and radii are per look in [`@gram/themes`](packages/themes/src/looks.ts); spacing, elevation and
+selection are in [globals.css](apps/web/src/styles/globals.css) and
+[tokens.css](apps/web/src/styles/tokens.css).
+
+**Type scale.** Seven steps, each with its line height; three carry a default weight that a
+`font-*` class can still override.
+
+| Class              | Size / line | Weight   | For                                                          |
+| ------------------ | ----------- | -------- | ------------------------------------------------------------ |
+| `text-caption`     | 11 / 16 px  | inherits | Counts, badges, key caps, overline labels. Never prose.      |
+| `text-meta`        | 12 / 16 px  | inherits | Metadata, help text, chips, a row's second line.             |
+| `text-body`        | 13 / 20 px  | inherits | UI text: rows, menus, buttons, labels, settings.             |
+| `text-body-strong` | 13 / 20 px  | 500      | A row's or card's title; an emphasised label.                |
+| `text-reading`     | 14 / 20 px  | inherits | Content: messages, descriptions, inputs, a dialog's body.    |
+| `text-title`       | 16 / 24 px  | 600      | Dialog, pane and section titles.                             |
+| `text-heading`     | 20 / 28 px  | 600      | A page's heading (a Settings page, an empty state, Welcome). |
+
+Markdown in the transcript keeps its own scale, sized by Settings → Appearance → Reading.
+
+**Spacing.** Tailwind's numeric steps are 4 px (`p-1` is 4 px, `p-4` 16 px); stay on whole steps,
+with half steps (`0.5`, `1.5`) only to centre something optically inside a control. Named steps
+say what the space is for: `tight` 4 px (an icon and its label), `inset` 8 px (inside a row or
+card, between cards), `list` 12 px (around a list's rows and headings), `section` 16 px (between
+sections, at a pane's edges), as in `gap-inset` or `px-section`.
+
+**Radius.** `rounded-2xs` 4 px, `rounded-xs` 8, `rounded-sm` 12, `rounded-md` 14, `rounded-lg`
+and `rounded-xl` 16, `rounded-full` for pills and dots, and `--composer-radius` for the composer.
+
+**Elevation.** `shadow-raised` for a card on a surface, `shadow-overlay` for what floats (a menu, a
+popover, a dialog, a toast), `shadow-composer` for the composer slab. More contrast and forced
+colours turn them off.
+
+**Selection and focus.** The keyboard cursor row (`row-cursor`), a picked choice
+(`choice-selected`) and the focus ring (`focus-ring`) have their own tokens, defined with the
+selection work in tokens.css and globals.css; `bg-sidebar-row-active` marks the current place in
+the sidebar.
+
+**The drift check.** `node tools/design-tokens/check.mjs` (part of `bun run lint`) flags in
+`apps/web/src`: text sizes outside the scale (`text-xs`, `text-[13px]`), raw arbitrary spacing
+(`p-[7px]`), raw radii (`rounded-[6px]`, Tailwind's literal `rounded`), Tailwind's own shadows
+(`shadow-md`), and colours that skip the palette (`#hex`, `bg-[rgb(…)]`, `bg-black/75`).
+Arbitrary values built from tokens (`pl-[max(--spacing(2),var(--x))]`) pass. Existing uses are
+counted per file in [its allowlist](tools/design-tokens/allowlist.json), which only shrinks: move
+a file onto the tokens, then run the check with `--write` to record it. The allowlist's `mode`
+is `warn` while the sweep is under way and `error` after.
 
 ## Voice
 

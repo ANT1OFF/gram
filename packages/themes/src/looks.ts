@@ -26,14 +26,48 @@ export interface MotionPersonality {
   staggerMs: number;
 }
 
+/**
+ * The type scale, smallest first. Every text size in the web UI is one of these steps
+ * (`text-caption` … `text-heading`); `tools/check-design-tokens.mjs` flags any other.
+ */
+export const TYPE_STEPS = [
+  "caption",
+  "meta",
+  "body",
+  "body-strong",
+  "reading",
+  "title",
+  "heading",
+] as const;
+export type TypeStep = (typeof TYPE_STEPS)[number];
+
+/** One step of the type scale, in pixels. `weight` is the default; a `font-*` class overrides it. */
+export interface TypeStyle {
+  size: number;
+  lineHeight: number;
+  weight?: number;
+}
+
 export interface Look {
   id: LookId;
   name: string;
   description: string;
   /** CSS font-family stacks. `display` and `label` are never used for body text. */
   fonts: { ui: string; display: string; mono: string; label: string };
-  /** Pixels. `composer` is the message box's slab, rounder than a card so it reads as one object. */
-  radii: { xs: number; sm: number; md: number; lg: number; xl: number; composer: number };
+  type: Record<TypeStep, TypeStyle>;
+  /**
+   * Pixels. `2xs` is for small marks (a key cap, a bar, a swatch); `composer` is the message box's
+   * slab, rounder than a card so it reads as one object.
+   */
+  radii: {
+    "2xs": number;
+    xs: number;
+    sm: number;
+    md: number;
+    lg: number;
+    xl: number;
+    composer: number;
+  };
   density: { default: Density; rowHeight: Record<Density, number> };
   surfaces: {
     /** Cards separate by hairline border, soft shadow, or horizontal rules. */
@@ -72,7 +106,16 @@ const glass: Look = {
     mono: '"JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace',
     label: '"Inter Variable", ui-sans-serif, system-ui, sans-serif',
   },
-  radii: { xs: 8, sm: 12, md: 14, lg: 16, xl: 16, composer: 22 },
+  type: {
+    caption: { size: 11, lineHeight: 16 },
+    meta: { size: 12, lineHeight: 16 },
+    body: { size: 13, lineHeight: 20 },
+    "body-strong": { size: 13, lineHeight: 20, weight: 500 },
+    reading: { size: 14, lineHeight: 20 },
+    title: { size: 16, lineHeight: 24, weight: 600 },
+    heading: { size: 20, lineHeight: 28, weight: 600 },
+  },
+  radii: { "2xs": 4, xs: 8, sm: 12, md: 14, lg: 16, xl: 16, composer: 22 },
   density: {
     default: "comfortable",
     rowHeight: { compact: 30, comfortable: 36 },

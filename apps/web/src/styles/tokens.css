@@ -107,6 +107,11 @@
  * ------------------------------------------------------------------------------------------- */
 
 :root {
+  /* Elevation (shadow-raised, shadow-overlay, shadow-composer). The look sets the first two. */
+  --elevation-raised: var(--shadow-raised);
+  --elevation-overlay: var(--shadow-overlay);
+  --elevation-composer: var(--shadow-composer);
+
   --chrome-bg: color-mix(in srgb, var(--surface-1) calc(var(--surface-alpha) * 100%), transparent);
 
   --sidebar-bg: var(--chrome-bg);

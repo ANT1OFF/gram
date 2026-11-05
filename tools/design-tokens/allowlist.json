@@ -1,0 +1,1208 @@
+{
+  "mode": "warn",
+  "files": {
+    "apps/web/src/agents/feature-preflight.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/agents/support-details.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/components/ai-elements/code-block.tsx": {
+      "text-size text-sm": 2
+    },
+    "apps/web/src/components/ai-elements/message.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/components/create-pr-dialog.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/components/folder-access-recovery.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/components/not-available.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/components/pr-elsewhere.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/components/pr-glyph.tsx": {
+      "text-size text-[11px]": 2,
+      "text-size text-[13px]": 1
+    },
+    "apps/web/src/components/pr-marks.tsx": {
+      "text-size text-[11px]": 1
+    },
+    "apps/web/src/components/recommended-tag.tsx": {
+      "text-size text-[10px]": 1
+    },
+    "apps/web/src/components/right-panel.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[10px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/components/running-count.tsx": {
+      "text-size text-[9px]": 1
+    },
+    "apps/web/src/components/sidebar-details.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-[10px]": 1,
+      "text-size text-base": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/components/ui/alert.tsx": {
+      "text-size text-sm": 2
+    },
+    "apps/web/src/components/ui/badge.tsx": {
+      "radius rounded-4xl": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/components/ui/button.tsx": {
+      "text-size text-[0.8rem]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/components/ui/context-menu.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1
+    },
+    "apps/web/src/components/ui/select.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/components/ui/switch.tsx": {
+      "shadow shadow-xs": 1
+    },
+    "apps/web/src/components/ui/tabs.tsx": {
+      "spacing bottom-[-1px]": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/components/ui/tooltip.tsx": {
+      "radius rounded-[2px]": 1,
+      "shadow shadow-md": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/composer/agent-fields.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/composer/attachment-chips.tsx": {
+      "color bg-black": 2,
+      "color text-white": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/composer/composer.tsx": {
+      "radius rounded-[2px]": 1,
+      "text-size text-[10px]": 4,
+      "text-size text-[11px]": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/composer/context-ring.tsx": {
+      "shadow shadow-md": 1
+    },
+    "apps/web/src/composer/diff-comment-chips.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/composer/edit-banner.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/composer/mention-menu.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/composer/model-picker.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 4,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/composer/model-select.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/composer/new-task-draft.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 11
+    },
+    "apps/web/src/composer/new-thread-draft.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/composer/slash-menu.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/composer/speed-field.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/composer/stash-menu.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/composer/styles.ts": {
+      "shadow shadow-xs": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/composer/toolbar-overflow.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/composer/verb-menu.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/composer/worker-fields.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/composer/worktree-fields.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 8
+    },
+    "apps/web/src/dictation/composer-dictation.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/history/history-view.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 3,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/keyboard/use-shortcut-hint.tsx": {
+      "text-size text-[10px]": 1
+    },
+    "apps/web/src/launch-checks/agent-runtime-details.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/launch-checks/agent-runtime-row.tsx": {
+      "text-size text-[0.7rem]": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/launch-checks/banner.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/launch-checks/cli-update.tsx": {
+      "text-size text-[0.7rem]": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/launch-checks/command-text.tsx": {
+      "text-size text-[0.9em]": 1
+    },
+    "apps/web/src/launch-checks/tool-checks.tsx": {
+      "text-size text-xs": 5
+    },
+    "apps/web/src/links/link-dialog.tsx": {
+      "text-size text-base": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/new-thread/add-repository.tsx": {
+      "text-size text-xs": 10
+    },
+    "apps/web/src/new-thread/authority-explainer.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/new-thread/autonomy-choice.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/new-thread/existing-worktrees.tsx": {
+      "text-size text-[11px]": 3,
+      "text-size text-sm": 1,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/new-thread/folder-browser.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/new-thread/git-badge.tsx": {
+      "text-size text-[10px]": 1
+    },
+    "apps/web/src/new-thread/path-field.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/new-thread/project-picker.tsx": {
+      "text-size text-xs": 5
+    },
+    "apps/web/src/new-thread/project-shortcuts.tsx": {
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/new-thread/set-default-folder.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/new-thread/where-chips.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/new-thread/who-does-it.tsx": {
+      "text-size text-base": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/new-thread/workspace-autonomy.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/ask-choices.tsx": {
+      "spacing mt-[3px]": 1,
+      "text-size text-[0.8rem]": 2,
+      "text-size text-[10px]": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/ask-sheet.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-[15px]": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/ask-stack.tsx": {
+      "text-size text-[0.8rem]": 1,
+      "text-size text-[11px]": 3,
+      "text-size text-sm": 2,
+      "text-size text-xs": 7
+    },
+    "apps/web/src/orchestration/autonomy-chip.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/beside-dock.tsx": {
+      "shadow shadow-sm": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/orchestration/board-waiting.tsx": {
+      "text-size text-[11px]": 1
+    },
+    "apps/web/src/orchestration/briefing.tsx": {
+      "text-size text-[0.7rem]": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/catch-up-card.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/digest-line.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/done-grouping-menu.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1
+    },
+    "apps/web/src/orchestration/dreams-section.tsx": {
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 4,
+      "text-size text-xs": 28
+    },
+    "apps/web/src/orchestration/failures-card.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/orchestration/feature-card.tsx": {
+      "text-size text-[11px]": 3,
+      "text-size text-sm": 1,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/orchestration/feature-sheet.tsx": {
+      "shadow shadow-lg": 1,
+      "shadow shadow-md": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-[15px]": 1,
+      "text-size text-sm": 6,
+      "text-size text-xs": 8
+    },
+    "apps/web/src/orchestration/finished-worker-view.tsx": {
+      "text-size text-sm": 4,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/orchestration/fresh-session.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/held-brief.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/orchestration/inline-confirm.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/memory-overview.tsx": {
+      "text-size text-base": 1,
+      "text-size text-sm": 4,
+      "text-size text-xs": 7
+    },
+    "apps/web/src/orchestration/memory-view.tsx": {
+      "text-size text-base": 1,
+      "text-size text-sm": 4,
+      "text-size text-xs": 17
+    },
+    "apps/web/src/orchestration/needs-you-panel.tsx": {
+      "text-size text-[13px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/orchestration/needs-you-popover.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[13px]": 2,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/needs-you-row.tsx": {
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-[12px]": 1,
+      "text-size text-[13px]": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/orchestration/needs-you-strip.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/new-workspace.tsx": {
+      "text-size text-base": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/outputs-view.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-[13px]": 1,
+      "text-size text-[15px]": 1,
+      "text-size text-sm": 3,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/orchestration/overview-extras.tsx": {
+      "radius rounded-[2px]": 1,
+      "text-size text-[13px]": 1,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/orchestration/overview-pr-chips.tsx": {
+      "text-size text-[11.5px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/overview-rail.tsx": {
+      "radius rounded-[12px]": 1,
+      "radius rounded-[6px]": 1,
+      "radius rounded-[9px]": 1,
+      "text-size text-[10px]": 2,
+      "text-size text-[11px]": 1,
+      "text-size text-[12.5px]": 1,
+      "text-size text-[13px]": 2,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/orchestration/overview-section.tsx": {
+      "text-size text-[11px]": 1
+    },
+    "apps/web/src/orchestration/overview-sidebar.tsx": {
+      "text-size text-[11px]": 1,
+      "text-size text-[13px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 17
+    },
+    "apps/web/src/orchestration/peek-sheet.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 7
+    },
+    "apps/web/src/orchestration/question-entry.tsx": {
+      "text-size text-[11px]": 3,
+      "text-size text-sm": 6,
+      "text-size text-xs": 8
+    },
+    "apps/web/src/orchestration/remove-workspace.tsx": {
+      "text-size text-sm": 3,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/repository-checklist.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/since-you-left.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/stage-editor.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/stage-stepper.tsx": {
+      "text-size text-[11px]": 6
+    },
+    "apps/web/src/orchestration/stuck-card.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/orchestration/switch-orchestrator.tsx": {
+      "text-size text-sm": 3,
+      "text-size text-xs": 8
+    },
+    "apps/web/src/orchestration/task-target-picker.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/orchestration/update-block.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/worker-banner.tsx": {
+      "text-size text-xs": 5
+    },
+    "apps/web/src/orchestration/worker-header.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/orchestration/workers-list.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-[11px]": 3,
+      "text-size text-sm": 4,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/orchestration/workspace-pause-button.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/orchestration/workspace-repos.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/palette/command-palette.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 4,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/palette/shortcut-list.tsx": {
+      "radius rounded": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/palette/snippet.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/palette/word-filter-controls.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/panels/browser-inspection.tsx": {
+      "radius rounded": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/ci-check-detail.tsx": {
+      "radius rounded": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/connector-add-form.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/connectors-panel.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 13
+    },
+    "apps/web/src/panels/diff-files.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/diff-panel.tsx": {
+      "text-size text-xs": 8
+    },
+    "apps/web/src/panels/diff-review.tsx": {
+      "text-size text-[10px]": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/diff-tree.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/files/file-preview.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/files/file-tabs.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/files/file-tree.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/panels/files/files-panel.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/files/files-search.tsx": {
+      "text-size text-[11px]": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/files/image-preview.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/files/markdown-preview.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/panels/folder-missing.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/notifications-panel.tsx": {
+      "text-size text-[11px]": 1,
+      "text-size text-[9px]": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 7
+    },
+    "apps/web/src/panels/panel-message.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/panels/patch-view.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/pr-actions.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/panels/pr-labels.tsx": {
+      "text-size text-xs": 5
+    },
+    "apps/web/src/panels/pr-panel.tsx": {
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 1,
+      "text-size text-xs": 9
+    },
+    "apps/web/src/panels/pr-people.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/preview-pane.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/panels/preview-suggestion.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/review/pr-binding.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/review/pr-watch.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/review/review-tab.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 7
+    },
+    "apps/web/src/panels/review/review-thread-card.tsx": {
+      "text-size text-[11px]": 1,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/panels/review/toggle-switch.tsx": {
+      "shadow shadow": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/terminal/terminal-find-bar.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/panels/terminal/terminal-panel.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/terminal/terminal-view.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/panels/worktree-banner.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/report-issue/report-issue-dialog.tsx": {
+      "text-size text-sm": 4,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/resume/resume-sessions.tsx": {
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 11
+    },
+    "apps/web/src/reviews/open-prs.tsx": {
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/reviews/pr-display.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-[13px]": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/reviews/pr-list-controls.tsx": {
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 2
+    },
+    "apps/web/src/reviews/review-requests.tsx": {
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 1,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/routes/index.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/routes/settings.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xl": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/scripts/project-scripts-editor.tsx": {
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 9
+    },
+    "apps/web/src/scripts/run-script-menu.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 1,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/settings/agent-browse-section.tsx": {
+      "text-size text-sm": 3
+    },
+    "apps/web/src/settings/agents-section.tsx": {
+      "text-size text-sm": 2
+    },
+    "apps/web/src/settings/ai-helpers-section.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/settings/appearance-section.tsx": {
+      "text-size text-[11px]": 3,
+      "text-size text-sm": 2,
+      "text-size text-xs": 9
+    },
+    "apps/web/src/settings/automatic-dream-field.tsx": {
+      "text-size text-xs": 3
+    },
+    "apps/web/src/settings/autonomy-field.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/settings/confirm-strip.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/settings/connector-entries.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/settings/connectors-section.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 13
+    },
+    "apps/web/src/settings/custom-models-section.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/settings/custom-shell-field.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/settings/diagnostics-section.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/settings/dictate-key-row.tsx": {
+      "radius rounded": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/settings/fields.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/settings/gateways-section.tsx": {
+      "text-size text-sm": 13,
+      "text-size text-xs": 10
+    },
+    "apps/web/src/settings/general-section.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/settings/help-section.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/settings/help-tip.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/settings/key-capture-dialog.tsx": {
+      "radius rounded": 1,
+      "text-size text-lg": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/settings/keyboard-section.tsx": {
+      "radius rounded": 1,
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 2,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/settings/local-helper-settings.tsx": {
+      "radius rounded": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 7
+    },
+    "apps/web/src/settings/merge-review-policy-field.tsx": {
+      "text-size text-xs": 6
+    },
+    "apps/web/src/settings/native-updates-section.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/settings/notification-status-row.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/settings/notifications-section.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/settings/palette-editor.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 10
+    },
+    "apps/web/src/settings/reading-section.tsx": {
+      "radius rounded": 1,
+      "text-size text-sm": 3
+    },
+    "apps/web/src/settings/review-bot-repos-field.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/settings/review-bots-section.tsx": {
+      "text-size text-sm": 2
+    },
+    "apps/web/src/settings/roster-editor.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/settings/row-menu.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1
+    },
+    "apps/web/src/settings/save-footer.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/settings/saved-mark.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/settings/search-scope.tsx": {
+      "text-size text-sm": 2
+    },
+    "apps/web/src/settings/settings-group.tsx": {
+      "text-size text-[0.9375rem]": 1
+    },
+    "apps/web/src/settings/settings-nav.tsx": {
+      "spacing ms-[1.1875rem]": 1,
+      "text-size text-[0.8125rem]": 1,
+      "text-size text-base": 1,
+      "text-size text-sm": 1
+    },
+    "apps/web/src/settings/storage-page.tsx": {
+      "radius rounded": 1,
+      "text-size text-[11px]": 5,
+      "text-size text-sm": 6,
+      "text-size text-xs": 15
+    },
+    "apps/web/src/settings/terminal-section.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/settings/trusted-links-section.tsx": {
+      "text-size text-sm": 3
+    },
+    "apps/web/src/settings/updates-section.tsx": {
+      "text-size text-sm": 3,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/settings/voice-input-section.tsx": {
+      "text-size text-sm": 5,
+      "text-size text-xs": 8
+    },
+    "apps/web/src/settings/voice-vocabulary-field.tsx": {
+      "text-size text-xs": 3
+    },
+    "apps/web/src/settings/worker-mode-field.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/settings/workspace-connectors-field.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/settings/workspace-page.tsx": {
+      "text-size text-lg": 1,
+      "text-size text-sm": 3,
+      "text-size text-xs": 9
+    },
+    "apps/web/src/settings/workspace-settings.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/settings/workspace-sheet.tsx": {
+      "shadow shadow-lg": 1
+    },
+    "apps/web/src/shell/connection-banner.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/shell/fake-agent-badge.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/shell/review-strip.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/shell/session-expired.tsx": {
+      "text-size text-lg": 1,
+      "text-size text-sm": 1
+    },
+    "apps/web/src/shell/settings-strip.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/shell/shortcut-overlay.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-base": 1
+    },
+    "apps/web/src/shell/thread-grid.tsx": {
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/shell/thread-switcher.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-sm": 1
+    },
+    "apps/web/src/shell/titlebar-fold.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/shell/titlebar-popover.tsx": {
+      "shadow shadow-md": 1
+    },
+    "apps/web/src/shell/toasts.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/shell/usage-meter.tsx": {
+      "text-size text-[11px]": 1,
+      "text-size text-[13px]": 1,
+      "text-size text-xs": 7
+    },
+    "apps/web/src/shell/workspace-switcher.tsx": {
+      "text-size text-[11px]": 5,
+      "text-size text-[13px]": 2
+    },
+    "apps/web/src/sidebar/section-header.tsx": {
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/agent-error-card.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/thread/artifact-card.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/attachment-lightbox.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/babysit-report-card.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/thread/bind-pr-dialog.tsx": {
+      "text-size text-sm": 2
+    },
+    "apps/web/src/thread/checkout-pr-dialog.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/close-all-dialog.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/thread/close-thread-dialog.tsx": {
+      "text-size text-sm": 3,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/thread/compaction-marker.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/thread/dialog-shell.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-base": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/file-edit-card.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/thread/file-ref-link.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-[0.9em]": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/find-bar.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/folder-missing-notice.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/thread/fork-dialog.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-base": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/thread/labels-dialog.tsx": {
+      "text-size text-sm": 3
+    },
+    "apps/web/src/thread/lapsed-connectors-notice.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/limit-wait-line.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/thread/merged-cleanup-notice.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/thread/message-actions.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 8
+    },
+    "apps/web/src/thread/message-block.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/thread/message-origin.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/orchestration-cards.tsx": {
+      "text-size text-[11px]": 2,
+      "text-size text-sm": 4,
+      "text-size text-xs": 31
+    },
+    "apps/web/src/thread/plan-strip.tsx": {
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-[13px]": 2,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/thread/pr-row-links.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/thread/pr-strip.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/thread/preview-file-card.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/queue-list.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/thread/reasoning-block.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/recap-card.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/thread/removal-checklist.tsx": {
+      "text-size text-xs": 5
+    },
+    "apps/web/src/thread/rename-dialog.tsx": {
+      "text-size text-sm": 2
+    },
+    "apps/web/src/thread/request-cards.tsx": {
+      "text-size text-[11px]": 3,
+      "text-size text-sm": 6,
+      "text-size text-xs": 26
+    },
+    "apps/web/src/thread/restore-worktree.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/review-notice-card.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 8
+    },
+    "apps/web/src/thread/role-chip.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/session-restart-marker.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/stop-receipt.tsx": {
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/subagent-strip.tsx": {
+      "text-size text-[11px]": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/table-of-contents.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/task-chip.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/thread/thread-action-items.tsx": {
+      "text-size text-[10px]": 2
+    },
+    "apps/web/src/thread/thread-dialogs.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/thread/thread-menu.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/thread/thread-ref-link.tsx": {
+      "text-size text-[0.92em]": 1
+    },
+    "apps/web/src/thread/thread-view.tsx": {
+      "text-size text-sm": 4,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/thread/tool-cards.tsx": {
+      "text-size text-sm": 2,
+      "text-size text-xs": 21
+    },
+    "apps/web/src/thread/tool-group.tsx": {
+      "text-size text-sm": 2
+    },
+    "apps/web/src/thread/tool-images.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/thread/transcript.tsx": {
+      "shadow shadow-sm": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/thread/turn-files-chip.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/thread/turn-undo-marker.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/thread/usage-bar.tsx": {
+      "text-size text-[11px]": 1
+    },
+    "apps/web/src/thread/waiting-tray.tsx": {
+      "text-size text-[10px]": 1,
+      "text-size text-[11px]": 2,
+      "text-size text-[13px]": 1,
+      "text-size text-xs": 9
+    },
+    "apps/web/src/thread/wake-chip.tsx": {
+      "shadow shadow-md": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/thread/widget-card.tsx": {
+      "shadow shadow-lg": 1,
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/updates/build-status.tsx": {
+      "text-size text-xs": 4
+    },
+    "apps/web/src/updates/update-notice.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 1
+    },
+    "apps/web/src/usage/usage-breakdown.tsx": {
+      "spacing gap-[2px]": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-[13px]": 2,
+      "text-size text-sm": 5,
+      "text-size text-xl": 2,
+      "text-size text-xs": 7
+    },
+    "apps/web/src/usage/usage-chart.tsx": {
+      "radius rounded-[2px]": 2,
+      "radius rounded-t-[2px]": 1,
+      "radius rounded-t-[3px]": 1,
+      "shadow shadow-md": 1,
+      "spacing gap-[2px]": 1,
+      "text-size text-[11px]": 3,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/usage/usage-limits-section.tsx": {
+      "text-size text-[13px]": 1,
+      "text-size text-2xl": 1,
+      "text-size text-sm": 3,
+      "text-size text-xs": 5
+    },
+    "apps/web/src/usage/usage-model-table.tsx": {
+      "text-size text-[13px]": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/usage/usage-page.tsx": {
+      "text-size text-sm": 5,
+      "text-size text-xl": 2,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/usage/usage-sources.tsx": {
+      "text-size text-[13px]": 3,
+      "text-size text-sm": 2,
+      "text-size text-xs": 3
+    },
+    "apps/web/src/views/board-grid.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 6
+    },
+    "apps/web/src/views/board-group.tsx": {
+      "text-size text-sm": 1,
+      "text-size text-xs": 2
+    },
+    "apps/web/src/views/board-header.tsx": {
+      "text-size text-xs": 2
+    },
+    "apps/web/src/views/board-view.tsx": {
+      "spacing top-[5px]": 2,
+      "text-size text-sm": 3,
+      "text-size text-xs": 8
+    },
+    "apps/web/src/views/quiet-view.tsx": {
+      "shadow shadow-md": 1,
+      "shadow shadow-sm": 1,
+      "text-size text-[11px]": 1,
+      "text-size text-[13px]": 5,
+      "text-size text-[15px]": 1,
+      "text-size text-lg": 1,
+      "text-size text-sm": 2,
+      "text-size text-xl": 1,
+      "text-size text-xs": 4
+    },
+    "apps/web/src/views/view-frame.tsx": {
+      "text-size text-[11px]": 1,
+      "text-size text-[13px]": 1
+    },
+    "apps/web/src/welcome/welcome.tsx": {
+      "text-size text-base": 1,
+      "text-size text-sm": 2,
+      "text-size text-xs": 9
+    },
+    "apps/web/src/whats-new/release-notes.tsx": {
+      "text-size text-[0.85em]": 1
+    },
+    "apps/web/src/whats-new/whats-new-dialog.tsx": {
+      "text-size text-sm": 1
+    },
+    "apps/web/src/worktrees/worktrees-dialog.tsx": {
+      "text-size text-[11px]": 4,
+      "text-size text-sm": 1,
+      "text-size text-xs": 18
+    }
+  }
+}
