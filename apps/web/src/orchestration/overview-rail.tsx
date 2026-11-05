@@ -413,7 +413,12 @@ function Flyout({
     tileRef.current?.focus({ preventScroll: true });
   };
   const onOpenChange = (next: boolean, details: PreviewCard.Root.ChangeEventDetails) => {
-    if (next && details.reason === "trigger-focus" && quiet.current) return;
+    if (
+      next &&
+      quiet.current &&
+      (details.reason === "trigger-focus" || details.reason === "trigger-hover")
+    )
+      return;
     // From a row inside it, the focus goes back to its tile rather than to the page.
     if (
       !next &&
@@ -473,6 +478,7 @@ function Flyout({
         }}
         onKeyDown={onTileKey}
         onMouseEnter={() => {
+          quiet.current = false;
           reentered.current = !open && popup.current !== null;
         }}
         onMouseLeave={() => {

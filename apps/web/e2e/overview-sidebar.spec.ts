@@ -1156,6 +1156,26 @@ test("activating a keyboard-focused workspace tile keeps its delayed flyout clos
   await expect(flyout(page).getByTestId("overview-worker").first()).toBeFocused();
 });
 
+test("clicking a workspace tile keeps its delayed hover closed until a new hover", async ({
+  page,
+}) => {
+  const made = await start(page, { width: 1100 });
+  await page.clock.install();
+  const other = tile(page, made.asks.other.workspaceId);
+  await other.hover();
+  await other.click();
+  await expect(page).toHaveURL(new RegExp(`/t/${made.asks.other.orchestratorThreadId}$`));
+  await page.clock.runFor(500);
+  await expect(flyout(page)).toHaveCount(0);
+  await page.mouse.move(600, 450);
+  await other.hover();
+  await page.clock.runFor(500);
+  await expect(flyout(page)).toHaveAttribute(
+    "data-for",
+    `workspace:${made.asks.other.workspaceId}`,
+  );
+});
+
 test("the Compact and Expand buttons pick the mode; ⌘B hides compact and brings it back compact", async ({
   page,
 }) => {

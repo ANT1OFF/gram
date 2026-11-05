@@ -1,5 +1,7 @@
 import {
   defaultRangeExtractor,
+  elementScroll,
+  observeElementOffset,
   useVirtualizer,
   type Range,
   type Virtualizer,
@@ -159,11 +161,21 @@ export function VirtualRows<T>({
   };
 
   const virtualizerRef = useRef<Virtualizer<HTMLElement, HTMLElement>>(undefined);
+  const offsetChanged = useRef<(offset: number, isScrolling: boolean) => void>(undefined);
+  const scrollWritten = useRef<() => void>(undefined);
   const typical = typicalSize(virtualizerRef.current) ?? estimate;
   // oxlint-disable-next-line react/incompatible-library -- opted out of memoization above
   const virtualizer = useVirtualizer<HTMLElement, HTMLElement>({
     count: items.length,
     getScrollElement: () => (scroller.current ??= scrollParent(root.current)),
+    observeElementOffset: (instance, changed) => {
+      offsetChanged.current = changed;
+      return observeElementOffset(instance, changed);
+    },
+    scrollToFn: (offset, options, instance) => {
+      elementScroll(offset, options, instance);
+      scrollWritten.current?.();
+    },
     // Rows not drawn yet are as tall as the drawn ones are on average: the given estimate is only a
     // first guess, and each row off from it by half a pixel moves the rows under it.
     estimateSize: () => typical,
@@ -183,32 +195,42 @@ export function VirtualRows<T>({
     const list = root.current;
     const parent = (scroller.current ??= scrollParent(list));
     if (list === null || parent === null) return;
-    // Where the list starts against the scroller's top edge, last seen.
-    let seen: number | undefined;
-    let measuredScroll = parent.scrollTop;
+    // Keep content and scroll offsets separately: a queued event must not absorb content that
+    // grew since the write. Row-size corrections also update the scroll offset synchronously.
+    let seenOffset: number | undefined;
+    let seenScroll = parent.scrollTop;
+    scrollWritten.current = () => {
+      seenScroll = parent.scrollTop;
+    };
     const measure = () => {
       const offset = offsetIn(list, parent);
       if (offset === undefined) return;
+      const seen = seenOffset === undefined ? undefined : seenOffset - seenScroll;
       const at = offset - parent.scrollTop;
       if (seen !== undefined && seen < 0 && Math.abs(at - seen) >= 0.5) {
         parent.scrollTop += at - seen;
+        // Report the compensation before another row measurement can write a correction from
+        // the old offset. This is an anchor adjustment, not an absolute scroll command, so row
+        // height corrections must still apply while the native scroll event is pending.
+        offsetChanged.current?.(parent.scrollTop, virtualizer.isScrolling);
       }
-      measuredScroll = parent.scrollTop;
-      seen = offset - parent.scrollTop;
+      seenScroll = parent.scrollTop;
+      seenOffset = offset;
       setMargin((was) => (Math.abs(was - offset) < 0.5 ? was : offset));
     };
     const scrolled = () => {
-      // A compensation queues a scroll event. Another section may grow before it arrives;
-      // re-reading geometry for that unchanged scroll would absorb the new growth into `seen`.
-      if (parent.scrollTop === measuredScroll) return;
-      measuredScroll = parent.scrollTop;
+      if (parent.scrollTop === seenScroll) return;
+      seenScroll = parent.scrollTop;
       const offset = offsetIn(list, parent);
-      if (offset !== undefined) seen = offset - parent.scrollTop;
+      if (offset !== undefined) seenOffset = offset;
     };
     measure();
     parent.addEventListener("scroll", scrolled, { passive: true });
     if (typeof ResizeObserver === "undefined") {
-      return () => parent.removeEventListener("scroll", scrolled);
+      return () => {
+        scrollWritten.current = undefined;
+        parent.removeEventListener("scroll", scrolled);
+      };
     }
     const observer = new ResizeObserver(measure);
     observer.observe(list);
@@ -223,11 +245,12 @@ export function VirtualRows<T>({
     });
     added.observe(parent, { childList: true });
     return () => {
+      scrollWritten.current = undefined;
       observer.disconnect();
       added.disconnect();
       parent.removeEventListener("scroll", scrolled);
     };
-  }, []);
+  }, [virtualizer]);
 
   useLayoutEffect(() => {
     const list = root.current;
