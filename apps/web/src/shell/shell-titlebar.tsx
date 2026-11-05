@@ -146,11 +146,12 @@ export function ShellTitlebar({
         <LaunchIssuesChip className="[-webkit-app-region:no-drag]" />
         {!soloBar && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
         {/* Before any setup there is no work of Gram's to meter. Narrow, the title needs the room
-            more than the meter needs its words. */}
+            more than the meter needs its words: it keeps its share ("85%"), its hover the rest. */}
         {!beforeSetup && (
           <UsageMeter
             className="[-webkit-app-region:no-drag]"
             textClassName="@max-2xl/titlebar:hidden"
+            shortTextClassName="hidden @max-2xl/titlebar:inline"
           />
         )}
         {/* What needs you has one way in: the sidebar's pill, open or compact; with no pill on

@@ -83,7 +83,7 @@ export function PeekSheet() {
       <Dialog.Portal container={inPane ? container : undefined}>
         <Dialog.Backdrop
           className={cn(
-            "inset-0 z-40 bg-scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
+            "inset-0 z-40 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
             inPane ? "absolute" : "fixed",
           )}
         />

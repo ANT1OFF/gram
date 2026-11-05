@@ -193,6 +193,13 @@
       min(100%, var(--thread-max-width)) / 2
   );
 }
+/* Behind a modal (History, Workers, the palette, a dialog): the scrim's dim and, where transparency is
+   welcome, a slight blur, so the page behind reads as a backdrop rather than as text. */
+@utility scrim {
+  background-color: var(--scrim);
+  -webkit-backdrop-filter: blur(var(--scrim-blur, 0px));
+  backdrop-filter: blur(var(--scrim-blur, 0px));
+}
 @utility focus-ring {
   outline: var(--focus-width) solid var(--focus-ring);
   outline-offset: var(--focus-offset);

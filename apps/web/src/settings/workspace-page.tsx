@@ -570,7 +570,7 @@ function MoreOptions({ state, changes }: { state: WorkspaceState; changes: Chang
         aria-controls={id}
         data-testid="workspace-advanced"
         onClick={() => setOpen(!open)}
-        className="flex min-h-7 items-center gap-1 rounded-sm px-1 font-caption text-meta font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-h-7 items-center gap-1 rounded-sm px-1 text-meta font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronRight
           aria-hidden

@@ -9,6 +9,7 @@ import type {
   ThreadId,
 } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Profiler } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -96,15 +97,18 @@ describe("DiffPanel turn scope", () => {
     renderWithApi(<DiffPanel threadId={T} />, { gitDiff: turnDiff, threadFeed });
 
     fireEvent.click(screen.getByRole("radio", { name: "Turn" }));
-    const picker = (await screen.findByRole("combobox", { name: "Turn" })) as HTMLSelectElement;
-    expect([...picker.options].map((o) => o.textContent)).toEqual([
+    // The app's dropdown, not a native select: it says the picked turn's prompt.
+    const picker = await screen.findByRole("combobox", { name: "Turn" });
+    expect(picker.textContent).toContain("Fix the lint");
+    expect(await screen.findByText("lint.ts")).toBeTruthy();
+
+    const user = userEvent.setup();
+    await user.click(picker);
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
       "Fix the lint",
       "Bump the deps",
     ]);
-    expect(picker.value).toBe("turn-b");
-    expect(await screen.findByText("lint.ts")).toBeTruthy();
-
-    fireEvent.change(picker, { target: { value: "turn-a" } });
+    await user.click(screen.getByRole("option", { name: "Bump the deps" }));
     expect(await screen.findByText("deps.json")).toBeTruthy();
     expect(turnDiff).toHaveBeenCalledWith(T, { kind: "turn", turnId: "turn-a" });
   });
@@ -186,14 +190,9 @@ describe("DiffPanel turn scope", () => {
       chunk({ type: "text-start", id: "t" }),
     );
     await frame();
-    const picker = screen.getByRole("combobox", { name: "Turn" }) as HTMLSelectElement;
-    await waitFor(() =>
-      expect([...picker.options].map((o) => o.textContent)).toEqual([
-        "Tidy the docs",
-        "Fix the lint",
-        "Bump the deps",
-      ]),
-    );
+    const picker = screen.getByRole("combobox", { name: "Turn" });
+    // The newest turn is offered, and picked, once it starts.
+    await waitFor(() => expect(picker.textContent).toContain("Tidy the docs"));
     await waitFor(() =>
       expect(turnDiff).toHaveBeenCalledWith(T, { kind: "turn", turnId: "turn-c" }),
     );

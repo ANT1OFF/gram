@@ -417,9 +417,7 @@ function Control({
   const search = useSettingSearch({ label, description: hint, keywords });
   return (
     <section {...search} className="flex flex-col gap-2">
-      <h3 className="font-caption text-meta font-medium tracking-wide text-muted-foreground uppercase">
-        {label}
-      </h3>
+      <h3 className="text-meta font-medium text-muted-foreground">{label}</h3>
       {hintFirst && hint && <p className="text-body text-pretty text-description">{hint}</p>}
       {children}
       {!hintFirst && hint && <p className="text-body text-pretty text-description">{hint}</p>}
@@ -561,7 +559,7 @@ function SidebarSample() {
           const rows = sample.rows.filter((row) => row.status === group.status);
           return (
             <section key={group.status} className="mb-2">
-              <h3 className="flex items-center gap-1.5 px-2 py-1 font-caption text-caption font-medium tracking-wide text-muted-foreground uppercase">
+              <h3 className="flex items-center gap-1.5 px-2 py-1 text-meta font-medium text-muted-foreground">
                 <group.icon className={cn("size-3", group.tone)} />
                 {group.label}
                 <NumberTicker className="ml-auto tabular-nums" value={rows.length} />

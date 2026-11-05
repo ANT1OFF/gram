@@ -81,7 +81,7 @@ export function SectionToggle({
         } as CSSProperties
       }
       className={cn(
-        "flex w-full min-w-0 items-center gap-1.5 rounded-(--radius-sm) px-2 py-1 text-caption font-semibold tracking-[0.06em] text-foreground uppercase outline-none transition-colors duration-(--dur-fast) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full min-w-0 items-center gap-1.5 rounded-(--radius-sm) px-2 py-1 text-meta font-semibold text-foreground outline-none transition-colors duration-(--dur-fast) hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
       {...button}

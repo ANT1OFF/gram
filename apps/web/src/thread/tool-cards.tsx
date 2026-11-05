@@ -15,7 +15,7 @@ import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Expand, isMarkPhase, StatusMark, Swap } from "@/motion";
 
-import { useAwaitingTools, withApproval } from "./awaiting-tools";
+import { ApprovalLink, useAwaitingTools, useShowApproval, withApproval } from "./awaiting-tools";
 import {
   basename,
   PHASE_DISPLAY,
@@ -125,6 +125,7 @@ function ToolShell({
   );
   const display = PHASE_DISPLAY[phase];
   const words = labelOf?.(phase) ?? { label: name, raw: undefined };
+  const showApproval = useShowApproval(phase === "awaiting" ? part.toolCallId : undefined);
   const [open, setOpen] = useState(defaultOpen);
   // A closed body is inert and zero-height, so it isn't rendered until first opened: a long
   // transcript would otherwise lay out every tool's full output. It stays mounted once opened, so
@@ -143,35 +144,48 @@ function ToolShell({
       data-tool={name}
       data-tool-call-id={part.toolCallId}
     >
-      <CollapsibleTrigger
-        aria-controls={bodyId}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-reading"
-      >
-        {/* The mark stays mounted from pending to done, so its arc can close into the check. */}
-        {/* A native title: a tooltip trigger inside the row's toggle would take its click. */}
-        <span title={display.label} className="flex shrink-0">
-          <Swap swapKey={isMarkPhase(phase) ? "mark" : phase}>
-            {isMarkPhase(phase) ? (
-              <StatusMark phase={phase} className={cn("size-3.5", display.tone)} />
-            ) : (
-              <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
+      <div className="flex items-center">
+        <CollapsibleTrigger
+          aria-controls={bodyId}
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-reading"
+        >
+          {/* The mark stays mounted from pending to done, so its arc can close into the check. */}
+          {/* A native title: a tooltip trigger inside the row's toggle would take its click. */}
+          <span title={display.label} className="flex shrink-0">
+            <Swap swapKey={isMarkPhase(phase) ? "mark" : phase}>
+              {isMarkPhase(phase) ? (
+                <StatusMark phase={phase} className={cn("size-3.5", display.tone)} />
+              ) : (
+                <display.icon aria-hidden className={cn("size-3.5", display.tone)} />
+              )}
+            </Swap>
+          </span>
+          <span className="shrink-0 font-medium">{words.label}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
+            {summary}
+          </span>
+          {meta}
+          {/* A finished row is the common case: its check says so, and the word is for a reader.
+            A waiting row's word is the link to its card instead, beside the toggle. */}
+          <span
+            className={cn(
+              "shrink-0 text-meta",
+              phase === "done" || showApproval !== undefined ? "sr-only" : display.tone,
             )}
-          </Swap>
-        </span>
-        <span className="shrink-0 font-medium">{words.label}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
-          {summary}
-        </span>
-        {meta}
-        {/* A finished row is the common case: its check says so, and the word is for a reader. */}
-        <span className={cn("shrink-0 text-meta", phase === "done" ? "sr-only" : display.tone)}>
-          {display.label}
-        </span>
-        <ChevronDown
-          aria-hidden
-          className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) in-data-panel-open:rotate-180"
-        />
-      </CollapsibleTrigger>
+          >
+            {display.label}
+          </span>
+          <ChevronDown
+            aria-hidden
+            className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast) in-data-panel-open:rotate-180"
+          />
+        </CollapsibleTrigger>
+        {showApproval !== undefined && (
+          <span className="shrink-0 pr-3">
+            <ApprovalLink onShow={showApproval} label={display.label} />
+          </span>
+        )}
+      </div>
       {!open && (
         <ToolImages
           part={part}

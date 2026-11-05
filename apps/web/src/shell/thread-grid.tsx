@@ -268,7 +268,7 @@ function EmptyPane({ index }: { index: number }) {
         </Button>
         {recent.length > 0 && (
           <section aria-label="Open a thread here" className="flex w-full max-w-64 flex-col gap-1">
-            <h3 className="text-caption font-medium tracking-wide uppercase">Open a thread here</h3>
+            <h3 className="text-meta font-medium">Open a thread here</h3>
             <ul className="flex flex-col">
               {recent.map((summary) => {
                 const { thread } = summary;

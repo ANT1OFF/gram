@@ -723,7 +723,7 @@ function Section({
     setOpen(true);
   }
   const heading =
-    "flex w-full items-center gap-1.5 px-3 py-2 text-caption font-medium tracking-wide text-muted-foreground uppercase";
+    "flex w-full items-center gap-1.5 px-3 py-2 text-meta font-medium text-muted-foreground";
   const trailing = meta ?? (count === 0 ? undefined : count);
 
   // Nothing to fold: the heading says it's empty, with any action (a rerun's outcome) below.
@@ -794,7 +794,7 @@ function PrDescription({ body }: { body: string }) {
           type="button"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="flex w-full items-center gap-1.5 py-2 text-caption font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex w-full items-center gap-1.5 py-2 text-meta font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             aria-hidden

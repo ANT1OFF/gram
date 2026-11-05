@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CHAT_MIN_WIDTH } from "@/stores/layout";
 
 import { inboxDockFit, type InboxDockInput } from "./inbox-dock";
-import { INBOX_CHAT_MIN_WIDTH, INBOX_DOCK_WIDTH } from "./inbox-store";
+import { INBOX_CHAT_MIN_WIDTH, INBOX_DOCK_AUTO_MAX, INBOX_DOCK_WIDTH } from "./inbox-store";
 
 const window = (windowWidth: number, more: Partial<InboxDockInput> = {}): InboxDockInput => ({
   windowWidth,
@@ -19,6 +19,14 @@ describe("inboxDockFit", () => {
     const fit = inboxDockFit(window(1728), INBOX_DOCK_WIDTH.default);
     expect(fit).toMatchObject({ sidebar: "full", sidebarWidth: 248, width: 600 });
     expect(1728 - 248 - fit!.width).toBeGreaterThan(INBOX_CHAT_MIN_WIDTH);
+  });
+
+  it("not dragged, takes the room past the chat's reading column, up to its own", () => {
+    // 1728 - 248 - 760: the chat keeps a comfortable column, the Inbox the rest.
+    expect(inboxDockFit(window(1728), undefined)?.width).toBe(720);
+    expect(inboxDockFit(window(2560), undefined)?.width).toBe(INBOX_DOCK_AUTO_MAX);
+    // Short of that, its minimum, as before.
+    expect(inboxDockFit(window(1440), undefined)?.width).toBe(INBOX_DOCK_WIDTH.min);
   });
 
   it("stops a drag where the transcript beside it is still readable", () => {

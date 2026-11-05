@@ -4,20 +4,27 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
 
+/**
+ * One disabled look for every button: never a faded copy of its enabled fill, which reads as live
+ * (a dim accent still looks pressable). A filled button turns to the neutral raised fill with
+ * subtle text, an outlined one keeps its edge on no fill, and a quiet one dims its words.
+ */
+const DISABLED_FILL =
+  "disabled:border-border disabled:bg-muted data-disabled:border-border data-disabled:bg-muted";
+
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-reading font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:focus-ring motion-safe:active:not-aria-[haspopup]:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-reading font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:focus-ring motion-safe:active:not-aria-[haspopup]:scale-[0.97] disabled:pointer-events-none disabled:text-subtle disabled:shadow-none data-disabled:text-subtle aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        default: `bg-primary text-primary-foreground hover:bg-primary/80 ${DISABLED_FILL}`,
         outline:
-          "border-border bg-background text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-transparent dark:hover:bg-muted",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--surface-3),var(--fg)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "border-border bg-background text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-transparent dark:hover:bg-muted disabled:bg-transparent data-disabled:bg-transparent",
+        secondary: `bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--surface-3),var(--fg)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground ${DISABLED_FILL}`,
         // The row hover's fill (surface-hover), so an icon button shows its 28 px target in dark too.
         ghost:
           "hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
-        destructive: "bg-destructive-tint text-destructive hover:bg-destructive-tint-hover",
+        destructive: `bg-destructive-tint text-destructive hover:bg-destructive-tint-hover ${DISABLED_FILL}`,
         link: "text-link underline-offset-4 hover:underline",
       },
       size: {

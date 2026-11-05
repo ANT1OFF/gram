@@ -82,10 +82,7 @@ export function PaletteEditor({ store = themeStore }: { store?: ThemeStore }) {
 
   return (
     <section aria-labelledby={`${nameId}-heading`} className="flex flex-col gap-3">
-      <h3
-        id={`${nameId}-heading`}
-        className="font-caption text-meta font-medium tracking-wide text-muted-foreground uppercase"
-      >
+      <h3 id={`${nameId}-heading`} className="text-meta font-medium text-muted-foreground">
         Custom palette
       </h3>
       <p className="text-meta text-muted-foreground">

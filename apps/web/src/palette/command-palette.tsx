@@ -141,7 +141,7 @@ export function CommandPalette() {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+        <Dialog.Backdrop className="fixed inset-0 z-40 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Dialog.Popup
           data-testid="command-palette"
           data-surface="overlay"
@@ -1201,7 +1201,7 @@ function PaletteBody({
           )}
           {sections.map((section) => (
             <div key={section.id} role="group" aria-label={section.label} className="mb-1">
-              <div className="px-2 py-1 text-caption font-medium tracking-wide text-muted-foreground uppercase">
+              <div className="px-2 py-1 text-meta font-medium text-muted-foreground">
                 {section.label}
               </div>
               {section.id === "filtered" && section.items.length === 0 && (

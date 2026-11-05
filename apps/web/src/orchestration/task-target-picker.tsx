@@ -10,8 +10,7 @@ const POPUP =
   "z-50 w-80 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 outline-none select-none data-[highlighted]:row-cursor";
-const LABEL =
-  "px-2 pt-1.5 pb-1 text-caption font-medium tracking-wide text-muted-foreground uppercase";
+const LABEL = "px-2 pt-1.5 pb-1 text-meta font-medium text-muted-foreground";
 
 /**
  * What the New form's "in" chip picks: a task's target, or `newWorkspace`, which is no target but

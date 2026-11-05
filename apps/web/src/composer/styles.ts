@@ -38,6 +38,10 @@ export const ROUND =
 export const STOP_PILL =
   "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-(--composer-button-radius) bg-foreground pr-3 pl-2.5 text-meta font-medium text-background outline-none transition-colors hover:bg-destructive focus-visible:focus-ring";
 
-/** Send's fill: the accent with a faint gloss, flat while pressed or disabled. */
+/**
+ * Send's fill: the accent with a faint gloss, flat while pressed. With nothing to send it takes the
+ * neutral disabled fill every button takes (components/ui/button.tsx), never a dimmed accent that
+ * still reads as pressable.
+ */
 export const SEND_FILL =
-  "bg-primary text-primary-foreground shadow-raised shadow-primary/24 inset-shadow-2xs inset-shadow-white/16 active:inset-shadow-black/8 active:shadow-none disabled:opacity-64 disabled:shadow-none";
+  "bg-primary text-primary-foreground shadow-raised shadow-primary/24 inset-shadow-2xs inset-shadow-white/16 active:inset-shadow-black/8 active:shadow-none disabled:bg-muted disabled:text-subtle disabled:shadow-none disabled:inset-shadow-none disabled:ring-1 disabled:ring-border";

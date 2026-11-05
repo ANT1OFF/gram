@@ -122,7 +122,7 @@ selection are in [globals.css](apps/web/src/styles/globals.css) and
 
 | Class              | Size / line | Weight   | For                                                          |
 | ------------------ | ----------- | -------- | ------------------------------------------------------------ |
-| `text-caption`     | 11 / 16 px  | inherits | Counts, badges, key caps, overline labels. Never prose.      |
+| `text-caption`     | 11 / 16 px  | inherits | Counts, badges, key caps. Never prose or a heading.          |
 | `text-meta`        | 12 / 16 px  | inherits | Metadata, help text, chips, a row's second line.             |
 | `text-body`        | 13 / 20 px  | inherits | UI text: rows, menus, buttons, labels, settings.             |
 | `text-body-strong` | 13 / 20 px  | 500      | A row's or card's title; an emphasised label.                |
@@ -147,9 +147,11 @@ muted text at AA there) and the edge `border-edge`, which carries the step in da
 doesn't show; a row that opens or acts (a tool row, an update, the files-changed row) takes the
 firmer `border-edge-action`. A plain divider stays `border-border`. `shadow-raised` for a card on a surface, `shadow-overlay` for what
 floats (a menu, a popover, a toast), `shadow-modal` for a modal dialog over the scrim (History, a
-confirm), `shadow-composer` for the composer slab. The scrim dims toward the chrome surface, more
-in light (82%) than dark (60%), so the page behind a light dialog doesn't compete with it. More
-contrast and forced colours turn the shadows off and the edges to `border-strong`.
+confirm), `shadow-composer` for the composer slab. The scrim (`scrim`) dims toward the chrome surface,
+82% in light and 78% in dark, and blurs the page a little (`--scrim-blur`), so the transcript
+behind History, Workers or the palette reads as a backdrop and never competes with the list in
+front. More contrast and forced colours turn the shadows and the blur off and the edges to
+`border-strong`.
 
 **Selection and focus.** The `row-cursor`, `choice-selected`, `focus-ring` and
 `focus-ring-inset` utilities in globals.css, as described under Look. In the sidebar the open
@@ -168,6 +170,8 @@ the check fails `bun run lint` on any new use; an allowlist entry is for a delib
 ## Voice
 
 - Plain and short. Sentence case. Buttons are verbs ("Create branch", "Open PR").
+- Headings are sentence case too, never all caps: a sidebar section ("Solo threads"), a settings
+  group ("Mode"), a PR panel section ("Checks"), a palette group and a chapter divider.
 - One word set per action, on every surface. An approval is "Allow once", "Always allow this
   rule…" and "Deny" in the thread, the Inbox, the Board and a notification (the verbs live in
   `thread/request-model.ts`), and its receipt names the scope chosen: "Allowed once", "Always

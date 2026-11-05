@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import { Expand } from "@/motion";
 
-import { useAwaitingTools } from "./awaiting-tools";
+import { ApprovalLink, useAwaitingTools, useShowApproval } from "./awaiting-tools";
 import { ToolCard, type ToolCardProps } from "./tool-cards";
 import { EditCounts } from "./file-edit-card";
 import {
@@ -35,15 +35,18 @@ export function ToolGroup({
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
+  const showApproval = useShowApproval(waiting?.toolCallId);
 
   return (
     <div data-testid="tool-group" data-open={open}>
+      {/* The toggle and, while a call waits, the link to its card share a line; the toggle stays
+          the group's own first child. */}
       <button
         type="button"
         aria-expanded={open}
         aria-controls={bodyId}
         className={cn(
-          "flex max-w-full items-center gap-1 rounded-sm py-0.5 text-left text-reading outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+          "inline-flex max-w-full items-center gap-1 rounded-sm py-0.5 align-middle text-left text-reading outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
           active || waiting ? "text-foreground" : "text-muted-foreground",
         )}
         onClick={() => {
@@ -84,6 +87,11 @@ export function ToolGroup({
           )}
         />
       </button>
+      {showApproval !== undefined && (
+        <span className="ml-2 inline-flex align-middle">
+          <ApprovalLink onShow={showApproval} label="Show approval" />
+        </span>
+      )}
       <Expand open={open} id={bodyId}>
         {opened && (
           <div className="flex flex-col gap-2 pt-1.5">

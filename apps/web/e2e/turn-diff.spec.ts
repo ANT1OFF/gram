@@ -9,12 +9,16 @@ test("a finished turn's files chip opens the Diff panel at that turn", async ({ 
   const panel = page.getByTestId("diff-panel");
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("radio", { name: "Turn" })).toHaveAttribute("aria-checked", "true");
-  await expect(panel.getByRole("combobox", { name: "Turn" })).toHaveValue("turn-deps-1");
+  await expect(panel.getByRole("combobox", { name: "Turn" })).toContainText(
+    "Bump all minor versions",
+  );
   await expect(panel.getByTestId("diff-file")).toHaveCount(2);
   await expect(panel.getByTestId("diff-files").getByText("package.json")).toBeVisible();
 
   // Switching scope and back keeps the turn.
   await panel.getByRole("radio", { name: "Uncommitted" }).click();
   await panel.getByRole("radio", { name: "Turn" }).click();
-  await expect(panel.getByRole("combobox", { name: "Turn" })).toHaveValue("turn-deps-1");
+  await expect(panel.getByRole("combobox", { name: "Turn" })).toContainText(
+    "Bump all minor versions",
+  );
 });

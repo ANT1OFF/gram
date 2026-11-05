@@ -119,9 +119,7 @@ export function KeyboardSection() {
         if (groupRows.length === 0) return null;
         return (
           <SearchScope key={group} as="section" label={group} aria-label={group}>
-            <h3 className="mb-1.5 text-meta font-medium tracking-wide text-muted-foreground uppercase">
-              {group}
-            </h3>
+            <h3 className="mb-1.5 text-meta font-medium text-muted-foreground">{group}</h3>
             <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
               {groupRows.map((row) => (
                 <BindingItem key={row.id} id={row.id} label={row.label}>

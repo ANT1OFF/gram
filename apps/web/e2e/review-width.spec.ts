@@ -111,7 +111,7 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
   await expect(panel.getByRole("button", { name: "Focus review" })).toBeVisible();
 });
 
-test("beside a review the chat keeps its room, and a review held too narrow offers Focus review", async ({
+test("beside a review the chat keeps its room, and a review held too narrow takes Focus review", async ({
   page,
 }) => {
   // 1024 wide: the overview is its compact rail, 60 px.
@@ -124,26 +124,34 @@ test("beside a review the chat keeps its room, and a review held too narrow offe
   await expect.poll(() => widthOf(panel)).toBe(352);
   const offer = panel.getByTestId("review-room-offer");
   await expect(offer).toHaveCount(0);
+  await expect(shell).toHaveAttribute("data-review-focus", "false");
 
-  // Dragged wide, the review stops where the chat keeps 520 px, too narrow to read: it says so.
+  // Dragged wide, the review stops where the chat keeps 520 px, too narrow to read: it takes the
+  // window on its own, and leaves the chat its strip.
   await dragHandle(page, -400);
+  await expect(shell).toHaveAttribute("data-review-focus", "true");
+  await expect.poll(() => widthOf(panel)).toBe(1024 - 48);
+  await expect(offer).toHaveCount(0);
+
+  // Esc gives the chat back, side by side as the user chose: the review says why it is cramped and
+  // offers focus again, and isn't taken again on its own.
+  await page.mouse.move(600, 600);
+  await page.keyboard.press("Escape");
+  await expect(shell).toHaveAttribute("data-review-focus", "false");
   await expect.poll(() => widthOf(chat)).toBe(520);
   await expect.poll(() => widthOf(panel)).toBe(1024 - 60 - 520);
   await expect(offer).toContainText("Too narrow to read beside the conversation.");
 
-  // Kept side by side, it goes; taken, the review gets the window, and Esc gives the chat back.
+  // Kept side by side, the offer goes; taken, the review gets the window.
   await offer.getByRole("button", { name: "Keep side by side" }).click();
   await expect(offer).toHaveCount(0);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.setViewportSize({ width: 1024, height: 900 });
-  await panel.getByTestId("review-room-focus").click();
-  await expect(shell).toHaveAttribute("data-review-focus", "true");
-  await expect.poll(() => widthOf(panel)).toBe(1024 - 48);
-  await expect(offer).toHaveCount(0);
-  await page.mouse.move(600, 600);
-  await page.keyboard.press("Escape");
   await expect(shell).toHaveAttribute("data-review-focus", "false");
-  await expect(offer).toBeVisible();
+
+  // With room again and then short once more, it takes focus on its own again.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(shell).toHaveAttribute("data-review-focus", "false");
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(shell).toHaveAttribute("data-review-focus", "true");
 });
 
 test("Wrap lines and Ignore whitespace change the diff and are remembered", async ({ page }) => {

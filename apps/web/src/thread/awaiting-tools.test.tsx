@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import type { RequestId, ThreadId } from "@gram/contracts";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { useRequestRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 
 import { AwaitingToolsProvider } from "./awaiting-tools";
@@ -82,5 +83,22 @@ describe("a tool call held at an approval", () => {
     const group = screen.getByTestId("tool-group");
     expect(group.getAttribute("data-open")).toBe("true");
     expect(group.textContent).toContain("Waiting for your approval · Bash git push");
+  });
+
+  it("links its waiting word to the card that decides it, which its queue then shows", () => {
+    asking(true);
+    useRequestRevealStore.getState().clear();
+    render(
+      <AwaitingToolsProvider threadId={T}>
+        <ToolCard part={push} {...props} renderSubagent={() => null} />
+      </AwaitingToolsProvider>,
+    );
+    const link = screen.getByTestId("approval-link");
+    expect(link.textContent).toContain("Waiting for your approval");
+    fireEvent.click(link);
+    expect(useRequestRevealStore.getState().request).toEqual({ threadId: T, requestId: "r1" });
+    // Allowed, the call runs and the link goes.
+    act(() => asking(false));
+    expect(screen.queryByTestId("approval-link")).toBeNull();
   });
 });

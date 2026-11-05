@@ -25,6 +25,13 @@ import { useApi } from "@/api/context";
 import { errorMessage, folderProblem } from "@/api/errors";
 import { Hint } from "@/components/hint";
 import { QueryError } from "@/components/not-available";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useShortcut } from "@/keyboard/registry";
 import { radioGroupKeyDown } from "@/lib/list-keys";
 import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
@@ -260,18 +267,31 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
         )}
         <div className="ml-auto flex min-w-0 items-center gap-1">
           {scope === "turn" && turnId !== undefined && (
-            <select
-              aria-label="Turn"
+            // The app's dropdown, as every other picker in the panel; its value is the turn's prompt.
+            <Select
               value={turnId}
-              onChange={(event) => setPicked(event.target.value as TurnId)}
-              className="max-w-56 min-w-0 truncate rounded-(--radius-sm) border border-border bg-transparent px-1 py-0.5 text-meta"
+              onValueChange={(value) => {
+                if (value !== null) setPicked(value as TurnId);
+              }}
             >
-              {turns.map((turn) => (
-                <option key={turn.turnId} value={turn.turnId}>
-                  {turn.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                size="sm"
+                aria-label="Turn"
+                title={turns.find((turn) => turn.turnId === turnId)?.label}
+                className="max-w-56 min-w-0 text-meta"
+              >
+                <SelectValue>
+                  {turns.find((turn) => turn.turnId === turnId)?.label ?? "Turn"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent align="end">
+                {turns.map((turn) => (
+                  <SelectItem key={turn.turnId} value={turn.turnId} className="text-meta">
+                    {turn.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <DiffViewMenu
             layout={layout}
@@ -629,7 +649,7 @@ function DiffBody({
     <>
       {/* Where the diff stands; how much it holds is beside its scope, above. */}
       {(diff.branch || (diff.base && fallbackBase === undefined)) && (
-        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-meta text-muted-foreground">
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 text-meta text-muted-foreground">
           {diff.branch && (
             <span className="flex min-w-0 items-center gap-1 font-mono">
               <GitBranch aria-hidden className="size-3.5 shrink-0" />

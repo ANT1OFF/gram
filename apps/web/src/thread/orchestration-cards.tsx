@@ -601,7 +601,7 @@ export function HandoffDivider({ handoff }: { handoff: Handoff }) {
   return (
     <div
       data-testid="handoff"
-      className="my-3 flex items-center gap-3 text-meta font-medium tracking-wide text-muted-foreground uppercase"
+      className="my-3 flex items-center gap-3 text-meta font-medium text-muted-foreground"
     >
       <span className="h-px flex-1 bg-border" />
       {handoffLabel(handoff)}

@@ -29,6 +29,16 @@ export const INBOX_DOCK_WIDTH: WidthBounds = { min: 600, max: 4096, default: 600
 export const INBOX_CHAT_MIN_WIDTH = 520;
 
 /**
+ * What the chat keeps beside an Inbox that hasn't been dragged: a comfortable reading column. The
+ * dock takes the rest of a wide window, up to `INBOX_DOCK_AUTO_MAX`, rather than squeezing its list
+ * and detail into its minimum while the chat has room to spare.
+ */
+export const INBOX_CHAT_COMFORT_WIDTH = 760;
+
+/** The widest an Inbox that hasn't been dragged opens: its list and a detail at reading width. */
+export const INBOX_DOCK_AUTO_MAX = 880;
+
+/**
  * The Inbox's request list, beside the detail. Its `default` is the full list's, which the dialog
  * opens at; docked, it opens compact (`INBOX_LIST_COMPACT`), leaving the detail and the chat room.
  */
@@ -75,8 +85,8 @@ interface InboxState {
    * dock stays, and its Esc hands focus to that thread's composer.
    */
   readonly leftForThread: boolean;
-  /** The dock's dragged width, for this session. */
-  readonly width: number;
+  /** The dock's dragged width, for this session; undefined to fit the window (`inboxDockFit`). */
+  readonly width: number | undefined;
   /** The request list's dragged width, for this session; undefined for its default. */
   readonly listWidth: number | undefined;
   /** Bumped to put focus on the dock's list: an open from outside it, while it is already shown. */
@@ -98,7 +108,7 @@ export const useInboxStore = create<InboxState>()((set) => ({
   lastKind: undefined,
   later: false,
   leftForThread: false,
-  width: INBOX_DOCK_WIDTH.default,
+  width: undefined,
   listWidth: undefined,
   focusTick: 0,
   select: (selected) => {

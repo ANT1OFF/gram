@@ -18,7 +18,6 @@ import {
   ShieldQuestion,
   MessageCircleQuestion,
   ListChecks,
-  Send,
 } from "lucide-react";
 import {
   createContext,
@@ -41,7 +40,7 @@ import { formatKeys, useShortcut } from "@/keyboard/registry";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { AttentionPulse, PresenceItem, PresenceList, PressScale } from "@/motion";
-import { Kbd } from "@/orchestration/ask-choices";
+import { Kbd, SendAnswer } from "@/orchestration/ask-choices";
 import { answerKey } from "@/orchestration/ask-keys";
 import { answeredAmong, useAskStackStore } from "@/orchestration/ask-stack-store";
 import { useRequestRevealStore } from "@/stores/reveal";
@@ -953,20 +952,14 @@ export function QuestionCard({
       footer={
         <>
           {last ? (
-            <Button
-              size="sm"
-              data-testid="question-card-send"
-              data-send-answer
+            <SendAnswer
+              testId="question-card-send"
               disabled={!complete || pending}
-              title={complete ? undefined : "Pick a choice first"}
-              onClick={submit}
-            >
-              <Send data-icon="inline-start" />
-              {count > 1 ? "Send answers" : "Send answer"}
-              <Kbd hidden className="border-current/40 text-current">
-                {formatKeys("mod+enter")}
-              </Kbd>
-            </Button>
+              title={complete ? undefined : count > 1 ? "Answer each question" : "Pick an answer"}
+              label={count > 1 ? "Send answers" : "Send answer"}
+              hint={formatKeys("mod+enter")}
+              onSend={submit}
+            />
           ) : (
             <Button size="sm" data-testid="question-next" onClick={() => setIndex(page + 1)}>
               Next
@@ -995,7 +988,7 @@ export function QuestionCard({
               aria-current={i === page ? "step" : undefined}
               onClick={() => setIndex(i)}
               className={cn(
-                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-caption text-muted-foreground uppercase",
+                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-caption text-muted-foreground",
                 i === page && "border-primary bg-primary/10 text-foreground",
               )}
             >
@@ -1012,7 +1005,7 @@ export function QuestionCard({
         <fieldset key={q.question} className="space-y-1.5">
           <legend className="mb-1">
             {count === 1 && (
-              <span className="mr-2 rounded-sm bg-muted px-1 text-caption text-muted-foreground uppercase">
+              <span className="mr-2 rounded-sm bg-muted px-1 text-caption text-muted-foreground">
                 {q.header}
               </span>
             )}
