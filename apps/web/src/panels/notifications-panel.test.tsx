@@ -146,14 +146,14 @@ describe("Notifications center", () => {
       vi.useRealTimers();
       expect(screen.queryByTestId("toast")).toBeNull();
       expect(screen.getByTestId("notification-entry")).toBeTruthy();
-      expect(useNotificationHistory.getState().entries.filter((entry) => !entry.read)).toHaveLength(1);
+      expect(useNotificationHistory.getState().entries.filter((entry) => !entry.read)).toHaveLength(
+        1,
+      );
       fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
       const read = screen.getByRole("button", { name: "Mark all read" });
       read.focus();
       fireEvent.keyDown(read, { key: "Escape" });
-      await waitFor(() =>
-        expect(document.activeElement).toBe(screen.getByTestId("inbox-button")),
-      );
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("inbox-button")));
       expect(fitShell(useLayoutStore.getState()).panel).toBe("none");
       expect(deny).not.toHaveBeenCalled();
     } finally {

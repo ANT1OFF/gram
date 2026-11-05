@@ -436,7 +436,7 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   const needsYou = page.getByTestId("overview-needs-you");
   const all = Number(await needsYou.getAttribute("data-count"));
   await expect(needsYou).toContainText(`${all} need you`);
-  await expect(count(page)).toHaveAttribute("data-count", String(all));
+  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-count", String(all));
 
   // The list the pill opens has `all` items, by kind; each workspace's rows as many as its badge,
   // and the threads outside any workspace the rest.

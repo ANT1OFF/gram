@@ -90,14 +90,14 @@ test("a narrower panel names Diff, PR, Files and Terminal, the rest named in Mor
   await expect(more).toContainText("More");
   await more.click();
   const menu = page.getByTestId("panel-more-menu");
-  await expect(menu.getByRole("menuitem", { name: "Needs you" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Notifications" })).toBeVisible();
   await menu.getByRole("menuitem", { name: "Connectors" }).click();
   const connectors = panel.getByRole("tab", { name: "Connectors", exact: true });
   await expect(connectors).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => named(page)).toContain("connectors");
   await more.click();
   await expect(menu.getByRole("menuitem", { name: "Connectors" })).toHaveCount(0);
-  await expect(menu.getByRole("menuitem", { name: "Needs you" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Notifications" })).toBeVisible();
   await page.keyboard.press("Escape");
   expect(await overflows(page)).toBe(false);
 });
