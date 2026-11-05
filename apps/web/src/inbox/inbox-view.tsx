@@ -471,7 +471,7 @@ function InboxBody({
 
 /**
  * What a row says of its kind, in words, where neither its section's heading nor the rest of the
- * row already does: not "Approval" under Approvals, nor "Plan to review" when that is its title. A
+ * row already does: not "Approval" under Approvals, nor "Plan to review" when its title says it. A
  * question's heading says it, and its thread says who asks; an error's heading says it.
  */
 const rowKind = (
@@ -483,7 +483,7 @@ const rowKind = (
   const label = kindOf(item).label;
   const heading = section.label.toLowerCase();
   const said = heading === label.toLowerCase() || heading === `${label.toLowerCase()}s`;
-  return said || label === title ? undefined : label;
+  return said || title.startsWith(label) ? undefined : label;
 };
 
 /**
