@@ -19,6 +19,8 @@ import { WorkspaceAppToolsLive } from "../settings/workspace-tools.ts";
 import { PrAppToolsLive } from "../app-tools/pr-tools.ts";
 import { ReadAppToolsLive } from "../app-tools/read-tools.ts";
 import { WrapUpAppToolsLive } from "../app-tools/wrap-up-tool.ts";
+import { DocAppToolsLive } from "../app-tools/doc-tools.ts";
+import { Docs } from "../docs/docs.ts";
 import { ReviewRequestAppToolsLive } from "../app-tools/review-request-tools.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ReviewAppToolsLive } from "../babysit/review-tools.ts";
@@ -335,6 +337,7 @@ export const ServerCore = Layer.unwrap(
         ReviewAppToolsLive,
         ReadAppToolsLive,
         WrapUpAppToolsLive,
+        DocAppToolsLive,
         ReviewRequestAppToolsLive,
         OrchestrationAppToolsLive,
         OrchestratorAppToolsLive,
@@ -391,7 +394,10 @@ export const ServerCore = Layer.unwrap(
           Layer.provideMerge(ProcessRoots.layer),
           // The outputs service observes the runtimes for files their threads produce; the browser
           // tools record evidence there too.
-          Layer.provideMerge(Layer.mergeAll(AppToolRegistry.layer, WorkspaceOutputs.layer)),
+          // The docs a workspace's threads publish (`publish_doc`), kept in Gram's state.
+          Layer.provideMerge(
+            Layer.mergeAll(AppToolRegistry.layer, WorkspaceOutputs.layer, Docs.layer),
+          ),
           // The runtimes read the limit readings, which a limit wait falls back on for its reset.
           Layer.provideMerge(
             Layer.mergeAll(ThreadRuntimes.layer, UsageLimitPoller.layer).pipe(

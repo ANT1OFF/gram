@@ -44,6 +44,11 @@ CLI/session owners and its [offline scenario guidance](../packages/agents/script
 - [Dream](../packages/server/src/orchestration/dreams.ts) owns candidate/review/adoption and file-commit
   freshness, drain and recovery. Its capability is separate from ordinary sessions
   and [helper consent](AGENTS_AND_FEATURES.md#ai-helpers-and-context-consent).
+- [Docs](../packages/server/src/docs/docs.ts) owns a workspace's published docs (`publish_doc`,
+  `read_doc`, the Docs tab): Markdown and metadata under `<dataDir>/docs/<workspaceId>/`, never in
+  a repo and never uploaded. Ids are slugs, so every path is built from two checked segments; a
+  linked folder or file is refused, and every save moves a revision on so the user's edit and an
+  agent's update can't overwrite each other.
 - [Git publisher](../packages/server/src/git/publisher.ts) owns async watcher and
   completion effects; [PR watch registry](../packages/server/src/git/pr-watches.ts)
   owns synchronous owner indexes/badge deduplication; [keyed lock](../packages/server/src/git/keyed-lock.ts)

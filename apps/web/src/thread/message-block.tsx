@@ -15,6 +15,7 @@ import {
   MessageResponse,
   type MessageResponseProps,
 } from "@/components/ai-elements/message";
+import { DocCard } from "@/docs/doc-card";
 import { useOrchestratorStreamContext } from "@/orchestration/stream-context";
 import { checkoutRelative } from "@/panels/files/files-store";
 import { formatMessageTime } from "@/lib/time";
@@ -455,6 +456,8 @@ export const MessageBlock = memo(function MessageBlock({
                 return <WorkerQuestionCard key={key} question={part.data} threadId={threadId} />;
               case "data-mock":
                 return <MockCard key={key} threadId={threadId} mock={part.data} />;
+              case "data-doc":
+                return <DocCard key={key} card={part.data} />;
               case "data-dream-report":
                 return <DreamReportCard key={key} report={part.data} threadId={threadId} />;
               default:

@@ -116,6 +116,7 @@ import { createAgentBrowseMock } from "./mock-agent-browse";
 import { createSpeechMock } from "./speech/mock";
 import { createDreamsMock } from "./dreams/mock";
 import { createFilesMock } from "./files/mock";
+import { createDocsMock } from "./docs/mock";
 import { createLabelsMock } from "./labels/mock";
 import { createKeybindingsMock } from "./keybindings/mock";
 import { createTerminalMock } from "./terminal/mock";
@@ -2352,6 +2353,7 @@ export function createMockApi(options: MockApiOptions = {}) {
     ...createAppMock(world),
     ...createBranchesMock(world),
     ...createConnectorsMock(world),
+    ...createDocsMock(world),
     ...createFilesMock(world),
     ...createKeybindingsMock(world),
     ...createLabelsMock(world),

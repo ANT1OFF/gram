@@ -30,6 +30,7 @@ export * from "./fs.ts";
 export * from "./fs-files.ts";
 export * from "./fs-search.ts";
 export * from "./outputs.ts";
+export * from "./docs.ts";
 export * from "./credential-paths.ts";
 export * from "./file-refs.ts";
 export * from "./file-edit.ts";
