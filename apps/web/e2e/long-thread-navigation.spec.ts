@@ -3,6 +3,14 @@ import type { GramUIMessage } from "@gram/contracts";
 
 import { seedTheme } from "./seed-theme";
 import { setLayout } from "./layout";
+import {
+  closeContents,
+  closeMenus,
+  contentsTrigger,
+  openBarSubmenu,
+  openContents,
+  openContentsByKeyboard,
+} from "./titlebar-menu";
 import { threadRow } from "./thread-row";
 
 const shots = process.env["GRAM_LONG_SHOTS"] ?? "e2e/__screenshots__";
@@ -147,7 +155,7 @@ async function open(page: Page, turns = 120, mode: "light" | "dark" = "dark", he
 }
 
 async function jump(page: Page, turn: number) {
-  await page.getByRole("button", { name: "Contents", exact: true }).click();
+  await openContents(page);
   await page
     .getByTestId("toc")
     .getByRole("menuitem", { name: `Synthetic decision ${turn + 1}`, exact: true })
@@ -194,7 +202,7 @@ test("late append during a jump keeps its stable target and manual wheel takes c
   for (const turn of [100, 80, 60, 40, 20, 0]) await jump(page, turn);
   await jump(page, 119);
   for (const turn of [60, 20, 80, 0, 100]) {
-    await page.getByRole("button", { name: "Contents", exact: true }).click();
+    await openContents(page);
     const item = page
       .getByTestId("toc")
       .getByRole("menuitem", { name: `Synthetic decision ${turn + 1}`, exact: true });
@@ -241,7 +249,7 @@ test("pending jump survives a same-count interior history replacement", async ({
   const threadId = await open(page);
   for (const turn of [100, 80, 60, 40, 20, 0]) await jump(page, turn);
   await jump(page, 119);
-  await page.getByRole("button", { name: "Contents", exact: true }).click();
+  await openContents(page);
   await page
     .getByTestId("toc")
     .getByRole("menuitem", { name: "Synthetic decision 61", exact: true })
@@ -285,14 +293,13 @@ test("navigation offers bounded older-history continuity without transcript scro
   page,
 }) => {
   await open(page);
-  const contents = page.getByRole("button", { name: "Contents", exact: true });
-  await contents.click();
+  await openContents(page);
   const menu = page.getByTestId("toc");
   for (let count = 44; count <= 132; count += 22) {
     await menu
       .getByRole("menuitem", { name: "Load earlier prompts and chapters", exact: true })
       .click();
-    await contents.click();
+    await openContents(page);
     await expect(menu.getByRole("menuitem", { name: /^Synthetic / })).toHaveCount(count);
   }
   await expect(
@@ -396,15 +403,16 @@ for (const touch of [false, true]) {
       await open(page);
       if (!touch) await setLayout(page, "3 columns");
       await expect(page.getByTestId("conversation-rail")).toBeHidden();
-      const contents = page.getByRole("button", { name: "Contents", exact: true });
+      // Three panes keep Contents in each header; a touch window's one pane has it in the bar's "…".
+      const contents = await contentsTrigger(page);
       const menu = page.getByTestId("toc");
-      await contents.click();
+      await openContents(page);
       for (let count = 44; count <= 132; count += 22) {
         await menu
           .getByRole("menuitem", { name: "Load earlier prompts and chapters", exact: true })
           .click();
         await expect(contents).toBeFocused();
-        await contents.click();
+        await openContents(page);
         await expect(menu.getByRole("menuitem", { name: /^Synthetic / })).toHaveCount(count);
       }
       await expect(
@@ -417,8 +425,10 @@ for (const touch of [false, true]) {
       ).toBeInViewport();
       await jump(page, 119);
       await expect(contents).toBeFocused();
-      await contents.click();
-      await page.keyboard.press("Escape");
+      await openContents(page);
+      // Escape steps back out of Contents, and in the bar's "…" out of View and the menu too.
+      await closeContents(page);
+      await expect(menu).toBeHidden();
       await expect(contents).toBeFocused();
     });
   });
@@ -539,7 +549,10 @@ test("the rail switches at actual 959 and 960 px pane widths", async ({ page }) 
   await page.setViewportSize({ width: Math.round(1600 + 959 - initial), height: 1000 });
   await expect.poll(async () => (await transcript.boundingBox())!.width).toBe(959);
   await expect(rail).toBeHidden();
-  await expect(page.getByRole("button", { name: "Contents", exact: true })).toBeVisible();
+  // Without the rail, Contents is still a click away: in the title bar's "…".
+  await openBarSubmenu(page, "view");
+  await expect(page.getByTestId("menu-contents")).toBeVisible();
+  await closeMenus(page);
   await page.setViewportSize({ width: Math.round(1600 + 960 - initial), height: 1000 });
   await expect.poll(async () => (await transcript.boundingBox())!.width).toBe(960);
   await expect(rail).toBeVisible();
@@ -598,7 +611,7 @@ test("selected older turn survives a delayed page, live append and viewport refl
   await expect(target).toBeInViewport();
   stages.push({ name: "narrow-held-page-live", geometry: await geometry(page) });
   await page.evaluate(() => window.timingReleasePage!());
-  await page.getByRole("button", { name: "Contents", exact: true }).click();
+  await openContents(page);
   await expect(page.getByTestId("toc").getByRole("menuitem", { name: /^Synthetic / })).toHaveCount(
     44,
   );
@@ -653,7 +666,7 @@ test("manual wheel during held paging is retained when the earlier page complete
   const beforePage = await geometry(page);
   const first = beforePage.rows.find((row) => row.top + row.height > 0)!;
   await page.evaluate(() => window.timingReleasePage!());
-  await page.getByRole("button", { name: "Contents", exact: true }).click();
+  await openContents(page);
   await expect(page.getByTestId("toc").getByRole("menuitem", { name: /^Synthetic / })).toHaveCount(
     44,
   );
@@ -723,8 +736,10 @@ test("trusted wheel during the unsettled jump wins over a late append", async ({
   const transcript = page.getByTestId("transcript");
   const box = (await transcript.boundingBox())!;
   await observeFrames(page);
-  await page.getByRole("button", { name: "Contents", exact: true }).click();
+  // The pointer rests over the transcript for the wheel, so Contents opens from the keyboard: a
+  // pointer leaving the bar's submenus closes them.
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await openContentsByKeyboard(page);
   await page
     .getByTestId("toc")
     .getByRole("menuitem", { name: "Synthetic decision 111", exact: true })

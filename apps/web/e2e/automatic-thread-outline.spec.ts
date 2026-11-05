@@ -3,6 +3,13 @@ import type { GramUIMessage } from "@gram/contracts";
 
 import { seedTheme } from "./seed-theme";
 import { setLayout } from "./layout";
+import {
+  closeContents,
+  closeMenus,
+  openBarSubmenu,
+  openContents,
+  titlebarMore,
+} from "./titlebar-menu";
 import { threadRow } from "./thread-row";
 
 declare global {
@@ -252,7 +259,10 @@ if (phase !== "before") {
       await page.goto("/t/t-deps");
       await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
       await expect(page.getByTestId("conversation-rail")).toBeHidden();
-      await page.getByRole("button", { name: "Contents", exact: true }).tap();
+      // One pane on a touch screen: Contents is in the title bar's "…".
+      await titlebarMore(page).tap();
+      await page.getByTestId("menu-view").tap();
+      await page.getByTestId("menu-contents").tap();
       await page
         .getByTestId("toc")
         .getByRole("menuitem", { name: "Choose a storage format", exact: true })
@@ -281,7 +291,12 @@ for (const provider of ["claude", "codex"] as const) {
         model: fixtureProvider === "claude" ? "opus" : "gpt-5.5",
       });
     }, provider);
-    const contents = page.getByRole("button", { name: "Contents", exact: true });
+    // A grid pane's own Contents button; the thread alone in the window has Contents in the bar's
+    // "…", whose button focus goes back to.
+    const contents = page
+      .getByTestId("pane")
+      .getByRole("button", { name: "Contents", exact: true });
+    const more = titlebarMore(page);
     const transcript = page.getByTestId("transcript");
     await expect(transcript.locator('[data-message-id="prompt-7"]')).toBeVisible();
     if (phase === "before") {
@@ -289,31 +304,38 @@ for (const provider of ["claude", "codex"] as const) {
       await page.screenshot({ path: `${shots}/outline-${provider}-wide.before.png` });
       return;
     }
-    await expect(contents).toBeVisible();
+    await expect(contents).toHaveCount(0);
+    await openBarSubmenu(page, "view");
+    await expect(page.getByTestId("menu-contents")).toBeVisible();
+    await closeMenus(page);
     await expect(
       page.getByTestId("conversation-rail").locator('[aria-current="location"]'),
     ).toHaveCount(1);
     await page.screenshot({ path: `${shots}/outline-${provider}-wide.after.png` });
-    await contents.click();
-    const menu = page.getByTestId("toc");
+    const menu = await openContents(page);
     await expect(menu.getByRole("menuitem")).toHaveCount(8);
     await menu.getByRole("menuitem", { name: "Choose a storage format", exact: true }).click();
     await expect(menu).toBeHidden();
     await expect(transcript.locator('[data-message-id="prompt-0"]')).toBeInViewport();
-    await expect(contents).toBeFocused();
-    await contents.press("ArrowDown");
+    await expect(more).toBeFocused();
+    // By keyboard: the "…" opens on its first item, End reaches View, whose first item is the
+    // thread's Contents, and Enter opens each.
+    await more.press("ArrowDown");
+    await page.keyboard.press("End");
+    await expect(page.getByTestId("menu-view")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("menu-contents")).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(menu).toBeVisible();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(menu).toBeHidden();
-    await expect(contents).toBeFocused();
+    await expect(more).toBeFocused();
     await expect(transcript.locator('[data-message-id="prompt-1"]')).toBeInViewport();
-    await contents.click();
-    await expect(menu).toBeVisible();
-    await menu.press("Escape");
-    await expect(menu).toBeHidden();
-    await expect(contents).toBeFocused();
-    await contents.click();
+    await openContents(page);
+    await closeContents(page);
+    await expect(more).toBeFocused();
+    await openContents(page);
     await menu.getByRole("menuitem", { name: "Choose a storage format", exact: true }).click();
     await expect(menu).toBeHidden();
     await expect(transcript.locator('[data-message-id="prompt-0"]')).toBeInViewport();
@@ -418,11 +440,10 @@ if (phase !== "before") {
       }, provider);
       await threadRow(page, threadId).click();
       const transcript = page.getByTestId("transcript");
-      const contents = page.getByRole("button", { name: "Contents", exact: true });
       const menu = page.getByTestId("toc");
       await expect(transcript.locator('[data-message-id="long-u99"]')).toBeInViewport();
       expect(await transcript.locator("[data-message-id]").count()).toBeLessThan(40);
-      await contents.click();
+      await openContents(page);
       await expect(menu.getByRole("menuitem", { name: /^Decision / })).toHaveCount(20);
       // Jumping to the oldest loaded turn itself triggers a prepend during jump reconciliation.
       await menu
@@ -432,7 +453,7 @@ if (phase !== "before") {
         })
         .click();
       await expect(menu).toBeHidden();
-      await contents.click();
+      await openContents(page);
       await expect(menu.getByRole("menuitem", { name: /^Decision / })).toHaveCount(40);
       await test.info().attach("prepend-geometry", {
         contentType: "application/json",
@@ -486,7 +507,7 @@ if (phase !== "before") {
       }, threadId);
       await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeHidden();
       await expect(transcript.locator('[data-message-id="long-u80"]')).toBeInViewport();
-      await contents.click();
+      await openContents(page);
       await menu
         .getByRole("menuitem", {
           name: "Decision 81: choose the simplest storage plan",
@@ -495,7 +516,9 @@ if (phase !== "before") {
         .click();
       await expect(transcript.locator('[data-message-id="long-u80"]')).toBeInViewport();
       await page.evaluate(() => window.gramMock!.simulateDisconnect());
-      await expect(contents).toBeVisible();
+      await openBarSubmenu(page, "view");
+      await expect(page.getByTestId("menu-contents")).toBeVisible();
+      await closeMenus(page);
       await expect(transcript.locator('[data-message-id="long-u80"]')).toBeInViewport();
       const fork = await page.evaluate(
         async (id) =>
@@ -506,7 +529,7 @@ if (phase !== "before") {
         threadId,
       );
       await threadRow(page, fork.id).click();
-      await contents.click();
+      await openContents(page);
       await expect(
         menu.getByRole("menuitem", {
           name: "Decision 81: choose the simplest storage plan",
@@ -526,11 +549,11 @@ if (phase !== "before") {
         (id) => window.gramMock!.rewind(id as never, "long-u80" as never, false),
         fork.id,
       );
-      await contents.click();
+      await openContents(page);
       await expect(menu.getByRole("menuitem", { name: /Decision 81:/ })).toHaveCount(0);
-      await menu.press("Escape");
+      await closeContents(page);
       await threadRow(page, threadId).click();
-      await contents.click();
+      await openContents(page);
       await menu
         .getByRole("menuitem", {
           name: "Decision 81: choose the simplest storage plan",
@@ -611,9 +634,7 @@ if (phase !== "before") {
       return id!;
     });
     await threadRow(page, threadId).click();
-    const contents = page.getByRole("button", { name: "Contents", exact: true });
-    await contents.click();
-    const menu = page.getByTestId("toc");
+    const menu = await openContents(page);
     await expect(menu.getByRole("menuitem")).toHaveText([
       "Empty prompt",
       "Attachment prompt",
@@ -624,7 +645,7 @@ if (phase !== "before") {
     await expect(menu).not.toContainText("HIDDEN");
     await expect(menu.locator("img")).toHaveCount(0);
     // A full snapshot with a new order, as a replaced history on reconnect would provide.
-    await menu.press("Escape");
+    await closeContents(page);
     await page.evaluate(() => {
       const mock = window.gramMock!;
       window.gramOutlineReplacement = [
@@ -633,7 +654,7 @@ if (phase !== "before") {
       ];
       mock.simulateDisconnect();
     });
-    await contents.click();
+    await openContents(page);
     await expect(menu.getByRole("menuitem")).toHaveText(["Moved decision", "New decision"]);
     await menu.getByRole("menuitem", { name: "Moved decision", exact: true }).click();
     await expect(

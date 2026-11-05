@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { threadRow } from "./thread-row";
+import { openContents } from "./titlebar-menu";
 
 /**
  * The page's clock, held at `START` plus `ms`. The mock stamps a turn's start and end with it, so a
@@ -179,7 +180,7 @@ test("Find opens the fold around a hit", async ({ page }) => {
 
 test("a chapter jump opens the fold it lands in", async ({ page }) => {
   const row = await finishFlaky(page);
-  await page.getByRole("button", { name: "Contents", exact: true }).click();
+  await openContents(page);
   await page.getByTestId("toc").getByRole("menuitem", { name: "Fix", exact: true }).click();
   await expect(row).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByTestId("transcript").getByTestId("chapter")).toHaveCount(3);

@@ -145,14 +145,21 @@ test("a feature-card worker opens in two steps or fewer", async ({ page }) => {
 // across bounded cases, and capture ids before navigation so a reordered list cannot skip one.
 const WORKER_GROUPS = 4;
 for (let group = 0; group < WORKER_GROUPS; group++) {
-  test(`the title bar opens every worker in two steps, group ${group + 1}/${WORKER_GROUPS}`, async ({
+  test(`the title bar opens every worker in a few steps, group ${group + 1}/${WORKER_GROUPS}`, async ({
     page,
   }) => {
     await seedTheme(page, { palette: "neutral-dark", mode: "dark", motion: "off" });
     await page.clock.setFixedTime(new Date("2026-06-15T12:00:00Z"));
     const made = await start(page);
-    const button = page.getByTestId("workers-button");
-    await expect(button).toHaveAccessibleName(/^Workers, \d+ now$/);
+    // Workers, in words with how many are on now, in the title bar's "…".
+    const more = page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow");
+    const button = page.getByTestId("folded-workers");
+    const openWorkers = async () => {
+      await more.click();
+      await button.click();
+    };
+    await more.click();
+    await expect(button).toHaveText(/^Workers\d+ now/);
     await button.click();
     const list = page.getByTestId("workers-list");
     await expect(list).toBeVisible();
@@ -180,7 +187,7 @@ for (let group = 0; group < WORKER_GROUPS; group++) {
       surface
         .getByRole("option")
         .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-thread-id")!));
-    await button.click();
+    await openWorkers();
     await expect(list.getByRole("option").first()).toBeVisible();
     const live = await rowIds(list);
     await page.keyboard.press("Escape");
@@ -200,9 +207,9 @@ for (let group = 0; group < WORKER_GROUPS; group++) {
       contentType: "application/json",
     });
     for (const id of selected) {
-      // On now: the title bar's Workers. Finished: History. Two steps either way.
+      // On now: Workers in the title bar's "…". Finished: History. A few steps either way.
       const surface = live.includes(id) ? list : history;
-      if (surface === list) await button.click();
+      if (surface === list) await openWorkers();
       else await page.keyboard.press("ControlOrMeta+Shift+KeyH");
       const row = surface.getByRole("option").and(surface.locator(`[data-thread-id="${id}"]`));
       await row.click();

@@ -3,6 +3,13 @@ import { expect, type Page } from "@playwright/test";
 import { openOrchestrator, threadRow } from "../e2e/thread-row";
 import { seedMockSettings, SHOTS, type Shot } from "./shots";
 
+/** The orchestrator's Memory, from the title bar's "…". */
+async function openMemory(page: Page): Promise<void> {
+  await page.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
+  await page.getByTestId("menu-memory").click();
+}
+
 // Contributor-only staging. Keep the ordinary before/after catalogue and product UI unchanged.
 // The tour shows Gram as a real window does: the realistic scenario (`mock-realistic.ts`), an
 // ordinary morning with four orchestrators, five live workers and one ask, at the size of a real
@@ -255,6 +262,7 @@ const scenes: readonly Shot[] = [
     open: async (page) => {
       await openRealisticOrchestrator(page);
       await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("menu-view").click();
       await page.getByTestId("folded-quiet").click();
       await page.getByTestId("quiet-strip-workspace").first().waitFor();
       await page.waitForTimeout(600);
@@ -293,7 +301,7 @@ const scenes: readonly Shot[] = [
       "Memory → Draft memory update: the Dreams action, when the update is saved, and seeded running, completed and failed runs",
     open: async (page) => {
       await openRealisticOrchestrator(page);
-      await page.getByRole("link", { name: "Memory", exact: true }).click();
+      await openMemory(page);
       await expect(page.getByTestId("memory-overview-file")).toHaveCount(6);
       await page.getByTestId("memory-tab-update").click();
       await expect(page.getByTestId("dream-row")).toHaveCount(3);
@@ -304,7 +312,7 @@ const scenes: readonly Shot[] = [
     title: "Memory → Current memory: the files rendered to read, recent changes, Edit beside each",
     open: async (page) => {
       await openRealisticOrchestrator(page);
-      await page.getByRole("link", { name: "Memory", exact: true }).click();
+      await openMemory(page);
       await expect(page.getByTestId("memory-overview-file")).toHaveCount(6);
       await expect(
         page.getByTestId("memory-overview").getByRole("heading", { name: "Goals" }),
@@ -316,7 +324,7 @@ const scenes: readonly Shot[] = [
     title: "Memory → Files: populated file list and goals editor, with its size and cap",
     open: async (page) => {
       await openRealisticOrchestrator(page);
-      await page.getByRole("link", { name: "Memory", exact: true }).click();
+      await openMemory(page);
       await expect(page.getByTestId("memory-overview-file")).toHaveCount(6);
       await page.getByRole("button", { name: "Edit goals.md" }).click();
       await expect(page.getByTestId("memory-text")).toHaveValue(/# Goals/);

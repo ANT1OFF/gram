@@ -1,155 +1,358 @@
 import { Menu } from "@base-ui/react/menu";
-import type { GridPreset, WorkspaceState } from "@gram/contracts";
+import type { GridPreset, ProjectId, ThreadId, WorkspaceState } from "@gram/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import {
+  BookOpen,
+  Brain,
   BroomSparkles,
   CheckIcon,
+  ChevronRightIcon,
+  CirclePause,
+  CirclePlay,
   Columns3,
   Ellipsis,
   Focus,
+  History,
+  MessageSquare,
   Moon,
+  Network,
+  PanelsTopLeft,
+  Play,
   Rows3,
+  Settings2,
   Users,
 } from "lucide-react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Hint } from "@/components/hint";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
+import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
+import { useWorkersListStore, useWorkersNow } from "@/orchestration/workers-list";
+import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
 import { RunScriptMenuItems } from "@/scripts/run-script-menu";
-import { useWorkersListStore } from "@/orchestration/workers-list";
+import { useProjectScripts } from "@/scripts/use-project-scripts";
+import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { GRID_PRESETS, PRESET_LABELS, useLayoutStore, type BoardLayout } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { pauseClock } from "@/thread/orchestration-model";
+import { useThreadMenu } from "@/thread/thread-menu";
 import { useViewStore } from "@/views/view-store";
 import { useViewWorkspace } from "@/views/view-workspace";
 
 import { PresetGlyph } from "./preset-glyph";
+import { useTitlebarOutline } from "./titlebar-outline";
 import { FOLD_ALL, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
-// The title bar's "…" holds the window's rarer toggles, and a narrow bar folds its lesser buttons
-// into it too. Each item does what its button did.
+// The title bar's one "…": everything the bar keeps out of sight, each item with its words and its
+// shortcut, and like every menu at most seven items. The carried thread's menu (and its scripts),
+// Workers, the workspace's (Tidy up, Pause, Memory, its settings) and the window's (Contents,
+// Quiet, focus mode, History, the layout), the groups each a submenu. A narrow bar folds a worker's
+// own actions and Board's layout into it too. Each item does what its button did.
 
-const POPUP =
-  "z-50 min-w-48 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
-const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground [&_svg]:size-3.5 [&_svg]:shrink-0";
+const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
 
-/** A folded button's shortcut, right-aligned as the palette shows it. */
+/** How soon after the menu closes a focus on its trigger is the one it handed back. */
+const FOCUS_RETURN_MS = 500;
+
+const TIDY_HINT =
+  "Ask the orchestrator to archive what's done, fix groups, stages and plans, close settled questions and refresh its memory";
+
+/** An item's shortcut, right-aligned as the palette shows it. */
 function Keys({ id }: { id: string }) {
   const hint = useShortcutHint(id);
-  return hint ? <span className="ml-auto pl-4 text-xs text-muted-foreground">{hint}</span> : null;
+  return hint ? <span className="ml-auto pl-4 text-meta text-muted-foreground">{hint}</span> : null;
 }
 
-function TidyItem({ state, className }: { state: WorkspaceState; className: string }) {
+/** A submenu's current value, right-aligned before its chevron. */
+function Current({ children }: { children: ReactNode }) {
+  return (
+    <span className="ml-auto max-w-32 truncate pl-4 text-meta text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+function Submenu({
+  label,
+  icon,
+  current,
+  testId,
+  popupTestId,
+  popupLabel = label,
+  children,
+}: {
+  label: string;
+  icon: ReactNode;
+  current?: ReactNode;
+  testId: string;
+  popupTestId?: string;
+  popupLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Menu.SubmenuRoot>
+      <Menu.SubmenuTrigger
+        data-testid={testId}
+        className={cn(MENU_ITEM, "data-[popup-open]:row-cursor")}
+      >
+        {icon}
+        {label}
+        {current === undefined ? <span className="ml-auto" /> : <Current>{current}</Current>}
+        <ChevronRightIcon aria-hidden className="text-muted-foreground" />
+      </Menu.SubmenuTrigger>
+      <Menu.Portal>
+        <Menu.Positioner
+          side="left"
+          align="start"
+          alignOffset={-4}
+          className="isolate z-50 outline-none"
+        >
+          <Menu.Popup
+            data-testid={popupTestId}
+            aria-label={popupLabel}
+            className={cn(MENU_POPUP, "max-h-80 overflow-y-auto")}
+          >
+            {children}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.SubmenuRoot>
+  );
+}
+
+/** The carried thread's chapters, as its header's Contents button listed them. */
+function ContentsSubmenu({ threadId }: { threadId: ThreadId }) {
+  const outline = useTitlebarOutline((s) =>
+    s.outline?.threadId === threadId ? s.outline : undefined,
+  );
+  if (outline === undefined || (outline.chapters.length === 0 && !outline.earlier)) return null;
+  return (
+    <Submenu
+      label="Contents"
+      testId="menu-contents"
+      popupTestId="toc"
+      popupLabel="Loaded conversation"
+      icon={<BookOpen aria-hidden />}
+      current={outline.chapters.length === 0 ? undefined : outline.chapters.length}
+    >
+      <div className="px-2 py-1 text-meta text-muted-foreground">Loaded prompts and chapters</div>
+      {outline.earlier && outline.onLoadEarlier && (
+        <Menu.Item
+          className={MENU_ITEM}
+          disabled={outline.loadingEarlier}
+          onClick={outline.onLoadEarlier}
+        >
+          {outline.loadingEarlier
+            ? "Loading earlier prompts and chapters…"
+            : outline.earlierFailed
+              ? "Couldn't load earlier prompts and chapters. Try again"
+              : "Load earlier prompts and chapters"}
+        </Menu.Item>
+      )}
+      {outline.chapters.map((chapter) => (
+        <Menu.Item
+          key={chapter.id}
+          className={cn(MENU_ITEM, "w-72 max-w-[calc(100vw-2rem)] wrap-anywhere")}
+          onClick={() => outline.jump(chapter.messageId)}
+        >
+          {chapter.title}
+        </Menu.Item>
+      ))}
+    </Submenu>
+  );
+}
+
+/**
+ * The workspace's Tidy up, held by the bar rather than the menu, so what was just sent outlasts
+ * the menu closing: reopened, it still says it asked, and rests until it may ask again.
+ */
+const TidyContext = createContext<ReturnType<typeof useTidyUp> | undefined>(undefined);
+
+export function TidyScope({ state, children }: { state: WorkspaceState; children: ReactNode }) {
   const tidy = useTidyUp(state);
+  // The menu has closed by the time it goes: a toast says so, as the palette's Tidy up does.
+  useEffect(() => {
+    if (tidy.sent === undefined) return;
+    useThreadsStore.getState().applyEvent({
+      type: "notify",
+      kind: "info",
+      title: "Asked the orchestrator to tidy up",
+      body:
+        tidy.sent === "queued"
+          ? "It starts once its current turn ends."
+          : "It summarises what it changed when it is done.",
+    });
+  }, [tidy.sent]);
+  return <TidyContext value={tidy}>{children}</TidyContext>;
+}
+
+export function TidyItem() {
+  const tidy = useContext(TidyContext);
+  if (tidy === undefined) return null;
   return (
     <Menu.Item
       data-testid="folded-tidy"
+      data-sent={tidy.sent}
       disabled={tidy.blocked !== undefined || tidy.resting}
-      title={tidy.blocked}
-      className={className}
+      title={TIDY_HINT}
+      className={MENU_ITEM}
       onClick={() => void tidy.send()}
     >
       <BroomSparkles aria-hidden />
-      {tidy.sent === undefined ? "Tidy up" : "Asked to tidy up"}
+      {/* A disabled item shows no tooltip, so it says why it is off. */}
+      {tidy.blocked === undefined ? (
+        tidy.sent === undefined ? (
+          "Tidy up"
+        ) : (
+          "Asked to tidy up"
+        )
+      ) : (
+        <span className="flex min-w-0 flex-col">
+          Tidy up
+          <span className="text-meta text-muted-foreground">{tidy.blocked}</span>
+        </span>
+      )}
     </Menu.Item>
   );
 }
 
 /**
- * The title bar's "…" menu: what a narrow bar folded first (a worker's Keep beside and Take over,
- * Workers, Tidy up), then the window's rarer toggles, Quiet and Focus mode, and the layout presets,
- * each with its shortcut.
+ * Pause or Resume the workspace. A pause that would stop work mid-flight asks first, in the menu:
+ * the item says what it stops and the next click pauses.
  */
-function TitlebarMenuItems({
-  orchestration,
-  itemClassName = ITEM,
-}: {
-  /** The bar shows the workspace's orchestration buttons, so Workers and Tidy up can fold. */
-  orchestration: boolean;
-  itemClassName?: string;
-}) {
+export function PauseItem({ state }: { state: WorkspaceState }) {
+  const { busy, confirm, run } = useWorkspacePause(state);
+  const [confirming, setConfirming] = useState(false);
+  if (state.paused !== undefined) {
+    return (
+      <Menu.Item
+        data-testid="folded-pause"
+        data-paused=""
+        disabled={busy}
+        className={MENU_ITEM}
+        onClick={() => run(false)}
+      >
+        <CirclePlay aria-hidden />
+        Resume workspace
+        <Current>since {pauseClock(state.paused.at)}</Current>
+      </Menu.Item>
+    );
+  }
+  if (confirming && confirm !== undefined) {
+    return (
+      <div data-testid="folded-pause-confirm" className="flex max-w-72 flex-col gap-0.5">
+        <p className="px-2 py-1 text-meta text-muted-foreground">{confirm}</p>
+        <Menu.Item
+          data-testid="folded-pause-confirmed"
+          disabled={busy}
+          className={MENU_ITEM}
+          onClick={() => run(true)}
+        >
+          <CirclePause aria-hidden />
+          Pause {state.workspace.name} anyway
+        </Menu.Item>
+      </div>
+    );
+  }
+  return (
+    <Menu.Item
+      data-testid="folded-pause"
+      disabled={busy}
+      closeOnClick={confirm === undefined}
+      title="The orchestrator and its workers finish the step they're on and stop, and nothing wakes them until you resume"
+      className={MENU_ITEM}
+      onClick={() => (confirm === undefined ? run(true) : setConfirming(true))}
+    >
+      <CirclePause aria-hidden />
+      {confirm === undefined ? "Pause workspace" : "Pause workspace…"}
+    </Menu.Item>
+  );
+}
+
+/** Workers, ⌘J's list of the workspace's workers, with how many are on now. */
+function WorkersItem() {
+  const { count } = useWorkersNow();
+  return (
+    <Menu.Item
+      data-testid="folded-workers"
+      className={MENU_ITEM}
+      onClick={() => useWorkersListStore.getState().toggle()}
+    >
+      <Users aria-hidden />
+      Workers
+      {count > 0 && (
+        <span className="text-meta text-muted-foreground tabular-nums">{count} now</span>
+      )}
+      <Keys id="workers.open" />
+    </Menu.Item>
+  );
+}
+
+/** The workspace's own, in a submenu named for it: Tidy up, Pause, Memory and its settings. */
+function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: number }) {
+  const navigate = useNavigate();
+  const workspaceId = state.workspace.id;
+  return (
+    <Submenu
+      label="Workspace"
+      testId="menu-workspace"
+      popupTestId="titlebar-menu-workspace"
+      popupLabel={state.workspace.name}
+      icon={<Network aria-hidden />}
+      current={state.workspace.name}
+    >
+      <TidyItem />
+      {/* Each opening of the menu starts Pause unasked, whatever the last one left. */}
+      <PauseItem key={`pause-${workspaceId}-${opening}`} state={state} />
+      <Menu.Item
+        data-testid="menu-memory"
+        className={MENU_ITEM}
+        onClick={() => void navigate({ to: "/w/$workspaceId/memory", params: { workspaceId } })}
+      >
+        <Brain aria-hidden />
+        Memory
+      </Menu.Item>
+      <Menu.Item
+        data-testid="menu-workspace-settings"
+        className={MENU_ITEM}
+        onClick={() => openWorkspaceSettings(workspaceId)}
+      >
+        <Settings2 aria-hidden />
+        Workspace settings
+      </Menu.Item>
+    </Submenu>
+  );
+}
+
+/**
+ * The window's own, in a submenu: the carried thread's Contents, Quiet, focus mode, History, then
+ * Board's layout when folded and the grid's layout, each picked with a check.
+ */
+function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
   const state = useViewWorkspace();
   const preset = useLayoutStore((s) => s.grid.preset);
   const focusMode = useLayoutStore((s) => s.focusMode);
   const fold = useTitlebarSlot((s) => s.fold);
-  const all = fold >= FOLD_ALL;
   // The Board's Grid or Lanes, folded out of its header with the lesser buttons.
   const board = useViewStore((s) => s.view === "board") && state !== undefined && fold > 0;
   const boardLayout = useLayoutStore((s) => s.boardLayout);
-  // A worker in the bar folded all the way: its own actions are this menu's.
-  const carried = useTitlebarThread();
-  const worker = useThreadsStore((s) =>
-    all && carried !== undefined ? s.byId[carried]?.thread : undefined,
-  );
-  const tidy = orchestration && state !== undefined && fold > 0;
-  // The thread in the bar, folded at all: its header's Run script is this menu's.
-  const scripted = useThreadsStore((s) => {
-    const thread = fold > 0 && carried !== undefined ? s.byId[carried]?.thread : undefined;
-    return thread !== undefined && thread.role !== "orchestrator" ? thread : undefined;
-  });
   return (
-    <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
-      {scripted !== undefined && (
-        <RunScriptMenuItems
-          threadId={scripted.id}
-          projectId={scripted.projectId}
-          itemClassName={itemClassName}
-        />
-      )}
-      {worker?.spawnedBy !== undefined && (
-        <WorkerMenuItems thread={worker} itemClassName={itemClassName} />
-      )}
-      {orchestration && state !== undefined && all && (
-        <Menu.Item
-          data-testid="folded-workers"
-          className={itemClassName}
-          onClick={() => useWorkersListStore.getState().toggle()}
-        >
-          <Users aria-hidden />
-          Workers
-          <Keys id="workers.open" />
-        </Menu.Item>
-      )}
-      {tidy && <TidyItem key={state.workspace.id} state={state} className={itemClassName} />}
-      {(tidy || (orchestration && state !== undefined && all)) && (
-        <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-      )}
-      {board && (
-        <>
-          <Menu.RadioGroup
-            data-testid="folded-board-layout"
-            value={boardLayout}
-            onValueChange={(next: BoardLayout) => useLayoutStore.getState().setBoardLayout(next)}
-          >
-            <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
-              Board
-            </Menu.GroupLabel>
-            {(
-              [
-                ["grid", "Grid", Rows3],
-                ["lanes", "Lanes", Columns3],
-              ] as const
-            ).map(([value, label, Icon]) => (
-              <Menu.RadioItem key={value} value={value} closeOnClick className={itemClassName}>
-                <span className="flex size-3.5 items-center justify-center">
-                  <Menu.RadioItemIndicator>
-                    <CheckIcon aria-hidden />
-                  </Menu.RadioItemIndicator>
-                </span>
-                <Icon aria-hidden />
-                {label}
-              </Menu.RadioItem>
-            ))}
-          </Menu.RadioGroup>
-          <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-        </>
-      )}
+    <Submenu
+      label="View"
+      testId="menu-view"
+      popupTestId="titlebar-menu-view"
+      icon={<PanelsTopLeft aria-hidden />}
+    >
+      {threadId !== undefined && <ContentsSubmenu threadId={threadId} />}
       <Menu.Item
         data-testid="folded-quiet"
         title="Show only what needs you, one card at a time"
-        className={itemClassName}
+        className={MENU_ITEM}
         onClick={() => useViewStore.getState().setQuiet(true)}
       >
         <Moon aria-hidden />
@@ -158,87 +361,278 @@ function TitlebarMenuItems({
       </Menu.Item>
       <Menu.Item
         data-testid="folded-focus"
-        className={itemClassName}
+        className={MENU_ITEM}
         onClick={() => useLayoutStore.getState().toggleFocusMode()}
       >
         <Focus aria-hidden />
         {focusMode ? "Leave focus mode" : "Focus mode"}
         <Keys id="focus.toggle" />
       </Menu.Item>
-      <div role="separator" className="-mx-1 my-1 h-px bg-border" />
+      <Menu.Item
+        data-testid="menu-history"
+        className={MENU_ITEM}
+        // After the menu has closed and given focus back, so History's field keeps it.
+        onClick={() => setTimeout(() => useHistoryStore.getState().toggle())}
+      >
+        <History aria-hidden />
+        History
+        <Keys id="history.open" />
+      </Menu.Item>
+      {board && (
+        <>
+          {SEPARATOR}
+          <Menu.RadioGroup
+            data-testid="folded-board-layout"
+            value={boardLayout}
+            onValueChange={(next: BoardLayout) => useLayoutStore.getState().setBoardLayout(next)}
+          >
+            <Menu.GroupLabel className={MENU_LABEL}>Board</Menu.GroupLabel>
+            {(
+              [
+                ["grid", "Grid", Rows3],
+                ["lanes", "Lanes", Columns3],
+              ] as const
+            ).map(([value, label, Icon]) => (
+              <Menu.RadioItem key={value} value={value} closeOnClick className={MENU_ITEM}>
+                <Icon aria-hidden />
+                {label}
+                <Check />
+              </Menu.RadioItem>
+            ))}
+          </Menu.RadioGroup>
+        </>
+      )}
+      {SEPARATOR}
       <Menu.RadioGroup
         data-testid="folded-layout"
         value={preset}
         onValueChange={(next: GridPreset) => useLayoutStore.getState().setPreset(next)}
       >
-        <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
-          Layout
-        </Menu.GroupLabel>
+        <Menu.GroupLabel className={MENU_LABEL}>Layout</Menu.GroupLabel>
         {GRID_PRESETS.map((value, i) => (
           <Menu.RadioItem
             key={value}
             value={value}
             aria-label={PRESET_LABELS[value]}
             closeOnClick
-            className={itemClassName}
+            className={MENU_ITEM}
           >
-            <span className="flex size-3.5 items-center justify-center">
-              <Menu.RadioItemIndicator>
-                <CheckIcon aria-hidden />
-              </Menu.RadioItemIndicator>
-            </span>
             <PresetGlyph preset={value} />
             {PRESET_LABELS[value]}
             <Keys id={`layout.preset${i + 1}`} />
+            <Check />
           </Menu.RadioItem>
         ))}
       </Menu.RadioGroup>
-    </div>
+    </Submenu>
+  );
+}
+
+/** A radio item's check, at its end: the current value's mark. */
+function Check() {
+  return (
+    <span className="ml-auto flex size-3.5 shrink-0 items-center justify-center pl-0">
+      <Menu.RadioItemIndicator>
+        <CheckIcon aria-hidden />
+      </Menu.RadioItemIndicator>
+    </span>
+  );
+}
+
+/** The carried thread's scripts, in a submenu once its project has any. */
+function RunScriptSubmenu({ threadId, projectId }: { threadId: ThreadId; projectId: ProjectId }) {
+  const scripts = useProjectScripts(projectId).data?.scripts ?? [];
+  if (scripts.length === 0) return null;
+  return (
+    <Submenu
+      label="Run script"
+      testId="menu-run-script"
+      icon={<Play aria-hidden />}
+      current={scripts.length}
+    >
+      <RunScriptMenuItems threadId={threadId} projectId={projectId} itemClassName={MENU_ITEM} />
+    </Submenu>
   );
 }
 
 /**
- * The bar's "…", always at the start of its view controls: the window's rarer toggles, and what a
- * narrow bar folds away.
+ * The carried thread's own: a folded worker's Keep beside and Take over, its menu's verbs in a
+ * submenu, and its scripts.
+ */
+function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode }) {
+  const fold = useTitlebarSlot((s) => s.fold);
+  const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
+  if (thread === undefined) return null;
+  const orchestrator = thread.role === "orchestrator";
+  return (
+    <>
+      {/* A worker in the bar folded all the way: its own actions are this menu's, first. */}
+      {fold >= FOLD_ALL && thread.spawnedBy !== undefined && (
+        <WorkerMenuItems thread={thread} itemClassName={MENU_ITEM} />
+      )}
+      <Submenu
+        label={orchestrator ? "Orchestrator" : "Thread"}
+        testId="menu-thread"
+        popupTestId="titlebar-menu-thread"
+        icon={orchestrator ? <Network aria-hidden /> : <MessageSquare aria-hidden />}
+      >
+        {items}
+      </Submenu>
+      {!orchestrator && <RunScriptSubmenu threadId={thread.id} projectId={thread.projectId} />}
+    </>
+  );
+}
+
+function OverflowMenu({
+  orchestration,
+  thread,
+  className,
+}: {
+  orchestration: boolean;
+  thread?: { id: ThreadId; items: ReactNode } | undefined;
+  className?: string | undefined;
+}) {
+  const state = useViewWorkspace();
+  const workspace = orchestration && state !== undefined;
+  // How many times the menu has opened: what it asked last time doesn't carry over.
+  const [opening, setOpening] = useState(0);
+  // The trigger's words show on hover and on Tab, but not as the menu closes and hands focus
+  // back: they would stand over what is under the bar, a banner's button say, as the user goes on.
+  const [hint, setHint] = useState(false);
+  const closedAt = useRef(0);
+  // Closed from a submenu (a chapter in View ▸ Contents, say), focus comes back here too, not to
+  // the submenu's trigger that closes with it. Unless something has taken it since: Workers' list
+  // or a dialog an item opened keeps it.
+  const trigger = useRef<HTMLButtonElement>(null);
+  const returnFocus = () => {
+    const active = document.activeElement;
+    const unclaimed =
+      active === null || active === document.body || active.closest('[role="menu"]') !== null;
+    return unclaimed ? trigger.current : false;
+  };
+  const menu = (
+    <Menu.Root
+      onOpenChange={(open) => {
+        if (open) {
+          setOpening((n) => n + 1);
+          setHint(false);
+        } else closedAt.current = performance.now();
+      }}
+    >
+      <Tooltip
+        open={hint}
+        onOpenChange={(open, details) => {
+          if (details.reason === "escape-key") details.allowPropagation();
+          if (open && details.reason === "trigger-focus") {
+            if (performance.now() - closedAt.current < FOCUS_RETURN_MS) return;
+          }
+          setHint(open);
+        }}
+      >
+        <TooltipTrigger
+          render={
+            <Menu.Trigger
+              ref={trigger}
+              data-testid="titlebar-overflow"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="More"
+                  className={cn(
+                    "text-muted-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
+                    className,
+                  )}
+                />
+              }
+            />
+          }
+        >
+          <Ellipsis />
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="whitespace-pre-line">
+          {"More\nThe thread's, the workspace's and the window's controls"}
+        </TooltipContent>
+      </Tooltip>
+      <Menu.Portal>
+        <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
+          {/* At most seven items, as every menu: the thread's, the workspace's and the window's
+              each a submenu of its own, Workers beside them. */}
+          <Menu.Popup
+            data-testid="titlebar-overflow-menu"
+            finalFocus={returnFocus}
+            className={cn(MENU_POPUP, "w-64")}
+          >
+            <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
+              {thread !== undefined && <ThreadItems threadId={thread.id} items={thread.items} />}
+              {workspace && (
+                <>
+                  <WorkersItem />
+                  <WorkspaceSubmenu key={state.workspace.id} state={state} opening={opening} />
+                </>
+              )}
+              {(thread !== undefined || workspace) && SEPARATOR}
+              <ViewSubmenu threadId={thread?.id} />
+            </div>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+  return workspace ? (
+    // A workspace switch starts the next one's Tidy up fresh, not resting on the last one's send.
+    <TidyScope key={state.workspace.id} state={state}>
+      {menu}
+    </TidyScope>
+  ) : (
+    menu
+  );
+}
+
+/** The bar's "…" with the carried thread's menu in it, whose dialogs outlast the menu. */
+function ThreadOverflow({
+  threadId,
+  orchestration,
+  className,
+}: {
+  threadId: ThreadId;
+  orchestration: boolean;
+  className?: string | undefined;
+}) {
+  const { items, aside } = useThreadMenu(threadId);
+  return (
+    <>
+      {aside}
+      <OverflowMenu
+        orchestration={orchestration}
+        thread={{ id: threadId, items: items(MENU_ITEM) }}
+        className={className}
+      />
+    </>
+  );
+}
+
+/**
+ * The bar's one "…", before the panel toggle: the carried thread's menu, the workspace's controls
+ * and the window's, each labelled, with its shortcut.
  */
 export function TitlebarOverflow({
   orchestration,
   className,
 }: {
+  /** The bar shows a workspace's work, so its controls (Workers, Tidy up, Pause…) are here. */
   orchestration: boolean;
   className?: string;
 }) {
-  return (
-    <Menu.Root>
-      <Hint
-        label={"More window controls\nQuiet, focus mode and layout"}
-        side="bottom"
-        render={
-          <Menu.Trigger
-            data-testid="titlebar-overflow"
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="More window controls"
-                className={cn(
-                  "text-muted-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
-                  className,
-                )}
-              />
-            }
-          />
-        }
-      >
-        <Ellipsis />
-      </Hint>
-      <Menu.Portal>
-        <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
-          <Menu.Popup data-testid="titlebar-overflow-menu" className={POPUP}>
-            <TitlebarMenuItems orchestration={orchestration} />
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+  const carried = useTitlebarThread();
+  return carried === undefined ? (
+    <OverflowMenu orchestration={orchestration} className={className} />
+  ) : (
+    <ThreadOverflow
+      key={carried}
+      threadId={carried}
+      orchestration={orchestration}
+      className={className}
+    />
   );
 }

@@ -3,12 +3,9 @@ import { useState } from "react";
 
 import { InboxButton } from "@/inbox/inbox-button";
 import { cn } from "@/lib/utils";
-import { TitlebarTidyUp } from "@/orchestration/tidy-up-button";
-import { WorkersButton } from "@/orchestration/workers-list";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { ShellToggle } from "@/shell/shell-toggle";
-import { Foldable } from "@/shell/foldable";
 import { TitlebarOverflow } from "@/shell/titlebar-fold";
 import {
   useSoloRoute,
@@ -19,6 +16,7 @@ import {
 import { TopLeftNav } from "@/shell/top-left-nav";
 import { UsageMeter } from "@/shell/usage-meter";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
+import { useBeforeSetup } from "@/welcome/welcome";
 import { useLayoutStore } from "@/stores/layout";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
 import { ViewSwitcher } from "@/views/view-frame";
@@ -31,9 +29,10 @@ import { useViewStore } from "@/views/view-store";
 const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
 
 /**
- * The chat column's title bar: the workspace and its views, the thread's header or Board's
- * controls in the slot, then three clusters: the workspace's work, what wants your attention, and
- * the view (a "…" with the rarer toggles, and the panel). Narrow, the lesser buttons fold into "…".
+ * The chat column's title bar, icon-only and few: the workspace and its views, the thread's header
+ * or Board's controls in the slot, then what wants your attention (a paused workspace, usage, the
+ * bell), one "…" with everything else in words, and the panel. Narrow, what the slot carries folds
+ * into "…" too.
  */
 export function ShellTitlebar({
   sidebarShown,
@@ -51,6 +50,7 @@ export function ShellTitlebar({
   panelLeft: boolean;
 }) {
   const togglePanel = useLayoutStore((s) => s.togglePanel);
+  const beforeSetup = useBeforeSetup();
   // One bar: a thread alone in Chat puts its header here, and Board its controls.
   const barThread = useTitlebarThread() !== undefined;
   const board = useViewStore((s) => s.view === "board");
@@ -128,38 +128,24 @@ export function ShellTitlebar({
           className="mx-1 h-4 w-px shrink-0 bg-border"
         />
       )}
-      {/* Three clusters, the room between them doing the grouping: the workspace's work, what
-          wants your attention, and the window's view. */}
-      {/* The workspace's workers, tidy-up and pause are Board's and the orchestrator's: a solo
-          thread is none of their work, and ⌘J, the palette and Board still reach them. */}
-      {!soloBar && (
-        <div
-          role="group"
-          aria-label="Workspace"
-          data-testid="titlebar-workspace"
-          className="flex shrink-0 items-center gap-0.5"
-        >
-          {/* Workers is one of the bar's main controls: it folds last. */}
-          <Foldable level={2} gap={4}>
-            <WorkersButton className="[-webkit-app-region:no-drag]" />
-          </Foldable>
-          <Foldable level={1} gap={4}>
-            <TitlebarTidyUp className="[-webkit-app-region:no-drag]" />
-          </Foldable>
-          <TitlebarPause className="[-webkit-app-region:no-drag]" />
-        </div>
-      )}
+      {/* Few controls, each with its words on hover: what wants your attention, then the one "…"
+          with everything else, labelled, and the panel. A paused workspace says so here, and a
+          click resumes it; pausing, Workers and Tidy up are the "…"'s. */}
       <div
         role="group"
         aria-label="Attention"
         data-testid="titlebar-attention"
-        className={cn("flex shrink-0 items-center gap-0.5", !soloBar && CLUSTER_GAP)}
+        className="flex shrink-0 items-center gap-0.5"
       >
-        {/* Narrow, the title needs the room more than the meter needs its words. */}
-        <UsageMeter
-          className="[-webkit-app-region:no-drag]"
-          textClassName="@max-2xl/titlebar:hidden"
-        />
+        {!soloBar && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
+        {/* Before any setup there is no work of Gram's to meter. Narrow, the title needs the room
+            more than the meter needs its words. */}
+        {!beforeSetup && (
+          <UsageMeter
+            className="[-webkit-app-region:no-drag]"
+            textClassName="@max-2xl/titlebar:hidden"
+          />
+        )}
         <InboxButton />
       </div>
       <div
@@ -168,8 +154,8 @@ export function ShellTitlebar({
         data-testid="titlebar-view"
         className={cn("flex shrink-0 items-center gap-0.5", CLUSTER_GAP)}
       >
-        {/* Quiet, focus mode and the layout, and what a narrow bar folds: Tidy up, then Workers
-            and a worker's own actions. */}
+        {/* The thread's menu, the workspace's controls and the window's, and what a narrow bar
+            folds: a worker's own actions and Board's layout. */}
         <TitlebarOverflow orchestration={!soloBar} className="[-webkit-app-region:no-drag]" />
         <ShellToggle
           icon={

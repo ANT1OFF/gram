@@ -139,6 +139,15 @@
   /* Send, Stop and Steer are circles; Terminal squares them with the rest of its corners. */
   --composer-button-radius: 9999px;
 
+  /* One selection and focus style (DESIGN.md, Selection and focus). The row the pointer or the
+     arrow keys are on, in every menu, list, palette and History: a fill and an accent edge at its
+     start. A chosen value (a card, a segment, a setting) takes an accent-tinted fill and edge, and a
+     check where it has room. Keyboard focus is the --focus-ring outline, never a ring round a menu. */
+  --row-cursor-bg: var(--surface-hover);
+  --row-cursor-edge: var(--accent);
+  --selected-bg: color-mix(in oklab, var(--accent) 14%, var(--surface-3));
+  --selected-edge: color-mix(in oklab, var(--accent) 70%, var(--border-strong));
+
   --panel-bg: var(--chrome-bg);
   --panel-tab-indicator: var(--accent);
 

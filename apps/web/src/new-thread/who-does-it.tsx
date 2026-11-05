@@ -1,8 +1,10 @@
 import { MessageSquare, Network, User, type LucideIcon } from "lucide-react";
 import { useId, type ReactNode } from "react";
 
+import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { CHOICE_CARD } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion";
 import type { NewEntry } from "@/orchestration/new-entry";
@@ -90,14 +92,15 @@ function Choice({
           onClick={() => {
             if (!checked) onPick(choice.value);
           }}
-          className="relative flex flex-col items-start gap-0.5 rounded-md px-2.5 py-1.5 text-left text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-checked:text-foreground"
+          className={CHOICE_CARD}
         />
       }
     >
       {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
-      <span className="relative flex items-center gap-1.5 text-sm font-medium">
+      <span className="relative flex w-full items-center gap-1.5 text-sm font-medium">
         <Icon aria-hidden className="size-3.5 shrink-0" />
         {choice.label}
+        <ChoiceCheck checked={checked} className="ml-auto" />
       </span>
       <span className="relative text-xs text-muted-foreground">{choice.line}</span>
     </Hint>

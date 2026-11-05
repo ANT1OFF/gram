@@ -16,7 +16,7 @@ type Option = PickerOption<string>;
 const NO_FAVOURITES = () => false;
 
 const ROW =
-  "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground";
+  "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:row-cursor";
 
 /**
  * The model picker: a search box over the models, favourites first, then a section per agent or

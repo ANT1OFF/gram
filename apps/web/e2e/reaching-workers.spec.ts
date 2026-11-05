@@ -48,11 +48,12 @@ const isHeld = (page: Page, made: MockReachingSimulation, threadId: string) =>
   );
 
 /**
- * The Workers list, from the title bar's Workers button: with the overview open, ⌘J jumps into the
+ * The Workers list, from Workers in the title bar's "…": with the overview open, ⌘J jumps into the
  * overview's worker rows instead.
  */
 const openList = async (page: Page) => {
-  await page.getByTestId("workers-button").click();
+  await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
+  await page.getByTestId("folded-workers").click();
   await expect(list(page)).toBeVisible();
 };
 

@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { showsFocus } from "./titlebar-menu";
+
 import { openOverviewDensity } from "./overview-density";
 import { seedTheme } from "./seed-theme";
 
@@ -22,7 +24,7 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   await sidebar.getByRole("button", { name: "Compact overview", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(add).toBeFocused();
-  expect(await add.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+  expect(await showsFocus(add)).toBe(true);
 
   // Enter opens the form on the orchestrator, aimed at the workspace on screen.
   await page.keyboard.press("Enter");

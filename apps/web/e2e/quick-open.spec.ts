@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { layoutButton } from "./layout";
+import { openLayout } from "./layout";
 import { openOrchestrator } from "./thread-row";
 
 test("layout preset keys, an empty pane's quick open, and a project's new thread", async ({
@@ -42,8 +42,8 @@ test("layout preset keys, an empty pane's quick open, and a project's new thread
 
   await page.keyboard.press("Control+Shift+Digit4");
   await expect(grid).toHaveAttribute("data-preset", "2x2");
-  // The title bar's "…" marks it as the layout.
-  await layoutButton(page).click();
+  // The title bar's Layout marks it as the layout.
+  await openLayout(page);
   await expect(
     page.getByTestId("folded-layout").getByRole("menuitemradio", { name: "2×2", exact: true }),
   ).toBeChecked();

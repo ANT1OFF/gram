@@ -1,6 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-import { openHeaderMore, openMore } from "./more-menu";
+import { closeMenus } from "./titlebar-menu";
+
+import { openHeaderMore, openMore, openThreadMenu as openThreadMenuOf } from "./more-menu";
 import { slowdown } from "./slowdown";
 import { openOrchestrator, threadRow, upToOrchestrator } from "./thread-row";
 
@@ -75,11 +77,8 @@ const openHistory = async (page: Page) => {
   await expect(page.getByTestId("history")).toBeVisible();
 };
 
-/** The pane header's thread menu, open: its own verbs, then More…. */
-const openThreadMenu = async (page: Page) => {
-  await page.getByRole("button", { name: "Thread menu" }).first().click();
-  return page.getByTestId("thread-menu");
-};
+/** The thread's menu, open: its own verbs, then More…, in a pane's header or the bar's "…". */
+const openThreadMenu = openThreadMenuOf;
 
 const simulate = (page: Page) =>
   page.evaluate(async () => {
@@ -123,10 +122,16 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   await expect(header.getByTestId("branch-chip")).toHaveCount(0);
   await expect(header).not.toContainText("Claude Code");
   await expect(header).not.toContainText("Orchestrator of");
-  // Its board and memory are in the bar, with nothing on a line of their own: Board beside it.
+  // Its board is in the bar, beside it, and its memory in the bar's "…", with nothing on a line of
+  // their own.
   await expect(bar.getByRole("radio", { name: /^Board\b/ })).toBeVisible();
   await expect(header.getByRole("button", { name: "Open board" })).toHaveCount(0);
-  await expect(header.getByRole("link", { name: "Memory" })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Memory" })).toHaveCount(0);
+  await bar.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
+  await expect(page.getByTestId("menu-memory")).toBeVisible();
+  await closeMenus(page);
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeHidden();
   await expect(page.getByTestId("orchestrator-banner")).toHaveCount(0);
   // A paused workspace says so in its orchestrator's thread, with the way to resume it.
   await expect(page.getByTestId("orchestrator-banner-paused")).toHaveCount(0);
@@ -480,8 +485,10 @@ test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ p
   await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName(
     "Orchestrator: platform-2",
   );
-  // The orchestrator's header opens its workspace's settings in a sheet, over the orchestrator.
-  await page.getByRole("button", { name: "Workspace settings" }).click();
+  // The bar's "…" opens its workspace's settings in a sheet, over the orchestrator.
+  await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
+  await page.getByTestId("menu-workspace-settings").click();
   const sheet = page.getByRole("dialog", { name: "platform-2" });
   await expect(sheet.getByTestId("autonomy")).toHaveAttribute("data-value", "full");
   await expect(sheet.getByRole("button", { name: "Open orchestrator" })).toHaveCount(0);
@@ -1088,15 +1095,18 @@ test("the Board shows workers by station, pauses from its header, and fits a nar
   await expect(chip(made.inReview)).toHaveAttribute("data-station", "review");
   await expect(chip(made.briefed)).toHaveAttribute("data-station", "briefed");
 
-  // Pause from the bar says so in a line, and the workspace's line in the overview says so
+  // Pause from the bar's "…" says so in a line, and the workspace's line in the overview says so
   // too, until it is resumed.
-  const pause = bar.getByTestId("titlebar-pause");
+  await bar.getByTestId("titlebar-overflow").click();
   // A worker is mid-turn, so the pause asks first: it stops workers too, at a tool boundary.
-  await pause.click();
-  await expect(page.getByTestId("titlebar-pause-confirm")).toContainText(
+  await page.getByTestId("menu-workspace").click();
+  await page.getByTestId("folded-pause").click();
+  await expect(page.getByTestId("folded-pause-confirm")).toContainText(
     "finishes the step it is on",
   );
-  await page.getByTestId("titlebar-pause-confirm-pause").click();
+  await page.getByTestId("folded-pause-confirmed").click();
+  // Paused, the bar says since when, and a click resumes it.
+  const pause = bar.getByTestId("titlebar-pause");
   await expect(board.getByTestId("rail-paused-line")).toContainText("Paused by you since");
   await expect(board.getByTestId("rail-paused-line")).toContainText("Its workers");
   // The overview's rows of its workers say so; the one the user holds goes on with them.
@@ -1112,18 +1122,15 @@ test("the Board shows workers by station, pauses from its header, and fits a nar
   await expect(line).not.toHaveAccessibleName(/paused/);
   await expect(page.getByTestId("overview-worker-paused")).toHaveCount(0);
 
-  // A narrow pane keeps the header's controls, Tidy up in the bar's "…" once it folds, and the
-  // page itself never scrolls sideways.
+  // A narrow pane keeps the header's controls, Tidy up and Pause in the bar's "…", and the page
+  // itself never scrolls sideways.
   await page.keyboard.press("ControlOrMeta+Alt+b");
   await page.setViewportSize({ width: 760, height: 700 });
-  if ((await bar.getAttribute("data-folded")) === "true") {
-    await bar.getByTestId("titlebar-overflow").click();
-    await expect(page.getByTestId("folded-tidy")).toBeVisible();
-    await page.keyboard.press("Escape");
-  } else {
-    await expect(bar.getByTestId("titlebar-tidy")).toBeVisible();
-  }
-  await expect(pause).toBeVisible();
+  await bar.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
+  await expect(page.getByTestId("folded-tidy")).toBeVisible();
+  await expect(page.getByTestId("folded-pause")).toBeVisible();
+  await closeMenus(page);
   await expect(bar.getByTestId("rail-waiting-chip")).toBeVisible();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -1458,25 +1465,24 @@ test("Tidy up asks the orchestrator to put its board in order, from the Board or
   await page.keyboard.press("ControlOrMeta+Shift+KeyD");
   await expectBoard(page, made.orchestratorThreadId);
 
-  // A glyph in the title bar whose words are its tooltip, and which says for a moment that it went.
-  // Wide enough that the bar keeps it out of its folded "…".
+  // In the title bar's "…", in words; a toast says it went, and reopened it rests a moment so a
+  // second press doesn't queue a second sweep.
   await page.setViewportSize({ width: 1680, height: 900 });
   const bar = page.getByTestId("shell-titlebar");
-  const tidy = bar.getByTestId("titlebar-tidy");
+  await bar.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
+  const tidy = page.getByTestId("titlebar-menu-workspace").getByTestId("folded-tidy");
   await expect(tidy).toHaveAccessibleName("Tidy up");
-  await tidy.hover();
-  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
-    "archive what's done, fix groups, stages and plans",
-  );
   await tidy.click();
+  const toast = page.getByTestId("toast").filter({ hasText: "Asked the orchestrator to tidy up" });
+  await expect(toast).toHaveCount(1);
+  await bar.getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
   await expect(tidy).toHaveAttribute("data-sent", /^(sent|queued)$/);
-  // A cooldown while it shows: a second press doesn't queue a second sweep.
   await expect(tidy).toHaveAttribute("aria-disabled", "true");
   await tidy.click({ force: true });
-  await expect(bar.getByRole("status").filter({ hasText: "Asked: the orchestrator" })).toHaveCount(
-    1,
-  );
-  await expect(tidy).not.toHaveAttribute("data-sent", /.*/, { timeout: 5_000 * slowdown });
+  await expect(toast).toHaveCount(1);
+  await closeMenus(page);
 
   // It is an ordinary message of the user's in the orchestrator's thread.
   await pickChat(page);
@@ -1486,7 +1492,7 @@ test("Tidy up asks the orchestrator to put its board in order, from the Board or
   await palette.getByRole("combobox").fill(">tidy");
   await palette.getByText("Tidy up workspace", { exact: true }).click();
   await expect(
-    page.getByTestId("toast").filter({ hasText: "Asked the orchestrator to tidy up" }),
+    page.getByTestId("toast").filter({ hasText: "Asked the orchestrator to tidy up" }).last(),
   ).toBeVisible();
 });
 

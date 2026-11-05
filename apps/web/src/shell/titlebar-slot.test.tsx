@@ -67,7 +67,9 @@ describe("a thread's header in the title bar", () => {
       "Fix flaky retry test",
     );
     expect(within(header).getByTestId("pane-status")).toBeTruthy();
-    expect(within(header).getByRole("button", { name: "Thread menu" })).toBeTruthy();
+    // The thread's menu, Contents and scripts are the bar's one "…", not buttons of the header.
+    expect(within(header).queryByRole("button", { name: "Thread menu" })).toBeNull();
+    expect(within(header).queryByRole("button", { name: "Contents" })).toBeNull();
     // The composer and the transcript stay in the pane.
     expect(within(pane()).getByLabelText("Message", { exact: true })).toBeTruthy();
     // The title and the empty room drag the window; the chips and the buttons after it don't.
@@ -77,23 +79,7 @@ describe("a thread's header in the title bar", () => {
     );
   });
 
-  it("keeps the branch out of the bar and the thread menu", async () => {
-    renderWithApi(<ThreadGrid />, api);
-    const header = await within(slot).findByTestId("pane-header");
-    expect(within(header).queryByTestId("branch-chip")).toBeNull();
-
-    fireEvent.click(within(header).getByRole("button", { name: "Thread menu" }));
-    const menu = await screen.findByTestId("thread-menu");
-    await within(menu).findByRole("menuitem", { name: "More…" });
-    // The agents' working detail: More… has it, to copy and push.
-    expect(within(menu).queryByTestId("branch-chip")).toBeNull();
-    expect(menu.textContent).not.toContain("fix/flaky-retry");
-    // Not folded, the window's buttons are the bar's, not the menu's.
-    expect(screen.queryByTestId("titlebar-folded")).toBeNull();
-  });
-
-  it("keeps the window's rarer toggles in the bar's own \"…\", never the thread menu", async () => {
-    act(() => useTitlebarSlot.getState().setFold(2));
+  it('keeps the branch out of the bar and its "…"', async () => {
     renderWithApi(
       <>
         <ThreadGrid />
@@ -102,21 +88,51 @@ describe("a thread's header in the title bar", () => {
       api,
     );
     const header = await within(slot).findByTestId("pane-header");
-    fireEvent.click(within(header).getByRole("button", { name: "Thread menu" }));
-    const menu = await screen.findByTestId("thread-menu");
-    await within(menu).findByRole("menuitem", { name: "More…" });
-    expect(within(menu).queryByRole("menuitem", { name: /^Title bar/ })).toBeNull();
-    expect(screen.queryByTestId("titlebar-folded")).toBeNull();
-    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(within(header).queryByTestId("branch-chip")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "More window controls" }));
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(await screen.findByTestId("menu-thread"));
+    const menu = await screen.findByTestId("titlebar-menu-thread");
+    await within(menu).findByRole("menuitem", { name: "More…" });
+    // The agents' working detail: More… has it, to copy and push.
+    expect(within(menu).queryByTestId("branch-chip")).toBeNull();
+    expect(menu.textContent).not.toContain("fix/flaky-retry");
+  });
+
+  it("holds the thread's menu and the window's controls in one \"…\", each in words", async () => {
+    act(() => useTitlebarSlot.getState().setFold(2));
+    renderWithApi(
+      <>
+        <ThreadGrid />
+        <TitlebarOverflow orchestration={false} />
+      </>,
+      api,
+    );
+    await within(slot).findByTestId("pane-header");
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
     const folded = await screen.findByTestId("titlebar-folded");
-    expect(within(folded).getByRole("menuitem", { name: /^Quiet/ })).toBeTruthy();
-    expect(within(folded).getByRole("menuitem", { name: /^Focus mode/ })).toBeTruthy();
-    expect(within(folded).getAllByRole("menuitemradio")).toHaveLength(6);
-    // A solo thread's bar has no Tidy up or Workers to fold.
-    expect(within(folded).queryByTestId("folded-tidy")).toBeNull();
+    // Like every menu, at most seven items: the thread's and the window's are submenus. A solo
+    // thread's bar has no workspace's Workers, Tidy up or Pause.
+    expect(
+      within(folded)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Thread", "View"]);
     expect(within(folded).queryByTestId("folded-workers")).toBeNull();
+    expect(within(folded).queryByTestId("menu-workspace")).toBeNull();
+    // The carried thread's verbs, as its header's menu had them.
+    fireEvent.click(within(folded).getByTestId("menu-thread"));
+    const thread = await screen.findByTestId("titlebar-menu-thread");
+    expect(within(thread).getByRole("menuitem", { name: "Fork thread" })).toBeTruthy();
+    expect(within(thread).getByRole("menuitem", { name: /^Rename/ })).toBeTruthy();
+    expect(within(thread).getByRole("menuitem", { name: "More…" })).toBeTruthy();
+    // The window's.
+    fireEvent.click(within(folded).getByTestId("menu-view"));
+    const view = await screen.findByTestId("titlebar-menu-view");
+    expect(within(view).getByRole("menuitem", { name: /^Quiet/ })).toBeTruthy();
+    expect(within(view).getByRole("menuitem", { name: /^Focus mode/ })).toBeTruthy();
+    expect(within(view).getByRole("menuitem", { name: /^History/ })).toBeTruthy();
+    expect(within(view).getAllByRole("menuitemradio")).toHaveLength(6);
   });
 
   it("carries an orchestrator's and a worker's header too", async () => {

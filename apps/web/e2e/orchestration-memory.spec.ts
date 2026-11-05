@@ -29,9 +29,11 @@ const openMemory = async (page: Page) => {
     if (!result) throw new Error("the mock API isn't on this page");
     return result;
   });
-  // From the orchestrator's header in the title bar, its Memory link.
+  // From the title bar's "…", its Memory.
   await openOrchestrator(page, made.orchestratorThreadId);
-  await page.getByRole("link", { name: "Memory", exact: true }).click();
+  await page.getByTestId("shell-titlebar").getByTestId("titlebar-overflow").click();
+  await page.getByTestId("menu-workspace").click();
+  await page.getByTestId("menu-memory").click();
   await expect(page).toHaveURL(new RegExp(`/w/${made.workspaceId}/memory$`));
   return made;
 };

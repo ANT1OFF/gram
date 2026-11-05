@@ -17,12 +17,13 @@ import {
   Network,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { create } from "zustand";
 
 import { AgentIcon } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
+import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
@@ -38,6 +39,7 @@ import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { ResumeSessions } from "@/resume/resume-sessions";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
+import { useThreadsStore } from "@/stores/threads";
 
 import { toolRows, type ToolState } from "./tools";
 
@@ -60,6 +62,17 @@ export function useFirstRun(): boolean {
     useWelcome.setState({ open: !settings.onboarding.welcomeSeen });
   }, [settings]);
   return open === true && settled && workspaces.length === 0;
+}
+
+/**
+ * Before any setup: the first run, with no thread yet. What only means something once there is
+ * work (pull requests, usage, what needs you) stays away, so the welcome is the one thing to look
+ * at.
+ */
+export function useBeforeSetup(): boolean {
+  const firstRun = useFirstRun();
+  const empty = useThreadsStore((s) => Object.keys(s.byId).length === 0);
+  return firstRun && empty;
 }
 
 /**
@@ -130,6 +143,17 @@ function FirstRun() {
     }
   };
 
+  const { projects, repos } = useFirstRunRepos();
+  const home = useHome();
+  // The most recent repository is picked to start with, so Open is the obvious first click.
+  const [pickedRoot, setPickedRoot] = useState<string>();
+  const picked = repos.find((repo) => repo.root === pickedRoot) ?? repos[0];
+  const openRepo = (repo: RepositoryCandidate) =>
+    void startAt(
+      repo.root,
+      projects.find((project) => project.id === repo.projectId),
+    );
+
   const chooseFolder = async () => {
     const choose = typeof window === "undefined" ? undefined : window.gram?.chooseFolder;
     if (choose === undefined) return setAdding(true);
@@ -170,19 +194,42 @@ function FirstRun() {
           </p>
         </div>
         <RecentRepos
+          repos={repos}
+          home={home}
+          picked={picked}
           pending={pending}
-          onPick={(repo, project) => void startAt(repo.root, project)}
+          onSelect={setPickedRoot}
+          onOpen={openRepo}
         />
         <div className="flex flex-wrap items-center gap-2">
+          {/* The one primary action: open the picked repository, or with none to pick, a folder. */}
+          {picked !== undefined && (
+            <Button
+              type="button"
+              size="sm"
+              data-testid="welcome-open"
+              disabled={pending !== undefined}
+              onClick={() => openRepo(picked)}
+            >
+              {pending === picked.root ? (
+                <Spinner aria-hidden data-icon="inline-start" />
+              ) : (
+                <FolderGit2 data-icon="inline-start" />
+              )}
+              Open {picked.name}
+              <ArrowRight data-icon="inline-end" />
+            </Button>
+          )}
           <Button
             type="button"
-            variant="outline"
+            variant={picked === undefined ? "default" : "outline"}
             size="sm"
+            data-testid="welcome-open-folder"
             disabled={pending !== undefined}
             onClick={() => void chooseFolder()}
           >
             <FolderOpen data-icon="inline-start" />
-            Other folder
+            Open a folder…
           </Button>
           <Button
             type="button"
@@ -280,7 +327,7 @@ function ImportSessions() {
                     role="radio"
                     aria-checked={repo.root === folder}
                     onClick={() => setRoot(repo.root)}
-                    className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-checked:border-ring aria-checked:bg-accent aria-checked:text-foreground"
+                    className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring aria-checked:choice-selected"
                   >
                     {repo.name}
                   </button>
@@ -301,31 +348,67 @@ function ImportSessions() {
   );
 }
 
-/** The repositories Gram knows or finds in the default and clone folders, a click each. */
+/**
+ * The repositories Gram knows or finds in the default and clone folders, as one choice: a click or
+ * the arrow keys pick one, and Open below (or a double-click, or Return) starts on it.
+ */
 function RecentRepos({
+  repos,
+  home,
+  picked,
   pending,
-  onPick,
+  onSelect,
+  onOpen,
 }: {
+  repos: readonly RepositoryCandidate[];
+  home: string | undefined;
+  picked: RepositoryCandidate | undefined;
   pending: string | undefined;
-  onPick: (repo: RepositoryCandidate, project: Project | undefined) => void;
+  onSelect: (root: string) => void;
+  onOpen: (repo: RepositoryCandidate) => void;
 }) {
-  const home = useHome();
-  const { projects, repos } = useFirstRunRepos();
   if (repos.length === 0) return null;
+  const move = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const step =
+      event.key === "ArrowDown" || event.key === "ArrowRight"
+        ? 1
+        : event.key === "ArrowUp" || event.key === "ArrowLeft"
+          ? -1
+          : 0;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onOpen(repos[index]!);
+      return;
+    }
+    if (step === 0) return;
+    event.preventDefault();
+    const next = (index + step + repos.length) % repos.length;
+    onSelect(repos[next]!.root);
+    const list = event.currentTarget.closest("[role=radiogroup]");
+    list?.querySelectorAll<HTMLElement>("[role=radio]")[next]?.focus();
+  };
   return (
-    <ul aria-label="Repositories" data-testid="welcome-repos" className="flex flex-col gap-0.5">
-      {repos.map((repo) => (
-        <li key={repo.projectId ?? repo.root}>
+    <div
+      role="radiogroup"
+      aria-label="Repositories"
+      data-testid="welcome-repos"
+      className="flex flex-col gap-0.5"
+    >
+      {repos.map((repo, index) => {
+        const checked = repo.root === picked?.root;
+        return (
           <button
+            key={repo.projectId ?? repo.root}
             type="button"
+            role="radio"
+            aria-checked={checked}
+            tabIndex={checked ? 0 : -1}
+            data-testid="welcome-repo"
             disabled={pending !== undefined}
-            onClick={() =>
-              onPick(
-                repo,
-                projects.find((project) => project.id === repo.projectId),
-              )
-            }
-            className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
+            onClick={() => onSelect(repo.root)}
+            onDoubleClick={() => onOpen(repo)}
+            onKeyDown={(event) => move(event, index)}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:row-cursor focus-visible:focus-ring-inset disabled:opacity-60 aria-checked:choice-selected"
           >
             {pending === repo.root ? (
               <Spinner aria-hidden className="size-3.5 shrink-0" />
@@ -336,19 +419,11 @@ function RecentRepos({
             <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
               {tildify(repo.root, home)}
             </span>
-            {/* What a click does, said where the pointer or focus is: the row is the button. */}
-            <span
-              aria-hidden
-              className="ml-auto flex shrink-0 items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:opacity-0"
-            >
-              Open
-              <ArrowRight className="size-3.5" />
-            </span>
-            <span className="sr-only">: open as a workspace</span>
+            <ChoiceCheck checked={checked} className="ml-auto" />
           </button>
-        </li>
-      ))}
-    </ul>
+        );
+      })}
+    </div>
   );
 }
 
@@ -409,7 +484,7 @@ function AgentStrip() {
                     <span
                       // Focusable, so the version or the remedy behind it reaches the keyboard too.
                       tabIndex={0}
-                      className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                      className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:focus-ring"
                     />
                   }
                 >

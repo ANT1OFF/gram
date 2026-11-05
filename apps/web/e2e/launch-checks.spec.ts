@@ -268,7 +268,10 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   ]);
   await expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeVisible();
   // Codex alone is enough: Claude Code missing is shown, but is nothing to fix.
-  await expect(welcome.getByRole("button", { name: /^web/ })).toBeVisible();
+  await expect(welcome.getByRole("radio", { name: /^web/ })).toBeVisible();
+  // Before any setup there are no pull requests or usage beside the welcome.
+  await expect(page.getByTestId("usage-meter")).toHaveCount(0);
+  await expect(page.getByTestId("overview-sidebar")).not.toContainText(/Pull requests/i);
   const agents = welcome.getByRole("list", { name: "Agents" }).getByRole("listitem");
   await expect(agents).toHaveCount(2);
   await expect(agents.nth(0)).toHaveAttribute("data-state", "optional");
@@ -289,7 +292,13 @@ test("first run is one screen: how Gram works, the agents, a repository and past
 
   // Looking at it isn't finishing it: it is back after a reload, and after leaving the sheet.
   await page.reload();
-  await welcome.getByRole("button", { name: /^web/ }).click();
+  // A repository is picked first, and Open starts on it.
+  await welcome.getByRole("radio", { name: /^web/ }).click();
+  await expect(welcome.getByRole("radio", { name: /^web/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await welcome.getByTestId("welcome-open").click();
   await expect(page).toHaveURL(/\/new-workspace\?repo=p-web$/);
   const sheet = page.getByRole("form", { name: "New workspace" });
   await expect(sheet.getByTestId("new-workspace-repo")).toHaveText(["web"]);
@@ -297,8 +306,8 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await page.keyboard.press("Escape");
   await expect(welcome).toBeVisible();
 
-  // Making the workspace finishes it.
-  await welcome.getByRole("button", { name: /^web/ }).click();
+  // Making the workspace finishes it. A double-click on a repository opens it too.
+  await welcome.getByRole("radio", { name: /^web/ }).dblclick();
   await sheet.getByTestId("new-workspace-start").click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName("Orchestrator: web");
   await expect

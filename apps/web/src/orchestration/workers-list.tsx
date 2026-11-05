@@ -11,17 +11,14 @@ import {
   History,
   Hourglass,
   Search,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import { Fragment, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { create } from "zustand";
 
-import { Hint } from "@/components/hint";
-import { Button } from "@/components/ui/button";
 import { keyLabel } from "@/keyboard/registry";
 import { useHistoryStore } from "@/history/history-view";
-import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
+import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { useNow } from "@/lib/use-now";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
@@ -113,10 +110,10 @@ function useListWorkspace(): WorkspaceId | undefined {
 }
 
 /**
- * The title bar's way into ⌘J: the workers of the workspace in front of you, with how many are on
- * now. Shown only where a workspace is, as ⌘J is.
+ * The workspace ⌘J lists, and how many of its workers are on now: what the title bar's "…" says
+ * beside Workers, its way into ⌘J.
  */
-export function WorkersButton({ className }: { className?: string }) {
+export function useWorkersNow(): { workspaceId: WorkspaceId | undefined; count: number } {
   const workspaceId = useListWorkspace();
   const workspaces = useWorkspaces();
   const ids = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
@@ -129,30 +126,7 @@ export function WorkersButton({ className }: { className?: string }) {
       workersByTab(ledger, { byId: s.byId, statusDetail: s.statusDetail, now }, undefined).now,
     ),
   );
-  const open = useWorkersListStore((s) => s.open);
-  const hint = useShortcutHint("workers.open");
-  if (workspaceId === undefined) return null;
-  const label = count === 0 ? "Workers" : `Workers, ${count} now`;
-  return (
-    <Hint
-      label={withHint(label, hint)}
-      side="bottom"
-      render={
-        <Button
-          variant="ghost"
-          size="sm"
-          data-testid="workers-button"
-          aria-label={label}
-          aria-pressed={open}
-          className={cn("text-muted-foreground aria-pressed:text-foreground", className)}
-          onClick={() => useWorkersListStore.getState().toggle()}
-        />
-      }
-    >
-      <Users aria-hidden className="size-4" />
-      {count > 0 && <span className="tabular-nums">{count}</span>}
-    </Hint>
-  );
+  return { workspaceId, count };
 }
 
 /**

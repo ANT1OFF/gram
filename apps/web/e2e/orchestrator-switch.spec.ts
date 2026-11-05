@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { pressFirstWorkspaceKey } from "./thread-row";
+import { openThreadMenu } from "./more-menu";
 
 test("explicit orchestrator switch separates current and requested models, cancellation and future preference", async ({
   page,
@@ -96,8 +97,7 @@ test("the orchestrator's header has no Switch pill; its ⋯ menu opens the same 
   await expect(header).toBeVisible();
   await expect(header.getByTestId("switch-orchestrator-open")).toHaveCount(0);
   await expect(header.getByText("Switch orchestrator…")).toHaveCount(0);
-  await header.getByRole("button", { name: "Thread menu" }).click();
-  const item = page.getByTestId("thread-menu").getByTestId("menu-switch-orchestrator");
+  const item = (await openThreadMenu(page)).getByTestId("menu-switch-orchestrator");
   await expect(item).toHaveText("Switch orchestrator…");
   await item.click();
   const dialog = page.getByTestId("switch-orchestrator-dialog");
