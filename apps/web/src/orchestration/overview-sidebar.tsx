@@ -1390,6 +1390,7 @@ export function SoloRow({
   const title = threadDisplayTitle(thread);
   const lastActive = display.working ? `Last activity ${formatStamp(thread.lastActivityAt)}` : "";
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
+  const active = display.working || display.tone === "text-status-needs";
   return (
     <RowMenu menu={<RowMenuItems threadId={thread.id} />}>
       <button
@@ -1418,8 +1419,11 @@ export function SoloRow({
             display.working && "gram-working",
           )}
         />
-        {/* Two lines before it is cut short; its hover says the whole of it. */}
-        <span className="line-clamp-2 [overflow-wrap:anywhere]">{title}</span>
+        {/* At work or needing you, two lines; at rest, one, which keeps the virtual list's rows
+            anchored as what is above them grows. Its hover says the whole of it. */}
+        <span className={active ? "line-clamp-2 [overflow-wrap:anywhere]" : "truncate"}>
+          {title}
+        </span>
         {!display.working && (
           <span className="flex h-lh items-center">
             <span className="text-meta text-muted-foreground tabular-nums">
