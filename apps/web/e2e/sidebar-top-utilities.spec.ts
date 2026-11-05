@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { showsFocus } from "./titlebar-menu";
+
 import { openOverviewDensity } from "./overview-density";
 import { seedTheme } from "./seed-theme";
 
@@ -108,9 +110,7 @@ test("top navigation explains real keyboard focus and preserves routes and modif
     const action = sidebar.getByRole("button", { name: label, exact: true });
     await expect(action).toBeFocused();
     await expect(hint).toHaveText(new RegExp(`^${label}`));
-    expect(await action.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe(
-      "none",
-    );
+    expect(await showsFocus(action)).toBe(true);
   }
   for (let i = 0; i < 2; i++) await page.keyboard.press("Shift+Tab");
   await expect(settings).toBeFocused();

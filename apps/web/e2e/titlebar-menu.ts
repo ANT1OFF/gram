@@ -89,3 +89,14 @@ export async function openContentsByKeyboard(page: Page): Promise<Locator> {
   await expect(toc).toBeVisible();
   return toc;
 }
+
+/**
+ * Whether `control` shows keyboard focus: the shared `focus-ring` outline, or a ring a control
+ * still draws as a shadow.
+ */
+export const showsFocus = (control: Locator): Promise<boolean> =>
+  control.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const outlined = style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0;
+    return outlined || style.boxShadow !== "none";
+  });
