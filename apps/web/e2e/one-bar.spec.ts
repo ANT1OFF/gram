@@ -47,6 +47,13 @@ const routeTo = (page: Page, path: string) =>
   }, path);
 
 const titlebar = (page: Page) => page.getByTestId("shell-titlebar");
+
+/** Escape out of the bar's open `submenu`, leaving the "…" open for the next. */
+const stepBack = async (page: Page, submenu: string) => {
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId(submenu)).toBeHidden();
+  await expect(page.getByTestId("titlebar-overflow-menu")).toBeVisible();
+};
 const pane = (page: Page) => page.getByTestId("pane").first();
 
 /** The window drag region an element is in, as Electron reads it. */
@@ -166,11 +173,14 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   const threadGroup = page.getByTestId("titlebar-menu-thread");
   await expect(threadGroup.getByRole("menuitem", { name: /^Switch/ })).toBeVisible();
   await expect(threadGroup.getByRole("menuitem", { name: "More…" })).toBeVisible();
+  // One submenu at a time: Escape steps back out of the last before the next opens.
+  await stepBack(page, "titlebar-menu-thread");
   await more.getByTestId("menu-workspace").click();
   const workspaceGroup = page.getByTestId("titlebar-menu-workspace");
   for (const name of [/^Tidy up/, /^Pause workspace/, /^Memory$/, /^Workspace settings$/]) {
     await expect(workspaceGroup.getByRole("menuitem", { name })).toBeVisible();
   }
+  await stepBack(page, "titlebar-menu-workspace");
   await more.getByTestId("menu-view").click();
   const viewGroup = page.getByTestId("titlebar-menu-view");
   for (const name of [/^Contents/, /^Quiet/, /^Focus mode/, /^History/]) {
@@ -327,6 +337,7 @@ test("narrow, the title truncates, a worker's actions fold into the bar's \"…\
     page.getByTestId("titlebar-menu-workspace").getByTestId("folded-tidy"),
   ).toBeVisible();
   // Its Grid or Lanes is under View.
+  await stepBack(page, "titlebar-menu-workspace");
   await page.getByTestId("menu-view").click();
   await expect(
     page.getByTestId("titlebar-menu-view").getByTestId("folded-board-layout"),
