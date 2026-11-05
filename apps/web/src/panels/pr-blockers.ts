@@ -173,8 +173,11 @@ export function mergeBlockersOf(
         detail:
           reviewMarkOf({ reviewDecision: "REVIEW_REQUIRED", reviewRequests: requested })?.detail ??
           "Waiting on an approving review",
+        // Named apart from the Reviewers row's own "Request review…", which opens the same form.
         action:
-          requested.length === 0 ? { kind: "requestReview", label: "Request review…" } : undefined,
+          requested.length === 0
+            ? { kind: "requestReview", label: "Ask for a review…" }
+            : undefined,
       });
     } else {
       blockers.push({

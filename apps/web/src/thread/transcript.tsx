@@ -230,6 +230,7 @@ export function Transcript({
   const inProgress = useThreadsStore((s) => TURN_IN_PROGRESS.has(s.byId[threadId]?.status ?? ""));
   const compaction = useThreadsStore((s) => s.byId[threadId]?.compaction);
   // A fresh thread's start, Branch › Worktree › Starting its CLI › First tool, until it has output.
+  const orchestratedStream = useOrchestratorStreamContext() !== undefined;
   const startStatus = useThreadsStore((s) => s.byId[threadId]?.status);
   const startCheckout = useThreadsStore((s) => s.byId[threadId]?.thread.checkout);
   const startAgent = useThreadsStore((s) => s.byId[threadId]?.thread.model.agent);
@@ -238,14 +239,17 @@ export function Transcript({
   );
   const startSteps = useMemo(
     () =>
-      startingSteps({
-        status: startStatus,
-        checkout: startCheckout,
-        agent: agentLabel(startAgent ?? "claude"),
-        activity: startActivity,
-        messages,
-      }),
-    [startStatus, startCheckout, startAgent, startActivity, messages],
+      // An orchestrator's stream is a digest of its turns, which may say nothing for a while.
+      orchestratedStream
+        ? undefined
+        : startingSteps({
+            status: startStatus,
+            checkout: startCheckout,
+            agent: agentLabel(startAgent ?? "claude"),
+            activity: startActivity,
+            messages,
+          }),
+    [orchestratedStream, startStatus, startCheckout, startAgent, startActivity, messages],
   );
   // Measured: in a narrow pane the line wraps, and the room under the last row must grow with it.
   const [compactingRow, setCompactingRow] = useState(COMPACTING_ROW);

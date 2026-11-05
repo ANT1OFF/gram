@@ -22,7 +22,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { create } from "zustand";
 
 import { AgentIcon } from "@/agents/agent-display";
@@ -35,6 +35,7 @@ import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { CommandText } from "@/launch-checks/command-text";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
 import { MENU_ITEM, MENU_POPUP } from "@/lib/selection";
+import { focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { Expand, Spinner } from "@/motion";
 import { OutboundLink } from "@/panels/outbound-link";
@@ -191,6 +192,7 @@ function FirstRun() {
           <RepoSearch
             query={query}
             total={all.length}
+            listed={repos.length > 0}
             onQuery={setQuery}
             onOpen={() => {
               if (picked !== undefined) openRepo(picked);
@@ -401,25 +403,30 @@ function AddRepositoryMenu({
 function RepoSearch({
   query,
   total,
+  listed,
   onQuery,
   onOpen,
 }: {
   query: string;
   total: number;
+  /** Whether the list it narrows is on the page, which it controls. */
+  listed: boolean;
   onQuery: (query: string) => void;
   onOpen: () => void;
 }) {
+  // It mounts once the repositories have loaded: focused then only if focus is nowhere else.
+  const focusFree = useCallback((input: HTMLInputElement | null) => {
+    if (input !== null && focusLost()) input.focus();
+  }, []);
   return (
     <label className="flex h-8 items-center gap-2 rounded-md border border-border bg-background px-2 text-meta focus-within:focus-ring">
       <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <input
+        ref={focusFree}
         type="search"
-        // The first run's one field, and what a long list needs first.
-        // oxlint-disable-next-line jsx-a11y/no-autofocus
-        autoFocus
         data-testid="welcome-repo-search"
         aria-label="Find a repository"
-        aria-controls="welcome-repos"
+        aria-controls={listed ? "welcome-repos" : undefined}
         placeholder={`Find a repository among ${total}`}
         value={query}
         spellCheck={false}

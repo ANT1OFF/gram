@@ -141,7 +141,7 @@ describe("mergeBlockersOf", () => {
     expect(nobody[0]!.detail).toBe("Waiting on an approving review");
     expect(primaryBlockerAction(nobody)).toEqual({
       kind: "requestReview",
-      label: "Request review…",
+      label: "Ask for a review…",
     });
 
     const unknown = mergeBlockersOf({ reviewDecision: "", checkRuns: [] }, "blocked");

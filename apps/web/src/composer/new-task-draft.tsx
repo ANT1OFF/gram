@@ -255,6 +255,7 @@ export function NewTaskDraft({
   // who does it and where it runs fold to one line until Change unfolds them.
   const [expanded, setExpanded] = useState(false);
   const repeat =
+    settled &&
     last !== undefined &&
     target !== undefined &&
     target.kind === "workspace" &&
