@@ -58,6 +58,9 @@ const start = async (page: Page, settings: Record<string, unknown> = {}) => {
     };
     return mock.simulateAsks();
   });
+  // t-flaky's opening turn raises its approval on its own time, and it lists above the seed's
+  // asks: read before it arrives, a row's place is one off once it does (a j then looks like two).
+  await flakyAsked(page);
   // The seed's own answers aren't the stack's.
   await page.evaluate(() => {
     (window as unknown as { sentAnswers: unknown[] }).sentAnswers.length = 0;
@@ -351,7 +354,9 @@ test("the orchestrator's own questions are asks: its pick is tagged, never picke
   page,
 }) => {
   await start(page);
-  await goTo(page, "429");
+  // Its row is called by its words cut at a word; the whole question, 429 and all, is the detail's.
+  await goTo(page, "Should the mail trigger retry when the provider answers");
+  await expect(currentAsk(page).getByTestId("ask-title")).toContainText("429");
   const first = currentAsk(page).getByTestId("ask-option").first();
   await expect(first).toContainText("Retry with backoff");
   await expect(first.getByTestId("ask-recommended")).toHaveText("Recommended");
@@ -367,7 +372,11 @@ test("the orchestrator's own questions are asks: its pick is tagged, never picke
     .toEqual([{ questionId: "Q1", answer: "Retry with backoff" }]);
   // Answered, it leaves the Inbox for good.
   await expect(undoLine(page)).toHaveCount(0);
-  await expect(inbox(page).getByTestId("inbox-item").filter({ hasText: /429/ })).toHaveCount(0);
+  await expect(
+    inbox(page)
+      .getByTestId("inbox-item")
+      .filter({ hasText: "Should the mail trigger retry when the provider answers" }),
+  ).toHaveCount(0);
 });
 
 test("a free-form question offers the helper's short replies, which fill the field but never send", async ({
@@ -460,7 +469,7 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   expect((await badge(made.workspaceId)) + (await badge(made.other.workspaceId)) + threads).toBe(
     all,
   );
-  // Each row of a workspace's says its name.
+  // Each row of a workspace's says its name, after its kind where its heading doesn't say that.
   const name = (await workspace(made.workspaceId)
     .getByTestId("overview-workspace-row")
     .getAttribute("aria-label"))!.split(",")[0]!;
@@ -468,7 +477,9 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
     `[data-testid="inbox-item"][data-workspace="${made.workspaceId}"]`,
   );
   for (const where of await own.getByTestId("inbox-item-where").allTextContents()) {
-    expect(where.startsWith(`${name} · `)).toBe(true);
+    expect(where).toMatch(
+      new RegExp(`^(?:(?:Plan to review|Worker question|Orchestrator question) · )?${name} · `),
+    );
   }
   await page.keyboard.press("Escape");
 

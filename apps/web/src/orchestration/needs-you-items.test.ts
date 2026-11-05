@@ -363,9 +363,9 @@ describe("newestAsk and kindsText", () => {
   });
 });
 
-describe("briefTitle", () => {
-  const question = (title: string) => ({ title, kind: "question" as const });
+const question = (title: string) => ({ title, kind: "question" as const });
 
+describe("briefTitle", () => {
   it("keeps a short title whole", () => {
     expect(briefTitle(question("Retry for 24 hours or 72?"))).toBe("Retry for 24 hours or 72?");
     expect(briefTitle({ title: "Allow", kind: "approval" })).toBe("Allow");

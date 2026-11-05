@@ -108,7 +108,8 @@ test("in the Inbox, four long choices all show with their descriptions, and the 
   await start(page);
   await page.getByTestId("inbox-button").click();
   const stack = page.getByTestId("inbox-detail-body");
-  await show(page, QUESTION);
+  // Its row is called by its words cut at a word; the whole question is the detail's.
+  await show(page, "Where should a running worker show while the");
   const ask = currentAsk(page);
   await expect(ask.getByTestId("ask-title")).toHaveText(QUESTION);
   await expect(ask.getByTestId("ask-choices")).toHaveAttribute("data-layout", "list");

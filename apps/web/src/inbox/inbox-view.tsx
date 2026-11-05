@@ -37,7 +37,7 @@ import { useNotificationHistory, unreadNotifications } from "@/stores/notificati
 
 import { InboxDetail } from "./inbox-detail";
 import { useInboxDock } from "./inbox-dock";
-import { useInboxStore } from "./inbox-store";
+import { INBOX_DOCKED, useInboxStore } from "./inbox-store";
 
 // The Inbox: everything that needs the user, across every workspace, in one place. A list by kind
 // (errors, approvals, questions, reviews, steps, drafts) with the category strip above it, and the
@@ -256,6 +256,28 @@ function InboxBody({
       ?.querySelector<HTMLElement>(`[data-key="${CSS.escape(current.key)}"]`)
       ?.scrollIntoView?.({ block: "nearest" });
   }, [current]);
+  // Docked, an item answered, put away or dismissed with a click takes the focused control with it,
+  // and focus would fall to the page, where Esc and the keys are the thread's beside it: the list
+  // has it back. Focus the user took elsewhere stays there. (The dialog keeps focus in itself.)
+  const hadFocus = useRef(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!docked) return;
+    const note = (event: Event) => {
+      const dock = bodyRef.current?.closest(INBOX_DOCKED);
+      hadFocus.current = event.target instanceof Node && dock?.contains(event.target) === true;
+    };
+    document.addEventListener("focusin", note, true);
+    document.addEventListener("pointerdown", note, true);
+    return () => {
+      document.removeEventListener("focusin", note, true);
+      document.removeEventListener("pointerdown", note, true);
+    };
+  }, [docked]);
+  useEffect(() => {
+    if (!docked || !hadFocus.current || !focusLost()) return;
+    (listRef.current ?? bodyRef.current?.closest<HTMLElement>(INBOX_DOCKED))?.focus();
+  });
 
   const move = (by: 1 | -1) => {
     if (items.length === 0) return;
@@ -301,7 +323,7 @@ function InboxBody({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
+    <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <InboxIcon aria-hidden className="size-4 text-muted-foreground" />
         {docked ? (
