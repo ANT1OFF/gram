@@ -105,11 +105,11 @@ export const DEFAULT_EFFORT_OPTION = {
   value: DEFAULT_EFFORT,
   label: "Default effort",
   // Says what the default is, not just that it is one: the model picks its own level. Short of
-  // room it keeps a word that still says whose, as every other effort keeps one ("Model"; not
-  // "Auto", which is a mode), and gives it up for the gauge only where every picker does. An empty
-  // compact form dropped it to the gauge at the first squeeze, beside a review in a 1024 px window.
+  // room it keeps a word, as every other effort keeps one, and gives it up for the gauge only where
+  // every picker does: the control's own name, "Effort" (not "Model", which beside the model picker
+  // read as a second one; not "Auto", which is a mode), its value on hover.
   short: "Model default",
-  compact: "Model",
+  compact: "Effort",
   description: "Whatever level the model uses on its own.",
 } as const satisfies PickerOption<typeof DEFAULT_EFFORT>;
 

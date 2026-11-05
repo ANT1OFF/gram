@@ -47,7 +47,7 @@ import { IdleCompactField } from "./idle-compact-field";
 import { PauseAtLimitField } from "./pause-at-limit-field";
 import { RosterEditor } from "./roster-editor";
 import { RowMenuButton, type RowAction } from "./row-menu";
-import { SETTINGS_CARD, SettingsGroup } from "./settings-group";
+import { SETTINGS_CARD, SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { WorkerBriefFooterField } from "./worker-brief-footer-field";
 import { WorkerModeField } from "./worker-mode-field";
 import { useWorkspaceChanges } from "./workspace-actions";
@@ -113,7 +113,7 @@ export function WorkspaceSettingsPage({
     );
   }
   return (
-    <div data-testid="workspace-page" className="flex flex-col gap-8 text-reading">
+    <div data-testid="workspace-page" className={cn(SETTINGS_STACK, "text-reading")}>
       <Header state={state} changes={changes} sheet={sheet} />
       <Basics state={state} projects={projects} changes={changes} />
       <SettingsGroup

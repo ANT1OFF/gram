@@ -362,10 +362,12 @@ export const MessageBlock = memo(function MessageBlock({
           onToggle={() => useTurnFolds.getState().toggle(threadId, fold.turn)}
         />
       )}
+      {/* A reply's parts (a tool row, its prose, a diff card) 12 px apart, a list's rhythm, so its
+          blocks read as separate steps by space rather than run together at 8 px. */}
       <MessageContent
         data-testid="message-time"
         title={actions ? undefined : sentAt}
-        className="w-full"
+        className="w-full gap-3"
       >
         <ToolImagesContext value={toolImages}>
           {message.parts.map((part, i) => {

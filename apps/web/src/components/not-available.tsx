@@ -23,7 +23,7 @@ export function QueryError({
         className,
       )}
     >
-      <CircleSlash aria-hidden className="size-5" />
+      <CircleSlash aria-hidden className="size-icon-empty" />
       <p>{unavailable ? `${feature} isn't available yet.` : `${feature} failed to load.`}</p>
       {!unavailable && <p className="font-mono text-meta">{errorMessage(error)}</p>}
     </div>

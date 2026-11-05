@@ -77,7 +77,6 @@ import { ApprovalSlotsProvider } from "./approval-slots";
 import { RequestCards } from "./request-cards";
 import { RoleGlyph, useThreadRole } from "./role-chip";
 import { activeStreamingIds } from "./streaming";
-import { StopReceiptLine } from "./stop-receipt";
 import { SubagentStrip } from "./subagent-strip";
 import {
   nextJump,
@@ -626,7 +625,6 @@ export function ThreadView({
         <div className="w-full thread-column shrink-0 px-6">
           {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
           {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
-          <StopReceiptLine threadId={threadId} />
           {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
           <RequestCards
             threadId={threadId}
@@ -782,7 +780,7 @@ function ThreadGoneNotice({ threadId }: { threadId: ThreadId }) {
       data-testid="thread-gone"
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-reading text-muted-foreground"
     >
-      <MessageSquareOff aria-hidden className="size-6" />
+      <MessageSquareOff aria-hidden className="size-icon-empty" />
       <p>This thread no longer exists.</p>
       <Button variant="outline" size="sm" onClick={close}>
         <X data-icon="inline-start" />

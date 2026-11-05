@@ -42,7 +42,7 @@ import { PaletteEditor } from "./palette-editor";
 import { paletteChoices, type PaletteChoice } from "./palette-choices";
 import { ReadingSection } from "./reading-section";
 import { SearchScope, useSettingSearch } from "./search-scope";
-import { SettingsGroup } from "./settings-group";
+import { SETTINGS_STACK, SettingsGroup } from "./settings-group";
 
 /** The click point, or the control's centre when activated from the keyboard. */
 function originOf(event: MouseEvent<HTMLElement>): Point {
@@ -92,7 +92,7 @@ function AppearancePage({ preview }: { preview: boolean }) {
   };
   const controls = <AppearanceControls onEditColours={editColours} />;
   return (
-    <div className="@container flex flex-col gap-8">
+    <div className={cn("@container", SETTINGS_STACK)}>
       {preview ? (
         <div className="grid gap-6 @3xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
           {controls}

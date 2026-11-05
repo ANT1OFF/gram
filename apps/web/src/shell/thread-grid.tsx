@@ -260,7 +260,7 @@ function EmptyPane({ index }: { index: number }) {
         Pane {index + 1}
       </header>
       <div className="flex flex-1 flex-col items-center justify-center gap-3 overflow-y-auto p-6 text-center text-reading text-muted-foreground">
-        <SquareDashed aria-hidden ref={drawOn} strokeWidth={1.5} className="size-6 opacity-70" />
+        <SquareDashed aria-hidden ref={drawOn} className="size-icon-empty" />
         <p>Empty pane</p>
         <Button variant="outline" size="sm" onClick={newThread}>
           <Plus data-icon="inline-start" />

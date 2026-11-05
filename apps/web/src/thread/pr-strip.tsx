@@ -18,7 +18,6 @@ import {
   FolderX,
   GitPullRequest,
   Unlink,
-  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -370,6 +369,10 @@ function StateIcon({ facts }: { facts: PrFacts | undefined }) {
   );
 }
 
+/**
+ * Hide a row from the strip: the eye the strip's "N hidden" shows too, not an ✕, which beside a
+ * failing PR's ⊗ read as a second close.
+ */
 function RowClose({ label, run }: { label: string; run: () => Promise<unknown> }) {
   const action = useReviewAction();
   return (
@@ -389,7 +392,7 @@ function RowClose({ label, run }: { label: string; run: () => Promise<unknown> }
         })
       }
     >
-      <X aria-hidden className="size-icon-row" />
+      <EyeOff aria-hidden className="size-icon-row" />
     </button>
   );
 }
