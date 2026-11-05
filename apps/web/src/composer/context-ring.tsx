@@ -22,8 +22,8 @@ export const ringLabel = (percent: number | undefined): string =>
   percent === undefined ? "Usage" : `Usage: ${percent}% of the context window`;
 
 /**
- * The thread's usage beside Send: how full the context window is, as a thin bar and its number in
- * the title bar's usage meter's form, opening onto the usage bar (tokens, context, and cost on a
+ * The thread's usage beside Send: how full the context window is, its number over a thin bar in
+ * the title bar's usage meter's colours, in the 32 px the ring had, opening onto the usage bar (tokens, context, and cost on a
  * gateway). Never a ring: a partly drawn circle beside Send read as a spinner on a thread with
  * nothing running. Without a window to measure it says "Usage". Subscribed on its own, so a usage
  * report renders only this.
@@ -43,16 +43,21 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
         data-testid="usage-ring"
         data-level={level}
         aria-label={ringLabel(percent)}
-        className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-meta text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring"
+        // The ring's 32 px, no wider: the toolbar measures this slot to decide when its pickers go
+        // compact (`useToolbarLayout`), so a wider gauge would fold them a step early.
+        className="flex size-8 shrink-0 flex-col items-center justify-center gap-0.5 rounded-(--radius-sm) text-caption leading-none text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring"
       >
         {percent === undefined ? (
           <span>Usage</span>
         ) : (
           <>
+            <span aria-hidden className="tabular-nums">
+              {percent}%
+            </span>
             <span
               aria-hidden
               data-testid="usage-ring-bar"
-              className="block h-1 w-4 shrink-0 overflow-hidden rounded-full bg-foreground/15"
+              className="block h-0.5 w-5 shrink-0 overflow-hidden rounded-full bg-foreground/15"
             >
               <span
                 className={cn(
@@ -61,9 +66,6 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
                 )}
                 style={{ width: `${barShare(percent)}%` }}
               />
-            </span>
-            <span aria-hidden className="tabular-nums">
-              {percent}%
             </span>
           </>
         )}

@@ -256,6 +256,8 @@ describe("ContextRing", () => {
     expect(ring.getAttribute("aria-label")).toBe("Usage: 93% of the context window");
     expect(ring.dataset["level"]).toBe("warning");
     expect(ring.textContent).toBe("93%");
+    // In the ring's 32 px, which the toolbar's layout measures.
+    expect(ring.className).toMatch(/\bsize-8\b/);
     expect(screen.getByTestId("usage-ring-bar").firstElementChild?.getAttribute("style")).toContain(
       "width: 93%",
     );
