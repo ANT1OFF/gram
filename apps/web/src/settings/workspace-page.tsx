@@ -43,6 +43,7 @@ import { AutonomyField } from "./autonomy-field";
 import { Field, inputCls, NumberField } from "./fields";
 import { MergeReviewPolicyField } from "./merge-review-policy-field";
 import { RouteAtLimitField } from "./route-at-limit-field";
+import { RoutinesField } from "./routines-field";
 import { IdleCompactField } from "./idle-compact-field";
 import { PauseAtLimitField } from "./pause-at-limit-field";
 import { RosterEditor } from "./roster-editor";
@@ -166,6 +167,19 @@ export function WorkspaceSettingsPage({
           onChange={(next, title) => void changes.saveCharter(next, title)}
         />
         <WorkerBriefFooterField
+          charter={changes.charter ?? state.charter}
+          disabled={changes.busy}
+          onChange={(next, title) => void changes.saveCharter(next, title)}
+        />
+      </SettingsGroup>
+      <SettingsGroup
+        label="Routines"
+        description="Briefs that start a fresh worker on a schedule, while Gram is running."
+        learnMore="A run Gram wasn't open for starts when it next is. A run is skipped while the workspace is paused or the last run's worker is still at work, and the orchestrator hears of each one."
+        keywords={["routine", "schedule", "recurring", "daily", "weekly", "cron"]}
+        testId="workspace-routines"
+      >
+        <RoutinesField
           charter={changes.charter ?? state.charter}
           disabled={changes.busy}
           onChange={(next, title) => void changes.saveCharter(next, title)}

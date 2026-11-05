@@ -90,6 +90,8 @@ changes into events that wake the thread that cares:
   pinned to the head it checked.
 - **Digests.** Worker reports, finished turns, errors, long-open requests and pull request changes
   wake the orchestrator with one digest built from the current ledger.
+- **Routines.** A workspace's [routines](#routines) start a fresh worker from a brief you approved,
+  every day, every weekday or once a week at a time you set.
 
 ### Condition wakes
 
@@ -150,6 +152,33 @@ To add a kind:
    met (with its facts), not met (with a new baseline, if any), or `undefined` when it couldn't
    tell. Give it a `pollEvery`, a `debounce`, and optionally a `changes` stream.
 3. List it in `WakeConditionSourcesLive`, and name it in `schedule_wake`'s description.
+
+### Routines
+
+A routine is a brief that starts a fresh worker on a schedule: a daily CI triage, a weekly
+dependency check, a stale-PR sweep. Each has a name of its own in the workspace, a brief of up to
+4,000 characters, a schedule (`every` `day`, `weekday` or `week`, `at` a 24-hour local time, and
+for `week` a `day` from 0 for Sunday to 6, Monday when absent), and optionally the `project` its
+worker works in (the home project by default) and its `model` (the roster's default by default).
+A workspace keeps at most eight.
+
+You set them up by asking the orchestrator, which proposes `workspace.routines` with
+`settings_propose`: the whole list, each brief in full on the card, which you approve at every
+autonomy level. Settings → Workspaces → a workspace → Routines lists them, turns one off without
+removing it, and removes one. The orchestrator's charter names them, and an open session is told
+when they change.
+
+Gram looks once a minute while it runs. A routine new or turned on again waits for its next time.
+When one is due, its worker starts as a worker you start from New does, its brief under a line
+naming the routine, and the orchestrator's next digest says which worker it started; the worker is
+the orchestrator's to follow from then on. A run that falls due while Gram is closed starts when
+Gram next looks, once, however many were missed. A due run is skipped, and the digest says why,
+while the workspace is paused, while no orchestrator holds it, or while the worker of the routine's
+last run is still at work (open, not completed and with no `done` report). The time a run started
+is stored before its worker starts, so a crash part-way never starts it twice.
+
+Source: [routine schedules](../packages/contracts/src/routines.ts),
+[scheduler](../packages/server/src/orchestration/service/routines.ts).
 
 ### Merge freezes
 

@@ -4,6 +4,7 @@
 import {
   autonomyOf,
   briefFooterOf,
+  routineScheduleText,
   serializeDigest,
   prioritizeDigestReports,
   DIGEST_REPORTS_MAX,
@@ -82,6 +83,18 @@ export const DELIVERY_RETRY_DELAYS: ReadonlyArray<Duration.Duration> = [
 ];
 /** Consecutive failed deliveries after which orchestration pauses instead of trying again. */
 export const DELIVERY_FAILURES_BEFORE_PAUSE = 3;
+/** The user's routines by name and time; their briefs reach the workers, not this charter. */
+const routineLines = (charter: OrchestratorCharter): ReadonlyArray<string> => {
+  const on = (charter.routines ?? []).filter((routine) => routine.off !== true);
+  return on.length === 0
+    ? []
+    : [
+        `routines the user set up, each starting a fresh worker of yours on its schedule (you hear of each run in a digest; change them only through settings_propose workspace.routines): ${on
+          .map((routine) => `"${routine.name}" ${routineScheduleText(routine.schedule)}`)
+          .join("; ")}`,
+      ];
+};
+
 const charterLines = (
   charter: OrchestratorCharter,
   mode: Thread["mode"],
@@ -100,6 +113,7 @@ const charterLines = (
   ),
   ...(charter.routeAtLimit === true ? [ROUTE_AT_LIMIT_LINE] : []),
   ...(briefFooterOf(charter) === undefined ? [] : [footerLine(briefFooterOf(charter)!)]),
+  ...routineLines(charter),
   charter.workerModels === undefined
     ? `workers start in ${mode} mode on your own model`
     : rosterText(

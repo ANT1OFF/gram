@@ -20,10 +20,12 @@ import { idleCompactOf, effectiveCheckout, type ServerEvent, type Thread } from 
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { withOwnedBranch } from "../git/worker-pr.ts";
 import { contextPct, workerErrorOf } from "./ledger.ts";
@@ -57,6 +59,7 @@ import { makeObservers } from "./service/observers.ts";
 import { makeBoot } from "./service/boot.ts";
 import { makeHeldSpawns } from "./service/held-spawns.ts";
 import { makeSpawning } from "./service/spawning.ts";
+import { makeRoutines } from "./service/routines.ts";
 export { DELIVERY_RETRY_DELAYS, DELIVERY_FAILURES_BEFORE_PAUSE } from "./service/digests.ts";
 export { RECOVERY_DELAYS, PAUSE_RESUME_KEY } from "./service/pauses.ts";
 export { MAX_WORKER_REPOS } from "./service/worker-repos.ts";
@@ -453,6 +456,8 @@ export const OrchestrationLive = Layer.effect(
 
     const { setCharter, changeCharter, checkCharter, afterCharter } = makeCharter(kit, { wake });
 
+    const { tickRoutines } = makeRoutines(kit, { wake, startWorker });
+
     const {
       noteForNextDigest,
       setStage,
@@ -730,7 +735,19 @@ export const OrchestrationLive = Layer.effect(
       Effect.forkScoped,
     );
 
+    // Routines look once a minute; a run is at most that late.
+    yield* tickRoutines.pipe(
+      Effect.repeat(Schedule.spaced(Duration.minutes(1))),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("routines stopped").pipe(
+          Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+        ),
+      ),
+      Effect.forkScoped,
+    );
+
     return Orchestration.of({
+      tickRoutines,
       listWorkspaces: store.listWorkspaces,
       saveWorkspace,
       commitWorkspace,

@@ -502,6 +502,16 @@ export const OutboxState = Schema.Struct({
   questions: Schema.optionalKey(Schema.Array(StoredWorkerQuestion)),
   /** The number of the last question id handed out (`WQ<n>`); absent before the first. */
   questionSeq: Schema.optionalKey(Schema.Int),
+  /**
+   * By routine name, lowercased: when it last ran or was first seen (epoch ms), and the worker its
+   * last run started. Absent before any routine.
+   */
+  routineRuns: Schema.optionalKey(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({ lastAt: Schema.Number, threadId: Schema.optionalKey(ThreadId) }),
+    ),
+  ),
 });
 export type OutboxState = typeof OutboxState.Type;
 

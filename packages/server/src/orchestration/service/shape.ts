@@ -495,6 +495,8 @@ export interface OrchestrationShape {
     E
   >;
 
+  /** One look at every workspace's routines, as the minute timer runs it; also for tests. */
+  readonly tickRoutines: Effect.Effect<void>;
   /** `undefined` unless the thread is its workspace's orchestrator right now. */
   authorityOf(threadId: ThreadId): Effect.Effect<Authority | undefined>;
   /**
@@ -580,6 +582,8 @@ export interface OrchestrationShape {
       readonly model?: ModelRef;
       /** "Start under my control": held as the user's from its first input. */
       readonly hold?: boolean;
+      /** What its feature and title are named from, in place of the input's text. */
+      readonly name?: string;
     },
   ): Effect.Effect<Thread, NotFound | InvalidState | ThreadNotFound>;
   /** Whether `add_worker_repo` needs a card: only for a project outside the workspace. Reads only. */

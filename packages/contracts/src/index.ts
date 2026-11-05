@@ -54,6 +54,7 @@ export * from "./orchestration.ts";
 export * from "./rules/worker-state.ts";
 export * from "./reaching-workers.ts";
 export * from "./workspaces.ts";
+export * from "./routines.ts";
 export * from "./pr-actions.ts";
 export * from "./pr-status.ts";
 export * from "./resume.ts";

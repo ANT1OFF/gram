@@ -2148,7 +2148,9 @@ describe("prompts", () => {
       expect(prompt).toContain("call `report` first, then `wrap_up` without `ask`");
       expect(prompt).toContain("a question for a decision goes to `ask_question`");
     }
-    expect(workerOn("codex")).toContain("`message_orchestrator`, `memory_list`, `memory_read`, `wrap_up`");
+    expect(workerOn("codex")).toContain(
+      "`message_orchestrator`, `memory_list`, `memory_read`, `wrap_up`",
+    );
   });
 
   it("names wrap_up to a plain Codex thread only, whose tool search hides it", () => {

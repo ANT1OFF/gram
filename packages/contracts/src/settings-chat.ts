@@ -43,6 +43,12 @@ import {
   type WorkerModel,
   type WorkspaceState,
 } from "./workspaces.ts";
+import {
+  ROUTINES_MAX,
+  routineScheduleText,
+  WorkspaceRoutines,
+  type WorkspaceRoutine,
+} from "./routines.ts";
 
 export const SETTINGS_READ_TOOL = "settings_read";
 export const SETTINGS_PROPOSE_TOOL = "settings_propose";
@@ -268,6 +274,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   ws("workspace.routeAtLimit", "Offer another model at a limit", (w) =>
     charterOf(w) === undefined ? undefined : charterOf(w)?.routeAtLimit === true,
   ),
+  ws("workspace.routines", "Routines", (w) => charterOf(w)?.routines, "none"),
   // Tier 2: the user's own app preferences.
   pref("appearance.mode", "Colour mode"),
   pref("appearance.paletteId", "Palette"),
@@ -453,12 +460,31 @@ const workerText = (model: WorkerModel): string =>
     model.useFor === undefined || model.useFor.trim() === "" ? "" : ` — ${model.useFor.trim()}`
   }`;
 
+const isRoutine = (value: unknown): value is WorkspaceRoutine =>
+  typeof value === "object" &&
+  value !== null &&
+  "schedule" in value &&
+  "brief" in value &&
+  "name" in value;
+
+/** A routine whole, brief included: the card is where the user approves what it will run. */
+const routineText = (routine: WorkspaceRoutine): string =>
+  [
+    `"${routine.name}", ${routineScheduleText(routine.schedule)}${routine.off === true ? " (off)" : ""}`,
+    ...(routine.project === undefined ? [] : [`in project ${routine.project}`]),
+    ...(routine.model === undefined ? [] : [`on ${modelText(routine.model)}`]),
+  ].join(", ") + `: ${routine.brief}`;
+
 const valueText = (entry: Entry, value: unknown): string => {
   if (value === undefined || value === null) return entry.unset ?? "not set";
   if (typeof value === "boolean") return value ? "on" : "off";
   if (typeof value === "string" || typeof value === "number") return String(value);
   if (isModelRef(value)) return modelText(value);
-  if (Array.isArray(value)) return value.map((each) => valueText(entry, each)).join(", ");
+  if (isRoutine(value)) return routineText(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return entry.unset ?? "none";
+    return value.map((each) => valueText(entry, each)).join(value.every(isRoutine) ? "\n\n" : ", ");
+  }
   return JSON.stringify(value);
 };
 
@@ -880,6 +906,33 @@ export const planSettingsChanges = (
           );
         } else if (decoded.success.trim() === "") delete into[field];
         else into[field] = decoded.success;
+        break;
+      }
+      case "workspace.routines": {
+        if (value === null || (Array.isArray(value) && value.length === 0)) {
+          delete into[field];
+          break;
+        }
+        const decoded = decodeWith(WorkspaceRoutines, value);
+        if (Result.isFailure(decoded)) {
+          errors.push(
+            `${key}: expected the whole list of at most ${ROUTINES_MAX} routines, each { name, brief, schedule: { every: "day" | "weekday" | "week", at: "HH:MM", day? }, project?, model?, off? } with a name of its own, or null for none. ${firstLine(decoded.failure.message)}`,
+          );
+          break;
+        }
+        const projects = world.workspace!.workspace.projectIds;
+        const outside = decoded.success.find(
+          (routine) => routine.project !== undefined && !projects.includes(routine.project),
+        );
+        if (outside !== undefined) {
+          errors.push(
+            `${key}: routine "${outside.name}" names project ${outside.project}, which isn't one of this workspace's.`,
+          );
+          break;
+        }
+        into[field] = decoded.success;
+        for (const routine of decoded.success)
+          if (routine.model !== undefined) models.push(routine.model);
         break;
       }
       case "workspace.routeAtLimit": {

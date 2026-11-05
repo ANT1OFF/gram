@@ -3,6 +3,7 @@
 import {
   autonomyOf,
   briefFooterOf,
+  routineScheduleText,
   InvalidState,
   connectorSetOf,
   type ConnectorSet,
@@ -37,9 +38,13 @@ import {
 import { type OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 
+/** The routines as compared for a change, whole. */
+const routinesKey = (charter: Pick<OrchestratorCharter, "routines">): string =>
+  JSON.stringify(charter.routines ?? []);
+
 /** What an open orchestrator session is told when the footer or routing changes under it. */
 const charterChangeNotes = (
-  before: Pick<OrchestratorCharter, "workerBriefFooter" | "routeAtLimit">,
+  before: Pick<OrchestratorCharter, "workerBriefFooter" | "routeAtLimit" | "routines">,
   after: OrchestratorCharter,
 ): ReadonlyArray<string> => {
   const notes: Array<string> = [];
@@ -56,6 +61,14 @@ const charterChangeNotes = (
       after.routeAtLimit === true
         ? `The user turned on your charter's ${ROUTE_AT_LIMIT_LINE}.`
         : "The user turned off offering another worker model at a limit: spawns stop at limits as before, with no alternatives.",
+    );
+  }
+  if (routinesKey(before) !== routinesKey(after)) {
+    const on = (after.routines ?? []).filter((routine) => routine.off !== true);
+    notes.push(
+      on.length === 0
+        ? "The user's routines changed: none runs now."
+        : `The user's routines changed. Now: ${on.map((routine) => `"${routine.name}" ${routineScheduleText(routine.schedule)}`).join("; ")}.`,
     );
   }
   return notes;
