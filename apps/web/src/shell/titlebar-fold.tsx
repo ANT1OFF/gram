@@ -65,13 +65,15 @@ const TIDY_HINT =
 /** An item's shortcut, right-aligned as the palette shows it. */
 function Keys({ id }: { id: string }) {
   const hint = useShortcutHint(id);
-  return hint ? <span className="ml-auto pl-4 text-xs text-muted-foreground">{hint}</span> : null;
+  return hint ? <span className="ml-auto pl-4 text-meta text-muted-foreground">{hint}</span> : null;
 }
 
 /** A submenu's current value, right-aligned before its chevron. */
 function Current({ children }: { children: ReactNode }) {
   return (
-    <span className="ml-auto max-w-32 truncate pl-4 text-xs text-muted-foreground">{children}</span>
+    <span className="ml-auto max-w-32 truncate pl-4 text-meta text-muted-foreground">
+      {children}
+    </span>
   );
 }
 
@@ -138,7 +140,7 @@ function ContentsSubmenu({ threadId }: { threadId: ThreadId }) {
       icon={<BookOpen aria-hidden />}
       current={outline.chapters.length === 0 ? undefined : outline.chapters.length}
     >
-      <div className="px-2 py-1 text-xs text-muted-foreground">Loaded prompts and chapters</div>
+      <div className="px-2 py-1 text-meta text-muted-foreground">Loaded prompts and chapters</div>
       {outline.earlier && outline.onLoadEarlier && (
         <Menu.Item
           className={MENU_ITEM}
@@ -212,7 +214,7 @@ export function TidyItem() {
       ) : (
         <span className="flex min-w-0 flex-col">
           Tidy up
-          <span className="text-xs text-muted-foreground">{tidy.blocked}</span>
+          <span className="text-meta text-muted-foreground">{tidy.blocked}</span>
         </span>
       )}
     </Menu.Item>
@@ -244,7 +246,7 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
   if (confirming && confirm !== undefined) {
     return (
       <div data-testid="folded-pause-confirm" className="flex max-w-72 flex-col gap-0.5">
-        <p className="px-2 py-1 text-xs text-muted-foreground">{confirm}</p>
+        <p className="px-2 py-1 text-meta text-muted-foreground">{confirm}</p>
         <Menu.Item
           data-testid="folded-pause-confirmed"
           disabled={busy}
@@ -283,7 +285,9 @@ function WorkersItem() {
     >
       <Users aria-hidden />
       Workers
-      {count > 0 && <span className="text-xs text-muted-foreground tabular-nums">{count} now</span>}
+      {count > 0 && (
+        <span className="text-meta text-muted-foreground tabular-nums">{count} now</span>
+      )}
       <Keys id="workers.open" />
     </Menu.Item>
   );

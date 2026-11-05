@@ -434,9 +434,6 @@
       "text-size text-sm": 4,
       "text-size text-xs": 4
     },
-    "apps/web/src/orchestration/workspace-pause-button.tsx": {
-      "text-size text-xs": 1
-    },
     "apps/web/src/orchestration/workspace-repos.tsx": {
       "text-size text-xs": 2
     },
@@ -817,12 +814,6 @@
       "shadow shadow-lg": 1,
       "text-size text-sm": 1
     },
-    "apps/web/src/shell/titlebar-fold.tsx": {
-      "shadow shadow-md": 1,
-      "text-size text-[11px]": 2,
-      "text-size text-sm": 1,
-      "text-size text-xs": 1
-    },
     "apps/web/src/shell/titlebar-popover.tsx": {
       "shadow shadow-md": 1
     },
@@ -1012,8 +1003,6 @@
       "text-size text-sm": 1
     },
     "apps/web/src/thread/thread-menu.tsx": {
-      "shadow shadow-md": 1,
-      "text-size text-sm": 1,
       "text-size text-xs": 2
     },
     "apps/web/src/thread/thread-ref-link.tsx": {
@@ -1143,7 +1132,7 @@
     "apps/web/src/welcome/welcome.tsx": {
       "text-size text-base": 1,
       "text-size text-sm": 2,
-      "text-size text-xs": 9
+      "text-size text-xs": 8
     },
     "apps/web/src/whats-new/release-notes.tsx": {
       "text-size text-[0.85em]": 1
