@@ -1201,7 +1201,7 @@ function PaletteBody({
           )}
           {sections.map((section) => (
             <div key={section.id} role="group" aria-label={section.label} className="mb-1">
-              <div className="px-2 py-1 text-meta font-medium text-muted-foreground">
+              <div className="px-2 pt-1 text-meta font-medium text-muted-foreground">
                 {section.label}
               </div>
               {section.id === "filtered" && section.items.length === 0 && (
