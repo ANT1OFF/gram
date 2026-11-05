@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { create } from "zustand";
 
 import type { Api } from "@/api/types";
+import { EXPLAIN } from "@/lib/explain";
 import { renderWithApi } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -86,7 +87,8 @@ it("pauses in one click when nothing is mid-flight", async () => {
     async () => workspace(true) as never,
   );
   renderWithApi(<OpenMenu />, { setOrchestratorPaused, listWorkspaces: async () => [] });
-  expect(item().textContent).toBe("Pause workspace");
+  // What stops, and that only a resume wakes it.
+  expect(item().textContent).toBe(`Pause workspace${EXPLAIN.pause}`);
   await act(async () => {
     fireEvent.click(item());
   });
@@ -101,7 +103,7 @@ it("asks first while a worker or the orchestrator is mid-turn, in the menu", asy
     async () => workspace(true) as never,
   );
   renderWithApi(<OpenMenu />, { setOrchestratorPaused, listWorkspaces: async () => [] });
-  expect(item().textContent).toBe("Pause workspace…");
+  expect(item().textContent).toBe(`Pause workspace…${EXPLAIN.pause}`);
   await act(async () => {
     fireEvent.click(item());
   });

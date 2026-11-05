@@ -11,5 +11,7 @@ declare global {
     gramMock?: Api & MockControls;
     /** Set by an e2e spec before the app loads: scripted gates wait for `gramMock.release`. */
     gramMockHoldGates?: boolean;
+    /** With `gramMockHoldGates`: a fresh worker stays starting until `worker-start` is released. */
+    gramMockHoldWorkerStart?: boolean;
   }
 }

@@ -390,7 +390,7 @@ for (const selected of [false, true]) {
     const flow = dreams.getByTestId("dream-start");
     if (selected) {
       await expect(
-        flow.getByRole("radio", { name: "Your default: Claude Code · opus", exact: true }),
+        flow.getByRole("radio", { name: "Your default: Claude Code · Claude Opus", exact: true }),
       ).toBeChecked();
       await expect(flow.getByTestId("harness-preflight-reason")).toContainText(
         "Unverified: This fixture has no qualified Dream observation.",
@@ -1126,7 +1126,7 @@ test("a conflict's two sides are merged by a model, reviewed, and adopted as the
   await diff.getByTestId("dream-merge-both").check();
   const status = diff.getByTestId("dream-merge-status");
   await expect(status).toHaveAttribute("data-status", "running");
-  await expect(status).toContainText("Merging on Claude Code · opus");
+  await expect(status).toContainText("Merging on Claude Code · Claude Opus");
   await expect(review.getByTestId("dream-adopt")).toBeDisabled();
   await expect(review.getByTestId("dream-adopt-reason")).toHaveText(
     "Wait for the merge of decisions.md, or choose a side.",

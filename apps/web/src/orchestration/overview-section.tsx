@@ -28,12 +28,15 @@ export function Section({
   title,
   count,
   action,
+  hint,
   children,
 }: {
   id: OverviewSection;
   title: string;
   count: number;
   action?: ReactNode;
+  /** What the section's name means, on its hover and to a screen reader. */
+  hint?: string;
   children: ReactNode;
 }) {
   const folded = useLayoutStore((s) => overviewSectionFolded(s, id));
@@ -49,7 +52,8 @@ export function Section({
             aria-expanded={!folded}
             aria-controls={body}
             aria-label={`${title}, ${count}`}
-            title={`${title}, ${count}`}
+            aria-description={hint}
+            title={hint === undefined ? `${title}, ${count}` : `${title}, ${count}\n${hint}`}
             onClick={() => toggle(id)}
             className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-caption font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >

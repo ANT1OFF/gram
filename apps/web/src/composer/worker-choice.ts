@@ -10,9 +10,12 @@ export const workerChoiceKey = (model: ModelRef): string =>
     model.speed ?? "standard",
   ]);
 
-/** A choice's name in the picker: the model, and its effort when the entry sets one. */
-export const workerChoiceLabel = (model: ModelRef): string =>
-  model.variant === undefined ? model.model : `${model.model} · ${model.variant}`;
+/**
+ * A choice's name in the picker: the model, by `name` (its display name, as the composer shows it)
+ * or else its id, and its effort when the entry sets one.
+ */
+export const workerChoiceLabel = (model: ModelRef, name: string = model.model): string =>
+  model.variant === undefined ? name : `${name} · ${model.variant}`;
 
 /**
  * The choice a draft shows: the one picked, or remembered for the target, while it can still run

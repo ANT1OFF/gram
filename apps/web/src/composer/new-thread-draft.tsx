@@ -29,7 +29,7 @@ import { folderProblem } from "@/new-thread/fs-errors";
 import { ProjectPicker } from "@/new-thread/project-picker";
 import { useFolderStatus, useIsGitRepo } from "@/new-thread/use-folder";
 import { FolderPicker } from "@/new-thread/where-chips";
-import { NewFormHeader, WHO_ENTRY, type Who } from "@/new-thread/who-does-it";
+import { NewFormHeader, WHO_ENTRY, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import type { TaskTarget } from "@/orchestration/task-model";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
@@ -367,12 +367,14 @@ function ConfiguredNewThreadDraft() {
             onWho={pickWho}
             disabled={attachments.uploading}
             where={
-              <FolderPicker
-                folder={projectRoot}
-                projects={recents}
-                onPickFolder={setTypedRoot}
-                onBrowse={browse}
-              />
+              <WhereStop label="Folder">
+                <FolderPicker
+                  folder={projectRoot}
+                  projects={recents}
+                  onPickFolder={setTypedRoot}
+                  onBrowse={browse}
+                />
+              </WhereStop>
             }
             line="You and one agent in one folder: no workspace, and no orchestrator turn to pay for."
           />

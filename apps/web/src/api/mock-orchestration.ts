@@ -1,5 +1,6 @@
 import {
   connectorEntryProblem,
+  derivedTitle,
   autonomyOf,
   availableWorkspaceName,
   newWorkspaceCharter,
@@ -1440,7 +1441,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
       for (let n = 2; taken.has(feature); n++) feature = `${base}-${n}`;
       const created = await host.createThread({
         projectRoot: project(projectId).root,
-        title: line.trim().slice(0, 60) || "New thread",
+        title: derivedTitle(line),
         mode: orchestrationMode(await host.settings()),
         branch: `feat/${feature}`,
       });

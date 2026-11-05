@@ -20,8 +20,8 @@ const SHORTCUT: Readonly<Record<Exclude<NewEntry, "workspace">, string>> = {
 
 /**
  * The overview header's `+`: the one New form, on Who does it as it was last left (the
- * agent team, one worker or a single agent chat). Where it goes, a new workspace included, is the form's own
- * "in" chip.
+ * agent team, one worker or a single agent chat). Where it goes, a new workspace included, is the
+ * form's own Where it runs row. An icon, with its name and shortcut on hover.
  */
 export function NewEntryMenu() {
   const navigate = useNavigate();
@@ -34,7 +34,7 @@ export function NewEntryMenu() {
       aria-label="New"
       data-testid="new-entry"
       data-entry={entry}
-      title={withHint("New task, worker or thread", hint)}
+      title={withHint("New: agent team, one worker or single agent chat", hint)}
       className="ml-auto text-muted-foreground [-webkit-app-region:no-drag]"
       onClick={() => {
         if (entry === "oneOff") prefillOneOff(focusedThreadId());

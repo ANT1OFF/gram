@@ -61,17 +61,27 @@ afterEach(() => {
 });
 
 describe("first run", () => {
-  it("is one screen: how Gram works, the agents, and a repository to pick", async () => {
+  it("is one screen: a repository to pick, the agents beside Open, and how Gram works folded", async () => {
     const { api, render, updateSettings } = load(withOnboarding({}));
     for (const profile of await api.listProfiles()) await api.removeProfile(profile.id);
     render();
 
     const welcome = within(await screen.findByTestId("welcome"));
-    expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeTruthy();
+    // It leads with the repository: the screen's heading is the pick.
+    const heading = welcome.getByRole("heading", { name: "Pick a repository to start" });
+    expect(screen.getByTestId("welcome").querySelector("h2")).toBe(heading);
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalled());
     await vi.mocked(api.launchChecks).mock.results[0]!.value;
     expect(await welcome.findByRole("radio", { name: /^api/ })).toBeTruthy();
-    expect(welcome.getByRole("heading", { name: "How Gram works" })).toBeTruthy();
+    // The agents' readiness sits right before the actions it gates.
+    const strip = welcome.getByTestId("welcome-agents");
+    expect(strip.nextElementSibling?.contains(welcome.getByTestId("welcome-open"))).toBe(true);
+    // How Gram works is folded under How it works until asked for.
+    const how = welcome.getByRole("button", { name: "How it works" });
+    expect(how.getAttribute("aria-expanded")).toBe("false");
+    expect(welcome.queryByRole("list", { name: "How Gram works" })).toBeNull();
+    fireEvent.click(how);
+    expect(how.getAttribute("aria-expanded")).toBe("true");
     expect(
       within(welcome.getByRole("list", { name: "How Gram works" }))
         .getAllByRole("listitem")

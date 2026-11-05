@@ -33,7 +33,7 @@ test("shows a shared-child restart wait while another thread remains usable", as
   const waiting = page.getByRole("status").filter({ hasText: detail });
   await expect(waiting).toHaveText(detail);
   await expect(waiting).toHaveAttribute("aria-live", "polite");
-  await expect(threadRow(page, "t-release")).toHaveAccessibleName("Release checklist, Starting");
+  await expect(threadRow(page, "t-release")).toHaveAccessibleName("Release checklist, Starting…");
   await page.screenshot({ path: testInfo.outputPath("starting-wait-detail.png") });
   await threadRow(page, "t-flaky").click();
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();

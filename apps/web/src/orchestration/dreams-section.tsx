@@ -26,6 +26,8 @@ import { AgentFields, choiceModel, type AgentChoice } from "@/composer/agent-fie
 import { choiceFromModel } from "@/composer/default-choice";
 import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
+import { useModelNames } from "@/composer/models";
+import { EXPLAIN } from "@/lib/explain";
 import { agoText } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -124,6 +126,7 @@ function StartFlow({
   const [projectIds, setProjectIds] = useState<readonly ProjectId[]>(state.workspace.projectIds);
   const [ownModel, setOwnModel] = useState(false);
   const defaultModel = useServerSettings((s) => s.settings?.agents.defaultModel);
+  const nameOf = useModelNames([defaultModel]);
   const [choice, setChoice] = useState<AgentChoice>(() => choiceFromModel(defaultModel));
   const selectedModel = ownModel
     ? choice.model === ""
@@ -446,7 +449,7 @@ function StartFlow({
           />
           {defaultModel === undefined
             ? "No default model configured; choose one below"
-            : `Your default: ${agentLabel(defaultModel.agent)} · ${defaultModel.model}`}
+            : `Your default: ${agentLabel(defaultModel.agent)} · ${nameOf(defaultModel)}`}
         </label>
         <label className="flex items-center gap-2">
           <input
@@ -551,7 +554,8 @@ function MergeStatus({
   error: string | undefined;
   onMerge: () => void;
 }) {
-  const on = merge === undefined ? "" : `${agentLabel(merge.model.agent)} · ${merge.model.model}`;
+  const nameOf = useModelNames([merge?.model]);
+  const on = merge === undefined ? "" : `${agentLabel(merge.model.agent)} · ${nameOf(merge.model)}`;
   if (error !== undefined || merge?.status === "failed") {
     return (
       <p
@@ -1081,6 +1085,7 @@ function DreamRow({
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
+  const nameOf = useModelNames([dream.model]);
   const [discarding, setDiscarding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -1115,7 +1120,7 @@ function DreamRow({
           {dream.mode === "auto" ? "Saved if it checks out" : "You review it"}
         </span>
         <span className="text-muted-foreground">
-          {agentLabel(dream.model.agent)} · {dream.model.model}
+          {agentLabel(dream.model.agent)} · {nameOf(dream.model)}
         </span>
         {showCost && dream.usage?.costUsd !== undefined && (
           <span data-testid="dream-cost" className="text-muted-foreground tabular-nums">
@@ -1300,8 +1305,7 @@ export function DreamsSection({
     <section ref={ref} aria-label="Dreams" data-testid="dreams" className={SECTION}>
       <h2 className="sr-only">Draft memory update</h2>
       <p className="text-meta text-muted-foreground">
-        Dreams: Gram rereads finished threads and drafts an update to this workspace&rsquo;s memory,
-        with a source for each change. One runs at a time.
+        Dreams: {EXPLAIN.dreams} One runs at a time.
       </p>
       <div data-testid="dream-actions" className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="flex flex-wrap gap-2">

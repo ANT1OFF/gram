@@ -182,6 +182,7 @@ describe("the now line", () => {
     const live = facts(
       {
         run: summary("run", "running"),
+        opening: summary("opening", "starting"),
         push: summary("push", "needsApproval", {}, [push]),
         merged: summary("merged", "idle", { completedAt: NOW - 3 * HOUR }),
       },
@@ -189,6 +190,8 @@ describe("the now line", () => {
     );
     const cases: [WorkerLedgerEntry, string][] = [
       [worker("run", "f", "working"), "running tests"],
+      // Its session is still opening: neither working nor idle yet.
+      [worker("opening", "f", "briefed"), "starting…"],
       [worker("push", "f", "working"), "wants to push"],
       [worker("merged", "f", "merged"), "merged 11:40"],
       [

@@ -9,6 +9,7 @@ import * as Option from "effect/Option";
 import * as Clock from "effect/Clock";
 import type * as Semaphore from "effect/Semaphore";
 import {
+  derivedTitle,
   type ThreadId,
   InvalidState,
   type AgentUnavailable,
@@ -227,11 +228,10 @@ export const makeThreadLifecycle = ({
         name: basename(input.projectRoot) || input.projectRoot,
       });
       const now = yield* Clock.currentTimeMillis;
-      const firstLine = input.input?.text.split("\n")[0]?.trim().slice(0, 60);
       const thread: Thread = {
         id: input.id ?? makeThreadId(),
         projectId: project.id,
-        title: input.title ?? (firstLine || "New thread"),
+        title: input.title ?? derivedTitle(input.input?.text),
         userNamed: input.title !== undefined,
         model,
         mode: input.mode ?? settings.agents.defaultMode,

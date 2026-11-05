@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { create } from "zustand";
 
 import type { Api } from "@/api/types";
+import { EXPLAIN } from "@/lib/explain";
 import { TIDY_UP_MESSAGE } from "@/orchestration/board-model";
 import { TIDY_SENT_MS } from "@/orchestration/use-board-actions";
 import { renderWithApi } from "@/panels/test-utils";
@@ -80,7 +81,8 @@ it("sends the board's tidy-up message, says so, rests across a reopen, then come
   const applyEvent = vi.spyOn(useThreadsStore.getState(), "applyEvent");
   const send = vi.fn<Api["send"]>(async () => ({ queued: true }) as never);
   renderWithApi(<Bar state={workspace(ORCH)} />, { send });
-  expect(item().textContent).toBe("Tidy up");
+  // Its name, and under it what it asks the orchestrator to do.
+  expect(item().textContent).toBe(`Tidy up${EXPLAIN.tidyUp}`);
   expect(item().getAttribute("aria-disabled")).not.toBe("true");
 
   await act(async () => {

@@ -54,6 +54,7 @@ import type {
   TurnUndoData,
 } from "@gram/contracts";
 import {
+  derivedTitle,
   effectiveCheckout,
   mcpTargetOf,
   normalizeThreadPrs,
@@ -217,6 +218,7 @@ import {
   questionAnswered,
   seedMessages,
   seedSummaries,
+  sessionStart,
   type Script,
   type Step,
 } from "./mock-scripts";
@@ -796,6 +798,9 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
 
   async #turn(threadId: ThreadId, input: UserInput) {
     const runtime = this.#runtime(threadId);
+    // No session yet and nothing said: this turn opens the session first.
+    const fresh =
+      runtime.summary.identity === undefined && runtime.fold.store.getState().messages.length === 0;
     this.#ensureIdentity(runtime);
     // As the server's `withWaitNote`: the user's own message tells a plain thread or a worker.
     const waitNote =
@@ -844,7 +849,10 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
       input.notice === undefined
         ? orchestratorScript
         : echoScript);
-    await this.#continue(threadId, script(input, this.#ids));
+    // A worker's first turn waits for its session to open, as a real one's does.
+    const opening = fresh && runtime.summary.thread.spawnedBy !== undefined;
+    const steps = script(input, this.#ids);
+    await this.#continue(threadId, opening ? [...sessionStart(), ...steps] : steps);
   }
 
   /** Like the server's: the turn's reply says how it ended, in a whole-message write. */
@@ -1072,7 +1080,7 @@ export class MockCore implements Pick<Api, "kind" | "connection">, ThreadsApi {
     const thread: Thread = {
       id: `t-${this.#ids()}` as ThreadId,
       projectId: project.id,
-      title: input.title ?? (input.input?.text.slice(0, 48) || "New thread"),
+      title: input.title ?? derivedTitle(input.input?.text),
       userNamed: input.title !== undefined,
       model,
       mode: input.mode ?? "default",

@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
+import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
 import { useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
@@ -59,8 +60,25 @@ const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />
 /** How soon after the menu closes a focus on its trigger is the one it handed back. */
 const FOCUS_RETURN_MS = 500;
 
-const TIDY_HINT =
-  "Ask the orchestrator to archive what's done, fix groups, stages and plans, close settled questions and refresh its memory";
+/**
+ * A menu item's words and, under them, one line on what it does: for Gram's own words, whose
+ * meaning a name alone doesn't carry (`EXPLAIN`).
+ */
+function Described({ label, line }: { label: ReactNode; line: string }) {
+  return (
+    <span className="flex max-w-64 min-w-0 flex-col">
+      {label}
+      {/* Its item's description, not part of its name: the item carries it as aria-description. */}
+      <span
+        aria-hidden
+        data-testid="menu-item-line"
+        className="text-meta whitespace-normal text-muted-foreground"
+      >
+        {line}
+      </span>
+    </span>
+  );
+}
 
 /** An item's shortcut, right-aligned as the palette shows it. */
 function Keys({ id }: { id: string }) {
@@ -199,15 +217,17 @@ export function TidyItem() {
       data-testid="folded-tidy"
       data-sent={tidy.sent}
       disabled={tidy.blocked !== undefined || tidy.resting}
-      title={TIDY_HINT}
-      className={MENU_ITEM}
+      aria-description={
+        tidy.blocked === undefined && tidy.sent === undefined ? EXPLAIN.tidyUp : undefined
+      }
+      className={cn(MENU_ITEM, "items-start")}
       onClick={() => void tidy.send()}
     >
-      <BroomSparkles aria-hidden />
+      <BroomSparkles aria-hidden className="mt-0.5" />
       {/* A disabled item shows no tooltip, so it says why it is off. */}
       {tidy.blocked === undefined ? (
         tidy.sent === undefined ? (
-          "Tidy up"
+          <Described label="Tidy up" line={EXPLAIN.tidyUp} />
         ) : (
           "Asked to tidy up"
         )
@@ -234,11 +254,12 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
         data-testid="folded-pause"
         data-paused=""
         disabled={busy}
-        className={MENU_ITEM}
+        aria-description={EXPLAIN.resume}
+        className={cn(MENU_ITEM, "items-start")}
         onClick={() => run(false)}
       >
-        <CirclePlay aria-hidden />
-        Resume workspace
+        <CirclePlay aria-hidden className="mt-0.5" />
+        <Described label="Resume workspace" line={EXPLAIN.resume} />
         <Current>since {pauseClock(state.paused.at)}</Current>
       </Menu.Item>
     );
@@ -264,12 +285,15 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
       data-testid="folded-pause"
       disabled={busy}
       closeOnClick={confirm === undefined}
-      title="The orchestrator and its workers finish the step they're on and stop, and nothing wakes them until you resume"
-      className={MENU_ITEM}
+      aria-description={EXPLAIN.pause}
+      className={cn(MENU_ITEM, "items-start")}
       onClick={() => (confirm === undefined ? run(true) : setConfirming(true))}
     >
-      <CirclePause aria-hidden />
-      {confirm === undefined ? "Pause workspace" : "Pause workspace…"}
+      <CirclePause aria-hidden className="mt-0.5" />
+      <Described
+        label={confirm === undefined ? "Pause workspace" : "Pause workspace…"}
+        line={EXPLAIN.pause}
+      />
     </Menu.Item>
   );
 }

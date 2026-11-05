@@ -56,6 +56,25 @@ const background = (...tasks: Array<Omit<BackgroundTask, "startedAt">>): Step =>
 const status = (s: ThreadStatus, detail?: string): Step =>
   detail === undefined ? { kind: "status", status: s } : { kind: "status", status: s, detail };
 
+/** How long a fresh worker's session takes to start, before its first turn runs. */
+export const WORKER_STARTUP_MS = 4_000;
+
+/** The gate a fresh worker's session start holds at, for a page that set `gramMockHoldWorkerStart`. */
+export const WORKER_START_GATE = "worker-start";
+
+/**
+ * A cold worker's session opening before its first turn, as the server's `starting` status: the
+ * worktree is there, the agent isn't running yet. A page that asked to (`gramMockHoldWorkerStart`,
+ * with `gramMockHoldGates`) keeps it there until it releases `WORKER_START_GATE`.
+ */
+export const sessionStart = (): Step[] => [
+  status("starting"),
+  ...(typeof window !== "undefined" && window.gramMockHoldWorkerStart === true
+    ? [gate(WORKER_START_GATE)]
+    : []),
+  wait(WORKER_STARTUP_MS),
+];
+
 export const start = (messageId: string, metadata: MessageMetadata = {}): Step[] => [
   chunk(messageId, {
     type: "start",

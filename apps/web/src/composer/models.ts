@@ -3,10 +3,11 @@ import {
   GATEWAY_UNLISTED_WARNING,
   type AgentKind,
   type AgentModel,
+  type ModelRef,
   type ProfileId,
   type ReasoningVariant,
 } from "@gram/contracts";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import { agentLabel } from "@/agents/agent-label";
@@ -57,6 +58,53 @@ export function useModelsSettled(
   const { data, isPending, isError, isFetched } = useModelsQuery(agent, profileId, enabled);
   // Retrying an initial error becomes pending again, but must not unmount the retrying chooser.
   return { models: isError ? undefined : data?.models, settled: !isPending || isFetched };
+}
+
+/**
+ * A model's name as the composer's picker shows it: the agent's own display name for the id, else
+ * the built-in Claude name, else the id itself ("opus" reads "Claude Opus" wherever it is named).
+ */
+export const modelDisplayName = (
+  models: readonly AgentModel[] | undefined,
+  agent: AgentKind,
+  id: string,
+): string =>
+  models?.find((m) => m.id === id)?.displayName ??
+  (agent === "claude" ? DEFAULT_MODEL_OPTIONS.find((o) => o.value === id)?.label : undefined) ??
+  id;
+
+/**
+ * `modelDisplayName` for every model in `refs`, from the same `models.list` answers the composer's
+ * picker reads (one per agent and gateway profile), so a form names a model as the composer does.
+ */
+export function useModelNames(refs: readonly (ModelRef | undefined)[]): (ref: ModelRef) => string {
+  const api = useApi();
+  const keys = [
+    ...new Map(
+      refs.flatMap((ref) =>
+        ref === undefined ? [] : [[`${ref.agent}:${ref.profileId ?? ""}`, ref] as const],
+      ),
+    ).values(),
+  ];
+  const results = useQueries({
+    queries: keys.map((ref) => ({
+      queryKey: ["models", ref.agent, ref.profileId ?? null],
+      queryFn: () =>
+        ref.profileId === undefined
+          ? api.listModels(ref.agent)
+          : api.listModels(ref.agent, ref.profileId),
+      retry: false,
+      retryOnMount: false,
+      staleTime: 5 * 60_000,
+    })),
+  });
+  return (ref) => {
+    const index = keys.findIndex(
+      (each) => each.agent === ref.agent && (each.profileId ?? "") === (ref.profileId ?? ""),
+    );
+    const models = index === -1 ? undefined : results[index]?.data?.models;
+    return modelDisplayName(models, ref.agent, ref.model);
+  };
 }
 
 /**

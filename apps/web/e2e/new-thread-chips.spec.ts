@@ -98,6 +98,11 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(page.getByTestId("task-way-note")).toContainText("One worker starts now");
   await expect(page.getByTestId("task-way-note")).toContainText("The orchestrator directs it");
+  // Where it runs is named before submit: the workspace, the repository and a new worktree.
+  const where = page.getByRole("group", { name: "Where it runs" });
+  await expect(where.getByTestId("task-target")).toHaveText("api");
+  await expect(where.getByTestId("task-repo")).toHaveText("api");
+  await expect(where.getByTestId("task-checkout")).toHaveText("New worktree, new branch");
   // The workspace's autonomy, in words, with what it allows and a way to change it.
   const autonomy = page.getByTestId("workspace-autonomy");
   await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
@@ -125,9 +130,15 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   // Started from here, the worker is the orchestrator's and running, not held as yours.
   const hold = page.getByRole("switch", { name: "Start under my control" });
   await expect(hold).not.toBeChecked();
-  await page.getByLabel("What needs doing").fill("Fix the retry test on Windows");
+  await page.getByLabel("What needs doing").fill("Fix the retry test on Windows. It times out.");
   await page.getByRole("button", { name: /Start worker/ }).click();
+  // Titled from the first sentence, without its full stop.
   await expect(page.getByTestId("pane-header")).toContainText("Fix the retry test on Windows");
+  await expect(page.getByTestId("pane-header")).not.toContainText("It times out");
+  // Until its session opens it says it is starting, not Idle.
+  await expect(
+    page.getByTestId("overview-sidebar").getByTestId("overview-worker-starting"),
+  ).toHaveText("Starting…");
   await expect(page.getByTestId("worker-crumbs")).toBeVisible();
   await expect(page.getByTestId("message-user").first()).toContainText(
     "Fix the retry test on Windows",

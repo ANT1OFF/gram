@@ -16,6 +16,7 @@ import {
   effortsUnlisted,
   gatewayModelWarning,
   matchesModel,
+  modelDisplayName,
   modelGroups,
   modelOptions,
   NOT_LISTED_BY_ACCOUNT,
@@ -246,5 +247,18 @@ describe("model favourites", () => {
     expect(useModelFavourites.getState().keys).toEqual(["claude:opus", "codex:opus"]);
     toggle("claude", "opus");
     expect(useModelFavourites.getState().keys).toEqual(["codex:opus"]);
+  });
+});
+
+describe("modelDisplayName", () => {
+  it("names a model as the composer's picker does, not by its id", () => {
+    const listed: AgentModel[] = [
+      { id: "synthetic-large", displayName: "Synthetic Large", supportsEffort: false },
+    ];
+    expect(modelDisplayName(listed, "claude", "synthetic-large")).toBe("Synthetic Large");
+    // Before the agent lists its models, Claude's built-in names stand in.
+    expect(modelDisplayName(undefined, "claude", "opus")).toBe("Claude Opus");
+    // An id nothing names stays as it is.
+    expect(modelDisplayName(listed, "codex", "synthetic-codex")).toBe("synthetic-codex");
   });
 });
