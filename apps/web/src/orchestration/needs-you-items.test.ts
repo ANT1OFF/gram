@@ -307,23 +307,24 @@ describe("needsYouSections", () => {
   });
 });
 
-describe("newestAsk and kindsText", () => {
-  const at = (key: string, kind: NeedsYouItem["kind"], when?: number): NeedsYouItem => ({
-    key,
-    ids: [key],
-    kind,
-    title: key,
-    where: "Worker",
-    threadId: undefined,
-    owned: true,
-    at: when,
-  });
+/** A bare item of `kind`, asked at `when`. */
+const at = (key: string, kind: NeedsYouItem["kind"], when?: number): NeedsYouItem => ({
+  key,
+  ids: [key],
+  kind,
+  title: key,
+  where: "Worker",
+  threadId: undefined,
+  owned: true,
+  at: when,
+});
 
+describe("newestAsk and kindsText", () => {
   it("opens on the newest request, then other waits, then errors", () => {
     const error = at("e", "failure", 9);
-    const wait = at("w", "wait", 8);
+    const waiting = at("w", "wait", 8);
     expect(newestAsk([error, at("q", "question", 1), at("a", "approval", 4)])?.key).toBe("a");
-    expect(newestAsk([error, wait])?.key).toBe("w");
+    expect(newestAsk([error, waiting])?.key).toBe("w");
     expect(newestAsk([at("e1", "failure", 1), error])?.key).toBe("e");
     expect(newestAsk([])).toBeUndefined();
     // What keeps no time is oldest.
