@@ -109,34 +109,27 @@ test("the waiting chip unfolds Waiting on you: waits with Done, questions answer
     return seeded;
   });
   const chip = bar(page).getByTestId("rail-waiting-chip");
-  const waiting = board(page).getByTestId("rail-waiting");
-  await expect(chip).toHaveAttribute("aria-expanded", "false");
-  // The chip has no number: the workspace's badge counts it with the asks. `data-count` is its band's.
-  await expect(chip).toHaveAttribute("aria-label", "Waiting on you");
+  // Its count is the workspace's share of the Inbox, as its badge's.
   const before = Number(await chip.getAttribute("data-count"));
   expect(before).toBeGreaterThan(0);
-  await expect(foldAround(waiting)).toHaveCount(1);
+  await expect(chip).toHaveAccessibleName(`${before} waiting. Open Inbox`);
 
+  // It opens the Inbox: the orchestrator's own item, its open questions and each worker's there.
   await chip.click();
-  await expect(chip).toHaveAttribute("aria-expanded", "true");
-  await expect(foldAround(waiting)).toHaveCount(0);
-  // The orchestrator's own first, its open questions answered in place, then each worker's.
-  const groups = waiting.getByTestId("board-waiting-group");
-  await expect(groups.first()).toHaveAttribute("data-thread", made.orchestratorThreadId);
-  await expect(groups.first()).toContainText("Run assume example-prod");
-  await expect(waiting.getByTestId("memory-question").first()).toBeVisible();
-  const reviewing = waiting.locator(
-    `[data-testid="board-waiting-group"][data-thread="${made.inReview}"]`,
-  );
-  await expect(reviewing).toContainText("PR description");
-
+  const inbox = page.getByTestId("inbox");
+  await expect(inbox).toBeVisible();
+  const items = inbox.locator(`[data-testid="inbox-item"][data-workspace="${made.workspaceId}"]`);
+  await expect(items).toHaveCount(before);
+  await expect(items.filter({ hasText: "Run assume example-prod" })).toHaveCount(1);
+  await expect(items.and(page.locator('[data-kind="question"]')).first()).toBeVisible();
+  const reviewing = items.filter({ hasText: "PR description" });
+  await expect(reviewing).toHaveAttribute("data-thread-id", made.inReview);
   // Done on a worker's item takes it off, and the chip counts one fewer.
-  await reviewing.getByTestId("waiting-done").click();
+  await reviewing.click();
+  await page.getByTestId("inbox-detail").getByTestId("waiting-done").click();
   await expect(reviewing).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await expect(chip).toHaveAttribute("data-count", String(before - 1));
-
-  await chip.click();
-  await expect(chip).toHaveAttribute("aria-expanded", "false");
 });
 
 test("a line carries its stage as a chip, its sheet's steps set it, and Set stage… edits the plan there", async ({
@@ -312,18 +305,16 @@ test("the failure card lists a stopped worker and red CI above the lines, names 
     "Spending limit",
   );
   await expect(failure(made.stopped).getByTestId("board-failure-action")).toHaveText("View limit");
-  // Failures first: above the lines and the docked stack.
+  // Failures first: above the lines.
   const stripBox = await strip.boundingBox();
   const firstLine = await board(page).getByTestId("rail-row").first().boundingBox();
-  const stackBox = await board(page).getByTestId("ask-stack").boundingBox();
   expect(stripBox!.y + stripBox!.height).toBeLessThanOrEqual(firstLine!.y);
-  expect(stripBox!.y).toBeLessThan(stackBox!.y);
 
-  // Dismiss holds behind the stack's Undo; Undo brings it back.
+  // Dismiss holds behind Undo, at the Board's foot; Undo brings it back.
   await failure(made.failing).getByTestId("board-failure-dismiss").click();
   await expect(failure(made.failing)).toHaveCount(0);
-  await expect(board(page).getByTestId("ask-undo-line")).toContainText("Dismissed");
-  await board(page).getByTestId("ask-undo").click();
+  await expect(board(page).getByTestId("board-undo-undo")).toContainText("Dismissed");
+  await board(page).getByTestId("board-undo-undo-button").click();
   await expect(failure(made.failing)).toBeVisible();
 
   // Once it goes, it is kept in settings (`inbox.cleared`).
@@ -415,12 +406,10 @@ test("⌘⇧D, the orchestrator's header, the palette and Memory all open the Bo
   await chat();
   const questions = page.getByTestId("banner-questions");
   if ((await questions.count()) > 0) {
+    // Its decisions are in the Inbox, over the chat.
     await questions.click();
-    await onBoard();
-    await expect(bar(page).getByTestId("rail-waiting-chip")).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    await expect(page.getByTestId("inbox")).toBeVisible();
+    await page.keyboard.press("Escape");
     await chat();
   }
 

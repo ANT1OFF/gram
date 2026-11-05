@@ -297,7 +297,7 @@ test("the Usage page", async ({ page }) => {
   await page.evaluate(() => window.gramMock!.stopBusyThreads());
 });
 
-test("the needs-you popover", async ({ page }) => {
+test("the Inbox", async ({ page }) => {
   const cdp = await start(page);
   await page.evaluate(() => window.gramMock!.simulateFailures());
   await page.evaluate(() => window.gramMock!.seedBusyThreads({ streaming: 12, idle: 20 }));
@@ -306,10 +306,10 @@ test("the needs-you popover", async ({ page }) => {
   await expect(pill).toBeVisible();
   const opened = Date.now();
   await pill.click();
-  await expect(page.getByTestId("needs-you-popover")).toBeVisible();
+  await expect(page.getByTestId("inbox")).toBeVisible();
   await settle(page);
-  record("needs-you popover: open until painted", `${Date.now() - opened} ms`);
-  record("needs-you popover open, 12 streaming: hands off", await measure(page, cdp, WINDOW_MS));
+  record("Inbox: open until painted", `${Date.now() - opened} ms`);
+  record("Inbox open, 12 streaming: hands off", await measure(page, cdp, WINDOW_MS));
   await page.evaluate(() => window.gramMock!.stopBusyThreads());
 });
 

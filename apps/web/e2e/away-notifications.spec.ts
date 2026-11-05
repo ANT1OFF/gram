@@ -112,7 +112,7 @@ const noteWith = async (page: Page, body: string, title?: string) => {
   return (await recorded(page)).notes.findLast(match)!;
 };
 
-test("Allow on a notification answers the ask through the stack, and it is gone everywhere", async ({
+test("Allow on a notification answers the ask through the one path, and it is gone everywhere", async ({
   page,
 }) => {
   const made = await start(page, { helpers: { enabled: false } });
@@ -134,11 +134,12 @@ test("Allow on a notification answers the ask through the stack, and it is gone 
   // A pressed button closes its notification in the shell; the page sends no withdraw for it.
 
   await openOrchestrator(page, made.orchestratorThreadId);
-  const stack = page.getByTestId("ask-stack");
-  await expect(stack).toBeVisible();
-  // The stack's own undo line: the same held answer, not a second path.
-  await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
-  await expect(stack.getByTestId("ask-command").filter({ hasText: PUSH })).toHaveCount(0);
+  // The orchestrator's line keeps the Undo: the same held answer, not a second path.
+  await expect(page.getByTestId("inbox-line-undo")).toContainText("Allowed 3");
+  const listed = page.getByTestId("inbox-item").filter({ hasText: PUSH });
+  await page.getByTestId("inbox-button").click();
+  await expect(page.getByTestId("inbox")).toBeVisible();
+  await expect(listed).toHaveCount(0);
 
   await page.clock.runFor(SENT_MS);
   const after = await recorded(page);
@@ -149,7 +150,7 @@ test("Allow on a notification answers the ask through the stack, and it is gone 
   expect(answers).toHaveLength(3);
   for (const { answer } of answers)
     expect(answer).toEqual({ kind: "approval", decision: "allow", scope: "once" });
-  await expect(stack.getByTestId("ask-command").filter({ hasText: PUSH })).toHaveCount(0);
+  await expect(listed).toHaveCount(0);
 
   // A second press of the same notification finds nothing to answer and sends nothing.
   await act(page, { id: note.id!, action: 0 });
@@ -157,7 +158,7 @@ test("Allow on a notification answers the ask through the stack, and it is gone 
   expect((await recorded(page)).sent).toHaveLength(after.sent.length);
 });
 
-test("a command the banner would cut offers Open only, which shows it whole in the stack", async ({
+test("a command the banner would cut offers Open only, which shows it whole in the Inbox", async ({
   page,
 }) => {
   const made = await start(page, { helpers: { enabled: false } });
@@ -180,9 +181,8 @@ test("a command the banner would cut offers Open only, which shows it whole in t
 
   await act(page, { id: note.id!, action: "open" });
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  const current = page
-    .getByTestId("ask-stack")
-    .locator('li:not([inert]) [data-testid="ask-item"][data-current]');
+  await expect(page.getByTestId("inbox")).toBeVisible();
+  const current = page.getByTestId("inbox-detail").getByTestId("ask-item");
   await expect(current.getByTestId("ask-command")).toHaveText(LONG);
 });
 

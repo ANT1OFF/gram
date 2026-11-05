@@ -14,7 +14,8 @@ const history = (page: Page) => page.getByRole("region", { name: "Notification h
  * React reveals on a timer once their chunk arrives, so the paused clock steps until it shows.
  */
 const openHistory = async (page: Page) => {
-  await page.getByTestId("notifications-bell").click();
+  await page.getByTestId("inbox-button").click();
+  await page.getByTestId("inbox-notifications").click();
   await expect(async () => {
     await nextFrame(page);
     await expect(history(page)).toBeVisible({ timeout: 100 });
@@ -30,7 +31,7 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
   await page.clock.install();
   await page.goto("/");
   await page.clock.pauseAt(Date.now() + 1_000);
-  await expect(page.getByTestId("notifications-bell")).toBeVisible();
+  await expect(page.getByTestId("inbox-button")).toBeVisible();
   await expect(page.getByTestId("right-panel")).toBeHidden();
   await page.evaluate((key) => {
     for (const threadId of ["t-flaky", "synthetic-worker-2", "synthetic-worker-3"])
@@ -54,7 +55,7 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
   await expect(center).toContainText("Thread no longer available");
   await expect(center.getByRole("button", { name: "Fix flaky retry test" })).toBeVisible();
   await center.getByRole("button", { name: "Mark all read" }).click();
-  await expect(page.getByTestId("notifications-bell")).toHaveAccessibleName("Notifications");
+  await expect(history(page)).toContainText("All caught up");
   await page.reload();
   await openHistory(page);
   await expect(center).toContainText("Seen 3 times");
@@ -71,7 +72,7 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
   );
   await nextFrame(page);
   await expect(center).toContainText("Seen 4 times");
-  await expect(page.getByTestId("notifications-bell")).toHaveAccessibleName("Notifications");
+  await expect(history(page)).toContainText("All caught up");
   await expect(page.getByTestId("toast")).toHaveCount(0);
   await page.evaluate(() => {
     window.gramMock?.simulateNotification({
@@ -111,7 +112,7 @@ test("startup repeats quietly retain history, survive reload, and remain usable 
   await center.getByRole("button", { name: "Mark all read" }).focus();
   await page.keyboard.press("Escape");
   await expect(center).toBeHidden();
-  await expect(page.getByTestId("notifications-bell")).toBeFocused();
+  await expect(page.getByTestId("inbox-button")).toBeFocused();
   await openHistory(page);
   await center.getByRole("button", { name: "Clear history" }).click();
   await expect(center).toContainText("No notifications yet");

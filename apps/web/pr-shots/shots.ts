@@ -1207,7 +1207,8 @@ export const SHOTS: readonly Shot[] = [
       await page.goto("/t/t-deps");
       await page.getByLabel("Message", { exact: true }).waitFor();
       await page.getByTestId("overview-needs-you").click();
-      await page.getByTestId("needs-you-popover").waitFor();
+      // The popover on a base from before the Inbox, the Inbox after.
+      await page.locator('[data-testid="needs-you-popover"], [data-testid="inbox"]').waitFor();
       await page.waitForTimeout(600);
     },
   },
@@ -1673,8 +1674,16 @@ export const SHOTS: readonly Shot[] = [
     title: "The ask stack's scenario, all asks shown: a three-way push, options, a free-form reply",
     open: async (page) => {
       await openOrchestratorOf(page, () => window.gramMock!.simulateAsks());
-      // The free-form question with drafted replies as the current ask, which is when they're asked.
       const chip = page.getByTestId("ask-reply-chip").first();
+      // After the Inbox: its line opens it, and the free-form question shows its drafted replies.
+      if ((await page.getByTestId("inbox-line-open").count()) > 0) {
+        await page.getByTestId("inbox-line-open").click();
+        await page.getByTestId("inbox-item").filter({ hasText: "registry page" }).click();
+        await chip.waitFor();
+        await page.waitForTimeout(800);
+        return;
+      }
+      // The free-form question with drafted replies as the current ask, which is when they're asked.
       for (let step = 0; step < 6 && !(await chip.isVisible()); step++) {
         await page.getByTestId("ask-next").click();
         await page.waitForTimeout(300);
@@ -1686,23 +1695,31 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "needs-you",
-    title: "Needs you: the pill opens a popover of every workspace's items; before, the Board",
+    title: "Needs you: the pill opens every workspace's items (the Inbox; before, a popover)",
     open: async (page) => {
       await openNeedsYouSeeded(page);
       await page.getByTestId("overview-needs-you").click();
-      await page.locator('[data-testid="needs-you-popover"], [data-testid="view-board"]').waitFor();
+      await page
+        .locator(
+          '[data-testid="needs-you-popover"], [data-testid="view-board"], [data-testid="inbox"]',
+        )
+        .waitFor();
       // Past the arrivals' motion, so both runs capture a still frame.
       await page.waitForTimeout(800);
     },
   },
   {
     name: "needs-you-panel",
-    title: "Needs you: See all opens the whole list as the right panel beside the thread",
+    title: "Needs you: the whole list (the Inbox on an approval; before, the right panel)",
     open: async (page) => {
       await openNeedsYouSeeded(page);
       await page.getByTestId("overview-needs-you").click();
-      await page.getByTestId("needs-you-see-all").click();
-      await page.getByTestId("needs-you-panel").waitFor();
+      if ((await page.getByTestId("inbox").count()) > 0) {
+        await page.getByTestId("inbox-item").filter({ hasText: "gh pr merge 91 --squash" }).click();
+      } else {
+        await page.getByTestId("needs-you-see-all").click();
+        await page.getByTestId("needs-you-panel").waitFor();
+      }
       await page.mouse.move(0, 0);
       await page.waitForTimeout(800);
     },
@@ -1713,11 +1730,16 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await openNeedsYouSeeded(page);
       await page.getByTestId("overview-needs-you").click();
-      await page
-        .getByTestId("needs-you-item")
-        .filter({ hasText: "gh pr merge 91 --squash" })
-        .getByTestId("needs-you-open")
-        .click();
+      if ((await page.getByTestId("inbox").count()) > 0) {
+        await page.getByTestId("inbox-item").filter({ hasText: "gh pr merge 91 --squash" }).click();
+        await page.getByTestId("inbox-open-thread").click();
+      } else {
+        await page
+          .getByTestId("needs-you-item")
+          .filter({ hasText: "gh pr merge 91 --squash" })
+          .getByTestId("needs-you-open")
+          .click();
+      }
       await page.locator('[data-needs-you-flash="true"]').waitFor();
       await page.waitForTimeout(300);
     },
@@ -1743,13 +1765,14 @@ export const SHOTS: readonly Shot[] = [
         ),
       );
       await page.getByTestId("overview-needs-you").click();
-      await page.getByTestId("needs-you-popover").waitFor();
+      // The popover on a base from before the Inbox, the Inbox after.
+      await page.locator('[data-testid="needs-you-popover"], [data-testid="inbox"]').waitFor();
       await page.waitForTimeout(800);
     },
   },
   {
     name: "needs-you-empty",
-    title: "Needs you with nothing waiting: the popover says so",
+    title: "Needs you with nothing waiting: the Inbox (before, the popover) says so",
     open: async (page) => {
       await seedMockSettings(page, { appearance: { mode: "system" } });
       await page.setViewportSize({ width: 1440, height: 900 });
@@ -1760,7 +1783,8 @@ export const SHOTS: readonly Shot[] = [
         for (const id of ["t-question", "t-plan"]) await window.gramMock!.park(id as never, true);
       });
       await page.getByTestId("overview-needs-you").click();
-      await page.getByTestId("needs-you-popover").waitFor();
+      // The popover on a base from before the Inbox, the Inbox after.
+      await page.locator('[data-testid="needs-you-popover"], [data-testid="inbox"]').waitFor();
       await page.waitForTimeout(800);
     },
   },

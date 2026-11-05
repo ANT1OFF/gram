@@ -146,20 +146,16 @@ const start = async (page: Page, visuals: boolean, mode: "dark" | "light" = "dar
     },
   );
   await openOrchestratorTile(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("ask-stack")).toBeVisible();
+  await expect(page.getByTestId("inbox-line")).toBeVisible();
   return made;
 };
 
-const currentAsk = (page: Page) =>
-  page.getByTestId("ask-stack").locator('li:not([inert]) [data-testid="ask-item"][data-current]');
+const currentAsk = (page: Page) => page.getByTestId("inbox-detail").getByTestId("ask-item");
 
-/** Steps the stack to the question that picks a direction. */
+/** Opens the Inbox on the question that picks a direction. */
 const toQuestion = async (page: Page) => {
-  const stack = page.getByTestId("ask-stack");
-  for (let tries = 0; tries < 8; tries++) {
-    if ((await currentAsk(page).getByTestId("ask-title").textContent())?.includes(QUESTION)) break;
-    await stack.getByTestId("ask-next").click();
-  }
+  await page.getByTestId("inbox-line-open").click();
+  await page.getByTestId("inbox-item").filter({ hasText: QUESTION }).click();
   await expect(currentAsk(page).getByTestId("ask-title")).toHaveText(QUESTION);
   return currentAsk(page);
 };
@@ -310,6 +306,7 @@ test("the question and the card fit a narrow window", async ({ page }) => {
       selector,
     );
   expect(await noSideScroll('[data-testid="option-gallery"]')).toBe(true);
+  await page.keyboard.press("Escape");
   await showMock(page, made.orchestratorThreadId, made.folder);
   await expect(page.getByTestId("mock-card")).toBeVisible();
   expect(await noSideScroll('[data-testid="mock-card"]')).toBe(true);
@@ -322,7 +319,7 @@ for (const mode of ["dark", "light"] as const) {
       motion: "off",
       palette: mode === "light" ? "catppuccin-latte" : "catppuccin-mocha",
     });
-    // Tall enough for the stack and the whole card at once.
+    // Tall enough for the whole card at once.
     await page.setViewportSize({ width: 1200, height: 1500 });
     const made = await start(page, true, mode);
     await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
@@ -330,12 +327,13 @@ for (const mode of ["dark", "light"] as const) {
     for (const tile of await ask.getByTestId("option-visual").all()) {
       await expect(tile.getByRole("img")).toBeVisible();
     }
+    if (SHOTS !== undefined) await ask.screenshot({ path: `${SHOTS}/ask-after-${mode}.png` });
+    await page.keyboard.press("Escape");
     await showMock(page, made.orchestratorThreadId, made.folder);
     const card = page.getByTestId("mock-card");
     await expect(card).toHaveAttribute("data-shots", mode);
     for (const image of await card.getByRole("img").all()) await expect(image).toBeVisible();
     if (SHOTS !== undefined) {
-      await ask.screenshot({ path: `${SHOTS}/ask-after-${mode}.png` });
       await card.scrollIntoViewIfNeeded();
       await expect(page.getByRole("button", { name: "Jump to latest" })).toHaveCount(0);
       await expect(card).toBeInViewport({ ratio: 1 });

@@ -59,7 +59,7 @@ For live clicking, run `bun run dev:preview` for a disposable Chromium window wi
 storage (see [isolated preview](#isolated-ui-preview)). Or run `bun run dev:mock`, open Gram's
 right panel → Preview, and enter the local Vite URL printed in the terminal. Both use the mock
 API without a backend or agent CLI. The seeded solo threads already contain transcripts, diffs,
-questions and an approval; use the sidebar, Board/Chat switcher, Needs you, ⌘J (Ctrl+J on
+questions and an approval; use the sidebar, Board/Chat switcher, the Inbox, ⌘J (Ctrl+J on
 Linux/Windows), History (⌘⇧H), ⌘K and Settings to explore.
 
 To populate an orchestrator workspace in the mock browser, run

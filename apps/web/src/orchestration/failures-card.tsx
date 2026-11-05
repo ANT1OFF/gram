@@ -78,7 +78,14 @@ function StepIcon({ step }: { step: FailureStep }) {
 }
 
 /** One failure with its next step and Dismiss: the Board's card lists them, the Inbox shows one. */
-export function FailureRowView({ item, onDismiss }: { item: FailureItem; onDismiss: () => void }) {
+export function FailureRowView({
+  item,
+  onDismiss,
+}: {
+  item: FailureItem;
+  /** Absent where Dismiss sits elsewhere, as in the Inbox's header. */
+  onDismiss?: (() => void) | undefined;
+}) {
   const open = useOpenThread();
   const navigate = useNavigate();
   const onGateway = useThreadsStore(
@@ -159,22 +166,24 @@ export function FailureRowView({ item, onDismiss }: { item: FailureItem; onDismi
         <StepIcon step={row.step} />
         {row.step.label}
       </Button>
-      <Hint
-        label="Dismiss until it fails again"
-        side="bottom"
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            data-testid="board-failure-dismiss"
-            aria-label={`Dismiss ${failure.tag} on ${failure.title}`}
-            onClick={onDismiss}
-            className="mt-0.5 text-muted-foreground"
-          />
-        }
-      >
-        <X aria-hidden />
-      </Hint>
+      {onDismiss !== undefined && (
+        <Hint
+          label="Dismiss until it fails again"
+          side="bottom"
+          render={
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              data-testid="board-failure-dismiss"
+              aria-label={`Dismiss ${failure.tag} on ${failure.title}`}
+              onClick={onDismiss}
+              className="mt-0.5 text-muted-foreground"
+            />
+          }
+        >
+          <X aria-hidden />
+        </Hint>
+      )}
     </li>
   );
 }

@@ -142,13 +142,13 @@ its models, the card says so instead. A change that changes nothing is refused. 
 the key and the reason.
 
 **The card.** It uses the existing server approval plumbing (`ThreadRuntimes.requestApproval`):
-the request shows in the thread, Needs you and the desktop ask stack like any other approval.
+the request shows in the thread and the Inbox like any other approval.
 Its input is a typed `SettingsProposalCard`, with the scope, the workspace's id and name,
 the agent's reason, and the rows: a label, and before and after as readable text. The web renders it
 as a diff table, open from the start.
 
 - The card is `mustReadDetails`, so it is never folded into "Allow all" or answered in place
-  from the ask stack, and an away notification never answers it.
+  in the Inbox's list, and an away notification never answers it.
 - Its only scope is `once`.
 - Its buttons are **Apply changes** and **Deny**.
 
@@ -248,7 +248,7 @@ a project id), `autonomy`, `workerMode` (`null` follows the default again) and `
 - **One card per call, the same plumbing.** The card is raised by the tool's own handler
   through `ThreadRuntimes.requestApproval`, with `once` as its only scope and no rule to
   remember. It is `mustReadDetails`, so it is never folded into "Allow all", answered in place
-  from the ask stack or answered from a notification. Its buttons are **Create workspace** or
+  in the Inbox's list or answered from a notification. Its buttons are **Create workspace** or
   **Apply changes**, and **Deny**. Denied, expired or withdrawn, nothing changes.
 - **Applying: all of it or nothing.** The handler keeps the workspace exactly as it read it
   for the card: name, projects, home and the whole charter, autonomy and worker mode

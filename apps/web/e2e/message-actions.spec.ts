@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
+import { openNotifications } from "./open-notifications";
 import { seedTheme } from "./seed-theme";
 
 test.describe("message timestamp convention", () => {
@@ -48,7 +49,7 @@ test.describe("message timestamp convention", () => {
         title: "Invented timestamp notification",
       });
     }, at);
-    await page.getByTestId("notifications-bell").click();
+    await openNotifications(page);
     const notice = page.getByTestId("notification-entry").filter({
       hasText: "Invented timestamp notification",
     });

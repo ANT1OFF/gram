@@ -100,7 +100,7 @@ const start = async (page: Page, { trayOn = true } = {}) => {
 
 const hasPush = (menu: TrayMenu) => menu.asks.some((ask) => ask.title === "Allow git push × 3?");
 
-test("Allow in the menu answers the ask through the stack, and it leaves the menu", async ({
+test("Allow in the menu answers the ask through the one path, and it leaves the menu", async ({
   page,
 }) => {
   const made = await start(page);
@@ -119,9 +119,8 @@ test("Allow in the menu answers the ask through the stack, and it leaves the men
   await menuWith(page, (latest) => !hasPush(latest));
 
   await openOrchestrator(page, made.orchestratorThreadId);
-  const stack = page.getByTestId("ask-stack");
-  // The stack's own undo line: the same held answer, not a second path.
-  await expect(stack.getByTestId("ask-undo-line")).toContainText("Allowed 3");
+  // The orchestrator's line keeps the Undo: the same held answer, not a second path.
+  await expect(page.getByTestId("inbox-line-undo")).toContainText("Allowed 3");
   await page.clock.runFor(SENT_MS);
   const answers = (await recorded(page)).sent.slice(sentBefore);
   expect(answers).toHaveLength(3);
@@ -135,7 +134,7 @@ test("Allow in the menu answers the ask through the stack, and it leaves the men
   expect((await recorded(page)).sent.length).toBe(sentBefore + 3);
 });
 
-test("a command too long for the menu offers Open only, which shows it whole in the stack", async ({
+test("a command too long for the menu offers Open only, which shows it whole in the Inbox", async ({
   page,
 }) => {
   const made = await start(page);
@@ -165,9 +164,8 @@ test("a command too long for the menu offers Open only, which shows it whole in 
 
   await pick(page, { kind: "open", id: long.id });
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
-  const current = page
-    .getByTestId("ask-stack")
-    .locator('li:not([inert]) [data-testid="ask-item"][data-current]');
+  await expect(page.getByTestId("inbox")).toBeVisible();
+  const current = page.getByTestId("inbox-detail").getByTestId("ask-item");
   await expect(current.getByTestId("ask-command")).toHaveText(LONG);
 });
 

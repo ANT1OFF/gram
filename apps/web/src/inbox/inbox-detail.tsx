@@ -57,7 +57,10 @@ function useInboxKeys(take: (event: KeyboardEvent) => boolean) {
   }, []);
 }
 
-/** Whether an ask is read in full before it is answered: every option it offers opens it. */
+/**
+ * Whether an ask is read in full before it is answered: every option it offers opens it. Any other
+ * is answered in place, as the Asks dock answered it; a question's own card is a click away.
+ */
 export const answersInFull = (ask: Pick<Ask, "options">): boolean =>
   ask.options.length > 0 &&
   ask.options.every((option) => option.action.kind === "open" || option.action.kind === "board");
@@ -211,7 +214,22 @@ function AskDetail({ item }: { item: NeedsYouItem }) {
       {full ? (
         <AskInFull ask={ask} orchestratorId={orchestratorId} />
       ) : (
-        <AskInPlace ask={ask} onFull={() => setFull(true)} />
+        <>
+          <AskInPlace ask={ask} onFull={() => setFull(true)} />
+          {/* A question's own card: an answer in words too ("Other…"), and its answer row kept in
+              sight however long it runs. */}
+          {(ask.memory !== undefined || ask.worker !== undefined) && ask.options.length > 0 && (
+            <Button
+              size="xs"
+              variant="ghost"
+              data-testid="inbox-read-full"
+              className="ml-8.5 text-muted-foreground"
+              onClick={() => setFull(true)}
+            >
+              Write your own answer
+            </Button>
+          )}
+        </>
       )}
     </div>
   );
@@ -322,7 +340,7 @@ export function InboxDetail({
           </ul>
         ) : item.failure !== undefined ? (
           <ul>
-            <FailureRowView item={item.failure} onDismiss={() => actions.dismiss(item)} />
+            <FailureRowView item={item.failure} />
           </ul>
         ) : null}
       </div>

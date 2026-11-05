@@ -10,29 +10,29 @@ const start = async (page: Page) => {
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await page.evaluate(() => window.gramMock!.simulateAsks());
   await openOrchestrator(page, made.orchestratorThreadId);
-  await expect(page.getByTestId("ask-stack")).toBeVisible();
+  await expect(page.getByTestId("inbox-line")).toBeVisible();
   return made;
 };
 
 const views = (page: Page) => page.getByRole("radiogroup", { name: "View" });
 const view = (page: Page, name: string) =>
   views(page).getByRole("radio", { name: new RegExp(`^${name}\\b`) });
-/** The orchestrator's own stack, above its composer; Board docks another. */
-const chatStack = (page: Page) => page.locator("[data-pane-root]").getByTestId("ask-stack");
+/** The orchestrator's line into the Inbox, above its composer. */
+const chatStack = (page: Page) => page.locator("[data-pane-root]").getByTestId("inbox-line");
 const composer = (page: Page) => page.getByLabel("Message", { exact: true });
 
 test("Chat and Board switch over the same route, and Esc comes back", async ({ page }) => {
   const made = await start(page);
   await expect(view(page, "Chat")).toHaveAttribute("aria-checked", "true");
-  // The Inbox is gone: Chat and Board, and no third view.
+  // Chat and Board, and no third view: the Inbox is a dialog over both.
   await expect(view(page, "Board")).toBeVisible();
   await expect(view(page, "Inbox")).toHaveCount(0);
 
   await view(page, "Board").click();
   await expect(page.getByTestId("view-board")).toBeVisible();
-  // Laid out under Board, but hidden; Board docks its own below the lines.
+  // Laid out under Board, but hidden; Board's header chip is its way to the Inbox.
   await expect(chatStack(page)).toBeHidden();
-  await expect(page.getByTestId("view-board").getByTestId("ask-stack")).toBeVisible();
+  await expect(page.getByTestId("rail-waiting-chip")).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
 
   await page.keyboard.press("Escape");
@@ -48,11 +48,11 @@ test("Chat and Board switch over the same route, and Esc comes back", async ({ p
   await expect(page.getByTestId("view-board")).toBeHidden();
   await expect(composer(page)).toHaveValue("half a thought");
 
-  // ⌘⌥3, where the Inbox was, opens the Needs you popover, and again closes it.
+  // ⌘⌥3 opens the Inbox, and again closes it.
   await page.keyboard.press("ControlOrMeta+Alt+3");
-  await expect(page.getByTestId("needs-you-popover")).toBeVisible();
+  await expect(page.getByTestId("inbox")).toBeVisible();
   await page.keyboard.press("ControlOrMeta+Alt+3");
-  await expect(page.getByTestId("needs-you-popover")).toBeHidden();
+  await expect(page.getByTestId("inbox")).toBeHidden();
   await expect(composer(page)).toHaveValue("half a thought");
 
   // Opening a thread anywhere shows it, in Chat: a solo thread's one bar, with no views of the

@@ -28,44 +28,15 @@ const KINDS = {
   error: { icon: CircleAlert, label: "Error", tone: "text-destructive" },
 };
 
-export function NotificationsBell() {
-  const unread = useNotificationHistory(unreadNotifications);
-  const reveal = useLayoutStore((s) => s.revealPanel);
-  const label = unread ? `Notifications, ${unread} unread` : "Notifications";
-  return (
-    <Hint
-      label={label}
-      side="bottom"
-      render={
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={label}
-          data-testid="notifications-bell"
-          className="relative shrink-0 text-muted-foreground [-webkit-app-region:no-drag]"
-          onClick={() => reveal("notifications")}
-        />
-      }
-    >
-      <Bell aria-hidden />
-      {unread > 0 && (
-        <span
-          aria-hidden
-          className="absolute -top-0.5 -right-0.5 rounded-full bg-primary px-1 text-[9px] leading-3 text-primary-foreground tabular-nums"
-        >
-          {unread}
-        </span>
-      )}
-    </Hint>
-  );
-}
+/** What opens the history, and takes focus back when it closes: the title bar's Inbox button. */
+const OPENER = '[data-testid="inbox-button"]';
 
 export function NotificationsPanel() {
-  useReturnFocus(() => document.querySelector('[data-testid="notifications-bell"]'));
+  useReturnFocus(() => document.querySelector(OPENER));
   const header = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     useNotificationHistory.getState().prune();
-    if (document.activeElement?.matches('[data-testid="notifications-bell"]'))
+    if (document.activeElement?.matches(OPENER) || document.activeElement === document.body)
       header.current?.focus();
   }, []);
   const storageUnavailable = useNotificationHistory((s) => s.storageUnavailable);
@@ -85,10 +56,8 @@ export function NotificationsPanel() {
         event.preventDefault();
         event.stopPropagation();
         useLayoutStore.getState().togglePanel();
-        const bell = document.querySelector<HTMLButtonElement>(
-          '[data-testid="notifications-bell"]',
-        );
-        if (bell) focusWhenAble(bell);
+        const opener = document.querySelector<HTMLButtonElement>(OPENER);
+        if (opener) focusWhenAble(opener);
       }}
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">

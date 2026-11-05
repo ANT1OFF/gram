@@ -64,6 +64,10 @@ export function InboxView() {
           data-testid={INBOX_TEST_ID}
           data-surface="overlay"
           aria-label="Inbox"
+          // The list first, where j/k move; the Later list or the empty state has none.
+          initialFocus={() =>
+            document.querySelector<HTMLElement>('[data-testid="inbox-list"]') ?? true
+          }
           // A thread just opened takes focus in its pane; a dismissal hands it back.
           finalFocus={() => (useInboxStore.getState().open ? false : returnFocusTo(opener)())}
           className="fixed top-[6%] left-1/2 z-50 flex h-[min(44rem,86vh)] w-[min(68rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"

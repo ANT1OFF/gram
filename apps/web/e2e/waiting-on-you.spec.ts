@@ -263,28 +263,30 @@ test("one Waiting on you across threads: Needs you counts it, the Board groups a
   // helper's suggestion.
   await expect(needsYou).toHaveAttribute("data-count", String(before + 4));
 
-  // The Board: the orchestrator's own and its questions first, then each worker's.
+  // The Board's chip counts the workspace's share and opens the Inbox: the orchestrator's own,
+  // its questions and each worker's, the helper's suggestion not among them.
   await openOrchestrator(page, made.orchestratorThreadId);
   await page.keyboard.press("ControlOrMeta+Shift+D");
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
   await expect(page.getByTestId("rail-board")).toBeVisible();
   const chip = page.getByTestId("rail-waiting-chip");
-  // No number on the chip: the workspace's badge counts these with its asks.
-  await expect(chip).toHaveAttribute("aria-label", "Waiting on you");
-  await expect(chip).toHaveAttribute("data-count", "5");
+  const share = Number(await chip.getAttribute("data-count"));
   await chip.click();
-  const band = page.getByTestId("rail-waiting");
-  const groups = band.getByTestId("board-waiting-group");
-  await expect(groups).toHaveCount(3);
-  await expect(groups.first()).toHaveAttribute("data-thread", made.orchestratorThreadId);
-  await expect(groups.first()).toContainText("Run assume example-prod");
-  await expect(band.getByTestId("memory-question")).toHaveCount(2);
-  const reviewing = groups.and(page.locator(`[data-thread="${made.inReview}"]`));
-  await expect(reviewing).toContainText("PR description");
-  await expect(band.getByText("Suggested note")).toHaveCount(0);
+  const items = page.locator(`[data-testid="inbox-item"][data-workspace="${made.workspaceId}"]`);
+  await expect(items).toHaveCount(share);
+  const waits = items.and(page.locator('[data-kind="wait"]'));
+  await expect(waits.filter({ hasText: "Run assume example-prod" })).toHaveAttribute(
+    "data-thread-id",
+    made.orchestratorThreadId,
+  );
+  await expect(items.filter({ hasText: "Suggested note" })).toHaveCount(0);
+  const reviewing = waits.filter({ hasText: "PR description" });
+  await expect(reviewing).toHaveAttribute("data-thread-id", made.inReview);
 
-  await reviewing.getByTestId("waiting-done").click();
-  await expect(groups).toHaveCount(2);
-  await expect(chip).toHaveAttribute("data-count", "4");
+  await reviewing.click();
+  await page.getByTestId("inbox-detail").getByTestId("waiting-done").click();
+  await expect(reviewing).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(chip).toHaveAttribute("data-count", String(share - 1));
   await expect(needsYou).toHaveAttribute("data-count", String(before + 3));
 });

@@ -45,8 +45,10 @@ configured pass.
   held key never answers a second card. Codex cards offer no "always", as they carry no rule.
 - **The Board.** A workspace's features, workers and pull requests on one surface, with each pull
   request's checks, reviews and merge readiness, read through the GitHub CLI.
-- **Needs you.** Questions, approvals, plans, errors and waits from every workspace and solo
-  thread collect in one list; <kbd>⌘⇧U</kbd> steps through them.
+- **Inbox.** Questions, approvals, plans, review requests, drafts, errors and steps from every
+  workspace and solo thread collect in one list by kind, each answered in a pane beside it. The
+  title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it; <kbd>⌘⇧U</kbd> steps
+  through its items at the turn that asked. The thread that asks keeps its own card too.
 - **Usage limits.** The Usage page shows Claude and Codex five-hour and weekly limits (see
   [accounts, models and speed](#accounts-models-and-speed)). A workspace can pause new workers
   near a limit, hold low-priority briefs until it resets and, if you turn it on,
