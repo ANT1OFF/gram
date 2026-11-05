@@ -1045,6 +1045,71 @@ export const MergeWhenReadyLive = Layer.effect(
      */
     /** Threads, by head and base, listening for the end of Gram's own check of their PR. */
     const listening = new Set<string>();
+    /**
+     * Per `baseKey`: claiming its turn is one step at a time. Every `turns.set` happens under it,
+     * so two PRs that both find a stale holder can't both take the turn and run two checks.
+     */
+    const turnLocks = makeKeyedLock<string>();
+
+    /**
+     * Takes `key`'s turn for `threadId`'s check on `listener`, or says why it waits. Another PR's
+     * turn holds while its check runs (it hands the turn on as it ends) or while it is still armed
+     * to merge that PR. A holder that is neither, its PR merged or closed or its intent dropped,
+     * holds nobody: its turn passes on, queue and all, so the next PR doesn't wait on a PR that is
+     * gone. The holder's intent is read under its own lock (`serial`), which every change of an
+     * intent takes (`mutate`), and the turn changes hands under it too: a re-arm that landed first
+     * keeps the holder its turn, and one after waits for the new turn like anyone else.
+     */
+    const claimTurn = (
+      key: string,
+      threadId: ThreadId,
+      bound: BoundPr,
+      listener: string,
+    ): Effect.Effect<"claimed" | "running" | { readonly waits: string }> =>
+      turnLocks.withLock(
+        key,
+        Effect.gen(function* () {
+          // Another look of the same thread took it while this one waited for the lock.
+          if (listening.has(listener)) return "running" as const;
+          const take = (queued: Set<ThreadId>) => {
+            turns.set(key, { threadId, pr: bound, listener, queued });
+            listening.add(listener);
+            return "claimed" as const;
+          };
+          const turn = turns.get(key);
+          // Its own older turn, on a head it has since pushed past, gives way.
+          if (turn === undefined || turn.threadId === threadId)
+            return take(turn?.queued ?? new Set());
+          const waits = {
+            waits: `its check waits for ${prName(turn.pr)}, whose merge would move the base`,
+          };
+          const queue = () => {
+            turn.queued.add(threadId);
+            return waits;
+          };
+          // Its check still runs: it hands the turn on when it ends, and two at once would race.
+          if (listening.has(turn.listener)) return queue();
+          const verdict = yield* serial(
+            turn.threadId,
+            Effect.gen(function* () {
+              const holder = yield* store.getThread(turn.threadId).pipe(Effect.option);
+              // Ended while the holder was read: no one holds it now.
+              if (turns.get(key) !== turn) return "gone" as const;
+              const armed =
+                Option.isSome(holder) &&
+                holder.value.boundPr !== undefined &&
+                samePr(holder.value.boundPr, turn.pr) &&
+                holder.value.boundPr.mergeWhenReady !== undefined;
+              if (armed) return "held" as const;
+              // Dropped and taken in one step, still under the holder's lock.
+              return take(turn.queued);
+            }),
+          );
+          if (verdict === "held") return queue();
+          // Only `turnOver` and `baseMoved` change a turn outside this lock, and both delete it.
+          return verdict === "gone" ? take(turn.queued) : verdict;
+        }),
+      );
     const startLocalCheck = (
       thread: Thread,
       bound: BoundPr,
@@ -1065,34 +1130,14 @@ export const MergeWhenReadyLive = Layer.effect(
         const listener = `${thread.id}\u0000${head}\u0000${base}`;
         if (listening.has(listener)) return undefined;
         const key = baseKey(bound.repo, badge.baseRef);
-        const turn = turns.get(key);
-        if (turn !== undefined && turn.threadId !== thread.id) {
-          // Its turn holds only while it is still armed to merge the same PR: once that merged or
-          // closed, its intent is cleared, so a stale turn left after the merge (the base moved
-          // before the turn was handed on) never strands the next PR waiting on a PR already gone.
-          const holder = yield* store.getThread(turn.threadId).pipe(Effect.option);
-          const stillArmed =
-            Option.isSome(holder) &&
-            holder.value.boundPr !== undefined &&
-            samePr(holder.value.boundPr, turn.pr) &&
-            holder.value.boundPr.mergeWhenReady !== undefined;
-          if (stillArmed) {
-            turn.queued.add(thread.id);
-            return `its check waits for ${prName(turn.pr)}, whose merge would move the base`;
-          }
-          // Carry its queue forward, then take the turn below.
-          turns.delete(key);
-        }
-        // Its own older turn, on a head it has since pushed past, gives way.
-        turns.set(key, {
-          threadId: thread.id,
-          pr: bound,
-          listener,
-          queued: turn?.queued ?? new Set(),
-        });
-        listening.add(listener);
+        // Read before the turn is taken, so nothing stands between taking it and the check that
+        // hands it on.
+        const dir = yield* repoDirOf(thread);
+        const claim = yield* claimTurn(key, thread.id, bound, listener);
+        if (claim === "running") return undefined;
+        if (claim !== "claimed") return claim.waits;
         const found = yield* localChecks
-          .ensure(yield* repoDirOf(thread), head, base, {
+          .ensure(dir, head, base, {
             projectId: thread.projectId,
             since: intent.setAt,
             // However it ended, the merge looks again: a pass may launch it, and after a failure,
