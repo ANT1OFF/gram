@@ -340,7 +340,7 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     const failed = await screen.findByTestId("sheet-load-error");
     expect(failed.textContent).toContain("offline");
     expect(screen.queryByRole("form", { name: "New workspace" })).toBeNull();
-    fireEvent.click(within(failed).getByRole("button", { name: "Try again" }));
+    fireEvent.click(within(failed).getByRole("button", { name: "Retry" }));
     await screen.findByRole("form", { name: "New workspace" });
     expect(list).toHaveBeenCalledTimes(2);
 

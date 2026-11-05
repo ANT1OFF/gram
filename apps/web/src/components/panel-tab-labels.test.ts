@@ -42,13 +42,17 @@ describe("tabLabelFit", () => {
     expect(tabLabelFit(207, 4, long).tabs).toBe("active");
   });
 
-  it("keeps an action's words before any name but the open tab's", () => {
+  it("keeps an action's words before every name, the open tab's too", () => {
     // 50 px of words: every name with them needs 377 px.
     expect(fit(377)).toEqual({ tabs: "all", action: true });
     expect(fit(376)).toEqual({ tabs: "primary", action: true });
     expect(fit(316)).toEqual({ tabs: "active", action: true });
-    // Short of the open name and the words, the words fold first, then the other names.
-    expect(fit(256)).toEqual({ tabs: "active", action: false });
+    // Short of the open name and the words, the open name goes and the words stay.
+    expect(fit(257)).toEqual({ tabs: "active", action: true });
+    expect(fit(256)).toEqual({ tabs: "none", action: true });
+    expect(fit(227)).toEqual({ tabs: "none", action: true });
+    // Short of even the bare tabs and the words, the words fold, and the open name may return.
+    expect(fit(226)).toEqual({ tabs: "active", action: false });
     expect(fit(206)).toEqual({ tabs: "none", action: false });
   });
 });

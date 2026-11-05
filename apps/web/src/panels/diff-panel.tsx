@@ -1,3 +1,4 @@
+import { Menu } from "@base-ui/react/menu";
 import {
   DIFF_TOO_LARGE_NOTE,
   type Diff,
@@ -7,6 +8,8 @@ import {
 } from "@gram/contracts";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
+  Check,
+  ChevronDown,
   Columns2,
   GitBranch,
   History,
@@ -16,7 +19,7 @@ import {
   WrapText,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, folderProblem } from "@/api/errors";
@@ -24,9 +27,11 @@ import { Hint } from "@/components/hint";
 import { QueryError } from "@/components/not-available";
 import { useShortcut } from "@/keyboard/registry";
 import { radioGroupKeyDown } from "@/lib/list-keys";
+import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { useStableSelector } from "@/lib/use-stable";
 import { cn } from "@/lib/utils";
 import { NumberTicker, SegmentSlab } from "@/motion";
+import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
 import { useThreadFeed } from "@/stores/feeds";
 import { useLayoutStore, type DiffLayout, type PanelTarget } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -102,7 +107,6 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useWidth(rootRef);
   const scopeSlab = useId();
-  const layoutSlab = useId();
   const layout = useLayoutStore((s) => s.diffLayout);
   const setLayout = useLayoutStore((s) => s.setDiffLayout);
   const treeShown = useLayoutStore((s) => s.diffTreeShown);
@@ -159,6 +163,16 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
   });
   const treeFits = width >= TREE_BESIDE_MIN_WIDTH;
   const fileCount = query.data?.files?.length ?? 0;
+  // How much the scope holds, beside it: shown once there is a diff with something in it.
+  const diffFiles = diffScope === undefined ? undefined : query.data?.files;
+  const summary =
+    diffFiles === undefined || diffFiles.length === 0
+      ? undefined
+      : {
+          files: diffFiles.length,
+          additions: diffFiles.reduce((sum, f) => sum + f.additions, 0),
+          deletions: diffFiles.reduce((sum, f) => sum + f.deletions, 0),
+        };
   // A small patch's tree starts folded whatever the stored choice, which is a larger patch's.
   const smallPatch = fileCount <= SMALL_PATCH_FILES;
   const [smallTreeOpen, setSmallTreeOpen] = useState(false);
@@ -196,11 +210,13 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
       data-layout={layout === "split" && splitFits ? "split" : "unified"}
       className="flex min-h-0 flex-1 flex-col"
     >
-      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 text-meta">
+      {/* What is shown first: the scope, on a track with its pick on the selected slab, then how
+          much it holds. The display choices fold into one labelled View menu beside Refresh. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-2 py-1.5 text-meta">
         <div
           role="radiogroup"
           aria-label="Diff scope"
-          className="isolate flex gap-1"
+          className={SEGMENT_TRACK}
           onKeyDown={(event) =>
             radioGroupKeyDown(
               event,
@@ -218,13 +234,30 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
               aria-checked={scope === option.kind}
               tabIndex={scope === option.kind ? 0 : -1}
               onClick={() => setScope(option.kind)}
-              className="relative rounded-(--radius-sm) px-2 py-0.5 text-muted-foreground transition-colors duration-(--dur-fast) outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
+              className="relative flex h-6 items-center rounded-md px-2 text-body text-muted-foreground transition-colors duration-(--dur-fast) outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
             >
-              {scope === option.kind && <SegmentSlab group={scopeSlab} className="bg-muted" />}
+              {scope === option.kind && <SegmentSlab group={scopeSlab} className={SEGMENT_SLAB} />}
               {option.label}
             </button>
           ))}
         </div>
+        {summary !== undefined && (
+          <span
+            data-testid="diff-summary"
+            data-files={summary.files}
+            className="flex items-baseline gap-1.5 text-body whitespace-nowrap tabular-nums"
+          >
+            <span className="font-medium">
+              <NumberTicker value={summary.files} /> {summary.files === 1 ? "file" : "files"}
+            </span>
+            <span className="font-mono text-meta text-success">
+              +<NumberTicker value={summary.additions} />
+            </span>
+            <span className="font-mono text-meta text-destructive">
+              −<NumberTicker value={summary.deletions} />
+            </span>
+          </span>
+        )}
         <div className="ml-auto flex min-w-0 items-center gap-1">
           {scope === "turn" && turnId !== undefined && (
             <select
@@ -240,71 +273,23 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
               ))}
             </select>
           )}
-          <div
-            role="radiogroup"
-            aria-label="Diff view"
-            className="isolate flex"
-            onKeyDown={(event) =>
-              radioGroupKeyDown(
-                event,
-                LAYOUTS.map((option) => option.kind),
-                layout,
-                setLayout,
-              )
+          <DiffViewMenu
+            layout={layout}
+            onLayout={setLayout}
+            splitFits={splitFits}
+            wrap={wrap}
+            onWrap={toggleWrap}
+            ignoreWhitespace={ignoreWhitespace}
+            onIgnoreWhitespace={toggleIgnoreWhitespace}
+            tree={
+              treeFits && fileCount > 1
+                ? {
+                    open: treeOpen,
+                    toggle: smallPatch ? () => setSmallTreeOpen((open) => !open) : toggleTree,
+                  }
+                : undefined
             }
-          >
-            {LAYOUTS.map((option) => {
-              const narrow = option.kind === "split" && !splitFits;
-              return (
-                <button
-                  key={option.kind}
-                  type="button"
-                  role="radio"
-                  aria-checked={layout === option.kind}
-                  aria-label={option.label}
-                  title={narrow ? "Split (needs a wider panel; showing unified)" : option.label}
-                  tabIndex={layout === option.kind ? 0 : -1}
-                  onClick={() => setLayout(option.kind)}
-                  className={cn(
-                    "relative rounded-(--radius-sm) p-1 text-muted-foreground transition-colors duration-(--dur-fast) outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground",
-                    narrow && "aria-checked:text-muted-foreground",
-                  )}
-                >
-                  {layout === option.kind && (
-                    <SegmentSlab group={layoutSlab} className="bg-muted" />
-                  )}
-                  <option.icon aria-hidden className="size-3.5" />
-                </button>
-              );
-            })}
-          </div>
-          <ViewToggle
-            label="Wrap lines"
-            icon={WrapText}
-            pressed={wrap}
-            onToggle={toggleWrap}
-            // Each side of a split is half as wide, so its lines always wrap.
-            fixed={layout === "split" && splitFits ? "Split view always wraps lines" : undefined}
           />
-          <ViewToggle
-            label="Ignore whitespace"
-            icon={Pilcrow}
-            pressed={ignoreWhitespace}
-            onToggle={toggleIgnoreWhitespace}
-          />
-          {treeFits && fileCount > 1 && (
-            <button
-              type="button"
-              aria-pressed={treeOpen}
-              data-testid="diff-tree-toggle"
-              title={treeOpen ? "Hide the file tree" : "Show the file tree"}
-              onClick={smallPatch ? () => setSmallTreeOpen((open) => !open) : toggleTree}
-              className="flex items-center gap-1 rounded-(--radius-sm) px-1.5 py-1 text-meta whitespace-nowrap text-muted-foreground tabular-nums outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:text-foreground"
-            >
-              <ListTree aria-hidden className="size-3.5" />
-              Files ({fileCount})
-            </button>
-          )}
           <RefreshButton
             threadId={threadId}
             label="Refresh diff"
@@ -335,40 +320,162 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
   );
 }
 
+const VIEW_POPUP = cn(MENU_POPUP, "min-w-56");
+
 /**
- * A view preference in the toolbar, pressed while it is on; its name shows on hover. `fixed` says
- * why the current view has it on whatever the preference, and holds the button pressed.
+ * The diff's display choices under one labelled menu: unified or split, then wrap, whitespace and
+ * the file tree as checks. Each choice is remembered. Split says when the panel is too narrow for
+ * it (it shows unified until there is room), and Wrap lines says when split view holds it on.
  */
-function ViewToggle({
+function DiffViewMenu({
+  layout,
+  onLayout,
+  splitFits,
+  wrap,
+  onWrap,
+  ignoreWhitespace,
+  onIgnoreWhitespace,
+  tree,
+}: {
+  layout: DiffLayout;
+  onLayout: (layout: DiffLayout) => void;
+  splitFits: boolean;
+  wrap: boolean;
+  onWrap: () => void;
+  ignoreWhitespace: boolean;
+  onIgnoreWhitespace: () => void;
+  /** The file tree's choice, while the panel has room for it beside more than one file. */
+  tree: { open: boolean; toggle: () => void } | undefined;
+}) {
+  const shown = layout === "split" && splitFits ? "split" : "unified";
+  // Each side of a split is half as wide, so its lines always wrap.
+  const wrapFixed = shown === "split";
+  const current = [
+    shown === "split" ? "Split" : "Unified",
+    ...(wrap || wrapFixed ? ["wrapped"] : []),
+    ...(ignoreWhitespace ? ["ignoring whitespace"] : []),
+  ].join(", ");
+  return (
+    <Menu.Root>
+      <Hint
+        label={`View: ${current}`}
+        side="bottom"
+        render={
+          <Menu.Trigger
+            data-testid="diff-view-menu"
+            className="flex h-7 shrink-0 items-center gap-1 rounded-(--radius-sm) px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted data-popup-open:text-foreground"
+          />
+        }
+      >
+        View
+        <ChevronDown aria-hidden className="size-3.5" />
+      </Hint>
+      <Menu.Portal>
+        <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
+          <Menu.Popup data-surface="overlay" data-testid="diff-view-popup" className={VIEW_POPUP}>
+            <Menu.Group>
+              <Menu.GroupLabel className={MENU_LABEL}>Layout</Menu.GroupLabel>
+              <Menu.RadioGroup value={layout} onValueChange={(next: DiffLayout) => onLayout(next)}>
+                {LAYOUTS.map((option) => {
+                  const narrow = option.kind === "split" && !splitFits;
+                  return (
+                    <Menu.RadioItem
+                      key={option.kind}
+                      value={option.kind}
+                      closeOnClick={false}
+                      aria-label={option.label}
+                      title={narrow ? "Split (needs a wider panel; showing unified)" : undefined}
+                      className={MENU_ITEM}
+                    >
+                      <MenuCheck>
+                        <Menu.RadioItemIndicator>
+                          <Check aria-hidden />
+                        </Menu.RadioItemIndicator>
+                      </MenuCheck>
+                      <option.icon aria-hidden className="text-muted-foreground" />
+                      {option.label}
+                      {narrow && (
+                        <span className="ml-auto text-caption text-muted-foreground">
+                          Needs a wider panel
+                        </span>
+                      )}
+                    </Menu.RadioItem>
+                  );
+                })}
+              </Menu.RadioGroup>
+            </Menu.Group>
+            <Menu.Separator className="mx-1 my-1 h-px bg-border" />
+            <ViewCheck
+              label="Wrap lines"
+              icon={WrapText}
+              checked={wrapFixed || wrap}
+              onToggle={onWrap}
+              fixed={wrapFixed ? "Always in split view" : undefined}
+            />
+            <ViewCheck
+              label="Ignore whitespace"
+              icon={Pilcrow}
+              checked={ignoreWhitespace}
+              onToggle={onIgnoreWhitespace}
+            />
+            {tree !== undefined && (
+              <ViewCheck
+                label="File tree"
+                icon={ListTree}
+                checked={tree.open}
+                onToggle={tree.toggle}
+                testId="diff-tree-toggle"
+              />
+            )}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
+
+/** The check column a menu's pick shows in, kept as wide when nothing is picked. */
+function MenuCheck({ children }: { children: ReactNode }) {
+  return <span className="flex size-3.5 items-center justify-center">{children}</span>;
+}
+
+/** A remembered on/off choice in the View menu. `fixed` says why it is on whatever the choice. */
+function ViewCheck({
   label,
   icon: Icon,
-  pressed,
+  checked,
   onToggle,
   fixed,
+  testId,
 }: {
   label: string;
   icon: LucideIcon;
-  pressed: boolean;
+  checked: boolean;
   onToggle: () => void;
   fixed?: string | undefined;
+  testId?: string;
 }) {
   return (
-    <Hint
-      label={fixed ?? label}
-      side="bottom"
-      render={
-        <button
-          type="button"
-          aria-label={label}
-          aria-pressed={fixed !== undefined || pressed}
-          aria-disabled={fixed !== undefined || undefined}
-          onClick={fixed === undefined ? onToggle : undefined}
-          className="rounded-(--radius-sm) p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-disabled:opacity-50 aria-pressed:bg-muted aria-pressed:text-foreground"
-        />
-      }
+    <Menu.CheckboxItem
+      checked={checked}
+      onCheckedChange={() => onToggle()}
+      disabled={fixed !== undefined}
+      closeOnClick={false}
+      aria-label={label}
+      data-testid={testId}
+      className={MENU_ITEM}
     >
-      <Icon aria-hidden className="size-3.5" />
-    </Hint>
+      <MenuCheck>
+        <Menu.CheckboxItemIndicator>
+          <Check aria-hidden />
+        </Menu.CheckboxItemIndicator>
+      </MenuCheck>
+      <Icon aria-hidden className="text-muted-foreground" />
+      {label}
+      {fixed !== undefined && (
+        <span className="ml-auto text-caption text-muted-foreground">{fixed}</span>
+      )}
+    </Menu.CheckboxItem>
   );
 }
 
@@ -514,32 +621,24 @@ function DiffBody({
       </>
     );
   }
-  const additions = files.reduce((sum, f) => sum + f.additions, 0);
-  const deletions = files.reduce((sum, f) => sum + f.deletions, 0);
   const focus: DiffFocus | undefined =
     jump ?? (request && focusPath ? { path: focusPath, key: request.id } : undefined);
   const withTree = tree !== undefined && files.length > 1;
 
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-meta text-muted-foreground">
-        {diff.branch && (
-          <span className="flex min-w-0 items-center gap-1 font-mono">
-            <GitBranch aria-hidden className="size-3.5 shrink-0" />
-            <span className="truncate">{diff.branch}</span>
-          </span>
-        )}
-        {diff.base && fallbackBase === undefined && <span>comparing to {diff.base}</span>}
-        <span className="ml-auto font-mono tabular-nums">
-          <NumberTicker value={files.length} /> {files.length === 1 ? "file" : "files"} ·{" "}
-          <span className="text-success">
-            +<NumberTicker value={additions} />
-          </span>{" "}
-          <span className="text-destructive">
-            −<NumberTicker value={deletions} />
-          </span>
-        </span>
-      </div>
+      {/* Where the diff stands; how much it holds is beside its scope, above. */}
+      {(diff.branch || (diff.base && fallbackBase === undefined)) && (
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-meta text-muted-foreground">
+          {diff.branch && (
+            <span className="flex min-w-0 items-center gap-1 font-mono">
+              <GitBranch aria-hidden className="size-3.5 shrink-0" />
+              <span className="truncate">{diff.branch}</span>
+            </span>
+          )}
+          {diff.base && fallbackBase === undefined && <span>comparing to {diff.base}</span>}
+        </div>
+      )}
       {fallbackBase && (
         <p
           data-testid="diff-fallback"

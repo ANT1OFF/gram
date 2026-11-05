@@ -12,8 +12,15 @@ import {
 } from "@gram/contracts";
 
 import {
+  allowOnceLabel,
+  allowedOnceDone,
+  alwaysAllowOpenLabel,
+  alwaysRules,
   appToolSummary,
   approvalDetails,
+  canAlwaysAllow,
+  DENY,
+  deniedDone,
   limitPauseAsk,
   approvalExtras,
   mustReadDetails,
@@ -37,8 +44,11 @@ export type AskAction =
   | { readonly kind: "memory"; readonly answer: string }
   /** A worker's question forwarded to the user, answered with these words, straight to the worker. */
   | { readonly kind: "worker"; readonly answer: string }
-  /** Answered where it can be read in full: the asking thread. */
-  | { readonly kind: "open"; readonly threadId: ThreadId }
+  /**
+   * Answered where it can be read in full: the asking thread. `always` opens its card on what
+   * "Always allow this rule…" would keep.
+   */
+  | { readonly kind: "open"; readonly threadId: ThreadId; readonly always?: true }
   /** Answered on the board's questions, where several choices can be picked. */
   | { readonly kind: "board"; readonly workspaceId: WorkspaceId };
 
@@ -62,9 +72,16 @@ export const ROW_LABEL_MAX = 20;
  */
 export const choiceLayout = (options: readonly AskOption[]): "row" | "list" =>
   options.length > 3 ||
-  options.some((option) => option.description !== undefined || option.label.length > ROW_LABEL_MAX)
+  options.some(
+    (option) =>
+      option.description !== undefined ||
+      // An approval's verbs are a row, "Always allow this rule…" too.
+      (option.label.length > ROW_LABEL_MAX && !isAlways(option.action)),
+  )
     ? "list"
     : "row";
+
+const isAlways = (action: AskAction): boolean => action.kind === "open" && action.always === true;
 
 /**
  * How an ask's options answer, the same on every surface. A question's choices are picked, then
@@ -253,15 +270,28 @@ export const askOf = (group: InboxGroup): Ask => {
       };
     }
     const n = group.entries.length;
+    // The verbs of the thread's card: Allow once, Always allow this rule… and Deny. "Always" is for
+    // one ask alone, whose rule its card shows before it keeps it; several equal asks answer once.
+    const always: AskOption[] =
+      n === 1 && canAlwaysAllow(request)
+        ? [
+            {
+              label: alwaysAllowOpenLabel(alwaysRules(request).length),
+              done: "Opened",
+              action: { kind: "open", threadId: first.threadId, always: true },
+            },
+          ]
+        : [];
     const options: AskOption[] = [
       {
-        label: n > 1 ? `Allow ${n}` : "Allow",
-        done: n > 1 ? `Allowed ${n}` : "Allowed",
+        label: allowOnceLabel(n),
+        done: allowedOnceDone(n),
         action: { kind: "group", decision: "allow" },
       },
+      ...always,
       {
-        label: "Deny",
-        done: n > 1 ? `Denied ${n}` : "Denied",
+        label: DENY,
+        done: deniedDone(n),
         action: { kind: "group", decision: "deny" },
       },
     ];

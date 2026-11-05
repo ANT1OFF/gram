@@ -121,7 +121,7 @@ export function NewWorkspaceSheet({
                 className="self-start"
                 onClick={() => void queryClient.invalidateQueries({ queryKey: ["workspaces"] })}
               >
-                Try again
+                Retry
               </Button>
             </div>
           ) : !shown || settings === undefined ? (

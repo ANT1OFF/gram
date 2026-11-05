@@ -131,7 +131,7 @@ describe("the menu bar's asks", () => {
     act(() => asks.setState({ all: [workspaceAsking("t-a", "0", "npm test")] }));
     await flush();
     const old = allowOf(menus.at(-1), "npm test");
-    expect(old).toMatchObject({ answer: "Allow" });
+    expect(old).toMatchObject({ answer: "Allow once" });
     // The same workspace, thread and request id now asks something else.
     act(() => asks.setState({ all: [workspaceAsking("t-a", "0", "rm -rf build")] }));
     await flush();
@@ -153,7 +153,7 @@ describe("the menu bar's asks", () => {
     const shown = allowOf(menus.at(-1), "npm test")!;
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     act(() => onAction?.({ kind: "answer", id: shown.id }));
-    expect(useAskStackStore.getState().held).toMatchObject([{ done: "Allowed" }]);
+    expect(useAskStackStore.getState().held).toMatchObject([{ done: "Allowed once" }]);
     await act(() => vi.advanceTimersByTimeAsync(UNDO_MS * 2));
     expect(respondMany).toHaveBeenCalledTimes(1);
     expect(respondMany.mock.calls[0]![0]).toMatchObject([

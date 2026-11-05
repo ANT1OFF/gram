@@ -348,3 +348,90 @@ export const alwaysRules = (request: ApprovalRequest): AlwaysRule[] => {
     }
   });
 };
+
+/**
+ * The approval verbs, the same on the thread's card, in the Inbox, on the Board and in a desktop
+ * notification: "Allow once", "Always allow this rule…" and "Deny". An answer for several equal
+ * asks at once counts them: "Allow 3 once".
+ */
+export const ALLOW_ONCE = "Allow once";
+export const DENY = "Deny";
+export const allowOnceLabel = (count: number): string =>
+  count > 1 ? `Allow ${count} once` : ALLOW_ONCE;
+export const allowedOnceDone = (count: number): string =>
+  count > 1 ? `Allowed ${count} once` : "Allowed once";
+export const deniedDone = (count: number): string => (count > 1 ? `Denied ${count}` : "Denied");
+
+/**
+ * "Always allow", saved: "Always allow this rule", or "Always allow these 2 rules". Its first press
+ * only shows what it would keep, so that button ends in an ellipsis (`alwaysAllowOpenLabel`).
+ */
+export const alwaysAllowLabel = (count: number): string =>
+  count === 1 ? "Always allow this rule" : `Always allow these ${count} rules`;
+export const alwaysAllowOpenLabel = (count: number): string => `${alwaysAllowLabel(count)}…`;
+
+/** Whether a card offers "always": it has a rule to show, and its scopes allow it. */
+export const canAlwaysAllow = (request: ApprovalRequest): boolean =>
+  alwaysRules(request).length > 0 && (request.scopes?.includes("always") ?? true);
+
+/** The three labelled lines of what an "always" keeps. */
+export interface AlwaysRuleLines {
+  /** "Allow Bash(git push:*)". */
+  readonly rule: string;
+  /** "This repository: the main checkout and all its worktrees, …". */
+  readonly appliesTo: string;
+  /** Where it is written, when the user can open it. */
+  readonly savedIn: string | undefined;
+}
+
+export const REACH_WORD: Readonly<Record<AlwaysReach, string>> = {
+  thread: "This thread",
+  repository: "This repository",
+  project: "This project",
+  everywhere: "Everywhere",
+};
+
+export const alwaysRuleLines = (rule: AlwaysRule): AlwaysRuleLines => ({
+  rule: `${rule.behavior} ${rule.rule}`,
+  appliesTo: `${REACH_WORD[rule.reach]}: ${rule.scope}`,
+  savedIn: rule.kept,
+});
+
+/** What answering an approval did, in the scope that was chosen. */
+export interface ApprovalReceipt {
+  readonly decision: "once" | "always" | "deny";
+  /** "Allowed once", "Always allowed" or "Denied". */
+  readonly label: string;
+  /** What it answered: the rule(s) an "always" kept, else the call. */
+  readonly subject: string;
+  /** For an "always": how far it reaches and where it is kept. */
+  readonly scope?: string | undefined;
+}
+
+export const approvalReceipt = (
+  request: ApprovalRequest,
+  decision: ApprovalReceipt["decision"],
+): ApprovalReceipt => {
+  const command = request.input["command"];
+  const call = typeof command === "string" ? command : request.displayName;
+  if (decision === "deny") return { decision, label: "Denied", subject: call };
+  if (decision === "once") return { decision, label: "Allowed once", subject: call };
+  const rules = alwaysRules(request);
+  const first = rules[0];
+  const reaches = new Set(rules.map((rule) => rule.reach));
+  const kept = new Set(rules.map((rule) => rule.kept));
+  return {
+    decision,
+    label: "Always allowed",
+    subject: rules.map((rule) => rule.rule).join(", ") || call,
+    scope:
+      first === undefined
+        ? undefined
+        : [
+            reaches.size === 1 ? REACH_WORD[first.reach] : undefined,
+            kept.size === 1 && first.kept !== undefined ? `saved in ${first.kept}` : undefined,
+          ]
+            .filter((part) => part !== undefined)
+            .join(" · ") || undefined,
+  };
+};

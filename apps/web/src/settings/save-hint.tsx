@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { KEY_CAP } from "@/keyboard/use-shortcut-hint";
 
 /**
- * Beside a typed setting's name while its draft differs from what is saved: how to keep it and how
- * to drop it, "Enter to save · Esc to cancel", the keys as key caps. Leaving the field saves too;
+ * Under a typed setting's field while its draft differs from what is saved (`SettingRow`'s `hint`),
+ * never on the name's line: how to keep it and how to drop it, "Enter to save · Esc to cancel", the
+ * keys as key caps. Leaving the field saves too;
  * the hint teaches the keys, and `DraftActions` beside the field does the same for a pointer. Once
  * saved, the row's "Saved" mark and its Undo take its place.
  */

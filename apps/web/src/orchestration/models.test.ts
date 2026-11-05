@@ -86,6 +86,8 @@ import {
   dreamFailureText,
   dreamKindLabel,
   dreamStatus,
+  dreamWaitsForReview,
+  orderDreams,
   presentDreamStatus,
   presentFileStatus,
   memoryIsEmpty,
@@ -1944,6 +1946,24 @@ describe("dreams", () => {
     ).toEqual(["c.md", "r.md", "z.md"]);
     expect(dreamKindLabel(dreamRecord({ kind: "import" }))).toBe("From past sessions");
     expect(dreamKindLabel(dreamRecord())).toBe("From recent threads");
+  });
+
+  it("puts the runs that wait for your review first, and keeps the rest in their order", () => {
+    expect(dreamWaitsForReview(dreamRecord())).toBe(true);
+    expect(dreamWaitsForReview(dreamRecord({ adoptedVersion: "0003" }))).toBe(false);
+    expect(dreamWaitsForReview(dreamRecord({ status: "running" }))).toBe(false);
+    expect(dreamWaitsForReview(dreamRecord({ status: "failed" }))).toBe(false);
+    // An Auto run waits on nobody, unless its adoption stopped and handed it back.
+    expect(dreamWaitsForReview(dreamRecord({ mode: "auto" }))).toBe(false);
+    expect(dreamWaitsForReview(dreamRecord({ mode: "auto", adoptionFailure: "refused" }))).toBe(
+      true,
+    );
+    const running = dreamRecord({ id: "d1" as DreamId, status: "running" });
+    const ready = dreamRecord({ id: "d2" as DreamId });
+    const failed = dreamRecord({ id: "d3" as DreamId, status: "failed" });
+    const { ready: first, rest } = orderDreams([running, ready, failed]);
+    expect(first.map((d) => d.id)).toEqual(["d2"]);
+    expect(rest.map((d) => d.id)).toEqual(["d1", "d3"]);
   });
 
   it("sums an import preview, and takes only a per-repo limit the server would", () => {

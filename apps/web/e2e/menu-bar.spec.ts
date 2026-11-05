@@ -107,7 +107,7 @@ test("Allow in the menu answers the ask through the one path, and it leaves the 
   const menu = await menuWith(page, hasPush);
   const push = menu.asks.find((ask) => ask.title === "Allow git push × 3?")!;
   // The exact command, then Allow for all three.
-  expect(push).toMatchObject({ lines: [PUSH], answer: "Allow 3" });
+  expect(push).toMatchObject({ lines: [PUSH], answer: "Allow 3 once" });
   expect(push.context).toContain("agent-platform");
   // Both workspaces, with their asks counted.
   expect(menu.workspaces.map((w) => w.name)).toEqual(

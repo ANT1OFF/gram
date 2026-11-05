@@ -48,14 +48,14 @@ describe("the menu bar's menu", () => {
       title: "Allow git push × 3?",
       context: "agent-platform · mail · Title of a and 2 more",
       lines: [PUSH],
-      answer: "Allow 3",
+      answer: "Allow 3 once",
     });
     expect(shown!.id).toBe(trayAskToken(askScope(ask, "w1" as WorkspaceId), askFingerprint(ask)));
     expect(built.asks.get(shown!.id)).toMatchObject({
       workspaceId: "w1",
       askKey: ask.key,
       fingerprint: askFingerprint(ask),
-      button: { label: "Allow 3", option: 0 },
+      button: { label: "Allow 3 once", option: 0 },
       // Open goes to the orchestrator's stack, as a notification's does.
       openThreadId: "orch",
     });
@@ -73,7 +73,7 @@ describe("the menu bar's menu", () => {
     );
     const [shown] = trayMenuOf([workspace([withExtras])], []).menu.asks;
     expect(shown!.lines).toEqual(["uv run pytest", "timeout: 60000"]);
-    expect(shown!.answer).toBe("Allow");
+    expect(shown!.answer).toBe("Allow once");
   });
 
   it("offers Open only when the command can't be shown whole", () => {
@@ -143,7 +143,7 @@ describe("an Allow picked in the menu", () => {
   it("takes the very ask that was shown", () => {
     expect(checkAwayAction([workspace([ask])], shown)).toMatchObject({
       ask,
-      done: "Allowed",
+      done: "Allowed once",
       action: { kind: "group", decision: "allow" },
     });
   });

@@ -42,7 +42,7 @@ export function searchStatus(
     return `Type at least ${MIN_SEARCH_LENGTH} characters to search file contents.`;
   if (state === "pending") return "Searching…";
   if (state === "error") return "The search didn't run.";
-  if (matches.length === 0) return "No results";
+  if (matches.length === 0) return "No matches";
   const files = new Set(matches.map((match) => match.relativePath)).size;
   return `${count(matches.length, "result")} in ${count(files, "file")}${more ? ", more to load" : ""}`;
 }

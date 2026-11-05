@@ -35,6 +35,26 @@ export const speedOptions = (
   ];
 };
 
+/**
+ * A speed in a word for the toolbar: "Default", "Standard", "Fast", or "Fast (requested)" while the
+ * CLI hasn't confirmed it.
+ */
+export const speedValueWord = (value: SpeedMode | undefined, state?: SpeedState): string =>
+  value === undefined
+    ? "Default"
+    : value === "standard"
+      ? "Standard"
+      : state && state.speed !== "fast"
+        ? "Fast (requested)"
+        : "Fast";
+
+/**
+ * The same, short of room: "Fast" keeps its word, as it is news; the default and Standard give
+ * theirs up first, leaving the bolt, still named "Speed: Standard" and saying so on hover.
+ */
+export const speedCompactWord = (value: SpeedMode | undefined): string =>
+  value === "fast" ? "Fast" : "";
+
 export const speedReport = (state?: SpeedState) =>
   state?.detail ??
   (state?.speed === "unknown"
@@ -84,6 +104,8 @@ export function SpeedField({
   const usage = speedUsage(agent);
   const report = speedReport(state);
   const shown = items.find((item) => item.value === (value ?? "default"))?.label ?? "CLI default";
+  // On a toolbar a short value, as model, effort and mode show theirs; "Speed" is in its tooltip.
+  const toolbarValue = ghost ? speedValueWord(value, state) : shown;
   return (
     <div className="flex flex-col gap-1" data-testid="speed-field">
       <Select
@@ -98,7 +120,8 @@ export function SpeedField({
       >
         <PickerTrigger
           label="Speed"
-          value={shown}
+          value={toolbarValue}
+          compact={ghost ? speedCompactWord(value) : undefined}
           labelled={labelled}
           field={!ghost}
           icon={

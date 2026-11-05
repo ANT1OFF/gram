@@ -76,7 +76,7 @@ export function Field({
   htmlFor,
   learnMore,
   action,
-  status,
+  hint,
   undoKey,
   children,
 }: {
@@ -90,8 +90,11 @@ export function Field({
   learnMore?: ReactNode;
   /** On the label's line, at its end. */
   action?: ReactNode;
-  /** Beside the name, where "Saved" shows: such as how to save a draft not saved yet. */
-  status?: ReactNode;
+  /**
+   * Under the control: such as how to keep a draft not saved yet. Kept off the name's line, which
+   * holds only the name and "Saved".
+   */
+  hint?: ReactNode;
   /** A typed setting's key for `offerUndo`, whose Undo shows after "Saved". */
   undoKey?: string;
   children: ReactNode;
@@ -102,13 +105,13 @@ export function Field({
     <div {...search} {...touchHandlers(row)} data-setting="" className="flex flex-col gap-1.5">
       <div className="flex items-start gap-1">
         <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
-          {status}
           <SavedMark row={row} />
           {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
         </RowLabel>
         {action !== undefined && <div className="ms-auto flex items-center">{action}</div>}
       </div>
       {children}
+      {hint}
     </div>
   );
 }
@@ -129,7 +132,7 @@ export function SettingRow({
   disabledReason,
   detail,
   learnMore,
-  status,
+  hint,
   undoKey,
   children,
 }: {
@@ -141,8 +144,11 @@ export function SettingRow({
   htmlFor?: string;
   /** What the one line leaves out, behind the ⓘ beside the name. */
   learnMore?: ReactNode;
-  /** Beside the name, where "Saved" shows: such as how to save a draft not saved yet. */
-  status?: ReactNode;
+  /**
+   * Under the control, right-aligned: such as how to keep a draft not saved yet. Kept off the name's
+   * line, which holds only the name, its reset and "Saved".
+   */
+  hint?: ReactNode;
   /** Puts the default back; absent while the value is the default. */
   onReset?: (() => void) | undefined;
   /** Why the last change to this setting failed, shown under the row. */
@@ -168,14 +174,16 @@ export function SettingRow({
         <div className="flex min-w-0 flex-[1_1_14rem]">
           <RowLabel label={label} htmlFor={htmlFor} description={description} learnMore={learnMore}>
             {onReset && <ResetButton label={label} onReset={onReset} />}
-            {status}
             <SavedMark row={row} />
             {undoKey !== undefined && <UndoSave undoKey={undoKey} />}
           </RowLabel>
         </div>
         {children !== undefined && (
-          <div className="ms-auto flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
-            <WhyDisabled reason={disabledReason}>{children}</WhyDisabled>
+          <div className="ms-auto flex max-w-full min-w-0 flex-col items-end gap-1">
+            <div className="flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
+              <WhyDisabled reason={disabledReason}>{children}</WhyDisabled>
+            </div>
+            {hint}
           </div>
         )}
       </div>
@@ -431,7 +439,7 @@ export function NumberField({
       htmlFor={id}
       {...(description === undefined ? {} : { description })}
       {...(keywords === undefined ? {} : { keywords })}
-      status={dirty ? <SaveHint id={hintId} /> : undefined}
+      hint={dirty ? <SaveHint id={hintId} /> : undefined}
       undoKey={id}
     >
       <span className="flex items-center gap-1">

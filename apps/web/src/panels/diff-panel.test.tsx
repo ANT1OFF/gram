@@ -118,9 +118,15 @@ describe("DiffPanel", () => {
     renderWithApi(<DiffPanel threadId={T} />, { gitDiff });
     await screen.findAllByTestId("diff-file");
     expect(gitDiff).toHaveBeenLastCalledWith(T, { kind: "uncommitted" });
+    // How much the scope holds reads beside it, in the scope's row.
+    const summary = screen.getByTestId("diff-summary");
+    expect(summary.dataset["files"]).toBe(String(screen.getAllByTestId("diff-file").length));
+    expect(summary.textContent).toMatch(/files\+.*−/);
 
-    const ignore = screen.getByRole("button", { name: "Ignore whitespace" });
-    expect(ignore.getAttribute("aria-pressed")).toBe("false");
+    // The display choices sit under one labelled View menu.
+    fireEvent.click(screen.getByRole("button", { name: /^View/ }));
+    const ignore = await screen.findByRole("menuitemcheckbox", { name: "Ignore whitespace" });
+    expect(ignore.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(ignore);
     await waitFor(() =>
       expect(gitDiff).toHaveBeenLastCalledWith(
@@ -138,9 +144,9 @@ describe("DiffPanel", () => {
     await waitFor(() => expect(clock.querySelectorAll('tr[data-kind="add"]')).toHaveLength(1));
     expect(clock.querySelectorAll('tr[data-kind="del"]')).toHaveLength(1);
 
-    const wrap = screen.getByRole("button", { name: "Wrap lines" });
+    const wrap = screen.getByRole("menuitemcheckbox", { name: "Wrap lines" });
     fireEvent.click(wrap);
-    expect(wrap.getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(wrap.getAttribute("aria-checked")).toBe("true"));
     expect(useLayoutStore.getState().diffWrap).toBe(true);
   });
 
@@ -385,7 +391,10 @@ describe("DiffPanel", () => {
     await screen.findAllByTestId("diff-file");
     const panel = screen.getByTestId("diff-panel");
     expect(panel.dataset["layout"]).toBe("unified");
-    expect(screen.getByRole("radio", { name: "Split" }).getAttribute("title")).toMatch(/wider/);
+    fireEvent.click(screen.getByRole("button", { name: /^View/ }));
+    const split = await screen.findByRole("menuitemradio", { name: "Split" });
+    expect(split.getAttribute("title")).toMatch(/wider/);
+    expect(split.textContent).toContain("Needs a wider panel");
 
     width = 700;
     act(() => observers.forEach((report) => report()));
@@ -396,7 +405,7 @@ describe("DiffPanel", () => {
     expect(panel.dataset["layout"]).toBe("split");
     expect(screen.getByTestId("patch").dataset["layout"]).toBe("split");
 
-    fireEvent.click(screen.getByRole("radio", { name: "Unified" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Unified" }));
     expect(useLayoutStore.getState().diffLayout).toBe("unified");
     expect(panel.dataset["layout"]).toBe("unified");
     vi.unstubAllGlobals();

@@ -378,7 +378,7 @@ describe("ConnectorsPanel", () => {
     expect(
       await screen.findByText("This thread's folder no longer exists: /work/repo"),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.getByTestId("connectors-snapshot")).toBeTruthy();
 
     // The call answers before the agent is up: one that can't start says why, from the thread.
@@ -397,9 +397,9 @@ describe("ConnectorsPanel", () => {
       );
       return "starting" as const;
     });
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("claude: command not found")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     cleanup();
 
     // An archived thread never starts from here.

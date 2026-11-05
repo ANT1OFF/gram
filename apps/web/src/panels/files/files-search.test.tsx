@@ -99,7 +99,7 @@ describe("searchStatus", () => {
     expect(searchStatus("idle", [], false)).toBe(
       "Type at least 2 characters to search file contents.",
     );
-    expect(searchStatus("done", [], false)).toBe("No results");
+    expect(searchStatus("done", [], false)).toBe("No matches");
     const match = { path: "/a", relativePath: "a", line: 1, text: "x", ranges: [] };
     expect(searchStatus("done", [match, { ...match, line: 2 }], true)).toBe(
       "2 results in 1 file, more to load",

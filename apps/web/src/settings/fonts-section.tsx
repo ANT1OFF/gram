@@ -135,7 +135,7 @@ function TextSetting({
       htmlFor={id}
       onReset={onReset}
       error={error}
-      status={dirty ? <SaveHint id={hintId} /> : undefined}
+      hint={dirty ? <SaveHint id={hintId} /> : undefined}
       undoKey={id}
     >
       <input

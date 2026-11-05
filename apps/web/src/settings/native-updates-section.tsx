@@ -141,7 +141,7 @@ export function NativeUpdatesSection({
           <p className="min-w-0 flex-1 text-muted-foreground">{state.message}</p>
           {/* A held restart or a pending earlier install: try again to remove what macOS holds. */}
           <Button size="xs" variant="ghost" onClick={() => void nativeUpdates.dismiss()}>
-            Try again
+            Retry
           </Button>
         </div>
       )}

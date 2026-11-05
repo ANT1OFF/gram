@@ -7,6 +7,8 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 
+import { allowOnceLabel } from "@/thread/request-model";
+
 import type { Ask } from "./ask-model";
 import type { SendAction } from "./ask-answer";
 import type { WorkspaceAsks } from "./ask-stack";
@@ -211,7 +213,10 @@ export const awayAsk = (ask: Ask, actions: boolean): AwayAsk => {
     (candidate) => candidate.action.kind === "group" && candidate.action.decision === "allow",
   );
   if (!actions || option < 0 || ask.count > MAX_AWAY_COUNT) return { text, whole: true };
-  const label = mergesPr(request) ? "Merge" : ask.count > 1 ? `Allow ${ask.count}` : "Allow";
+  // The Inbox's own verb, "Allow once" or "Allow 3 once"; a PR's merge says Merge.
+  const label = mergesPr(request)
+    ? "Merge"
+    : (ask.options[option]?.label ?? allowOnceLabel(ask.count));
   return { text, whole: true, button: { label, option } };
 };
 

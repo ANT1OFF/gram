@@ -457,7 +457,7 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
       label="Name"
       description="Shown in the sidebar and the title bar."
       htmlFor={id}
-      status={dirty ? <SaveHint id={hintId} /> : undefined}
+      hint={dirty ? <SaveHint id={hintId} /> : undefined}
     >
       <span className="flex max-w-md items-center gap-2">
         <input

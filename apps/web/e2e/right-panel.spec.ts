@@ -6,7 +6,8 @@ import { reviewsInPanel } from "./reviews-panel";
 // tabs fold into More, named there, and Diff, PR, Files, Terminal and the open tab keep their
 // names; then only the open tab's; then icons alone. All of it is measured from the row rather
 // than guessed from a breakpoint. Every state keeps each tab's accessible name and tooltip, and its
-// count. On a review, Focus review sits beside the tabs in words that fold to its icon last.
+// count. On a review, Focus review sits beside the tabs in words that fold to its icon last, after
+// even the open tab's name.
 
 const open = async (page: Page, width: number) => {
   await page.addInitScript((panelWidth) => {
@@ -144,9 +145,10 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   );
   expect(gap).toBeLessThan(24);
 
-  // Too narrow for its words, it keeps its icon and its name.
+  // Narrower, the tabs give up their names, the open one's too, before Focus review its words.
   await page.setViewportSize({ width: 1180, height: 1000 });
-  await expect(focus).toHaveAttribute("data-words", "false");
+  await expect.poll(() => named(page)).toEqual([]);
+  await expect(focus).toHaveAttribute("data-words", "true");
   await expect(focus).toBeVisible();
   expect(await overflows(page)).toBe(false);
 });

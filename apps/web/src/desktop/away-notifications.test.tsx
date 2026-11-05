@@ -133,7 +133,7 @@ describe("asks' desktop notifications", () => {
       title: "Allow rm?",
       body: "rm -rf build",
       subtitle: expect.stringContaining("w-b"),
-      actions: ["Allow"],
+      actions: ["Allow once"],
     });
   });
 
@@ -145,7 +145,7 @@ describe("asks' desktop notifications", () => {
     await act(async () => titles[0]!(null));
     await flush();
     const [shown] = notes;
-    expect(shown).toMatchObject({ body: "npm test", actions: ["Allow"] });
+    expect(shown).toMatchObject({ body: "npm test", actions: ["Allow once"] });
     // The same key, another thread and command.
     act(() => asks.setState({ all: [workspaceAsking("w-a", "t-b", "0", "rm -rf build")] }));
     await flush();
@@ -167,7 +167,7 @@ describe("asks' desktop notifications", () => {
     await flush();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     act(() => onAction?.({ id: notes[0]!.id!, action: 0 }));
-    expect(useAskStackStore.getState().held.map((h) => h.done)).toEqual(["Allowed"]);
+    expect(useAskStackStore.getState().held.map((h) => h.done)).toEqual(["Allowed once"]);
     await act(() => vi.advanceTimersByTimeAsync(UNDO_MS));
     expect(respondMany).toHaveBeenCalledTimes(1);
     expect(respondMany.mock.calls[0]![0]).toEqual([

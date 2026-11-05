@@ -163,6 +163,14 @@ the check fails `bun run lint` on any new use; an allowlist entry is for a delib
 ## Voice
 
 - Plain and short. Sentence case. Buttons are verbs ("Create branch", "Open PR").
+- One word set per action, on every surface. An approval is "Allow once", "Always allow this
+  rule…" and "Deny" in the thread, the Inbox, the Board and a notification (the verbs live in
+  `thread/request-model.ts`), and its receipt names the scope chosen: "Allowed once", "Always
+  allowed …", "Denied". A failed step offers "Retry". A search that finds nothing says "No matches".
+- An ellipsis (…, never three dots) ends a button or item only when it asks for more before acting
+  ("Always allow this rule…", "More…"), and a placeholder ("Message…").
+- A short empty state is a fragment without a full stop ("No files yet", "Nothing needs you"); one
+  that goes on to say what to do is sentences, with full stops.
 - Say what happened and what the user can do; no blame, no exclamation marks.
 - Times are 24-hour only, from `formatStamp` in `apps/web/src/lib/time.ts`: `HH:MM` today
   (`09:42`, `00:00`), else `D Mon HH:MM` (`14 Jun 08:00`), with the year only when it isn't this
