@@ -21,6 +21,10 @@ const openHistory = async (page: Page) => {
     await nextFrame(page);
     await expect(history(page)).toBeVisible({ timeout: 100 });
   }).toPass();
+  // The panel opens its tab strip where the Inbox's link was, so the resting pointer would hover a
+  // tab and hold its tooltip open over the history: under the paused clock it never closes on its
+  // timer. Move the pointer off, as a hand does.
+  await page.mouse.move(0, 0);
 };
 
 test("startup repeats quietly retain history, survive reload, and remain usable without a thread", async ({
