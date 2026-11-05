@@ -12,6 +12,9 @@ import { threadRow } from "./thread-row";
 // title bar's button, the sidebar's pill, ⌘⇧I and ⌘⌥3 open it. Mock state lives in memory, so
 // every step after the seed navigates inside the app; nothing reloads.
 
+/** The setup guide's question, as its list row calls it: the full question is the detail's. */
+const UV = "The setup guide covers both pip and uv";
+
 /** The stack's undo window (`UNDO_MS`) and then some, for an answer to have gone out. */
 const SENT_MS = 8_000;
 
@@ -117,19 +120,113 @@ test("the pill opens every workspace's items by kind, and Open thread lands on t
     "billing · Export invoices as CSV",
   );
 
-  // Open thread: the worker that asked, its card ringed and in view; the Inbox closes.
+  // Docked beside the thread, in the panel's column: the chat stays in sight.
+  await expect(inbox(page)).toHaveAttribute("data-docked", "");
+  await expect(page.getByRole("dialog", { name: "Inbox" })).toHaveCount(0);
+  await expect(page.getByLabel("Message", { exact: true })).toBeInViewport();
+  await expect(page.getByTestId("right-panel")).toHaveCount(0);
+
+  // Show thread: the worker that asked, beside the Inbox, its card ringed and in view; the Inbox
+  // stays.
+  await expect(detail(page).getByTestId("inbox-open-thread")).toHaveText("Show thread");
   await detail(page).getByTestId("inbox-open-thread").click();
-  await expect(inbox(page)).toBeHidden();
   await expect(page).toHaveURL(new RegExp(`/t/${made.other.asking}$`));
   const card = page.locator(`[data-request-id="r-merge-${made.other.asking}"]`);
   await expect(card).toBeInViewport();
   await expect(card).toHaveAttribute("data-needs-you-flash", "true");
-  // Reopened, it is where it was left.
-  await page.keyboard.press("ControlOrMeta+Shift+I");
   await expect(inbox(page)).toBeVisible();
   await expect(detail(page)).toHaveAttribute("data-key", (await merge.getAttribute("data-key"))!);
+  // Esc closes it, and the thread it showed has focus: its composer.
+  await page.keyboard.press("Escape");
+  await expect(inbox(page)).toBeHidden();
+  await expect(page.getByLabel("Message", { exact: true })).toBeFocused();
+  // Reopened, it is where it was left, with focus on its list.
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(inbox(page)).toBeVisible();
+  await expect(inbox(page).getByTestId("inbox-list")).toBeFocused();
+  await expect(detail(page)).toHaveAttribute("data-key", (await merge.getAttribute("data-key"))!);
+  // From the composer beside it, ⌘⇧I takes focus back to the list; from the list, it closes it.
+  await page.getByLabel("Message", { exact: true }).focus();
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(inbox(page).getByTestId("inbox-list")).toBeFocused();
   await page.keyboard.press("ControlOrMeta+Shift+I");
   await expect(inbox(page)).toBeHidden();
+  // The right panel had the column before, and has it back.
+  await expect(page.getByTestId("right-panel")).toBeVisible();
+});
+
+test("list rows are short: what it is about, kind, workspace, thread and age; the detail has the question", async ({
+  page,
+}) => {
+  await start(page);
+  await openInbox(page);
+  const question = await show(page, UV);
+  await expect(question.getByTestId("inbox-item-title")).toHaveText(UV);
+  await expect(question.getByTestId("inbox-item-title")).not.toContainText("uv only");
+  // Its kind (its glyph, under Questions, which says it in words), workspace and thread.
+  await expect(question.getByRole("img", { name: "Question" })).toBeVisible();
+  await expect(question.getByTestId("inbox-item-where")).toHaveText(
+    "agent-platform · Refresh the setup guide",
+  );
+  // A kind its heading doesn't say is said in words: a plan, under Approvals.
+  const plan = inbox(page).locator('[data-testid="inbox-item"][data-kind="plan"]');
+  await expect(plan.getByTestId("inbox-item-title")).toHaveText("Plan to review");
+  await expect(plan.getByTestId("inbox-item-where")).not.toContainText("Plan to review");
+  const lines = await question
+    .getByTestId("inbox-item-title")
+    .evaluate((el) =>
+      Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)),
+    );
+  expect(lines).toBe(1);
+  // The whole question and its choices are the detail's alone.
+  await expect(detail(page)).toContainText(
+    "The setup guide covers both pip and uv. Keep both, or uv only?",
+  );
+  await expect(detail(page).getByTestId("ask-option")).toHaveCount(2);
+});
+
+test("docked, Esc and Enter stay with the Inbox: the thread's approval beside it isn't answered", async ({
+  page,
+}) => {
+  await start(page);
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+  await openInbox(page);
+  // On the dock itself, where nothing of the Inbox takes Enter either.
+  await inbox(page).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(inbox(page)).toBeHidden();
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+  expect(await sent(page)).toEqual([]);
+});
+
+test("a window too narrow to dock it, and Quiet, open the Inbox as a dialog", async ({ page }) => {
+  await start(page);
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(page.getByRole("dialog", { name: "Inbox" })).toBeVisible();
+  await expect(inbox(page)).not.toHaveAttribute("data-docked");
+  await expect(inbox(page).getByTestId("inbox-list")).toBeFocused();
+  // Widened, the same Inbox docks, where it was.
+  const shown = await detail(page).getAttribute("data-key");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole("dialog", { name: "Inbox" })).toHaveCount(0);
+  await expect(inbox(page)).toHaveAttribute("data-docked", "");
+  await expect(detail(page)).toHaveAttribute("data-key", shown!);
+  await expect(inbox(page).getByTestId("inbox-list")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(inbox(page)).toBeHidden();
+
+  // Quiet covers the window: the Inbox opens over it, and Quiet stays.
+  await page.keyboard.press("ControlOrMeta+Alt+4");
+  await expect(page.getByTestId("quiet-layer")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(page.getByRole("dialog", { name: "Inbox" })).toBeVisible();
+  await expect(inbox(page)).not.toHaveAttribute("data-docked");
+  await page.keyboard.press("Escape");
+  await expect(inbox(page)).toBeHidden();
+  await expect(page.getByTestId("quiet-layer")).toBeVisible();
 });
 
 test("answers in the detail go out through the one path, with Undo, and nothing twice", async ({
@@ -139,7 +236,7 @@ test("answers in the detail go out through the one path, with Undo, and nothing 
   await page.clock.install();
   const made = await start(page);
   await openInbox(page);
-  const question = await show(page, "Keep both, or uv only?");
+  const question = await show(page, UV);
   // Pick, then Send answer: a pick alone sends nothing.
   await detail(page).getByTestId("ask-option").filter({ hasText: "uv only" }).click();
   await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
@@ -196,7 +293,7 @@ test("keys: j and k move, 2 picks, ⌘⏎ sends, ⌘Z takes it back, ⏎ opens t
   await expect(detail(page)).toHaveAttribute("data-key", (await key(1))!);
 
   // A question's options carry their words and the number that picks them.
-  await show(page, "Keep both, or uv only?");
+  await show(page, UV);
   await inbox(page).getByTestId("inbox-list").focus();
   const options = detail(page).getByTestId("ask-option");
   await expect(options).toHaveText([/uv only/, /Keep both/]);
@@ -206,18 +303,26 @@ test("keys: j and k move, 2 picks, ⌘⏎ sends, ⌘Z takes it back, ⏎ opens t
   await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(page.getByTestId("needs-you-undo-line")).toContainText("Keep both");
-  await expect(row(page, "Keep both, or uv only?")).toHaveCount(0);
+  await expect(row(page, UV)).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(row(page, "Keep both, or uv only?")).toHaveCount(1);
+  await expect(row(page, UV)).toHaveCount(1);
   await expect(page.getByTestId("needs-you-undo-line")).toHaveCount(0);
   // The ask taken back is shown again.
   await expect(detail(page)).toContainText("Keep both, or uv only?");
 
-  // ⏎ opens its thread at the turn that asked.
+  // ⏎ shows its thread at the turn that asked, beside the Inbox, and focus stays on the list.
   await inbox(page).getByTestId("inbox-list").focus();
   await page.keyboard.press("Enter");
-  await expect(inbox(page)).toBeHidden();
   await expect(page).toHaveURL(new RegExp(`/t/${made.choosing}$`));
+  await expect(inbox(page).getByTestId("inbox-list")).toBeFocused();
+  await page.keyboard.press("j");
+  await expect(detail(page)).not.toContainText("Keep both, or uv only?");
+  // Tab goes on from the list to the detail; ⌘L to the composer beside it.
+  await page.keyboard.press("Tab");
+  await expect(detail(page).locator(":focus")).toHaveCount(1);
+  await page.keyboard.press("ControlOrMeta+l");
+  await expect(page.getByLabel("Message", { exact: true })).toBeFocused();
+  await expect(inbox(page)).toBeVisible();
 });
 
 test("a wait's Done resolves it, and Open thread lands on the message that added it", async ({

@@ -569,7 +569,8 @@ test("Needs you counts what the agents left waiting on you too, and goes to it",
   await row.click();
   await page.getByTestId("inbox-open-thread").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
-  await expect(page.getByTestId("inbox")).toBeHidden();
+  // Docked, the Inbox stays beside the thread it shows.
+  await expect(page.getByTestId("inbox")).toHaveAttribute("data-docked", "");
   await expect(page.getByTestId("wait-chip")).toBeInViewport();
   const tray = page.getByTestId("waiting-tray");
   await expect(tray.getByTestId("waiting-count")).toContainText("1 waiting on you");

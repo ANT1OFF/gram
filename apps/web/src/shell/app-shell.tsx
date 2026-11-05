@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 
 import { RightPanel, useShowPanelRequests } from "@/components/right-panel";
 import { MenuBar } from "@/desktop/menu-bar";
+import { InboxDock } from "@/inbox/inbox-view";
+import { useInboxStore } from "@/inbox/inbox-store";
 import { useShortcut } from "@/keyboard/registry";
 import { LaunchChecksBanner } from "@/launch-checks/banner";
 import { cn } from "@/lib/utils";
@@ -51,6 +53,7 @@ export function AppShell() {
     right,
     bounds,
     chatWidth,
+    dock,
   } = useShellLayout();
   useWorkspaceKeys();
   // The strip in Settings is no overview: entering or leaving Settings swaps nothing to carry.
@@ -91,6 +94,7 @@ export function AppShell() {
         data-panel-side={panelLeft ? "left" : "right"}
         data-panel-expanded={expanded}
         data-review-focus={reviewFocus}
+        data-inbox-docked={dock !== undefined}
         className={cn(
           "relative grid h-dvh overflow-hidden",
           level === "full" &&
@@ -151,6 +155,21 @@ export function AppShell() {
             panelLeft ? "order-2" : "order-3",
           )}
         >
+          {dock !== undefined && (
+            <>
+              <InboxDock />
+              <SideResizeHandle
+                side={panelLeft ? "left" : "right"}
+                label="Resize Inbox"
+                width={right}
+                bounds={dock.bounds}
+                onResize={(width) =>
+                  useInboxStore.getState().setWidth(clampWidth(width, dock.bounds))
+                }
+                onActive={setResizing}
+              />
+            </>
+          )}
           {panelShown && (
             <>
               <RightPanel />

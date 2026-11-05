@@ -276,10 +276,13 @@ function WatchStoppedBody({ item, onResume }: { item: NeedsYouItem; onResume: ()
 export function InboxDetail({
   item,
   now,
+  docked = false,
   onOpenThread,
 }: {
   item: NeedsYouItem;
   now: number;
+  /** Docked beside the work: its thread shows in the main area, and the Inbox stays. */
+  docked?: boolean;
   onOpenThread: (item: NeedsYouItem) => void;
 }) {
   const actions = useNeedsYouActions();
@@ -319,11 +322,17 @@ export function InboxDetail({
           variant="ghost"
           data-testid="inbox-open-thread"
           disabled={item.threadId === undefined}
-          title={item.threadId === undefined ? "No thread to open" : `Open ${item.where} at it`}
+          title={
+            item.threadId === undefined
+              ? "No thread to open"
+              : docked
+                ? `Show ${item.where} beside the Inbox (⏎)`
+                : `Open ${item.where} at it (⏎)`
+          }
           onClick={() => onOpenThread(item)}
         >
-          Open thread
-          <SquareArrowOutUpRight aria-hidden data-icon="inline-end" />
+          {docked ? "Show thread" : "Open thread"}
+          {!docked && <SquareArrowOutUpRight aria-hidden data-icon="inline-end" />}
         </Button>
         <Hint
           label="Later (1 hour)"

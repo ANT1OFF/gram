@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useLayoutEffect, useMemo } from "react";
 
 import { useApi } from "@/api/context";
-import { showInbox, toggleInbox, useInboxStore } from "@/inbox/inbox-store";
+import { inboxDocked, showInbox, toggleInbox, useInboxStore } from "@/inbox/inbox-store";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { useLayoutStore } from "@/stores/layout";
 import { useRequestRevealStore, useRevealStore } from "@/stores/reveal";
@@ -90,7 +90,7 @@ const FIND_MS = 3_000;
  * moment. Cards above the composer are found this way; transcript messages go through the reveal
  * store, which also pages earlier history in.
  */
-const ringWhenDrawn = (selector: string) => {
+const ringWhenDrawn = (selector: string, focus: boolean) => {
   const until = performance.now() + FIND_MS;
   const look = () => {
     // Drawn and shown: an approval queue keeps the others hidden until it shows this one.
@@ -103,8 +103,10 @@ const ringWhenDrawn = (selector: string) => {
     }
     found.scrollIntoView({ block: "center" });
     found.setAttribute("data-needs-you-flash", "true");
-    if (!found.hasAttribute("tabindex")) found.tabIndex = -1;
-    found.focus({ preventScroll: true });
+    if (focus) {
+      if (!found.hasAttribute("tabindex")) found.tabIndex = -1;
+      found.focus({ preventScroll: true });
+    }
     setTimeout(() => found.removeAttribute("data-needs-you-flash"), FLASH_MS);
   };
   requestAnimationFrame(look);
@@ -142,12 +144,15 @@ export const jumpTarget = (
 
 /**
  * Opens an item's thread at the turn that asked: the transcript message, or its card above the
- * composer, ringed. The Inbox closes, so the thread is what is seen.
+ * composer, ringed. A dialog Inbox closes, so the thread is what is seen, and the ringed card takes
+ * focus; a docked one stays beside it, keeping focus.
  */
 export function useNeedsYouJump(): (item: NeedsYouItem) => void {
   const navigate = useNavigate();
   return (item) => {
     const inbox = useInboxStore.getState();
+    // Shown beside the docked Inbox, the thread leaves focus where it was: on the Inbox's list.
+    const beside = inbox.open && inboxDocked();
     inbox.select(item.key);
     if (inbox.open) inbox.leave();
     const target = jumpTarget(item);
@@ -166,7 +171,7 @@ export function useNeedsYouJump(): (item: NeedsYouItem) => void {
     if (window.location.pathname !== pathname) {
       void navigate({ to: "/t/$threadId", params: { threadId } });
     }
-    if (target.kind === "card") ringWhenDrawn(target.selector);
+    if (target.kind === "card") ringWhenDrawn(target.selector, !beside);
   };
 }
 
