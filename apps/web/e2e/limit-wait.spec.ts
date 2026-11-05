@@ -59,9 +59,10 @@ test("a wait that resumes on another day names the day, as the meter does", asyn
       "Carry on with the brief",
     );
   }, resumeAt);
-  // Before: "resumes 21:00", read as tonight, for a resume three days off.
+  // Before: "resumes 21:00", read as tonight, for a resume three days off. Now the shared stamp's
+  // date and clock: "resumes 8 Nov 07:20".
   await expect(page.getByTestId("limit-wait")).toContainText(
-    /^Limit reached · resumes [A-Z][a-z]{2} \d{2}:\d{2}/,
+    /^Limit reached · resumes \d{1,2} [A-Z][a-z]{2}( \d{4})? \d{2}:\d{2}/,
   );
   if (DAY_SHOTS !== undefined) await page.screenshot({ path: `${DAY_SHOTS}/after.png` });
 });
