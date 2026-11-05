@@ -179,10 +179,13 @@ Three ways change them, all through the charter's one write path:
 - Settings → Workspaces → a workspace → Routines adds, edits, turns off, removes and runs one now,
   and shows each one's last and next run; each change saves with Undo.
 - The orchestrator keeps them with `routine_create` and `routine_update` (`remove: true` deletes
-  one), without a card, as it spawns inside its charter without one. Their schedule is a few
-  words: `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00` or `every 6 hours`. A worker is bound
-  `routine_create` alone, and its call always asks the user: a forced card that `bypassPermissions`
-  and Full autonomy don't lift.
+  one). Their schedule is a few words: `daily 09:00`, `weekdays 09:00`, `weekly mon 09:00` or
+  `every 6 hours`. A routine is a standing change to the charter that starts work with nobody
+  there, so adding one, turning one back on, or widening one (its schedule, brief, project, model,
+  target or name) always asks the user, from the orchestrator as from a worker: a forced card for
+  that call, showing the routine in full, that `bypassPermissions` and Full autonomy don't lift.
+  Turning one off or removing one only takes autonomy away, and the orchestrator does that without
+  a card. A worker is bound `routine_create` alone.
 - Settings by chat: `settings_propose` with `workspace.routines`, the whole list, each brief in full
   on the card the user approves.
 
@@ -205,7 +208,9 @@ under the routine's id:
   released, or its worker is live, a due run is skipped and recorded so. Its phase is read from
   durable facts under the lock every release of a held brief takes.
 - A routine new, turned on again or given a new schedule is reckoned from then, never run for a time
-  it missed. A run missed while Gram was closed runs once, a minute after the next start, never
+  it missed. Turned off, it keeps its claim, so a run still going is followed to its end and a
+  worker a crash left half made is still finished; removed, its state goes, and a run that was
+  under way doesn't bring it back. A run missed while Gram was closed runs once, a minute after the next start, never
   once per miss. A paused workspace pauses its routines: a run that falls due waits and runs once
   on the resume. An orchestrator routine's note goes into the digest once per occurrence.
 - Times are read in the machine's time zone, so a daylight-saving change keeps 09:00 at 09:00; a
@@ -587,8 +592,12 @@ an unwritten topic. Suggested names do not establish recorded goals or decisions
 The orchestrator should record actual information and update its index as it goes.
 
 Workers can read their orchestrator's memory with `memory_list` and `memory_read`, while that
-orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator. A
-worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
+orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator.
+A worker's reads go through the anchored tree, every folder below the data root opened without
+following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
+another workspace. A worker doesn't see what is marked private (a `private` folder, a
+`*.private.md` name, or `private: true` in a file's front matter) or a file named like a credential
+(a key, a secret, a token, an `.env`); the orchestrator sees it all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
 digest shows it to the orchestrator, which records it only when it holds for later work. Solo
 threads have no workspace memory.
 

@@ -1,13 +1,13 @@
 /**
  * The routine tools, `routine_create` and `routine_update` (which also removes one), which change the
- * routines in the workspace's charter through its one write path (`Orchestration.editCharter`). An
- * orchestrator keeps its workspace's routines without a card, as it spawns inside its charter without
- * one; the charter's digest lists them, so it needs no list tool. A worker is bound `routine_create`
- * alone, and its call always asks the user, at every autonomy and in every mode (a forced card, which
- * `bypassPermissions` doesn't lift): a routine starts work on its own later, so a worker never sets
- * one up unasked. Update keeps the same check, should a session's tool list ever carry it to a
- * thread that isn't the orchestrator. The user changes routines in Settings, or by chat through
- * `settings_propose`'s `workspace.routines` on its own card.
+ * routines in the workspace's charter through its one write path (`Orchestration.editCharter`). A
+ * routine is a standing change to the charter: it starts work later with nobody there. So adding one,
+ * turning one back on, or widening one (its schedule, brief, project, model or target) always asks
+ * the user, from an orchestrator as from a worker, on a card for that one call that shows the
+ * routine in full, at every autonomy and in every mode (a forced card: `bypassPermissions` and Full
+ * autonomy don't lift it). Turning one off or removing one only takes autonomy away, so the
+ * orchestrator does that without a card. A worker is bound `routine_create` alone. The user changes
+ * routines in Settings, or by chat through `settings_propose`'s `workspace.routines` on its card.
  *
  * What a routine starts is gated where it starts (`routines.ts`): its worker is the orchestrator's,
  * spawned under the workspace's autonomy, cap and approvals like any other.
@@ -85,6 +85,22 @@ const modelOf = (tool: string, charter: OrchestratorCharter, named: string) =>
     return model as ModelRef;
   });
 
+/**
+ * Whether a `routine_update` call only narrows what runs: it removes the routine, or turns it off and
+ * changes nothing else. Anything else (on again, a new schedule, brief, project, model, target or
+ * name) is a charter change the user approves.
+ */
+const onlyNarrows = (input: {
+  readonly remove?: boolean | undefined;
+  readonly off?: boolean | undefined;
+}) => {
+  if (input.remove === true) return true;
+  const changed = Object.entries(input).filter(
+    ([key, value]) => key !== "routine" && value !== undefined,
+  );
+  return changed.length === 1 && changed[0]![0] === "off" && input.off === true;
+};
+
 /** `edit`, refused when the routines it makes wouldn't be kept: too many, or a name twice. */
 const checked =
   (
@@ -125,10 +141,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         if (state === undefined) return yield* toolError(tool, NO_WORKSPACE);
         return state;
       });
-
-    /** A worker's change to a routine is the user's to allow; an orchestrator's isn't asked. */
-    const askWorker = (caller: ThreadId) =>
-      orchestration.authorityOf(caller).pipe(Effect.map((authority) => authority === undefined));
 
     /** One of the workspace's projects, by name or id. */
     const projectOf = (tool: string, state: WorkspaceState, named: string) =>
@@ -204,7 +216,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         name: "routine_create",
         class: "self",
         description:
-          'Save a routine: a brief run on a schedule. `schedule`: "daily HH:MM", "weekdays HH:MM", "weekly mon HH:MM" or "every N hours" (local, 24-hour). `target` "worker" starts your worker in `project` on `model` (defaults apply) with `brief`, written to stand alone; "orchestrator" puts it in your digest. A missed run runs once at start; a run is skipped while the last one\'s worker is live. From a worker this asks the user.',
+          'Save a routine: a brief run on a schedule. `schedule`: "daily HH:MM", "weekdays HH:MM", "weekly mon HH:MM" or "every N hours" (local, 24-hour). `target` "worker" starts your worker in `project` on `model` (defaults apply) with `brief`, written to stand alone; "orchestrator" puts it in your digest. A missed run runs once at start; a run is skipped while the last one\'s worker is live. Always asks the user, who sees it in full.',
       },
       audience: ["orchestrator", "worker"],
       input: Schema.Struct({
@@ -215,10 +227,11 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         project: Schema.optionalKey(Schema.String),
         model: Schema.optionalKey(Schema.String),
       }),
-      needsApproval: (caller) => askWorker(caller),
+      // A new standing routine is the user's to allow, whoever asks.
+      needsApproval: () => Effect.succeed(true),
       describe: (caller, input) =>
         Effect.succeed(
-          `Save the routine "${input.name}" (${input.schedule}), which ${input.target === "orchestrator" ? "wakes the orchestrator" : `starts a worker in ${input.project ?? "the home repository"}`} each time with this brief: ${input.brief.slice(0, 400)}${input.brief.length > 400 ? "…" : ""} [asked by thread ${caller}]`,
+          `Save the routine "${input.name}" (${input.schedule}), which ${input.target === "orchestrator" ? "wakes the orchestrator" : `starts a worker in ${input.project ?? "the home repository"}`} each time${input.model === undefined ? "" : ` on ${input.model}`}, with this brief in full:\n\n${input.brief}\n\n[asked by thread ${caller}]`,
         ),
       handle: (caller, input) =>
         Effect.gen(function* () {
@@ -256,7 +269,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         name: "routine_update",
         class: "self",
         description:
-          "Change a routine, named by `routine`: only the fields given change, as routine_create takes them. `off: true` turns it off; turning it on or a new schedule counts from now. `remove: true` deletes it; its workers carry on.",
+          "Change a routine, named by `routine`: only the fields given change, as routine_create takes them, and the user approves any change but `off: true` alone or `remove: true` (its workers carry on). Turning it on or a new schedule counts from now.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -270,7 +283,11 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         off: Schema.optionalKey(Schema.Boolean),
         remove: Schema.optionalKey(Schema.Boolean),
       }),
-      needsApproval: (caller) => askWorker(caller),
+      // Off or removed only takes autonomy away; anything else adds or widens what runs.
+      needsApproval: (caller, input) =>
+        Effect.map(orchestration.authorityOf(caller), (authority) =>
+          authority === undefined ? true : !onlyNarrows(input),
+        ),
       describe: (caller, input) =>
         Effect.succeed(
           input.remove === true

@@ -150,6 +150,17 @@ export interface OrchestrationMemoryShape {
   list(workspaceId: string): Effect.Effect<ReadonlyArray<MemoryFile>, MemoryError>;
   /** One file's text, scrubbed again in case it was edited by hand. */
   read(workspaceId: string, path: string): Effect.Effect<string, MemoryError>;
+  /**
+   * `list` as a worker sees it: through the anchored tree (every folder below the data root opened
+   * without following a link, so no symlink in any ancestor can lead out of this workspace), and
+   * without the files `workerMayRead` keeps from workers.
+   */
+  listForWorker(workspaceId: string): Effect.Effect<ReadonlyArray<MemoryFile>, MemoryError>;
+  /**
+   * `read` as a worker sees it: through the anchored tree, and `NotFound` for a file
+   * `workerMayRead` keeps from workers, by its name or by a `private: true` line in its front matter.
+   */
+  readForWorker(workspaceId: string, path: string): Effect.Effect<string, MemoryError>;
   /** `MEMORY.md`, or `""` when there is none yet. */
   index(workspaceId: string): Effect.Effect<string, MemoryError>;
   /**
@@ -766,6 +777,23 @@ const guarded = <A, E = never>(
     return yield* run();
   });
 
+/**
+ * Memory paths a worker never sees: a file or folder marked private (a `private` segment, or a
+ * `*.private.md` name), and names shaped like credentials (a key, a secret, a token, an `.env`).
+ * The orchestrator, memory's one curator, sees them all.
+ */
+const WORKER_HIDDEN_SEGMENT =
+  /^(?:private|\.env(?:\..*)?|.*\.private\.md|.*(?:secret|token|passwords?|credentials?|api[-_]?keys?|private[-_]?keys?)[^/]*|(?:id_(?:rsa|dsa|ecdsa|ed25519)|.*\.(?:pem|key|p12|pfx))(?:\.pub)?)$/i;
+
+/** Whether a worker may see the memory file at `path`, and, with its text, whether it isn't private. */
+export const workerMayRead = (path: string, text?: string): boolean => {
+  if (path.split("/").some((segment) => WORKER_HIDDEN_SEGMENT.test(segment))) return false;
+  if (text === undefined) return true;
+  // Front matter: a first `---` block that says `private: true`.
+  const front = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1];
+  return front === undefined || !/^private:\s*(?:true|yes)\s*$/im.test(front);
+};
+
 const make = (root: string): OrchestrationMemoryShape => {
   const locks = makeKeyedLock<string>();
   const locked = <A, E>(workspaceId: string, effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
@@ -845,6 +873,47 @@ const make = (root: string): OrchestrationMemoryShape => {
               }
             } else if (entry.isFile() && memoryPathProblem(path) === undefined) {
               const file = yield* resolveInTree(workspaceId, `${within}/${path}`, within);
+              if (file.kind === "file" && file.stats !== undefined) {
+                files.push({
+                  path,
+                  bytes: file.stats.size,
+                  modifiedAt: Math.round(file.stats.mtimeMs),
+                });
+              }
+            }
+          }
+        });
+      yield* walk("", 1);
+      return files.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    });
+
+  /** `listVersion` through the anchored tree, without what a worker may not see. */
+  const listVersionForWorker = (workspaceId: string, version: string) =>
+    Effect.gen(function* () {
+      const within = versionRel(version);
+      const files: Array<MemoryFile> = [];
+      const walk = (relDir: string, depth: number): Effect.Effect<void, MemoryError> =>
+        Effect.gen(function* () {
+          const treeRel = relDir === "" ? within : `${within}/${relDir}`;
+          const entries = yield* adoptionTree.listDir(
+            workspaceId,
+            treeRel,
+            relDir === "" ? "" : within,
+          );
+          for (const entry of entries ?? []) {
+            const path = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
+            if (!workerMayRead(path)) continue;
+            // `other` (a symlink included) is neither entered nor listed.
+            if (entry.kind === "dir") {
+              if (!entry.name.startsWith(".") && depth < MEMORY_MAX_DEPTH) {
+                yield* walk(path, depth + 1);
+              }
+            } else if (entry.kind === "file" && memoryPathProblem(path) === undefined) {
+              const file = yield* adoptionTree.resolveInTree(
+                workspaceId,
+                `${within}/${path}`,
+                within,
+              );
               if (file.kind === "file" && file.stats !== undefined) {
                 files.push({
                   path,
@@ -1067,6 +1136,39 @@ const make = (root: string): OrchestrationMemoryShape => {
         Effect.flatMap(adopted(workspaceId), (version) =>
           version === undefined ? Effect.succeed([]) : listVersion(workspaceId, version),
         ),
+      ),
+
+    listForWorker: (workspaceId) =>
+      guarded(workspaceId, undefined, () =>
+        Effect.flatMap(adopted(workspaceId, adoptionTree), (version) =>
+          version === undefined ? Effect.succeed([]) : listVersionForWorker(workspaceId, version),
+        ),
+      ),
+
+    readForWorker: (workspaceId, path) =>
+      guarded(workspaceId, path, () =>
+        Effect.gen(function* () {
+          const missing = new NotFound({
+            entity: "file",
+            id: path,
+            message: `No memory file ${path}`,
+          });
+          if (!workerMayRead(path)) return yield* missing;
+          const version = yield* adopted(workspaceId, adoptionTree);
+          if (version === undefined) return yield* missing;
+          const within = versionRel(version);
+          // Anchored: every folder down to the file is opened without following a link, and the
+          // file is read through that same chain, so nothing swapped in between leads elsewhere.
+          const text = yield* adoptionTree.readText(
+            workspaceId,
+            `${within}/${path}`,
+            within,
+            path,
+            MEMORY_READ_MAX_BYTES,
+          );
+          if (!workerMayRead(path, text)) return yield* missing;
+          return redactText(text);
+        }),
       ),
 
     read: (workspaceId, path) =>

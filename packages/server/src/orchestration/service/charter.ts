@@ -46,9 +46,10 @@ const routinesKey = (charter: Pick<OrchestratorCharter, "routines">): string =>
   JSON.stringify(charter.routines ?? []);
 
 /**
- * The outbox without the run states of routines `charter` no longer runs (removed or turned off),
- * so one added or turned on again is reckoned from then; the same outbox when nothing goes. An
- * unsettled run of one is let go with it: its worker carries on as the orchestrator's.
+ * The outbox without the run states of routines `charter` no longer has; the same outbox when
+ * nothing goes. An unsettled run of one is let go with it: its worker carries on as the
+ * orchestrator's. A routine turned off keeps its state, its claim included, so a run still going
+ * is followed to its end; the routines engine clears its next run (`routines/routines.ts`).
  */
 export const pruneRoutineRuns = (
   outbox: OutboxState,
@@ -58,7 +59,7 @@ export const pruneRoutineRuns = (
   if (runs === undefined) return outbox;
   const keys = new Set(
     (charter.routines ?? []).flatMap((routine) =>
-      routine.off === true || routine.id === undefined ? [] : [routine.id as string],
+      routine.id === undefined ? [] : [routine.id as string],
     ),
   );
   if (Object.keys(runs).every((key) => keys.has(key))) return outbox;
@@ -250,7 +251,7 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
           yield* wake(workspaceId, "the user changed the worker models", true);
         }
       }
-      // A routine removed or turned off forgets its runs, so one back again waits for its time.
+      // A routine removed forgets its runs; the engine looks again at every change.
       if (routinesKey(prior) !== routinesKey(charter)) {
         yield* updateOutbox(workspaceId, (outbox) => [
           pruneRoutineRuns(outbox, charter),

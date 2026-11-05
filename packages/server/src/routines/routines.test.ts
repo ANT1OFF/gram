@@ -269,104 +269,107 @@ describe.skipIf(!hasGit)("routines", () => {
     }),
   );
 
-  it.effect("lets the orchestrator keep routines unasked, and asks the user for a worker's", () =>
-    Effect.gen(function* () {
-      const world = yield* makeWorld;
-      yield* withServer(
-        world,
-        Effect.gen(function* () {
-          const registry = yield* AppToolRegistry;
-          const { session, thread } = yield* openOrchestrator(world);
-          const worker = yield* spawn(session, { feature: "flakes" });
-          yield* completeTurn(worker.session);
-          const input = {
-            name: "Nightly flake sweep",
-            brief: "Rerun the flaky suites and report what still fails.",
-            schedule: "daily 2:00",
-            target: "worker",
-            project: "shop",
-          };
-          const asks = (threadId: ThreadId, audience: "orchestrator" | "worker", name: string) =>
-            Effect.gen(function* () {
-              const tool = registry
-                .forThread(threadId, audience)
-                .find((each) => each.descriptor.name === name);
-              expect(tool).toBeDefined();
-              return yield* tool!.needsApproval!(
-                name === "routine_create" ? input : { routine: "x" },
-              );
-            });
-          expect(yield* asks(thread.id, "orchestrator", "routine_create")).toBe(false);
-          expect(yield* asks(thread.id, "orchestrator", "routine_update")).toBe(false);
-          expect(yield* asks(worker.thread.id, "worker", "routine_create")).toBe(true);
-          // A worker is bound create alone: listing, changing and removing are the orchestrator's.
-          const workerTools = registry
-            .forThread(worker.thread.id, "worker")
-            .map((each) => each.descriptor.name)
-            .filter((name) => name.startsWith("routine_"));
-          expect(workerTools).toEqual(["routine_create"]);
-          // A forced card: neither bypassPermissions nor an earlier allow lifts it.
-          expect(approvalFor("self", true)).toBe("forced");
+  it.effect(
+    "asks the user for every new routine, from the orchestrator as from a worker, and saves it in the charter",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const registry = yield* AppToolRegistry;
+            const { session, thread } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "flakes" });
+            yield* completeTurn(worker.session);
+            const input = {
+              name: "Nightly flake sweep",
+              brief: "Rerun the flaky suites and report what still fails.",
+              schedule: "daily 2:00",
+              target: "worker",
+              project: "shop",
+            };
+            const asks = (threadId: ThreadId, audience: "orchestrator" | "worker", name: string) =>
+              Effect.gen(function* () {
+                const tool = registry
+                  .forThread(threadId, audience)
+                  .find((each) => each.descriptor.name === name);
+                expect(tool).toBeDefined();
+                return yield* tool!.needsApproval!(
+                  name === "routine_create" ? input : { routine: "x", off: true },
+                );
+              });
+            // A new routine is a standing charter change: the user's, whoever asks ([12] has the rest).
+            expect(yield* asks(thread.id, "orchestrator", "routine_create")).toBe(true);
+            expect(yield* asks(thread.id, "orchestrator", "routine_update")).toBe(false);
+            expect(yield* asks(worker.thread.id, "worker", "routine_create")).toBe(true);
+            // A worker is bound create alone: listing, changing and removing are the orchestrator's.
+            const workerTools = registry
+              .forThread(worker.thread.id, "worker")
+              .map((each) => each.descriptor.name)
+              .filter((name) => name.startsWith("routine_"));
+            expect(workerTools).toEqual(["routine_create"]);
+            // A forced card: neither bypassPermissions nor an earlier allow lifts it.
+            expect(approvalFor("self", true)).toBe("forced");
 
-          // The orchestrator's create goes straight through; once approved, a worker's does too.
-          const made = (yield* session.callTool("routine_create", input)) as {
-            name: string;
-            schedule: string;
-            nextRunAt?: string;
-          };
-          expect(made).toMatchObject({
-            name: "Nightly flake sweep",
-            schedule: "every day at 02:00",
-            target: "worker",
-          });
-          expect(made.nextRunAt).toBeDefined();
-          yield* worker.session.callTool("routine_create", {
-            ...input,
-            name: "Weekly audit",
-            schedule: "weekly fri 16:00",
-          });
-          const charter = () =>
-            Effect.gen(function* () {
-              const store = yield* ThreadStore;
-              return (yield* store.getWorkspace(thread.workspaceId as WorkspaceId)).charter;
+            // Once approved (the fake session's calls skip the card), each is saved in the charter.
+            const made = (yield* session.callTool("routine_create", input)) as {
+              name: string;
+              schedule: string;
+              nextRunAt?: string;
+            };
+            expect(made).toMatchObject({
+              name: "Nightly flake sweep",
+              schedule: "every day at 02:00",
+              target: "worker",
             });
-          const saved = (yield* charter()).routines ?? [];
-          expect(saved.map((routine) => [routine.name, routine.schedule])).toEqual([
-            ["Nightly flake sweep", { every: "day", at: "02:00" }],
-            ["Weekly audit", { every: "week", day: 5, at: "16:00" }],
-          ]);
-          expect(saved.every((routine) => routine.id !== undefined)).toBe(true);
-          const refused = yield* session
-            .callTool("routine_create", { ...input, schedule: "every 0 hours" })
-            .pipe(Effect.flip);
-          expect(refused.message).toContain("1 to 168 whole hours");
-          const garbled = yield* session
-            .callTool("routine_create", { ...input, schedule: "at 9pm" })
-            .pipe(Effect.flip);
-          expect(garbled.message).toContain('"daily HH:MM"');
-          const dup = yield* session.callTool("routine_create", input).pipe(Effect.flip);
-          expect(dup.message).toContain("already has a routine named");
-          const outside = yield* session
-            .callTool("routine_create", { ...input, name: "Elsewhere", project: "nowhere" })
-            .pipe(Effect.flip);
-          expect(outside.message).toContain("isn't one of this workspace's projects");
-          // Turned off it keeps its place; removed it goes, its id with it.
-          yield* session.callTool("routine_update", { routine: "weekly audit", off: true });
-          expect((yield* charter()).routines?.find((r) => r.name === "Weekly audit")?.off).toBe(
-            true,
-          );
-          const renamed = (yield* session.callTool("routine_update", {
-            routine: "Nightly flake sweep",
-            name: "Flake sweep",
-          })) as { name: string };
-          expect(renamed.name).toBe("Flake sweep");
-          expect((yield* charter()).routines?.find((r) => r.name === "Flake sweep")?.id).toBe(
-            saved[0]!.id,
-          );
-          yield* session.callTool("routine_update", { routine: "Weekly audit", remove: true });
-          expect(((yield* charter()).routines ?? []).map((r) => r.name)).toEqual(["Flake sweep"]);
-        }),
-      );
-    }),
+            expect(made.nextRunAt).toBeDefined();
+            yield* worker.session.callTool("routine_create", {
+              ...input,
+              name: "Weekly audit",
+              schedule: "weekly fri 16:00",
+            });
+            const charter = () =>
+              Effect.gen(function* () {
+                const store = yield* ThreadStore;
+                return (yield* store.getWorkspace(thread.workspaceId as WorkspaceId)).charter;
+              });
+            const saved = (yield* charter()).routines ?? [];
+            expect(saved.map((routine) => [routine.name, routine.schedule])).toEqual([
+              ["Nightly flake sweep", { every: "day", at: "02:00" }],
+              ["Weekly audit", { every: "week", day: 5, at: "16:00" }],
+            ]);
+            expect(saved.every((routine) => routine.id !== undefined)).toBe(true);
+            const refused = yield* session
+              .callTool("routine_create", { ...input, schedule: "every 0 hours" })
+              .pipe(Effect.flip);
+            expect(refused.message).toContain("1 to 168 whole hours");
+            const garbled = yield* session
+              .callTool("routine_create", { ...input, schedule: "at 9pm" })
+              .pipe(Effect.flip);
+            expect(garbled.message).toContain('"daily HH:MM"');
+            const dup = yield* session.callTool("routine_create", input).pipe(Effect.flip);
+            expect(dup.message).toContain("already has a routine named");
+            const outside = yield* session
+              .callTool("routine_create", { ...input, name: "Elsewhere", project: "nowhere" })
+              .pipe(Effect.flip);
+            expect(outside.message).toContain("isn't one of this workspace's projects");
+            // Turned off it keeps its place; removed it goes, its id with it.
+            yield* session.callTool("routine_update", { routine: "weekly audit", off: true });
+            expect((yield* charter()).routines?.find((r) => r.name === "Weekly audit")?.off).toBe(
+              true,
+            );
+            const renamed = (yield* session.callTool("routine_update", {
+              routine: "Nightly flake sweep",
+              name: "Flake sweep",
+            })) as { name: string };
+            expect(renamed.name).toBe("Flake sweep");
+            expect((yield* charter()).routines?.find((r) => r.name === "Flake sweep")?.id).toBe(
+              saved[0]!.id,
+            );
+            yield* session.callTool("routine_update", { routine: "Weekly audit", remove: true });
+            expect(((yield* charter()).routines ?? []).map((r) => r.name)).toEqual(["Flake sweep"]);
+          }),
+        );
+      }),
   );
 });

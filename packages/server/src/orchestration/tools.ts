@@ -758,7 +758,10 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       handle: (caller, { prefix }) =>
         Effect.gen(function* () {
           const workspaceId = yield* readableMemoryOf("memory_list", caller);
-          const files = yield* memory.list(workspaceId);
+          // A worker reads through the anchored tree, without what is private or credential-shaped.
+          const files = (yield* orchestration.authorityOf(caller))
+            ? yield* memory.list(workspaceId)
+            : yield* memory.listForWorker(workspaceId);
           return {
             files: files.filter((file) => prefix === undefined || file.path.startsWith(prefix)),
           };
@@ -777,7 +780,10 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       handle: (caller, { path }) =>
         Effect.gen(function* () {
           const workspaceId = yield* readableMemoryOf("memory_read", caller);
-          return { path, content: yield* memory.read(workspaceId, path) };
+          const content = (yield* orchestration.authorityOf(caller))
+            ? yield* memory.read(workspaceId, path)
+            : yield* memory.readForWorker(workspaceId, path);
+          return { path, content };
         }).pipe(Effect.mapError(failed("memory_read"))),
     });
 

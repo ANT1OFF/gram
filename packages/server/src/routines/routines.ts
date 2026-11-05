@@ -331,9 +331,18 @@ export const RoutinesLive = Layer.effect(
       });
 
     /** Stores the routine's run state in its workspace's outbox. */
-    const write = (routine: Routine) =>
+    /**
+     * Stores the routine's run state. Every engine write runs under `lock`, so they are one at a
+     * time; the one writer outside it is the charter's prune of a removed routine. So a write finds
+     * the state it read, or none: and one that finds none brings nothing back (`create` aside, for
+     * the reckoning that starts a routine's state), so a run in flight can't revive a routine
+     * removed meanwhile.
+     */
+    const write = (routine: Routine, create = false) =>
       orchestration
-        .updateRoutineState(routine.workspaceId, routine.id, () => stateOf(routine))
+        .updateRoutineState(routine.workspaceId, routine.id, (current) =>
+          current === undefined && !create ? undefined : stateOf(routine),
+        )
         .pipe(Effect.asVoid);
 
     /** Runs the routine once `after` has passed, or at its `nextRunAt`; nothing while it is off. */
@@ -761,12 +770,30 @@ export const RoutinesLive = Layer.effect(
           const live = new Set<string>();
           for (const state of states) {
             const workspaceId = state.workspace.id;
-            const routines = charterRoutines(state).filter((routine) => routine.off !== true);
+            const all = charterRoutines(state);
+            const routines = all.filter((routine) => routine.off !== true);
             for (const routine of routines) live.add(timerKey(workspaceId, routine.id));
             if (only !== undefined && workspaceId !== only) continue;
-            if (routines.length === 0) continue;
+            if (all.length === 0) continue;
             const runs = yield* orchestration.routineStates(workspaceId);
             let touched = false;
+            // Off: no next run, so turning it back on reckons from then, never from a time it
+            // missed; its claim and what its runs did stay, so a run still going is followed to
+            // its end, and one a crash left half made is finished at the start's look.
+            for (const charterRoutine of all.filter((routine) => routine.off === true)) {
+              const stored = runs[charterRoutine.id];
+              if (stored === undefined) continue;
+              const routine = routineOf(workspaceId, charterRoutine, stored);
+              if (routine.claim !== undefined) live.add(timerKey(workspaceId, routine.id));
+              if (stored.nextRunAt !== undefined || stored.waiting !== undefined) {
+                const { nextRunAt: _next, waiting: _waiting, ...rest } = routine;
+                yield* write(rest);
+                touched = true;
+              }
+              if (catchUp && routine.claim !== undefined) {
+                yield* arm(routine, ROUTINE_CATCH_UP_DELAY);
+              }
+            }
             for (const charterRoutine of routines) {
               let routine = routineOf(workspaceId, charterRoutine, runs[charterRoutine.id]);
               const key = scheduleKeyOf(routine.schedule);
@@ -778,7 +805,7 @@ export const RoutinesLive = Layer.effect(
                   nextRunAt: nextRunAfter(routine.schedule, now, localZone()),
                   scheduleKey: key,
                 };
-                yield* write(routine);
+                yield* write(routine, true);
                 touched = true;
               }
               const missed = routine.nextRunAt! <= now;
