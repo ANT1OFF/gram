@@ -134,10 +134,18 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   beside it while the composer has focus. A default says whose it is ("Model default" for effort,
   "CLI default" for speed), never a bare "Default".
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use
-  the instant tooltip (`Hint`), never a native title, with the shortcut where there is one.
+  the instant tooltip (`Hint`), never a native title, with the shortcut where there is one. A hint
+  opens when the pointer moves onto its trigger, never for one that appears under a resting
+  pointer, and opens on the side away from what sits next to it (a panel's tabs above, over the
+  panel's empty top, not over the notice under them).
 - **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title, then
   what wants you (a setup problem folded from its banner, a paused workspace, usage, the bell), one "…" with everything else in words and
-  shortcuts, and the panel. A new control goes in the "…" unless it is needed at a glance.
+  shortcuts, and the panel. A new control goes in the "…" unless it is needed at a glance. A
+  thread's title comes before its secondary buttons: the bar folds a worker's actions into "…"
+  before it cuts the title (up to a cap). Settings is a place of its own: Back and its name in place
+  of the workspace and its views, and no overview beside it.
+- **A status strip keeps its words:** short of room it drops whole items from its end, never their
+  words, so a count never stands alone and no two read the same.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
 
