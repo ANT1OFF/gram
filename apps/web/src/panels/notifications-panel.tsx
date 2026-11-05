@@ -126,7 +126,7 @@ export function NotificationsPanel() {
                   className="px-3 py-3"
                 >
                   <div className="flex items-center gap-2 text-meta text-muted-foreground">
-                    <kind.icon aria-hidden className={cn("size-3.5 shrink-0", kind.tone)} />
+                    <kind.icon aria-hidden className={cn("size-icon-row shrink-0", kind.tone)} />
                     <span>{kind.label}</span>
                     {!entry.read && (
                       <span className="size-1.5 rounded-full bg-primary" aria-label="Unread" />
@@ -209,7 +209,7 @@ export function NotificationsPanel() {
           </ol>
         )}
       </div>
-      <p className="shrink-0 border-t border-border px-3 py-2 text-caption text-muted-foreground">
+      <p className="shrink-0 border-t border-border px-3 py-2 text-meta text-muted-foreground">
         {storageUnavailable
           ? "Session only · local storage unavailable"
           : "On this device · latest 100 · 30 days"}

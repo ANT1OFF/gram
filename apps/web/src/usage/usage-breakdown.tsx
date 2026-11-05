@@ -102,7 +102,10 @@ function ThreadList({ threads }: { threads: UsageBreakdown["threads"] }) {
                 data-thread-id={thread.threadId}
               >
                 <div className="flex min-w-0 items-center gap-2 pt-1.5 text-body">
-                  <AgentIcon agent={agent} className="size-3.5 shrink-0 text-muted-foreground" />
+                  <AgentIcon
+                    agent={agent}
+                    className="size-icon-row shrink-0 text-muted-foreground"
+                  />
                   {thread.title === null ? (
                     <span className="truncate text-muted-foreground">Deleted thread</span>
                   ) : (
@@ -114,7 +117,7 @@ function ThreadList({ threads }: { threads: UsageBreakdown["threads"] }) {
                       {thread.title}
                     </Link>
                   )}
-                  <span className="shrink-0 rounded-sm bg-muted px-1.5 text-caption text-muted-foreground">
+                  <span className="shrink-0 rounded-sm bg-muted px-1.5 text-meta text-muted-foreground">
                     {ROLE_LABEL[thread.role]}
                   </span>
                   <Amount totals={thread.totals} className="ml-auto" />
@@ -224,7 +227,7 @@ export function OutsideGramSection({
           id="usage-outside-title"
           className="flex items-center gap-1.5 text-reading font-semibold"
         >
-          <SquareTerminal aria-hidden className="size-3.5 text-muted-foreground" />
+          <SquareTerminal aria-hidden className="size-icon-row text-muted-foreground" />
           Outside Gram
         </h2>
         <p className="text-meta text-muted-foreground">

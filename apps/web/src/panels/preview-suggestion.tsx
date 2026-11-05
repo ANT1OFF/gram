@@ -32,7 +32,7 @@ export function PreviewSuggestionNotice({ threadId }: { threadId: ThreadId | und
       data-testid="preview-suggestion"
       className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-meta text-muted-foreground"
     >
-      <Globe aria-hidden className="size-3.5 shrink-0" />
+      <Globe aria-hidden className="size-icon-row shrink-0" />
       <span className="min-w-0 flex-1 truncate" title={url}>
         Agent suggests previewing <span className="font-mono text-foreground">{url}</span>
       </span>

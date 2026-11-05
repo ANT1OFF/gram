@@ -161,7 +161,7 @@ function RegistrySignIn() {
       data-testid="registry-sign-in"
       className="flex min-h-7 items-center gap-2 text-meta text-warning"
     >
-      <KeyRound aria-hidden className="size-3.5 shrink-0" />
+      <KeyRound aria-hidden className="size-icon-row shrink-0" />
       <span className="min-w-0">
         <CommandText text="npm registry sign-in expired: run `npm login` (or `npm ping`) to check for newer agent releases." />
       </span>
@@ -204,7 +204,7 @@ function AgentStatusRow({
   return (
     <div role="group" aria-label={name} data-testid="agent-check" data-trouble={trouble?.level}>
       <div className="flex min-h-7 items-center gap-2">
-        <AgentIcon agent={agent} className="size-4" />
+        <AgentIcon agent={agent} className="size-icon-row" />
         <span className="font-medium">{name}</span>
         {shown !== undefined && (
           <span className="font-mono text-meta text-muted-foreground">{shown}</span>
@@ -228,7 +228,7 @@ function AgentStatusRow({
                 />
               }
             >
-              <StatusIcon aria-hidden className="size-3.5 shrink-0" />
+              <StatusIcon aria-hidden className="size-icon-row shrink-0" />
               <span className="truncate">{trouble.summary}</span>
               <span className="sr-only">. {trouble.detail.replaceAll("`", "")}</span>
             </Hint>

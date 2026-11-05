@@ -19,7 +19,7 @@ export function WorktreeBanner({ threadId }: { threadId: ThreadId }) {
       data-testid="worktree-banner"
       className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-1.5 text-meta text-muted-foreground"
     >
-      <GitBranch aria-hidden className="size-3.5 shrink-0" />
+      <GitBranch aria-hidden className="size-icon-row shrink-0" />
       <span className="min-w-0 truncate">
         Working in worktree{" "}
         <code className="font-mono text-foreground" title={current.path}>

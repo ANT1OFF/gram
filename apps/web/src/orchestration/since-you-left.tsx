@@ -102,7 +102,7 @@ export function SinceYouLeft({
           aria-label={`Since you left: ${words}. Show what happened`}
           className="flex h-7 min-w-0 items-center gap-1.5 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <History aria-hidden className="size-3.5 shrink-0" />
+          <History aria-hidden className="size-icon-row shrink-0" />
           <span className="shrink-0 @max-4xl:hidden">Since you left</span>
           {merged > 0 && (
             <span data-testid="since-merged" className="shrink-0">
@@ -166,7 +166,7 @@ export function SinceYouLeft({
         className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={dismiss}
       >
-        <X aria-hidden className="size-3" />
+        <X aria-hidden className="size-icon-chip" />
       </button>
     </section>
   );

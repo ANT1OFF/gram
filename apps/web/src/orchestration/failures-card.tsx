@@ -68,7 +68,7 @@ const CAUSE_ICON: Record<FailureStep["kind"], LucideIcon> = {
 /** The glyph beside a failure's cause, so it reads without its colour. */
 function CauseIcon({ step }: { step: FailureStep }) {
   const Icon = CAUSE_ICON[step.kind];
-  return <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />;
+  return <Icon aria-hidden className="mt-0.5 size-icon-row shrink-0 text-destructive" />;
 }
 
 /** The glyph on a failure's step button. */
@@ -218,7 +218,7 @@ export function FailuresCard({
         className="overflow-hidden rounded-(--radius-lg) border border-destructive/40 bg-card"
       >
         <h2 className="flex items-center gap-1.5 border-b border-border px-3 py-1.5 text-meta font-medium text-destructive">
-          <CircleAlert aria-hidden className="size-3.5" />
+          <CircleAlert aria-hidden className="size-icon-row" />
           Failing
           <span className="text-muted-foreground tabular-nums">{failures.length}</span>
         </h2>

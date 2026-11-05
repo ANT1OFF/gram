@@ -235,7 +235,7 @@ export function PrBadge({
           <state.icon
             role="img"
             aria-label={prGlyphWords(facts)}
-            className={cn("size-3.5", state.tone)}
+            className={cn("size-icon-row", state.tone)}
           />
         </Swap>
       </PulseOnce>
@@ -250,7 +250,7 @@ export function PrBadge({
               aria-hidden
               data-testid="pr-checks-glyph"
               data-checks={shown.checks}
-              className={cn("size-3.5", checks.tone)}
+              className={cn("size-icon-row", checks.tone)}
             />
           </Swap>
         </PulseOnce>
@@ -292,7 +292,7 @@ export function PrBadgeMarks({
           role="img"
           aria-label="Couldn't refresh from GitHub"
           data-testid="pr-stale-glyph"
-          className="size-3.5 text-muted-foreground"
+          className="size-icon-row text-muted-foreground"
         />
       )}
       {cue === "followed" && (
@@ -302,14 +302,14 @@ export function PrBadgeMarks({
         <ArrowRight
           role="img"
           aria-label={`bound to #${thread?.boundPr?.number}`}
-          className="size-3.5 text-foreground"
+          className="size-icon-row text-foreground"
         />
       )}
       {git.workElsewhere && (
         <TriangleAlert
           role="img"
           aria-label={`uncommitted work on ${git.workElsewhere.branch} in another worktree`}
-          className="size-3.5 text-warning"
+          className="size-icon-row text-warning"
         />
       )}
       <BabysitGlyph threadId={threadId} />
@@ -336,7 +336,7 @@ function BabysitGlyph({ threadId }: { threadId: ThreadId }) {
         aria-label={label}
         data-testid="babysit-glyph"
         data-phase={babysit.phase}
-        className={cn("size-3.5", display.tone)}
+        className={cn("size-icon-row", display.tone)}
       >
         <title>{label}</title>
       </display.icon>
@@ -408,7 +408,7 @@ export function PrChip({
           />
         }
       >
-        <display.icon aria-hidden className="size-3.5" />
+        <display.icon aria-hidden className="size-icon-row" />
         <span className="sr-only">{mark.word}</span>
       </Hint>
     );
@@ -424,7 +424,7 @@ export function PrChip({
         className,
       )}
     >
-      <display.icon aria-hidden className="size-3.5" />
+      <display.icon aria-hidden className="size-icon-row" />
       <span>{mark.word}</span>
     </span>
   );

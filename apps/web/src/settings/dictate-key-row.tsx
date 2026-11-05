@@ -57,7 +57,7 @@ export function DictateKeyRow({ mac = isMac() }: { mac?: boolean }) {
           <ul data-testid="dictate-key-warnings" className="flex flex-col gap-1">
             {warnings.map((warning) => (
               <li key={warning} className="flex items-start gap-1.5 text-meta text-warning">
-                <AlertTriangle aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+                <AlertTriangle aria-hidden className="mt-0.5 size-icon-row shrink-0" />
                 {warning}
               </li>
             ))}

@@ -133,7 +133,7 @@ function MessageAttachment({
     <li data-testid="message-attachment" title={path} className="max-w-full">
       {src === undefined ? (
         <span className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-meta">
-          <Paperclip aria-hidden className="size-3.5" />
+          <Paperclip aria-hidden className="size-icon-row" />
           {name}
         </span>
       ) : (
@@ -178,7 +178,7 @@ function SentFile({ threadId, url }: { threadId: ThreadId; url: string }) {
           // The click comes from this thread's own pane, so this is the thread being viewed.
           onClick={() => requestPanel({ threadId, panel: "files", target: path }, threadId)}
         >
-          <FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+          <FileText aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           <span className="truncate">{name}</span>
         </button>
       ) : (
@@ -193,7 +193,7 @@ function SentFile({ threadId, url }: { threadId: ThreadId; url: string }) {
             );
           }}
         >
-          <FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+          <FileText aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           <span className="flex min-w-0 flex-col">
             <span className="truncate">{name}</span>
             <span

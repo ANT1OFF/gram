@@ -44,7 +44,7 @@ export function SaveFooter({
               role="status"
               className="gram-fade inline-flex items-center gap-0.5 text-meta text-success-text"
             >
-              <DrawnCheck className="size-3.5" />
+              <DrawnCheck className="size-icon-row" />
               Saved
             </span>
           )

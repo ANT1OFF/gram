@@ -55,7 +55,7 @@ export function ToolGroup({
         }}
       >
         {waiting !== undefined && (
-          <ShieldQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
+          <ShieldQuestion aria-hidden className="size-icon-row shrink-0 text-status-needs-mark" />
         )}
         <span className="truncate">
           {waiting !== undefined
@@ -82,7 +82,7 @@ export function ToolGroup({
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+            "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
             open && "rotate-90",
           )}
         />
@@ -143,7 +143,7 @@ export function TurnFoldRow({
       <ChevronRight
         aria-hidden
         className={cn(
-          "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+          "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
           open && "rotate-90",
         )}
       />

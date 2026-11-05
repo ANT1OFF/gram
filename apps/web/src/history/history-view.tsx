@@ -19,6 +19,7 @@ import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { useAvailableAgents } from "@/composer/agent-fields";
 import { keyLabel } from "@/keyboard/registry";
+import { KEY_CAP } from "@/keyboard/use-shortcut-hint";
 import { listIndexForKey } from "@/lib/list-keys";
 import { useNow } from "@/lib/use-now";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
@@ -274,7 +275,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
   return (
     <div className="flex min-h-0 flex-col" onKeyDown={onKeyDown}>
       <div className="flex items-center gap-2 border-b border-border px-3">
-        <Search aria-hidden className="size-4 text-muted-foreground" />
+        <Search aria-hidden className="size-icon-row text-muted-foreground" />
         <Dialog.Title className="sr-only">History</Dialog.Title>
         <input
           autoFocus
@@ -418,7 +419,10 @@ function HistoryRow({
   onOpen: () => void;
 }) {
   const glyph = entry.outcome === undefined ? IMPORTED_GLYPH : OUTCOME_GLYPH[entry.outcome];
-  const word = entry.outcome === undefined ? "resume" : OUTCOME_LABEL[entry.outcome];
+  // What happened to it, a status, apart from what Enter does to it, an action: an imported session
+  // is "imported" and resumes; everything else opens.
+  const word = entry.outcome === undefined ? "imported" : OUTCOME_LABEL[entry.outcome];
+  const action = entry.outcome === undefined ? "Resume" : "Open";
   // A workspace named for its one repo says it once, whatever its case ("Gram · gram" is "Gram").
   const full = [entry.place, entry.repo]
     .filter(
@@ -452,7 +456,7 @@ function HistoryRow({
         resuming && "opacity-60",
       )}
     >
-      <glyph.icon aria-hidden className={cn("size-4 shrink-0", glyph.tone)} />
+      <glyph.icon aria-hidden className={cn("size-icon-row shrink-0", glyph.tone)} />
       <span data-testid="history-title" className="min-w-0 truncate">
         {entry.title}
       </span>
@@ -464,19 +468,30 @@ function HistoryRow({
           {where}
         </span>
       )}
-      <span className="ml-auto flex shrink-0 items-center gap-2 pl-3 text-meta text-muted-foreground">
-        {entry.agent !== undefined && <AgentIcon agent={entry.agent} className="size-3.5" />}
-        <span data-testid="history-outcome">{word}</span>
-        <time
-          data-testid="history-time"
-          dateTime={
-            entry.finishedAt === undefined ? undefined : new Date(entry.finishedAt).toISOString()
-          }
-          title={whenLong}
-          className="min-w-10 text-right tabular-nums"
-        >
-          {when}
-        </time>
+      <span className="ml-auto flex shrink-0 items-center gap-3 pl-3 text-meta text-muted-foreground">
+        {/* The cursor row's action, ahead of the status columns so they stay aligned. */}
+        {active && (
+          <span data-testid="history-action" className="flex items-center gap-1 text-foreground">
+            {action}
+            <kbd className={KEY_CAP}>{keyLabel("⏎")}</kbd>
+          </span>
+        )}
+        <span className="flex items-center gap-2">
+          {entry.agent !== undefined && <AgentIcon agent={entry.agent} className="size-icon-row" />}
+          <span data-testid="history-outcome" className="min-w-16 capitalize">
+            {word}
+          </span>
+          <time
+            data-testid="history-time"
+            dateTime={
+              entry.finishedAt === undefined ? undefined : new Date(entry.finishedAt).toISOString()
+            }
+            title={whenLong}
+            className="min-w-10 text-right tabular-nums"
+          >
+            {when}
+          </time>
+        </span>
       </span>
     </div>
   );

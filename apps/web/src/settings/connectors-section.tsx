@@ -594,7 +594,7 @@ export function ConnectorsSettings() {
                     <ChevronRight
                       aria-hidden
                       className={cn(
-                        "size-3.5 shrink-0 motion-safe:transition-transform",
+                        "size-icon-chip shrink-0 motion-safe:transition-transform",
                         showSignedOut && "rotate-90",
                       )}
                     />
@@ -731,9 +731,9 @@ function Cell({
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
         {waiting ? (
-          <Spinner aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <Spinner aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         ) : (
-          <state.icon aria-hidden className={cn("size-3.5 shrink-0", state.tone)} />
+          <state.icon aria-hidden className={cn("size-icon-row shrink-0", state.tone)} />
         )}
         <span className={cn(!signedIn && "text-muted-foreground")}>
           {waiting ? "Waiting for sign-in…" : state.text}

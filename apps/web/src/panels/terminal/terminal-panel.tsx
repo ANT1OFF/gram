@@ -127,7 +127,7 @@ export function TerminalPanel({ threadId }: { threadId: ThreadId }) {
                   onClick={() => closeTab(id)}
                   className="rounded-sm p-0.5 outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
-                  <X aria-hidden className="size-3" />
+                  <X aria-hidden className="size-icon-chip" />
                 </button>
               </div>
             );

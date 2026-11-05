@@ -99,9 +99,9 @@ export function StageStepper({
         <span
           data-testid="stage-label"
           title={model.current}
-          className="inline-flex w-fit max-w-full items-center gap-1 rounded-sm border border-border px-1 text-caption text-foreground/80"
+          className="inline-flex w-fit max-w-full items-center gap-1 rounded-sm border border-border px-1 text-meta text-foreground/80"
         >
-          <Milestone aria-hidden className="size-3.5 shrink-0" />
+          <Milestone aria-hidden className="size-icon-row shrink-0" />
           <span className="truncate">{model.current}</span>
         </span>
       ) : compact ? (
@@ -140,7 +140,7 @@ export function StageStepper({
             ))}
           </ol>
           {!bare && (
-            <span className="flex min-w-0 items-baseline gap-1 text-caption">
+            <span className="flex min-w-0 items-baseline gap-1 text-meta">
               <span
                 data-testid="stage-current"
                 title={model.current}
@@ -155,7 +155,7 @@ export function StageStepper({
       ) : (
         <ol
           aria-label={`Stages of ${subject}`}
-          className="flex flex-wrap items-center gap-x-0.5 gap-y-1 text-caption"
+          className="flex flex-wrap items-center gap-x-0.5 gap-y-1 text-meta"
         >
           {model.steps.map((step, index) => {
             const Icon = STEP_ICON[step.status];
@@ -193,7 +193,7 @@ export function StageStepper({
                   <Icon
                     aria-hidden
                     className={cn(
-                      "relative size-3.5 shrink-0",
+                      "relative size-icon-row shrink-0",
                       step.status === "current" && "text-primary",
                     )}
                   />
@@ -214,11 +214,11 @@ export function StageStepper({
               : undefined
           }
           className={cn(
-            "flex min-w-0 items-start gap-1 text-caption",
+            "flex min-w-0 items-start gap-1 text-meta",
             model.stale ? "text-warning" : "text-muted-foreground",
           )}
         >
-          {model.stale && <Clock aria-hidden className="mt-0.5 size-3.5 shrink-0" />}
+          {model.stale && <Clock aria-hidden className="mt-0.5 size-icon-row shrink-0" />}
           <span className="min-w-0 break-words">{model.attribution}</span>
           {model.stale && <span className="sr-only">, which may be out of date</span>}
         </span>
@@ -227,7 +227,7 @@ export function StageStepper({
         <p
           data-testid="stage-note"
           title={model.note}
-          className="line-clamp-2 text-caption break-words text-muted-foreground"
+          className="line-clamp-2 text-meta break-words text-muted-foreground"
         >
           {model.note}
         </p>
@@ -258,16 +258,16 @@ export function StageChip({
       data-stale={model.stale}
       title={stageTitle(model)}
       className={cn(
-        "inline-flex max-w-32 min-w-0 shrink items-center gap-1 rounded-sm border border-border px-1 text-caption font-normal text-muted-foreground",
+        "inline-flex max-w-32 min-w-0 shrink items-center gap-1 rounded-sm border border-border px-1 text-meta font-normal text-muted-foreground",
         brief &&
           "shrink-0 border-transparent @min-[324px]/sidebar:max-w-24 @min-[324px]/sidebar:shrink @min-[324px]/sidebar:border-border",
         className,
       )}
     >
       {model.stale ? (
-        <Clock aria-hidden className="size-3.5 shrink-0 text-warning" />
+        <Clock aria-hidden className="size-icon-row shrink-0 text-warning" />
       ) : (
-        <Milestone aria-hidden className="size-3.5 shrink-0" />
+        <Milestone aria-hidden className="size-icon-row shrink-0" />
       )}
       {/* Keyed by the stage, so a new one fades in where the old one stood. */}
       <span

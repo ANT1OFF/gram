@@ -147,7 +147,7 @@ function ReportIssueForm({
     return (
       <DialogShell testId="report-issue-dialog" title="Report an issue" onClose={onClose}>
         <div data-testid="report-issue-filed" className="flex items-center gap-2 text-reading">
-          <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
+          <CircleCheck aria-hidden className="size-icon-row shrink-0 text-success" />
           <button
             type="button"
             className="font-medium text-primary underline-offset-2 hover:underline"
@@ -199,7 +199,7 @@ function ReportIssueForm({
             >
               <option.icon
                 aria-hidden
-                className={cn("size-3.5", kind === option.value && option.tone)}
+                className={cn("size-icon-row", kind === option.value && option.tone)}
               />
               {option.label}
             </button>
@@ -267,7 +267,7 @@ function ReportIssueForm({
             >
               <ChevronRight
                 aria-hidden
-                className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+                className="size-icon-chip shrink-0 transition-transform group-data-[panel-open]:rotate-90"
               />
               What's added
             </CollapsibleTrigger>

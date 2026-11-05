@@ -1116,8 +1116,11 @@ test("the keyboard opens a tile's flyout, → goes in, Esc closes it back on the
     `workspace:${made.asks.other.workspaceId}`,
   );
   await expect(flyout(page).getByTestId("overview-flyout-summary")).toContainText("1 ask");
-  // The solo threads' tile lists them; a row opens one.
-  await soloTile(page).hover();
+  // The solo threads' tile lists them; a row opens one. The pointer travels there as a hand moves
+  // it, in steps: the other flyout's two lines reach the solo tile's top edge, and a single jump
+  // onto it is the one move the card's hover can't tell from staying on its way into the flyout.
+  const solo = (await soloTile(page).boundingBox())!;
+  await page.mouse.move(solo.x + solo.width / 2, solo.y + solo.height / 2, { steps: 6 });
   await expect(flyout(page)).toHaveAttribute("data-for", "solo");
   const flaky = flyout(page).locator('[data-testid="overview-solo"][data-thread-id="t-flaky"]');
   await expect(flaky).toContainText("Fix flaky");

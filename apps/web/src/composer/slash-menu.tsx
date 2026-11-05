@@ -53,7 +53,7 @@ export function SlashMenu({
                 index > 0 && "mt-1 border-t border-border pt-1.5",
               )}
             >
-              <Cable aria-hidden className="size-3.5" />
+              <Cable aria-hidden className="size-icon-row" />
               Gram
             </li>
           )}
@@ -82,7 +82,7 @@ export function SlashMenu({
             </span>
             {!headed && command.action !== undefined && (
               <span title="Gram does this" className="shrink-0 self-center">
-                <Cable aria-hidden className="size-3.5 text-muted-foreground" />
+                <Cable aria-hidden className="size-icon-row text-muted-foreground" />
               </span>
             )}
           </li>
@@ -100,7 +100,7 @@ export function SlashNote({ note }: { note: string }) {
       data-testid="slash-note"
       className={cn(POPOVER, "flex items-start gap-2 px-2 py-1.5 text-meta text-muted-foreground")}
     >
-      <CircleSlash aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
+      <CircleSlash aria-hidden className="mt-px size-icon-row shrink-0 text-warning" />
       <span>{note}</span>
     </div>
   );

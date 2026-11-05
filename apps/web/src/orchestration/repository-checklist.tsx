@@ -102,7 +102,7 @@ export function RepositoryChecklist({
                   else if (included) add(repo.root);
                 }}
               />
-              <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
               <span>{repo.name}</span>
               <span className="truncate font-mono text-meta text-muted-foreground">
                 {repo.root}

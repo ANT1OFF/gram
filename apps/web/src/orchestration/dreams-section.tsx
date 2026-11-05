@@ -422,7 +422,10 @@ function StartFlow({
                 >
                   {preview.notes.map((note) => (
                     <li key={note} className="flex items-start gap-1.5">
-                      <TriangleAlert aria-hidden className="mt-0.5 size-3 shrink-0 text-warning" />
+                      <TriangleAlert
+                        aria-hidden
+                        className="mt-0.5 size-icon-chip shrink-0 text-warning"
+                      />
                       <span>{note}</span>
                     </li>
                   ))}
@@ -559,7 +562,7 @@ function MergeStatus({
         data-status="failed"
         className="flex items-start gap-1.5 pl-5.5 text-destructive"
       >
-        <TriangleAlert aria-hidden className="mt-0.5 size-3 shrink-0" />
+        <TriangleAlert aria-hidden className="mt-0.5 size-icon-chip shrink-0" />
         <span className="min-w-0 flex-1">{error ?? merge?.error ?? "The merge failed."}</span>
         <Button size="xs" variant="ghost" data-testid="dream-merge-again" onClick={onMerge}>
           <RotateCcw data-icon="inline-start" />
@@ -577,7 +580,7 @@ function MergeStatus({
         data-status="running"
         className="flex items-center gap-1.5 pl-5.5 text-muted-foreground"
       >
-        <GitMerge aria-hidden className="size-3 shrink-0 text-status-working" />
+        <GitMerge aria-hidden className="size-icon-chip shrink-0 text-status-working" />
         <Shimmer>Merging on {on}…</Shimmer>
       </p>
     );
@@ -589,7 +592,7 @@ function MergeStatus({
       data-status="done"
       className="flex items-center gap-1.5 pl-5.5 text-muted-foreground"
     >
-      <Check aria-hidden className="size-3 shrink-0 text-success" />
+      <Check aria-hidden className="size-icon-chip shrink-0 text-success" />
       <span className="min-w-0 flex-1">Merged on {on}: the diff is the merge.</span>
       <Button size="xs" variant="ghost" data-testid="dream-merge-again" onClick={onMerge}>
         <RotateCcw data-icon="inline-start" />
@@ -913,7 +916,7 @@ function Review({
       >
         {failure !== undefined && (
           <p role="status" className="flex items-start gap-1.5 text-meta text-destructive">
-            <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+            <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0" />
             {failure} It can only be discarded.
           </p>
         )}
@@ -923,7 +926,7 @@ function Review({
             data-testid="dream-review-refreshed"
             className="flex items-start gap-1.5 rounded-(--radius-sm) border border-warning/50 px-2 py-1.5 text-meta"
           >
-            <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+            <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
             <span>
               Nothing was adopted. {refreshed} What you see below is the review as it stands now:
               read it, choose again where it asks, then adopt.
@@ -960,9 +963,9 @@ function Review({
                   )}
                 >
                   <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
-                  <StatePill state={presentFileStatus(file.status)} className="text-caption" />
+                  <StatePill state={presentFileStatus(file.status)} className="text-meta" />
                   {file.status === "conflict" && resolutions[file.path] !== undefined && (
-                    <span className="shrink-0 text-caption text-muted-foreground">
+                    <span className="shrink-0 text-meta text-muted-foreground">
                       {sideLabel(resolutions[file.path]!)}
                     </span>
                   )}
@@ -1121,10 +1124,7 @@ function DreamRow({
       data-testid="dream-row"
       data-dream={dream.id}
       data-status={dream.status}
-      className={cn(
-        "flex flex-col gap-2.5 rounded-(--radius-md) border border-edge bg-card px-4 py-3 shadow-raised",
-        !reviewing && "max-w-3xl",
-      )}
+      className="flex flex-col gap-2.5 rounded-(--radius-md) border border-edge bg-card px-4 py-3 shadow-raised"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <StatePill state={dreamStatus(dream)} testId="dream-status" />
@@ -1388,7 +1388,17 @@ export function DreamsSection({
   );
 
   return (
-    <section ref={ref} aria-label="Dreams" data-testid="dreams" className="flex flex-col gap-5">
+    // The reading column, as Memory's rendered files sit, so the review, the form and the runs share
+    // one centred measure on a wide pane; a review open widens it for its diffs.
+    <section
+      ref={ref}
+      aria-label="Dreams"
+      data-testid="dreams"
+      className={cn(
+        "thread-column flex flex-col gap-5",
+        reviewing !== undefined && "[--thread-max-width:var(--settings-column-wide)]",
+      )}
+    >
       {/* What waits on you comes first: a finished draft to review, ahead of starting another. */}
       {ready.length > 0 && (
         <RunList
@@ -1403,7 +1413,7 @@ export function DreamsSection({
       )}
       <div
         data-testid="dream-form"
-        className="flex max-w-2xl flex-col gap-3 rounded-(--radius-md) border border-edge bg-card px-4 py-3.5"
+        className="flex flex-col gap-3 rounded-(--radius-md) border border-edge bg-card px-4 py-3.5"
       >
         <h2 className="text-body-strong">Draft memory update</h2>
         <p className="max-w-(--description-measure) text-body text-pretty text-description">
@@ -1473,7 +1483,7 @@ export function DreamsSection({
       {suggestion !== undefined && starting === undefined && (
         <p
           data-testid="dream-backlog"
-          className="flex max-w-2xl flex-wrap items-center gap-2 rounded-(--radius-sm) border border-border px-3 py-2 text-body"
+          className="flex flex-wrap items-center gap-2 rounded-(--radius-sm) border border-border px-3 py-2 text-body"
         >
           <span className="min-w-0 flex-1">{suggestion}</span>
           <Button

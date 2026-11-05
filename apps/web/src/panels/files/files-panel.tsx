@@ -163,7 +163,7 @@ export function FilesPanel({
         <label className="relative min-w-0 flex-1">
           <Search
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 start-2 my-auto size-3.5 text-muted-foreground"
+            className="pointer-events-none absolute inset-y-0 start-2 my-auto size-icon-row text-muted-foreground"
           />
           <input
             ref={searchRef}

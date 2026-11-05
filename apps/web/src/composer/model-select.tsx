@@ -55,7 +55,7 @@ const keyed = (
   options.map((option) => ({
     ...option,
     value: pickKey(agent, profileId, option.value),
-    icon: <AgentIcon agent={agent} className="size-3.5" />,
+    icon: <AgentIcon agent={agent} className="size-icon-row" />,
   }));
 
 /**
@@ -211,7 +211,7 @@ export function ModelSelect({
         open={open}
         onOpenChange={setOpen}
         icon={undefined}
-        rowIcon={<AgentIcon agent={agent} className="size-3.5" />}
+        rowIcon={<AgentIcon agent={agent} className="size-icon-row" />}
         title="Model"
         description={undefined}
         labelled={ghost ? labelled : true}

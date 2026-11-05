@@ -70,7 +70,7 @@ export function FileTabs({
               active && "bg-accent text-foreground",
             )}
           >
-            <Icon aria-hidden className={cn("size-3.5 shrink-0", tone)} />
+            <Icon aria-hidden className={cn("size-icon-row shrink-0", tone)} />
             <span className="min-w-0 truncate">{name}</span>
             <button
               type="button"
@@ -85,7 +85,7 @@ export function FileTabs({
                 !active && "opacity-0 group-hover/tab:opacity-100",
               )}
             >
-              <X aria-hidden className="size-3.5" />
+              <X aria-hidden className="size-icon-row" />
             </button>
           </div>
         );

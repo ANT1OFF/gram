@@ -160,7 +160,7 @@ export function LaunchChecksBanner() {
       data-testid="launch-checks-banner"
       className="flex shrink-0 items-start gap-3 border-b border-edge bg-card px-4 py-2 text-reading text-card-foreground"
     >
-      <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+      <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
       <ul className="flex min-w-0 flex-1 flex-col gap-0.5">
         {issues.map((issue) => (
           <li key={issue.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -251,7 +251,7 @@ export function LaunchIssuesChip({ className }: { className?: string }) {
         />
       }
     >
-      <TriangleAlert aria-hidden className="size-3.5" />
+      <TriangleAlert aria-hidden className="size-icon-row" />
       {words}
     </Hint>
   );

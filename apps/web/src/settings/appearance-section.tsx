@@ -560,7 +560,7 @@ function SidebarSample() {
           return (
             <section key={group.status} className="mb-2">
               <h3 className="flex items-center gap-1.5 px-2 py-1 text-meta font-medium text-muted-foreground">
-                <group.icon className={cn("size-3", group.tone)} />
+                <group.icon className={cn("size-icon-chip", group.tone)} />
                 {group.label}
                 <NumberTicker className="ml-auto tabular-nums" value={rows.length} />
               </h3>
@@ -626,11 +626,11 @@ function ToolCardSample() {
         >
           <ChevronRight
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-move-fast)",
+              "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-move-fast)",
               open && "rotate-90",
             )}
           />
-          <SquareTerminal className="size-4 shrink-0 text-muted-foreground" />
+          <SquareTerminal className="size-icon-row shrink-0 text-muted-foreground" />
           <span className="font-medium">Bash</span>
           <code className="truncate font-mono text-meta text-muted-foreground">
             pnpm test retry
@@ -640,7 +640,7 @@ function ToolCardSample() {
           <Shimmer className="text-meta text-muted-foreground">Running…</Shimmer>
         ) : (
           <span className="flex items-center gap-1 text-meta text-success-text">
-            <Check className="size-3.5" />
+            <Check className="size-icon-row" />
             {seconds.toFixed(1)}s
           </span>
         )}

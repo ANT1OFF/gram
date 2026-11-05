@@ -98,7 +98,7 @@ function Choice({
     >
       {checked && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
       <span className="relative flex w-full items-center gap-1.5 text-reading font-medium">
-        <Icon aria-hidden className="size-3.5 shrink-0" />
+        <Icon aria-hidden className="size-icon-row shrink-0" />
         {choice.label}
         <ChoiceCheck checked={checked} className="ml-auto" />
       </span>
@@ -135,7 +135,7 @@ export function WhereFact({
       data-testid={testId}
       className="flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-dashed border-border px-2 text-meta text-foreground"
     >
-      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <Icon aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
       <span className="truncate">{children}</span>
     </span>
   );
@@ -166,7 +166,7 @@ function NewFormSummary({
       data-testid="new-summary"
       className="flex min-w-0 items-center gap-2 rounded-md border border-edge bg-card py-1 pr-1 pl-2.5 text-meta"
     >
-      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <Icon aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
       <span className="shrink-0 font-medium text-foreground">
         <span aria-hidden={choice.spoken === undefined ? undefined : true}>{choice.label}</span>
         {choice.spoken !== undefined && <span className="sr-only">{choice.spoken}</span>}

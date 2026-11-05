@@ -191,7 +191,7 @@ export function ReplyField({
 }
 
 const DETAIL_TEXT =
-  "overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-caption break-words whitespace-pre-wrap";
+  "overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta break-words whitespace-pre-wrap";
 
 /** Everything an Allow covers that the ask's lines don't: where each member runs, the whole input. */
 function AskDetailsBody({ ask, where }: { ask: Ask; where: readonly AskMember[] }) {
@@ -228,7 +228,7 @@ function AskDetailsBody({ ask, where }: { ask: Ask; where: readonly AskMember[] 
             ))}
           </dl>
           {ask.details.scope.length > 0 && (
-            <p className="font-mono text-caption">{ask.details.scope.join(", ")}</p>
+            <p className="font-mono text-meta">{ask.details.scope.join(", ")}</p>
           )}
           <pre className={DETAIL_TEXT}>{ask.details.brief}</pre>
         </>
@@ -260,7 +260,7 @@ export function AskDetails({ ask, open = false }: { ask: Ask; open?: boolean }) 
       >
         <ChevronRight
           aria-hidden
-          className="size-3.5 shrink-0 transition-transform duration-(--dur-fast) group-data-[panel-open]:rotate-90"
+          className="size-icon-chip shrink-0 transition-transform duration-(--dur-fast) group-data-[panel-open]:rotate-90"
         />
         Details
       </CollapsibleTrigger>
@@ -327,7 +327,7 @@ export function AskItem({
       // squeeze it to a letter a line.
       className="flex flex-wrap items-start gap-2.5 px-3.5 pt-1 pb-2.5 outline-none"
     >
-      <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-status-needs-mark" />
+      <Icon aria-hidden className="mt-0.5 size-icon-row shrink-0 text-status-needs-mark" />
       <div className="min-w-0 flex-1 basis-48">
         <p className="text-reading break-words" data-testid="ask-title">
           {ask.lead}
@@ -348,7 +348,7 @@ export function AskItem({
         {ask.extras.length > 0 && (
           <p
             data-testid="ask-extras"
-            className="font-mono text-caption break-all text-muted-foreground"
+            className="font-mono text-meta break-all text-muted-foreground"
           >
             {ask.extras.map((field, index) => (
               <span key={field.label}>

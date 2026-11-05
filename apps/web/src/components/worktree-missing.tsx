@@ -28,7 +28,7 @@ export function WorktreeMissingChip({
         />
       }
     >
-      <FolderX aria-hidden className="size-3.5" />
+      <FolderX aria-hidden className="size-icon-row" />
       <span className="sr-only">Folder missing</span>
     </Hint>
   );

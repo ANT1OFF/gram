@@ -147,7 +147,7 @@ export function VerbMenu({
               index === activeIndex && "text-accent-foreground",
             )}
           >
-            <Icon aria-hidden className="size-4" />
+            <Icon aria-hidden className="size-icon-row" />
             <span>{verb.label}</span>
           </li>
         );

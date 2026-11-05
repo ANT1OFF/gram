@@ -445,7 +445,7 @@ function AgentActivity({
       )}
       {label !== undefined && (
         <>
-          <Bot aria-hidden className="size-3.5 shrink-0 text-status-working" />
+          <Bot aria-hidden className="size-icon-row shrink-0 text-status-working" />
           <span data-testid="preview-action" className="min-w-0 truncate" title={label.summary}>
             {label.summary}
           </span>
@@ -490,7 +490,7 @@ function DriverButton({
               />
             }
           >
-            <Bot aria-hidden className="size-4" />
+            <Bot aria-hidden className="size-icon-row" />
           </Hint>
         ) : (
           <ToolButton

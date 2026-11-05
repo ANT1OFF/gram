@@ -56,9 +56,9 @@ export function LapsedConnectorsNotice({ threadId }: { threadId: ThreadId }) {
         return (
           <div key={name} data-testid="lapsed-connector" className="flex items-center gap-3">
             {pending === undefined ? (
-              <KeyRound aria-hidden className="size-4 shrink-0 text-warning-text" />
+              <KeyRound aria-hidden className="size-icon-row shrink-0 text-warning-text" />
             ) : (
-              <Spinner aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <Spinner aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
             )}
             <p className="min-w-0 flex-1">
               {pending === undefined ? (

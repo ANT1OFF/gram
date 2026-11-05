@@ -164,7 +164,7 @@ export function CloseThreadDialog({
           role="status"
           className="flex items-start gap-2 rounded-md border border-warning/50 px-2 py-1.5 text-meta"
         >
-          <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+          <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
           {warning}
         </p>
       )}
@@ -174,7 +174,7 @@ export function CloseThreadDialog({
           data-testid="close-waiting-warning"
           className="flex items-start gap-2 rounded-md border border-warning/50 px-2 py-1.5 text-meta"
         >
-          <Inbox aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+          <Inbox aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
           {waiting}
         </p>
       )}

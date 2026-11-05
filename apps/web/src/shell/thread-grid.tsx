@@ -280,7 +280,10 @@ function EmptyPane({ index }: { index: number }) {
                       onClick={() => open(thread.id)}
                       className="flex w-full min-w-0 items-center gap-1.5 rounded-(--radius-sm) px-2 py-1 text-left text-foreground outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
-                      <display.icon aria-hidden className={cn("size-3.5 shrink-0", display.tone)} />
+                      <display.icon
+                        aria-hidden
+                        className={cn("size-icon-row shrink-0", display.tone)}
+                      />
                       <span className="truncate">{thread.title}</span>
                       <span className="sr-only">, {display.label}</span>
                     </button>

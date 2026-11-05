@@ -30,7 +30,7 @@ export function SettingsStrip() {
           "hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
         )}
       >
-        <ArrowLeft aria-hidden className="size-4" />
+        <ArrowLeft aria-hidden className="size-icon-row" />
         Back
       </button>
     </aside>

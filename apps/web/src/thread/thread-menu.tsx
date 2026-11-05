@@ -49,7 +49,7 @@ export function useThreadMenu(threadId: ThreadId): {
             className={itemClassName}
             onClick={() => setSwitching(true)}
           >
-            <ArrowLeftRight aria-hidden className="size-3.5" />
+            <ArrowLeftRight aria-hidden className="size-icon-row" />
             {switchOpenLabel(switchable)}
           </Menu.Item>
           <div role="separator" className="-mx-1 my-1 h-px bg-border" />
@@ -63,12 +63,12 @@ export function useThreadMenu(threadId: ThreadId): {
             if (folder) void openInEditor(folder, { threadId });
           }}
         >
-          <SquareArrowOutUpRight aria-hidden className="size-3.5" />
+          <SquareArrowOutUpRight aria-hidden className="size-icon-row" />
           Open folder in editor
         </Menu.Item>
       )}
       <Menu.Item disabled={!available} className={itemClassName} onClick={() => void forkThread()}>
-        <GitFork aria-hidden className="size-3.5" />
+        <GitFork aria-hidden className="size-icon-row" />
         Fork thread
       </Menu.Item>
       {reason && <p className="px-2 py-1 text-meta text-muted-foreground">{reason}</p>}

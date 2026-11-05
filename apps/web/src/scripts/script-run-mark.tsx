@@ -20,7 +20,7 @@ export function ScriptRunMark({ run, className }: { run: ScriptRunState; classNa
       aria-hidden
       data-testid="script-run-mark"
       data-run={run}
-      className={cn("size-3 shrink-0", tone, className)}
+      className={cn("size-icon-chip shrink-0", tone, className)}
     />
   );
 }

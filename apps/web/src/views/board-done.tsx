@@ -79,7 +79,7 @@ export function DoneBand({
               )}
             >
               <span className="flex min-w-0 items-center gap-2">
-                <CircleCheck aria-hidden className="size-3.5 shrink-0 text-success" />
+                <CircleCheck aria-hidden className="size-icon-row shrink-0 text-success" />
                 {first === undefined ? (
                   <span className="min-w-0 truncate text-foreground">{row.title}</span>
                 ) : (
@@ -104,9 +104,9 @@ export function DoneBand({
                     className="flex items-center gap-1 text-muted-foreground tabular-nums"
                   >
                     {pr.state === "merged" ? (
-                      <GitMerge aria-hidden className="size-3.5 text-merged" />
+                      <GitMerge aria-hidden className="size-icon-row text-merged" />
                     ) : (
-                      <GitPullRequest aria-hidden className="size-3.5" />
+                      <GitPullRequest aria-hidden className="size-icon-row" />
                     )}
                     #{pr.number}
                     {pr.state !== undefined && ` ${pr.state}`}

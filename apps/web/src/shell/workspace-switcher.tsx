@@ -190,7 +190,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
           <span className="min-w-0 truncate">
             {inSolo ? <Term term="solo">{name}</Term> : name}
           </span>
-          <ChevronsUpDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <ChevronsUpDown aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
         </Button>
       }
     >
@@ -209,7 +209,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
                 switchTo(state.workspace);
               }}
             >
-              <Check className={cn("size-3.5 shrink-0", !here && "invisible")} />
+              <Check className={cn("size-icon-row shrink-0", !here && "invisible")} />
               <span className="min-w-0 flex-1 truncate">{state.workspace.name}</span>
               {count > 0 && (
                 <span
@@ -264,7 +264,7 @@ function SoloThreads({
       {threads.map(({ thread }) => (
         <SwitcherItem key={thread.id} onClick={() => onOpen(thread.id)}>
           <span className="min-w-0 flex-1 truncate">{threadDisplayTitle(thread)}</span>
-          <span className="max-w-20 shrink-0 truncate text-caption text-muted-foreground">
+          <span className="max-w-20 shrink-0 truncate text-meta text-muted-foreground">
             {projectNames.get(thread.projectId)}
           </span>
           <span className="w-7 shrink-0 text-right text-caption text-muted-foreground tabular-nums">

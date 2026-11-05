@@ -100,7 +100,7 @@ function PrRefLink({
       {display !== undefined && (
         <display.icon
           aria-hidden
-          className={cn("mr-0.5 inline size-3.5 align-[-0.15em]", display.tone)}
+          className={cn("mr-0.5 inline size-icon-row align-[-0.15em]", display.tone)}
         />
       )}
       {children}

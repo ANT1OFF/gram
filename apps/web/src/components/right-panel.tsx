@@ -300,7 +300,7 @@ function TabFace({
   return (
     <>
       <span className="relative flex">
-        <tab.icon aria-hidden className="size-4" />
+        <tab.icon aria-hidden className="size-icon-row" />
         {busy && (
           <span
             aria-hidden
@@ -334,7 +334,7 @@ function MoreFace() {
   return (
     <>
       More
-      <ChevronDown aria-hidden className="size-3.5" />
+      <ChevronDown aria-hidden className="size-icon-chip" />
     </>
   );
 }
@@ -342,7 +342,7 @@ function MoreFace() {
 const MENU_POPUP =
   "z-50 min-w-44 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
 
 /**
  * The rarer tabs, folded out of a short strip, each named with its icon. None has a count: a tab with
@@ -387,7 +387,10 @@ function MoreTabs({
                 className={MENU_ITEM}
                 onClick={() => onPick(face.tab.value)}
               >
-                <face.tab.icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <face.tab.icon
+                  aria-hidden
+                  className="size-icon-row shrink-0 text-muted-foreground"
+                />
                 {face.tab.label}
               </Menu.Item>
             ))}
@@ -452,9 +455,9 @@ function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolea
       }
     >
       {focused ? (
-        <Minimize2 aria-hidden className="size-4" />
+        <Minimize2 aria-hidden className="size-icon-row" />
       ) : (
-        <Focus aria-hidden className="size-4" />
+        <Focus aria-hidden className="size-icon-row" />
       )}
       <span aria-hidden data-action-label className={cn("overflow-hidden", !words && "max-w-0")}>
         <span data-action-label-text className="block pl-1.5 whitespace-nowrap">

@@ -215,7 +215,7 @@ function ApprovalQueue({
             disabled={index === 0}
             onClick={() => step(index - 1)}
           >
-            <ChevronLeft aria-hidden className="size-3.5" />
+            <ChevronLeft aria-hidden className="size-icon-chip" />
           </Button>
           <span
             aria-live="polite"
@@ -232,7 +232,7 @@ function ApprovalQueue({
             disabled={index === requests.length - 1}
             onClick={() => step(index + 1)}
           >
-            <ChevronRight aria-hidden className="size-3.5" />
+            <ChevronRight aria-hidden className="size-icon-chip" />
           </Button>
         </nav>
       )}
@@ -406,7 +406,7 @@ function ApprovalDetailsFold({
       >
         <ChevronRight
           aria-hidden
-          className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-icon-chip shrink-0 transition-transform group-data-[panel-open]:rotate-90"
         />
         Details
       </CollapsibleTrigger>
@@ -644,7 +644,7 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
       {extras.length > 0 && (
         <p
           data-testid="approval-extras"
-          className="mt-1 font-mono text-caption break-all text-muted-foreground"
+          className="mt-1 font-mono text-meta break-all text-muted-foreground"
         >
           {extras.map((field, index) => (
             <span key={field.label}>
@@ -738,7 +738,7 @@ export function ApprovalCard({
     <CardShell
       testId="approval-card"
       requestId={request.id}
-      icon={<ShieldQuestion aria-hidden className="size-4 text-status-needs-mark" />}
+      icon={<ShieldQuestion aria-hidden className="size-icon-row text-status-needs-mark" />}
       title={
         pause !== undefined
           ? pause.lead
@@ -946,7 +946,7 @@ export function QuestionCard({
     <CardShell
       testId="question-card"
       requestId={request.id}
-      icon={<MessageCircleQuestion aria-hidden className="size-4 text-status-needs-mark" />}
+      icon={<MessageCircleQuestion aria-hidden className="size-icon-row text-status-needs-mark" />}
       title="The agent has a question"
       answerKeys
       footer={
@@ -992,7 +992,9 @@ export function QuestionCard({
                 i === page && "border-primary bg-primary/10 text-foreground",
               )}
             >
-              {answerFor(each.question).length > 0 && <Check aria-hidden className="size-3.5" />}
+              {answerFor(each.question).length > 0 && (
+                <Check aria-hidden className="size-icon-row" />
+              )}
               {each.header}
             </button>
           ))}
@@ -1151,7 +1153,7 @@ export function PlanCard({ threadId, request }: { threadId: ThreadId; request: P
     <CardShell
       testId="plan-card"
       requestId={request.id}
-      icon={<ListChecks aria-hidden className="size-4 text-status-needs-mark" />}
+      icon={<ListChecks aria-hidden className="size-icon-row text-status-needs-mark" />}
       title="Review the plan"
       footer={
         stage === "review" ? (

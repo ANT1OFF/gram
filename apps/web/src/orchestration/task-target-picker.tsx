@@ -57,9 +57,9 @@ export function TaskTargetPicker({
         aria-label={`In: ${label}`}
         className="flex h-7 w-fit max-w-64 min-w-0 items-center gap-1.5 rounded-md border border-edge bg-card px-2 text-meta text-foreground outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <Icon aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         <span className="truncate">{label}</span>
-        <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronDown aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner align="start" sideOffset={4} className="isolate z-50 outline-none">
@@ -73,7 +73,7 @@ export function TaskTargetPicker({
                     className={ITEM}
                     onClick={() => onPick({ kind: "workspace", workspaceId: each.id })}
                   >
-                    <Network aria-hidden className="size-4 shrink-0 text-primary" />
+                    <Network aria-hidden className="size-icon-row shrink-0 text-primary" />
                     <span className="min-w-0 flex-1 truncate">{each.name}</span>
                     <span className="shrink-0 text-meta text-muted-foreground">
                       {plural(each.projectIds.length, "repo")}
@@ -81,7 +81,7 @@ export function TaskTargetPicker({
                     <Check
                       aria-hidden
                       className={cn(
-                        "size-4 shrink-0",
+                        "size-icon-row shrink-0",
                         current === `w:${each.id}` ? "opacity-100" : "opacity-0",
                       )}
                     />
@@ -99,7 +99,10 @@ export function TaskTargetPicker({
                   className={ITEM}
                   onClick={() => onPick({ kind: "repo", projectId: project.id })}
                 >
-                  <FolderGit2 aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  <FolderGit2
+                    aria-hidden
+                    className="size-icon-row shrink-0 text-muted-foreground"
+                  />
                   <span className="min-w-0 flex-1 truncate">{project.name}</span>
                   <span className="shrink-0 text-meta text-muted-foreground">
                     makes one on send
@@ -107,7 +110,7 @@ export function TaskTargetPicker({
                   <Check
                     aria-hidden
                     className={cn(
-                      "size-4 shrink-0",
+                      "size-icon-row shrink-0",
                       current === `p:${project.id}` ? "opacity-100" : "opacity-0",
                     )}
                   />
@@ -119,7 +122,7 @@ export function TaskTargetPicker({
                 className={cn(ITEM, "text-muted-foreground")}
                 onClick={() => onPick({ kind: "newWorkspace" })}
               >
-                <Plus aria-hidden className="size-4 shrink-0" />
+                <Plus aria-hidden className="size-icon-row shrink-0" />
                 <span className="flex-1">New workspace</span>
               </Menu.Item>
             </Menu.Group>

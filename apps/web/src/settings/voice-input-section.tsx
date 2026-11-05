@@ -543,7 +543,7 @@ function AccurateModelsRow({
             className="flex items-center gap-1.5 text-meta text-muted-foreground"
             data-testid="voice-accurate-ready"
           >
-            <CircleCheck aria-hidden className="size-3.5 text-success" />
+            <CircleCheck aria-hidden className="size-icon-row text-success" />
             Ready
           </span>
         </SettingRow>
@@ -711,7 +711,7 @@ function ModelRow({
             className="flex items-center gap-1.5 text-meta text-muted-foreground"
             data-testid="voice-model-ready"
           >
-            <CircleCheck aria-hidden className="size-3.5 text-success" />
+            <CircleCheck aria-hidden className="size-icon-row text-success" />
             Ready
           </span>
         </SettingRow>

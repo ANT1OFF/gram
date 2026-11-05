@@ -24,15 +24,15 @@ export function PrBadgeMenuItems({ threadId, pr }: { threadId: ThreadId; pr: PrS
   return (
     <>
       <ContextMenuItem onClick={() => void copyText(pr.url).catch(() => undefined)}>
-        <Copy aria-hidden className="size-3.5" />
+        <Copy aria-hidden className="size-icon-row" />
         Copy PR link
       </ContextMenuItem>
       <ContextMenuItem onClick={() => void openExternalUrl(api, pr.url)}>
-        <ExternalLink aria-hidden className="size-3.5" />
+        <ExternalLink aria-hidden className="size-icon-row" />
         Open #{pr.number} on GitHub
       </ContextMenuItem>
       <ContextMenuItem onClick={() => void api.refreshGit(threadId).catch(() => undefined)}>
-        <RefreshCw aria-hidden className="size-3.5" />
+        <RefreshCw aria-hidden className="size-icon-row" />
         Refresh from GitHub
       </ContextMenuItem>
     </>
@@ -61,7 +61,7 @@ export function PrActionItems({ threadId }: { threadId: ThreadId }) {
       {pr.state === "OPEN" && (
         <>
           <ContextMenuItem onClick={() => openPrPanel(threadId)}>
-            <GitMerge aria-hidden className="size-3.5" />
+            <GitMerge aria-hidden className="size-icon-row" />
             Merge or close in PR panel
           </ContextMenuItem>
           <ContextMenuItem
@@ -74,7 +74,7 @@ export function PrActionItems({ threadId }: { threadId: ThreadId }) {
               )
             }
           >
-            <GitPullRequestDraft aria-hidden className="size-3.5" />
+            <GitPullRequestDraft aria-hidden className="size-icon-row" />
             {pr.isDraft ? "Ready for review" : "Convert to draft"}
           </ContextMenuItem>
         </>
@@ -83,7 +83,7 @@ export function PrActionItems({ threadId }: { threadId: ThreadId }) {
         <ContextMenuItem
           onClick={() => write(() => api.prReopen(threadId), `Couldn't reopen #${pr.number}`)}
         >
-          <GitPullRequest aria-hidden className="size-3.5" />
+          <GitPullRequest aria-hidden className="size-icon-row" />
           Reopen #{pr.number}
         </ContextMenuItem>
       )}

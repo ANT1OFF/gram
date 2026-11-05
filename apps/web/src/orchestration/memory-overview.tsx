@@ -131,7 +131,7 @@ function OverviewFile({
       className="flex flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3"
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <FileText aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <FileText aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         <button
           type="button"
           data-testid="memory-overview-source"

@@ -13,7 +13,7 @@ function ToolHints({ tool }: { tool: ConnectorTool }) {
   return (
     <>
       {tool.readOnly === true && (
-        <Eye role="img" aria-label={READ_ONLY_HINT} className="size-3.5 shrink-0 text-success">
+        <Eye role="img" aria-label={READ_ONLY_HINT} className="size-icon-row shrink-0 text-success">
           <title>{READ_ONLY_HINT}</title>
         </Eye>
       )}
@@ -21,7 +21,7 @@ function ToolHints({ tool }: { tool: ConnectorTool }) {
         <TriangleAlert
           role="img"
           aria-label={DESTRUCTIVE_HINT}
-          className="size-3.5 shrink-0 text-warning"
+          className="size-icon-row shrink-0 text-warning"
         >
           <title>{DESTRUCTIVE_HINT}</title>
         </TriangleAlert>
@@ -60,7 +60,10 @@ export function ConnectorTools({
       >
         <ChevronRight
           aria-hidden
-          className={cn("size-3.5 shrink-0 motion-safe:transition-transform", open && "rotate-90")}
+          className={cn(
+            "size-icon-chip shrink-0 motion-safe:transition-transform",
+            open && "rotate-90",
+          )}
         />
         <span className="tabular-nums">
           {tools.length} {tools.length === 1 ? "tool" : "tools"}
@@ -70,7 +73,7 @@ export function ConnectorTools({
             className="flex items-center gap-0.5 text-warning"
             title={`${destructive} the server calls destructive`}
           >
-            <TriangleAlert aria-hidden className="size-3.5" />
+            <TriangleAlert aria-hidden className="size-icon-row" />
             <span className="tabular-nums">{destructive}</span>
           </span>
         )}
@@ -104,7 +107,7 @@ export function ClaudeAiMarks({ claudeAi }: { claudeAi: ClaudeAiConnector | unde
         <Ban
           role="img"
           aria-label={`Blocked by policy: ${claudeAi.blocked}`}
-          className="size-3.5 shrink-0 text-muted-foreground"
+          className="size-icon-row shrink-0 text-muted-foreground"
         >
           <title>{`Blocked by policy: ${claudeAi.blocked}`}</title>
         </Ban>
@@ -113,7 +116,7 @@ export function ClaudeAiMarks({ claudeAi }: { claudeAi: ClaudeAiConnector | unde
         <Building2
           role="img"
           aria-label={ORG_MANAGED_HINT}
-          className="size-3.5 shrink-0 text-muted-foreground"
+          className="size-icon-row shrink-0 text-muted-foreground"
         >
           <title>{ORG_MANAGED_HINT}</title>
         </Building2>

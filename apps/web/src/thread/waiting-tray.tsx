@@ -108,7 +108,7 @@ function Action({
         />
       }
     >
-      <Icon aria-hidden className="size-3.5" />
+      <Icon aria-hidden className="size-icon-row" />
     </Hint>
   );
 }
@@ -190,7 +190,7 @@ function Row({
       )}
     >
       <Hint label={kindLabel} render={<span className="mt-0.5 flex shrink-0" />}>
-        <KindIcon aria-hidden className="size-3.5 text-status-needs-mark" />
+        <KindIcon aria-hidden className="size-icon-row text-status-needs-mark" />
         <span className="sr-only">{kindLabel}</span>
       </Hint>
       <button
@@ -202,11 +202,11 @@ function Row({
         <span className="flex items-center gap-2">
           <span className="truncate text-body font-medium text-foreground">{view.title}</span>
           {suggested && (
-            <span className="shrink-0 rounded-sm border border-dashed border-border px-1 text-caption text-muted-foreground">
+            <span className="shrink-0 rounded-sm border border-dashed border-border px-1 text-meta text-muted-foreground">
               suggested
             </span>
           )}
-          <span className="ml-auto shrink-0 text-caption text-muted-foreground tabular-nums">
+          <span className="ml-auto shrink-0 text-meta text-muted-foreground tabular-nums">
             {formatRelative(view.createdAt, now)}
           </span>
         </span>
@@ -216,7 +216,7 @@ function Row({
               <span className="whitespace-pre-wrap text-muted-foreground">{item.body}</span>
             )}
             {item.copy !== undefined && (
-              <span className="max-h-40 overflow-y-auto rounded-sm border border-border bg-background/60 px-2 py-1 font-mono text-caption whitespace-pre-wrap text-foreground">
+              <span className="max-h-40 overflow-y-auto rounded-sm border border-border bg-background/60 px-2 py-1 font-mono text-meta whitespace-pre-wrap text-foreground">
                 {item.copy}
               </span>
             )}
@@ -347,7 +347,10 @@ function ResolvedLine({
       >
         <ChevronRight
           aria-hidden
-          className={cn("size-3.5 transition-transform duration-(--dur-fast)", open && "rotate-90")}
+          className={cn(
+            "size-icon-chip transition-transform duration-(--dur-fast)",
+            open && "rotate-90",
+          )}
         />
         Resolved ({resolved.length})
       </button>
@@ -359,7 +362,7 @@ function ResolvedLine({
               data-testid="waiting-resolved-item"
               className="flex items-center gap-2 px-2 py-1 pl-6 text-meta text-muted-foreground"
             >
-              <Check aria-hidden className="size-3.5 shrink-0 text-success" />
+              <Check aria-hidden className="size-icon-row shrink-0 text-success" />
               <span className="min-w-0 truncate line-through">{item.title}</span>
               <span className="shrink-0 tabular-nums">
                 {item.resolvedBy === "agent" ? "by the agent · " : ""}
@@ -371,7 +374,7 @@ function ResolvedLine({
                 onClick={() => onReopen(item)}
                 className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
               >
-                <Undo2 aria-hidden className="size-3.5" /> Reopen
+                <Undo2 aria-hidden className="size-icon-row" /> Reopen
               </button>
             </li>
           ))}
@@ -459,7 +462,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
       >
         <PulseOnce trigger={additions} tone="needs">
-          <Inbox aria-hidden className="size-3.5 text-status-needs-mark" />
+          <Inbox aria-hidden className="size-icon-row text-status-needs-mark" />
         </PulseOnce>
         <span data-testid="waiting-count" className="shrink-0 font-medium text-foreground">
           <span className="@max-sm:hidden">{count} waiting on you</span>
@@ -470,7 +473,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         )}
         {suggestions > 0 && (
           <span className="flex shrink-0 items-center gap-1 @max-sm:hidden">
-            · <Sparkles aria-hidden className="size-3.5" /> {suggestions} suggested
+            · <Sparkles aria-hidden className="size-icon-row" /> {suggestions} suggested
           </span>
         )}
         {byHelper.length > 0 && (
@@ -481,7 +484,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         <ChevronDown
           aria-hidden
           className={cn(
-            "ml-auto size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+            "ml-auto size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
             open && "rotate-180",
           )}
         />
@@ -510,7 +513,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                 data-testid="waiting-undo-row"
                 className="flex items-center gap-2 px-2 py-1 text-meta text-muted-foreground"
               >
-                <Check aria-hidden className="size-3.5 shrink-0 text-success" />
+                <Check aria-hidden className="size-icon-row shrink-0 text-success" />
                 <span className="min-w-0 truncate line-through">{item.title}</span>
                 <button
                   type="button"
@@ -518,7 +521,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                   onClick={() => undo(item)}
                   className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
                 >
-                  <Undo2 aria-hidden className="size-3.5" /> Undo
+                  <Undo2 aria-hidden className="size-icon-row" /> Undo
                 </button>
               </li>
             ))}
@@ -530,11 +533,14 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                   onClick={() => setShowResolved(!showResolved)}
                   className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
                 >
-                  <Sparkles aria-hidden className="size-3.5" />
+                  <Sparkles aria-hidden className="size-icon-row" />
                   Resolved by the helper from what you wrote ({byHelper.length})
                   <ChevronDown
                     aria-hidden
-                    className={cn("size-3.5 transition-transform", showResolved && "rotate-180")}
+                    className={cn(
+                      "size-icon-chip transition-transform",
+                      showResolved && "rotate-180",
+                    )}
                   />
                 </button>
                 {showResolved && (
@@ -545,7 +551,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                         data-testid="waiting-helper-resolved-item"
                         className="flex items-center gap-2 py-1 text-muted-foreground"
                       >
-                        <Check aria-hidden className="size-3.5 shrink-0 text-success" />
+                        <Check aria-hidden className="size-icon-row shrink-0 text-success" />
                         <span className="min-w-0 truncate line-through">{item.title}</span>
                         <span className="shrink-0 tabular-nums">
                           {formatRelative(item.resolvedAt!, now)}
@@ -556,7 +562,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                           onClick={() => reopen(item)}
                           className="ml-auto flex shrink-0 items-center gap-1 hover:text-foreground"
                         >
-                          <Undo2 aria-hidden className="size-3.5" /> Undo
+                          <Undo2 aria-hidden className="size-icon-row" /> Undo
                         </button>
                       </li>
                     ))}
@@ -626,7 +632,7 @@ export function WaitChip({ wait }: { wait: WaitData }) {
     >
       <Inbox
         aria-hidden
-        className={cn("size-3.5 shrink-0", wait.state === "open" && "text-status-needs-mark")}
+        className={cn("size-icon-row shrink-0", wait.state === "open" && "text-status-needs-mark")}
       />
       <span className="min-w-0 truncate">
         Waiting on you:{" "}
@@ -653,11 +659,14 @@ export function WaitNoteLine({ note }: { note: WaitNoteData }) {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
       >
-        <Inbox aria-hidden className="size-3.5" />
+        <Inbox aria-hidden className="size-icon-row" />
         Gram told the agent
         <ChevronRight
           aria-hidden
-          className={cn("size-3.5 transition-transform duration-(--dur-fast)", open && "rotate-90")}
+          className={cn(
+            "size-icon-chip transition-transform duration-(--dur-fast)",
+            open && "rotate-90",
+          )}
         />
       </button>
       {open && (

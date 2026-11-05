@@ -9,14 +9,20 @@ import { Button, buttonVariants } from "./button";
 
 afterEach(cleanup);
 
-it("gives every icon button a 28 px square, an inline glyph at 14 px and a chrome glyph at 16 px", () => {
+it("gives every icon button a 28 px square, a row glyph at 16 px and a toolbar glyph at 18 px", () => {
   for (const size of ["icon-xs", "icon-sm"] as const) {
     expect(buttonVariants({ size })).toMatch(/\bsize-7\b/);
   }
-  expect(buttonVariants({ size: "icon-xs" })).toContain("[&_svg:not([class*='size-'])]:size-3.5");
-  // icon-sm leaves the glyph at the base's 16 px.
-  expect(buttonVariants({ size: "icon-sm" })).not.toMatch(/:size-3(\.5)?\b/);
-  expect(buttonVariants({ size: "icon-sm" })).toContain("[&_svg:not([class*='size-'])]:size-4");
+  expect(buttonVariants({ size: "icon-xs" })).toContain(
+    "[&_svg:not([class*='size-'])]:size-icon-row",
+  );
+  expect(buttonVariants({ size: "icon-sm" })).toContain(
+    "[&_svg:not([class*='size-'])]:size-icon-bar",
+  );
+  // Icon sizes come from the tokens, never a raw step.
+  for (const size of ["icon-xs", "icon-sm", "xs", "sm", "default"] as const) {
+    expect(buttonVariants({ size })).not.toMatch(/svg[^\s]*\]:size-\d/);
+  }
 });
 
 it("shows an icon button's title as its tooltip at once, not as a native title", async () => {

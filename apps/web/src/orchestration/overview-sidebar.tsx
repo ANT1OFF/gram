@@ -23,6 +23,7 @@ import {
 import { useShallow } from "zustand/react/shallow";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
+import { MiddleTruncate } from "@/components/middle-truncate";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -637,7 +638,7 @@ function WorkspaceRow({
             <ChevronDown
               aria-hidden
               className={cn(
-                "size-3.5 transition-transform duration-(--dur-fast)",
+                "size-icon-chip transition-transform duration-(--dur-fast)",
                 folded && "-rotate-90",
               )}
             />
@@ -811,14 +812,16 @@ export function WorkerRow({
         data-tone={tone}
         className={DOT_ON_FIRST_LINE}
       />
-      <span data-testid="overview-worker-title" className="truncate text-foreground">
-        {row.title}
-      </span>
+      <MiddleTruncate
+        data-testid="overview-worker-title"
+        className="text-foreground"
+        text={row.title}
+      />
       <span className="flex h-lh items-center gap-1.5 text-muted-foreground">
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
         {agent !== undefined && agent !== orchestratorAgent && (
           <span data-testid="overview-worker-agent" className="flex">
-            <AgentIcon agent={agent} className="size-3.5" />
+            <AgentIcon agent={agent} className="size-icon-row" />
           </span>
         )}
       </span>
@@ -1139,7 +1142,7 @@ function WaitingLine({
         data-kind={waiting.kind}
         className="flex min-w-0 items-center gap-1"
       >
-        <Hourglass aria-hidden className="size-3.5 shrink-0" />
+        <Hourglass aria-hidden className="size-icon-row shrink-0" />
         <span className="truncate">{nowBesidePrs(waiting.label, prs)}</span>
       </span>
     </Swap>
@@ -1155,7 +1158,7 @@ function WaitingList({ waiting }: { waiting: WaitingOn }) {
     >
       {waiting.reasons.map((reason, i) => (
         <li key={i} data-kind={reason.kind} className="flex min-w-0 gap-1.5">
-          <Hourglass aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          <Hourglass aria-hidden className="mt-0.5 size-icon-row shrink-0" />
           <span className="min-w-0">{reason.detail}</span>
         </li>
       ))}
@@ -1182,10 +1185,10 @@ function HeldRow({ held }: { held: FeatureCardHeld }) {
 }
 
 /**
- * A solo row's height (two lines: 20 px and 16 px, and 4 px above and below), and the space
- * between rows (the section's `gap-px`).
+ * A solo row's height (two 20 px lines, the title's and its status's, and 4 px above and below),
+ * and the space between rows (the section's `gap-px`).
  */
-const SOLO_ROW = 44;
+const SOLO_ROW = 48;
 const SOLO_GAP = 1;
 
 const soloKey = (summary: ThreadSummary) => summary.thread.id;
@@ -1273,7 +1276,7 @@ function FoldedThreads({
         <ChevronDown
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+            "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
             !open && "-rotate-90",
           )}
         />
@@ -1464,7 +1467,7 @@ export function SoloRow({
         {/* Two lines like every row, at work or at rest, so the virtual list's rows keep one
             height and stay anchored as what is above them grows: its title, cut short with the
             whole of it on hover, its last activity at the edge, and its status under it. */}
-        <span className="truncate">{title}</span>
+        <MiddleTruncate text={title} />
         <span className="flex h-lh items-center text-meta text-muted-foreground">
           {!display.working && (
             <span className="tabular-nums">{formatRelative(thread.lastActivityAt, now)}</span>

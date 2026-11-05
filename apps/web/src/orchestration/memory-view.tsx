@@ -96,7 +96,7 @@ function Questions({ state }: { state: WorkspaceState }) {
           <>
             <CircleHelp
               aria-hidden
-              className="me-1 inline size-3.5 align-[-2px] text-status-needs-mark"
+              className="me-1 inline size-icon-row align-[-2px] text-status-needs-mark"
             />
             The orchestrator is waiting on{" "}
             <span className="tabular-nums">
@@ -125,7 +125,7 @@ function Questions({ state }: { state: WorkspaceState }) {
             <ChevronRight
               aria-hidden
               className={cn(
-                "size-3 transition-transform duration-(--dur-fast)",
+                "size-icon-chip transition-transform duration-(--dur-fast)",
                 showClosed && "rotate-90",
               )}
             />
@@ -716,7 +716,7 @@ export function MemoryView({
     >
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3">
         <h1 className="flex min-w-0 items-center gap-2 text-title">
-          <BookOpenText aria-hidden className="size-4 shrink-0 text-primary" />
+          <BookOpenText aria-hidden className="size-icon-row shrink-0 text-primary" />
           <span className="truncate">Memory · {state.workspace.name}</span>
         </h1>
         <div className="ml-auto flex items-center gap-2">

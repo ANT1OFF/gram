@@ -36,12 +36,12 @@ export const speedOptions = (
 };
 
 /**
- * A speed in a word for the toolbar: "Default", "Standard", "Fast", or "Fast (requested)" while the
- * CLI hasn't confirmed it.
+ * A speed in a word or two for the toolbar: "CLI default" (the CLI decides, so it says whose
+ * default), "Standard", "Fast", or "Fast (requested)" while the CLI hasn't confirmed it.
  */
 export const speedValueWord = (value: SpeedMode | undefined, state?: SpeedState): string =>
   value === undefined
-    ? "Default"
+    ? "CLI default"
     : value === "standard"
       ? "Standard"
       : state && state.speed !== "fast"
@@ -127,7 +127,7 @@ export function SpeedField({
           icon={
             ghost && (
               <Swap swapKey={value ?? "default"}>
-                <SpeedGlyph speed={value} className="size-4" />
+                <SpeedGlyph speed={value} className="size-icon-bar" />
               </Swap>
             )
           }

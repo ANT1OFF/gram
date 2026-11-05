@@ -388,19 +388,19 @@ function PatchMenu({
       {target?.kind === "comment" ? (
         <>
           <ContextMenuItem onClick={() => review.edit(target.id)}>
-            <Pencil aria-hidden className="size-3.5" />
+            <Pencil aria-hidden className="size-icon-row" />
             Edit comment
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => useDiffCommentsStore.getState().remove(review.threadId, target.id)}
           >
-            <Trash2 aria-hidden className="size-3.5" />
+            <Trash2 aria-hidden className="size-icon-row" />
             Delete comment
           </ContextMenuItem>
         </>
       ) : (
         <ContextMenuItem disabled={!range} onClick={review.compose}>
-          <MessageSquarePlus aria-hidden className="size-3.5" />
+          <MessageSquarePlus aria-hidden className="size-icon-row" />
           {range ? `Comment on ${linesLabel(range.start, range.end)}` : "Pick a line to comment"}
         </ContextMenuItem>
       )}

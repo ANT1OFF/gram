@@ -215,11 +215,11 @@ function DiffFileRow({
           <ChevronRight
             aria-hidden
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
+              "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
               open && "rotate-90",
             )}
           />
-          <status.icon aria-hidden className={cn("size-3.5 shrink-0", status.tone)} />
+          <status.icon aria-hidden className={cn("size-icon-row shrink-0", status.tone)} />
           <span className="min-w-0 flex-1 truncate font-mono" title={file.path}>
             {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
           </span>
@@ -248,7 +248,7 @@ function DiffFileRow({
               onClick={() => onReveal(file.path)}
               className={ROW_ACTION}
             >
-              <FolderSearch aria-hidden className="size-3.5" />
+              <FolderSearch aria-hidden className="size-icon-row" />
             </button>
           )}
           {onOpenInEditor && (
@@ -259,7 +259,7 @@ function DiffFileRow({
               onClick={() => onOpenInEditor(file.path)}
               className={ROW_ACTION}
             >
-              <SquareArrowOutUpRight aria-hidden className="size-3.5" />
+              <SquareArrowOutUpRight aria-hidden className="size-icon-row" />
             </button>
           )}
           {onRevealInFileManager && (
@@ -270,7 +270,7 @@ function DiffFileRow({
               onClick={() => onRevealInFileManager(file.path)}
               className={ROW_ACTION}
             >
-              <FolderOpen aria-hidden className="size-3.5" />
+              <FolderOpen aria-hidden className="size-icon-row" />
             </button>
           )}
         </div>

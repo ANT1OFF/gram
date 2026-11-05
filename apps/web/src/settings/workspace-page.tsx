@@ -194,7 +194,7 @@ function BackLink() {
       data-testid="workspace-page-back"
       className="inline-flex w-fit items-center gap-0.5 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
     >
-      <ChevronLeft aria-hidden className="size-3.5" />
+      <ChevronLeft aria-hidden className="size-icon-chip" />
       Workspaces
     </Link>
   );
@@ -257,7 +257,7 @@ function Header({
             data-testid="workspace-paused"
             className="inline-flex items-center gap-1 text-meta text-muted-foreground"
           >
-            <CirclePause aria-hidden className="size-3" />
+            <CirclePause aria-hidden className="size-icon-chip" />
             Paused
           </span>
         )}
@@ -574,7 +574,10 @@ function MoreOptions({ state, changes }: { state: WorkspaceState; changes: Chang
       >
         <ChevronRight
           aria-hidden
-          className={cn("size-3.5 transition-transform duration-(--dur-fast)", open && "rotate-90")}
+          className={cn(
+            "size-icon-chip transition-transform duration-(--dur-fast)",
+            open && "rotate-90",
+          )}
         />
         More options
       </button>

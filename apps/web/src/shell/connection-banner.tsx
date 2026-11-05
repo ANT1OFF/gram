@@ -33,7 +33,7 @@ export function ConnectionBanner() {
     >
       {notice === undefined ? (
         <>
-          <WifiOff aria-hidden className="size-4 text-warning" />
+          <WifiOff aria-hidden className="size-icon-row text-warning" />
           <span>
             Reconnecting to the server…
             {seconds > 0 && <span className="text-muted-foreground"> retry in {seconds}s</span>}
@@ -41,7 +41,7 @@ export function ConnectionBanner() {
         </>
       ) : (
         <>
-          <CloudCog aria-hidden className="size-4 text-warning" />
+          <CloudCog aria-hidden className="size-icon-row text-warning" />
           <span>
             {notice.message}
             {notice.detail !== undefined && (

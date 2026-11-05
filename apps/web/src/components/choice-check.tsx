@@ -12,7 +12,7 @@ export function ChoiceCheck({ checked, className }: { checked: boolean; classNam
       aria-hidden
       data-testid={checked ? "choice-check" : undefined}
       className={cn(
-        "size-3.5 shrink-0 text-(--row-cursor-edge) transition-opacity duration-(--dur-fast)",
+        "size-icon-row shrink-0 text-(--row-cursor-edge) transition-opacity duration-(--dur-fast)",
         checked ? "opacity-100" : "opacity-0",
         className,
       )}

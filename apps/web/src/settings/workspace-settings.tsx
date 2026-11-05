@@ -197,7 +197,7 @@ function WorkspaceRow({
                   data-testid="workspace-paused"
                   className="inline-flex items-center gap-1 text-meta text-muted-foreground"
                 >
-                  <CirclePause aria-hidden className="size-3" />
+                  <CirclePause aria-hidden className="size-icon-chip" />
                   Paused
                 </span>
               ) : (

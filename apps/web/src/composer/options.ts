@@ -101,12 +101,16 @@ export const EFFORT_OPTIONS: readonly PickerOption<ReasoningVariant>[] = [
 export const DEFAULT_EFFORT = "default";
 
 /** The effort pickers' first row: no explicit effort, so the model's own default applies. */
-export const DEFAULT_EFFORT_OPTION: PickerOption<typeof DEFAULT_EFFORT> = {
+export const DEFAULT_EFFORT_OPTION = {
   value: DEFAULT_EFFORT,
   label: "Default effort",
-  short: "Default",
+  // Says what the default is, not just that it is one: the model picks its own level. Short of
+  // room it gives up its words first, as Speed's default does, leaving the gauge, still named
+  // "Effort: Model default" on hover.
+  short: "Model default",
+  compact: "",
   description: "Whatever level the model uses on its own.",
-};
+} as const satisfies PickerOption<typeof DEFAULT_EFFORT>;
 
 /** Claude models offered before a session exists to report its own list. */
 export const DEFAULT_MODEL_OPTIONS: readonly PickerOption<string>[] = [

@@ -223,9 +223,12 @@ export function OpenQuestion({
       {card.asker !== undefined && (
         <p
           data-testid="question-asker"
-          className="flex min-w-0 items-center gap-1 text-caption text-muted-foreground"
+          className="flex min-w-0 items-center gap-1 text-meta text-muted-foreground"
         >
-          <MessageCircleQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
+          <MessageCircleQuestion
+            aria-hidden
+            className="size-icon-row shrink-0 text-status-needs-mark"
+          />
           <span className="min-w-0 flex-1 truncate">
             <AskedBy asker={card.asker} />
           </span>
@@ -248,7 +251,7 @@ export function OpenQuestion({
                 data-testid="question-answering"
                 className="inline-flex h-6 items-center gap-1 px-1 text-meta text-muted-foreground"
               >
-                <ArrowDown aria-hidden className="size-3.5" />
+                <ArrowDown aria-hidden className="size-icon-row" />
                 In Asks
               </span>
             ) : (
@@ -298,7 +301,7 @@ export function OpenQuestion({
           data-testid="question-note"
           className="flex items-start gap-1 text-meta text-muted-foreground"
         >
-          <Bot aria-hidden className="mt-px size-3.5 shrink-0" />
+          <Bot aria-hidden className="mt-px size-icon-row shrink-0" />
           <span>
             <span className="font-medium text-foreground">Orchestrator:</span> {card.note}
           </span>
@@ -566,16 +569,13 @@ export function WorkerQuestionHistory({ question }: { question: WorkerQuestion }
       className="flex min-w-0 items-start gap-2"
     >
       <span title={status} className="mt-0.5 inline-flex shrink-0">
-        <Icon aria-hidden className={cn("size-3.5", look.className)} />
+        <Icon aria-hidden className={cn("size-icon-row", look.className)} />
       </span>
       <IdChip id={question.id} />
       <div className="min-w-0 flex-1">
         <p className="text-reading break-words text-muted-foreground">{question.question}</p>
         {outcome !== undefined && <p className="text-meta break-words">{outcome}</p>}
-        <p
-          data-testid="question-status"
-          className="text-caption text-muted-foreground tabular-nums"
-        >
+        <p data-testid="question-status" className="text-meta text-muted-foreground tabular-nums">
           {status}
         </p>
       </div>
@@ -619,7 +619,7 @@ export function ClosedQuestion({ question }: { question: MemoryQuestion }) {
       className="flex min-w-0 items-start gap-2"
     >
       <span title={look.label} className="mt-0.5 inline-flex shrink-0">
-        <Icon aria-hidden className={cn("size-3.5", look.className)} />
+        <Icon aria-hidden className={cn("size-icon-row", look.className)} />
         <span className="sr-only">{look.label}</span>
       </span>
       {question.id !== undefined && <IdChip id={question.id} />}

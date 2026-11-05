@@ -167,7 +167,7 @@ function StatusStrip({
         >
           <Workflow
             aria-hidden
-            className={cn("size-3.5 shrink-0", running > 0 && "text-status-working")}
+            className={cn("size-icon-row shrink-0", running > 0 && "text-status-working")}
           />
           <Count n={running} word="running" />
         </Item>
@@ -177,7 +177,7 @@ function StatusStrip({
           hint={<WorkersHint title="In review" workers={counts.inReview} />}
           onClick={() => openBoard(workspaceId)}
         >
-          <Eye aria-hidden className="size-3.5 shrink-0" />
+          <Eye aria-hidden className="size-icon-row shrink-0" />
           <Count n={review} word="in review" short="review" />
         </Item>
         <Item
@@ -186,7 +186,10 @@ function StatusStrip({
           hint={<WorkersHint title="Merged today" workers={counts.mergedToday} />}
           onClick={() => useHistoryStore.getState().show("workers")}
         >
-          <GitMerge aria-hidden className={cn("size-3.5 shrink-0", merged > 0 && "text-merged")} />
+          <GitMerge
+            aria-hidden
+            className={cn("size-icon-row shrink-0", merged > 0 && "text-merged")}
+          />
           <Count n={merged} word="merged today" short="merged" />
         </Item>
         {digests !== undefined && (

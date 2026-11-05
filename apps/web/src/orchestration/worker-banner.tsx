@@ -72,7 +72,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
           role="status"
           className={`${BANNER} bg-muted/60`}
         >
-          <Pause aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <Pause aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           <span className="shrink-0 font-medium">Workspace paused</span>
           <span
             className="min-w-0 flex-1 truncate text-muted-foreground"
@@ -93,7 +93,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
       {held && (
         // Hand back itself is the header's, beside the worker's name, where it always stays.
         <div data-testid="worker-banner-held" role="status" className={BANNER}>
-          <HandGrab aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <HandGrab aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           <span className="shrink-0 font-medium">Under your control</span>
           <span
             className="min-w-0 flex-1 truncate text-muted-foreground"
@@ -108,7 +108,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
           data-testid="worker-banner-repos"
           className="flex min-w-0 items-start gap-1.5 border-b border-edge bg-card/40 px-3 py-1 text-meta text-muted-foreground"
         >
-          <FolderGit2 aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+          <FolderGit2 aria-hidden className="mt-0.5 size-icon-row shrink-0" />
           <span className="min-w-0">
             Works in <span className="text-foreground/80">{repos.primary}</span>
             {repos.others.map((name) => (
@@ -182,7 +182,7 @@ export function OrchestratorChips({
             />
           }
         >
-          <Columns3 aria-hidden className="size-4" />
+          <Columns3 aria-hidden className="size-icon-row" />
         </Hint>
       )}
       {/* In the title bar, Memory and the workspace's settings are the bar's "…". */}
@@ -200,7 +200,7 @@ export function OrchestratorChips({
               />
             }
           >
-            <Brain aria-hidden className="size-4" />
+            <Brain aria-hidden className="size-icon-row" />
           </Hint>
           <Hint
             label="Workspace settings"
@@ -215,7 +215,7 @@ export function OrchestratorChips({
               />
             }
           >
-            <Settings2 aria-hidden className="size-4" />
+            <Settings2 aria-hidden className="size-icon-row" />
           </Hint>
         </>
       )}
@@ -269,7 +269,7 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
           role="status"
           className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1 text-meta text-foreground"
         >
-          <Pause aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <Pause aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1">
             {pauseText(paused)} since {pauseClock(paused.at)}. While paused, nothing wakes it and it
             can't spawn or message workers. {pauseLeavesRunning(working, paused)}

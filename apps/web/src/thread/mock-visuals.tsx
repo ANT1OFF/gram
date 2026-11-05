@@ -172,14 +172,14 @@ export function OptionGallery({
                   onClick={() => open(threadId, option.preview!)}
                   className="flex aspect-[16/10] w-full items-center justify-center rounded-md border border-dashed border-border text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <LayoutDashboard aria-hidden className="size-4" />
+                  <LayoutDashboard aria-hidden className="size-icon-row" />
                 </button>
               )}
               <span className="flex min-w-0 items-center gap-1 text-xs">
                 <span className="min-w-0 truncate font-medium">{option.label}</span>
                 {option.label === recommended && (
                   <span title="Recommended" className="inline-flex shrink-0 text-link">
-                    <Star aria-hidden className="size-3.5 fill-current" />
+                    <Star aria-hidden className="size-icon-row fill-current" />
                     <span className="sr-only">(recommended)</span>
                   </span>
                 )}
@@ -249,7 +249,7 @@ export function MockCard({ threadId, mock }: { threadId: ThreadId; mock: MockCar
       className="my-2 flex w-full max-w-xl min-w-0 flex-col gap-2.5 rounded-lg border border-edge bg-card p-3"
     >
       <header className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <LayoutDashboard aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <LayoutDashboard aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         <h3 className="min-w-0 flex-1 truncate font-heading text-sm font-semibold">{mock.title}</h3>
         {mock.version !== undefined && (
           <span data-testid="mock-version" className="font-mono text-xs text-muted-foreground">

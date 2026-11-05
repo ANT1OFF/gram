@@ -101,7 +101,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
           <display.icon
             aria-hidden
             data-working={display.working}
-            className={cn("size-3.5 shrink-0", display.tone)}
+            className={cn("size-icon-row shrink-0", display.tone)}
           />
         </Swap>
         <span className="sr-only">{display.label}: </span>
@@ -126,7 +126,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
             />
           }
         >
-          <Maximize2 aria-hidden className="size-3.5" />
+          <Maximize2 aria-hidden className="size-icon-row" />
         </Hint>
         <Hint
           label={keyLabel("Close (⌘\\)")}
@@ -141,7 +141,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
             />
           }
         >
-          <X aria-hidden className="size-3.5" />
+          <X aria-hidden className="size-icon-row" />
         </Hint>
       </header>
       <div

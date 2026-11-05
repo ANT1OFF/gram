@@ -58,7 +58,7 @@ export function HelperHarnessPicker({
       onChange={onChange}
       icon={
         source === "claude" || source === "codex" ? (
-          <AgentIcon agent={source} className="size-3.5" />
+          <AgentIcon agent={source} className="size-icon-row" />
         ) : undefined
       }
     />
@@ -144,7 +144,7 @@ export function LocalHelperSettings({
               />
             }
           >
-            <RefreshCw aria-hidden className="size-3.5" ref={retrying ? spin : undefined} />
+            <RefreshCw aria-hidden className="size-icon-row" ref={retrying ? spin : undefined} />
           </TooltipTrigger>
           <TooltipContent id={refreshInfoId} role="tooltip">
             Refresh models and availability
@@ -291,7 +291,7 @@ function LocalProviderRows({
                   aria-describedby={informationId}
                   className="shrink-0 rounded-2xs p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <Info aria-hidden className="size-3.5" />
+                  <Info aria-hidden className="size-icon-row" />
                 </TooltipTrigger>
                 <TooltipContent id={informationId} role="tooltip">
                   {discovered?.detail ??
@@ -325,7 +325,7 @@ function LocalProviderRows({
           onChange={(value) => onSave({ [modelKey]: value === "automatic" ? null : value })}
           open={modelOpen}
           onOpenChange={setModelOpen}
-          icon={<AgentIcon agent={provider} className="size-3.5" />}
+          icon={<AgentIcon agent={provider} className="size-icon-row" />}
           title={`${name} helper model`}
           description={discovered?.detail}
           labelled
@@ -349,7 +349,7 @@ function LocalProviderRows({
           onChange={(value) =>
             onSave({ [effortKey]: value === "automatic" ? null : (value as ReasoningVariant) })
           }
-          icon={<Brain aria-hidden className="size-3.5" />}
+          icon={<Brain aria-hidden className="size-icon-row" />}
         />
       </SettingRow>
       <SettingRow

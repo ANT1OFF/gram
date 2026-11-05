@@ -53,7 +53,7 @@ function Output({ text }: { text: string }) {
     <pre
       ref={ref}
       data-testid="cli-update-output"
-      className="max-h-32 overflow-auto rounded-sm bg-muted px-2 py-1 font-mono text-caption leading-4 wrap-break-word whitespace-pre-wrap text-muted-foreground"
+      className="max-h-32 overflow-auto rounded-sm bg-muted px-2 py-1 font-mono text-meta leading-4 wrap-break-word whitespace-pre-wrap text-muted-foreground"
     >
       {text}
     </pre>
@@ -154,7 +154,7 @@ export function CliUpdatePanel({
       {state?.state === "running" && (
         <>
           <div className="flex min-w-0 items-center gap-2">
-            <Spinner aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <Spinner aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
             <span aria-live="polite" className="min-w-0 truncate">
               <CommandText text={`Running \`${state.command}\`…`} />
             </span>
@@ -177,9 +177,9 @@ export function CliUpdatePanel({
         <>
           <div className="flex min-w-0 items-start gap-2">
             {state.problem === "cancelled" ? (
-              <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+              <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
             ) : (
-              <CircleX aria-hidden className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+              <CircleX aria-hidden className="mt-0.5 size-icon-row shrink-0 text-destructive" />
             )}
             <span
               aria-live="polite"
@@ -219,9 +219,9 @@ function Succeeded({
   return (
     <div className="flex min-w-0 items-center gap-2">
       {outcome.tone === "success" ? (
-        <DrawnCheck className="size-3.5 shrink-0 text-success" />
+        <DrawnCheck className="size-icon-row shrink-0 text-success" />
       ) : (
-        <TriangleAlert aria-hidden className="size-3.5 shrink-0 text-warning" />
+        <TriangleAlert aria-hidden className="size-icon-row shrink-0 text-warning" />
       )}
       <span
         aria-live="polite"
@@ -277,7 +277,7 @@ export function BannerCliUpdate({ agent }: { agent: GatewayAgentTool }) {
         data-state="running"
         className="flex items-center gap-1 text-meta text-muted-foreground"
       >
-        <Spinner aria-hidden className="size-3.5" />
+        <Spinner aria-hidden className="size-icon-row" />
         Updating…
       </span>
     );

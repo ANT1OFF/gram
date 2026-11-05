@@ -14,7 +14,7 @@ const SHORTCUTS = [
 ];
 
 const rowCls =
-  "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-reading outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:bg-accent";
+  "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-body outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:bg-accent";
 
 /** Folder chips worth one click (the default folder, ~/Documents/code, Home), each opening the browser there. */
 export function ShortcutChips({
@@ -38,7 +38,7 @@ export function ShortcutChips({
           onClick={() => onBrowse(shortcut.path)}
           className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-meta text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          <FolderOpen aria-hidden className="size-3.5" />
+          <FolderOpen aria-hidden className="size-icon-row" />
           {shortcut.label}
         </button>
       ))}
@@ -111,7 +111,7 @@ function Section({
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-1">
       <h3 className="flex items-center gap-1.5 px-2 text-meta font-medium text-muted-foreground">
-        <Icon className="size-3.5" />
+        <Icon className="size-icon-row" />
         {title}
       </h3>
       {children.length > 0 ? (

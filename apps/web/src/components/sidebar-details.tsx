@@ -53,7 +53,7 @@ export function SidebarDetails({
           className="max-h-[min(24rem,calc(100dvh-2rem))] flex-col items-stretch"
         >
           <span className="min-h-0 overflow-y-auto whitespace-pre-line">{label}</span>
-          <span className="shrink-0 border-t border-background/20 pt-1 text-caption dark:border-border dark:text-muted-foreground">
+          <span className="shrink-0 border-t border-background/20 pt-1 text-meta dark:border-border dark:text-muted-foreground">
             {keyboard ? "Press F1 for full details" : "Focus the row and press F1 for full details"}
           </span>
         </TooltipContent>

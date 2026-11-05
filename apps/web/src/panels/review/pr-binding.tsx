@@ -75,7 +75,7 @@ export function FollowingStatus({ binding }: { binding: ReturnType<typeof usePrB
         data-testid="pr-binding-status"
         className="flex min-w-0 items-center gap-1 text-muted-foreground"
       >
-        <GitPullRequest aria-hidden className="size-3 shrink-0" />
+        <GitPullRequest aria-hidden className="size-icon-chip shrink-0" />
         <span className="truncate">
           Following{" "}
           {boundUrl === undefined ? (

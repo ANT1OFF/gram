@@ -259,7 +259,7 @@ function WorkersBody() {
         </span>
       </div>
       <div className="flex items-center gap-2 border-b border-border px-3">
-        <Search aria-hidden className="size-3.5 text-muted-foreground" />
+        <Search aria-hidden className="size-icon-row text-muted-foreground" />
         <input
           autoFocus
           data-testid="workers-search"
@@ -353,7 +353,7 @@ function WorkersBody() {
           }}
           className="ml-auto flex items-center gap-1.5 rounded-(--radius-sm) px-1 text-caption text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <History aria-hidden className="size-3.5" />
+          <History aria-hidden className="size-icon-row" />
           Finished in History
           {historyHint !== "" && <kbd className="font-sans">{historyHint}</kbd>}
         </button>
@@ -391,7 +391,7 @@ function WorkerListRow({
       onMouseMove={onHover}
       onClick={onOpen}
       className={cn(
-        "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-reading",
+        "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-body",
         active && "row-cursor",
       )}
     >
@@ -405,7 +405,7 @@ function WorkerListRow({
       {row.held && (
         <HandGrab
           aria-label="Under your control"
-          className="size-3.5 shrink-0 text-muted-foreground"
+          className="size-icon-row shrink-0 text-muted-foreground"
         />
       )}
       {repo && <span className="shrink-0 text-meta text-muted-foreground">{row.repo}</span>}

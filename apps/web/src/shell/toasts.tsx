@@ -151,7 +151,7 @@ export function Toasts() {
               // The stack's gap is each toast's own margin, so a leaving toast folds its gap away too.
               className="pointer-events-auto mb-2 flex items-start gap-2 rounded-(--radius-lg) border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-(--shadow-raised)"
             >
-              <kind.icon aria-hidden className={cn("mt-0.5 size-4 shrink-0", kind.tone)} />
+              <kind.icon aria-hidden className={cn("mt-0.5 size-icon-row shrink-0", kind.tone)} />
               <button
                 type="button"
                 className="min-w-0 flex-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
@@ -172,7 +172,7 @@ export function Toasts() {
                   else dismiss(n);
                 }}
               >
-                <X className="size-3.5" />
+                <X className="size-icon-row" />
               </button>
             </PresenceItem>
           );
@@ -219,7 +219,7 @@ function UndoItem({ toast }: { toast: UndoToast }) {
           );
         }}
       >
-        <Undo2 aria-hidden className="size-3.5" />
+        <Undo2 aria-hidden className="size-icon-row" />
         Undo
       </button>
       <button
@@ -228,7 +228,7 @@ function UndoItem({ toast }: { toast: UndoToast }) {
         className="shrink-0 rounded-sm text-muted-foreground transition-colors duration-(--dur-fast) outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={dismiss}
       >
-        <X className="size-3.5" />
+        <X className="size-icon-row" />
       </button>
     </PresenceItem>
   );

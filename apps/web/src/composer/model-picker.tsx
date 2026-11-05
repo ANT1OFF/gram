@@ -19,7 +19,7 @@ type Option = PickerOption<string>;
 const NO_FAVOURITES = () => false;
 
 const ROW =
-  "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[highlighted]:row-cursor";
+  "group/row flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[highlighted]:row-cursor";
 
 /**
  * The model picker: a search box over the models, favourites first, then a section per agent or
@@ -108,7 +108,7 @@ export function ModelCombobox({
       />
       {/* Short of room it goes, leaving the space to the name (`useToolbarLayout`). */}
       {(whole || field) && (
-        <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronDownIcon aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
       )}
     </>
   );
@@ -154,7 +154,7 @@ export function ModelCombobox({
             className="flex w-80 max-w-(--available-width) origin-(--transform-origin) flex-col rounded-md border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <div className="flex items-center gap-2 border-b border-border px-2.5">
-              <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <Search aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
               <Combobox.Input
                 aria-label="Search models"
                 placeholder="Search models…"
@@ -210,7 +210,7 @@ export function ModelCombobox({
                             )}
                           </span>
                           <Combobox.ItemIndicator>
-                            <CheckIcon aria-hidden className="size-3.5" />
+                            <CheckIcon aria-hidden className="size-icon-row" />
                           </Combobox.ItemIndicator>
                           {/* Out of the tab order: the input keeps focus, and ⇧↵ stars from there. */}
                           {onToggleFavourite && (
@@ -242,7 +242,7 @@ export function ModelCombobox({
                               <Star
                                 aria-hidden
                                 className={cn(
-                                  "size-3.5",
+                                  "size-icon-row",
                                   starred && "fill-current text-foreground",
                                 )}
                               />

@@ -264,7 +264,7 @@ function DiskSummary({
     <div className={cn(SETTINGS_CARD, "gap-2")} data-testid="storage-disk">
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          <HardDrive aria-hidden className="size-4 text-muted-foreground" />
+          <HardDrive aria-hidden className="size-icon-row text-muted-foreground" />
           <span className="font-medium">
             {free === undefined ? "Free space unknown" : `${formatBytes(free)} free`}
           </span>
@@ -545,7 +545,7 @@ function GroupSection({
           <ChevronRight
             aria-hidden
             className={cn(
-              "size-3.5 text-muted-foreground transition-transform",
+              "size-icon-chip text-muted-foreground transition-transform",
               open && "rotate-90",
             )}
           />
@@ -605,17 +605,17 @@ function StorageRow({
   return (
     <li data-testid="storage-row" aria-label={name} className="flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
-        <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         <span className="truncate font-mono text-meta font-medium">{name}</span>
-        <span className="shrink-0 text-caption text-muted-foreground">{repo}</span>
+        <span className="shrink-0 text-meta text-muted-foreground">{repo}</span>
         {state !== undefined && (
           <span
-            className={cn("shrink-0 text-caption", risk ? "text-warning" : "text-muted-foreground")}
+            className={cn("shrink-0 text-meta", risk ? "text-warning" : "text-muted-foreground")}
           >
             {state}
           </span>
         )}
-        <span className="ml-auto shrink-0 text-caption text-muted-foreground tabular-nums">
+        <span className="ml-auto shrink-0 text-meta text-muted-foreground tabular-nums">
           {entry.missing
             ? "—"
             : size === undefined
@@ -627,7 +627,7 @@ function StorageRow({
         {entry.lastActivity > 0 && (
           <time
             dateTime={new Date(entry.lastActivity).toISOString()}
-            className="w-10 shrink-0 text-right text-caption text-muted-foreground tabular-nums"
+            className="w-10 shrink-0 text-right text-meta text-muted-foreground tabular-nums"
           >
             {formatRelative(entry.lastActivity)}
           </time>
@@ -635,7 +635,7 @@ function StorageRow({
       </div>
       <div className="flex min-w-0 items-center gap-1 pl-5.5">
         <span
-          className="min-w-0 flex-1 truncate font-mono text-caption text-muted-foreground"
+          className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground"
           title={entry.path}
         >
           {entry.threadTitle !== undefined ? `“${entry.threadTitle}” · ` : ""}

@@ -94,7 +94,7 @@ function Block({
 function AddKeyNote({ agent }: { agent: AgentKind }) {
   return (
     <p className="flex h-8 items-center gap-1.5 text-meta text-muted-foreground">
-      <KeyRound aria-hidden className="size-3.5 shrink-0" />
+      <KeyRound aria-hidden className="size-icon-row shrink-0" />
       {`${agentLabel(agent)} runs through your gateway.`}
       <Link
         to="/settings/gateways"
@@ -233,13 +233,13 @@ export function AgentFields({
           }}
         >
           <SelectTrigger aria-label="Agent" data-toolbar-lead={ghost || undefined} {...trigger}>
-            <AgentIcon agent={value.agent} className="size-4" />
+            <AgentIcon agent={value.agent} className="size-icon-bar" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {agentItems.map((o) => (
               <SelectItem key={o.value} value={o.value}>
-                <AgentIcon agent={o.value} className="size-3.5 text-muted-foreground" />
+                <AgentIcon agent={o.value} className="size-icon-row text-muted-foreground" />
                 {o.label}
               </SelectItem>
             ))}
@@ -254,7 +254,10 @@ export function AgentFields({
               : "flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-reading"
           }
         >
-          <AgentIcon agent={agents[0] ?? value.agent} className="size-3.5 text-muted-foreground" />
+          <AgentIcon
+            agent={agents[0] ?? value.agent}
+            className="size-icon-row text-muted-foreground"
+          />
           {agentLabel(agents[0] ?? value.agent)}
         </span>
       )}
@@ -324,14 +327,14 @@ export function AgentFields({
                 >
                   <PickerTrigger
                     label="Effort"
-                    value={effortShown?.short ?? effortShown?.label ?? "Default"}
+                    value={effortShown?.short ?? effortShown?.label ?? DEFAULT_EFFORT_OPTION.short}
                     compact={effortShown?.compact}
                     labelled={sized("effort")}
                     field={!ghost}
                     icon={
                       ghost && (
                         <Swap swapKey={value.variant ?? DEFAULT_EFFORT}>
-                          <EffortGauge variant={value.variant} className="size-4" />
+                          <EffortGauge variant={value.variant} className="size-icon-bar" />
                         </Swap>
                       )
                     }
@@ -348,7 +351,7 @@ export function AgentFields({
                 </Select>
               ) : (
                 <UnavailableSlot label="Effort" reason="This model has no effort levels">
-                  <EffortGauge variant={undefined} className="size-4" />
+                  <EffortGauge variant={undefined} className="size-icon-bar" />
                 </UnavailableSlot>
               )}
             </Block>
@@ -372,7 +375,7 @@ export function AgentFields({
                 />
               ) : (
                 <UnavailableSlot label="Speed" reason={`${agentLabel(value.agent)} has one speed`}>
-                  <SpeedGlyph speed={undefined} className="size-4" />
+                  <SpeedGlyph speed={undefined} className="size-icon-bar" />
                 </UnavailableSlot>
               )}
             </Block>
@@ -408,13 +411,13 @@ export function AgentFields({
             >
               <PickerTrigger
                 label="Effort"
-                value={effortShown?.short ?? effortShown?.label ?? "Default"}
+                value={effortShown?.short ?? effortShown?.label ?? DEFAULT_EFFORT_OPTION.short}
                 labelled={false}
                 field={!ghost}
                 icon={
                   ghost && (
                     <Swap swapKey={value.variant ?? DEFAULT_EFFORT}>
-                      <EffortGauge variant={value.variant} className="size-4" />
+                      <EffortGauge variant={value.variant} className="size-icon-bar" />
                     </Swap>
                   )
                 }

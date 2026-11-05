@@ -132,7 +132,7 @@ export function ReviewThreadCard({
         {first && <span className="min-w-0 truncate">{first.author}</span>}
         {first?.url && (
           <OutboundLink href={first.url} className="ml-auto shrink-0 hover:text-foreground">
-            <ExternalLink aria-label="Open on GitHub" className="size-3" />
+            <ExternalLink aria-label="Open on GitHub" className="size-icon-chip" />
           </OutboundLink>
         )}
       </p>
@@ -143,7 +143,7 @@ export function ReviewThreadCard({
             {first.suggestion === "" ? "Suggests deleting these lines" : "Suggested change"}
           </figcaption>
           {first.suggestion !== "" && (
-            <pre className="overflow-x-auto rounded-sm bg-muted p-1.5 font-mono text-caption">
+            <pre className="overflow-x-auto rounded-sm bg-muted p-1.5 font-mono text-meta">
               {first.suggestion}
             </pre>
           )}

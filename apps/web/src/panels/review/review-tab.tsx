@@ -144,7 +144,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
       <CollapsibleTrigger className="group flex w-full items-center gap-1 px-3 py-1 text-meta text-muted-foreground hover:text-foreground">
         <ChevronRight
           aria-hidden
-          className="size-3 transition-transform group-data-[panel-open]:rotate-90"
+          className="size-icon-chip transition-transform group-data-[panel-open]:rotate-90"
         />
         {label}
       </CollapsibleTrigger>
@@ -168,7 +168,7 @@ function VerdictBanner({ review, actions }: { review: PrReview; actions: ReviewA
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {verdict ? (
           <span className={cn("flex items-center gap-1 font-medium", verdict.tone)}>
-            <verdict.icon aria-hidden className="size-4" />
+            <verdict.icon aria-hidden className="size-icon-row" />
             {verdict.label}
           </span>
         ) : (
@@ -186,7 +186,7 @@ function VerdictBanner({ review, actions }: { review: PrReview; actions: ReviewA
             data-testid="round-in-flight"
             className="flex items-center gap-1 text-meta text-info"
           >
-            <Spinner aria-hidden className="size-3" />
+            <Spinner aria-hidden className="size-icon-chip" />
             Round in progress
           </span>
         )}

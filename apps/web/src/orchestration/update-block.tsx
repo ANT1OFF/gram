@@ -84,11 +84,11 @@ export function UpdateBlock({
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground opacity-60 transition-transform duration-(--dur-fast) group-hover:opacity-100",
+            "size-icon-chip shrink-0 text-muted-foreground opacity-60 transition-transform duration-(--dur-fast) group-hover:opacity-100",
             open && "rotate-90",
           )}
         />
-        <History aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <History aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         <UpdateTime time={words.time} />
         <span className="min-w-0 truncate text-muted-foreground">
           <span className="font-medium">Update</span>
@@ -169,11 +169,11 @@ function QuietUpdate({
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground opacity-60 transition-transform duration-(--dur-fast) group-hover:opacity-100",
+            "size-icon-chip shrink-0 text-muted-foreground opacity-60 transition-transform duration-(--dur-fast) group-hover:opacity-100",
             open && "rotate-90",
           )}
         />
-        <History aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <History aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         <UpdateTime time={time} />
         <span className="min-w-0 truncate text-muted-foreground">
           <span className="font-medium">Update</span>

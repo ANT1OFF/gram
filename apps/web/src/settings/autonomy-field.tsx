@@ -83,7 +83,7 @@ export function AutonomyField({
               className="flex flex-col gap-2 rounded-md border border-warning/50 p-2.5 text-meta"
             >
               <p {...{ [LONG_COPY]: "consent" }} className="flex items-start gap-1.5">
-                <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
+                <TriangleAlert aria-hidden className="mt-px size-icon-row shrink-0 text-warning" />
                 <span>
                   <span className="font-medium">Turn on Full autonomy?</span> {full.description}{" "}
                   {full.detail}
@@ -113,7 +113,7 @@ export function AutonomyField({
             data-testid="autonomy-error"
             className="flex items-start gap-1.5 text-meta whitespace-pre-wrap text-destructive"
           >
-            <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+            <TriangleAlert aria-hidden className="mt-px size-icon-row shrink-0" />
             <span>{error}</span>
           </p>
         )}
@@ -126,7 +126,7 @@ export function AutonomyField({
             level.warn ? "text-warning" : "text-muted-foreground",
           )}
         >
-          {level.warn && <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />}
+          {level.warn && <TriangleAlert aria-hidden className="mt-px size-icon-row shrink-0" />}
           <span>{level.description}</span>
         </p>
         {note !== undefined && (
@@ -134,7 +134,7 @@ export function AutonomyField({
             data-testid="orchestration-gate-warning"
             className="flex items-start gap-1.5 text-meta text-muted-foreground"
           >
-            <ShieldAlert aria-hidden className="mt-px size-3.5 shrink-0 text-warning" />
+            <ShieldAlert aria-hidden className="mt-px size-icon-row shrink-0 text-warning" />
             <span>{note.line}</span>
           </p>
         )}

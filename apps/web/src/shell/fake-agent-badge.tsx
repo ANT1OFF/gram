@@ -21,7 +21,7 @@ export function FakeAgentBadge({ className }: { className?: string }) {
           className,
         )}
       >
-        <FlaskConical aria-hidden className="size-3.5" />
+        <FlaskConical aria-hidden className="size-icon-row" />
         Fake agent
       </TooltipTrigger>
       <TooltipContent>{FAKE_AGENT_HINT}</TooltipContent>

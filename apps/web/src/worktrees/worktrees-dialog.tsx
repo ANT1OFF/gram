@@ -297,28 +297,23 @@ function WorktreeRow({
             className="size-3.5 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           />
         ) : (
-          <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         )}
         <span className="shrink-0 font-mono text-meta font-medium">{name}</span>
         {entry.isMain && entry.branch && (
-          <span className="shrink-0 font-mono text-caption text-muted-foreground">
-            {entry.branch}
-          </span>
+          <span className="shrink-0 font-mono text-meta text-muted-foreground">{entry.branch}</span>
         )}
-        <span className="ml-auto shrink-0 text-caption text-muted-foreground">{usage}</span>
+        <span className="ml-auto shrink-0 text-meta text-muted-foreground">{usage}</span>
         {entry.lastActivity > 0 && (
           <time
             dateTime={new Date(entry.lastActivity).toISOString()}
-            className="shrink-0 text-caption text-muted-foreground tabular-nums"
+            className="shrink-0 text-meta text-muted-foreground tabular-nums"
           >
             {formatRelative(entry.lastActivity)}
           </time>
         )}
       </div>
-      <p
-        className="truncate pl-5.5 font-mono text-caption text-muted-foreground"
-        title={entry.path}
-      >
+      <p className="truncate pl-5.5 font-mono text-meta text-muted-foreground" title={entry.path}>
         {entry.path}
       </p>
       {!entry.isMain && (
@@ -395,12 +390,12 @@ function WorktreeStatus({ path }: { path: string }) {
   const warning = closeWarning(status.data);
   return warning ? (
     <p data-testid="worktree-warning" className="flex items-start gap-1.5 text-meta">
-      <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+      <TriangleAlert aria-hidden className="mt-0.5 size-icon-row shrink-0 text-warning" />
       {warning}
     </p>
   ) : (
     <p data-testid="worktree-clean" className="flex items-center gap-1.5 text-meta">
-      <CircleCheck aria-hidden className="size-3.5 shrink-0 text-success" />
+      <CircleCheck aria-hidden className="size-icon-row shrink-0 text-success" />
       Clean
     </p>
   );

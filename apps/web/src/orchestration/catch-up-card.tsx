@@ -70,7 +70,7 @@ export function CatchUpCard({ thread }: { thread: Thread }) {
         data-source={isPending ? "pending" : helper == null ? "report" : "helper"}
         className="flex items-start gap-2 border-b border-edge bg-card/40 px-4 py-2 text-reading"
       >
-        <History aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        <History aria-hidden className="mt-0.5 size-icon-row shrink-0 text-muted-foreground" />
         <p className="line-clamp-2 min-w-0 flex-1" title={isPending ? undefined : text}>
           <span className="mr-1.5 text-meta text-muted-foreground">Since you looked</span>
           <Swap swapKey={isPending ? "pending" : "text"} className="inline">
@@ -83,7 +83,7 @@ export function CatchUpCard({ thread }: { thread: Thread }) {
           className="shrink-0 rounded-sm p-0.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => setDismissed(thread.id)}
         >
-          <X aria-hidden className="size-3.5" />
+          <X aria-hidden className="size-icon-row" />
         </button>
       </div>
     </ExpandPresence>

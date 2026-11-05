@@ -150,7 +150,7 @@ function SheetHead({
           />
         }
       >
-        <X aria-hidden className="size-3.5" />
+        <X aria-hidden className="size-icon-row" />
       </Hint>
     </header>
   );
@@ -189,7 +189,7 @@ function WorkerPeekView({
         titleId={titleId}
         icon={
           running ? (
-            <Spinner aria-hidden className="size-3.5 shrink-0 text-status-working" />
+            <Spinner aria-hidden className="size-icon-row shrink-0 text-status-working" />
           ) : (
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
           )
@@ -217,7 +217,7 @@ function WorkerPeekView({
           <ul data-testid="peek-files" className="flex flex-col gap-0.5 font-mono text-meta">
             {peek.files.map((file) => (
               <li key={file.path} className="flex min-w-0 items-center gap-1.5">
-                <FileDiff aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                <FileDiff aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
                 <span className="min-w-0 truncate">{file.path}</span>
                 <span className="shrink-0 text-success">+{file.additions}</span>
                 <span className="shrink-0 text-destructive">−{file.deletions}</span>
@@ -228,7 +228,7 @@ function WorkerPeekView({
             )}
             {peek.changedFiles !== undefined && (
               <li className="flex items-center gap-1.5 text-muted-foreground">
-                <FileDiff aria-hidden className="size-3.5 shrink-0" />
+                <FileDiff aria-hidden className="size-icon-row shrink-0" />
                 {peek.changedFiles === 1 ? "1 file changed" : `${peek.changedFiles} files changed`}
               </li>
             )}
@@ -240,10 +240,10 @@ function WorkerPeekView({
             data-running={peek.command.running}
             className="flex min-w-0 items-center gap-1.5 font-mono text-meta"
           >
-            <SquareTerminal aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <SquareTerminal aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate">{peek.command.command}</span>
             {peek.command.running && (
-              <Spinner aria-hidden className="size-3 shrink-0 text-status-working" />
+              <Spinner aria-hidden className="size-icon-chip shrink-0 text-status-working" />
             )}
           </p>
         )}
@@ -302,7 +302,7 @@ function PrPeekView({
         icon={
           <Icon
             aria-hidden
-            className={cn("size-3.5 shrink-0", merged ? "text-merged" : "text-status-working")}
+            className={cn("size-icon-row shrink-0", merged ? "text-merged" : "text-status-working")}
           />
         }
       >
@@ -343,7 +343,10 @@ function PrPeekView({
               const duration = checkDuration(run, now);
               return (
                 <li key={run.name} className="flex min-w-0 items-center gap-1.5">
-                  <check.icon aria-label={check.label} className={cn("size-3.5", check.tone)} />
+                  <check.icon
+                    aria-label={check.label}
+                    className={cn("size-icon-row", check.tone)}
+                  />
                   <span className="min-w-0 flex-1 truncate">{run.name}</span>
                   {duration !== undefined && (
                     <span className="shrink-0 text-muted-foreground tabular-nums">{duration}</span>

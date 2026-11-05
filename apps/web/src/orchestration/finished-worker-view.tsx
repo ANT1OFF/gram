@@ -62,7 +62,7 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
     [detail.messages],
   );
   const separator = (
-    <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground/60" />
+    <ChevronRight aria-hidden className="size-icon-chip shrink-0 text-muted-foreground/60" />
   );
 
   return (
@@ -91,9 +91,9 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
           <span className="min-w-0 truncate">{worker.title}</span>
         </h1>
         {row.glyph === "merged" ? (
-          <GitMerge aria-hidden className="size-3.5 shrink-0 text-merged" />
+          <GitMerge aria-hidden className="size-icon-row shrink-0 text-merged" />
         ) : (
-          <Archive aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <Archive aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
         )}
         <span data-testid="finished-when" className="shrink-0 text-meta text-muted-foreground">
           {row.now}
@@ -103,7 +103,7 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
         data-testid="finished-note"
         className="flex shrink-0 items-center gap-2 border-b border-edge bg-card/40 px-4 py-1.5 text-meta text-muted-foreground"
       >
-        <Archive aria-hidden className="size-3.5 shrink-0" />
+        <Archive aria-hidden className="size-icon-row shrink-0" />
         <span className="min-w-0 flex-1 truncate">Worktree cleaned up · read-only</span>
         <Button
           size="xs"
@@ -187,9 +187,9 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
               className="inline-flex items-center gap-1 text-meta text-foreground/80 hover:text-foreground"
             >
               {pr.merged === true ? (
-                <GitMerge aria-hidden className="size-3.5 text-merged" />
+                <GitMerge aria-hidden className="size-icon-row text-merged" />
               ) : (
-                <GitPullRequest aria-hidden className="size-3.5 text-muted-foreground" />
+                <GitPullRequest aria-hidden className="size-icon-row text-muted-foreground" />
               )}
               {pr.repo.split("/").pop()}#{pr.number}
             </OutboundLink>
@@ -208,7 +208,7 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
       {files.length > 0 && (
         <div data-testid="finished-files" className="text-meta">
           <div className="flex items-center gap-1 text-muted-foreground">
-            <FileDiff aria-hidden className="size-3.5" />
+            <FileDiff aria-hidden className="size-icon-row" />
             {files.length} {files.length === 1 ? "file" : "files"} changed
           </div>
           <ul className="mt-1 flex flex-col gap-0.5 font-mono">

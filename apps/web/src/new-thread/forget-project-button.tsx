@@ -28,7 +28,7 @@ export function ForgetProjectButton({ project }: { project: Project }) {
       onClick={() => mutation.mutate()}
       className="shrink-0 rounded-sm p-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
     >
-      <X aria-hidden className="size-3.5" />
+      <X aria-hidden className="size-icon-row" />
     </button>
   );
 }

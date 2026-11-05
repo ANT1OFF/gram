@@ -14,7 +14,7 @@ import { startScript, useProjectScripts } from "./use-project-scripts";
 const POPUP =
   "z-50 max-w-80 min-w-56 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
 
 /** The exact line a script runs, and where, as its menu row's tooltip says it. */
 export const scriptCommandHint = (script: ProjectScript): string =>
@@ -75,7 +75,7 @@ export function RunScriptMenu({
           />
         }
       >
-        <Play aria-hidden className={size === "icon-sm" ? "size-3.5" : "size-3"} />
+        <Play aria-hidden className={size === "icon-sm" ? "size-icon-row" : "size-icon-chip"} />
       </Hint>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
@@ -112,7 +112,7 @@ export function RunScriptMenu({
               >
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate">{script.name}</span>
-                  <span className="truncate font-mono text-caption text-muted-foreground">
+                  <span className="truncate font-mono text-meta text-muted-foreground">
                     {script.command}
                   </span>
                 </span>
@@ -126,9 +126,9 @@ export function RunScriptMenu({
             <div role="separator" className="-mx-1 my-1 h-px bg-border" />
             <Menu.Item data-testid="edit-project-scripts" className={ITEM} onClick={openEditor}>
               {scripts.length === 0 ? (
-                <Plus aria-hidden className="size-3.5" />
+                <Plus aria-hidden className="size-icon-row" />
               ) : (
-                <Pencil aria-hidden className="size-3.5" />
+                <Pencil aria-hidden className="size-icon-row" />
               )}
               {scripts.length === 0 ? "Add project script…" : "Edit project scripts…"}
             </Menu.Item>

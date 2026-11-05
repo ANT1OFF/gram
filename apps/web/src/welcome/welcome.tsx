@@ -333,7 +333,7 @@ function HowItWorks() {
           >
             {STEPS.map(({ icon: Icon, short, line }) => (
               <li key={short} className="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2">
-                <Icon aria-hidden className="mt-0.5 size-3.5 text-muted-foreground" />
+                <Icon aria-hidden className="mt-0.5 size-icon-row text-muted-foreground" />
                 <span className="flex flex-col">
                   <span className="font-medium text-foreground">{short}</span>
                   <span className="text-muted-foreground">{line}</span>
@@ -413,7 +413,7 @@ function RepoSearch({
   }, []);
   return (
     <label className="flex h-8 items-center gap-2 rounded-md border border-border bg-background px-2 text-meta focus-within:focus-ring">
-      <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <Search aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
       <input
         ref={focusFree}
         type="search"
@@ -590,9 +590,9 @@ function RecentRepos({
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:row-cursor focus-visible:focus-ring-inset disabled:opacity-60 aria-checked:choice-selected"
           >
             {pending === repo.root ? (
-              <Spinner aria-hidden className="size-3.5 shrink-0" />
+              <Spinner aria-hidden className="size-icon-row shrink-0" />
             ) : (
-              <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <FolderGit2 aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
             )}
             <span className="shrink-0 font-medium whitespace-nowrap">{repo.name}</span>
             <span className="min-w-0 truncate font-mono text-meta text-muted-foreground">
@@ -624,9 +624,9 @@ function RunsWith() {
       )}
     >
       {ready ? (
-        agents.map((agent) => <AgentIcon key={agent} agent={agent} className="size-3.5" />)
+        agents.map((agent) => <AgentIcon key={agent} agent={agent} className="size-icon-row" />)
       ) : (
-        <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+        <CircleAlert aria-hidden className="size-icon-row shrink-0" />
       )}
       {words}
     </span>
@@ -695,12 +695,12 @@ function AgentStrip() {
                   }
                 >
                   {row.tool === "git" ? (
-                    <FolderGit2 aria-hidden className="size-3.5 text-muted-foreground" />
+                    <FolderGit2 aria-hidden className="size-icon-row text-muted-foreground" />
                   ) : (
-                    <AgentIcon agent={row.tool} className="size-3.5" />
+                    <AgentIcon agent={row.tool} className="size-icon-row" />
                   )}
                   <span className="font-medium">{row.name}</span>
-                  <Icon aria-hidden className={cn("ml-1 size-3.5", state.className)} />
+                  <Icon aria-hidden className={cn("ml-1 size-icon-row", state.className)} />
                   <span
                     className={row.state === "ready" ? "text-foreground" : "text-muted-foreground"}
                   >

@@ -126,11 +126,11 @@ export function GroupBand({
           <ChevronRight
             aria-hidden
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
+              "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
               !folded && "rotate-90",
             )}
           />
-          <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <Layers aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
           <span className={cn("min-w-0 truncate", group.finished && "text-muted-foreground")}>
             {group.group}
           </span>
@@ -140,7 +140,7 @@ export function GroupBand({
           <CircleAlert
             aria-label="Needs you"
             data-testid="rail-needs"
-            className="size-3.5 shrink-0 text-status-needs-mark"
+            className="size-icon-row shrink-0 text-status-needs-mark"
           />
         )}
         <span className="shrink-0 text-meta text-muted-foreground tabular-nums">
@@ -164,7 +164,7 @@ export function GroupBand({
             onClick={() => onEditingChange(!editing)}
             className={ROW_ACTION}
           >
-            <Pencil aria-hidden className="size-3.5" />
+            <Pencil aria-hidden className="size-icon-row" />
             {group.stage === undefined ? "Set stage" : "Edit plan"}
           </button>
         )}

@@ -498,9 +498,11 @@ function Flyout({
             data-surface="overlay"
             onKeyDown={onFlyoutKey}
             onClick={onPick}
+            // 22 rem: room for a worker's status words and two PR chips side by side at the meta
+            // size, as a card would say them.
             className={cn(
               CARD_SURFACE,
-              "flex max-h-[min(32rem,var(--available-height))] w-80 flex-col gap-px overflow-y-auto p-2 text-body",
+              "flex max-h-[min(32rem,var(--available-height))] w-88 flex-col gap-px overflow-y-auto p-2 text-body",
             )}
           >
             {children}
@@ -596,7 +598,7 @@ function OtherWorkerRow({ summary }: { summary: ThreadSummary }) {
       <span className="truncate text-foreground">{title}</span>
       <span className="flex text-muted-foreground">
         {thread.model?.agent !== undefined && (
-          <AgentIcon agent={thread.model.agent} className="size-3" />
+          <AgentIcon agent={thread.model.agent} className="size-icon-chip" />
         )}
       </span>
       <span className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground">

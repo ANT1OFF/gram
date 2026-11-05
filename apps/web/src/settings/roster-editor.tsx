@@ -291,7 +291,7 @@ function HarnessNotes({
         data-testid="harness-notes"
         className="flex items-center gap-1 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <CircleHelp aria-hidden className="size-3.5" />
+        <CircleHelp aria-hidden className="size-icon-row" />
         {label}
       </Popover.Trigger>
       <Popover.Portal>
@@ -368,7 +368,7 @@ function IssueNote({ issue }: { issue: WorkerModelIssue }) {
       data-unavailable={issue.unavailable === undefined ? undefined : true}
       className="flex items-start gap-1.5 text-meta text-warning"
     >
-      <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+      <TriangleAlert aria-hidden className="mt-px size-icon-row shrink-0" />
       <span>
         {issue.message}
         {issue.unavailable?.fix === "agents" && (
@@ -514,7 +514,7 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
                         <span className="flex min-h-7 min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-reading">
                           <AgentIcon
                             agent={model.agent}
-                            className="size-3.5 shrink-0 text-muted-foreground"
+                            className="size-icon-row shrink-0 text-muted-foreground"
                           />
                           <span className="shrink-0">{agentLabel(model.agent)}</span>
                           <span className="min-w-0 font-mono text-meta break-all">

@@ -190,7 +190,7 @@ function FileEditRow({
             <ChevronRight
               aria-hidden
               className={cn(
-                "size-3.5 transition-transform duration-(--dur-fast)",
+                "size-icon-chip transition-transform duration-(--dur-fast)",
                 open && "rotate-90",
               )}
             />

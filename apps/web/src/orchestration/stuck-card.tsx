@@ -83,7 +83,7 @@ export function StuckCard({ thread }: { thread: Thread }) {
         className="flex flex-col gap-1.5 border-b border-edge bg-card/40 px-4 py-2 text-reading"
       >
         <div className="flex items-start gap-2">
-          <Clock aria-hidden className="mt-0.5 size-3.5 shrink-0 text-status-idle" />
+          <Clock aria-hidden className="mt-0.5 size-icon-row shrink-0 text-status-idle" />
           <div className="min-w-0 flex-1">
             <span className="mr-1.5 text-meta text-muted-foreground">
               Why is it stuck? · {idleSince === undefined ? "" : idleFor(idleSince, now)}
@@ -106,7 +106,7 @@ export function StuckCard({ thread }: { thread: Thread }) {
             className="shrink-0 rounded-sm p-0.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setDismissed(idleSince)}
           >
-            <X aria-hidden className="size-3.5" />
+            <X aria-hidden className="size-icon-row" />
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 pl-5.5">

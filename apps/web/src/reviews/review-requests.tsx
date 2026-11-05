@@ -400,7 +400,7 @@ function ReviewRequestsList({
   if (requests.length === 0) {
     return (
       <RequestsMenu
-        render={<p id={id} className="py-1 pr-1 pl-3 text-caption text-muted-foreground" />}
+        render={<p id={id} className="py-1 pr-1 pl-3 text-meta text-muted-foreground" />}
       >
         None right now. Right-click to change what is listed.
       </RequestsMenu>
@@ -431,7 +431,7 @@ function FilteredRequests({
         shown={visible.length}
       />
       {visible.length === 0 ? (
-        <p className="px-3 py-2 text-caption text-muted-foreground">No PRs match this view.</p>
+        <p className="px-3 py-2 text-meta text-muted-foreground">No PRs match this view.</p>
       ) : !grouped ? (
         <ul className="flex flex-col">
           {visible.map((request) => (

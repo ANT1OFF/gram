@@ -387,9 +387,9 @@ export function ResumeSessions({
                   )}
                 >
                   <span className="truncate text-reading">{session.title}</span>
-                  <span className="flex items-center gap-1.5 text-caption text-muted-foreground">
+                  <span className="flex items-center gap-1.5 text-meta text-muted-foreground">
                     <span className="flex shrink-0 items-center gap-0.5 rounded-sm bg-muted px-1">
-                      <AgentIcon agent={session.agent} className="size-3" />
+                      <AgentIcon agent={session.agent} className="size-icon-chip" />
                       {agentLabel(session.agent)}
                     </span>
                     <time dateTime={new Date(session.updatedAt).toISOString()}>
@@ -397,7 +397,7 @@ export function ResumeSessions({
                     </time>
                     {session.gitBranch && (
                       <span className="flex min-w-0 items-center gap-0.5 truncate font-mono">
-                        <GitBranch aria-hidden className="size-3.5 shrink-0" />
+                        <GitBranch aria-hidden className="size-icon-row shrink-0" />
                         {session.gitBranch}
                       </span>
                     )}
@@ -415,7 +415,7 @@ export function ResumeSessions({
                     onClick={() => setConfirming(key)}
                     className="mt-1.5 shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 outline-none group-hover:opacity-100 hover:bg-accent hover:text-destructive focus-visible:opacity-100 focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
-                    <Trash2 aria-hidden className="size-3.5" />
+                    <Trash2 aria-hidden className="size-icon-row" />
                   </button>
                 )}
               </li>
@@ -434,7 +434,7 @@ export function ResumeSessions({
       className="flex flex-col gap-2 rounded-lg border border-border p-2"
     >
       <h2 className="flex items-center gap-1.5 text-meta font-medium text-muted-foreground">
-        <History aria-hidden className="size-3.5" />
+        <History aria-hidden className="size-icon-row" />
         Resume a past session
       </h2>
       {body}

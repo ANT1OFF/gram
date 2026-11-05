@@ -61,7 +61,7 @@ export function CopyCommandButton({
       }
     >
       <Swap swapKey={copied ? "copied" : "copy"}>
-        {copied ? <DrawnCheck className="size-3 text-success" /> : <Copy aria-hidden />}
+        {copied ? <DrawnCheck className="size-icon-chip text-success" /> : <Copy aria-hidden />}
       </Swap>
     </Hint>
   );
@@ -74,7 +74,7 @@ export function SourceTag({ runtime }: { runtime: AgentRuntime }) {
   return (
     <span
       data-testid="runtime-source"
-      className="rounded-sm bg-muted px-1 text-caption leading-4 text-muted-foreground"
+      className="rounded-sm bg-muted px-1 text-meta leading-4 text-muted-foreground"
     >
       {SOURCE_LABEL[resolved.source]}
     </span>
@@ -108,7 +108,7 @@ export function VerdictMark({ runtime }: { runtime: AgentRuntime }) {
         />
       }
     >
-      <Icon aria-hidden className="size-3.5" />
+      <Icon aria-hidden className="size-icon-row" />
       <span className="sr-only">{reason}</span>
     </Hint>
   );
@@ -141,7 +141,7 @@ export function NewerMark({ runtime }: { runtime: AgentRuntime }) {
         />
       }
     >
-      <Icon aria-hidden className="size-3.5 shrink-0" />
+      <Icon aria-hidden className="size-icon-row shrink-0" />
       <span className="truncate">{note.summary}</span>
       <span className="sr-only">. {note.detail}</span>
     </Hint>

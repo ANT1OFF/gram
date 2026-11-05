@@ -8,6 +8,7 @@ import { recentDone, recentWhen, OUTCOME_LABEL, type RecentDone } from "@/histor
 import { OUTCOME_GLYPH, useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { openExternalUrl } from "@/api/open-external";
+import { MiddleTruncate } from "@/components/middle-truncate";
 import { PrMarkIcon } from "@/components/pr-marks";
 import { prMarksOf, prTooltipOf, worstPrMark } from "@/components/pr-marks-model";
 import { useOpenPrRows } from "@/reviews/open-prs";
@@ -107,9 +108,7 @@ function PrRow({ row }: { row: OverviewPrRow }) {
       >
         <PrMarkIcon group={worst.group} mark={worst.mark} />
       </span>
-      <span data-testid="overview-pr-title" className="col-span-2 truncate">
-        {row.title}
-      </span>
+      <MiddleTruncate data-testid="overview-pr-title" className="col-span-2" text={row.title} />
       <span data-testid="overview-pr-sub" className={ROW_STATUS}>
         <span className="truncate">{sub}</span>
       </span>
@@ -135,7 +134,7 @@ export function OverviewSearch() {
       onClick={() => useLayoutStore.getState().openPalette()}
       className="flex h-8 w-full shrink-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
     >
-      <Search aria-hidden className="size-3.5 shrink-0" />
+      <Search aria-hidden className="size-icon-row shrink-0" />
       <span className="flex-1">Search</span>
       {hint !== "" && <kbd className="font-sans text-meta tabular-nums">{hint}</kbd>}
     </button>
@@ -200,7 +199,7 @@ export function OverviewDone() {
           <ChevronDown
             aria-hidden
             className={cn(
-              "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+              "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
               !all && "-rotate-90",
             )}
           />
@@ -246,9 +245,9 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
         )}
       >
         <span aria-hidden className={ROW_MARK}>
-          {Icon !== undefined && <Icon className="size-3.5" />}
+          {Icon !== undefined && <Icon className="size-icon-row" />}
         </span>
-        <span className="truncate">{row.title}</span>
+        <MiddleTruncate text={row.title} />
         <span className="flex h-lh items-center text-meta tabular-nums">{when}</span>
         <span data-testid="overview-done-status" className={ROW_STATUS}>
           <span className="truncate">
@@ -280,7 +279,7 @@ export function OverviewHistory() {
         className="flex h-8 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-body text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
       >
         {/* An inline glyph, on Search's and the rows' marks. */}
-        <History aria-hidden className="size-3.5 shrink-0" />
+        <History aria-hidden className="size-icon-row shrink-0" />
         <span className="flex-1">Open History</span>
         {hint !== "" && <kbd className="font-sans text-meta tabular-nums">{hint}</kbd>}
       </button>

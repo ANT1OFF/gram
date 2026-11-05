@@ -28,7 +28,7 @@ export function HelpTip({ label, help }: { label: string; help: ReactNode }) {
             />
           }
         >
-          <Info aria-hidden className="size-3.5" strokeWidth={1.75} />
+          <Info aria-hidden className="size-icon-row" strokeWidth={1.75} />
         </TooltipTrigger>
         <TooltipContent className="max-w-80 flex-col items-start gap-1 text-start font-normal [&_p]:m-0">
           {help}

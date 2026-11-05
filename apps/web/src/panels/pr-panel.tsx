@@ -415,7 +415,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
               state.tone,
             )}
           >
-            <state.icon aria-hidden className="size-3.5" />
+            <state.icon aria-hidden className="size-icon-row" />
             {state.label}
           </span>
           <span className="tabular-nums">#{detail.number}</span>
@@ -429,7 +429,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
             title="Open on GitHub"
             className="ms-auto flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <ExternalLink aria-hidden className="size-3.5" />
+            <ExternalLink aria-hidden className="size-icon-row" />
             <span className="sr-only">Open on GitHub</span>
           </OutboundLink>
         </div>
@@ -468,7 +468,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
             data-testid="pr-stale"
             className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground"
           >
-            <CloudOff aria-hidden className="size-3.5 shrink-0" />
+            <CloudOff aria-hidden className="size-icon-row shrink-0" />
             Couldn't refresh from GitHub: {staleReasonText(badge.stale.reason)}
             <Button
               size="xs"
@@ -556,7 +556,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
                       href={run.link}
                       className="shrink-0 text-muted-foreground hover:text-foreground"
                     >
-                      <ExternalLink aria-label={`Open ${run.name}`} className="size-3.5" />
+                      <ExternalLink aria-label={`Open ${run.name}`} className="size-icon-row" />
                     </OutboundLink>
                   )}
                 </div>
@@ -587,7 +587,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
               <li key={commit.oid} className="flex items-center gap-2 px-3 py-1 text-meta">
                 <GitCommitHorizontal
                   aria-hidden
-                  className="size-3.5 shrink-0 text-muted-foreground"
+                  className="size-icon-row shrink-0 text-muted-foreground"
                 />
                 {url === undefined ? (
                   <span className="shrink-0 font-mono text-muted-foreground">{short}</span>
@@ -629,7 +629,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
               className="rounded-(--radius-md) border border-edge bg-card/40 p-2 outline-none focus-visible:focus-ring"
             >
               <p className="mb-1 flex items-center gap-1.5 text-meta text-muted-foreground">
-                <MessageSquare aria-hidden className="size-3.5" />
+                <MessageSquare aria-hidden className="size-icon-row" />
                 <span className="font-medium text-foreground">{comment.author}</span>
                 {comment.kind === "review" && comment.state && (
                   <span>{reviewWord(comment.state) ?? comment.state.toLowerCase()}</span>
@@ -754,7 +754,7 @@ function Section({
           <ChevronRight
             aria-hidden
             className={cn(
-              "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+              "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
               open && "rotate-90",
             )}
           />
@@ -799,7 +799,7 @@ function PrDescription({ body }: { body: string }) {
           <ChevronRight
             aria-hidden
             className={cn(
-              "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+              "size-icon-chip shrink-0 transition-transform duration-(--dur-fast)",
               open && "rotate-90",
             )}
           />
@@ -850,7 +850,7 @@ function CheckIcon({ check }: { check: ReturnType<typeof checkState> }) {
         animate={{ opacity: 1, scale: 1 }}
         transition={transition}
       >
-        <check.icon aria-hidden className={cn("size-3.5", check.tone)} />
+        <check.icon aria-hidden className={cn("size-icon-row", check.tone)} />
       </m.span>
     </AnimatePresence>
   );

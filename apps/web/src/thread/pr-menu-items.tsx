@@ -27,7 +27,7 @@ export function PrContextMenuItems({ threadId }: { threadId: ThreadId }) {
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger>
-        <GitPullRequest aria-hidden className="size-3.5" />
+        <GitPullRequest aria-hidden className="size-icon-row" />
         PR
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
@@ -45,14 +45,14 @@ export function PrContextMenuItems({ threadId }: { threadId: ThreadId }) {
                 )
             }
           >
-            <Unlink aria-hidden className="size-3.5" />
+            <Unlink aria-hidden className="size-icon-row" />
             Unbind #{boundPr.number}
           </ContextMenuItem>
         )}
         <ContextMenuItem
           onClick={() => useThreadDialogs.getState().open({ kind: "bindPr", threadId })}
         >
-          <Link2 aria-hidden className="size-3.5" />
+          <Link2 aria-hidden className="size-icon-row" />
           {boundPr ? "Follow another PR…" : "Bind PR…"}
         </ContextMenuItem>
       </ContextMenuSubContent>

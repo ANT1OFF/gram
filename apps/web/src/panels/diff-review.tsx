@@ -121,7 +121,7 @@ export function CommentActionRow({
             onClick={onClear}
             className="rounded-sm p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <X aria-hidden className="size-3.5" />
+            <X aria-hidden className="size-icon-row" />
           </button>
         </div>
       </td>
@@ -194,7 +194,7 @@ export function CommentNoteRow({ span, comment }: { span: number; comment: DiffC
     <tr data-testid="diff-comment" data-comment={comment.id}>
       <td colSpan={span} className={ROW_CELL}>
         <div className="flex min-w-0 items-start gap-1.5 text-meta">
-          <MessageSquare aria-hidden className="mt-0.5 size-3.5 shrink-0 text-info" />
+          <MessageSquare aria-hidden className="mt-0.5 size-icon-row shrink-0 text-info" />
           <span className="sr-only">Draft comment on {commentLabel(comment)}:</span>
           <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
             {comment.note}

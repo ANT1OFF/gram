@@ -237,7 +237,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
         {checks !== undefined && (
           <Fact term="Checks" testId="thread-outcome-checks">
             <span className="flex items-center gap-1.5">
-              <checks.icon aria-hidden className={cn("size-3.5 shrink-0", checks.tone)} />
+              <checks.icon aria-hidden className={cn("size-icon-row shrink-0", checks.tone)} />
               {checks.word}
             </span>
           </Fact>
@@ -250,7 +250,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
         {branch !== undefined && (
           <Fact term="Branch" testId="thread-outcome-branch">
             <span className="flex min-w-0 items-center gap-1.5">
-              <GitBranch aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <GitBranch aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
               <span className="truncate font-mono text-meta">{branch}</span>
               {base !== undefined && (
                 <span className="text-meta text-muted-foreground">

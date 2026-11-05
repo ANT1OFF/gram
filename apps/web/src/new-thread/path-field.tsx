@@ -116,9 +116,12 @@ export function PathField({ value, onChange, debounceMs }: PathFieldProps) {
                 className="flex h-7 cursor-default items-center gap-2 rounded-md px-2 aria-selected:bg-accent"
               >
                 {entry.isGitRepo ? (
-                  <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                  <FolderGit2
+                    aria-hidden
+                    className="size-icon-row shrink-0 text-muted-foreground"
+                  />
                 ) : (
-                  <Folder aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                  <Folder aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
                 )}
                 <span className="min-w-0 flex-1 truncate font-mono text-meta">
                   <span className="text-foreground">{entry.name.slice(0, leaf.length)}</span>

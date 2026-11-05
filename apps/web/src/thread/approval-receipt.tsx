@@ -57,7 +57,7 @@ export function ApprovalReceiptLine({ threadId }: { threadId: ThreadId }) {
       <Icon
         aria-hidden
         className={cn(
-          "size-3.5 shrink-0 translate-y-0.5",
+          "size-icon-row shrink-0 translate-y-0.5",
           receipt.decision === "deny" ? "text-muted-foreground" : "text-success",
         )}
       />

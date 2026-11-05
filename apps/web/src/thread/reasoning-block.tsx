@@ -16,7 +16,7 @@ export function ReasoningBlock({ isStreaming }: { isStreaming: boolean }) {
         role="status"
         className="not-prose flex items-center gap-1.5 text-meta text-muted-foreground"
       >
-        <BrainIcon aria-hidden className="size-3.5" />
+        <BrainIcon aria-hidden className="size-icon-row" />
         <Shimmer duration={1}>Thinking…</Shimmer>
       </div>
     </ExpandPresence>

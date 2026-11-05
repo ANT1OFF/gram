@@ -339,7 +339,7 @@ function ProviderLimits({
               <p className={cn(LIMIT_ROW, "-mt-1 text-meta text-muted-foreground")}>
                 <span aria-hidden />
                 <span className="col-span-3 flex items-baseline gap-1">
-                  <TrendingUp aria-hidden className="size-3 shrink-0 self-center" />
+                  <TrendingUp aria-hidden className="size-icon-chip shrink-0 self-center" />
                   <span data-testid="usage-limit-forecast">
                     {forecastText(forecast)}
                     {stale && " · from an older reading"}

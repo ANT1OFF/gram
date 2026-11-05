@@ -140,7 +140,7 @@ function FolderStatusLine({ status }: { status: FolderStatus }) {
           data-testid="folder-problem"
           className="flex items-center gap-1.5 text-meta text-danger-text"
         >
-          <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+          <CircleAlert aria-hidden className="size-icon-row shrink-0" />
           {status.problem.message}
         </p>
       );
@@ -151,7 +151,7 @@ function FolderStatusLine({ status }: { status: FolderStatus }) {
           data-testid="folder-status"
           className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground"
         >
-          <FolderCheck aria-hidden className="size-3.5 shrink-0 text-success-text" />
+          <FolderCheck aria-hidden className="size-icon-row shrink-0 text-success-text" />
           <span className="truncate font-mono">{tildify(status.folder.path, home)}</span>
           {isGitRepo === true && <GitBadge />}
           {isGitRepo === false && <span>Not a git repository</span>}

@@ -61,7 +61,7 @@ export function LimitWaitLine({
         data-testid="limit-cleared"
         className="mx-auto my-2 flex w-full max-w-3xl items-center gap-2 px-1 text-meta text-muted-foreground"
       >
-        <CircleCheck aria-hidden className="size-3.5 shrink-0" />
+        <CircleCheck aria-hidden className="size-icon-row shrink-0" />
         <span className="min-w-0 flex-1 truncate">{limitClearedLabel(thread.limitCleared)}</span>
       </div>
     );
@@ -79,7 +79,7 @@ export function LimitWaitLine({
       data-cleared={wait.cleared === undefined ? undefined : true}
       className="mx-auto my-2 flex w-full max-w-3xl items-center gap-2 px-1 text-meta text-muted-foreground"
     >
-      <Hourglass aria-hidden className="size-3.5 shrink-0" />
+      <Hourglass aria-hidden className="size-icon-row shrink-0" />
       <span className="min-w-0 flex-1 truncate">{limitWaitLabel(wait, now)}</span>
       <Button
         size="xs"

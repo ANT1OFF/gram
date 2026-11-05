@@ -46,7 +46,7 @@ export function DiffCommentChips({
               }
               className="flex min-w-0 items-center gap-1.5 rounded-md py-0.5 ps-1.5 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <MessageSquare aria-hidden className="size-3.5 shrink-0 text-info" />
+              <MessageSquare aria-hidden className="size-icon-row shrink-0 text-info" />
               <span className="truncate font-mono">{label}</span>
             </button>
             <button
@@ -55,7 +55,7 @@ export function DiffCommentChips({
               className="me-1.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => useDiffCommentsStore.getState().remove(threadId, comment.id)}
             >
-              <X className="size-3.5" />
+              <X className="size-icon-row" />
             </button>
           </li>
         );

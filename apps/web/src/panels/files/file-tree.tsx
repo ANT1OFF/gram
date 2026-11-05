@@ -232,12 +232,12 @@ function TreeRow({
         <ChevronRight
           aria-hidden
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-(--dur-move-fast)",
+            "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-move-fast)",
             !isDir && "invisible",
             expanded && "rotate-90",
           )}
         />
-        <Icon aria-hidden className={cn("size-3.5 shrink-0", tone)} />
+        <Icon aria-hidden className={cn("size-icon-row shrink-0", tone)} />
         <span className="min-w-0 truncate">{entry.name}</span>
       </div>
       {isDir && expanded && (

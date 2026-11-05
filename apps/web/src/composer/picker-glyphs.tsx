@@ -88,7 +88,7 @@ export function SpeedGlyph({
       aria-hidden
       data-testid="speed-glyph"
       data-speed={speed ?? "default"}
-      className={cn("size-3.5", speed === "fast" && "fill-current", className)}
+      className={cn("size-icon-row", speed === "fast" && "fill-current", className)}
     />
   );
 }

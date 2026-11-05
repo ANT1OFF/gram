@@ -60,7 +60,7 @@ export function PrMarkIcon({
           {...(labelled ? { role: "img", "aria-label": mark.detail } : { "aria-hidden": true })}
           data-pr-mark={group}
           data-kind={mark.kind}
-          className={cn("size-3 shrink-0", display.tone, className)}
+          className={cn("size-icon-chip shrink-0", display.tone, className)}
         />
       </Swap>
     </span>
@@ -187,7 +187,7 @@ export function PrMarkLines({
   );
   if (lines.length === 0) return null;
   return (
-    <ul data-testid="pr-mark-lines" className={cn("flex flex-col gap-0.5 text-caption", className)}>
+    <ul data-testid="pr-mark-lines" className={cn("flex flex-col gap-0.5 text-meta", className)}>
       {lines.map(({ key, group, mark, line }) => {
         const display = markDisplay(group, mark);
         return (
@@ -199,7 +199,7 @@ export function PrMarkLines({
           >
             <display.icon
               aria-hidden
-              className={cn("mt-px size-3 shrink-0", display.tone, cached && "opacity-50")}
+              className={cn("mt-px size-icon-chip shrink-0", display.tone, cached && "opacity-50")}
             />
             <span className="min-w-0 text-muted-foreground">
               {cached ? `Cached: ${line}` : line}
