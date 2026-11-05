@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { askOf, memoryAskOf, workerAskOf } from "./ask-model";
 import type { FailureItem } from "./needs-you-model";
 import {
+  briefTitle,
   kindsText,
   needsYouGroups,
   needsYouSections,
@@ -359,5 +360,54 @@ describe("newestAsk and kindsText", () => {
       "2 errors, 1 question",
     );
     expect(kindsText([])).toBe("");
+  });
+});
+
+describe("briefTitle", () => {
+  const question = (title: string) => ({ title, kind: "question" as const });
+
+  it("keeps a short title whole", () => {
+    expect(briefTitle(question("Retry for 24 hours or 72?"))).toBe("Retry for 24 hours or 72?");
+    expect(briefTitle({ title: "Allow", kind: "approval" })).toBe("Allow");
+  });
+
+  it("calls a long question by what it is about, when it says that first", () => {
+    expect(
+      briefTitle(
+        question(
+          "A refund webhook that keeps failing: retry for 24 hours, or 72 hours like charges do?",
+        ),
+      ),
+    ).toBe("A refund webhook that keeps failing");
+    expect(
+      briefTitle(
+        question(
+          'The docs repo has no preview deploy. Is a merged PR enough for "preview deployed" there?',
+        ),
+      ),
+    ).toBe("The docs repo has no preview deploy");
+  });
+
+  it("cuts a long one at a word, never mid-word", () => {
+    const brief = briefTitle(
+      question(
+        "Should the mail trigger retry when the provider answers 429, or drop the mail and report it?",
+      ),
+    );
+    expect(brief).toBe("Should the mail trigger retry when the provider answers…");
+    expect(brief.length).toBeLessThanOrEqual(57);
+  });
+
+  it("doesn't split on a lead too short to name anything", () => {
+    expect(
+      briefTitle(question("Q: which of the three retry policies should refunds use from now on?")),
+    ).toBe("Q: which of the three retry policies should refunds use…");
+  });
+
+  it("doesn't split what isn't a question", () => {
+    const title = "Review the release notes for 0.9: wording, order and the links to each PR";
+    expect(briefTitle({ title, kind: "wait" })).toBe(
+      "Review the release notes for 0.9: wording, order and the…",
+    );
   });
 });

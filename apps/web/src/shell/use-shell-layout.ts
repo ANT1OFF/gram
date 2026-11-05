@@ -2,6 +2,7 @@ import type { ThreadId } from "@gram/contracts";
 import { useParams, useRouterState } from "@tanstack/react-router";
 import { useLayoutEffect } from "react";
 
+import { useInboxDock } from "@/inbox/inbox-dock";
 import { useServerSettings } from "@/settings-sync/store";
 import { useWindowWidth } from "@/shell/side-resize";
 import {
@@ -86,7 +87,10 @@ export function useShellLayout() {
     setShellContext({ windowWidth, threadInView: hasThread, threadQuiet, page, chatBusy });
   }, [windowWidth, hasThread, threadQuiet, page, chatBusy, setShellContext]);
 
-  const left = fit.sidebarWidth;
+  // The docked Inbox takes the panel's column while it is open, the panel waiting behind it as it
+  // was; the chat keeps its width beside it.
+  const dock = useInboxDock();
+  const left = dock?.sidebarWidth ?? fit.sidebarWidth;
   // Beside a review the chat keeps more room, so the drag stops there too.
   const bounds = panelBoundsFor({ panelTab, chatBusy, windowWidth }, left);
   const shownWidth = clampWidth(
@@ -96,21 +100,24 @@ export function useShellLayout() {
     ),
     panelBoundsFor({ panelTab, chatBusy, windowWidth }, unfocused.sidebarWidth),
   );
+  const sidebar = dock?.sidebar ?? fit.sidebar;
   return {
-    fit,
+    fit: dock === undefined ? fit : { ...fit, sidebar },
     focusMode,
-    settingsStrip: settingsStrip && fit.sidebar !== "none",
+    settingsStrip: settingsStrip && sidebar !== "none",
     panelLeft,
     hasThread,
     windowResizing,
-    sidebarShown: fit.sidebar !== "none",
-    panelShown: fit.panel !== "none",
-    expanded: fit.panel === "over",
-    reviewFocus: fit.reviewFocus,
+    sidebarShown: sidebar !== "none",
+    panelShown: dock === undefined && fit.panel !== "none",
+    expanded: dock === undefined && fit.panel === "over",
+    reviewFocus: dock === undefined && fit.reviewFocus,
     /** A review held too narrow to read beside the chat: the panel offers Focus review. */
-    reviewCramped: fit.reviewCramped,
+    reviewCramped: dock === undefined && fit.reviewCramped,
+    /** The docked Inbox, in the panel's column; undefined while it is closed or a dialog. */
+    dock,
     left,
-    right: fit.panelWidth,
+    right: dock?.width ?? fit.panelWidth,
     bounds,
     /** The panel's width beside the chat, outside an expanded panel or a review's focus. */
     shownWidth,

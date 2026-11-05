@@ -1,17 +1,28 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { AlarmClock, Bell, CircleCheck, Inbox as InboxIcon, X } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { keyLabel } from "@/keyboard/registry";
 import { formatRelative, formatWakeTime } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
-import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
+import { focusIfConnected, focusLost, returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
 import { types } from "@/orchestration/ask-keys";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
-import { sectionsIn, type NeedsYouItem } from "@/orchestration/needs-you-items";
+import {
+  briefTitle,
+  sectionsIn,
+  type NeedsYouItem,
+  type NeedsYouSection,
+} from "@/orchestration/needs-you-items";
 import {
   kindOf,
   NeedsYouUndo,
@@ -20,18 +31,23 @@ import {
 } from "@/orchestration/needs-you-row";
 import { NeedsYouStrip } from "@/orchestration/needs-you-strip";
 import { useNeedsYouJump, useNeedsYouList } from "@/orchestration/use-needs-you";
-import { useLayoutStore } from "@/stores/layout";
+import { paneComposerNow } from "@/shell/pane-focus";
+import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useNotificationHistory, unreadNotifications } from "@/stores/notifications";
 
 import { InboxDetail } from "./inbox-detail";
+import { useInboxDock } from "./inbox-dock";
 import { useInboxStore } from "./inbox-store";
 
 // The Inbox: everything that needs the user, across every workspace, in one place. A list by kind
 // (errors, approvals, questions, reviews, steps, drafts) with the category strip above it, and the
-// picked item in a pane beside it with everything it takes to answer it. Every count in the window
+// picked item in a pane beside it with everything it takes to answer it. It docks in the side
+// panel's column (`InboxDock`), beside the thread it answers for, which ⏎ shows in the main area;
+// where the window has no room for it there, or Quiet covers the window, it is a dialog
+// (`InboxView`). One Inbox either way: the same list, selection and keys. Every count in the window
 // is this list's (`needsYouCounts`): the title bar's button, the sidebar's pill, each workspace's
-// badge, the window title and the dock badge. Keys: j/k or ↓/↑ move, ⏎ opens the item's thread,
-// 1–9 pick, ⌘⏎ sends, ⌘Z takes the last answer back, esc closes.
+// badge, the window title and the dock badge. Keys: j/k or ↓/↑ move, ⏎ opens the item's thread
+// (docked, beside it), 1–9 pick, ⌘⏎ sends, ⌘Z takes the last answer back, esc closes.
 
 export const INBOX_TEST_ID = "inbox";
 
@@ -47,8 +63,10 @@ const selectedIn = (
   return items[Math.min(lastIndex, items.length - 1)];
 };
 
+/** The Inbox as a dialog: in Quiet, and where the window has no room to dock it. */
 export function InboxView() {
-  const open = useInboxStore((s) => s.open);
+  const docked = useInboxDock() !== undefined;
+  const open = useInboxStore((s) => s.open) && !docked;
   const close = useInboxStore((s) => s.close);
   const opener = useOpener(open);
   return (
@@ -68,9 +86,12 @@ export function InboxView() {
           initialFocus={() =>
             document.querySelector<HTMLElement>('[data-testid="inbox-list"]') ?? true
           }
-          // A thread just opened takes focus in its pane; a dismissal hands it back.
+          // A thread just opened takes focus in its pane; a dismissal hands it back. Docked instead
+          // (the window widened), the dock has it.
           finalFocus={() =>
-            useInboxStore.getState().leftForThread ? false : returnFocusTo(opener)()
+            useInboxStore.getState().leftForThread || useInboxStore.getState().open
+              ? false
+              : returnFocusTo(opener)()
           }
           className="fixed top-[6%] left-1/2 z-50 flex h-[min(44rem,86vh)] w-[min(68rem,94vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
@@ -81,7 +102,131 @@ export function InboxView() {
   );
 }
 
-function InboxBody() {
+const CLOSE = {
+  size: "icon-xs",
+  variant: "ghost",
+  "aria-label": "Close Inbox",
+  title: "Close (esc)",
+  "data-testid": "inbox-close",
+} as const;
+
+/** The dock's own keys: Esc closes it; Enter and Esc never reach the thread beside it. */
+const onDockKey = (event: ReactKeyboardEvent<HTMLElement>) => {
+  if (event.metaKey || event.ctrlKey || (event.key !== "Enter" && event.key !== "Escape")) return;
+  // A plain Enter or Esc pressed here is the Inbox's, never the thread's beside it (its approval's
+  // Allow and Deny), whether anything here takes it or not.
+  event.stopPropagation();
+  // Esc closes it from anywhere in it but a menu or popup it opened, which keeps its own.
+  if (
+    event.key !== "Escape" ||
+    event.defaultPrevented ||
+    event.altKey ||
+    event.shiftKey ||
+    event.nativeEvent.isComposing ||
+    !(event.target instanceof Node) ||
+    !event.currentTarget.contains(event.target)
+  ) {
+    return;
+  }
+  event.preventDefault();
+  useInboxStore.getState().close();
+};
+
+/** The focused pane's composer, beside the docked Inbox. */
+const composer = () => paneComposerNow(useLayoutStore.getState().grid.focused);
+
+/** The list, the strip, the detail and Later: where focus goes when the Inbox opens. */
+const inboxStart = (root: ParentNode): HTMLElement | null =>
+  root.querySelector<HTMLElement>('[data-testid="inbox-list"]');
+
+/**
+ * The Inbox docked in the side panel's column, beside the work: the shell draws it in the panel's
+ * place while it is open and the window has room (`useInboxDock`). Opening it, or ⌘⇧I from the
+ * thread beside it, puts focus on its list; Tab goes on to the detail; Esc closes it, handing focus
+ * to the thread it showed (its composer) or else back to where it was opened from. A panel opened
+ * meanwhile (its toggle, a tab, an agent's request) takes the column back.
+ */
+export function InboxDock() {
+  const root = useRef<HTMLElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+
+  // Focus to the list on opening and on every open from outside it; what had focus is where Esc
+  // goes back to.
+  useEffect(() => {
+    const take = () => {
+      const dock = root.current;
+      if (dock === null) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== document.body && !dock.contains(active)) {
+        opener.current = active;
+      }
+      (inboxStart(dock) ?? dock).focus();
+    };
+    take();
+    return useInboxStore.subscribe((s, prev) => {
+      if (s.focusTick !== prev.focusTick) take();
+    });
+  }, []);
+
+  // Closed with focus inside (Esc, its close button, ⌘⇧I): focus goes to the thread it showed, else
+  // back where it came from, else the composer, not to the page.
+  useEffect(
+    () => () => {
+      const showed = useInboxStore.getState().leftForThread;
+      setTimeout(() => {
+        if (!focusLost()) return;
+        if (showed && focusIfConnected(composer())) return;
+        if (!focusIfConnected(opener.current)) focusIfConnected(composer());
+      }, 0);
+    },
+    [],
+  );
+
+  // The panel's column is the Inbox's while it shows: a panel opened or switched meanwhile takes it
+  // back, shown even where the toggle that asked for it found it hidden behind the Inbox.
+  useEffect(
+    () =>
+      useLayoutStore.subscribe((s, prev) => {
+        const asked =
+          s.panelTab !== prev.panelTab ||
+          s.panelOpen !== prev.panelOpen ||
+          (s.panelPeek && !prev.panelPeek);
+        if (!asked || !useInboxStore.getState().open) return;
+        useInboxStore.getState().close();
+        if (fitShell(s).panel === "none") s.revealPanel();
+      }),
+    [],
+  );
+
+  return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- the keys of what is inside it
+    <aside
+      ref={root}
+      onKeyDown={onDockKey}
+      data-testid={INBOX_TEST_ID}
+      data-docked=""
+      data-surface="chrome"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+      className="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-border bg-panel outline-none"
+    >
+      <div className="h-(--titlebar-height) shrink-0 [-webkit-app-region:drag]" />
+      <InboxBody docked={titleId} />
+    </aside>
+  );
+}
+
+function InboxBody({
+  docked: titleId,
+}: {
+  /**
+   * Docked beside the work, its title's id: ⏎ shows the thread in the main area, and Esc is the
+   * Inbox's own. Absent in the dialog, which titles and closes itself.
+   */
+  docked?: string;
+}) {
+  const docked = titleId !== undefined;
   const { sections, later } = useNeedsYouList();
   const category = useInboxStore((s) => s.category);
   const setCategory = useInboxStore((s) => s.setCategory);
@@ -159,7 +304,13 @@ function InboxBody() {
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <InboxIcon aria-hidden className="size-4 text-muted-foreground" />
-        <Dialog.Title className="text-title">Inbox</Dialog.Title>
+        {docked ? (
+          <h2 id={titleId} className="text-title">
+            Inbox
+          </h2>
+        ) : (
+          <Dialog.Title className="text-title">Inbox</Dialog.Title>
+        )}
         <p
           data-testid="inbox-count"
           className="min-w-0 flex-1 truncate text-meta text-muted-foreground"
@@ -203,19 +354,15 @@ function InboxBody() {
           Notifications
           {unread > 0 && <span className="tabular-nums">{unread}</span>}
         </Button>
-        <Dialog.Close
-          render={
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              aria-label="Close Inbox"
-              title="Close"
-              data-testid="inbox-close"
-            />
-          }
-        >
-          <X aria-hidden />
-        </Dialog.Close>
+        {docked ? (
+          <Button {...CLOSE} onClick={() => useInboxStore.getState().close()}>
+            <X aria-hidden />
+          </Button>
+        ) : (
+          <Dialog.Close render={<Button {...CLOSE} />}>
+            <X aria-hidden />
+          </Dialog.Close>
+        )}
       </header>
       {!showLater && sections.length > 1 && (
         <NeedsYouStrip
@@ -238,7 +385,10 @@ function InboxBody() {
             tabIndex={0}
             aria-activedescendant={current === undefined ? undefined : `inbox-row-${index}`}
             data-testid="inbox-list"
-            className="w-[min(24rem,40%)] shrink-0 overflow-y-auto border-r border-border p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className={cn(
+              "shrink-0 overflow-y-auto border-r border-border p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              docked ? "w-[min(20rem,42%)]" : "w-[min(22rem,36%)]",
+            )}
           >
             {shown.map((section) => (
               <section
@@ -252,6 +402,7 @@ function InboxBody() {
                   <InboxRow
                     key={item.key}
                     item={item}
+                    section={section}
                     index={items.indexOf(item)}
                     now={now}
                     selected={item.key === current?.key}
@@ -262,20 +413,22 @@ function InboxBody() {
             ))}
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
-            {current !== undefined && <InboxDetail item={current} now={now} onOpenThread={jump} />}
+            {current !== undefined && (
+              <InboxDetail item={current} now={now} docked={docked} onOpenThread={jump} />
+            )}
           </div>
         </div>
       )}
       <NeedsYouUndo className="shrink-0 border-t border-border py-1" />
       <div
         data-testid="inbox-keys"
-        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-meta text-muted-foreground"
+        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-border px-3 py-1.5 text-meta text-muted-foreground"
       >
         <span>
           <kbd className="font-sans">j k</kbd> move
         </span>
         <span>
-          <kbd className="font-sans">{keyLabel("⏎")}</kbd> open thread
+          <kbd className="font-sans">{keyLabel("⏎")}</kbd> {docked ? "show thread" : "open thread"}
         </span>
         <span>
           <kbd className="font-sans">1–9</kbd> pick
@@ -294,22 +447,45 @@ function InboxBody() {
   );
 }
 
-/** One row of the list: its kind, words, where it is from and how long ago; a click shows it. */
+/**
+ * What a row says of its kind, in words, where its section's heading doesn't already: "Plan to
+ * review" under Approvals, "Worker question" under Questions, but not "Approval" under Approvals.
+ */
+const rowKind = (
+  item: NeedsYouItem,
+  section: NeedsYouSection,
+  title: string,
+): string | undefined => {
+  const label = kindOf(item).label;
+  const heading = section.label.toLowerCase();
+  const said = heading === label.toLowerCase() || heading === `${label.toLowerCase()}s`;
+  return said || label === title ? undefined : label;
+};
+
+/**
+ * One row of the list, two short lines: what it is about and how long ago, then its kind where the
+ * heading doesn't say it, its workspace and its thread. The whole question, its choices and its
+ * command's arguments are the detail pane's. A click shows it.
+ */
 function InboxRow({
   item,
+  section,
   index,
   now,
   selected,
   onSelect,
 }: {
   item: NeedsYouItem;
+  section: NeedsYouSection;
   index: number;
   now: number;
   selected: boolean;
   onSelect: () => void;
 }) {
   const kind = kindOf(item);
+  const title = briefTitle(item);
   const where = [
+    rowKind(item, section, title),
     item.workspace,
     item.where === "" ? undefined : item.where,
     item.owned || item.kind !== "failure" ? undefined : "no live worker",
@@ -330,14 +506,14 @@ function InboxRow({
       onClick={onSelect}
       className={cn(
         "grid min-h-9 cursor-default grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-(--radius-md) px-2 py-1.5",
-        selected ? "bg-accent text-accent-foreground" : "hover:bg-muted/60",
+        selected ? "row-cursor" : "hover:bg-accent",
       )}
     >
       <kind.icon
         aria-label={kind.label}
         role="img"
         className={cn(
-          "mt-0.5 size-4",
+          "mt-0.5 size-3.5",
           item.kind === "failure"
             ? "text-destructive"
             : item.kind === "wait"
@@ -345,9 +521,9 @@ function InboxRow({
               : "text-status-needs-mark",
         )}
       />
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span data-testid="inbox-item-title" className="line-clamp-2 text-body break-words">
-          {item.title}
+      <span className="flex min-w-0 flex-col">
+        <span data-testid="inbox-item-title" className="truncate text-body">
+          {title}
           {item.command !== undefined && (
             <>
               {" "}

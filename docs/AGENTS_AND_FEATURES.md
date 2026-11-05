@@ -46,9 +46,15 @@ configured pass.
 - **The Board.** A workspace's features, workers and pull requests on one surface, with each pull
   request's checks, reviews and merge readiness, read through the GitHub CLI.
 - **Inbox.** Questions, approvals, plans, review requests, drafts, errors and steps from every
-  workspace and solo thread collect in one list by kind, each answered in a pane beside it. The
-  title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it; <kbd>⌘⇧U</kbd> steps
-  through its items at the turn that asked. Under each item the pane shows the asking thread's
+  workspace and solo thread collect in one list by kind, each answered in a pane beside it. Each
+  row is short: what the item is about, its kind where the heading doesn't say it, its workspace,
+  thread and age; the whole question and its choices are in the pane. The Inbox docks in the side
+  panel's column, beside the work, and <kbd>⏎</kbd> or Show thread puts the item's thread in the
+  main area next to it. In Quiet, or a window too narrow for it beside the chat, it opens as a
+  dialog instead. The title bar's Inbox button, the sidebar's pill and <kbd>⌘⇧I</kbd> open it;
+  docked, <kbd>⌘⇧I</kbd> from the thread brings focus back to its list, <kbd>⌘L</kbd> goes to the
+  composer and <kbd>Esc</kbd> closes it. <kbd>⌘⇧U</kbd> steps through its items at the turn that
+  asked. Under each item the pane shows the asking thread's
   last few turns and what its edits changed. An answer can be taken back for a few seconds from
   one receipt: the Inbox's foot while it is open, above the orchestrator's composer after. The
   thread that asks keeps its own card too.

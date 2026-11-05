@@ -82,6 +82,28 @@ export interface NeedsYouThread {
 export const itemText = (item: Pick<NeedsYouItem, "title" | "command">): string =>
   item.command === undefined ? item.title : `${item.title} ${item.command}`;
 
+/** The longest a list row's title runs before it is cut at a word. */
+const BRIEF_MAX = 56;
+/** Where a question's words split into what it is about and what it asks. */
+const BRIEF_BREAK = /:\s|\s[—–]\s|;\s|[.?!]\s+(?=\S)/u;
+
+/**
+ * What a list row calls an item: its words, made short enough for one line. A question that says
+ * what it is about first ("A refund webhook that keeps failing: retry for 24 hours, or 72?") is
+ * called by that ("A refund webhook that keeps failing"); a long one is cut at a word. The whole
+ * question, and its choices, stay in the detail pane. An approval's command follows as it is.
+ */
+export const briefTitle = (item: Pick<NeedsYouItem, "title" | "kind">): string => {
+  const words = item.title.trim().replace(/\s+/gu, " ");
+  if (words.length <= BRIEF_MAX) return words;
+  const at = item.kind === "question" ? words.search(BRIEF_BREAK) : -1;
+  const lead = at >= 12 ? words.slice(0, at).trim() : words;
+  if (lead.length <= BRIEF_MAX) return lead;
+  const cut = lead.slice(0, BRIEF_MAX + 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > BRIEF_MAX / 2 ? cut.slice(0, space) : cut.slice(0, BRIEF_MAX)).replace(/[\s,;:—–-]+$/u, "")}…`;
+};
+
 /** One item for an ask, opening the thread that asked at its card. */
 const askItem = (
   ask: Ask,
