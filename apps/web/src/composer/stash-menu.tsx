@@ -67,7 +67,7 @@ export function StashMenu({
           <Popover.Trigger
             data-testid="stash-trigger"
             aria-label={`Stashed drafts (${stashes.length})`}
-            className="flex h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-muted-foreground tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="flex h-8 min-w-8 items-center justify-center gap-1 rounded-md px-2 text-meta font-medium text-muted-foreground tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring"
           />
         }
       >

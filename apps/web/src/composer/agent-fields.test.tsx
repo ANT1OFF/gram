@@ -369,16 +369,20 @@ describe("AgentFields effort", () => {
     const user = userEvent.setup();
     const choice: AgentChoice = { agent: "claude", model: "opus", variant: "high" };
     renderWithApi(<AgentFields ghost value={choice} onChange={() => {}} />, mockApi());
-    const glyph = await screen.findByRole("combobox", { name: "Effort: High effort" });
+    const glyph = await screen.findByRole("combobox", { name: "Effort: High" });
     expect(glyph.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
     await user.hover(glyph);
-    expect(await screen.findByText("Effort: High effort")).toBeTruthy();
+    expect(await screen.findByText("Effort: High")).toBeTruthy();
     await user.click(glyph);
     expect(screen.getByRole("option", { name: "Default effort" })).toBeTruthy();
+    // The current level is checked, and each says what it costs.
+    const high = screen.getByRole("option", { name: "High effort" });
+    expect(high.getAttribute("aria-selected")).toBe("true");
+    expect(high.textContent).toContain("Reasons longer");
     cleanup();
     renderWithApi(<AgentFields value={choice} onChange={() => {}} />, mockApi());
     const labelled = await screen.findByRole("combobox", { name: "Effort" });
-    expect(labelled.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
+    expect(labelled.textContent).toContain("High effort");
   });
 });
 

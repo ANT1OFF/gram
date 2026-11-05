@@ -28,8 +28,9 @@ const fits = (
   labelled: ReadonlySet<string>,
   folded: ReadonlySet<string>,
   overflow: number,
+  room: number,
 ): boolean => {
-  let width = folded.size > 0 ? overflow : 0;
+  let width = (folded.size > 0 ? overflow : 0) + (labelled.size > 0 ? room : 0);
   for (const block of blocks) {
     if (folded.has(block.id)) continue;
     width += labelled.has(block.id) ? block.full : block.icon;
@@ -39,12 +40,15 @@ const fits = (
 
 /**
  * The widest arrangement of `blocks` that fits in `space`, with `overflow` the width of the "…"
- * button once anything folds. When even the narrowest doesn't fit, the narrowest.
+ * button once anything folds. Labels keep `room` free beside them, so words never run up against
+ * what sits past the blocks (Send and Stop); glyphs alone need none. When even the narrowest
+ * doesn't fit, the narrowest.
  */
 export function toolbarLayout(
   space: number,
   blocks: readonly ToolbarBlock[],
   overflow: number,
+  room = 0,
 ): ToolbarLayout {
   const labelled = new Set(blocks.filter((block) => block.full > block.icon).map((b) => b.id));
   const folded = new Set<string>();
@@ -52,16 +56,16 @@ export function toolbarLayout(
     labelled: new Set(labelled),
     folded: blocks.filter((block) => folded.has(block.id)).map((block) => block.id),
   });
-  if (fits(space, blocks, labelled, folded, overflow)) return result();
+  if (fits(space, blocks, labelled, folded, overflow, room)) return result();
 
   for (const block of blocks.toReversed()) {
     if (!labelled.delete(block.id)) continue;
-    if (fits(space, blocks, labelled, folded, overflow)) return result();
+    if (fits(space, blocks, labelled, folded, overflow, room)) return result();
   }
   for (const block of blocks.toReversed()) {
     if (!block.foldable) continue;
     folded.add(block.id);
-    if (fits(space, blocks, labelled, folded, overflow)) return result();
+    if (fits(space, blocks, labelled, folded, overflow, room)) return result();
   }
   return result();
 }

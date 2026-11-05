@@ -35,10 +35,12 @@ test("the toolbar stays one row as it narrows, folding pickers into …", async 
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   const message = page.getByLabel("Message", { exact: true });
   const toolbar = page.getByTestId("composer-toolbar");
-  // Mode is a glyph alone: its name and its tooltip say the mode, the open list spells them out.
+  // With room, Mode says its value beside the glyph; its name and tooltip say it too, and the open
+  // list spells out every mode.
   const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
   await expect(mode).toHaveAccessibleName("Mode: Ask");
-  await expect(mode.locator("[data-toolbar-label]")).toHaveClass(/\bsr-only\b/);
+  await expect(mode.locator("[data-toolbar-label]")).not.toHaveClass(/\bsr-only\b/);
+  await expect(mode).toHaveText(/^Ask/);
   await mode.hover();
   const tooltip = page.locator('[data-slot="tooltip-content"]');
   await expect(tooltip).toHaveText(/^Mode: Ask/);
@@ -53,7 +55,10 @@ test("the toolbar stays one row as it narrows, folding pickers into …", async 
   await expect(more).toBeVisible();
   await expect(toolbar.getByRole("combobox", { name: /^Speed/ })).toHaveCount(0);
   await squeeze(page, 400);
+  // Narrower, the words give way first: the glyph stays, named with its value.
   await expect(mode).toBeVisible();
+  await expect(mode.locator("[data-toolbar-label]")).toHaveClass(/\bsr-only\b/);
+  await expect(mode).toHaveAccessibleName("Mode: Ask");
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
 
   await squeeze(page, 280);
@@ -190,8 +195,10 @@ test("one send button: Stop while empty, Queue with a draft, Steer with the modi
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   await expect(button("Stop")).toBeVisible();
   await button("Stop").hover();
-  // Its word and its shortcut, ⌘. on macOS and Ctrl+. elsewhere.
-  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(/^Stop \((⌘|Ctrl\+)\.\)$/);
+  // Its word, that what the turn wrote stays, and its shortcut: ⌘. on macOS and Ctrl+. elsewhere.
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
+    /^Stop · keeps the reply so far \((⌘|Ctrl\+)\.\)$/,
+  );
 
   const message = page.getByLabel("Message", { exact: true });
   await message.fill("use the fake clock");

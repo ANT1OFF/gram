@@ -48,6 +48,7 @@ export function HelperHarnessPicker({
 }) {
   return (
     <Picker
+      field
       label="Helper source"
       shortcutId="helper.harness"
       keys=""
@@ -338,6 +339,7 @@ function LocalProviderRows({
         onReset={resetOf(effortKey)}
       >
         <Picker
+          field
           label={`${name} helper effort`}
           shortcutId={`helper.${provider}.effort`}
           keys=""

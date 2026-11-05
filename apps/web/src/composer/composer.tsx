@@ -88,8 +88,8 @@ import {
   useProviderLabel,
   useRefreshModels,
 } from "./models";
-import { MODE_ICONS, MODE_OPTIONS } from "./options";
-import { Picker } from "./picker";
+import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_ICONS, MODE_OPTIONS } from "./options";
+import { Picker, type PickerOption } from "./picker";
 import { EffortGauge, SpeedGlyph } from "./picker-glyphs";
 import { inOpenFence } from "./mention";
 import { sendAction, type SendAction } from "./send-action";
@@ -820,6 +820,8 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     provider,
   );
   const efforts = effortOptions(models, model?.model);
+  // The model's own default heads the list, so the current effort always has its check.
+  const effortChoices = efforts.length > 0 ? [DEFAULT_EFFORT_OPTION, ...efforts] : [];
   const modelWarning =
     model?.profileId !== undefined
       ? gatewayModelWarning(models, model.model)
@@ -854,7 +856,11 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
     send: { aria: "Send", hint: withHint("Send", sendKeyHint) },
     queue: { aria: "Queue", hint: withHint(queueLabel, sendKeyHint) },
     steer: { aria: "Steer now", hint: STEER_LABEL },
-    stop: { aria: "Stop", hint: withHint(stopLabel, stopHint) },
+    // Stopping keeps what the turn wrote so far; only what it hadn't yet written is lost.
+    stop: {
+      aria: "Stop",
+      hint: withHint(background ? stopLabel : `${stopLabel} · keeps the reply so far`, stopHint),
+    },
   } as const;
   useShortcut(
     {
@@ -898,33 +904,49 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
       })
       .catch((error: unknown) => flash(errorMessage(error)));
   };
-  const onEffort = (next: ReasoningVariant) => {
-    if (!model) return;
+  /** Says a pick took, in words beside the glyph that changed: "Effort set to Extra high". */
+  const confirmPick = (label: string, options: readonly PickerOption<string>[], value: string) => {
+    const option = options.find((o) => o.value === value);
+    flash(`${label} set to ${option?.short ?? option?.label ?? value}`);
+  };
+  const onEffort = (next: string) => {
+    if (!model || next === (model.variant ?? DEFAULT_EFFORT)) return;
+    const { variant: _variant, ...rest } = model;
     void api
-      .setModel(threadId, { ...model, variant: next })
+      .setModel(
+        threadId,
+        next === DEFAULT_EFFORT ? rest : { ...rest, variant: next as ReasoningVariant },
+      )
+      .then(() => confirmPick("Effort", effortChoices, next))
       .catch((error: unknown) => flash(errorMessage(error)));
   };
   const onSpeed = (speed: SpeedMode) => {
-    if (model)
-      void api
-        .setModel(threadId, { ...model, speed })
-        .catch((error: unknown) => flash(errorMessage(error)));
+    if (!model || speed === model.speed) return;
+    void api
+      .setModel(threadId, { ...model, speed })
+      .then(() => flash(`Speed set to ${speed === "fast" ? "Fast" : "Standard"}`))
+      .catch((error: unknown) => flash(errorMessage(error)));
   };
-  const onMode = (mode: PermissionMode) =>
+  const onMode = (mode: PermissionMode) => {
+    if (mode === summary?.thread.mode) return;
     void api
       .setMode(threadId, mode)
+      .then(() => confirmPick("Mode", MODE_OPTIONS, mode))
       .catch((error: unknown) => flash(`Couldn't switch mode: ${errorMessage(error)}`));
+  };
   // The toolbar is chrome: its glyphs are 16 px, as the title bar's are.
   const modeIcon = <ModeIcon aria-hidden className="size-4" />;
   const effortIcon = <EffortGauge variant={model?.variant} className="size-4" />;
 
-  // Fold order is from the end: the mode picker first, then effort. The model's label goes first;
-  // speed, effort and mode are glyphs alone, their values named in a tooltip and in the open list.
+  // Each control shows its value in words while the row has room ("Claude Opus", "Extra high",
+  // "Plan"), and gives them up from the right as it narrows, leaving glyphs named in their tooltips;
+  // then mode folds into "…", then effort. Speed has words only for Fast: Standard is no news.
   const hasEffort = efforts.length > 0;
   // A default nobody chose says nothing: Speed on the CLI's default, and Mode on the user's own,
   // wait in "…" (their shortcuts still open them there). A mode with a warning always shows.
   const defaultMode = useServerSettings((s) => s.settings?.agents.defaultMode);
   const quietSpeed = model?.speed === undefined;
+  const fastSpeed = model?.speed === "fast";
   const quietMode =
     defaultMode !== undefined &&
     summary?.thread.mode === defaultMode &&
@@ -932,11 +954,11 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   const blocks = useMemo(
     () => [
       { id: "model", foldable: false },
-      ...(quietSpeed ? [] : [{ id: "speed", foldable: true, glyph: true }]),
-      ...(hasEffort ? [{ id: "effort", foldable: true, glyph: true }] : []),
-      ...(quietMode ? [] : [{ id: "mode", foldable: true, glyph: true }]),
+      ...(quietSpeed ? [] : [{ id: "speed", foldable: true, glyph: !fastSpeed }]),
+      ...(hasEffort ? [{ id: "effort", foldable: true }] : []),
+      ...(quietMode ? [] : [{ id: "mode", foldable: true }]),
     ],
-    [hasEffort, quietSpeed, quietMode],
+    [hasEffort, quietSpeed, quietMode, fastSpeed],
   );
   const toolbar = useToolbarLayout(blocks);
   const { ref: toolbarRef, labelled, folded } = toolbar;
@@ -973,9 +995,9 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
             id: "effort",
             label: "Effort",
             icon: effortIcon,
-            value: model?.variant,
-            options: efforts,
-            onChange: (value: string) => onEffort(value as ReasoningVariant),
+            value: model?.variant ?? DEFAULT_EFFORT,
+            options: effortChoices,
+            onChange: onEffort,
           },
         ]
       : []),
@@ -1006,7 +1028,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
         onArrived={() => useSlabHandoff.getState().done()}
         data-surface="composer"
         data-dragging={dragging ? "true" : undefined}
-        className={cn(SLAB, "thread-column")}
+        className={cn(SLAB, "group/composer thread-column")}
         onDragOver={(event) => event.preventDefault()}
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}
@@ -1169,10 +1191,10 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                 shortcutId="composer.effort"
                 keys="mod+shift+e"
                 focused={focused}
-                value={model?.variant}
-                options={efforts}
+                value={model?.variant ?? DEFAULT_EFFORT}
+                options={effortChoices}
                 icon={effortIcon}
-                labelled={false}
+                labelled={isLabelled("effort")}
                 folded={isFolded("effort")}
                 onFoldedOpen={() => openFolded("effort")}
                 onChange={onEffort}
@@ -1188,7 +1210,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                 value={model.speed}
                 state={summary?.thread.speedState ?? { speed: "unknown" }}
                 ghost
-                labelled={false}
+                labelled={fastSpeed && isLabelled("speed")}
                 onChange={onSpeed}
               />
             </ToolbarBlock>
@@ -1203,7 +1225,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               options={MODE_OPTIONS}
               icon={modeIcon}
               warning={modeWarning(summary?.thread.mode)}
-              labelled={false}
+              labelled={isLabelled("mode")}
               folded={isFolded("mode")}
               onFoldedOpen={() => openFolded("mode")}
               onChange={onMode}
@@ -1249,6 +1271,20 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
             )}
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
+            {/* Stop's key, beside it while you're in the composer, as it is in its tooltip. Its
+                room is kept, so focusing the composer doesn't shift the row. */}
+            {action === "stop" && stopHint && (
+              <kbd
+                aria-hidden
+                data-testid="stop-key"
+                className={cn(
+                  KBD,
+                  "text-muted-foreground opacity-0 transition-opacity group-focus-within/composer:opacity-100",
+                )}
+              >
+                {stopHint}
+              </kbd>
+            )}
             {/* One button for what the composer can do now, its word on hover. Right-click for the
                 rest: Stop stays reachable there while a draft has the button. */}
             <ContextMenu>
@@ -1275,7 +1311,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                       <RingSpinner
                         aria-hidden
                         data-testid="stop-ring"
-                        className="pointer-events-none absolute inset-0 size-full text-status-working"
+                        className="pointer-events-none absolute -inset-1.5 size-11 text-status-working"
                       />
                     )}
                     <Swap swapKey={action}>

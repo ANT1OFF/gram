@@ -105,7 +105,7 @@ export const TASKS: readonly Task[] = [
     run: async (p, r) => {
       await r.click(p.getByRole("combobox", { name: /^Effort:/ }));
       await r.click(p.getByRole("option", { name: "Extra high effort" }));
-      await expect(p.getByRole("combobox", { name: "Effort: Extra high effort" })).toBeVisible();
+      await expect(p.getByRole("combobox", { name: "Effort: Extra high" })).toBeVisible();
     },
   },
   {

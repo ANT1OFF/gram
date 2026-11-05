@@ -13,6 +13,8 @@ import { GHOST_TRIGGER } from "./styles";
 export interface PickerOption<V extends string> {
   value: V;
   label: string;
+  /** The value on the toolbar's trigger and in its tooltip, when shorter than `label`. */
+  short?: string | undefined;
   /** A line under the label: the model picker's search list, and each mode's consequence. */
   description?: string | undefined;
   /** The model picker's section past favourites: the agent or gateway it runs on, or Custom. */
@@ -40,10 +42,16 @@ interface PickerProps<V extends string> {
   /** What `icon` stands for, in the tooltip and read after the label. */
   iconLabel?: string | undefined;
   /**
-   * Shows the value beside the glyph. Without it the glyph stands alone: its name and tooltip say
-   * the value instead ("Mode: Bypass"), and the open list still spells out every option.
+   * Shows the value beside the glyph, in short for effort and mode ("Extra high"). Without it the
+   * glyph stands alone; either way its name and tooltip say the value ("Mode: Bypass"), and the open
+   * list spells out every option with the current one checked.
    */
   labelled?: boolean;
+  /**
+   * A settings form's select rather than a toolbar control: named by its label alone, the value in
+   * full, and its shortcut in a native title.
+   */
+  field?: boolean;
   /** Moved into the toolbar's "…" menu: nothing renders, and the shortcut calls `onFoldedOpen`. */
   folded?: boolean;
   onFoldedOpen?: (() => void) | undefined;
@@ -72,6 +80,7 @@ export function Picker<V extends string>({
   icon,
   iconLabel,
   labelled = true,
+  field = false,
   folded = false,
   onFoldedOpen,
   onOpen,
@@ -96,11 +105,17 @@ export function Picker<V extends string>({
   );
 
   if (folded) return null;
-  const shown = options.find((option) => option.value === value)?.label ?? "none";
-  const named = labelled ? label : `${label}: ${shown}`;
+  const chosen = options.find((option) => option.value === value);
+  // The model's name in full; effort and mode in a word or two, the same on the trigger as in its
+  // tooltip ("Effort: Extra high").
+  const shown = chosen?.short ?? chosen?.label ?? "none";
+  const named = field ? label : `${label}: ${shown}`;
   const tagged = withHint(named, hint);
   const title = warning ?? (iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`);
   const description = [iconLabel, warning].filter(Boolean).join(". ") || undefined;
+  const tip = [iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
+    .filter(Boolean)
+    .join("\n");
 
   if (search) {
     return (
@@ -116,9 +131,7 @@ export function Picker<V extends string>({
         description={description}
         warning={warning}
         labelled={labelled}
-        tip={[iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
-          .filter(Boolean)
-          .join("\n")}
+        tip={tip}
         {...search}
       />
     );
@@ -141,12 +154,11 @@ export function Picker<V extends string>({
         label={label}
         value={shown}
         labelled={labelled}
+        field={field}
         icon={icon && <Swap swapKey={String(value)}>{icon}</Swap>}
         confirm={confirm.landed}
         title={title}
-        tip={[iconLabel === undefined ? tagged : `${iconLabel} · ${tagged}`, warning]
-          .filter(Boolean)
-          .join("\n")}
+        tip={tip}
         aria-description={description}
         data-warning={warning ? "true" : undefined}
         className={cn(GHOST_TRIGGER, warning && "text-warning hover:text-warning")}

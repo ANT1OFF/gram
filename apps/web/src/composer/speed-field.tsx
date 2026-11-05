@@ -68,7 +68,10 @@ export function SpeedField({
   state?: SpeedState | undefined;
   ghost?: boolean;
   disabled?: boolean;
-  /** Shows the value beside the glyph; without it the trigger's name and tooltip say it instead. */
+  /**
+   * On a toolbar (`ghost`), shows the value beside the bolt; either way its name and tooltip say it.
+   * Outside one the trigger is a form's field, value in full.
+   */
   labelled?: boolean;
   /** `sm` to sit in a row of small controls; the ghost style is always small. */
   size?: "sm" | "default";
@@ -96,6 +99,7 @@ export function SpeedField({
           label="Speed"
           value={shown}
           labelled={labelled}
+          field={!ghost}
           icon={
             ghost && (
               <Swap swapKey={value ?? "default"}>

@@ -10,6 +10,7 @@ import { PulseOnce, Swap } from "@/motion";
 import { matchesModel, modelGroups, type ModelGroup } from "./models";
 import type { PickerOption } from "./picker";
 import { usePickConfirm } from "./picker-trigger";
+import { GHOST_TRIGGER } from "./styles";
 
 type Option = PickerOption<string>;
 
@@ -80,7 +81,10 @@ export function ModelCombobox({
     className: cn(
       field
         ? "flex h-8 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-reading whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-muted"
-        : "flex h-7 w-fit max-w-full min-w-0 items-center gap-1.5 rounded-[min(var(--radius-md),10px)] border border-transparent bg-transparent px-2 text-meta font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none select-none hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-[popup-open]:bg-accent",
+        : cn(
+            "flex w-fit max-w-full min-w-0 items-center rounded-[min(var(--radius-md),10px)] border bg-transparent whitespace-nowrap transition-colors outline-none select-none",
+            GHOST_TRIGGER,
+          ),
       warning && "text-warning hover:text-warning",
     ),
   };
