@@ -1567,7 +1567,7 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
   await expect(waits(made.merging)).toHaveText("Waiting · merge of #345");
   await expect(waits(made.release)).toHaveText("Waiting · Release run");
   await expect(waits(made.rebase)).toHaveText("Waiting · #341 to merge");
-  await expect(waits(made.timed)).toHaveText(/^Waiting · until \d{2}:\d{2}$/);
+  await expect(waits(made.timed)).toHaveText(/^Waiting · until (\w{3} )?\d{2}:\d{2}$/);
   await expect(waits(made.limited)).toHaveText(/^Paused · limit until (\w{3} )?\d{2}:\d{2}$/);
   await expect(waits(made.exportPresets)).toHaveText("Waiting · main to move");
   await expect(waits(made.exportPresets)).toHaveAttribute("data-kind", "condition");
@@ -1592,7 +1592,7 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
   await expect(own).toHaveAttribute("data-kind", "condition");
   await expect(workspace.getByTestId("overview-workspace-row")).toHaveAttribute(
     "title",
-    /Orchestrator: Waiting · thread to finish · \+1\nWakes when "Cut 2\.4\.0" finishes, else at (\w{3} )?\d{2}:\d{2}: Announce 2\.4\.0\nWakes at \d{2}:\d{2}: Check #341 and #343, then merge the index/,
+    /Orchestrator: Waiting · thread to finish · \+1\nWakes when "Cut 2\.4\.0" finishes, else at (\w{3} )?\d{2}:\d{2}: Announce 2\.4\.0\nWakes at (\w{3} )?\d{2}:\d{2}: Check #341 and #343, then merge the index/,
   );
 
   // Hover lists every wait, the one its row names first.
@@ -1600,6 +1600,6 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
   const card = page.getByTestId("overview-worker-card-waits");
   await expect(card).toBeVisible();
   await expect(card.locator("li").first()).toHaveText(
-    /^Wakes at \d{2}:\d{2}: Retry the export once the archive job is done$/,
+    /^Wakes at (\w{3} )?\d{2}:\d{2}: Retry the export once the archive job is done$/,
   );
 });
