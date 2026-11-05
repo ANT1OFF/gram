@@ -9,6 +9,7 @@ import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { useAllActivity } from "@/stores/all-activity";
 import { useThreadsStore } from "@/stores/threads";
+import { trackWrappedRow } from "@/thread/header-chips";
 
 import { useOpenBoard } from "./open-board";
 import { SinceYouLeft } from "./since-you-left";
@@ -21,17 +22,18 @@ import { workersByTab } from "./workers-model";
 const ITEM =
   "flex h-7 min-w-7 shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-/** A count in the foreground, its word muted; narrow, the word shortens ("review") but stays. */
+/**
+ * A count in the foreground, its word muted. The word is always there, in full: short of room the
+ * strip drops whole items from its end rather than words, so a number never stands alone and no
+ * two counts read the same ("6 merged" beside "2 merged").
+ */
 function Count({
   n,
   word,
-  short = word,
   className,
 }: {
   n: number;
   word: string;
-  /** Its word where the strip is narrow: shorter, never gone, so a number never stands alone. */
-  short?: string;
   className?: string | undefined;
 }) {
   return (
@@ -39,14 +41,7 @@ function Count({
       <span data-testid="status-count" className={cn("font-medium text-foreground", className)}>
         {n}
       </span>
-      <span data-testid="status-word" className="@max-3xl:hidden">
-        {word}
-      </span>
-      {short !== word && (
-        <span data-testid="status-word-short" className="hidden @max-3xl:inline">
-          {short}
-        </span>
-      )}
+      <span data-testid="status-word">{word}</span>
     </>
   );
 }
@@ -156,9 +151,15 @@ function StatusStrip({
       role="region"
       aria-label="Workspace status"
       data-testid="status-header"
-      className="@container flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-2 py-0.5"
+      className="@container relative flex min-w-0 shrink-0 items-center border-b border-border px-2 py-0.5"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+      {/* The items wrap, the fixed height hides every line after the first, and what wraps is
+          inert: short of room, whole items go from the end, never their words. */}
+      <div
+        ref={trackItems}
+        data-testid="status-items"
+        className="flex h-7 min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-4 overflow-hidden"
+      >
         <Item
           testId="status-running"
           label={`${running} running, open Workers`}
@@ -178,7 +179,7 @@ function StatusStrip({
           onClick={() => openBoard(workspaceId)}
         >
           <Eye aria-hidden className="size-icon-row shrink-0" />
-          <Count n={review} word="in review" short="review" />
+          <Count n={review} word="in review" />
         </Item>
         <Item
           testId="status-merged"
@@ -190,7 +191,7 @@ function StatusStrip({
             aria-hidden
             className={cn("size-icon-row shrink-0", merged > 0 && "text-merged")}
           />
-          <Count n={merged} word="merged today" short="merged" />
+          <Count n={merged} word="merged today" />
         </Item>
         {digests !== undefined && (
           <SinceYouLeft key={`since-you-left:${threadId}`} thread={thread} digests={digests} />
@@ -201,13 +202,46 @@ function StatusStrip({
   );
 }
 
+/** The room between the last count shown and the switch. */
+const SWITCH_GAP_PX = 12;
+
+/**
+ * Puts the switch just after the counts the row still shows, not at the strip's end, where the
+ * title bar's "…" opens over it. The row keeps the switch's room at its end, so where the switch
+ * goes never changes what fits: the counts wrap by the row's width alone.
+ */
+function placeSwitch(row: HTMLDivElement) {
+  const control = row.nextElementSibling;
+  if (!(control instanceof HTMLElement)) return;
+  // Only when it changes: a new padding resizes the row, which runs this again.
+  const room = `${control.offsetWidth + SWITCH_GAP_PX}px`;
+  if (row.style.paddingInlineEnd !== room) row.style.paddingInlineEnd = room;
+  const start = row.getBoundingClientRect().left;
+  let end = 0;
+  for (const child of row.children) {
+    if (child instanceof HTMLElement && !child.inert)
+      end = Math.max(end, child.getBoundingClientRect().right - start);
+  }
+  const left = `${row.offsetLeft + end + (end > 0 ? SWITCH_GAP_PX : 0)}px`;
+  if (control.style.left !== left) control.style.left = left;
+}
+
+/** The counts' row: what wraps goes inert, and the switch follows what stays. */
+const trackItems = (row: HTMLDivElement | null) => trackWrappedRow(row, placeSwitch);
+
 /** Folded (off) or every digest and reply (on): only the chat's view of them changes. */
 function AllActivitySwitch({ threadId, on }: { threadId: Thread["id"]; on: boolean }) {
   const id = `all-activity-${threadId}`;
   return (
-    <div className="flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground">
-      <label htmlFor={id} className="cursor-default @max-2xl:sr-only">
-        Show all activity
+    <div
+      data-testid="status-all-activity-control"
+      // Placed beside the counts by `placeSwitch`.
+      className="absolute top-1/2 flex -translate-y-1/2 items-center gap-1.5 text-meta text-muted-foreground"
+    >
+      {/* Narrow, its words shorten but stay: a switch alone says nothing. */}
+      <label htmlFor={id} className="cursor-default">
+        <span className="@max-2xl:hidden">Show all activity</span>
+        <span className="hidden @max-2xl:inline">All activity</span>
       </label>
       <Switch
         id={id}

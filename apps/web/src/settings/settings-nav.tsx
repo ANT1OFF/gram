@@ -62,7 +62,9 @@ export function SettingsNav({
       <h1
         ref={headingRef}
         tabIndex={-1}
-        className="mb-2 px-2 font-heading text-title outline-none @max-2xl/settings:mb-0 @max-2xl/settings:shrink-0"
+        // Named on screen by the title bar, beside Back; here for where focus lands and for
+        // screen readers.
+        className="sr-only"
       >
         Settings
       </h1>

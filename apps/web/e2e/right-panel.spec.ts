@@ -168,6 +168,36 @@ test("a narrow panel names no tab, and keeps every name on hover", async ({ page
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Diff");
 });
 
+test("a tab that appears under a resting pointer opens no hint until the pointer moves", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 900, height: 900 });
+  const panel = await open(page, 240);
+  const diff = panel.getByRole("tab", { name: "Diff", exact: true });
+  const box = (await diff.boundingBox())!;
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  // The tab's own hint: with the panel closed the spot is in the title bar, whose icons' hints a
+  // move there may open on their own.
+  const hint = page
+    .locator('[data-slot="tooltip-content"][data-open]')
+    .filter({ hasText: /^Diff$/ });
+  // The pointer rests where the tab will be, the panel closed: no tab there to hover yet.
+  await page.keyboard.press("ControlOrMeta+Alt+b");
+  await expect(diff).toBeHidden();
+  await page.mouse.move(at.x, at.y);
+  // Still for a moment: a tab that came within a frame or two of a move would be the move's own.
+  await page.waitForTimeout(250);
+  // The panel opens under the still pointer: the browser says the pointer is over the tab, but
+  // nobody pointed at it, so its hint stays shut rather than cover the row beside it.
+  await page.keyboard.press("ControlOrMeta+Alt+b");
+  await expect(diff).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(hint).toHaveCount(0);
+  // Moving over it is pointing at it.
+  await page.mouse.move(at.x + 2, at.y + 1);
+  await expect(hint).toBeVisible();
+});
+
 test("the strip goes back to every name when the panel widens again", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1000 });
   const panel = await open(page, 240);

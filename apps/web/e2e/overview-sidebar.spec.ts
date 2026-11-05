@@ -883,13 +883,13 @@ test("Settings → General's Overview sidebar row picks the mode the window lays
   await expect(page.getByTestId("general-settings")).toContainText(
     "Automatic is open from 1280 px wide and compact below.",
   );
-  // Settings is focused, its strip in the overview's place; each pick lays the window out once
+  // Settings is a place of its own, with no overview beside it; each pick lays the window out once
   // Settings closes.
   const pickThenLeave = async (mode: string) => {
     await row.getByRole("radio", { name: mode }).click();
-    await expect(page.getByTestId("settings-strip")).toBeVisible();
+    await expect(page.getByTestId("settings-title")).toBeVisible();
     await page.getByTestId("settings-back").click();
-    await expect(page.getByTestId("settings-strip")).toHaveCount(0);
+    await expect(page.getByTestId("settings-title")).toHaveCount(0);
   };
   const reopen = async () => {
     await page.keyboard.press("ControlOrMeta+Comma");

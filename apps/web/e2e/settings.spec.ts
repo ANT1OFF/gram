@@ -394,9 +394,9 @@ test("side panel position, fonts and the Windows shell apply live", async ({ pag
 test("a narrow window gives Settings its width: no right panel, and the tabs fold into a picker", async ({
   page,
 }) => {
-  // Under 1280 px the overview is its 60 px rail, so this leaves Settings about 640 px: under the
-  // 672 px where its tabs fold.
-  await page.setViewportSize({ width: 700, height: 700 });
+  // Settings has no overview beside it, so the window is its width: under the 672 px where its
+  // tabs fold.
+  await page.setViewportSize({ width: 640, height: 700 });
   await page.goto("/settings/general");
   await expect(page.getByTestId("general-settings")).toBeVisible();
   await expect(page.getByTestId("right-panel")).toHaveCount(0);
@@ -431,12 +431,11 @@ test("Settings is focused: the overview gives way to Back, and General's section
     .getByRole("button", { name: "Settings", exact: true })
     .click();
   await expect(page).toHaveURL(/\/settings\/general$/);
-  // One column of navigation, not two: the overview is a strip with Back.
+  // One column of navigation, not two: the overview steps aside, and the title bar says where you
+  // are, with Back.
   await expect(page.getByTestId("overview-sidebar")).toHaveCount(0);
-  const strip = page.getByTestId("settings-strip");
-  await expect(strip).toBeVisible();
-  // The column narrows as Settings appears, so its width settles a moment after.
-  await expect.poll(async () => (await strip.boundingBox())!.width).toBeLessThanOrEqual(64);
+  const title = page.getByTestId("settings-title");
+  await expect(title).toHaveText("Settings");
 
   // General's subsections, linked under it, scroll the page to each.
   const sections = page.getByTestId("settings-page-sections");
@@ -464,13 +463,13 @@ test("Settings is focused: the overview gives way to Back, and General's section
   await expect(sections).toBeVisible();
 
   // Back leaves Settings, and the overview returns as it was.
-  await strip.getByRole("button", { name: "Back" }).click();
+  await title.getByRole("button", { name: "Back" }).click();
   await expect(page).not.toHaveURL(/\/settings/);
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
-  await expect(page.getByTestId("settings-strip")).toHaveCount(0);
+  await expect(page.getByTestId("settings-title")).toHaveCount(0);
 });
 
-test("opening Settings never shows its Back strip beside the thread it is leaving", async ({
+test("opening Settings never shows its title bar beside the thread it is leaving", async ({
   page,
 }) => {
   // Settings' code arrives late, as on a cold start, so the router keeps the thread up meanwhile.
@@ -485,7 +484,7 @@ test("opening Settings never shows its Back strip beside the thread it is leavin
     const probe = { mixed: 0 };
     (window as unknown as { gramMixedFrames: typeof probe }).gramMixedFrames = probe;
     const sample = () => {
-      const strip = document.querySelector('[data-testid="settings-strip"]');
+      const strip = document.querySelector('[data-testid="settings-title"]');
       const thread = document.querySelector('[aria-label="Message"]');
       if (strip && thread) probe.mixed++;
       if (!document.querySelector('[data-testid="general-settings"]'))
@@ -495,7 +494,7 @@ test("opening Settings never shows its Back strip beside the thread it is leavin
   });
   await page.keyboard.press("ControlOrMeta+,");
   await expect(page.getByTestId("general-settings")).toBeVisible();
-  await expect(page.getByTestId("settings-strip")).toBeVisible();
+  await expect(page.getByTestId("settings-title")).toBeVisible();
   expect(
     await page.evaluate(
       () => (window as unknown as { gramMixedFrames: { mixed: number } }).gramMixedFrames.mixed,

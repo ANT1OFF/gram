@@ -201,10 +201,12 @@ export function RightPanel() {
                 Files, Terminal and the open one's, the rest folded into More; then the open one's
                 alone; then icons only. Each is named on hover in every case. */}
             {inStrip.map((face) => (
+              // Above the strip, which has the panel's empty top beside the title bar: below, a
+              // tab's name would cover the notice or the toolbar under the tabs.
               <Hint
                 key={face.tab.value}
                 label={face.name}
-                side="bottom"
+                side="top"
                 render={
                   <TabsTrigger
                     value={face.tab.value}
@@ -411,7 +413,7 @@ function ExpandToggle() {
   return (
     <Hint
       label={expanded ? withHint(label, restoreHint) : label}
-      side="bottom"
+      side="top"
       render={
         <Button
           variant="ghost"
@@ -442,7 +444,7 @@ function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolea
   return (
     <Hint
       label={withHint(label, hint)}
-      side="bottom"
+      side="top"
       render={
         <Button
           variant="ghost"
