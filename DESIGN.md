@@ -25,15 +25,24 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     muted, and merged `merged`.
   - Informational marks (a PR waiting on review, a paused workspace, a held brief) stay neutral
     or outlined.
-  - An orchestrator's sidebar line carries at most one amber marker, its count; its workers'
-    rows say "asks you" in plain text.
+  - An orchestrator's sidebar line carries at most one amber marker, its count; a worker that
+    needs you takes the amber dot like everywhere else, and its row says "asks you".
+  - **One dot per state**, the same in the sidebar, on the Board and in Workers (`StatusDot`):
+    filled is where it stands (amber needs you, the accent works and pulses, red failed, grey
+    idle, a neutral dot needs attention, the merged colour merged), a hollow ring waits on
+    something outside it (checks, a review, a wake), and a dashed ring is held (paused by you, or
+    until a usage limit resets). The sidebar's Orchestrators header opens the legend.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
     purpose), Full autonomy, a key clash, and the usage meter from 90% of a limit (red once
     spent with no credits).
 - **Radii are soft:** 8 to 16 px (`radius-xs` to `radius-xl`); the composer is rounder (22 px);
   small marks (a key cap, a bar, a swatch) take 4 px (`radius-2xs`).
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
-  Lists, menus and the sidebar share one row shape.
+  Lists, menus and the sidebar share one row shape. Every sidebar row, whatever it lists (a
+  workspace, a worker, a solo thread, a PR, a Done item), takes two lines (`ROW`, `ROW_STATUS`):
+  its mark and title, with a count, time or mark at the right edge, then one muted status line
+  with its badges (a worker's PR chips) at the right edge. Marks centre on one column and titles
+  start on one edge, the pill, Search, section titles and Open History included.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings, 16 px between sections and at a pane's edges.
 - **Settings descriptions** (a setting's or a group's line under its name) are `text-body` in
@@ -41,7 +50,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`).
 - **Titles and metadata:** a title at 13 to 14 px in `fg` (`text-body-strong` or `text-reading`),
   its metadata (where it is from, its state, a time or a count) at 12 px in `fg-muted`
-  (`text-meta`), never smaller. A title wraps to two lines before it is cut short. Metadata a
+  (`text-meta`), never smaller. A title wraps to two lines before it is cut short, except in the sidebar's two-line rows, where
+  it takes one and its hover says the whole of it. Metadata a
   heading or the whole list already says is left out: no repo on each row when every row has the
   same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
@@ -83,7 +93,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   target on the row is 32 px tall. Stop is a solid disc inside the running ring, and its key
   shows beside it while the composer has focus.
 - **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title, then
-  what wants you (a paused workspace, usage, the bell), one "…" with everything else in words and
+  what wants you (a setup problem folded from its banner, a paused workspace, usage, the bell), one "…" with everything else in words and
   shortcuts, and the panel. A new control goes in the "…" unless it is needed at a glance.
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.

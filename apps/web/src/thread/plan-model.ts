@@ -61,6 +61,39 @@ export const stripLine = (
   return next === undefined ? undefined : `Next: ${planText(next.text)}`;
 };
 
+/** Where the thread's turn stands, as the plan strip reads it. */
+export type StripTurn = "running" | "stopped" | "failed" | "ended";
+
+/**
+ * What the plan strip says for where the turn stands, so it never contradicts it: while the turn
+ * runs, the step in progress (`stripLine`) and the count; stopped or failed, where it stopped,
+ * "Stopped at step 1/4", and the step it was on; ended, what comes next. A plan built from the
+ * agent's todo list belongs to the turn that wrote it, so once that turn has ended it isn't shown
+ * at all (`undefined`).
+ */
+export const stripState = (
+  steps: readonly Pick<PlanStep, "text" | "status">[],
+  turn: StripTurn,
+  fromTodo: boolean,
+):
+  | {
+      readonly lead: string | undefined;
+      readonly line: string | undefined;
+      readonly count: boolean;
+    }
+  | undefined => {
+  if (turn === "running") return { lead: undefined, line: stripLine(steps), count: true };
+  if (fromTodo && turn === "ended") return undefined;
+  const done = steps.filter((step) => step.status === "done").length;
+  const at = `${done}/${steps.length}`;
+  const next = steps.find((step) => step.status === "doing" || step.status === "todo");
+  // A todo list's step is worded for while it runs ("Reproducing the flake"): left out once stopped.
+  const nextLine = next === undefined || fromTodo ? undefined : `Next: ${planText(next.text)}`;
+  if (turn === "stopped") return { lead: `Stopped at step ${at}`, line: nextLine, count: false };
+  if (turn === "failed") return { lead: `Failed at step ${at}`, line: nextLine, count: false };
+  return { lead: undefined, line: nextLine, count: true };
+};
+
 /** The tone a phase's text and ring take. */
 export const PHASE_TONE: Record<PlanPhase, string> = {
   needsYou: "text-status-needs",

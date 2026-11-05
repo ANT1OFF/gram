@@ -425,6 +425,15 @@ const scenes: readonly Shot[] = [
       await expect(item.getByTestId("ask-option").first()).toBeVisible();
     },
   },
+  {
+    name: "status-legend",
+    title: "The sidebar's legend: one dot per state, and the sidebar's marks",
+    open: async (page) => {
+      await openRealisticOrchestrator(page);
+      await page.getByTestId("overview-status-legend").click();
+      await page.getByTestId("status-legend").waitFor();
+    },
+  },
 ];
 
 /** Ordered whole-window frames, always both modes and `SET_SIZE` regardless of source shot. */

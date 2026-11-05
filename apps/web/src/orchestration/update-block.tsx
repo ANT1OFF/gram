@@ -23,8 +23,8 @@ const COUNT_TONE: Record<string, string> = {
 
 /**
  * The background events a run of digests brought, as one update in the orchestrator's stream: a
- * single header line, "2 merged · 1 report · 09:19", in a quiet box that sets it apart from the
- * orchestrator's prose. It opens in place on every line it gathered and on the digests behind
+ * single light rule line, "09:19 · Update · 2 merged · 1 report ───", its time first, muted and with
+ * no box, so it reads as a marker between the orchestrator's answers rather than one of them. It opens in place on every line it gathered and on the digests behind
  * them, so nothing is hidden, only folded; an update with a line that needs the user or failed
  * starts open. A run that spoke no line is its digest line alone, in the same box.
  *
@@ -51,8 +51,8 @@ export function UpdateBlock({
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
-  // An actionable secondary row: it opens, so its edge is the firmer one (border-edge-action).
-  const box = "w-full rounded-(--radius-md) border border-edge-action bg-card/40 px-2.5 py-1";
+  // A rule line, not a card: the answers around it carry the weight.
+  const box = "w-full py-0.5";
   if (quiet) {
     return (
       <QuietUpdate lines={lines} digests={digests} replies={replies} renderReply={renderReply} />
@@ -68,15 +68,7 @@ export function UpdateBlock({
   const said = words.counts.map((count) => count.text);
   if (words.digest.count !== undefined) said.push(words.digest.count);
   return (
-    <div
-      data-testid="update-block"
-      data-lines={lines.length}
-      data-open={open}
-      className={cn(
-        box,
-        words.counts.some((count) => count.kind === "ask") && "border-status-needs-mark/40",
-      )}
-    >
+    <div data-testid="update-block" data-lines={lines.length} data-open={open} className={box}>
       <button
         type="button"
         data-testid="update-block-toggle"
@@ -97,21 +89,18 @@ export function UpdateBlock({
           )}
         />
         <History aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate">
-          <span className="font-medium text-foreground">Update</span>
+        <UpdateTime time={words.time} />
+        <span className="min-w-0 truncate text-muted-foreground">
+          <span className="font-medium">Update</span>
           {words.counts.map((count) => (
             <span key={count.kind}>
-              <span className="text-muted-foreground"> · </span>
-              <span className={COUNT_TONE[count.kind] ?? "text-foreground"}>{count.text}</span>
+              {" · "}
+              <span className={COUNT_TONE[count.kind]}>{count.text}</span>
             </span>
           ))}
-          {words.digest.count !== undefined && (
-            <span className="text-muted-foreground"> · {words.digest.count}</span>
-          )}
+          {words.digest.count !== undefined && <span> · {words.digest.count}</span>}
         </span>
-        {words.time !== undefined && (
-          <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{words.time}</span>
-        )}
+        <Rule />
       </button>
       <Expand open={open} id={bodyId}>
         {opened && (
@@ -163,7 +152,7 @@ function QuietUpdate({
       data-digests={digests.length}
       data-replies={replies.length}
       data-open={open}
-      className="w-full rounded-md border border-border/70 bg-muted/20 px-2.5 py-1"
+      className="w-full py-0.5"
     >
       <button
         type="button"
@@ -185,25 +174,24 @@ function QuietUpdate({
           )}
         />
         <History aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate">
-          <span className="font-medium text-foreground">Update</span>
+        <UpdateTime time={time} />
+        <span className="min-w-0 truncate text-muted-foreground">
+          <span className="font-medium">Update</span>
           {words.counts.map((count) => (
             <span key={count.kind}>
-              <span className="text-muted-foreground"> · </span>
-              <span className={COUNT_TONE[count.kind] ?? "text-foreground"}>{count.text}</span>
+              {" · "}
+              <span className={COUNT_TONE[count.kind]}>{count.text}</span>
             </span>
           ))}
-          {many !== undefined && <span className="text-muted-foreground"> · {many}</span>}
+          {many !== undefined && <span> · {many}</span>}
           {preview !== undefined && (
-            <span data-testid="update-block-preview" className="text-muted-foreground">
+            <span data-testid="update-block-preview">
               {" · "}
               {preview}
             </span>
           )}
         </span>
-        {time !== undefined && (
-          <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{time}</span>
-        )}
+        <Rule />
       </button>
       <Expand open={open} id={bodyId}>
         {(everOpened || open) && (
@@ -223,4 +211,19 @@ function QuietUpdate({
       </Expand>
     </div>
   );
+}
+
+/** An update's time, first on its line, as the stream's other markers put it. */
+function UpdateTime({ time }: { time: string | undefined }) {
+  if (time === undefined) return null;
+  return (
+    <span data-testid="update-block-time" className="shrink-0 text-muted-foreground tabular-nums">
+      {time}
+    </span>
+  );
+}
+
+/** The hairline that carries an update's line to the column's edge. */
+function Rule() {
+  return <span aria-hidden className="h-px min-w-6 flex-1 bg-border" />;
 }

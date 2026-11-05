@@ -397,7 +397,7 @@ describe("a workspace's line", () => {
       pulse: false,
     });
     expect(orchestratorLine("paused", { working: 1, asks: 0 })).toEqual({
-      dot: "border border-muted-foreground bg-transparent",
+      dot: "border border-dashed border-muted-foreground bg-transparent",
       pulse: false,
     });
   });

@@ -135,11 +135,12 @@ test("Pull requests starts folded and lists the PR lists' PRs, opening one on Gi
   const first = rows.first();
   await expect(first).toHaveAttribute("title", /^Review requests · [\w.-]+#\d+( · .+)?\n/);
   await expect(first).toHaveAccessibleName(/^Open .+#\d+ on GitHub: .+, .+#\d+( · .+)?, Review/);
-  // One glyph on one line: nothing under the title.
+  // One glyph, and the rows' two lines: its title, then `repo#n · author` under it.
   await expect(first.getByTestId("overview-pr-glyph").locator("svg")).toHaveCount(1);
   await expect(first.locator("[data-pr-mark]")).toHaveCount(1);
-  const lineHeight = (await first.boundingBox())!.height;
-  expect(lineHeight).toBeLessThan(36);
+  await expect(first.getByTestId("overview-pr-sub")).toHaveText(/^[\w.-]+#\d+( · .+)?$/);
+  const rowHeight = (await first.boundingBox())!.height;
+  expect(rowHeight).toBe(44);
 
   // A click opens it on GitHub, as the lists' rows do.
   const url = await page.evaluate(async (pr) => {

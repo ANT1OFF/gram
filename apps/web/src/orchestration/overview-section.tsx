@@ -13,8 +13,21 @@ import { overviewSectionFolded, useLayoutStore, type OverviewSection } from "@/s
 /** A stop for the arrow keys: every row and section title. */
 export const STOP = OVERVIEW_STOP;
 
+/**
+ * Every row's shape, whatever it lists: a 10 px mark column, then its title on one line with what
+ * trails it (a count, a time, a mark) on the right edge, and under the title one compact status
+ * line (`ROW_STATUS`), its own trailing badges again at the right edge. Two lines, never more: a
+ * long title is cut short and its hover says the whole of it.
+ */
 export const ROW =
   "grid w-full cursor-default grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 py-1 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring";
+
+/** A row's status line, under its title: muted words, and its badges at the right edge. */
+export const ROW_STATUS =
+  "col-span-2 col-start-2 flex h-lh min-w-0 items-center gap-x-1.5 text-meta text-muted-foreground";
+
+/** A row's mark (its dot or glyph), centred on its title's line. */
+export const ROW_MARK = "flex h-lh items-center justify-center self-start";
 
 /**
  * The thread open in the chat, as a row under its workspace: the chosen fill and edge, stronger than
@@ -69,7 +82,8 @@ export function Section({
             onPointerEnter={term === undefined ? undefined : () => seeTerm(term)}
             onFocus={term === undefined ? undefined : () => seeTerm(term)}
             onClick={() => toggle(id)}
-            className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-caption font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            // Its chevron centred on the rows' marks, its name where their titles start.
+            className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-caption font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronDown
               aria-hidden
@@ -93,11 +107,14 @@ export function Section({
   );
 }
 
-/** A thread's row with its context menu: a right-click anywhere on it, its PR chips included. */
+/**
+ * A thread's row with its context menu: a right-click anywhere on it, its PR chips included. The
+ * chips, buttons of their own, sit over the row's status line at its right edge.
+ */
 export function RowMenu({ menu, children }: { menu: ReactNode; children: ReactNode }) {
   return (
     <ContextMenu>
-      <ContextMenuTrigger className="flex flex-col">{children}</ContextMenuTrigger>
+      <ContextMenuTrigger className="relative flex flex-col">{children}</ContextMenuTrigger>
       <ContextMenuContent>{menu}</ContextMenuContent>
     </ContextMenu>
   );

@@ -29,7 +29,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { useApi } from "@/api/context";
 import { Hint } from "@/components/hint";
@@ -39,15 +39,21 @@ import { cn } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
 import { spin, Spinner, StatusMark, Swap, type MarkPhase } from "@/motion";
 import { imeComposing } from "@/composer/send-key";
+import { useThreadFeed } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
+
+import { stopOf } from "./attempt-model";
+import { inTurn } from "./orchestration-model";
+import { useStopStore } from "./stop-store";
 
 import {
   cycleStatus,
   editOf,
   moveStep,
   stepPrBadge,
-  stripLine,
+  stripState,
   stripSteps,
+  type StripTurn,
   withStep,
 } from "./plan-model";
 import { PlanRing, useThreadHeadline } from "./plan-ui";
@@ -57,7 +63,11 @@ const STEP: Record<PlanStepStatus, { icon: LucideIcon; tone: string; label: stri
   doing: { icon: CircleDot, tone: "text-status-working", label: "In progress" },
   done: { icon: CircleCheck, tone: "text-success", label: "Done" },
   blocked: { icon: Octagon, tone: "text-destructive", label: "Blocked" },
-  dropped: { icon: CircleSlash, tone: "text-muted-foreground", label: "Dropped" },
+  dropped: {
+    icon: CircleSlash,
+    tone: "text-muted-foreground",
+    label: "Dropped",
+  },
 };
 
 const SOURCE: Record<PlanSource, { icon: LucideIcon; label: string }> = {
@@ -224,7 +234,10 @@ function StepRow({
           title={editable ? `${display.label} · click for the next status` : display.label}
           onClick={() =>
             onEdit((edit) =>
-              withStep(edit, step.id, (s) => ({ ...s, status: cycleStatus(s.status) })),
+              withStep(edit, step.id, (s) => ({
+                ...s,
+                status: cycleStatus(s.status),
+              })),
             )
           }
           className="mt-0.5 shrink-0 rounded-full disabled:cursor-default"
@@ -407,7 +420,21 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
   // until that one's `thread.plan` arrives: two quick clicks otherwise undo the first.
   const sent = useRef<PlanEdit | undefined>(undefined);
   const saving = useRef<Promise<unknown>>(Promise.resolve());
+  // Where the turn stands, so the strip says what the transcript does: a stopped turn's plan says
+  // where it stopped, never the step as if it still ran.
+  const stoppedAt = useStopStore((s) => s.stoppedAt[threadId]);
+  const messages = useThreadFeed(threadId, (state) => state.messages);
+  const stopped = useMemo(() => stopOf(messages, stoppedAt) !== undefined, [messages, stoppedAt]);
   if (summary === undefined || !planned || summary.thread.role !== undefined) return null;
+  // Work it left running in the background is its turn's still: its todo list goes on.
+  const turn: StripTurn =
+    inTurn(summary.status) || (summary.background?.length ?? 0) > 0
+      ? "running"
+      : summary.status === "error"
+        ? "failed"
+        : stopped
+          ? "stopped"
+          : "ended";
 
   const plan = summary.plan;
   const { steps, fromTodo } = stripSteps(plan, turnPlan);
@@ -429,20 +456,25 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
   };
   const goal = plan?.goal ?? "";
   const doing = fromTodo ? undefined : steps.find((step) => step.status === "doing");
-  const line = stripLine(steps);
-  // A finished plan has nothing left to say; it stays while the user has it open.
+  const state = stripState(steps, turn, fromTodo);
+  // A finished plan has nothing left to say, and an ended turn's todo list neither; either stays
+  // while the user has it open.
   if (progress.total > 0 && progress.done === progress.total && !open) return null;
+  if (state === undefined && !open) return null;
+  const line = state?.line;
+  const lead = state?.lead;
 
   return (
     <div
       data-testid="plan-strip"
       data-open={open}
+      data-turn={turn}
       className="@container shrink-0 border-b border-edge bg-card/30"
     >
       <button
         type="button"
         aria-expanded={open}
-        aria-label={`Plan: ${goal || "the agent's todo list"}, ${progress.done} of ${progress.total} done${line === undefined ? "" : `. ${line}`}`}
+        aria-label={`Plan: ${goal || "the agent's todo list"}, ${lead ?? `${progress.done} of ${progress.total} done`}${line === undefined ? "" : `. ${line}`}`}
         onClick={() => setOpen(!open)}
         className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
       >
@@ -450,7 +482,12 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
             only counts. */}
         <PlanRing
           headline={{
-            phase: headline === undefined || headline.phase === "working" ? "next" : headline.phase,
+            phase:
+              turn === "stopped" || turn === "failed"
+                ? "stale"
+                : headline === undefined || headline.phase === "working"
+                  ? "next"
+                  : headline.phase,
             done: progress.done,
             total: progress.total,
           }}
@@ -458,12 +495,20 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
         <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">
           {goal || "Plan"}
         </span>
+        {lead !== undefined && (
+          <span
+            data-testid="plan-strip-turn"
+            className={cn("shrink-0", turn === "failed" && "text-destructive")}
+          >
+            · {lead}
+          </span>
+        )}
         {line !== undefined && (
           <span data-testid="plan-strip-headline" className="min-w-0 truncate @max-sm:hidden">
             · {line}
           </span>
         )}
-        {progress.total > 0 && (
+        {progress.total > 0 && state?.count !== false && (
           <span data-testid="plan-strip-count" className="ml-auto shrink-0 tabular-nums">
             {progress.done}/{progress.total}
           </span>
@@ -472,7 +517,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
           aria-hidden
           className={cn(
             "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
-            progress.total === 0 && "ml-auto",
+            (progress.total === 0 || state?.count === false) && "ml-auto",
             open && "rotate-180",
           )}
         />

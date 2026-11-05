@@ -19,11 +19,15 @@ import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { LaunchChecksBanner } from "./banner";
+import { LaunchChecksBanner, LaunchIssuesChip, useBannerFold } from "./banner";
 import { AgentChecks, ToolChecks } from "./tool-checks";
+
+/** The thread the window shows, which the banner folds on leaving. */
+const route = vi.hoisted(() => ({ threadId: undefined as string | undefined }));
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
+  useParams: () => ({ threadId: route.threadId }),
 }));
 
 const SIGNED_OUT: LaunchChecks = {
@@ -93,11 +97,21 @@ const seedDismissed = (keys: string[]) =>
     },
   });
 
+/** The title bar's chip beside the banner, as the shell mounts them. */
+const shell = () => (
+  <>
+    <LaunchIssuesChip />
+    <LaunchChecksBanner />
+  </>
+);
+
 /** The line under a launch-check Update, re-read since each state renders a new one. */
 const outcome = () => screen.getByTestId("banner-cli-update");
 
 beforeEach(() => {
   watches.length = 0;
+  route.threadId = undefined;
+  useBannerFold.setState({ folded: [], open: undefined });
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   vi.spyOn(console, "warn");
   vi.spyOn(console, "error");
@@ -115,6 +129,38 @@ afterEach(async () => {
 });
 
 describe("LaunchChecksBanner", () => {
+  it("folds to the title bar's chip once seen and left, stays folded after a restart, and opens again from it", async () => {
+    route.threadId = "t-1";
+    const launchChecks = vi.fn(async () => SIGNED_OUT);
+    const view = renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
+    expect(await screen.findByTestId("launch-checks-banner")).toBeTruthy();
+    expect(screen.queryByTestId("launch-issues-chip")).toBeNull();
+
+    // Another thread opened: the banner has been seen, and folds to the chip.
+    route.threadId = "t-2";
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ApiProvider api={{ launchChecks, ...appAt("0.4.0") } as unknown as Api}>
+          {shell()}
+        </ApiProvider>
+      </QueryClientProvider>,
+    );
+    const chip = await screen.findByTestId("launch-issues-chip");
+    expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
+    expect(chip.getAttribute("aria-label")).toBe("Setup problems: 2. Show them");
+    expect(useBannerFold.getState().folded).toEqual([
+      "0.4.0:claude-signed-out",
+      "0.4.0:gh-missing",
+    ]);
+    cleanup();
+
+    // A restart: the problems already seen start as the chip, which opens the banner.
+    renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
+    fireEvent.click(await screen.findByTestId("launch-issues-chip"));
+    expect(await screen.findByTestId("launch-checks-banner")).toBeTruthy();
+    expect(screen.queryByTestId("launch-issues-chip")).toBeNull();
+  });
+
   it("lists the problems with a details link, and a dismissal survives a restart", async () => {
     const launchChecks = vi.fn(async () => SIGNED_OUT);
     const app = appAt("0.4.0");
