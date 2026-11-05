@@ -61,12 +61,14 @@ describe("New thread draft @ mentions", () => {
     });
     expect(await screen.findByRole("form", { name: "New thread" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Agent" }).textContent).toContain("Codex");
-    // Speed and mode are glyphs alone, as in a thread's composer; Bypass keeps its tint.
+    // Speed is its glyph unless Fast, and mode says its value, as in a thread's composer; Bypass
+    // keeps its tint.
     expect(screen.getByRole("combobox", { name: "Speed: Fast" })).toBeTruthy();
     const mode = screen.getByRole("combobox", { name: "Mode: Bypass" });
     expect(mode.getAttribute("data-warning")).toBe("true");
     expect(mode.className).toContain("text-warning");
-    expect(mode.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
+    expect(mode.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
+    expect(mode.textContent).toContain("Bypass");
   });
 
   it("offers the project folder's files and inserts the chosen one", async () => {

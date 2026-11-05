@@ -19,6 +19,7 @@ import {
 import { useShallow } from "zustand/react/shallow";
 
 import { AgentIcon } from "@/agents/agent-display";
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useWindowLights } from "@/desktop/window-lights";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
@@ -84,18 +85,23 @@ export function OverviewRail() {
   // Under macOS's window buttons the title bar's row is theirs; the toggle leads the column below.
   const underLights = useWindowLights((s) => s.inset > 0);
   const hide = (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      {...STOP}
-      aria-label="Hide sidebar"
-      data-testid="overview-hide"
-      title={withHint("Hide sidebar", hideHint)}
-      className="shrink-0 text-muted-foreground [-webkit-app-region:no-drag]"
-      onClick={toggleOverviewSidebar}
+    <Hint
+      label={withHint("Hide sidebar", hideHint)}
+      side="right"
+      render={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          {...STOP}
+          aria-label="Hide sidebar"
+          data-testid="overview-hide"
+          className="shrink-0 text-muted-foreground [-webkit-app-region:no-drag]"
+          onClick={toggleOverviewSidebar}
+        />
+      }
     >
       <PanelLeftClose />
-    </Button>
+    </Hint>
   );
   return (
     <aside
@@ -117,18 +123,23 @@ export function OverviewRail() {
         {underLights && hide}
         {/* Usage and Settings follow the toggle, stacked, as they follow it in the open header. */}
         <TopLeftNav className="shrink-0 flex-col" />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          {...STOP}
-          aria-label="Expand overview"
-          data-testid="overview-expand"
-          title="Expand overview"
-          className="shrink-0 text-muted-foreground"
-          onClick={() => switchOverview("open")}
+        <Hint
+          label="Expand overview"
+          side="right"
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              {...STOP}
+              aria-label="Expand overview"
+              data-testid="overview-expand"
+              className="shrink-0 text-muted-foreground"
+              onClick={() => switchOverview("open")}
+            />
+          }
         >
           <PanelLeftOpen />
-        </Button>
+        </Hint>
         <RailNeedsYou />
         <Separator />
         <WorkspaceTiles />

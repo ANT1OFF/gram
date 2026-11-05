@@ -1,11 +1,24 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { sameLayout, toolbarLayout, type ToolbarBlock, type ToolbarLayout } from "./toolbar-layout";
+import {
+  sameLayout,
+  toolbarLayout,
+  type LabelSize,
+  type ToolbarBlock,
+  type ToolbarLayout,
+} from "./toolbar-layout";
 
 /** The "…" button and its gap. */
 const OVERFLOW_WIDTH = 32;
 /** What a label adds besides its text: the trigger's gap between glyph and label. */
 const LABEL_GAP = 6;
+/**
+ * What a control carries only while it says its value in full: the chevron after its words (14 px
+ * and its gap), and the rule before it (1 px, its margins and the block's gap). Short of room both
+ * go, so the words keep the space. Constant, as the measure can't see what isn't drawn.
+ */
+const CHEVRON = 20;
+const SEPARATOR = 9;
 /** Slack for rounding and the gaps between groups, so a fit is never a pixel short. */
 const SLACK = 6;
 /**
@@ -14,22 +27,24 @@ const SLACK = 6;
  */
 const LABEL_ROOM = 48;
 
-/** Before the first measure: everything as wide as it wants, so the measure sees full widths. */
-const UNMEASURED: ToolbarLayout = { labelled: new Set(["*"]), folded: [] };
+/** Before the first measure: everything in full, so the measure sees full widths. */
+const UNMEASURED: ToolbarLayout = { sizes: new Map(), folded: [], wrapped: false };
 
 /**
  * Fits the toolbar `ref` points at. Every `[data-toolbar-block]` in it is a block, measured with
- * and without its `[data-toolbar-label]`; every `[data-toolbar-fixed]` is space the blocks can't
- * have. `blocks` lists the blocks in toolbar order, folded ones too, whose widths are remembered
- * from when they last showed; keep the array stable while they don't change, since a new one
- * measures again. Anything measured resizing measures again too. A block marked `glyph` never shows
- * its label, so the hidden one it carries for screen readers isn't counted as width it could take.
+ * its full `[data-toolbar-label]`, its `[data-toolbar-compact]` one and neither; every
+ * `[data-toolbar-fixed]` is space the blocks can't have on their row, and every
+ * `[data-toolbar-lead]` space before them that stays on their row when it wraps. `blocks` lists the blocks in
+ * toolbar order, folded ones too, whose widths are remembered from when they last showed; keep the
+ * array stable while they don't change, since a new one measures again. Anything measured resizing
+ * measures again too. A block marked `glyph` never shows a word, so the hidden one it carries for
+ * screen readers isn't counted as width it could take.
  */
-export function useToolbarLayout(
+export function useToolbarLayout<T extends HTMLElement = HTMLDivElement>(
   blocks: readonly { id: string; foldable: boolean; glyph?: boolean }[],
 ) {
-  const ref = useRef<HTMLDivElement>(null);
-  const widths = useRef(new Map<string, { full: number; icon: number }>());
+  const ref = useRef<T>(null);
+  const widths = useRef(new Map<string, { full: number; short: number; icon: number }>());
   const observer = useRef<ResizeObserver | undefined>(undefined);
   const [tick, setTick] = useState(0);
   const [layout, setLayout] = useState<ToolbarLayout>(UNMEASURED);
@@ -43,7 +58,6 @@ export function useToolbarLayout(
   }, []);
 
   useLayoutEffect(() => {
-    const labelled = (id: string) => layout.labelled.has("*") || layout.labelled.has(id);
     const el = ref.current;
     if (el === null) return;
     const width = el.clientWidth;
@@ -56,33 +70,56 @@ export function useToolbarLayout(
       observer.current?.observe(node);
       const id = node.dataset["toolbarBlock"]!;
       const glyph = blocks.some((block) => block.id === id && block.glyph === true);
-      const label = glyph ? null : node.querySelector<HTMLElement>("[data-toolbar-label]");
-      const extra = label === null ? 0 : label.scrollWidth + LABEL_GAP;
+      const size = layout.sizes.get(id) ?? "full";
       const shown = node.offsetWidth + gap;
-      widths.current.set(
-        id,
-        labelled(id) && label !== null
-          ? { full: shown, icon: shown - extra }
-          : { full: shown + extra, icon: shown },
-      );
+      // Every block but the first has its rule while it is in full.
+      const rule = blocks[0]?.id === id ? 0 : SEPARATOR;
+      if (glyph) {
+        const bare = shown - (size === "full" ? rule : 0);
+        widths.current.set(id, { full: bare + rule, short: bare, icon: bare });
+        continue;
+      }
+      const words = (selector: string) => {
+        const label = node.querySelector<HTMLElement>(selector);
+        return label === null ? undefined : label.scrollWidth + LABEL_GAP;
+      };
+      const full = words("[data-toolbar-label]") ?? 0;
+      const short = words("[data-toolbar-compact]") ?? full;
+      const decor = rule + (node.querySelector('[role="combobox"]') === null ? 0 : CHEVRON);
+      const bare = shown - (size === "full" ? full + decor : size === "short" ? short : 0);
+      widths.current.set(id, { full: bare + full + decor, short: bare + short, icon: bare });
     }
-    let fixed = 0;
-    for (const node of el.querySelectorAll<HTMLElement>("[data-toolbar-fixed]")) {
-      observer.current?.observe(node);
-      if (node.offsetWidth > 0) fixed += node.offsetWidth + gap;
-    }
+    const sum = (selector: string) => {
+      let total = 0;
+      for (const node of el.querySelectorAll<HTMLElement>(selector)) {
+        observer.current?.observe(node);
+        if (node.offsetWidth > 0) total += node.offsetWidth + gap;
+      }
+      return total;
+    };
+    const fixed = sum("[data-toolbar-fixed]");
+    // Before the blocks, on their row however it wraps: the prompt box's agent picker.
+    const lead = sum("[data-toolbar-lead]");
     const measured: ToolbarBlock[] = blocks.flatMap((block) => {
       const known = widths.current.get(block.id);
       return known === undefined ? [] : [{ ...block, ...known }];
     });
-    const next = toolbarLayout(inner - fixed - SLACK, measured, OVERFLOW_WIDTH, LABEL_ROOM);
+    const next = toolbarLayout(
+      inner - lead - fixed - SLACK,
+      measured,
+      OVERFLOW_WIDTH,
+      LABEL_ROOM,
+      inner - lead - SLACK,
+    );
     if (!sameLayout(next, layout)) setLayout(next);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `tick` is the resize signal: something measured changed size
   }, [tick, blocks, layout]);
 
   return {
     ref,
-    labelled: layout.labelled.has("*") ? ("all" as const) : layout.labelled,
+    /** How `id` shows its value: in full, compact, or its glyph alone. */
+    size: (id: string): LabelSize => layout.sizes.get(id) ?? "full",
     folded: layout.folded,
+    wrapped: layout.wrapped,
   };
 }

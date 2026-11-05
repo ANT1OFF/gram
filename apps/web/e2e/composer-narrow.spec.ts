@@ -24,17 +24,26 @@ const rowSpread = (page: Page) =>
     return Math.round(Math.max(...centres) - Math.min(...centres));
   });
 
-// In a narrow pane the toolbar used to wrap, and before that it clipped Stop and Send past the
-// pane's edge. Now labels give way to glyphs, then pickers fold into "…", on one row throughout.
-test("the toolbar stays one row as it narrows, folding pickers into …", async ({ page }) => {
+// In a narrow pane the toolbar used to clip Stop and Send past the pane's edge, and later dropped
+// every value for a glyph. Now each value goes compact first ("Opus"), then the pickers take a row
+// of their own with their words, and only at the narrowest do glyphs and "…" stand in.
+test("the toolbar keeps its values as it narrows, before glyphs and …", async ({ page }) => {
   // Held running, so Stop and Steer stay offered: the script's later approval takes Steer away.
   await page.addInitScript(() => {
     window.gramMockHoldGates = true;
   });
   await page.goto("/t/t-flaky");
-  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeVisible();
   const message = page.getByLabel("Message", { exact: true });
   const toolbar = page.getByTestId("composer-toolbar");
+  // One order, in every composer: model · effort · mode · speed.
+  await expect(toolbar.locator("[data-toolbar-block]")).toHaveCount(4);
+  expect(
+    await toolbar
+      .locator("[data-toolbar-block]")
+      .evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset["toolbarBlock"])),
+  ).toEqual(["model", "effort", "mode", "speed"]);
   // With room, Mode says its value beside the glyph; its name and tooltip say it too, and the open
   // list spells out every mode.
   const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
@@ -50,24 +59,39 @@ test("the toolbar stays one row as it narrows, folding pickers into …", async 
   await expect(tooltip).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // Speed at the CLI's default waits in "…", which is there from the start.
+  // Speed at the CLI's default keeps its slot, as its glyph; nothing waits in "…".
   const more = toolbar.getByRole("button", { name: "More composer controls" });
-  await expect(more).toBeVisible();
-  await expect(toolbar.getByRole("combobox", { name: /^Speed/ })).toHaveCount(0);
-  await squeeze(page, 400);
-  // Narrower, the words give way first: the glyph stays, named with its value.
-  await expect(mode).toBeVisible();
-  await expect(mode.locator("[data-toolbar-label]")).toHaveClass(/\bsr-only\b/);
-  await expect(mode).toHaveAccessibleName("Mode: Ask");
+  await expect(toolbar.getByRole("combobox", { name: /^Speed/ })).toBeVisible();
+  await expect(more).toHaveCount(0);
+
+  // Short of room, the model's name goes compact first; the others keep their words.
+  const model = toolbar.getByRole("combobox", { name: /^Model/ });
+  await squeeze(page, 520);
+  const compact = model.locator("[data-toolbar-compact]");
+  await expect(compact).not.toHaveClass(/\bsr-only\b/);
+  await expect(compact).toHaveText("Opus");
+  await expect(model.locator("[data-toolbar-label]")).toHaveClass(/\bsr-only\b/);
+  await expect(model).toHaveAccessibleName("Model: Claude Opus");
+  await expect(mode).toHaveText(/^Ask/);
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
 
+  // Narrower, the pickers take a row of their own, words and all, above Send and Stop: still so
+  // at 300 px, a narrow pane beside a wide diff in a 1024 px window.
+  await squeeze(page, 300);
+  await expect(toolbar).toHaveAttribute("data-wrapped", "true");
+  await expect(mode).toHaveText(/^Ask/);
+  const modeBox = await mode.boundingBox();
+  const stopBox = await stop.boundingBox();
+  expect(stopBox!.y).toBeGreaterThanOrEqual(modeBox!.y + modeBox!.height);
+
+  // Only at the narrowest do glyphs stand in, on one row, and the pickers fold into "…".
   await squeeze(page, 280);
+  await expect(toolbar).not.toHaveAttribute("data-wrapped");
   await expect(mode).toHaveCount(0);
+  await expect(more).toBeVisible();
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
   const edge = await right(message);
-  expect(await right(page.getByRole("button", { name: "Stop", exact: true }))).toBeLessThanOrEqual(
-    edge,
-  );
+  expect(await right(stop)).toBeLessThanOrEqual(edge);
 
   // With a draft the one button takes Queue, and stays inside the composer however narrow it gets.
   await message.fill("use the fake clock");

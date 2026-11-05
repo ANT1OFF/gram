@@ -51,6 +51,7 @@ import { modeWarning } from "@/thread/mode-warning";
 import { inOpenFence } from "./mention";
 import { enterSends } from "./send-key";
 import { AgentFields, choiceModel, gatewayReady } from "./agent-fields";
+import { useToolbarLayout } from "./use-toolbar-layout";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { useModels } from "./models";
 import { AttachmentChips } from "./attachment-chips";
@@ -83,6 +84,17 @@ type CheckoutKind = CheckoutRequest["kind"];
  * Where the task draft goes from this folder: its own one-repo workspace, else one it is part of,
  * else the repo, to make a workspace for. Nothing for a folder Gram doesn't know yet.
  */
+/**
+ * The prompt box's measured controls, in the composer's order. Mode is the one that may stand as
+ * its glyph alone; none folds, since the row wraps instead.
+ */
+const NEW_THREAD_BLOCKS = [
+  { id: "model", foldable: false },
+  { id: "effort", foldable: false },
+  { id: "mode", foldable: false },
+  { id: "speed", foldable: false },
+];
+
 export function folderTarget(
   project: Project | undefined,
   workspaces: readonly WorkspaceState[],
@@ -349,6 +361,49 @@ function ConfiguredNewThreadDraft() {
   const modeConfirm = usePickConfirm(mode);
   const modeLabel = MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
   const modeWarned = modeWarning(mode);
+  // The composer's order and words: model · effort · mode · speed, each saying its value as the
+  // row's room allows, as in a thread's composer (`useToolbarLayout`).
+  const {
+    ref: toolbarRef,
+    size: labelOf,
+    wrapped,
+  } = useToolbarLayout<HTMLFieldSetElement>(NEW_THREAD_BLOCKS);
+  const modePicker = (
+    <Select
+      value={mode}
+      items={MODE_OPTIONS}
+      onValueChange={(value) => {
+        if (value === null) return;
+        modeConfirm.pick(value);
+        setMode(value as PermissionMode);
+      }}
+    >
+      <PickerTrigger
+        size="sm"
+        label="Mode"
+        value={modeLabel}
+        compact={MODE_OPTIONS.find((option) => option.value === mode)?.compact}
+        labelled={labelOf("mode")}
+        icon={
+          <Swap swapKey={mode}>
+            <ModeIcon aria-hidden className="size-4" />
+          </Swap>
+        }
+        confirm={modeConfirm.landed}
+        tip={[`Mode: ${modeLabel}`, modeWarned].filter(Boolean).join("\n")}
+        aria-description={modeWarned}
+        data-warning={modeWarned ? "true" : undefined}
+        className={cn(GHOST_TRIGGER, modeWarned && "text-warning hover:text-warning")}
+      />
+      <SelectContent>
+        {MODE_OPTIONS.map((o) => (
+          <SelectItem key={o.value} value={o.value} description={o.description}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -479,51 +534,30 @@ function ConfiguredNewThreadDraft() {
                       <DictationStrip partial={dictation.partial} />
                     )}
                   <DictationError state={dictation.state} />
-                  <fieldset className="flex flex-wrap items-center gap-1 px-2 pb-2">
+                  <fieldset
+                    ref={toolbarRef}
+                    data-testid="new-thread-toolbar"
+                    className="flex flex-wrap items-center gap-1 px-2 pb-2"
+                  >
                     <legend className="sr-only">Agent</legend>
                     {discovering ? (
-                      <span role="status" className="px-2 text-meta text-muted-foreground">
-                        Discovering local agents…
-                      </span>
+                      <>
+                        <span role="status" className="px-2 text-meta text-muted-foreground">
+                          Discovering local agents…
+                        </span>
+                        {modePicker}
+                      </>
                     ) : (
-                      <AgentFields ghost value={choice} onChange={setChoice} />
-                    )}
-                    <Select
-                      value={mode}
-                      items={MODE_OPTIONS}
-                      onValueChange={(value) => {
-                        if (value === null) return;
-                        modeConfirm.pick(value);
-                        setMode(value as PermissionMode);
-                      }}
-                    >
-                      <PickerTrigger
-                        size="sm"
-                        label="Mode"
-                        value={modeLabel}
-                        labelled={false}
-                        icon={
-                          <Swap swapKey={mode}>
-                            <ModeIcon aria-hidden className="size-4" />
-                          </Swap>
-                        }
-                        confirm={modeConfirm.landed}
-                        tip={[`Mode: ${modeLabel}`, modeWarned].filter(Boolean).join("\n")}
-                        aria-description={modeWarned}
-                        data-warning={modeWarned ? "true" : undefined}
-                        className={cn(
-                          GHOST_TRIGGER,
-                          modeWarned && "text-warning hover:text-warning",
-                        )}
+                      <AgentFields
+                        ghost
+                        value={choice}
+                        onChange={setChoice}
+                        size={labelOf}
+                        mode={modePicker}
                       />
-                      <SelectContent>
-                        {MODE_OPTIONS.map((o) => (
-                          <SelectItem key={o.value} value={o.value} description={o.description}>
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    )}
+                    {/* Wrapped, the pickers have this row to themselves; the rest goes on the next. */}
+                    {wrapped && <div aria-hidden className="h-0 basis-full" />}
                     <span
                       aria-live="polite"
                       data-testid="draft-dictation-status"

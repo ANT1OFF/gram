@@ -107,7 +107,8 @@ import {
 import { useSlabHandoff } from "./slab-handoff";
 import { useOrchestratorVerbs, VerbMenu } from "./verb-menu";
 import { filterVerbs, gridIndexForKey, VERB_COLUMNS, type Verb } from "./verbs";
-import { GHOST_MIRROR, ROUND, SEND_FILL, SLAB, SLAB_TEXTAREA, STOP_RUNNING } from "./styles";
+import { UnavailableSlot } from "./unavailable-slot";
+import { GHOST_MIRROR, ROUND, SEND_FILL, SLAB, SLAB_TEXTAREA, STOP_PILL } from "./styles";
 import { StashMenu, stashesQueryKey } from "./stash-menu";
 import { ToolbarOverflow, type FoldedPicker } from "./toolbar-overflow";
 import { useMentions } from "./use-mentions";
@@ -938,58 +939,34 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   const modeIcon = <ModeIcon aria-hidden className="size-4" />;
   const effortIcon = <EffortGauge variant={model?.variant} className="size-4" />;
 
-  // Each control shows its value in words while the row has room ("Claude Opus", "Extra high",
-  // "Plan"), and gives them up from the right as it narrows, leaving glyphs named in their tooltips;
-  // then mode folds into "…", then effort. Speed has words only for Fast: Standard is no news.
+  // One order everywhere, the orchestrator's chat, a solo thread's and `/new` alike: model ·
+  // effort · mode · speed, then "…". A control that doesn't apply keeps its slot, greyed, rather
+  // than letting the rest move up. Each says its value in words while the row has room ("Claude
+  // Opus", "Extra high", "Plan"); short of it, in a compact word ("Opus", "X-high"); then the
+  // pickers take a row of their own; and only at the narrowest do they give up their words for
+  // glyphs named in their tooltips, then fold into "…" from the right. Speed has words only for
+  // Fast: Standard is no news.
   const hasEffort = efforts.length > 0;
-  // A default nobody chose says nothing: Speed on the CLI's default, and Mode on the user's own,
-  // wait in "…" (their shortcuts still open them there). A mode with a warning always shows.
-  const defaultMode = useServerSettings((s) => s.settings?.agents.defaultMode);
-  const quietSpeed = model?.speed === undefined;
+  const speedApplies = model !== undefined && (model.agent === "claude" || model.agent === "codex");
   const fastSpeed = model?.speed === "fast";
-  const quietMode =
-    defaultMode !== undefined &&
-    summary?.thread.mode === defaultMode &&
-    modeWarning(summary.thread.mode) === undefined;
   const blocks = useMemo(
     () => [
       { id: "model", foldable: false },
-      ...(quietSpeed ? [] : [{ id: "speed", foldable: true, glyph: !fastSpeed }]),
-      ...(hasEffort ? [{ id: "effort", foldable: true }] : []),
-      ...(quietMode ? [] : [{ id: "mode", foldable: true }]),
+      { id: "effort", foldable: true, ...(hasEffort ? {} : { glyph: true }) },
+      { id: "mode", foldable: true },
+      { id: "speed", foldable: true, glyph: !(speedApplies && fastSpeed) },
     ],
-    [hasEffort, quietSpeed, quietMode, fastSpeed],
+    [hasEffort, speedApplies, fastSpeed],
   );
   const toolbar = useToolbarLayout(blocks);
-  const { ref: toolbarRef, labelled, folded } = toolbar;
-  const isFolded = (id: string) =>
-    folded.includes(id) || (id === "speed" && quietSpeed) || (id === "mode" && quietMode);
-  const isLabelled = (id: string) => labelled === "all" || labelled.has(id);
+  const { ref: toolbarRef, size: labelOf, folded, wrapped } = toolbar;
+  const isFolded = (id: string) => folded.includes(id);
   const openFolded = (id: string) => {
     setOverflowOpen(true);
     setOverflowSub(id);
   };
   const foldedPickers: FoldedPicker[] = [
-    ...(model && isFolded("speed")
-      ? [
-          {
-            id: "speed",
-            label: "Speed",
-            icon: <SpeedGlyph speed={model.speed} />,
-            value: model.speed ?? "default",
-            options: speedOptions(models, model.model, model.speed, summary?.thread.speedState),
-            onChange: (value: string) => {
-              if (
-                value === "standard" ||
-                (value === "fast" && modelSpeeds(models, model.model).includes("fast"))
-              )
-                onSpeed(value);
-            },
-            description: `${speedUsage(model.agent)} ${speedReport(summary?.thread.speedState)}`,
-          },
-        ]
-      : []),
-    ...(isFolded("effort")
+    ...(hasEffort && isFolded("effort")
       ? [
           {
             id: "effort",
@@ -1011,6 +988,25 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
             options: MODE_OPTIONS,
             onChange: (value: string) => onMode(value as PermissionMode),
             warning: modeWarning(summary?.thread.mode),
+          },
+        ]
+      : []),
+    ...(model && speedApplies && isFolded("speed")
+      ? [
+          {
+            id: "speed",
+            label: "Speed",
+            icon: <SpeedGlyph speed={model.speed} />,
+            value: model.speed ?? "default",
+            options: speedOptions(models, model.model, model.speed, summary?.thread.speedState),
+            onChange: (value: string) => {
+              if (
+                value === "standard" ||
+                (value === "fast" && modelSpeeds(models, model.model).includes("fast"))
+              )
+                onSpeed(value);
+            },
+            description: `${speedUsage(model.agent)} ${speedReport(summary?.thread.speedState)}`,
           },
         ]
       : []),
@@ -1154,11 +1150,13 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
           <DictationStrip partial={dictation.partial} />
         )}
         <DictationError state={dictation.state} />
-        {/* Never wraps: labels give way to glyphs, then pickers fold into "…" (toolbar-layout.ts). */}
+        {/* Words give way to compact words, then the pickers take a row of their own, and only
+            then glyphs and "…" (toolbar-layout.ts). */}
         <div
           ref={toolbarRef}
           data-testid="composer-toolbar"
-          className="flex flex-nowrap items-center gap-1 px-2 pb-2"
+          data-wrapped={wrapped || undefined}
+          className={cn("flex items-center gap-1 px-2 pb-2", wrapped ? "flex-wrap" : "flex-nowrap")}
         >
           <ToolbarBlock id="model" folded={false}>
             <Picker
@@ -1172,7 +1170,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               iconLabel={model && agentLabel(model.agent)}
               warning={modelWarning}
               onOpen={refreshModels}
-              labelled={isLabelled("model")}
+              labelled={labelOf("model")}
               search={
                 model && {
                   rowIcon: <AgentIcon agent={model.agent} className="size-3.5" />,
@@ -1184,8 +1182,12 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               onChange={onModel}
             />
           </ToolbarBlock>
-          {efforts.length > 0 && (
-            <ToolbarBlock id="effort" folded={isFolded("effort")} separator>
+          <ToolbarBlock
+            id="effort"
+            folded={isFolded("effort")}
+            separator={labelOf("effort") === "full"}
+          >
+            {hasEffort ? (
               <Picker
                 label="Effort"
                 shortcutId="composer.effort"
@@ -1194,28 +1196,20 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                 value={model?.variant ?? DEFAULT_EFFORT}
                 options={effortChoices}
                 icon={effortIcon}
-                labelled={isLabelled("effort")}
+                labelled={labelOf("effort")}
                 folded={isFolded("effort")}
                 onFoldedOpen={() => openFolded("effort")}
                 onChange={onEffort}
               />
-            </ToolbarBlock>
-          )}
-          {model && !isFolded("speed") && (
-            <ToolbarBlock id="speed" folded={false} separator>
-              <SpeedField
-                agent={model.agent}
-                model={model.model}
-                models={models}
-                value={model.speed}
-                state={summary?.thread.speedState ?? { speed: "unknown" }}
-                ghost
-                labelled={fastSpeed && isLabelled("speed")}
-                onChange={onSpeed}
-              />
-            </ToolbarBlock>
-          )}
-          <ToolbarBlock id="mode" folded={isFolded("mode")} separator>
+            ) : (
+              !isFolded("effort") && (
+                <UnavailableSlot label="Effort" reason="This model has no effort levels">
+                  {effortIcon}
+                </UnavailableSlot>
+              )
+            )}
+          </ToolbarBlock>
+          <ToolbarBlock id="mode" folded={isFolded("mode")} separator={labelOf("mode") === "full"}>
             <Picker
               label="Mode"
               shortcutId="composer.mode"
@@ -1225,15 +1219,37 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               options={MODE_OPTIONS}
               icon={modeIcon}
               warning={modeWarning(summary?.thread.mode)}
-              labelled={isLabelled("mode")}
+              labelled={labelOf("mode")}
               folded={isFolded("mode")}
               onFoldedOpen={() => openFolded("mode")}
               onChange={onMode}
             />
           </ToolbarBlock>
+          {!isFolded("speed") && (
+            <ToolbarBlock id="speed" folded={false} separator={labelOf("speed") === "full"}>
+              {model && speedApplies ? (
+                <SpeedField
+                  agent={model.agent}
+                  model={model.model}
+                  models={models}
+                  value={model.speed}
+                  state={summary?.thread.speedState ?? { speed: "unknown" }}
+                  ghost
+                  labelled={fastSpeed && labelOf("speed")}
+                  onChange={onSpeed}
+                />
+              ) : (
+                <UnavailableSlot
+                  label="Speed"
+                  reason={`${model ? agentLabel(model.agent) : "This agent"} has one speed`}
+                >
+                  <SpeedGlyph speed={undefined} className="size-4" />
+                </UnavailableSlot>
+              )}
+            </ToolbarBlock>
+          )}
           {foldedPickers.length > 0 ? (
-            // Always there while a default waits in it, so the measure counts it as fixed.
-            <div data-toolbar-fixed={quietSpeed || quietMode ? "" : undefined} className="flex">
+            <div className="flex">
               <ToolbarOverflow
                 pickers={foldedPickers}
                 open={overflowOpen}
@@ -1246,6 +1262,8 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
               />
             </div>
           ) : null}
+          {/* Wrapped, the pickers have this row to themselves; the rest goes on the next. */}
+          {wrapped && <div aria-hidden className="h-0 basis-full" />}
           <div data-toolbar-fixed className="flex shrink-0 empty:hidden">
             <StashMenu
               threadId={threadId}
@@ -1292,7 +1310,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                 data-testid="send-menu-trigger"
                 render={<span className="inline-flex" />}
               >
-                <PressScale hover={canSend || action === "stop" ? 1.05 : undefined}>
+                <PressScale hover={canSend ? 1.05 : undefined}>
                   <Hint
                     label={actionLabels[action].hint}
                     render={
@@ -1300,23 +1318,29 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                         type="button"
                         aria-label={actionLabels[action].aria}
                         disabled={action !== "stop" && !canSend}
-                        className={cn(ROUND, action === "stop" ? STOP_RUNNING : SEND_FILL)}
+                        className={action === "stop" ? STOP_PILL : cn(ROUND, SEND_FILL)}
                         onClick={runAction}
                       />
                     }
                   >
-                    {/* While it runs, the ring turns round Stop: the button says the agent is
-                        at work, not only how to end it. Still under Reduced and Off. */}
-                    {action === "stop" && (
-                      <RingSpinner
-                        aria-hidden
-                        data-testid="stop-ring"
-                        className="pointer-events-none absolute -inset-1.5 size-11 text-status-working"
-                      />
+                    {action === "stop" ? (
+                      // While it runs, the ring turns round the square: the button says the agent
+                      // is at work, not only how to end it. Still under Reduced and Off.
+                      <>
+                        <span aria-hidden className="relative grid size-4 place-items-center">
+                          <RingSpinner
+                            data-testid="stop-ring"
+                            className="pointer-events-none absolute inset-0 size-4"
+                          />
+                          <Square className="size-2 fill-current" />
+                        </span>
+                        <span>Stop</span>
+                      </>
+                    ) : (
+                      <Swap swapKey={action}>
+                        <SendGlyph action={action} />
+                      </Swap>
                     )}
-                    <Swap swapKey={action}>
-                      <SendGlyph action={action} />
-                    </Swap>
                   </Hint>
                 </PressScale>
               </ContextMenuTrigger>
@@ -1359,11 +1383,9 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   );
 }
 
-/** The one send button's glyph; the button's own label says it in words, on hover. */
-function SendGlyph({ action }: { action: SendAction }) {
+/** Send, Queue and Steer's glyph; the button's own label says it in words, on hover. */
+function SendGlyph({ action }: { action: Exclude<SendAction, "stop"> }) {
   switch (action) {
-    case "stop":
-      return <Square aria-hidden className="size-3.5 rounded-2xs fill-current" />;
     case "queue":
       return <ListPlus aria-hidden className="size-4" />;
     case "steer":
@@ -1393,6 +1415,7 @@ function ToolbarBlock({
   if (folded) return <>{children}</>;
   return (
     <div data-toolbar-block={id} className={cn("flex shrink-0 items-center gap-1", className)}>
+      {/* The rule goes with the words in full, as `useToolbarLayout` counts it. */}
       {separator && <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-border" />}
       {children}
     </div>

@@ -30,12 +30,13 @@ export const ROUND =
   "grid size-8 shrink-0 place-items-center rounded-(--composer-button-radius) outline-none transition-[opacity,box-shadow,background-color,color] focus-visible:focus-ring disabled:cursor-default";
 
 /**
- * Stop while a turn runs: a solid disc in the text colour with the square cut out of it, so it reads
- * as a stop button and never as Send's accent, inside a turning ring (drawn by the composer) that
- * says the agent is at work. Danger only under the pointer.
+ * Stop while a turn runs: a solid pill in the text colour saying "Stop" beside its square, so it
+ * reads as a stop button and never as Send's accent, the square inside a turning ring (drawn by
+ * the composer) that says the agent is at work. As tall as Send, right-aligned where Send sits, so
+ * its spot doesn't move. Danger only under the pointer.
  */
-export const STOP_RUNNING =
-  "relative bg-foreground text-background transition-colors hover:bg-destructive";
+export const STOP_PILL =
+  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-(--composer-button-radius) bg-foreground pr-3 pl-2.5 text-meta font-medium text-background outline-none transition-colors hover:bg-destructive focus-visible:focus-ring";
 
 /** Send's fill: the accent with a faint gloss, flat while pressed or disabled. */
 export const SEND_FILL =

@@ -341,16 +341,15 @@ const renderSpeed = (
 };
 
 describe("AgentFields speed", () => {
-  it("leaves Speed out of the prompt box while there is nothing to pick", async () => {
-    // The CLI decides, though Fast is there.
+  it("keeps Speed's slot in the prompt box, as its glyph, while there is nothing to pick", async () => {
+    // The CLI decides, though Fast is there: the slot stays, so the row reads as a thread's does.
     renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
-    expect(await screen.findByLabelText("Model")).toBeTruthy();
-    expect(screen.queryByLabelText(/^Speed/)).toBeNull();
+    const decides = await screen.findByRole("combobox", { name: "Speed: CLI default" });
+    expect(decides.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
     cleanup();
     // Standard is all the model offers.
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard"], true);
-    expect(await screen.findByLabelText("Model")).toBeTruthy();
-    expect(screen.queryByLabelText(/^Speed/)).toBeNull();
+    expect(await screen.findByRole("combobox", { name: "Speed: Standard" })).toBeTruthy();
   });
 
   it("shows Speed in the prompt box with Fast to pick, and always outside it", async () => {
@@ -365,12 +364,14 @@ describe("AgentFields speed", () => {
 });
 
 describe("AgentFields effort", () => {
-  it("is a glyph in the prompt box, named with its value, and labelled outside it", async () => {
+  it("says its value in the prompt box, named with it, and is labelled outside it", async () => {
     const user = userEvent.setup();
     const choice: AgentChoice = { agent: "claude", model: "opus", variant: "high" };
     renderWithApi(<AgentFields ghost value={choice} onChange={() => {}} />, mockApi());
     const glyph = await screen.findByRole("combobox", { name: "Effort: High" });
-    expect(glyph.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
+    // With room, as in a thread's composer, the value shows beside the gauge.
+    expect(glyph.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
+    expect(glyph.textContent).toContain("High");
     await user.hover(glyph);
     expect(await screen.findByText("Effort: High")).toBeTruthy();
     await user.click(glyph);

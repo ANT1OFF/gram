@@ -9,7 +9,9 @@ import { PulseOnce, Swap } from "@/motion";
 
 import { matchesModel, modelGroups, type ModelGroup } from "./models";
 import type { PickerOption } from "./picker";
-import { usePickConfirm } from "./picker-trigger";
+import { labelSize, usePickConfirm, ValueWords } from "./picker-trigger";
+import { compactModelName } from "./options";
+import type { LabelSize } from "./toolbar-layout";
 import { GHOST_TRIGGER } from "./styles";
 
 type Option = PickerOption<string>;
@@ -59,7 +61,8 @@ export function ModelCombobox({
   description: string | undefined;
   /** Tints the trigger amber, as the compact picker does; `title` carries the reason. */
   warning?: string | undefined;
-  labelled: boolean;
+  /** The name in full, in short ("Opus"), or the agent's mark alone; see `PickerTrigger`. */
+  labelled: boolean | LabelSize;
   favourite?: ((value: string) => boolean) | undefined;
   onToggleFavourite?: ((value: string) => void) | undefined;
   /** A form's select rather than a toolbar control: bordered, and the list opens below it. */
@@ -72,11 +75,13 @@ export function ModelCombobox({
   const selected = options.find((option) => option.value === value);
   const confirm = usePickConfirm(value);
   const shown = selected?.label ?? label;
+  // In full the trigger says the name itself; shorter, its name and tooltip say it whole.
+  const whole = labelSize(labelled) === "full";
 
   const triggerProps = {
-    "aria-label": labelled ? label : `${label}: ${shown}`,
+    "aria-label": whole ? label : `${label}: ${shown}`,
     "aria-description": description,
-    title: labelled ? title : undefined,
+    title: whole ? title : undefined,
     "data-warning": warning ? "true" : undefined,
     className: cn(
       field
@@ -96,10 +101,15 @@ export function ModelCombobox({
   const triggerContent = (
     <>
       {glyph}
-      <span data-toolbar-label className={cn("min-w-0 truncate", !labelled && "sr-only")}>
-        {shown}
-      </span>
-      <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <ValueWords
+        value={shown}
+        compact={field ? undefined : (selected?.compact ?? compactModelName(shown))}
+        labelled={labelled}
+      />
+      {/* Short of room it goes, leaving the space to the name (`useToolbarLayout`). */}
+      {(whole || field) && (
+        <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      )}
     </>
   );
 
@@ -122,7 +132,7 @@ export function ModelCombobox({
         highlighted.current = option;
       }}
     >
-      {labelled ? (
+      {whole ? (
         <Combobox.Trigger {...triggerProps}>{triggerContent}</Combobox.Trigger>
       ) : (
         // A native title would wait a second before saying what the glyph means.

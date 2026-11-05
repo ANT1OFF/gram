@@ -28,6 +28,7 @@ import {
 } from "./models";
 import type { PickerOption } from "./picker";
 import { GHOST_TRIGGER } from "./styles";
+import type { LabelSize } from "./toolbar-layout";
 
 /** Where a model in the prompt box's list runs: an agent, through a gateway or its own account. */
 export interface ModelPick {
@@ -112,6 +113,7 @@ export function ModelSelect({
   ghost = false,
   agents,
   onPick,
+  labelled = "full",
 }: {
   agent: AgentKind;
   profileId?: ProfileId;
@@ -123,6 +125,8 @@ export function ModelSelect({
   agents?: readonly AgentKind[] | undefined;
   /** Called for a model of another agent or gateway than `agent` and `profileId`. */
   onPick?: ((pick: ModelPick) => void) | undefined;
+  /** In the prompt box, the name in full or in short ("Opus"), as the row's room allows. */
+  labelled?: LabelSize | undefined;
 }) {
   const listing = useModelsQuery(agent, profileId);
   const provider = useProviderLabel(agent, profileId);
@@ -185,7 +189,7 @@ export function ModelSelect({
         icon={undefined}
         title="Model"
         description={undefined}
-        labelled
+        labelled={labelled}
         favourite={(key) => {
           const pick = parsePick(key);
           return favouriteOf(pick.agent, pick.model);
@@ -210,7 +214,7 @@ export function ModelSelect({
         rowIcon={<AgentIcon agent={agent} className="size-3.5" />}
         title="Model"
         description={undefined}
-        labelled
+        labelled={ghost ? labelled : true}
         favourite={favourite}
         onToggleFavourite={(model) => useModelFavourites.getState().toggle(agent, model)}
         field={!ghost}

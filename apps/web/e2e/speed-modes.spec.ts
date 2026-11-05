@@ -85,7 +85,11 @@ for (const agent of ["claude", "codex"] as const)
     // In the thread's composer speed and effort are glyphs, named with their values.
     const currentSpeed = page.getByRole("combobox", { name: /^Speed: / });
     await expect(currentSpeed).toHaveAccessibleName(/^Speed: Fast/);
-    await page.getByRole("combobox", { name: "Model", exact: true }).click();
+    // Its name is "Model" with the value in full beside it, "Model: …" once the row is short.
+    await page
+      .getByTestId("composer-toolbar")
+      .getByRole("combobox", { name: /^Model/ })
+      .click();
     await page.getByRole("option", { name: "Synthetic Standard model", exact: true }).click();
     await expect(currentSpeed).toHaveAccessibleName("Speed: Standard");
     await expect(page.getByRole("combobox", { name: "Effort: High" })).toBeVisible();
