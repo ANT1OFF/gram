@@ -26,6 +26,7 @@ import { useApi } from "@/api/context";
 import { openContentUrl } from "@/api/open-external";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { formatLogTime } from "@/lib/time";
 import { spin } from "@/motion";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -452,12 +453,7 @@ function AgentActivity({
             className="ml-auto shrink-0 tabular-nums"
             dateTime={new Date(label.at).toISOString()}
           >
-            {new Date(label.at).toLocaleTimeString(undefined, {
-              hour12: false,
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            })}
+            {formatLogTime(label.at)}
           </time>
         </>
       )}

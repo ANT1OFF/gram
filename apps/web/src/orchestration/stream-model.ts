@@ -7,7 +7,7 @@ import {
   type StreamLine,
 } from "@gram/contracts";
 
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { digestTitle } from "@/thread/orchestration-model";
 import { isToolPart, toolNameOf } from "@/thread/parts";
 
@@ -110,7 +110,7 @@ export interface DigestLineWords {
 
 export function digestLineWords(
   digests: readonly StreamDigest[],
-  clock: (at: number) => string = formatClockTime,
+  clock: (at: number) => string = formatStamp,
 ): DigestLineWords {
   const newest = digests.at(-1);
   const title =
@@ -328,7 +328,7 @@ const COUNT_WORDS: Readonly<Record<StreamLine["kind"], string>> = {
 export function updateWords(
   lines: readonly TimedLine[],
   digests: readonly StreamDigest[],
-  clock: (at: number) => string = formatClockTime,
+  clock: (at: number) => string = formatStamp,
 ): UpdateWords {
   const byKind = new Map<StreamLine["kind"], number>();
   for (const { line } of lines) byKind.set(line.kind, (byKind.get(line.kind) ?? 0) + 1);

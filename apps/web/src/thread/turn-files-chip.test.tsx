@@ -131,14 +131,14 @@ describe("TurnFilesChip", () => {
 
 describe("turn undo receipts", () => {
   const at = Date.UTC(2026, 10, 4, 14, 5);
-  const intl = { locale: "en-GB", timeZone: "UTC" };
+  const intl = { timeZone: "UTC" };
 
   it("says how many files and when, on a 24-hour clock", () => {
     const undo = { turnId: "turn-1" as TurnId, files: 3, at };
     expect(turnUndoLabel(undo, at, intl)).toBe("Undid edits to 3 files at 14:05");
     expect(turnUndoLabel({ ...undo, files: 1 }, at, intl)).toBe("Undid edits to 1 file at 14:05");
     expect(turnUndoLabel(undo, at + 86_400_000, intl)).toBe(
-      "Undid edits to 3 files at 4 Nov, 14:05",
+      "Undid edits to 3 files at 4 Nov 14:05",
     );
   });
 

@@ -63,8 +63,8 @@ test("captured CLI windows show the same percentages and 24-hour resets on Usage
     ["claude", "fiveHour", "44%", "Resets 15:39"],
     ["claude", "weekly", "96%", "Resets 21:59"],
     ["codex", "fiveHour", "0%", "Resets 15:45"],
-    // A reset that isn't today carries its date, not just a weekday.
-    ["codex", "weekly", "100%", "Resets Fri 23 Oct 01:31"],
+    // A reset that isn't today carries its date, never a weekday.
+    ["codex", "weekly", "100%", "Resets 23 Oct 01:31"],
   ]) {
     const card = page.locator(
       `[data-testid="usage-limit-card"][data-provider="${provider}"][data-window="${window}"]`,
@@ -82,5 +82,5 @@ test("captured CLI windows show the same percentages and 24-hour resets on Usage
   await expect(popover).toContainText("96%");
   await expect(popover).toContainText("100%");
   await expect(popover).toContainText("15:45");
-  await expect(popover).toContainText("Fri 23 Oct 01:31");
+  await expect(popover).toContainText("23 Oct 01:31");
 });

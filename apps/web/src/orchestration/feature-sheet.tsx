@@ -374,7 +374,7 @@ export function PausedBadge({ testId }: { testId: string }) {
 }
 
 const MENU_POPUP =
-  "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const MENU_SEPARATOR = "my-1 h-px bg-border";
 const MENU_ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-meta outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
@@ -806,7 +806,7 @@ export function FeatureSheet() {
           finalFocus={() =>
             useFeatureSheet.getState().returnFocus ? returnFocusTo(opener)() : false
           }
-          className="fixed inset-y-2 end-2 z-50 flex w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0"
+          className="fixed inset-y-2 end-2 z-50 flex w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0"
         >
           {target !== undefined && (
             <SheetBody

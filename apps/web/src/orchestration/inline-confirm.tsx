@@ -29,7 +29,7 @@ export function InlineConfirm({
         role="alertdialog"
         aria-label={label}
         data-testid="inline-confirm"
-        className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-(--radius-md) border border-border bg-card px-2 py-1.5 text-meta"
+        className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-(--radius-md) border border-edge bg-card px-2 py-1.5 text-meta"
       >
         <p className="min-w-0 flex-1 basis-64">{children}</p>
         <span className="flex shrink-0 gap-2">

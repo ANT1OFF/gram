@@ -435,7 +435,7 @@ export function AddRepository({
                       input.kind === "folder" ? "Folder suggestions" : "Repository suggestions"
                     }
                     onMouseDown={(event) => event.preventDefault()}
-                    className="max-h-[min(16rem,var(--available-height))] overflow-y-auto overscroll-contain rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-overlay"
+                    className="max-h-[min(16rem,var(--available-height))] overflow-y-auto overscroll-contain rounded-lg border border-edge bg-popover p-1 text-popover-foreground shadow-overlay"
                   >
                     {suggestions.map((suggestion, i) => {
                       const Icon =

@@ -10,7 +10,7 @@ import { ProjectLists } from "./project-shortcuts";
 import { useHome } from "./use-folder";
 
 const CHIP =
-  "flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 text-meta outline-none";
+  "flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-edge bg-card px-2 text-meta outline-none";
 const FOCUS = "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 interface FolderPickerProps {
@@ -68,7 +68,7 @@ export function FolderPicker({
             data-testid="where-folder-menu"
             data-surface="overlay"
             aria-label="Choose a folder"
-            className="flex w-96 origin-(--transform-origin) flex-col rounded-md border border-border bg-popover p-1 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="flex w-96 origin-(--transform-origin) flex-col rounded-md border border-edge bg-popover p-1 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <div className="max-h-96 overflow-y-auto py-1">
               <ProjectLists

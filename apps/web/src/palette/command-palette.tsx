@@ -133,7 +133,7 @@ export function CommandPalette() {
             if (useThreadDialogs.getState().dialog !== undefined) return false;
             return returnFocusTo(opener)();
           }}
-          className="fixed top-[15%] left-1/2 z-50 flex max-h-[60vh] w-[min(36rem,90vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[15%] left-1/2 z-50 flex max-h-[60vh] w-[min(36rem,90vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && (
             <PaletteBody

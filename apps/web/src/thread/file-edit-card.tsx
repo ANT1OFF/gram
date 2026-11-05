@@ -201,7 +201,7 @@ function FileEditRow({
         {opened && (
           <div className="pt-1 pb-1.5">
             {edit.hunks.length > 0 && (
-              <div className="max-h-[32rem] overflow-y-auto rounded-(--radius-md) border border-border bg-card/40">
+              <div className="max-h-[32rem] overflow-y-auto rounded-(--radius-md) border border-edge bg-card/40">
                 <PatchView
                   file={editDiffFile(edit)}
                   budget={EDIT_ROW_BUDGET}

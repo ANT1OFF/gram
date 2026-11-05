@@ -217,7 +217,7 @@ export function ChunkedPatch({
       {loaded && !binary && (
         <div
           data-testid="diff-chunks"
-          className="-mx-3 border-y border-border bg-card/40"
+          className="-mx-3 border-y border-edge bg-card/40"
           aria-label={`Loaded hunks of ${file.path}`}
           role="group"
         >

@@ -6,7 +6,7 @@ import type {
   RuntimeSource,
 } from "@gram/contracts";
 
-import { CLOCK_TIME } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 
 /** The word beside a version for where it came from; a PATH install is the default and says less. */
 export const SOURCE_LABEL: Readonly<Record<RuntimeSource, string>> = {
@@ -44,16 +44,10 @@ export interface NewerNote {
   readonly detail: string;
 }
 
-const DATE = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  ...CLOCK_TIME,
-});
+/** `17:12` today, else `2 Oct 17:12` (`formatStamp`), in the user's time zone. */
+export const shortDate = (epochMs: number, now = Date.now()): string => formatStamp(epochMs, now);
 
-/** `2 Oct, 17:12`, in the user's time zone. */
-export const shortDate = (epochMs: number): string => DATE.format(epochMs);
-
-export function newerNote(runtime: AgentRuntime): NewerNote | undefined {
+export function newerNote(runtime: AgentRuntime, now = Date.now()): NewerNote | undefined {
   const { newer } = runtime;
   if (newer === undefined) return undefined;
   const { version } = newer;
@@ -66,8 +60,8 @@ export function newerNote(runtime: AgentRuntime): NewerNote | undefined {
   if (!newer.eligible)
     return {
       kind: "waiting",
-      summary: `${version} after ${shortDate(newer.eligibleAt)}`,
-      detail: `${version} came out ${shortDate(newer.publishedAt)}. New releases wait at least 24 hours before Gram suggests them.`,
+      summary: `${version} after ${shortDate(newer.eligibleAt, now)}`,
+      detail: `${version} came out ${shortDate(newer.publishedAt, now)}. New releases wait at least 24 hours before Gram suggests them.`,
     };
   if (newer.verdict === "supported")
     return {

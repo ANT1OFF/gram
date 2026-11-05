@@ -9,7 +9,7 @@ import type {
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DigestLine } from "./digest-line";
 import type { StreamDigest } from "./stream-model";
@@ -22,12 +22,20 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-afterEach(cleanup);
-
 const W = "w-1" as WorkspaceId;
 const A = "t-a" as ThreadId;
 // 14:12 local, so the line reads the same clock in any zone.
 const AT = new Date(2026, 9, 16, 14, 12).getTime();
+
+// Read on the digests' own day, so their time reads alone; another day's would carry its date.
+beforeEach(() => {
+  vi.spyOn(Date, "now").mockReturnValue(AT + 60_000);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const report = (index: number, patch: Partial<DigestReport> = {}): DigestReport => ({
   threadId: A,

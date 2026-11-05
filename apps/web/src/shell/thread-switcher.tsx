@@ -160,7 +160,7 @@ export function ThreadSwitcher() {
     >
       <ol
         aria-label="Recent threads"
-        className="flex max-h-[60vh] w-[min(28rem,90vw)] flex-col overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-overlay"
+        className="flex max-h-[60vh] w-[min(28rem,90vw)] flex-col overflow-hidden rounded-lg border border-edge bg-popover p-1 text-popover-foreground shadow-overlay"
       >
         {cycle.order.map((threadId, index) => {
           const summary = byId[threadId];

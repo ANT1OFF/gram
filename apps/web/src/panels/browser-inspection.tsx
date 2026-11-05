@@ -11,14 +11,9 @@ import { Camera, Monitor, Smartphone, Tablet, X } from "lucide-react";
 import { useState } from "react";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { formatLogTime } from "@/lib/time";
 
-const time = (at: number) =>
-  new Date(at).toLocaleTimeString(undefined, {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+const time = (at: number) => formatLogTime(at);
 
 /** Fits measured CSS geometry to the actual displayed image, independently of its pixel density. */
 function annotationStyle(region: BrowserRegion, capture: BrowserCapture) {

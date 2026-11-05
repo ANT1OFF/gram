@@ -115,7 +115,7 @@ export function WorkspaceAutonomy({
               data-surface="overlay"
               aria-label="Workspace autonomy"
               data-testid="workspace-autonomy-menu"
-              className="flex w-80 flex-col gap-2 rounded-md border border-border bg-popover p-2 text-meta text-popover-foreground shadow-overlay outline-none"
+              className="flex w-80 flex-col gap-2 rounded-md border border-edge bg-popover p-2 text-meta text-popover-foreground shadow-overlay outline-none"
             >
               <p className="px-1 text-muted-foreground">
                 What {state?.workspace.name ?? "this workspace"}'s orchestrator and workers may do

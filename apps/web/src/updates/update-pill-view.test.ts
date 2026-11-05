@@ -19,7 +19,8 @@ const base: AppUpdateState = {
   notApplied: null,
   canInstall: true,
 };
-const intl = { timeZone: "UTC", locale: "en-GB" };
+// Read on 20 October 2026, so a release or a check from the 16th carries its date.
+const intl = { timeZone: "UTC", now: Date.UTC(2026, 9, 20, 12) };
 const at = (patch: Partial<AppUpdateState>) => pillView({ ...base, ...patch }, intl);
 
 describe("pillView", () => {
@@ -55,7 +56,7 @@ describe("pillView", () => {
       }),
     ).toEqual({
       kind: "available",
-      hint: "Gram 0.1.0-rc.18 is available.\nPublished 16 Oct, 17:05\nClick to download.",
+      hint: "Gram 0.1.0-rc.18 is available.\nPublished 16 Oct 17:05\nClick to download.",
       notes: "Faster restarts",
       action: "download",
       version: "0.1.0-rc.18",
@@ -174,6 +175,10 @@ describe("statusLine", () => {
     expect(statusLine(base)).toBe("Not checked yet");
     expect(
       statusLine({ ...base, status: "upToDate", checkedAt: Date.UTC(2026, 9, 16, 9, 5) }, intl),
+    ).toBe("Up to date · checked 16 Oct 09:05");
+    const today = { ...intl, now: Date.UTC(2026, 9, 16, 12) };
+    expect(
+      statusLine({ ...base, status: "upToDate", checkedAt: Date.UTC(2026, 9, 16, 9, 5) }, today),
     ).toBe("Up to date · checked 09:05");
     expect(statusLine({ ...base, status: "ready", downloadedVersion: "0.1.0-rc.18" })).toBe(
       "Gram 0.1.0-rc.18 is downloaded and verified · restart to update",

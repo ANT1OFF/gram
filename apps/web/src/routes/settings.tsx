@@ -133,10 +133,13 @@ function SettingsLayout() {
             ref={resultsRef}
             data-settings-results
             className={cn(
-              // Beside the nav rather than centred in the window, so the eye doesn't cross a
-              // blank band between a page's name and its first control.
-              "flex w-full flex-col gap-10 px-8 py-6 @max-2xl/settings:gap-8 @max-2xl/settings:p-4",
-              current?.wide && !searching ? "max-w-5xl" : "max-w-[46rem]",
+              // Beside the nav and leaning into the room past it (`settings-column`), so the eye
+              // crosses no blank band between a page's name and its first control, and a wide
+              // window keeps no dead half to the page's right.
+              "settings-column flex flex-col gap-10 px-8 py-6 @max-2xl/settings:gap-8 @max-2xl/settings:p-4",
+              current?.wide &&
+                !searching &&
+                "[--settings-column-width:var(--settings-column-wide)]",
             )}
           >
             {SETTINGS_PAGES.map((page) => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { LimitForecast } from "@gram/contracts";
+
 import type { TightestLimit } from "@/stores/usage-limits";
 
 import { costShown } from "./cost";
@@ -12,6 +14,7 @@ import {
   meterHint,
   meterLabel,
   creditsText,
+  forecastText,
   meterText,
   resetAtText,
   resetText,
@@ -27,7 +30,7 @@ describe("limit formatting", () => {
   it("says when a held brief starts, on a 24-hour clock, and why it waits", () => {
     expect(heldUntilText(Date.parse("2026-10-15T23:15:00Z"), NOW, UTC)).toBe("Paused until 23:15");
     expect(heldUntilText(Date.parse("2026-10-17T09:00:00Z"), NOW, UTC)).toBe(
-      "Paused until Sat 09:00",
+      "Paused until 17 Oct 09:00",
     );
     const until = Date.parse("2026-10-15T18:00:00Z");
     expect(heldStateText({ until }, NOW, UTC)).toBe("Paused until 18:00");
@@ -128,19 +131,25 @@ describe("limit formatting", () => {
     expect(resetText(Date.parse("2026-10-15T23:45:00Z"), NOW, UTC)).toBe("23:45");
   });
 
-  it("gives a reset in the week ahead as its weekday and time", () => {
-    expect(resetText(Date.parse("2026-10-16T00:15:00Z"), NOW, UTC)).toBe("Fri 00:15");
-    expect(resetText(Date.parse("2026-10-19T09:00:00Z"), NOW, UTC)).toBe("Mon 09:00");
-  });
-
-  it("gives a reset a week or more away as its date and time", () => {
-    expect(resetText(Date.parse("2026-10-22T09:00:00Z"), NOW, UTC)).toBe("22 Oct, 09:00");
+  it("gives a reset on another day as its date and time, never a weekday", () => {
+    expect(resetText(Date.parse("2026-10-16T00:15:00Z"), NOW, UTC)).toBe("16 Oct 00:15");
+    expect(resetText(Date.parse("2026-10-19T09:00:00Z"), NOW, UTC)).toBe("19 Oct 09:00");
+    expect(resetText(Date.parse("2026-10-22T09:00:00Z"), NOW, UTC)).toBe("22 Oct 09:00");
+    expect(resetText(Date.parse("2027-01-02T09:00:00Z"), NOW, UTC)).toBe("2 Jan 2027 09:00");
   });
 
   it("dates a reset under Resets at unless it is today", () => {
     expect(resetAtText(Date.parse("2026-10-15T18:00:00Z"), NOW, UTC)).toBe("18:00");
-    expect(resetAtText(Date.parse("2026-10-16T00:15:00Z"), NOW, UTC)).toBe("Fri 16 Oct 00:15");
-    expect(resetAtText(Date.parse("2026-10-22T09:00:00Z"), NOW, UTC)).toBe("Thu 22 Oct 09:00");
+    expect(resetAtText(Date.parse("2026-10-16T00:15:00Z"), NOW, UTC)).toBe("16 Oct 00:15");
+    expect(resetAtText(Date.parse("2026-10-22T09:00:00Z"), NOW, UTC)).toBe("22 Oct 09:00");
+  });
+
+  it("gives a forecast to the nearest five minutes, dated when it isn't today", () => {
+    const forecast: LimitForecast = { target: 0.9, at: Date.parse("2026-10-15T16:38:00Z") };
+    expect(forecastText(forecast, NOW, UTC)).toBe("Estimate at recent pace: 90% around 16:40");
+    expect(forecastText({ ...forecast, at: Date.parse("2026-10-17T09:03:00Z") }, NOW, UTC)).toBe(
+      "Estimate at recent pace: 90% around 17 Oct 09:05",
+    );
   });
 
   it("names the account's credits and balance only when the agent reports them", () => {

@@ -3,6 +3,7 @@ import { Info } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatStamp } from "@/lib/time";
 
 import { useUpdateStore } from "./store";
 
@@ -55,7 +56,7 @@ export function BuildStatus({
   const version = build?.version ?? check?.currentVersion;
   const latest = check?.releases?.[0]?.version ?? check?.latestVersion;
   return (
-    <div className="rounded-md border border-border bg-card p-3" data-testid="build-status">
+    <div className="rounded-md border border-edge bg-card p-3" data-testid="build-status">
       <div className="flex flex-wrap items-center gap-2">
         <p className="font-medium">Running Gram {version ?? "· version unavailable"}</p>
         <Tooltip>
@@ -95,14 +96,7 @@ export function BuildStatus({
               {" "}
               ·{" "}
               <time dateTime={new Date(check.checkedAt).toISOString()}>
-                {new Date(check.checkedAt).toLocaleString(undefined, {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hourCycle: "h23",
-                })}
+                {formatStamp(check.checkedAt)}
               </time>
             </>
           )}

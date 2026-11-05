@@ -2,7 +2,7 @@ import type { Thread, ThreadId, WorkerLedgerEntry } from "@gram/contracts";
 import { FileDiff, GitPullRequest } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { reportLine } from "@/orchestration/board-model";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { workerEntryOf } from "@/orchestration/workers-model";
@@ -69,7 +69,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   const ended =
     thread.completedAt === undefined
       ? undefined
-      : `${pr?.state === "merged" ? "Merged" : "Completed"} ${formatClockTime(thread.completedAt)}`;
+      : `${pr?.state === "merged" ? "Merged" : "Completed"} ${formatStamp(thread.completedAt)}`;
   const show = (panel: "pr" | "diff") =>
     useLayoutStore.getState().requestPanel({ threadId, panel }, threadId);
 
@@ -96,7 +96,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
       {report !== undefined && (
         <div data-testid="thread-outcome-report" className="flex flex-col gap-0.5">
           <p className="text-meta text-muted-foreground tabular-nums">
-            Last report · {formatClockTime(report.at)}
+            Last report · {formatStamp(report.at)}
           </p>
           <p className="whitespace-pre-line">{reportLine(report.summary, SUMMARY_MAX)}</p>
         </div>

@@ -300,7 +300,7 @@ function HarnessNotes({
             data-surface="overlay"
             aria-label={label}
             {...{ [LONG_COPY]: "learn more" }}
-            className="flex max-h-(--available-height) max-w-md origin-(--transform-origin) flex-col gap-2 overflow-y-auto rounded-md border border-border bg-popover px-3 py-2 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="flex max-h-(--available-height) max-w-md origin-(--transform-origin) flex-col gap-2 overflow-y-auto rounded-md border border-edge bg-popover px-3 py-2 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             {notes.map(({ agent, notes: lines }) => (
               <section key={agent} data-testid={`harness-note-${agent}`}>
@@ -594,7 +594,7 @@ export function RosterEditor({ charter, disabled = false, onChange }: RosterEdit
           <ExpandPresence open={adding}>
             <div
               data-testid="worker-model-form"
-              className="flex flex-col gap-2 rounded-md border border-border bg-card/40 p-2.5"
+              className="flex flex-col gap-2 rounded-md border border-edge bg-card/40 p-2.5"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <AgentFields value={choice} onChange={setChoice} allowed={ADMITTED_AGENTS} />

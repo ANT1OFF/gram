@@ -15,6 +15,7 @@ import {
 } from "@gram/contracts";
 
 import { dateTimeFormat } from "@/lib/intl";
+import { formatDay } from "@/lib/time";
 import { threadDisplayTitle } from "@/thread/thread-title";
 
 import { liveWorkerEntry, workerTitle } from "./board-model";
@@ -135,7 +136,7 @@ export const startOfMonth = (at: number): number => {
 
 /**
  * What finished work at `at` is listed under: its day for the last `DONE_DAYS` days, headed as the
- * outputs' days are ("Today", "Yesterday", "Fri 30 Oct"), and its month before that
+ * outputs' days are ("Today", "Yesterday", "30 Oct"), and its month before that
  * ("October 2026").
  */
 export const doneDay = (at: number | undefined, now: number): DoneDay => {
@@ -157,11 +158,12 @@ export const clockTime = (at: number): string => {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
-/** `14:12` for today, `12 Oct` before: a now line, which is read outside Done's days too. */
+/**
+ * `14:12` for today, `12 Oct` before (`formatDay`, with the year when it isn't this one): a now
+ * line, read outside Done's days too, and only a date so it stays within its four words.
+ */
 export const finishedWhen = (at: number, now: number): string =>
-  at >= startOfDay(now)
-    ? clockTime(at)
-    : dateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(at));
+  at >= startOfDay(now) ? clockTime(at) : formatDay(at, now);
 
 // The now line's words are the feature cards' (contracts `feature-cards.ts`), so a worker reads the
 // same in the Workers list and on its card.

@@ -31,7 +31,7 @@ export function BabysitReportCard({ report }: { report: BabysitReport }) {
     <article
       aria-label={`#${report.number} ready to merge`}
       data-testid="babysit-report"
-      className="my-2 flex flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading"
+      className="my-2 flex flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3 text-reading"
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <GitPullRequest aria-hidden className="size-4 text-success" />

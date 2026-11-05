@@ -144,7 +144,7 @@ export function TerminalFindBar({
         event.preventDefault();
         onClose();
       }}
-      className="absolute top-2 right-3 z-10 flex items-center gap-1 rounded-md border border-border bg-card py-1 pr-1 pl-2 shadow-overlay"
+      className="absolute top-2 right-3 z-10 flex items-center gap-1 rounded-md border border-edge bg-card py-1 pr-1 pl-2 shadow-overlay"
     >
       <input
         ref={inputRef}

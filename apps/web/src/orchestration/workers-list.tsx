@@ -156,7 +156,7 @@ export function WorkersList() {
             if (useWorkersListStore.getState().gliding !== undefined) return false;
             return returnFocusTo(opener)();
           }}
-          className="fixed top-[12%] left-1/2 z-50 flex max-h-[70vh] w-[min(38rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[12%] left-1/2 z-50 flex max-h-[70vh] w-[min(38rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && <WorkersBody />}
         </Dialog.Popup>

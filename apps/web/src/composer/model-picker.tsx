@@ -141,7 +141,7 @@ export function ModelCombobox({
             data-surface="overlay"
             data-testid="model-picker"
             aria-label="Models"
-            className="flex w-80 max-w-(--available-width) origin-(--transform-origin) flex-col rounded-md border border-border bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="flex w-80 max-w-(--available-width) origin-(--transform-origin) flex-col rounded-md border border-edge bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <div className="flex items-center gap-2 border-b border-border px-2.5">
               <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />

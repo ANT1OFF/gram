@@ -58,11 +58,12 @@ test("History lists finished workers, done and archived threads and past session
     await expect(row(page, id)).toBeAttached();
   await expect(rows(page).and(page.locator('[data-kind="imported"]')).first()).toBeAttached();
 
-  // Under their days this week and their months before, today's first.
+  // Under their days this week ("3 Nov", the shared day format) and their months before, today's
+  // first.
   const groups = history(page).getByTestId("history-group");
   await expect(groups.first()).toHaveText("Today");
   for (const group of await groups.allTextContents())
-    expect(group).toMatch(/^(Today|Yesterday|\w{3} \d{1,2} \w{3}|[A-Z][a-z]+ \d{4})$/);
+    expect(group).toMatch(/^(Today|Yesterday|\d{1,2} [A-Z][a-z]{2}( \d{4})?|[A-Z][a-z]+ \d{4})$/);
 
   // A row says its title, workspace and repo, outcome, agent and time, 24-hour.
   const merged = row(page, made.doneToday);
@@ -71,7 +72,8 @@ test("History lists finished workers, done and archived threads and past session
   await expect(merged.getByTestId("history-outcome")).toHaveText("merged");
   await expect(merged.getByTestId("history-time")).toHaveText(/^\d{2}:\d{2}$/);
   await expect(merged).toHaveAccessibleName(
-    /, agent-platform · api, merged, Today \d{2}:\d{2}, Claude/,
+    // Its time is the shared stamp, the clock alone today; its group heading says "Today".
+    /, agent-platform · api, merged, \d{2}:\d{2}, Claude/,
   );
   const dark = row(page, "t-dark");
   await expect(dark).toHaveAttribute("data-kind", "thread");

@@ -22,17 +22,73 @@ export function formatClockTime(
   }).format(at);
 }
 
-/** Notification dates in the viewer's locale and zone, always with a 24-hour clock. */
-export function notificationTime(
-  at: number,
-  intl: { readonly locale?: string; readonly timeZone?: string } = {},
-): string {
-  return dateTimeFormat(intl.locale, {
-    month: "short",
+/**
+ * A log line's clock to the second, `14:03:12`, for events seconds apart (a browser's console and
+ * network lines, a capture's start and end). 24-hour and in Latin digits, in any locale.
+ */
+export function formatLogTime(at: number, intl: { readonly timeZone?: string } = {}): string {
+  return dateTimeFormat("en-GB", {
+    numberingSystem: "latn",
+    ...CLOCK_TIME,
+    second: "2-digit",
+    ...(intl.timeZone === undefined ? {} : { timeZone: intl.timeZone }),
+  }).format(at);
+}
+
+/** A zone to read a time in, for tests; the viewer's own when absent. */
+interface ZoneOption {
+  readonly timeZone?: string;
+}
+
+/** English month abbreviations, so `Sep` reads the same in every engine and locale. */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** `at`'s day and 24-hour clock in the viewer's zone (or `intl.timeZone`), in Latin digits. */
+function stampParts(at: number, intl: ZoneOption) {
+  const parts = dateTimeFormat("en-GB", {
+    numberingSystem: "latn",
+    year: "numeric",
+    month: "numeric",
     day: "numeric",
     ...CLOCK_TIME,
     ...(intl.timeZone === undefined ? {} : { timeZone: intl.timeZone }),
-  }).format(at);
+  }).formatToParts(at);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return {
+    year: part("year"),
+    day: `${Number(part("day"))} ${MONTHS[Number(part("month")) - 1]}`,
+    time: `${part("hour")}:${part("minute")}`,
+  };
+}
+
+/**
+ * A date alone, for a day heading or a date column: `14 Jun`, with the year when it isn't `now`'s
+ * (`14 Jun 2025`). The viewer's zone, or `intl.timeZone`'s; never a weekday or a US order.
+ */
+export function formatDay(at: number, now = Date.now(), intl: ZoneOption = {}): string {
+  const due = stampParts(at, intl);
+  return due.year === stampParts(now, intl).year ? due.day : `${due.day} ${due.year}`;
+}
+
+/**
+ * Gram's one way to show a point in time: its 24-hour clock alone today (`09:42`, `00:00`), else
+ * the date before it (`14 Jun 08:00`), with the year when it isn't this one (`14 Jun 2025 08:00`).
+ * "Today" is `now`'s day in the viewer's zone, or `intl.timeZone`'s. The other forms are each for
+ * one job: a relative time (`agoText`), a message's full hint (`formatMessageTime`), a log line's
+ * seconds (`formatLogTime`), a wake's weekday (`formatWakeTime`) and a bare clock
+ * (`formatClockTime`).
+ */
+export function formatStamp(at: number, now = Date.now(), intl: ZoneOption = {}): string {
+  const due = stampParts(at, intl);
+  const today = stampParts(now, intl);
+  if (due.year === today.year && due.day === today.day) return due.time;
+  return due.year === today.year ? `${due.day} ${due.time}` : `${due.day} ${due.year} ${due.time}`;
+}
+
+/** When a notification came: `formatStamp`. */
+export function notificationTime(at: number, now = Date.now(), intl: ZoneOption = {}): string {
+  return formatStamp(at, now, intl);
 }
 
 /** Compact sidebar time: `now`, `5m`, `3h`, `2d`, `6w`. */
@@ -118,14 +174,15 @@ export function formatMessageTime(
 }
 
 /**
- * When a message arrived, using the notification date convention in the viewer's locale and zone.
- * `formatMessageTime` retains the full date, seconds and offset for its hint.
+ * When a message arrived, under it: `formatStamp`. `formatMessageTime` keeps the full date, seconds
+ * and offset for its hint.
  */
 export function formatMessageStamp(
   epochMs: number,
-  intl: { readonly locale?: string; readonly timeZone?: string } = {},
+  now = Date.now(),
+  intl: ZoneOption = {},
 ): string {
-  return notificationTime(epochMs, intl);
+  return formatStamp(epochMs, now, intl);
 }
 
 const wakeTimeFormats = new Map<string | undefined, Intl.DateTimeFormat>();
@@ -133,6 +190,9 @@ const wakeTimeFormats = new Map<string | undefined, Intl.DateTimeFormat>();
 /**
  * When a pending wake is due, for its chip: `14:30` on the day it is set from, `Fri 14:30` on
  * another (a wake is at most a week ahead), in the viewer's zone. `intl` pins the zone, for tests.
+ * The one weekday form left: within that week the weekday is unambiguous, and it keeps a worker's
+ * wait label ("Waiting · until Fri 14:30") inside its four words, which `formatStamp`'s date would
+ * not.
  */
 export function formatWakeTime(
   at: number,

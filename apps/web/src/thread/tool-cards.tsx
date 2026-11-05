@@ -138,7 +138,7 @@ function ToolShell({
         setOpen(next);
         if (next) setOpened(true);
       }}
-      className="group/tool mb-0 rounded-(--radius-md) border-border bg-card/40"
+      className="group/tool mb-0 rounded-(--radius-md) border-edge-action bg-card/40"
       data-testid="tool-card"
       data-tool={name}
       data-tool-call-id={part.toolCallId}

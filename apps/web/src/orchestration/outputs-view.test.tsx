@@ -42,15 +42,21 @@ afterEach(() => {
 const tiles = () => screen.getAllByTestId("output-tile");
 
 describe("OutputsView", () => {
-  it("shows the workspace's outputs as tiles by day, one-line labels with a 24-hour time", async () => {
+  it("shows the workspace's outputs as tiles by day, one-line labels with a 24-hour stamp", async () => {
     const listOutputs = vi.spyOn(api, "listOutputs");
     renderWithApi(<OutputsView workspaceId={workspaceId} />, api);
     await waitFor(() => expect(tiles().length).toBeGreaterThan(5));
     expect(listOutputs).toHaveBeenCalledWith(workspaceId, {});
     const groups = screen.getAllByTestId("output-group");
     expect(groups[0]?.getAttribute("aria-label")).toBe("Today");
-    for (const tile of tiles()) {
+    // Today's tiles carry the clock alone; an earlier day's, its date before the clock.
+    for (const tile of within(groups[0]!).getAllByTestId("output-tile")) {
       expect(tile.textContent).toMatch(/^\S+\.(png|gif|md|svg|pdf|txt)\d{2}:\d{2}$/);
+    }
+    for (const tile of tiles()) {
+      expect(tile.textContent).toMatch(
+        /^\S+\.(png|gif|md|svg|pdf|txt)(\d{1,2} [A-Z][a-z]{2} )?\d{2}:\d{2}$/,
+      );
     }
     // Every worker of the board scenario made something; the orchestrator its plan.
     const threads = new Set(tiles().map((tile) => tile.getAttribute("data-thread-id")));

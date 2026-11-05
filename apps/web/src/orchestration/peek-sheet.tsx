@@ -96,7 +96,7 @@ export function PeekSheet() {
           finalFocus={returnFocusTo(opener)}
           onKeyDown={onKeyDown}
           className={cn(
-            "inset-y-2 end-2 z-50 flex w-[min(26rem,calc(100%-1rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-reading text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0",
+            "inset-y-2 end-2 z-50 flex w-[min(26rem,calc(100%-1rem))] flex-col overflow-hidden rounded-lg border border-edge bg-popover text-reading text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0",
             inPane ? "absolute" : "fixed",
           )}
         >

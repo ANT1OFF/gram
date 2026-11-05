@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { reposWithoutWorkspace, taskTargetKey, type TaskTarget } from "./task-model";
 
 const POPUP =
-  "z-50 w-80 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 w-80 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
   "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 outline-none select-none data-[highlighted]:row-cursor";
 const LABEL =
@@ -56,7 +56,7 @@ export function TaskTargetPicker({
         data-testid="task-target"
         disabled={disabled}
         aria-label={`In: ${label}`}
-        className="flex h-7 w-fit max-w-64 min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 text-meta text-foreground outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-7 w-fit max-w-64 min-w-0 items-center gap-1.5 rounded-md border border-edge bg-card px-2 text-meta text-foreground outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate">{label}</span>

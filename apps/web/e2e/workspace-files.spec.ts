@@ -94,9 +94,12 @@ test("/files on the orchestrator opens the workspace's files by day, each openin
   await expect(tiles(page).first()).toBeVisible();
   expect(await tiles(page).count()).toBeGreaterThan(8);
   await expect(page.getByTestId("output-group").first()).toHaveAttribute("aria-label", "Today");
-  // One line a tile: the file's name and a 24-hour time.
+  // One line a tile: the file's name and the shared stamp, a 24-hour time with its date on any day
+  // but today ("17 Oct 17:58").
   for (const text of await tiles(page).allTextContents()) {
-    expect(text.trim()).toMatch(/^\S+\.(png|gif|md|svg|pdf|txt)\d{2}:\d{2}$/);
+    expect(text.trim()).toMatch(
+      /^\S+\.(png|gif|md|svg|pdf|txt)(\d{1,2} [A-Z][a-z]{2}( \d{4})? )?\d{2}:\d{2}$/,
+    );
   }
   // Pictures arrive as their tiles come into view.
   await expect(

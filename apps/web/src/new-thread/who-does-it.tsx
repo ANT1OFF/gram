@@ -165,7 +165,7 @@ function NewFormSummary({
       role="group"
       aria-label="Who does it and where it runs"
       data-testid="new-summary"
-      className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card py-1 pr-1 pl-2.5 text-meta"
+      className="flex min-w-0 items-center gap-2 rounded-md border border-edge bg-card py-1 pr-1 pl-2.5 text-meta"
     >
       <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="shrink-0 font-medium text-foreground">

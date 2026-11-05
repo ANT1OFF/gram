@@ -284,7 +284,7 @@ describe("threads store events", () => {
         now,
         intl,
       ),
-    ).toBe("Approaching rate limit: 94% of overage, resets Thu 00:00");
+    ).toBe("Approaching rate limit: 94% of overage, resets 1 Oct 00:00");
     const later = Date.UTC(2026, 8, 29, 14);
     expect(
       rateLimitTitle(
@@ -304,14 +304,14 @@ describe("threads store events", () => {
         Date.UTC(2026, 8, 29, 23),
         intl,
       ),
-    ).toBe("Approaching rate limit: 80% of 5-hour, resets Wed 08:00");
+    ).toBe("Approaching rate limit: 80% of 5-hour, resets 30 Sep 08:00");
     expect(
       rateLimitTitle(
         { status: "rejected", window: "seven_day_opus", resetsAt: nextMonth },
         now,
         intl,
       ),
-    ).toBe("Rate limited (weekly opus, resets Thu 00:00)");
+    ).toBe("Rate limited (weekly opus, resets 1 Oct 00:00)");
     expect(
       rateLimitTitle({ status: "rejected", window: "five_hour", resetsAt: now - 1 }, now, intl),
     ).toBe("Rate limited (5-hour)");
@@ -338,12 +338,12 @@ describe("threads store events", () => {
         now,
         intl,
       ),
-    ).toBe("Approaching rate limit: 100% of weekly, resets 9 Oct, 07:00");
+    ).toBe("Approaching rate limit: 100% of weekly, resets 9 Oct 07:00");
   });
 
   it.each([
     [Date.UTC(2026, 8, 29, 9), Date.UTC(2026, 8, 29, 14), "14:00"],
-    [Date.UTC(2026, 8, 29, 23), Date.UTC(2026, 8, 30, 0, 5), "Wed 00:05"],
+    [Date.UTC(2026, 8, 29, 23), Date.UTC(2026, 8, 30, 0, 5), "30 Sep 00:05"],
   ])("uses a 24-hour rate-limit reset clock in en-US", (now, resetsAt, reset) => {
     expect(
       rateLimitTitle({ status: "rejected", window: "five_hour", resetsAt }, now, {

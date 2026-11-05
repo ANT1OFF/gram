@@ -38,7 +38,7 @@ import { create } from "zustand";
 import { useApi } from "@/api/context";
 import { openContentUrl } from "@/api/open-external";
 import { Hint } from "@/components/hint";
-import { formatClockTime, formatRelative } from "@/lib/time";
+import { formatRelative, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
@@ -614,7 +614,7 @@ function useAdditions(count: number): number {
 export function WaitChip({ wait }: { wait: WaitData }) {
   const state =
     wait.state === "done"
-      ? `Done${wait.resolvedAt === undefined ? "" : ` ${formatClockTime(wait.resolvedAt)}`}`
+      ? `Done${wait.resolvedAt === undefined ? "" : ` ${formatStamp(wait.resolvedAt)}`}`
       : wait.state === "revised"
         ? "Updated later"
         : undefined;

@@ -362,7 +362,7 @@ function BindingsFileHelp({ path }: { path: string }) {
         <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50">
           <Popover.Popup
             data-testid="keyboard-file-help-popup"
-            className="flex w-96 max-w-[calc(100vw-2rem)] origin-(--transform-origin) flex-col gap-2 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="flex w-96 max-w-[calc(100vw-2rem)] origin-(--transform-origin) flex-col gap-2 rounded-md border border-edge bg-popover p-3 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <Popover.Title className="text-body-strong">keybindings.json</Popover.Title>
             <Popover.Description className="text-meta text-muted-foreground">

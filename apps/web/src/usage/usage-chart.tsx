@@ -200,13 +200,13 @@ function DayTip({
     <div
       role="status"
       data-testid="usage-chart-tip"
-      className="pointer-events-none absolute top-0 z-10 w-48 rounded-md border border-border bg-popover px-2.5 py-2 text-meta text-popover-foreground shadow-overlay"
+      className="pointer-events-none absolute top-0 z-10 w-48 rounded-md border border-edge bg-popover px-2.5 py-2 text-meta text-popover-foreground shadow-overlay"
       style={{
         left: `calc(2.75rem + 0.5rem + (100% - 3.25rem) * ${at})`,
         transform: at > 0.6 ? "translateX(calc(-100% - 12px))" : "translateX(12px)",
       }}
     >
-      <p className="font-medium">{dayLabel(day.day, { weekday: true })}</p>
+      <p className="font-medium">{dayLabel(day.day)}</p>
       <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 tabular-nums">
         {families.map((family) =>
           day.families[family] > 0 ? (

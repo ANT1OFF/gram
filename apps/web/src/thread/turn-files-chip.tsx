@@ -7,7 +7,7 @@ import { useApi } from "@/api/context";
 import { undoTurnErrorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
-import { formatClockTime } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { turnTarget } from "@/panels/turn-diff";
 import { useLayoutStore } from "@/stores/layout";
 
@@ -58,7 +58,7 @@ export function TurnFilesChip({
     <div
       data-testid="turn-files-card"
       data-undone={undone === undefined ? undefined : "true"}
-      className="mt-2 flex w-full flex-col self-stretch gap-1 rounded-(--radius-md) border border-border px-3 py-2"
+      className="mt-2 flex w-full flex-col self-stretch gap-1 rounded-(--radius-md) border border-edge-action px-3 py-2"
     >
       <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1">
         <Hint
@@ -89,8 +89,7 @@ export function TurnFilesChip({
               className="inline-flex items-center gap-1 px-2 text-meta text-muted-foreground"
             >
               <Undo2 aria-hidden className="size-3.5" />
-              {undone.failed === undefined ? "Undone" : "Undo failed"} at{" "}
-              {formatClockTime(undone.at)}
+              {undone.failed === undefined ? "Undone" : "Undo failed"} at {formatStamp(undone.at)}
             </span>
           ) : confirming ? (
             <>

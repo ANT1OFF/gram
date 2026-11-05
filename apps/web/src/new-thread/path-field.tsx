@@ -100,7 +100,7 @@ export function PathField({ value, onChange, debounceMs }: PathFieldProps) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={transition}
-            className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-overlay"
+            className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-edge bg-popover p-1 shadow-overlay"
           >
             {matches.map((entry, i) => (
               <li

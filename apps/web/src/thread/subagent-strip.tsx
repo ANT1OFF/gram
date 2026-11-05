@@ -30,7 +30,7 @@ import {
 import { COPIED_MS, copyMarkdown } from "./message-actions";
 
 const ROW =
-  "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md border border-border bg-card px-2 text-meta hover:bg-muted/60";
+  "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-md border border-edge bg-card px-2 text-meta hover:bg-muted/60";
 const JUMP =
   "flex min-w-0 flex-1 items-center gap-1.5 self-stretch text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 const CHIP = "shrink-0 rounded-sm border border-border px-1 text-muted-foreground";

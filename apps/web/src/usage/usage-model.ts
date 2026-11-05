@@ -6,7 +6,7 @@ import type {
   UsageTotals,
 } from "@gram/contracts";
 
-import { dateTimeFormat } from "@/lib/intl";
+import { formatDay } from "@/lib/time";
 
 /**
  * A model's family, the one thing the Usage page colours by. Families stay put when a filter or a
@@ -133,14 +133,9 @@ export const compactTokens = (n: number): string => COMPACT.format(n);
 /** "57,012,334". */
 export const wholeTokens = (n: number): string => WHOLE.format(n);
 
-/** "Fri 16 Oct" for a `YYYY-MM-DD` UTC day. */
-export const dayLabel = (day: string, { weekday = false } = {}): string =>
-  dateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    day: "numeric",
-    month: "short",
-    ...(weekday ? { weekday: "short" } : {}),
-  }).format(Date.parse(`${day}T00:00:00Z`));
+/** "16 Oct" for a `YYYY-MM-DD` UTC day, with the year when it isn't `now`'s (`formatDay`). */
+export const dayLabel = (day: string, now = Date.now()): string =>
+  formatDay(Date.parse(`${day}T00:00:00Z`), now, { timeZone: "UTC" });
 
 /** The local limit history for one provider's window, oldest first, within the last `span` ms. */
 export function limitHistory(

@@ -450,7 +450,7 @@ function RemoveConfirm({
   return (
     <div
       data-testid="worktree-remove"
-      className="flex flex-col gap-2 rounded-md border border-border bg-card/40 p-2"
+      className="flex flex-col gap-2 rounded-md border border-edge bg-card/40 p-2"
     >
       <p className="text-meta text-muted-foreground">
         The worktree folder will be removed. The branch and its commits are kept.
@@ -585,7 +585,7 @@ function BulkRemove({
   return (
     <div
       data-testid="worktree-bulk-remove"
-      className="flex flex-col gap-2 rounded-md border border-border bg-card/40 p-2"
+      className="flex flex-col gap-2 rounded-md border border-edge bg-card/40 p-2"
     >
       <p className="text-meta text-muted-foreground">
         These worktree folders will be removed, freeing {size ?? "…"}. Their branches and commits

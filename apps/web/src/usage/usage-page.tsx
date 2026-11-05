@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { formatDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { OptionGroup } from "@/settings/fields";
 
@@ -37,13 +38,9 @@ const PROVIDERS = [
   { value: "codex", label: "Codex" },
 ] as const;
 
-const DAY_MONTH = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "UTC",
-  day: "numeric",
-  month: "short",
-});
-const rangeText = (data: UsageOverview) =>
-  `${DAY_MONTH.format(data.from)} – ${DAY_MONTH.format(data.to)}`;
+const UTC = { timeZone: "UTC" } as const;
+const rangeText = (data: UsageOverview, now = Date.now()) =>
+  `${formatDay(data.from, now, UTC)} – ${formatDay(data.to, now, UTC)}`;
 
 /**
  * Usage, limits first: the subscription windows as the agents report them, then tokens by day and
@@ -192,11 +189,7 @@ function UsageSnapshot({ data }: { data: UsageOverview }) {
           />
           <Stat label="Output" value={data.totals.outputTokens} />
           {busiest !== undefined && days.length > 1 && (
-            <Stat
-              label="Busiest day"
-              value={busiest.total}
-              detail={dayLabel(busiest.day, { weekday: true })}
-            />
+            <Stat label="Busiest day" value={busiest.total} detail={dayLabel(busiest.day)} />
           )}
         </dl>
         {noActivity ? (

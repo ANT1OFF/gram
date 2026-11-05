@@ -13,6 +13,12 @@ const chapters: Chapter[] = [
   { id: "c2", messageId: "a2", title: "Fix the timer", kind: "chapter", index: 3 },
 ];
 
+/** Enough marks for the rail to show (`RAIL_MIN_MARKS`). */
+const railChapters: Chapter[] = [
+  ...chapters,
+  { id: "c3", messageId: "u5", title: "Ship the fix", kind: "prompt", index: 5 },
+];
+
 describe("TableOfContents", () => {
   it("renders nothing without chapters", () => {
     const { container } = render(<TableOfContents chapters={[]} onJump={() => {}} />);
@@ -124,13 +130,15 @@ describe("outline history continuity", () => {
 
   it("keeps the stable anchor, order and keyboard endpoints across a same-count reorder", () => {
     const onJump = vi.fn();
-    const view = render(<ConversationRail chapters={chapters} currentId="c1" onJump={onJump} />);
+    const view = render(
+      <ConversationRail chapters={railChapters} currentId="c1" onJump={onJump} />,
+    );
     const first = screen.getByRole("button", { name: "Reproduce the flake" });
     first.focus();
     fireEvent.keyDown(first, { key: "End" });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Fix the timer" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Ship the fix" }));
     view.rerender(
-      <ConversationRail chapters={[chapters[1]!, chapters[0]!]} currentId="c1" onJump={onJump} />,
+      <ConversationRail chapters={railChapters.toReversed()} currentId="c1" onJump={onJump} />,
     );
     fireEvent.keyDown(document.activeElement!, { key: "End" });
     expect(document.activeElement).toBe(first);
@@ -138,11 +146,23 @@ describe("outline history continuity", () => {
     fireEvent.click(first);
     expect(onJump).toHaveBeenCalledWith("u1");
     fireEvent.keyDown(first, { key: "Home" });
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Fix the timer" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Ship the fix" }));
   });
 });
 
 describe("ConversationRail with one place to go", () => {
+  it("leaves the gutter empty for two marks, which read as a stray bracket rather than an outline", () => {
+    const { container } = render(
+      <ConversationRail chapters={chapters} currentId="c1" onJump={() => {}} />,
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("shows from the third mark on", () => {
+    render(<ConversationRail chapters={railChapters} currentId="c1" onJump={() => {}} />);
+    expect(screen.getAllByRole("button")).toHaveLength(3);
+  });
+
   it("leaves the gutter empty for a single prompt, which has nowhere to jump", () => {
     const { container } = render(
       <ConversationRail chapters={[chapters[0]!]} currentId="c1" onJump={() => {}} />,

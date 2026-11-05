@@ -28,8 +28,8 @@ import { useFeatureSummary } from "@/orchestration/use-feature-cards";
 // The Board as a grid: a row per feature with its cells side by side, Task · Stage · Now · Pull
 // request, so a feature's name, how far it has come, what it does and its checks read on one line.
 // A feature with several workers (or a held brief beside one) heads a row of its own, its workers
-// under it. The stations stay in each Stage cell as five small steps; the lanes are the other
-// layout (board-view.tsx).
+// under it. The stations stay in each Stage cell as a segmented bar under the station's name; the
+// lanes are the other layout (board-view.tsx).
 
 /** The grid's four columns, shared by its heads and every row so the cells line up. */
 export const GRID_COLUMNS =
@@ -66,8 +66,9 @@ const STEP_TONE: Readonly<Record<RailTone, string>> = {
 };
 
 /**
- * Five small steps, one per station, filled up to where the work stands, then the station's word:
- * the lanes' track in the width of a cell. The step it stands on takes its tone's colour.
+ * The stage bar: the station's name and where it stands ("Checks 3/5"), over five joined segments,
+ * one per station, filled up to where the work stands. The segment it stands on takes its tone's
+ * colour; the lanes' track in the width of a cell.
  */
 export function StationSteps({
   station,
@@ -85,27 +86,79 @@ export function StationSteps({
       aria-label={`${label}, step ${at + 1} of ${FEATURE_STATIONS.length}`}
       data-testid="grid-stage"
       data-station={station}
-      className="flex min-w-0 items-center gap-2 text-body"
+      className="flex min-w-0 flex-col gap-1"
     >
-      <span aria-hidden className="flex shrink-0 items-center gap-1">
+      <span aria-hidden className="flex min-w-0 items-baseline gap-1.5">
+        <span className="truncate text-body font-medium text-foreground">{label}</span>
+        <span className="shrink-0 text-meta text-muted-foreground tabular-nums">
+          {at + 1}/{FEATURE_STATIONS.length}
+        </span>
+      </span>
+      <span aria-hidden data-testid="grid-stage-bar" className="flex w-full max-w-36 gap-0.5">
         {FEATURE_STATIONS.map((each, index) => (
           <i
             key={each}
+            data-step={index < at ? "done" : index === at ? "current" : "upcoming"}
             className={cn(
-              "h-2 w-3.5 rounded-full transition-colors duration-(--dur-base)",
+              "h-1.5 flex-1 transition-colors duration-(--dur-base) first:rounded-s-full last:rounded-e-full",
               index < at
                 ? "bg-muted-foreground"
                 : index === at
                   ? tone === undefined
-                    ? "bg-foreground/80"
+                    ? "bg-foreground"
                     : STEP_TONE[tone]
                   : "bg-border-strong/50",
             )}
           />
         ))}
       </span>
-      <span className="truncate font-medium text-foreground">{label}</span>
     </span>
+  );
+}
+
+/**
+ * The Pull request cell: the worker's chips, then what its first PR waits on in words (its checks,
+ * its review, its merge), so the state reads without decoding the glyphs; "No PR yet" before one.
+ */
+function PrCell({ worker }: { worker: RailWorker }) {
+  const chips = useWorkerPrChips(worker.threadId, worker.prs);
+  const first = chips[0];
+  if (first === undefined) {
+    return (
+      <span data-testid="grid-pr-none" className="pt-px text-meta text-muted-foreground">
+        No PR yet
+      </span>
+    );
+  }
+  // A settled PR's marks are its state alone, so a merged one adds no words.
+  const { checks, review, merge } = first.marks;
+  const words = [
+    ...(checks === undefined || checks.kind === "none" || checks.kind === "unknown"
+      ? []
+      : [checks]),
+    ...(review === undefined ? [] : [review]),
+    ...(merge === undefined ? [] : [merge]),
+  ];
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <WorkerPrChips threadId={worker.threadId} cardPrs={worker.prs} className="min-w-0" />
+      {words.length > 0 && (
+        <span
+          data-testid="grid-pr-state"
+          className="line-clamp-2 min-w-0 text-meta break-words text-muted-foreground"
+        >
+          {words.map((mark, index) => (
+            <span
+              key={mark.word}
+              className={cn(checks?.kind === "failing" && mark === checks && "text-destructive")}
+            >
+              {index > 0 && " · "}
+              {mark.word}
+            </span>
+          ))}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -239,7 +292,7 @@ function WorkerCells({
         shown={shownPrNumbers(chips)}
         onOpen={onOpen}
       />
-      <WorkerPrChips threadId={worker.threadId} cardPrs={worker.prs} className="min-w-0" />
+      <PrCell worker={worker} />
     </>
   );
 }

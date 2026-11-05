@@ -31,7 +31,7 @@ import {
   workerSlots,
   type OverviewPrRow,
 } from "./overview-extras-model";
-import { ROW, RowMenu, Section, STOP } from "./overview-section";
+import { CURRENT_ROW, ROW, RowMenu, Section, STOP } from "./overview-section";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
@@ -201,20 +201,21 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
         data-outcome={row.outcome}
         aria-current={viewed || undefined}
         aria-label={`${row.title}, ${row.place}, ${word}${when === "" ? "" : `, ${when}`}`}
-        title={`${row.place} · ${word}`}
+        title={`${row.title}\n${row.place} · ${word}`}
         aria-keyshortcuts="Shift+F10"
         onClick={() => openThread(row.threadId)}
         onKeyDown={rowMenuKeys}
         className={cn(
           ROW,
-          "text-muted-foreground hover:text-foreground aria-current:bg-sidebar-row-active aria-current:text-foreground",
+          "items-start text-muted-foreground hover:text-foreground aria-current:text-foreground",
+          CURRENT_ROW,
         )}
       >
-        <span aria-hidden className="flex justify-self-center">
+        <span aria-hidden className="flex h-lh items-center justify-self-center">
           {Icon !== undefined && <Icon className="size-3.5" />}
         </span>
-        <span className="truncate">{row.title}</span>
-        <span className="text-meta tabular-nums">{when}</span>
+        <span className="line-clamp-2 [overflow-wrap:anywhere]">{row.title}</span>
+        <span className="flex h-lh items-center text-meta tabular-nums">{when}</span>
       </button>
     </RowMenu>
   );

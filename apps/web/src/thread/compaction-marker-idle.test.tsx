@@ -14,7 +14,7 @@ import { CompactionMarker, compactionLabel, idleCompactRequestText } from "./com
 
 afterEach(cleanup);
 
-const intl = { locale: "en-GB", timeZone: "UTC" };
+const intl = { timeZone: "UTC" };
 const at = Date.UTC(2026, 9, 20, 14, 32);
 const idle = (outcome: NonNullable<CompactionData["outcome"]>): CompactionData => ({
   trigger: "manual",

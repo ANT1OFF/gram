@@ -58,13 +58,13 @@ const CHIP =
   "flex h-6 shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 text-meta tabular-nums outline-none";
 const FOCUS = "focus-visible:ring-3 focus-visible:ring-ring/50";
 const ROW =
-  "flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card pr-1 pl-2.5 text-reading";
+  "flex h-9 items-center gap-1.5 rounded-lg border border-edge bg-card pr-1 pl-2.5 text-reading";
 const QUIET =
   "flex items-center gap-1 rounded-sm px-1 text-meta text-muted-foreground outline-none hover:text-foreground";
 const MENU_ACTION =
   "flex items-center gap-2 rounded-sm text-left text-meta text-muted-foreground outline-none hover:text-foreground disabled:opacity-50";
 const POPUP =
-  "flex w-72 origin-(--transform-origin) flex-col gap-2 rounded-md border border-border bg-popover p-3 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "flex w-72 origin-(--transform-origin) flex-col gap-2 rounded-md border border-edge bg-popover p-3 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 
 const CHECKS_TONE: Record<ChecksRollup, string> = {
   passing: "text-success",

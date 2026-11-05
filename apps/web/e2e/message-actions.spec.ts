@@ -54,7 +54,9 @@ test.describe("message timestamp convention", () => {
       hasText: "Invented timestamp notification",
     });
     const notificationTime = notice.locator("time");
-    await expect(notificationTime).toHaveText("Oct 11, 16:35");
+    // The clock is pinned to the message's own day, so both read as today's time alone, 24-hour
+    // even in an AM/PM locale.
+    await expect(notificationTime).toHaveText("16:35");
     const evidence = [];
     for (const role of ["user", "assistant"]) {
       const message = page.getByTestId(`message-${role}`).filter({
@@ -82,7 +84,7 @@ test.describe("message timestamp convention", () => {
     });
     expect(errors).toEqual([]);
     for (const entry of evidence) {
-      expect(entry.text).toBe("Oct 11, 16:35");
+      expect(entry.text).toBe("16:35");
       expect(entry.datetime).toBe("2026-10-11T14:35:12.000Z");
       expect(entry.title).toBe("2026-10-11 16:35:12 UTC+02:00");
     }

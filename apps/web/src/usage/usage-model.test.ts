@@ -133,8 +133,9 @@ describe("usage model", () => {
     expect(compactTokens(57_012_334)).toBe("57M");
     expect(compactTokens(3_650_000)).toBe("3.7M");
     expect(compactTokens(940)).toBe("940");
-    expect(dayLabel("2026-10-16")).toBe("16 Oct");
-    expect(dayLabel("2026-10-16", { weekday: true })).toBe("Fri 16 Oct");
+    const now = Date.parse("2026-10-20T12:00:00Z");
+    expect(dayLabel("2026-10-16", now)).toBe("16 Oct");
+    expect(dayLabel("2025-12-31", now)).toBe("31 Dec 2025");
   });
 
   it("keeps one window's limit history in its span, oldest first", () => {

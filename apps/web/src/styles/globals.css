@@ -75,9 +75,9 @@
   /* shadcn names → semantic tokens */
   --color-background: var(--surface-2);
   --color-foreground: var(--fg);
-  --color-card: var(--surface-3);
+  --color-card: var(--surface-raised);
   --color-card-foreground: var(--fg);
-  --color-popover: var(--surface-3);
+  --color-popover: var(--surface-raised);
   --color-popover-foreground: var(--fg);
   --color-primary: var(--accent);
   --color-primary-foreground: var(--on-accent);
@@ -91,6 +91,9 @@
   --color-destructive-tint: var(--danger-tint);
   --color-destructive-tint-hover: var(--danger-tint-hover);
   --color-border: var(--border-subtle);
+  /* A raised surface's edge, and an actionable row's (tokens.css, elevation). */
+  --color-edge: var(--edge-raised);
+  --color-edge-action: var(--edge-action);
   --color-input: var(--border-strong);
   --color-ring: var(--focus-ring);
   --color-scrim: var(--scrim);
@@ -170,6 +173,14 @@
   width: 100%;
   max-width: var(--thread-max-width);
   margin-inline-start: max(0px, calc((100% - var(--thread-max-width)) * var(--thread-lean)));
+  margin-inline-end: auto;
+}
+/* Settings' page column: beside the nav, leaning into a wide pane as the thread's column does, so a
+   wide window neither strands the page against the nav nor leaves a gulf on its other side. */
+@utility settings-column {
+  width: 100%;
+  max-width: var(--settings-column-width);
+  margin-inline-start: max(0px, calc((100% - var(--settings-column-width)) * var(--settings-lean)));
   margin-inline-end: auto;
 }
 /* Something floating over the column's middle (Jump to latest), placed with -translate-x-1/2. */

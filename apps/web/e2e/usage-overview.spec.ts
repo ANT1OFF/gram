@@ -343,7 +343,7 @@ test.describe("midday reset fixture", () => {
     const claudeWeekly = page.getByRole("group", { name: "Claude Code weekly limit" });
     await expect(claudeWeekly).not.toHaveAttribute("data-warn");
     await expect(claudeWeekly.getByTestId("usage-limit-reset")).toHaveText(
-      /^Resets [A-Z][a-z]{2}\D*\d{1,2}\D+\d{2}:\d{2}$/,
+      /^Resets \d{1,2} [A-Z][a-z]{2}( \d{4})? \d{2}:\d{2}$/,
     );
     await expect(claudeWeekly.getByTestId("usage-limit-age")).toHaveText("Updated 40m ago");
     await pick(page, "Provider", "Codex");

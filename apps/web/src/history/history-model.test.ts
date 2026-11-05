@@ -10,7 +10,13 @@ import type {
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { doneDay, DONE_DAYS, daysBefore, type workersByTab } from "@/orchestration/workers-model";
+import {
+  doneDay,
+  DONE_DAYS,
+  daysBefore,
+  startOfDay,
+  type workersByTab,
+} from "@/orchestration/workers-model";
 
 import {
   filterCounts,
@@ -334,16 +340,14 @@ describe("History's chips and search", () => {
 });
 
 describe("History's times", () => {
-  it("says the clock under a day heading, else the date and the clock, 24-hour", () => {
-    expect(historyWhen(at(9, 5), "date", NOW)).toBe("09:05");
-    expect(historyWhen(daysBefore(NOW, DONE_DAYS - 1), "date", NOW)).toBe("00:00");
-    expect(historyWhen(at(17, 30) - 10 * DAY, "date", NOW)).toBe("5 Oct 17:30");
-    expect(historyWhen(new Date(2025, 11, 30, 8, 0).getTime(), "date", NOW)).toBe(
-      "30 Dec 2025 08:00",
-    );
-    expect(historyWhen(at(9, 5), "orchestrator", NOW)).toBe("09:05");
-    expect(historyWhen(at(9, 5) - DAY, "orchestrator", NOW)).toBe("14 Oct 09:05");
-    expect(historyWhen(undefined, "date", NOW)).toBe("");
+  it("says the clock today, else the date and the clock, 24-hour, whatever the heading", () => {
+    expect(historyWhen(at(9, 5), NOW)).toBe("09:05");
+    expect(historyWhen(startOfDay(NOW), NOW)).toBe("00:00");
+    expect(historyWhen(daysBefore(NOW, DONE_DAYS - 1), NOW)).toBe("9 Oct 00:00");
+    expect(historyWhen(at(17, 30) - 10 * DAY, NOW)).toBe("5 Oct 17:30");
+    expect(historyWhen(new Date(2025, 11, 30, 8, 0).getTime(), NOW)).toBe("30 Dec 2025 08:00");
+    expect(historyWhen(at(9, 5) - DAY, NOW)).toBe("14 Oct 09:05");
+    expect(historyWhen(undefined, NOW)).toBe("");
     expect(doneDay(at(9) - DAY, NOW).label).toBe("Yesterday");
   });
 });
@@ -386,10 +390,10 @@ describe("the sidebar's Done", () => {
     expect(recentDone(rest, 2)).toHaveLength(2);
   });
 
-  it("times a row by its clock today and by its day before", () => {
+  it("times a row by its clock today and by its date and clock before", () => {
     expect(recentWhen(at(9, 5), NOW)).toBe("09:05");
-    expect(recentWhen(new Date(2026, 9, 3, 18).getTime(), NOW)).toBe("3 Oct");
-    expect(recentWhen(new Date(2025, 11, 30, 18).getTime(), NOW)).toBe("30 Dec 2025");
+    expect(recentWhen(new Date(2026, 9, 3, 18).getTime(), NOW)).toBe("3 Oct 18:00");
+    expect(recentWhen(new Date(2025, 11, 30, 18).getTime(), NOW)).toBe("30 Dec 2025 18:00");
     expect(recentWhen(undefined, NOW)).toBe("");
   });
 });

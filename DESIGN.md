@@ -44,15 +44,20 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.
 - **The reading column** (`thread-column`) is as wide as Settings → Appearance → Reading says and
-  leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). The sidebar keeps
-  the width the user gives it, and its edge shows a grip while the pointer is over the column.
+  leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). Memory's rendered
+  files use it too; Settings' pages take `settings-column` (60 rem, leaning `--settings-lean`).
+  The sidebar keeps the width the user gives it, and its edge shows a grip while the pointer is
+  over the column.
 - **Icons: Lucide** at a 1.75 stroke, never as decoration and never emoji. Two sizes: 16 px in
   chrome (the title bar, the sidebar's header, the panel's tabs and the composer's toolbar) and
   14 px inline (rows, chips, cards, menus and docks). A disclosure chevron beside a glyph or a
   value, and a menu's check, are inline glyphs (14 px) wherever they sit.
   - An icon button is at least 28 px square (`icon-sm` for chrome, `icon-xs` inline), with a
     background on hover and focus. Its tooltip names it and its shortcut at once, and its
-    accessible name says the same; a `title` on an icon `Button` becomes that tooltip.
+    accessible name says the same; a `title` on an icon `Button` becomes that tooltip. Its hover
+    and open fill is `bg-accent` (`surface-hover`), the row hover's, so the target shows in dark.
+  - Chrome glyphs are `fg-muted` until hovered, focused or open, in the title bar's slot too (a
+    thread's role glyph, Keep beside); colour on a glyph is a status it means, never decoration.
   - The open tab, view or toggle shows a background or an underline, never colour alone.
   - One meaning per glyph, and one glyph per meaning: the Inbox (everything that needs you) is
     `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval
@@ -111,13 +116,18 @@ sections, at a pane's edges), as in `gap-inset` or `px-section`.
 **Radius.** `rounded-2xs` 4 px, `rounded-xs` 8, `rounded-sm` 12, `rounded-md` 14, `rounded-lg`
 and `rounded-xl` 16, `rounded-full` for pills and dots, and `--composer-radius` for the composer.
 
-**Elevation.** `shadow-raised` for a card on a surface, `shadow-overlay` for what floats (a menu, a
-popover, a dialog, a toast), `shadow-composer` for the composer slab. More contrast and forced
-colours turn them off.
+**Elevation.** One step for every secondary surface: a card, a panel's block, a popover and a menu
+take `bg-card` or `bg-popover` (both `--surface-raised`, which is `surface-3`: the palettes hold
+muted text at AA there) and the edge `border-edge`, which carries the step in dark where a shadow
+doesn't show; a row that opens or acts (a tool row, an update, the files-changed row) takes the
+firmer `border-edge-action`. A plain divider stays `border-border`. `shadow-raised` for a card on a surface, `shadow-overlay` for what
+floats (a menu, a popover, a dialog, a toast), `shadow-composer` for the composer slab. More
+contrast and forced colours turn the shadows off and the edges to `border-strong`.
 
 **Selection and focus.** The `row-cursor`, `choice-selected`, `focus-ring` and
-`focus-ring-inset` utilities in globals.css, as described under Look; `bg-sidebar-row-active`
-marks the current place in the sidebar.
+`focus-ring-inset` utilities in globals.css, as described under Look. In the sidebar the open
+thread's row (a worker, a solo thread, a Done row) takes `choice-selected` (`CURRENT_ROW`), and its
+workspace's line the quieter `bg-sidebar-row-active`, so the deepest current place reads strongest.
 
 **The drift check.** `node tools/design-tokens/check.mjs` (part of `bun run lint`) flags in
 `apps/web/src`: text sizes outside the scale (`text-xs`, `text-[13px]`), raw arbitrary spacing
@@ -132,7 +142,11 @@ the check fails `bun run lint` on any new use; an allowlist entry is for a delib
 
 - Plain and short. Sentence case. Buttons are verbs ("Create branch", "Open PR").
 - Say what happened and what the user can do; no blame, no exclamation marks.
-- Times are 24-hour (`17:05`, `Yesterday 09:42`). Durations in the largest sensible unit.
+- Times are 24-hour only, from `formatStamp` in `apps/web/src/lib/time.ts`: `HH:MM` today
+  (`09:42`, `00:00`), else `D Mon HH:MM` (`14 Jun 08:00`), with the year only when it isn't this
+  one's (`14 Jun 2025 08:00`). A date alone, for a day heading or a date column, is `D Mon`
+  (`formatDay`). No US order and no weekday, except a pending wake's chip (`Fri 14:30`, at most a
+  week ahead). Relative times (`5m ago`) stay; durations in the largest sensible unit.
 - No invented data in docs or mocks: real names from the code, or a bracketed gap such as
   `[Workspace name]`.
 

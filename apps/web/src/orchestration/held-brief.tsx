@@ -105,7 +105,7 @@ export function HeldBriefChip({
       data-testid="rail-held"
       data-held-id={held.id}
       title={reason}
-      className="flex w-full max-w-72 min-w-0 flex-col items-start gap-1 rounded-(--radius-md) border border-dashed border-border bg-card px-2.5 py-2 text-meta"
+      className="flex w-full max-w-72 min-w-0 flex-col items-start gap-1 rounded-(--radius-md) border border-dashed border-edge bg-card px-2.5 py-2 text-meta"
     >
       <span className="flex w-full min-w-0 items-start gap-1.5">
         <Hourglass aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />

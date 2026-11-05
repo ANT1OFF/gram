@@ -7,7 +7,7 @@ import { ListHighlight } from "@/motion";
 import type { MenuCommand } from "./slash-native";
 
 export const POPOVER =
-  "absolute right-0 bottom-full left-0 z-20 mb-1 rounded-lg border border-border bg-popover p-1 text-reading shadow-overlay";
+  "absolute right-0 bottom-full left-0 z-20 mb-1 rounded-lg border border-edge bg-popover p-1 text-reading shadow-overlay";
 
 export function SlashMenu({
   id,

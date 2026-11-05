@@ -1571,8 +1571,8 @@ test("a solo thread at work trades its age for a pulsing dot, and can't be marke
   }, id);
   await expect(dot).toHaveCount(1);
   await expect(age).toHaveCount(0);
-  // Off the row, its last activity stays on its hover and in its name.
-  await expect(row).toHaveAttribute("title", /^Last activity \d{2}:\d{2}$/);
+  // Off the row, its last activity stays on its hover, under its whole title, and in its name.
+  await expect(row).toHaveAttribute("title", /^.+\nLast activity \d{2}:\d{2}$/);
   await expect(row).toHaveAttribute("aria-label", /, Working, Last activity \d{2}:\d{2}$/);
 
   await row.click({ button: "right" });

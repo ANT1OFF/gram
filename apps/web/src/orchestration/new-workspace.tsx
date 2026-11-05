@@ -107,7 +107,7 @@ export function NewWorkspaceSheet({
       <div className="flex min-h-full items-center justify-center p-6">
         <div
           data-testid="new-workspace"
-          className="flex w-full max-w-lg flex-col gap-5 rounded-lg border border-border bg-card p-5 text-reading text-card-foreground"
+          className="flex w-full max-w-lg flex-col gap-5 rounded-lg border border-edge bg-card p-5 text-reading text-card-foreground"
         >
           <h1 className="font-heading text-title">New workspace</h1>
           {loadError && !shown ? (

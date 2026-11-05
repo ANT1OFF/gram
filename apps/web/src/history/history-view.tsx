@@ -124,7 +124,7 @@ export function HistoryView() {
           aria-label="History"
           // A thread just opened takes focus in its pane; only a dismissal hands it back.
           finalFocus={() => (picked ? false : returnFocusTo(opener)())}
-          className="fixed top-[10%] left-1/2 z-50 flex max-h-[76vh] w-[min(46rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[10%] left-1/2 z-50 flex max-h-[76vh] w-[min(46rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-edge bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && <HistoryBody onPicked={() => setPicked(true)} />}
         </Dialog.Popup>
@@ -344,7 +344,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
                   active={at === activeIndex}
                   resuming={resuming === entry.threadId}
                   grouped={by === "orchestrator"}
-                  when={historyWhen(entry.finishedAt, by, now)}
+                  when={historyWhen(entry.finishedAt, now)}
                   whenLong={doneWhenLong(entry.finishedAt, now)}
                   onHover={() => setActive(at)}
                   onOpen={() => pick(entry)}

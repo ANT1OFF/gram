@@ -39,8 +39,8 @@ const HEADINGS = {
 
 /**
  * The Memory view's first tab: what the orchestrator knows now, read as rendered Markdown, one file
- * after another, under the few files changed most recently. Each file's name opens it in Files,
- * and Edit beside it opens its editor there; sizes and caps are file details, kept to Files.
+ * after another, under the few files changed most recently, in the reading column. Each file's name
+ * opens it in Files, and Edit beside its name and age opens its editor there; sizes and caps are file details, kept to Files.
  */
 export function MemoryOverview({
   workspaceId,
@@ -60,7 +60,8 @@ export function MemoryOverview({
       ref={ref}
       aria-label="Current memory"
       data-testid="memory-overview"
-      className="flex flex-col gap-4"
+      // As wide as Settings → Appearance → Reading says, as the transcript is: a file reads as prose.
+      className="thread-column flex flex-col gap-4"
     >
       <h2 className="sr-only">Current memory</h2>
       <p className="text-meta text-muted-foreground">
@@ -72,7 +73,7 @@ export function MemoryOverview({
         <>
           <div
             data-testid="memory-recent"
-            className="flex flex-col gap-1 rounded-(--radius-md) border border-border bg-card/40 p-3"
+            className="flex flex-col gap-1 rounded-(--radius-md) border border-edge bg-card/40 p-3"
           >
             <h3 className="text-meta font-medium text-muted-foreground">Recently changed</h3>
             <ul className="flex flex-col gap-0.5">
@@ -127,7 +128,7 @@ function OverviewFile({
       aria-label={file.path}
       data-testid="memory-overview-file"
       data-path={file.path}
-      className="flex flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3"
+      className="flex flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3"
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <FileText aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
@@ -148,7 +149,6 @@ function OverviewFile({
           variant="outline"
           data-testid="memory-overview-edit"
           aria-label={`Edit ${file.path}`}
-          className="ms-auto"
           onClick={onOpen}
         >
           <Pencil data-icon="inline-start" />
@@ -162,7 +162,7 @@ function OverviewFile({
       ) : content.data.content.trim() === "" ? (
         <p className="text-meta text-muted-foreground">Empty.</p>
       ) : (
-        <div className="max-w-3xl text-reading leading-relaxed [&_ol]:list-decimal [&_ol]:ps-5 [&_ul]:list-disc [&_ul]:ps-5">
+        <div className="text-reading leading-relaxed [&_ol]:list-decimal [&_ol]:ps-5 [&_ul]:list-disc [&_ul]:ps-5">
           <MessageResponse components={HEADINGS}>{content.data.content}</MessageResponse>
         </div>
       )}

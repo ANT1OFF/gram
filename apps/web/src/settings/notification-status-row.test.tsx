@@ -3,6 +3,8 @@ import type { NotificationStatus } from "@gram/contracts";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { formatStamp } from "@/lib/time";
+
 import { NotificationStatusSetting, notificationStatusText } from "./notification-status-row";
 
 const clock = () => "14:02";
@@ -25,12 +27,18 @@ describe("notificationStatusText", () => {
 
   it("shows the time on a 24-hour clock", () => {
     const afternoon = new Date(2026, 9, 25, 14, 2).getTime();
-    expect(
-      notificationStatusText({
-        supported: true,
-        last: { outcome: "shown", at: afternoon, test: true },
-      }),
-    ).toBe("Test shown at 14:02");
+    const status = {
+      supported: true,
+      last: { outcome: "shown", at: afternoon, test: true },
+    } as const;
+    // Today it is the clock alone; from another day, the shared stamp's date and clock.
+    expect(notificationStatusText(status, (when) => formatStamp(when, afternoon))).toBe(
+      "Test shown at 14:02",
+    );
+    const nextDay = new Date(2026, 9, 26, 9, 0).getTime();
+    expect(notificationStatusText(status, (when) => formatStamp(when, nextDay))).toBe(
+      "Test shown at 25 Oct 14:02",
+    );
   });
 });
 

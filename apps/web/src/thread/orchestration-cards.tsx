@@ -119,7 +119,7 @@ export function StatePill({
   );
 }
 
-const CARD = "rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading";
+const CARD = "rounded-(--radius-md) border border-edge bg-card/40 p-3 text-reading";
 const TRIGGER =
   "group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground";
 const PRE =

@@ -177,7 +177,7 @@ function FirstRun() {
     <section
       aria-labelledby="welcome-title"
       data-testid="welcome"
-      className="flex w-full max-w-xl flex-col gap-5 rounded-lg border border-border bg-card p-5 text-reading text-card-foreground"
+      className="flex w-full max-w-xl flex-col gap-5 rounded-lg border border-edge bg-card p-5 text-reading text-card-foreground"
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-0.5">

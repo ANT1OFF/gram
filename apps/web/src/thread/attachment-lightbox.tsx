@@ -58,7 +58,7 @@ export function AttachmentLightbox({
         <Dialog.Popup
           data-testid="attachment-lightbox"
           data-surface="overlay"
-          className="fixed inset-6 z-50 flex flex-col gap-3 rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed inset-6 z-50 flex flex-col gap-3 rounded-lg border border-edge bg-popover p-4 text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           <Dialog.Title className="truncate font-heading text-reading font-medium">
             {name}

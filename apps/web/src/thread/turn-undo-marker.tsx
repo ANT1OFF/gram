@@ -1,27 +1,20 @@
 import type { GramUIMessage, TurnId, TurnUndoData } from "@gram/contracts";
 import { Undo2 } from "lucide-react";
 
-import { dateTimeFormat } from "@/lib/intl";
-import { CLOCK_TIME } from "@/lib/time";
+import { formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
-
-const DATE = { day: "numeric", month: "short" } as const;
 
 /**
  * The receipt's line: `Undid edits to 3 files at 14:32`, with the date before the time when it
- * wasn't today. `intl` pins the locale and zone, for tests.
+ * wasn't today (`formatStamp`). `intl` pins the zone, for tests.
  */
 export const turnUndoLabel = (
   undo: TurnUndoData,
   now: number,
-  intl: { readonly locale?: string; readonly timeZone?: string } = {},
+  intl: { readonly timeZone?: string } = {},
 ): string => {
-  const zone = intl.timeZone === undefined ? {} : { timeZone: intl.timeZone };
-  const format = (at: number, options: Intl.DateTimeFormatOptions) =>
-    dateTimeFormat(intl.locale, { ...options, ...zone }).format(at);
-  const today = format(undo.at, DATE) === format(now, DATE);
   const files = `${undo.files} ${undo.files === 1 ? "file" : "files"}`;
-  const at = format(undo.at, today ? CLOCK_TIME : { ...DATE, ...CLOCK_TIME });
+  const at = formatStamp(undo.at, now, intl);
   if (undo.failed !== undefined) return `Undo failed at ${at}: check ${files} with View changes`;
   return `Undid edits to ${files} at ${at}`;
 };
