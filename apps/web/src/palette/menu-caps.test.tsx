@@ -287,11 +287,13 @@ describe("palette commands", () => {
     expect(screen.getAllByRole("option")).toHaveLength(6);
   });
 
-  it("go to threads, workers, features and PRs first, with commands behind >", async () => {
+  it("opens short on places to go, threads and workers, with commands behind >", async () => {
     await openPalette("");
-    const sections = Object.keys(paletteSections());
-    expect(sections.slice(0, 4)).toEqual(["Threads", "Workers", "Features", "Pull requests"]);
-    expect(sections).not.toContain("Commands");
+    const sections = paletteSections();
+    expect(Object.keys(sections)).toEqual(["Go to", "Threads", "Workers"]);
+    // Workers, Memory and Quiet are first-class, not only in the title bar's "…".
+    expect(sections["Go to"]!.slice(0, 3)).toEqual(["Workers", "Memory", "Quiet"]);
+    expect(Object.keys(sections)).not.toContain("Commands");
   });
 });
 

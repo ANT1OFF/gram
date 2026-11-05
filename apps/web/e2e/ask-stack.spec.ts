@@ -448,9 +448,8 @@ test("every needs-you count is the list it opens, and a workspace's count opens 
   const needsYou = page.getByTestId("overview-needs-you");
   const all = Number(await needsYou.getAttribute("data-count"));
   await expect(needsYou).toContainText(`${all} need you`);
-  // The title bar's Inbox button says the count in its name, but beside the pill wears no badge.
-  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-count", String(all));
-  await expect(page.getByTestId("inbox-button")).not.toHaveAttribute("data-badge");
+  // The pill is the one way in: the title bar has no Inbox button beside it.
+  await expect(page.getByTestId("inbox-button")).toHaveCount(0);
 
   // The list the pill opens has `all` items, by kind; each workspace's rows as many as its badge,
   // and the threads outside any workspace the rest.

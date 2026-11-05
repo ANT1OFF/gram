@@ -522,6 +522,7 @@ function OverflowMenu({
 }) {
   const state = useViewWorkspace();
   const workspace = orchestration && state !== undefined;
+  const paletteHint = useShortcutHint("palette.open");
   // How many times the menu has opened: what it asked last time doesn't carry over.
   const [opening, setOpening] = useState(0);
   // The trigger's words show on hover and on Tab, but not as the menu closes and hands focus
@@ -579,7 +580,7 @@ function OverflowMenu({
           <Ellipsis />
         </TooltipTrigger>
         <TooltipContent side="bottom" className="whitespace-pre-line">
-          {"More\nThe thread's, the workspace's and the window's controls"}
+          {`More\nThe thread's, the workspace's and the window's controls${paletteHint === "" ? "" : `\nEvery place and command: ${paletteHint}`}`}
         </TooltipContent>
       </Tooltip>
       <Menu.Portal>

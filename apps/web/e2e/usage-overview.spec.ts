@@ -54,8 +54,9 @@ test("Usage navigation, server period/provider filters, chart/table agreement an
     )
     .toBe("1.0.0-mock");
   const settingsBefore = await page.evaluate(() => window.gramMock!.getSettings());
-  const usageLink = page.getByRole("button", { name: "Usage", exact: true });
-  await usageLink.focus();
+  // The title bar's meter, then its popover's link: usage's one way in.
+  await page.getByTestId("usage-meter").click();
+  await page.getByTestId("usage-limits-page").focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   // Thirty days to begin with; the flow below starts from seven.

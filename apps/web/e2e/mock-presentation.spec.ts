@@ -8,6 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { openOrchestratorTile } from "./overview-rail";
 import { seedTheme } from "./seed-theme";
+import { inboxEntry } from "./open-notifications";
 
 // Mocks shown as pictures: an `ask_user` question whose
 // options carry the needs-you-home mock's own screenshots and boards, and the card `show_mock`
@@ -154,7 +155,7 @@ const currentAsk = (page: Page) => page.getByTestId("inbox-detail").getByTestId(
 
 /** Opens the Inbox on the question that picks a direction. */
 const toQuestion = async (page: Page) => {
-  await page.getByTestId("inbox-button").click();
+  await inboxEntry(page).click();
   await page.getByTestId("inbox-item").filter({ hasText: QUESTION }).click();
   await expect(currentAsk(page).getByTestId("ask-title")).toHaveText(QUESTION);
   return currentAsk(page);

@@ -32,17 +32,21 @@ const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
 /**
  * The chat column's title bar, icon-only and few: the workspace and its views, the thread's header
  * or Board's controls in the slot, then what wants your attention (a setup problem folded from its
- * banner, a paused workspace, usage, the bell), one "…" with everything else in words, and the panel. Narrow, what the slot carries folds
- * into "…" too.
+ * banner, a paused workspace, usage, and the Inbox while no sidebar shows its pill), one "…" with
+ * everything else in words, and the panel. Narrow, what the slot carries folds into "…" too. Each
+ * destination has one entry here or in the sidebar, never both.
  */
 export function ShellTitlebar({
   sidebarShown,
+  needsYouPill,
   compactRail,
   panelShown,
   panelLeft,
 }: {
   /** The overview, open or compact, is to the bar's left. */
   sidebarShown: boolean;
+  /** The overview to the bar's left shows the needs-you pill (Settings' Back strip doesn't). */
+  needsYouPill: boolean;
   /** The overview is the compact rail. */
   compactRail: boolean;
   /** The right panel is shown. */
@@ -98,7 +102,7 @@ export function ShellTitlebar({
             onClick={toggleOverviewSidebar}
           />
         )}
-        {/* Usage and Settings follow the toggle, as they do in the overview's header. */}
+        {/* Settings follows the toggle, as it does in the overview's header. */}
         {!sidebarShown && <TopLeftNav className="mr-2" />}
         <WorkspaceSwitcher
           className={cn(
@@ -149,8 +153,10 @@ export function ShellTitlebar({
             textClassName="@max-2xl/titlebar:hidden"
           />
         )}
-        {/* The sidebar's pill counts what needs you; hidden, the button wears the count. */}
-        <InboxButton badge={!sidebarShown} />
+        {/* What needs you has one way in: the sidebar's pill, open or compact; with no pill on
+            screen (the sidebar hidden, or Settings' strip in its place), this button, wearing the
+            count. */}
+        {!needsYouPill && <InboxButton />}
       </div>
       <div
         role="group"

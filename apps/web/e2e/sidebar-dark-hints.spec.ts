@@ -53,7 +53,7 @@ async function colors(hint: Locator) {
   };
 }
 
-// The quiet hint panel behind the overview header's icons, Usage and Settings: readable and
+// The quiet hint panel behind the overview header's icons, Settings among them: readable and
 // arrowed in its own colours in every palette, by hover and by real keyboard focus.
 
 for (const mode of ["light", "dark"] as const) {
@@ -90,7 +90,7 @@ for (const mode of ["light", "dark"] as const) {
     }
     await page.mouse.move(1000, 1000);
     await expect(hint).toHaveCount(0);
-    await sidebar.getByRole("button", { name: "Usage", exact: true }).focus();
+    await sidebar.getByRole("button", { name: "Hide sidebar", exact: true }).focus();
     await page.keyboard.press("Tab");
     await expect(settings).toBeFocused();
     await expect(hint).toHaveText(/^Settings \(.+\)$/);

@@ -120,7 +120,7 @@ export function OverviewRail() {
           {!underLights && hide}
         </div>
         {underLights && hide}
-        {/* Usage and Settings follow the toggle, stacked, as they follow it in the open header. */}
+        {/* Settings follows the toggle, as it follows it in the open header. */}
         <TopLeftNav className="shrink-0 flex-col" />
         <Hint
           label="Expand overview"

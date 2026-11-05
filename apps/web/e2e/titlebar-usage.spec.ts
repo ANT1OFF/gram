@@ -10,7 +10,7 @@ const seed = (page: Page, flags: Record<string, string>) =>
 
 const WELCOME_UNSEEN = JSON.stringify({ onboarding: { welcomeSeen: false } });
 
-const RESETS = /^Resets (\d{1,2} [A-Z][a-z]{2}( \d{4})? )?\d{2}:\d{2}$/;
+const RESETS = /^(\d{1,2} [A-Z][a-z]{2}( \d{4})? )?\d{2}:\d{2}$/;
 
 test("the meter shows the tightest limit and opens onto both providers", async ({ page }) => {
   await page.goto("/t/t-flaky");
@@ -26,6 +26,8 @@ test("the meter shows the tightest limit and opens onto both providers", async (
   await meter.click();
   const popover = page.getByRole("dialog", { name: "Subscription usage" });
   await expect(popover).toBeVisible();
+  // The columns are named once, so the rows line up under them without repeating the words.
+  await expect(popover.getByTestId("usage-limits-columns")).toHaveText(/^\s*Used\s*Resets\s*$/);
   for (const [provider, rows] of [
     ["Claude Code", ["42%", "61%"]],
     ["Codex", ["85%", "30%"]],
@@ -36,9 +38,13 @@ test("the meter shows the tightest limit and opens onto both providers", async (
     await expect(windows).toHaveCount(2);
     for (const [i, label] of ["5-hour", "Weekly"].entries()) {
       const cells = windows.nth(i).locator(":scope > span:not([aria-hidden])");
-      // Each row says its period, the share used and when it resets, in words.
+      // Each row says its period, the share used and when it resets, under the columns' names,
+      // and all three in words in its name.
       await expect(cells.nth(0)).toHaveText(label);
-      await expect(cells.nth(1)).toHaveText(`${rows[i]!} used`);
+      await expect(cells.nth(1)).toHaveText(rows[i]!);
+      await expect(windows.nth(i)).toHaveAccessibleName(
+        new RegExp(`^${label}: ${rows[i]!} used, resets `),
+      );
       // Resets on a 24-hour clock: today's as a time, later ones with their date before it.
       await expect(cells.nth(2)).toHaveText(RESETS);
     }

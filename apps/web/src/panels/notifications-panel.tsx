@@ -28,8 +28,12 @@ const KINDS = {
   error: { icon: CircleAlert, label: "Error", tone: "text-destructive" },
 };
 
-/** What opens the history, and takes focus back when it closes: the title bar's Inbox button. */
-const OPENER = '[data-testid="inbox-button"]';
+/**
+ * What opens the Inbox, whose header opens the history, and takes focus back when it closes: the
+ * sidebar's pill, the compact rail's, or with no sidebar the title bar's Inbox button.
+ */
+const OPENER =
+  '[data-testid="overview-needs-you"], [data-testid="overview-rail-needs-you"], [data-testid="inbox-button"]';
 
 export function NotificationsPanel() {
   useReturnFocus(() => document.querySelector(OPENER));

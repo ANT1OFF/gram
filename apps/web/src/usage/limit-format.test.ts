@@ -10,7 +10,6 @@ import {
   heldUntilText,
   limitPercent,
   limitShareText,
-  limitSummaryText,
   meterHint,
   meterLabel,
   creditsText,
@@ -77,18 +76,6 @@ describe("limit formatting", () => {
     );
     expect(limitShareText({ agent: "claude", usedPct: 90, window: "seven_day" })).toBe(
       "Claude is at 90% of its weekly limit",
-    );
-  });
-
-  it("sums the tightest limit up in one line, capped short of the limit", () => {
-    const tightest: TightestLimit = {
-      provider: "claude",
-      window: "weekly",
-      limit: { utilization: 0.996, status: "allowed", expiresAt: NOW + 3_600_000 },
-    };
-    expect(limitSummaryText(tightest)).toBe("Claude 99% of the weekly limit");
-    expect(limitSummaryText({ ...tightest, provider: "codex", window: "fiveHour" })).toBe(
-      "Codex 99% of the 5-hour limit",
     );
   });
 

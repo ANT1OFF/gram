@@ -62,9 +62,8 @@ test("the header counts what runs, waits, is in review and merged, and opens eac
     `[data-testid="overview-workspace"][data-workspace-id="${made.workspaceId}"]`,
   );
   await expect(gram).toHaveAttribute("data-asks", "0");
-  // Beside the pill, the title bar's Inbox button wears no second count.
-  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-count", "2");
-  await expect(page.getByTestId("inbox-button")).not.toHaveAttribute("data-badge");
+  // The pill is the one way in: the title bar has no Inbox button beside it.
+  await expect(page.getByTestId("inbox-button")).toHaveCount(0);
   // The pill opens the Inbox on the newest ask elsewhere, not on the error listed first.
   await pill.click();
   await expect(page.getByTestId("inbox")).toBeVisible();

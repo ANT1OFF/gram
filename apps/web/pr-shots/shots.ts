@@ -2079,11 +2079,10 @@ export const SHOTS: readonly Shot[] = [
         () => typeof window.gramMock?.usageOverview === "function",
       );
       if (hasOverview) {
-        await page.getByRole("button", { name: "Usage", exact: true }).click();
+        // By its address: the page's way in moved from the sidebar to the title bar's meter.
+        await page.goto("/usage");
         // Seven days on the page before the limits-first redesign, thirty after it.
         await expect(page.getByTestId("usage-tokens")).toHaveText(/^(468,000|2\.3M)$/);
-      } else {
-        await expect(page.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
       }
       await page
         .getByTestId("launch-checks-banner")
@@ -2121,12 +2120,10 @@ export const SHOTS: readonly Shot[] = [
         () => typeof window.gramMock?.usageOverview === "function",
       );
       if (hasOverview) {
-        await page.getByRole("button", { name: "Usage", exact: true }).click();
+        await page.goto("/usage");
         await expect(page.getByTestId("usage-tokens")).toHaveText(
           process.env["GRAM_PR_SHOTS_LABEL"] === "before" ? "0" : "227",
         );
-      } else {
-        await expect(page.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
       }
       await page
         .getByTestId("launch-checks-banner")

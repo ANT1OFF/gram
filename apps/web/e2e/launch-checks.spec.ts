@@ -111,12 +111,23 @@ test("launch checks show what's missing, link to details and dismiss for the ses
   const tools = page.getByTestId("tool-checks");
   await expect(tools).toContainText("2.1.273 at /mock/bin/claude, not signed in");
   await expect(tools).toContainText("not found on the login-shell PATH");
+  // Seen once and moved on from, it folds to the title bar's Setup chip, and stays folded after a
+  // reload; the chip shows it again.
+  const chip = page.getByTestId("launch-issues-chip");
+  await expect(banner).toBeHidden();
+  await expect(chip).toHaveText("Setup · 2");
+  await page.reload();
+  await expect(chip).toBeVisible();
+  await expect(banner).toBeHidden();
+  await chip.click();
 
   await banner.getByRole("button", { name: "Dismiss" }).click();
   await expect(banner).toBeHidden();
+  await expect(chip).toHaveCount(0);
   await page.reload();
   await expect(tools).toContainText("not signed in");
   await expect(banner).toBeHidden();
+  await expect(chip).toHaveCount(0);
 });
 
 test("an outdated Codex in use shows the upgrade command, and Diagnostics names a stray install", async ({

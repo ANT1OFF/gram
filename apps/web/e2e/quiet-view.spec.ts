@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { flakyAsked } from "./seed-asks";
 import { openOrchestrator, threadRow } from "./thread-row";
+import { inboxEntry } from "./open-notifications";
 
 // Quiet: one ask card at a time over an empty field, a strip with
 // a dot per worker, and the window dropping into it by itself when idle. Mock state lives in memory,
@@ -112,7 +113,7 @@ test("one card at a time: 1 then ⌘⏎ answers it everywhere, and undo brings i
   }
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("quiet-layer")).toBeHidden();
-  await page.getByTestId("inbox-button").click();
+  await inboxEntry(page).click();
   await expect(page.getByTestId("inbox")).toBeVisible();
   await expect(page.getByTestId("inbox-item").filter({ hasText: PUSH })).toHaveCount(0);
 });

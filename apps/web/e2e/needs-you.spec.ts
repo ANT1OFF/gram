@@ -82,11 +82,8 @@ test("the pill opens every workspace's items by kind, and Open thread lands on t
   // are up first, so the count is read once the scenario's have arrived too.
   const count = 11;
   await expect(pill(page)).toHaveAttribute("data-count", String(count));
-  // The title bar's Inbox button counts the same, in its name.
-  await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-count", String(count));
-  await expect(page.getByTestId("inbox-button")).toHaveAccessibleName(
-    new RegExp(`^Inbox, ${count} need you`),
-  );
+  // The pill is the one way in beside the sidebar: the title bar has no second Inbox entry.
+  await expect(page.getByTestId("inbox-button")).toHaveCount(0);
   await openInbox(page);
   await expect(inbox(page).getByTestId("inbox-count")).toHaveText(`${count} need you`);
   await expect(inbox(page).getByTestId("inbox-item")).toHaveCount(count);
@@ -493,8 +490,7 @@ test("with nothing waiting, the Inbox says so", async ({ page }) => {
   await expect(page).toHaveTitle("(3) Gram");
   await parkSeedAsks(page);
   await expect(pill(page)).toHaveText("Nothing needs you");
-  await expect(page.getByTestId("inbox-button")).toHaveAccessibleName(/^Inbox\b(?!,)/);
-  await page.getByTestId("inbox-button").click();
+  await pill(page).click();
   await expect(inbox(page).getByTestId("inbox-empty")).toContainText("Nothing needs you");
   await page.keyboard.press("Escape");
   await page.evaluate(() =>
@@ -527,11 +523,11 @@ test("a worker's question is answered in the Inbox: pick, then Send answer", asy
 test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3 opens it", async ({
   page,
 }) => {
-  // Below the open overview's width, the compact rail carries the pill, the one count: the title
-  // bar's Inbox button wears none beside it.
+  // Below the open overview's width, the compact rail carries the pill, the one way in: the title
+  // bar has no Inbox button beside it.
   await page.setViewportSize({ width: 1000, height: 800 });
   await start(page);
-  await expect(page.getByTestId("inbox-button")).not.toHaveAttribute("data-badge");
+  await expect(page.getByTestId("inbox-button")).toHaveCount(0);
   await page.getByTestId("overview-rail-needs-you").click();
   await expect(inbox(page)).toBeVisible();
   const fits = async (width: number) => {
@@ -547,7 +543,7 @@ test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3
   // Narrower, no pill is on screen: ⌘⌥3 opens it, within the window.
   await page.setViewportSize({ width: 520, height: 800 });
   await expect(page.getByTestId("overview-rail-needs-you")).toBeHidden();
-  // With no pill on screen, the title bar's Inbox button wears the count.
+  // With no pill on screen, the title bar's Inbox button is the way in, and wears the count.
   await expect(page.getByTestId("inbox-button")).toHaveAttribute("data-badge", "true");
   await page.keyboard.press("ControlOrMeta+Alt+3");
   await expect(inbox(page)).toBeVisible();
