@@ -1,8 +1,10 @@
 import type { Project, RepositoryCandidate } from "@gram/contracts";
+import { Menu } from "@base-ui/react/menu";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
+  ChevronDown,
   ChevronRight,
   Circle,
   CircleAlert,
@@ -16,6 +18,8 @@ import {
   History,
   MessageSquare,
   Network,
+  Plus,
+  Search,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -30,6 +34,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { CommandText } from "@/launch-checks/command-text";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
+import { MENU_ITEM, MENU_POPUP } from "@/lib/selection";
 import { cn } from "@/lib/utils";
 import { Expand, Spinner } from "@/motion";
 import { OutboundLink } from "@/panels/outbound-link";
@@ -42,6 +47,7 @@ import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 
+import { matchRepos, RECENT_LIMIT } from "./repo-search";
 import { toolRows, type ToolState } from "./tools";
 
 /**
@@ -49,9 +55,6 @@ import { toolRows, type ToolState } from "./tools";
  * picking a repository that happens to mark it seen can't close it under the user.
  */
 export const useWelcome = create<{ open: boolean | undefined }>()(() => ({ open: undefined }));
-
-/** The most repositories the first run lists before Other folder. */
-const RECENT_LIMIT = 6;
 
 /** Whether the first-run screen shows: a first run, while no workspace exists. */
 export function useFirstRun(): boolean {
@@ -145,9 +148,15 @@ function FirstRun() {
     }
   };
 
-  const { projects, repos } = useFirstRunRepos();
+  const { projects, all } = useFirstRunRepos();
   const home = useHome();
-  // The most recent repository is picked to start with, so Open is the obvious first click.
+  // Past a screenful of repositories, a search finds one; it has the focus, so typing starts it.
+  const [query, setQuery] = useState("");
+  const searchable = all.length > RECENT_LIMIT;
+  const matches = matchRepos(all, query);
+  const repos = matches.slice(0, RECENT_LIMIT);
+  // The most recent repository is picked to start with, so Open is the obvious first click; a
+  // search picks its best match unless the pick is still among them.
   const [pickedRoot, setPickedRoot] = useState<string>();
   const picked = repos.find((repo) => repo.root === pickedRoot) ?? repos[0];
   const openRepo = (repo: RepositoryCandidate) =>
@@ -178,6 +187,16 @@ function FirstRun() {
             It becomes a workspace with its own orchestrator. You can add more repositories later.
           </p>
         </div>
+        {searchable && (
+          <RepoSearch
+            query={query}
+            total={all.length}
+            onQuery={setQuery}
+            onOpen={() => {
+              if (picked !== undefined) openRepo(picked);
+            }}
+          />
+        )}
         <RecentRepos
           repos={repos}
           home={home}
@@ -186,6 +205,16 @@ function FirstRun() {
           onSelect={setPickedRoot}
           onOpen={openRepo}
         />
+        {searchable && matches.length === 0 && (
+          <p data-testid="welcome-repos-none" className="px-2 text-meta text-muted-foreground">
+            No repository matches “{query.trim()}”. Add it below.
+          </p>
+        )}
+        {matches.length > repos.length && (
+          <p data-testid="welcome-repos-more" className="px-2 text-meta text-muted-foreground">
+            {matches.length - repos.length} more. Type to narrow the list.
+          </p>
+        )}
         {/* Whether the agents can run, beside the action that starts them. */}
         <AgentStrip />
         <div className="flex flex-wrap items-center gap-2">
@@ -207,28 +236,38 @@ function FirstRun() {
               <ArrowRight data-icon="inline-end" />
             </Button>
           )}
-          <Button
-            type="button"
-            variant={picked === undefined ? "default" : "outline"}
-            size="sm"
-            data-testid="welcome-open-folder"
-            disabled={pending !== undefined}
-            onClick={() => void chooseFolder()}
-          >
-            <FolderOpen data-icon="inline-start" />
-            Open a folder…
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-expanded={adding}
-            disabled={pending !== undefined}
-            onClick={() => setAdding((open) => !open)}
-          >
-            <Globe data-icon="inline-start" />
-            Clone from GitHub
-          </Button>
+          {picked === undefined ? (
+            // Nothing to pick: the other sources are the way in, so they stand on their own.
+            <>
+              <Button
+                type="button"
+                size="sm"
+                data-testid="welcome-open-folder"
+                disabled={pending !== undefined}
+                onClick={() => void chooseFolder()}
+              >
+                <FolderOpen data-icon="inline-start" />
+                Open a folder…
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-expanded={adding}
+                disabled={pending !== undefined}
+                onClick={() => setAdding((open) => !open)}
+              >
+                <Globe data-icon="inline-start" />
+                Clone from GitHub
+              </Button>
+            </>
+          ) : (
+            <AddRepositoryMenu
+              disabled={pending !== undefined}
+              onFolder={() => void chooseFolder()}
+              onClone={() => setAdding(true)}
+            />
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -313,6 +352,100 @@ function HowItWorks() {
   );
 }
 
+/**
+ * The first run's other ways in, behind one named action beside Open: a folder on disk, or a clone
+ * from GitHub, which unfolds its form under the row.
+ */
+function AddRepositoryMenu({
+  disabled,
+  onFolder,
+  onClone,
+}: {
+  disabled: boolean;
+  onFolder: () => void;
+  onClone: () => void;
+}) {
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        disabled={disabled}
+        data-testid="welcome-add"
+        render={<Button type="button" variant="outline" size="sm" />}
+      >
+        <Plus data-icon="inline-start" />
+        Add repository
+        <ChevronDown data-icon="inline-end" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner side="bottom" align="start" sideOffset={4} className="isolate z-50">
+          <Menu.Popup className={MENU_POPUP}>
+            <Menu.Item className={MENU_ITEM} data-testid="welcome-open-folder" onClick={onFolder}>
+              <FolderOpen aria-hidden />
+              Open a folder…
+            </Menu.Item>
+            <Menu.Item className={MENU_ITEM} data-testid="welcome-clone" onClick={onClone}>
+              <Globe aria-hidden />
+              Clone from GitHub
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
+
+/**
+ * The first run's repository search, once there are more than fit: focused as the card opens, so
+ * typing narrows the list at once. Down moves into the list, Return opens the best match.
+ */
+function RepoSearch({
+  query,
+  total,
+  onQuery,
+  onOpen,
+}: {
+  query: string;
+  total: number;
+  onQuery: (query: string) => void;
+  onOpen: () => void;
+}) {
+  return (
+    <label className="flex h-8 items-center gap-2 rounded-md border border-border bg-background px-2 text-meta focus-within:focus-ring">
+      <Search aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <input
+        type="search"
+        // The first run's one field, and what a long list needs first.
+        // oxlint-disable-next-line jsx-a11y/no-autofocus
+        autoFocus
+        data-testid="welcome-repo-search"
+        aria-label="Find a repository"
+        aria-controls="welcome-repos"
+        placeholder={`Find a repository among ${total}`}
+        value={query}
+        spellCheck={false}
+        autoComplete="off"
+        onChange={(event) => onQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            document
+              .querySelector<HTMLElement>('#welcome-repos [role=radio][aria-checked="true"]')
+              ?.focus();
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            onOpen();
+          } else if (event.key === "Escape" && query !== "") {
+            event.preventDefault();
+            event.stopPropagation();
+            onQuery("");
+          }
+        }}
+        className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+      />
+    </label>
+  );
+}
+
 /** The repositories the first run offers, shared by the picker and the session import. */
 function useFirstRunRepos() {
   const api = useApi();
@@ -324,7 +457,8 @@ function useFirstRunRepos() {
     queryKey: ["projects", "repositories"],
     queryFn: () => api.listRepositories(),
   });
-  return { projects, repos: (data?.repos ?? []).slice(0, RECENT_LIMIT) };
+  const all = data?.repos ?? [];
+  return { projects, all, repos: all.slice(0, RECENT_LIMIT) };
 }
 
 /**
@@ -433,6 +567,7 @@ function RecentRepos({
   };
   return (
     <div
+      id="welcome-repos"
       role="radiogroup"
       aria-label="Repositories"
       data-testid="welcome-repos"

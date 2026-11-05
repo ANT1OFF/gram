@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
 import { folderProblem } from "@/api/errors";
@@ -24,13 +24,20 @@ import { MessageResponse } from "@/components/ai-elements/message";
 import { mergeStateMarkOf, PrChip, staleReasonText } from "@/components/git-badges";
 import { PR_STATE_DISPLAY, prStateMarkOf, reviewMarkOf } from "@/components/pr-marks-model";
 import { QueryError } from "@/components/not-available";
+import { reviewStatusOf } from "@/components/review-glyph";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { agoText } from "@/lib/time";
 import { useInSight } from "@/lib/use-in-sight";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
-import { NumberTicker, RingGlyph, RingSpinner, usePresetTransition } from "@/motion";
+import {
+  NumberTicker,
+  RingGlyph,
+  RingSpinner,
+  useMotionLevel,
+  usePresetTransition,
+} from "@/motion";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -41,6 +48,7 @@ import { FolderMissing } from "./folder-missing";
 import { OutboundLink } from "./outbound-link";
 import { PanelMessage } from "./panel-message";
 import { PrActions, UpdateBranch } from "./pr-actions";
+import type { BlockerAction } from "./pr-blockers";
 import { keepSamePr, prDetailQuery, prDetailStamp } from "./pr-detail-query";
 import { ifTarget, identityOf, prTargetOf } from "./pr-identity";
 import { PrPeople } from "./pr-people";
@@ -337,6 +345,46 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
   const state = { ...PR_STATE_DISPLAY[stateMark.kind], label: stateMark.word };
   const mergeState = mergeStateMarkOf(badge, boundPr);
   const decision = reviewWord(detail.reviewDecision);
+  const setTab = useLayoutStore((s) => s.setPrPanelTab);
+  const reveal = useReveal(panel);
+
+  // The summary's next step: open the section it lives in, then bring its row into view.
+  const onBlocker = (step: BlockerAction) => {
+    switch (step.kind) {
+      case "inspectCheck":
+        reveal.show("Checks", (root) => {
+          const row = [...root.querySelectorAll<HTMLElement>("[data-check]")].find(
+            (el) => el.dataset["check"] === step.check,
+          );
+          // The row's one disclosure is its job evidence; opened already, it stays open.
+          const toggle = row?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+          if (toggle?.getAttribute("aria-expanded") === "false") toggle.click();
+          return { row, focus: toggle ?? undefined };
+        });
+        return;
+      case "readChanges":
+        if (step.where === "review") {
+          setTab("review");
+          return;
+        }
+        reveal.show("Conversation", (root) => {
+          const row = [
+            ...root.querySelectorAll<HTMLElement>('[data-review-state="CHANGES_REQUESTED"]'),
+          ].at(-1);
+          return { row, focus: row };
+        });
+        return;
+      case "openReview":
+        setTab("review");
+        return;
+      case "requestReview":
+        panel.current?.querySelector<HTMLButtonElement>("[data-request-review]")?.click();
+        return;
+      case "openCheck":
+      case "fixConflicts":
+        return;
+    }
+  };
 
   return (
     <div ref={panel} data-testid="pr-panel" className="min-h-0 flex-1 overflow-y-auto text-reading">
@@ -397,7 +445,6 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
             kind={mergeState?.kind}
           />
         </div>
-        <PrPeople threadId={threadId} detail={detail} />
         {badge?.stale && (
           <p
             data-testid="pr-stale"
@@ -414,12 +461,16 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
             </Button>
           </p>
         )}
+        {/* What blocks the merge and the next step lead; people and labels follow. */}
         <PrActions
           threadId={threadId}
           detail={detail}
           merge={mergeState?.kind}
+          bot={reviewStatusOf(badge?.review)}
+          onBlocker={onBlocker}
           onBind={bound ? undefined : () => setBindFormOpen(true)}
         />
+        <PrPeople threadId={threadId} detail={detail} />
       </header>
 
       <PrWatch
@@ -441,6 +492,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         empty="No checks"
         count={detail.checkRuns.length}
         attention={detail.checkRuns.some((run) => run.status === "failing")}
+        reveal={reveal.count("Checks")}
         action={
           <RerunFailedChecks threadId={threadId} available={detail.checkRuns.some(rerunnable)} />
         }
@@ -458,6 +510,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
                 // Keyed on the flash count too, so a second failure replays the animation.
                 key={`${run.name}:${flashes[run.name] ?? 0}`}
                 data-testid="check-run"
+                data-check={run.name}
                 className={cn(
                   "flex flex-col gap-1 px-3 py-1 text-meta",
                   flashes[run.name] !== undefined && "gram-flash",
@@ -540,12 +593,20 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         </ul>
       </Section>
 
-      <Section title="Conversation" empty="No comments yet" count={detail.conversation.length}>
+      <Section
+        title="Conversation"
+        empty="No comments yet"
+        count={detail.conversation.length}
+        reveal={reveal.count("Conversation")}
+      >
         <ul className="flex flex-col gap-2 px-3 py-1">
           {detail.conversation.map((comment) => (
             <li
               key={`${comment.author}-${comment.at}`}
-              className="rounded-(--radius-md) border border-border bg-card/40 p-2"
+              data-review-state={comment.kind === "review" ? comment.state : undefined}
+              // The summary's "Read requested changes" brings a review here and focuses it.
+              tabIndex={comment.kind === "review" ? -1 : undefined}
+              className="rounded-(--radius-md) border border-border bg-card/40 p-2 outline-none focus-visible:focus-ring"
             >
               <p className="mb-1 flex items-center gap-1.5 text-meta text-muted-foreground">
                 <MessageSquare aria-hidden className="size-3.5" />
@@ -574,6 +635,38 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
   );
 }
 
+type RevealTarget = (root: HTMLElement) => {
+  row: HTMLElement | undefined;
+  focus: HTMLElement | undefined;
+};
+
+/**
+ * Takes the user to a row of a section: `show` opens the section (each `count` change opens it),
+ * then, once it has rendered, finds the row, scrolls it to the top of the panel and focuses it.
+ */
+function useReveal(panel: RefObject<HTMLElement | null>) {
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  // A new object per request, so asking for the same row twice still brings it back into view.
+  const [request, setRequest] = useState<{ readonly find: RevealTarget }>();
+  const handled = useRef<typeof request>(undefined);
+  const smooth = useMotionLevel() === "full";
+  useEffect(() => {
+    const at = panel.current;
+    if (request === undefined || handled.current === request || at === null) return;
+    handled.current = request;
+    const { row, focus } = request.find(at);
+    row?.scrollIntoView?.({ block: "start", behavior: smooth ? "smooth" : "auto" });
+    focus?.focus({ preventScroll: true });
+  }, [request, panel, smooth]);
+  return {
+    count: (section: string) => counts[section] ?? 0,
+    show: (section: string, find: RevealTarget) => {
+      setCounts((all) => ({ ...all, [section]: (all[section] ?? 0) + 1 }));
+      setRequest({ find });
+    },
+  };
+}
+
 function Section({
   title,
   meta,
@@ -582,6 +675,7 @@ function Section({
   count,
   defaultOpen = true,
   attention = false,
+  reveal = 0,
   children,
 }: {
   title: string;
@@ -593,13 +687,20 @@ function Section({
   defaultOpen?: boolean;
   /** Opens the section when it turns true, e.g. a check started failing. */
   attention?: boolean;
+  /** Opens the section each time it grows, e.g. the summary took the user to one of its rows. */
+  reveal?: number;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen || attention);
   const [noticed, setNoticed] = useState(attention);
+  const [revealed, setRevealed] = useState(reveal);
   if (attention !== noticed) {
     setNoticed(attention);
     if (attention) setOpen(true);
+  }
+  if (reveal !== revealed) {
+    setRevealed(reveal);
+    setOpen(true);
   }
   const heading =
     "flex w-full items-center gap-1.5 px-3 py-2 text-caption font-medium tracking-wide text-muted-foreground uppercase";

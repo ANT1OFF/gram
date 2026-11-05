@@ -1,7 +1,9 @@
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Term } from "@/components/term";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { seeTerm, type TermId } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
 import { OVERVIEW_STOP } from "@/shell/focus-regions";
 import { overviewSectionFolded, useLayoutStore, type OverviewSection } from "@/stores/layout";
@@ -29,6 +31,7 @@ export function Section({
   count,
   action,
   hint,
+  term,
   children,
 }: {
   id: OverviewSection;
@@ -37,6 +40,8 @@ export function Section({
   action?: ReactNode;
   /** What the section's name means, on its hover and to a screen reader. */
   hint?: string;
+  /** The Gram word the name is, marked as one until its `hint` has been seen. */
+  term?: TermId;
   children: ReactNode;
 }) {
   const folded = useLayoutStore((s) => overviewSectionFolded(s, id));
@@ -54,6 +59,9 @@ export function Section({
             aria-label={`${title}, ${count}`}
             aria-description={hint}
             title={hint === undefined ? `${title}, ${count}` : `${title}, ${count}\n${hint}`}
+            // The hover that shows `hint` is its first use; a native title has no open event.
+            onPointerEnter={term === undefined ? undefined : () => seeTerm(term)}
+            onFocus={term === undefined ? undefined : () => seeTerm(term)}
             onClick={() => toggle(id)}
             className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-caption font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -64,7 +72,9 @@ export function Section({
                 folded && "-rotate-90",
               )}
             />
-            <span className="flex-1">{title}</span>
+            <span className="flex-1">
+              {term === undefined ? title : <Term term={term}>{title}</Term>}
+            </span>
             {folded && count > 0 && <span className="tracking-normal tabular-nums">{count}</span>}
           </button>
         </h2>

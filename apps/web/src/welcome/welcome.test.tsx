@@ -108,8 +108,14 @@ describe("first run", () => {
     expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("false");
     expect(welcome.getByTestId("welcome-open").textContent).toContain("Open web");
     expect(welcome.getByRole("button", { name: "Import past CLI sessions" })).toBeTruthy();
-    expect(welcome.getByRole("button", { name: "Open a folder…" })).toBeTruthy();
-    expect(welcome.getByRole("button", { name: "Clone from GitHub" })).toBeTruthy();
+    // The other ways in are behind one named action beside Open, not a row of their own.
+    expect(welcome.queryByRole("button", { name: "Open a folder…" })).toBeNull();
+    expect(welcome.queryByRole("button", { name: "Clone from GitHub" })).toBeNull();
+    fireEvent.click(welcome.getByRole("button", { name: "Add repository" }));
+    expect(await screen.findByRole("menuitem", { name: "Open a folder…" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Clone from GitHub" })).toBeTruthy();
+    // Six repositories fit; no search is offered for them.
+    expect(welcome.queryByRole("searchbox", { name: "Find a repository" })).toBeNull();
     // Looking at it records nothing, and a first run never asks for a gateway key.
     expect(updateSettings).not.toHaveBeenCalled();
     expect(welcome.queryByRole("form", { name: "Connect the AI gateway" })).toBeNull();
@@ -158,6 +164,35 @@ describe("first run", () => {
     expect(welcome.queryByTestId("welcome-open")).toBeNull();
     // The default button variant is the primary one; beside a picked repository it is outlined.
     expect(folder.className).toContain("bg-primary");
+  });
+
+  it("offers a focused search once the repositories outgrow the list", async () => {
+    const { api, render } = load(withOnboarding({}));
+    const repos = Array.from({ length: 9 }, (_, i) => ({
+      name: `repo-${i}`,
+      root: `/Users/dev/code/repo-${i}`,
+    }));
+    vi.spyOn(api, "listRepositories").mockResolvedValue({
+      repos: [...repos, { name: "billing", root: "/Users/dev/work/billing" }],
+    });
+    render();
+    const welcome = within(await screen.findByTestId("welcome"));
+    const search = await welcome.findByRole("searchbox", { name: "Find a repository" });
+    expect(document.activeElement).toBe(search);
+    expect(welcome.getAllByTestId("welcome-repo")).toHaveLength(6);
+    expect(welcome.getByTestId("welcome-repos-more").textContent).toContain("4 more");
+    fireEvent.change(search, { target: { value: "bill" } });
+    expect(welcome.getAllByTestId("welcome-repo").map((row) => row.textContent)).toEqual([
+      expect.stringContaining("billing"),
+    ]);
+    // The best match is picked, so Open and Return open it.
+    expect(welcome.getByTestId("welcome-open").textContent).toContain("Open billing");
+    fireEvent.change(search, { target: { value: "nope" } });
+    expect(welcome.getByTestId("welcome-repos-none").textContent).toContain("nope");
+    expect(welcome.queryByTestId("welcome-open")).toBeNull();
+    // Escape clears the search before anything else hears it.
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect((search as HTMLInputElement).value).toBe("");
   });
 
   it("is skipped for good", async () => {

@@ -24,6 +24,7 @@ import { OVERVIEW_OPEN_FROM, useLayoutStore } from "@/stores/layout";
 import { branchPrefixSetting } from "./branch-prefix";
 import { GENERAL_DEFAULTS, resetFor } from "./defaults";
 import { OptionGroup, rowInputCls, SettingRow, Toggle } from "./fields";
+import { SaveHint } from "./save-hint";
 import { claimTouchedRow, markSaved, markTouchedSaved } from "./saved-mark";
 import { GENERAL_ANCHORS } from "./general-anchors";
 import { SettingsGroup } from "./settings-group";
@@ -495,17 +496,7 @@ function FolderField({
       htmlFor={id}
       onReset={onReset}
       error={invalid ?? error}
-      status={
-        unsaved ? (
-          <span
-            id={hintId}
-            data-testid="setting-unsaved"
-            className="text-meta text-muted-foreground"
-          >
-            Enter or Tab to save
-          </span>
-        ) : undefined
-      }
+      status={unsaved ? <SaveHint id={hintId} /> : undefined}
     >
       <input
         id={id}

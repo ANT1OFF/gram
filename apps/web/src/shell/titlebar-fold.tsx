@@ -30,6 +30,7 @@ import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { EXPLAIN } from "@/lib/explain";
+import { seeTerm } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
 import { useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
@@ -375,12 +376,15 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
       {threadId !== undefined && <ContentsSubmenu threadId={threadId} />}
       <Menu.Item
         data-testid="folded-quiet"
-        title="Show only what needs you, one card at a time"
-        className={MENU_ITEM}
-        onClick={() => useViewStore.getState().setQuiet(true)}
+        aria-description={EXPLAIN.quiet}
+        className={cn(MENU_ITEM, "items-start")}
+        onClick={() => {
+          seeTerm("quiet");
+          useViewStore.getState().setQuiet(true);
+        }}
       >
-        <Moon aria-hidden />
-        Quiet
+        <Moon aria-hidden className="mt-0.5" />
+        <Described label="Quiet" line={EXPLAIN.quiet} />
         <Keys id="view.quiet" />
       </Menu.Item>
       <Menu.Item

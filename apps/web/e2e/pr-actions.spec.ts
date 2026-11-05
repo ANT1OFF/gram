@@ -23,6 +23,44 @@ test("the PR row's menu copies, opens and refreshes the PR", async ({ page }) =>
   await expect(page.getByTestId("pane-review-decision")).toHaveText("Changes requested");
 });
 
+test("the PR overview leads with what blocks the merge and one next step", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/t/t-flaky");
+  await page.getByRole("tab", { name: "PR", exact: true }).click();
+  const panel = page.getByTestId("pr-panel");
+
+  const blocked = panel.getByTestId("pr-merge-blocked");
+  await expect(blocked).toHaveText(/^Blocked: 1 failing check, changes requested/);
+  const reasons = panel.getByRole("list", { name: "What blocks the merge" }).getByRole("listitem");
+  await expect(reasons.first()).toHaveText("test (windows) failing");
+  await expect(reasons.nth(1)).toHaveText("Changes requested by reviewer");
+  const actions = panel.getByTestId("pr-actions").getByRole("button");
+  await expect(actions).toHaveText(["Inspect test (windows) job", "Merge…"]);
+  await expect(panel.getByRole("button", { name: "Merge…" })).toHaveAttribute(
+    "aria-describedby",
+    (await blocked.getAttribute("id"))!,
+  );
+
+  // The summary and its step sit above the reviewers, the labels and what the agent watches.
+  const top = async (locator: ReturnType<typeof panel.getByTestId>) =>
+    (await locator.boundingBox())!.y;
+  const summary = await top(panel.getByTestId("pr-blockers"));
+  const step = await top(panel.getByTestId("pr-actions"));
+  const reviewers = await top(panel.getByTestId("pr-reviewers"));
+  const labels = await top(panel.getByRole("button", { name: "Add label…" }));
+  const watch = await top(panel.getByTestId("pr-watch"));
+  expect(summary).toBeLessThan(step);
+  expect(step).toBeLessThan(reviewers);
+  expect(reviewers).toBeLessThanOrEqual(labels);
+  expect(labels).toBeLessThan(watch);
+
+  await panel.getByTestId("pr-next-action").click();
+  const checks = panel.getByRole("region", { name: "Checks" });
+  await expect(checks.getByRole("button", { name: "Hide test (windows) job" })).toBeFocused();
+  await expect(checks.getByTestId("ci-job-detail")).toContainText("Run 9102 · Attempt 1 · Job 3");
+  await expect(checks.getByTestId("ci-job-detail")).toBeInViewport();
+});
+
 test("rerun failed checks, then squash-merge the PR from the panel", async ({ page }) => {
   await page.goto("/t/t-flaky");
   await page.getByRole("tab", { name: "PR", exact: true }).click();

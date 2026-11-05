@@ -14,12 +14,30 @@ import {
 import { useId, useState } from "react";
 
 import { useApi } from "@/api/context";
-import type { MergeMarkKind } from "@/components/pr-marks-model";
+import { openExternalUrl } from "@/api/open-external";
+import {
+  BOT_DISPLAY,
+  CHECKS_DISPLAY,
+  MERGE_DISPLAY,
+  REVIEW_DISPLAY,
+  type MergeMarkKind,
+  type PrMarkDisplay,
+} from "@/components/pr-marks-model";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/settings/copy-text";
 import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
+import {
+  blockedLineOf,
+  fixConflictsMessage,
+  mergeBlockersOf,
+  primaryBlockerAction,
+  type BlockerAction,
+  type BlockerSource,
+  type BotSource,
+  type MergeBlockerKind,
+} from "./pr-blockers";
 import { Notice, useReviewAction, type NoticeState } from "./review/review-thread-card";
 
 const STRATEGY_LABEL: Record<MergeStrategy, string> = {
@@ -35,39 +53,38 @@ const ITEM =
 
 /**
  * Why merging an open PR wouldn't go through yet, as GitHub's merge state and the PR's reviews and
- * checks say, "Blocked: changes requested, 1 failing check"; `undefined` when nothing stands in
- * the way that the panel knows of.
+ * checks say, worst first: "Blocked: 1 failing check, changes requested"; `undefined` when nothing
+ * stands in the way that the panel knows of.
  */
 export function mergeBlockedReason(
-  detail: Pick<PrDetail, "reviewDecision" | "checkRuns">,
+  detail: BlockerSource,
   merge: MergeMarkKind | undefined,
+  bot?: BotSource | undefined,
 ): string | undefined {
-  const parts: string[] = [];
-  if (merge === "conflicts") parts.push("conflicts");
-  if (detail.reviewDecision === "CHANGES_REQUESTED") parts.push("changes requested");
-  const failing = detail.checkRuns.filter(
-    (run) => run.status === "failing" && run.conclusion?.toUpperCase() !== "CANCELLED",
-  ).length;
-  if (failing > 0) parts.push(failing === 1 ? "1 failing check" : `${failing} failing checks`);
-  if (parts.length === 0 && merge === "blocked") {
-    parts.push(
-      detail.reviewDecision === "REVIEW_REQUIRED"
-        ? "review required"
-        : "required reviews or checks are missing",
-    );
-  }
-  return parts.length === 0 ? undefined : `Blocked: ${parts.join(", ")}`;
+  return blockedLineOf(mergeBlockersOf(detail, merge, bot));
 }
 
+const BLOCKER_DISPLAY: Record<MergeBlockerKind, PrMarkDisplay> = {
+  checks: CHECKS_DISPLAY.failing,
+  conflicts: MERGE_DISPLAY.conflicts,
+  changes: REVIEW_DISPLAY.changes,
+  bot: BOT_DISPLAY.blockers,
+  review: REVIEW_DISPLAY.waiting,
+  required: MERGE_DISPLAY.blocked,
+};
+
 /**
- * The PR's one main action (Merge, Ready for review or Reopen) and a "…" menu with the rest: draft,
- * binding another PR, copying the link and closing. Merging and closing confirm first.
+ * What blocks an open PR's merge, worst first, then the PR's one main action and a "…" menu with
+ * the rest: draft, binding another PR, copying the link and closing. Blocked, the main action is the
+ * next step for the worst blocker and Merge steps back beside it. Merging and closing confirm first.
  */
 export function PrActions({
   threadId,
   detail,
   onBind,
   merge,
+  bot,
+  onBlocker,
 }: {
   threadId: ThreadId;
   detail: PrDetail;
@@ -75,6 +92,10 @@ export function PrActions({
   onBind?: (() => void) | undefined;
   /** Where GitHub says the merge stands, from the thread's PR badge. */
   merge?: MergeMarkKind | undefined;
+  /** The review bot's status on the PR's badge; its blockers block the merge too. */
+  bot?: BotSource | undefined;
+  /** Takes the user to what blocks the merge: a check, a review. No such step is offered without it. */
+  onBlocker?: ((action: BlockerAction) => void) | undefined;
 }) {
   const api = useApi();
   const reasonId = useId();
@@ -96,7 +117,28 @@ export function PrActions({
     });
 
   const open = detail.state === "OPEN";
-  const blocked = open && !detail.isDraft ? mergeBlockedReason(detail, merge) : undefined;
+  const blockers = open && !detail.isDraft ? mergeBlockersOf(detail, merge, bot) : [];
+  const blocked = blockedLineOf(blockers);
+  const next = primaryBlockerAction(
+    blockers.filter(
+      (blocker) =>
+        onBlocker !== undefined ||
+        blocker.action?.kind === "fixConflicts" ||
+        blocker.action?.kind === "openCheck",
+    ),
+  );
+  const takeNext = (step: BlockerAction) => {
+    if (step.kind === "openCheck") {
+      void openExternalUrl(api, step.url).catch(() => undefined);
+    } else if (step.kind === "fixConflicts") {
+      void action.run(async () => {
+        const result = await api.send(threadId, {
+          text: fixConflictsMessage(detail.number, detail.baseRefName),
+        });
+        return result.queued ? "Queued for the agent" : "Sent to the agent";
+      });
+    } else onBlocker?.(step);
+  };
   const more = (
     <Menu.Root>
       <Menu.Trigger
@@ -157,9 +199,50 @@ export function PrActions({
 
   return (
     <div className="flex flex-col gap-1.5">
+      {blocked !== undefined && (
+        <div data-testid="pr-blockers" className="flex flex-col gap-1">
+          <p
+            id={reasonId}
+            data-testid="pr-merge-blocked"
+            className="flex min-w-0 items-center gap-1.5 text-body-strong"
+          >
+            <Ban aria-hidden className="size-3.5 shrink-0" />
+            {blocked}
+          </p>
+          <ul
+            aria-label="What blocks the merge"
+            className="flex flex-col gap-0.5 text-meta text-muted-foreground"
+          >
+            {blockers.map((blocker) => {
+              const mark = BLOCKER_DISPLAY[blocker.kind];
+              return (
+                <li
+                  key={blocker.kind}
+                  data-blocker={blocker.kind}
+                  className="flex min-w-0 items-center gap-1.5"
+                >
+                  <mark.icon aria-hidden className={cn("size-3.5 shrink-0", mark.tone)} />
+                  <span className="min-w-0 truncate">{blocker.detail}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-1.5">
         {detail.state !== "MERGED" && (
           <div data-testid="pr-actions" className="flex items-center gap-1.5">
+            {next !== undefined && (
+              <Button
+                size="xs"
+                data-testid="pr-next-action"
+                data-action={next.kind}
+                disabled={action.pending}
+                onClick={() => takeNext(next)}
+              >
+                {next.label}
+              </Button>
+            )}
             {detail.state === "CLOSED" ? (
               <Button
                 size="xs"
@@ -180,8 +263,8 @@ export function PrActions({
                 Ready for review
               </Button>
             ) : (
-              // Blocked, Merge steps back to a secondary button and says why; it still opens, for
-              // auto-merge or a merge the panel can't foresee GitHub allowing.
+              // Blocked, Merge steps back to a secondary button described by the blockers above; it
+              // still opens, for auto-merge or a merge the panel can't foresee GitHub allowing.
               <Button
                 size="xs"
                 variant={blocked === undefined ? "default" : "outline"}
@@ -197,16 +280,6 @@ export function PrActions({
           </div>
         )}
         {more}
-        {blocked !== undefined && (
-          <span
-            id={reasonId}
-            data-testid="pr-merge-blocked"
-            className="flex min-w-0 items-center gap-1 text-meta text-muted-foreground"
-          >
-            <Ban aria-hidden className="size-3.5 shrink-0" />
-            {blocked}
-          </span>
-        )}
       </div>
       {confirming === undefined && <Notice notice={action.notice} />}
       {confirming === "merge" && (

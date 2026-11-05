@@ -124,6 +124,21 @@ const steps: readonly Shot[] = [
       await page.getByTestId("overview-worker-starting").first().waitFor();
     },
   },
+  {
+    name: "new-task-again",
+    title: "Start again: the next worker's form folds to the brief and the remembered place",
+    open: async (page) => {
+      await page.goto("/new-task?way=direct");
+      await page.getByLabel("What needs doing").fill("Add retry coverage for the queue consumer.");
+      await page.getByRole("button", { name: /Start (workspace and )?worker/ }).click();
+      await expect(page).toHaveURL(/\/t\//);
+      await page.getByLabel("Message", { exact: true }).waitFor();
+      // The next one, by its shortcut, in the same session: the last target is remembered.
+      await page.keyboard.press("ControlOrMeta+Alt+n");
+      await page.getByLabel("What needs doing").waitFor();
+      await page.getByLabel("What needs doing").fill("Cover the dead-letter path too.");
+    },
+  },
   { name: "new-thread", title: "Start: one-off thread form", open: shot("new-thread") },
   {
     name: "needs-you",
@@ -312,6 +327,14 @@ const steps: readonly Shot[] = [
       await page.getByLabel("Message", { exact: true }).waitFor();
       await page.keyboard.press("ControlOrMeta+,");
       await expect(page.getByTestId("general-settings")).toBeVisible();
+    },
+  },
+  {
+    name: "settings-dirty",
+    title: "Settings: a typed folder not saved yet says Enter to save · Esc to cancel",
+    open: async (page) => {
+      await page.goto("/settings/general");
+      await page.getByLabel("Default folder", { exact: true }).fill("~/work/sandbox");
     },
   },
   {

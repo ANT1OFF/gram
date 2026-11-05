@@ -46,7 +46,7 @@ test("a folder field says how to save, then Saved, and why a path can't be saved
     .filter({ has: page.getByLabel("Default folder", { exact: true }) });
 
   await folder.fill("~/work/sandbox");
-  await expect(row.getByTestId("setting-unsaved")).toHaveText("Enter or Tab to save");
+  await expect(row.getByTestId("setting-unsaved")).toHaveText("Enter to save · Esc to cancel");
   await folder.press("Enter");
   // The row that saved says so, though the save changed its value and its reset now shows.
   await expect(row.getByTestId("setting-saved")).toBeVisible();

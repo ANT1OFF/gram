@@ -4,10 +4,12 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, HandGrab, PanelRight } from "lucide-react";
 
 import { Hint } from "@/components/hint";
+import { Term } from "@/components/term";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { keyLabel, useShortcut } from "@/keyboard/registry";
 import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
+import { seeTerm } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
 import { GlideText, Swap } from "@/motion";
 import { useThreadsStore } from "@/stores/threads";
@@ -320,6 +322,9 @@ export function WorkerActions({
           <Hint
             label={EXPLAIN.takeOver}
             side="bottom"
+            onOpenChange={(open) => {
+              if (open) seeTerm("takeOver");
+            }}
             render={
               <button
                 type="button"
@@ -329,7 +334,7 @@ export function WorkerActions({
               />
             }
           >
-            Take over
+            <Term term="takeOver">Take over</Term>
           </Hint>
         )
       )}

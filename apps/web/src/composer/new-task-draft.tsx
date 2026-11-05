@@ -251,9 +251,21 @@ export function NewTaskDraft({
   const holdId = useId();
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Arriving here (⌘N, New task) leaves focus on the page it came from: go where typing starts.
+  // A repeat start: the target is the one the last task went to and no new workspace is made, so
+  // who does it and where it runs fold to one line until Change unfolds them.
+  const [expanded, setExpanded] = useState(false);
+  const repeat =
+    last !== undefined &&
+    target !== undefined &&
+    target.kind === "workspace" &&
+    taskTargetKey(last) === taskTargetKey(target);
+  const folded = repeat && !expanded;
+
+  // Arriving here (⌘N, New task, the New menu) starts where typing does: the brief. Focus already
+  // in a field (a carried draft's, say) stays.
   useEffect(() => {
-    if (!focusLost()) return;
+    if (!focusLost() && document.activeElement?.closest("input, textarea, [contenteditable]"))
+      return;
     focusIfConnected(formRef.current?.querySelector('textarea[aria-label="What needs doing"]'));
   }, []);
 
@@ -375,6 +387,27 @@ export function NewTaskDraft({
           who={way === "direct" ? "worker" : "orchestrator"}
           onWho={pickWho}
           disabled={attachments.uploading}
+          summary={
+            folded
+              ? {
+                  places: [
+                    name,
+                    ...(way === "direct" && repo !== undefined
+                      ? [repo.name, "New worktree, new branch"]
+                      : []),
+                  ],
+                  onExpand: () => {
+                    setExpanded(true);
+                    // Unfolded, the keyboard picks up at the choice it was folding.
+                    requestAnimationFrame(() =>
+                      focusIfConnected(
+                        formRef.current?.querySelector('[role="radio"][aria-checked="true"]'),
+                      ),
+                    );
+                  },
+                }
+              : undefined
+          }
           where={
             <>
               <WhereStop label={makesOne ? "New workspace for" : "Workspace"}>
@@ -691,6 +724,15 @@ export function NewTaskDraft({
                   state={workspace}
                   autonomy={autonomyOf(workspace?.charter ?? DEFAULT_CHARTER)}
                 />
+                {way === "direct" && (
+                  // Who the worker answers to, beside what the workspace lets it do: the toggle
+                  // above decides it, and folded or not this is where Start says so.
+                  <span data-testid="task-owner" className="text-muted-foreground">
+                    {hold
+                      ? "You direct it until you hand it back."
+                      : "Its orchestrator directs it."}
+                  </span>
+                )}
                 {way === "plan" && budget !== undefined && (
                   <span
                     data-testid="task-workers"

@@ -37,6 +37,7 @@ import { pauseText } from "@/thread/orchestration-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { useOpenBoard } from "@/orchestration/open-board";
+import { SaveHint } from "./save-hint";
 import { AutomaticDreamField } from "./automatic-dream-field";
 import { AutonomyField } from "./autonomy-field";
 import { Field, inputCls, NumberField } from "./fields";
@@ -429,6 +430,8 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
   const id = useId();
   const [draft, setDraft] = useState<string>();
   const [error, setError] = useState<string>();
+  const hintId = useId();
+  const dirty = draft !== undefined && draft !== workspace.name;
   const commit = () => {
     if (draft === undefined) return;
     const result = validateWorkspaceDraft(
@@ -446,7 +449,12 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
     }
   };
   return (
-    <Field label="Name" description="Shown in the sidebar and the title bar." htmlFor={id}>
+    <Field
+      label="Name"
+      description="Shown in the sidebar and the title bar."
+      htmlFor={id}
+      status={dirty ? <SaveHint id={hintId} /> : undefined}
+    >
       <input
         id={id}
         className={inputCls}
@@ -454,6 +462,7 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
         spellCheck={false}
         autoComplete="off"
         disabled={changes.busy}
+        aria-describedby={dirty ? hintId : undefined}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {

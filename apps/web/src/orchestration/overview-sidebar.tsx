@@ -1158,7 +1158,7 @@ function SoloThreads() {
   const viewed = useParams({ strict: false }).threadId;
   if (solo.length + parked.length === 0) return null;
   return (
-    <Section id="solo" title="Solo threads" count={solo.length} hint={EXPLAIN.solo}>
+    <Section id="solo" title="Solo threads" count={solo.length} hint={EXPLAIN.solo} term="solo">
       {solo.length > 0 && <SoloList threads={solo} viewed={viewed} />}
       {parked.length > 0 && <FoldedThreads kind="parked" threads={parked} viewed={viewed} />}
     </Section>

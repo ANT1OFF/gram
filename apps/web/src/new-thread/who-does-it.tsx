@@ -3,6 +3,7 @@ import { useId, type ReactNode } from "react";
 
 import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
+import { Button } from "@/components/ui/button";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { CHOICE_CARD } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -142,27 +143,96 @@ export function WhereFact({
 }
 
 /**
+ * Who does it and where it runs, folded to one line for a repeat start: the work type, then each
+ * place in words ("Gram · gram · New worktree, new branch"), and Change, which unfolds the full
+ * choice. The words are what the unfolded form would show, so nothing is decided out of sight.
+ */
+function NewFormSummary({
+  who,
+  places,
+  onExpand,
+  disabled,
+}: {
+  who: Who;
+  places: readonly string[];
+  onExpand: () => void;
+  disabled: boolean;
+}) {
+  const choice = WHO_CHOICES.find((each) => each.value === who)!;
+  const Icon = choice.icon;
+  return (
+    <div
+      role="group"
+      aria-label="Who does it and where it runs"
+      data-testid="new-summary"
+      className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card py-1 pr-1 pl-2.5 text-meta"
+    >
+      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="shrink-0 font-medium text-foreground">
+        <span aria-hidden={choice.spoken === undefined ? undefined : true}>{choice.label}</span>
+        {choice.spoken !== undefined && <span className="sr-only">{choice.spoken}</span>}
+      </span>
+      <span className="min-w-0 truncate text-muted-foreground" data-testid="new-summary-where">
+        {places.map((place) => ` · ${place}`).join("")}
+      </span>
+      <Button
+        type="button"
+        size="xs"
+        variant="ghost"
+        className="ml-auto shrink-0"
+        data-testid="new-summary-change"
+        aria-label="Change who does it or where it runs"
+        aria-expanded={false}
+        disabled={disabled}
+        onClick={onExpand}
+      >
+        Change
+      </Button>
+    </div>
+  );
+}
+
+/**
  * The top of the one New form, the same whoever does it: the title, Who does it with each
  * choice's owner in a line, Where it runs (`where`: the workspace, the repository and the checkout,
  * or the folder, each named before submit), and one plain line on what happens next there.
+ *
+ * With `summary`, a repeat start to the remembered place, it folds all of that to one line naming
+ * the same choices, which Change unfolds; the brief below is where typing starts.
  */
 export function NewFormHeader({
   who,
   onWho,
   where,
   line,
+  summary,
   disabled = false,
 }: {
   who: Who;
   onWho: (who: Who) => void;
   where: ReactNode;
   line: ReactNode;
+  /** The places in words and how to unfold them; present only while the form is folded. */
+  summary?: { readonly places: readonly string[]; readonly onExpand: () => void } | undefined;
   /** While a file is still uploading, which the other kind of draft couldn't take with it. */
   disabled?: boolean;
 }) {
   const slab = useId();
   const labelId = useId();
   const whereId = useId();
+  if (summary !== undefined) {
+    return (
+      <header className="flex flex-col gap-3">
+        <h1 className="font-heading text-title">New</h1>
+        <NewFormSummary
+          who={who}
+          places={summary.places}
+          onExpand={summary.onExpand}
+          disabled={disabled}
+        />
+      </header>
+    );
+  }
   return (
     <header className="flex flex-col gap-3">
       <h1 className="font-heading text-title">New</h1>
