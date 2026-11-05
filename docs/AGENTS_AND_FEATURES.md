@@ -213,6 +213,16 @@ archived workers, groups and their stage notes by default, including with
 `detail: true`. Use `includeArchived: true` (or `state: ["archived"]`) to inspect
 that history. Current questions, failures, blockers and PR changes stay visible.
 
+The orchestrator's chat opens on a status header with live counts. **Running** opens
+Workers, **Waiting on you** opens Needs you, **In review** opens the Board and
+**Merged today** opens History. The header also has the tightest subscription
+limit. Digests that changed nothing for you fold into one update line, together
+with the orchestrator's replies to them. These always stand on their own:
+merges, deliveries, failures, questions, boot and away digests, and replies that
+ask you something. **Show all activity** in the header shows everything, and so
+does finding a folded reply with ⌘F. Only the view changes: the orchestrator
+still receives every digest.
+
 Workers may add `evidence: { headSha, gate, pr?, nextStep }` to `report`. These
 bounded, worker-authored claims appear in full before the prose excerpt and in
 compact ledger rows; they do not qualify a server merge gate. The SHA accepts
