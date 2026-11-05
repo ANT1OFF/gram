@@ -92,7 +92,7 @@ export function useDiffReviewState(threadId: ThreadId, diff: unknown): DiffRevie
 export const linesLabel = (start: number, end: number) =>
   start === end ? `line ${start}` : `lines ${start}-${end}`;
 
-const ROW_CELL = "border-y border-border bg-card px-2 py-1.5 font-sans";
+const ROW_CELL = "border-y border-edge bg-card px-2 py-1.5 font-sans";
 
 /** Under a pick: the way to comment on it without the context menu. */
 export function CommentActionRow({

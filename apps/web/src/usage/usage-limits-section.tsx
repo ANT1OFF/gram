@@ -120,7 +120,7 @@ function LimitCard({
         data-testid="usage-limit-card"
         data-provider={provider}
         data-window={window}
-        className="flex min-h-28 flex-col rounded-lg border border-border bg-card px-4 py-3.5 text-muted-foreground"
+        className="flex min-h-28 flex-col rounded-lg border border-edge bg-card px-4 py-3.5 text-muted-foreground"
       >
         <CardTitle provider={provider} window={window} />
         <p className="mt-auto text-meta">No reading yet</p>
@@ -145,7 +145,7 @@ function LimitCard({
       data-provider={provider}
       data-window={window}
       data-warn={warns || undefined}
-      className="flex min-h-28 flex-col rounded-lg border border-border bg-card px-4 py-3.5"
+      className="flex min-h-28 flex-col rounded-lg border border-edge bg-card px-4 py-3.5"
     >
       <div className="flex items-baseline gap-2">
         <CardTitle provider={provider} window={window} />

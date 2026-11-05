@@ -70,7 +70,7 @@ function SelectContent({
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}
           className={cn(
-            "relative isolate z-50 max-h-(--available-height) outline-none w-max max-w-[min(var(--available-width),28rem)] min-w-[max(var(--anchor-width),9rem)] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-overlay ring-1 ring-foreground/10 transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0 data-[align-trigger=true]:data-[ending-style]:scale-100 data-[align-trigger=true]:data-[starting-style]:scale-100",
+            "relative isolate z-50 max-h-(--available-height) outline-none w-max max-w-[min(var(--available-width),28rem)] min-w-[max(var(--anchor-width),9rem)] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-overlay ring-1 ring-edge transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0 data-[align-trigger=true]:data-[ending-style]:scale-100 data-[align-trigger=true]:data-[starting-style]:scale-100",
             className,
           )}
           {...props}

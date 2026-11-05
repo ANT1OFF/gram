@@ -277,7 +277,7 @@ function DiffFileRow({
       </div>
       <Expand open={open} id={bodyId}>
         {rendered && (
-          <div className="border-t border-border bg-card/40">
+          <div className="border-t border-edge bg-card/40">
             {file.tooLarge ? (
               <TooLargeNote
                 file={file}

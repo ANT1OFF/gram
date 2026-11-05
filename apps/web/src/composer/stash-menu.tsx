@@ -80,7 +80,7 @@ export function StashMenu({
             data-testid="stash-menu"
             data-surface="overlay"
             aria-label="Stashed drafts"
-            className="w-80 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="w-80 origin-(--transform-origin) rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             {stashes.length === 0 ? (
               <p className="px-2 py-1.5 text-reading text-muted-foreground">No stashed drafts.</p>
