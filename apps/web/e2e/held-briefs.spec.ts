@@ -7,6 +7,13 @@ import { openOrchestrator, pressFirstWorkspaceKey } from "./thread-row";
 // clock, Release now, and the release at the reset. Mock state lives in memory, so every step
 // after the seed navigates inside the app; nothing reloads.
 
+test.use({ timezoneId: "UTC" });
+test.beforeEach(async ({ page }) => {
+  // Both the three-hour reset and the four-second hold cross midnight. Keep Date fixed while
+  // real timers still release the short hold on their own.
+  await page.clock.setFixedTime(new Date("2026-11-05T23:59:58Z"));
+});
+
 const seed = async (page: Page) => {
   await page.goto("/t/t-flaky");
   await page.getByLabel("Message", { exact: true }).waitFor();
@@ -24,10 +31,7 @@ const openBoard = async (page: Page) => {
   return made;
 };
 
-/**
- * Holds a brief for `feature` until `inMs` from now, and gives back what the page's 24-hour clock
- * reads for that time.
- */
+/** Holds a brief for `feature` until `inMs` from the page's pinned clock, and returns its id. */
 const hold = (page: Page, workspaceId: string, feature: string, title: string, inMs: number) =>
   page.evaluate(
     ([id, slug, name, after]) => {
@@ -39,12 +43,7 @@ const hold = (page: Page, workspaceId: string, feature: string, title: string, i
         usedPct: 85,
         until,
       });
-      const clock = new Date(until).toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-      });
-      return { id: brief.id, clock };
+      return brief.id;
     },
     [workspaceId, feature, title, inMs] as const,
   );
@@ -56,23 +55,14 @@ test("a held brief sits on the Board's Briefed station with its reset, and Relea
   page,
 }) => {
   const made = await openBoard(page);
-  const { id, clock } = await hold(
-    page,
-    made.workspaceId,
-    "nightly-docs",
-    "Nightly docs",
-    3 * 3_600_000,
-  );
+  const id = await hold(page, made.workspaceId, "nightly-docs", "Nightly docs", 3 * 3_600_000);
 
   const row = line(page, "nightly-docs");
   const chip = row.getByTestId("rail-held");
   await expect(chip).toBeVisible();
   await expect(chip).toHaveAttribute("data-held-id", id);
   await expect(chip).toContainText("Nightly docs");
-  // 24-hour, with the date only when the reset falls on another day.
-  await expect(chip.getByTestId("held-until")).toHaveText(
-    new RegExp(`^until (\\d{1,2} \\w{3} )?${clock}$`),
-  );
+  await expect(chip.getByTestId("held-until")).toHaveText("until 6 Nov 02:59");
   await expect(chip.getByTestId("held-until")).not.toHaveText(/AM|PM/);
   await expect(chip).toHaveAttribute("title", /^Codex is at 85% of its 5-hour limit/);
   // It is on Briefed, and no worker exists for it yet.
@@ -103,13 +93,11 @@ test("the feature card in the stream shows the brief held, and it starts on its 
   const card = page.locator('[data-testid="feature-card"][data-feature="mail-trigger"]');
   await expect(card).toBeVisible();
   const workers = await card.getByTestId("feature-card-worker").count();
-  const { clock } = await hold(page, made.workspaceId, "mail-trigger", "Mail docs", 4_000);
+  await hold(page, made.workspaceId, "mail-trigger", "Mail docs", 4_000);
   const held = card.getByTestId("held-brief");
   await expect(held).toBeVisible();
   await expect(held).toContainText("Mail docs");
-  await expect(held.getByTestId("held-until")).toHaveText(
-    new RegExp(`^Paused until (\\w{3} )?${clock}$`),
-  );
+  await expect(held.getByTestId("held-until")).toHaveText("Paused until 6 Nov 00:00");
   await expect(held.getByRole("button", { name: "Release Mail docs now" })).toBeVisible();
 
   // At the reset it is spawned without a click: the held line gives way to a worker.
