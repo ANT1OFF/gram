@@ -20,12 +20,11 @@ import { idleCompactOf, effectiveCheckout, type ServerEvent, type Thread } from 
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Schedule from "effect/Schedule";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { withOwnedBranch } from "../git/worker-pr.ts";
 import { contextPct, workerErrorOf } from "./ledger.ts";
@@ -454,9 +453,13 @@ export const OrchestrationLive = Layer.effect(
       routePaused,
     });
 
-    const { setCharter, changeCharter, checkCharter, afterCharter } = makeCharter(kit, { wake });
+    const routinesChanged = yield* Queue.unbounded<void>();
+    const { setCharter, changeCharter, checkCharter, afterCharter } = makeCharter(kit, {
+      wake,
+      routinesChanged: Queue.offer(routinesChanged, undefined).pipe(Effect.asVoid),
+    });
 
-    const { tickRoutines } = makeRoutines(kit, { wake, startWorker });
+    const { tickRoutines, runRoutines } = makeRoutines(kit, { wake, startWorker });
 
     const {
       noteForNextDigest,
@@ -735,9 +738,8 @@ export const OrchestrationLive = Layer.effect(
       Effect.forkScoped,
     );
 
-    // Routines look once a minute; a run is at most that late.
-    yield* tickRoutines.pipe(
-      Effect.repeat(Schedule.spaced(Duration.minutes(1))),
+    // Routines look once a minute while any is on, so a run is at most that late.
+    yield* runRoutines(routinesChanged).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("routines stopped").pipe(
           Effect.annotateLogs({ cause: Cause.pretty(cause) }),

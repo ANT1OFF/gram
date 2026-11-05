@@ -6,6 +6,7 @@ import {
   routineScheduleText,
   ThreadId,
   type ModelRef,
+  type OrchestratorCharter,
   type ProjectId,
   type Thread,
   type UserInput,
@@ -16,7 +17,9 @@ import {
 import { randomUUID } from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { withNotes, type OutboxState } from "../outbox.ts";
@@ -56,6 +59,25 @@ export const routineBrief = (routine: WorkspaceRoutine): string =>
   ].join("\n");
 
 type Run = NonNullable<OutboxState["routineRuns"]>[string];
+
+/**
+ * The outbox without the runs of routines `charter` no longer runs (removed or turned off), so one
+ * added or turned on again waits for its next time; the same outbox when nothing goes.
+ */
+export const pruneRoutineRuns = (
+  outbox: OutboxState,
+  charter: Pick<OrchestratorCharter, "routines">,
+): OutboxState => {
+  const runs = outbox.routineRuns;
+  if (runs === undefined) return outbox;
+  const keys = new Set(
+    (charter.routines ?? []).filter((routine) => routine.off !== true).map(routineKey),
+  );
+  if (Object.keys(runs).every((key) => keys.has(key))) return outbox;
+  const kept = Object.entries(runs).filter(([key]) => keys.has(key));
+  const { routineRuns: _, ...rest } = outbox;
+  return kept.length === 0 ? rest : { ...rest, routineRuns: Object.fromEntries(kept) };
+};
 
 /** What one routine does on a tick, decided from what is stored. Pure. */
 export type RoutineStep =
@@ -108,25 +130,13 @@ export const makeRoutines = (kit: OrchestrationKit, deps: RoutinesDeps) => {
       yield* deps.wake(workspaceId, "a routine ran", true);
     });
 
-  /** Forgets runs of routines the charter no longer has, so a name used again starts afresh. */
-  const prune = (workspaceId: WorkspaceId, keys: ReadonlySet<string>) =>
-    updateOutbox(workspaceId, (outbox) => {
-      const runs = outbox.routineRuns;
-      if (runs === undefined || Object.keys(runs).every((key) => keys.has(key))) {
-        return [outbox, undefined];
-      }
-      const kept = Object.fromEntries(Object.entries(runs).filter(([key]) => keys.has(key)));
-      return [{ ...outbox, routineRuns: kept }, undefined];
-    });
-
   const tickWorkspace = (state: WorkspaceState) =>
     Effect.gen(function* () {
       const workspaceId = state.workspace.id;
       const routines = (state.charter.routines ?? []).filter((routine) => routine.off !== true);
-      const outbox = yield* readOutbox(workspaceId);
-      if (routines.length === 0 && outbox.routineRuns === undefined) return;
-      yield* prune(workspaceId, new Set(routines.map(routineKey)));
+      // Most workspaces have none: they cost no read, however often the minute comes round.
       if (routines.length === 0) return;
+      const outbox = yield* readOutbox(workspaceId);
       const holder = state.workspace.orchestratorThreadId;
       const hasOrchestrator = holder !== undefined && (yield* findThread(holder)) !== undefined;
       for (const routine of routines) {
@@ -187,7 +197,8 @@ export const makeRoutines = (kit: OrchestrationKit, deps: RoutinesDeps) => {
 
   /** One look at every workspace's routines; a workspace that fails is logged and the rest go on. */
   const tickRoutines = Effect.gen(function* () {
-    for (const state of yield* store.listWorkspaces) {
+    const states = yield* store.listWorkspaces;
+    for (const state of states) {
       yield* tickWorkspace(state).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("routine tick failed").pipe(
@@ -196,7 +207,22 @@ export const makeRoutines = (kit: OrchestrationKit, deps: RoutinesDeps) => {
         ),
       );
     }
+    return states.some((state) =>
+      (state.charter.routines ?? []).some((routine) => routine.off !== true),
+    );
   });
 
-  return { tickRoutines };
+  /**
+   * Looks once a minute while any workspace runs a routine, and otherwise sleeps until `changed`
+   * says a charter's routines changed: with none, no timer runs at all.
+   */
+  const runRoutines = (changed: Queue.Queue<void>) =>
+    Effect.gen(function* () {
+      const on = yield* tickRoutines;
+      yield* on
+        ? Effect.raceFirst(Effect.sleep(Duration.minutes(1)), Queue.take(changed))
+        : Queue.take(changed);
+    }).pipe(Effect.forever);
+
+  return { tickRoutines: Effect.asVoid(tickRoutines), runRoutines };
 };

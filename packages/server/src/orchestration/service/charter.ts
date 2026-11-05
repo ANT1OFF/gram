@@ -37,6 +37,7 @@ import {
 } from "./kit.ts";
 import { type OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
+import { pruneRoutineRuns } from "./routines.ts";
 
 /** The routines as compared for a change, whole. */
 const routinesKey = (charter: Pick<OrchestratorCharter, "routines">): string =>
@@ -77,6 +78,8 @@ const charterChangeNotes = (
 /** What the charter takes from the rest of the service. */
 export interface CharterDeps {
   readonly wake: Digests["wake"];
+  /** Says a workspace's routines changed, so the routine timer looks again. */
+  readonly routinesChanged: Effect.Effect<void>;
 }
 
 /** Writing and changing a workspace's charter. */
@@ -194,6 +197,14 @@ export const makeCharter = (kit: OrchestrationKit, deps: CharterDeps) => {
           yield* updateOutbox(workspaceId, (outbox) => [withNotes(outbox, [note]), undefined]);
           yield* wake(workspaceId, "the user changed the worker models", true);
         }
+      }
+      // A routine removed or turned off forgets its runs, so one back again waits for its time.
+      if (routinesKey(prior) !== routinesKey(charter)) {
+        yield* updateOutbox(workspaceId, (outbox) => [
+          pruneRoutineRuns(outbox, charter),
+          undefined,
+        ]);
+        yield* deps.routinesChanged;
       }
       // The boot digest named the footer and routing once too; an open session hears of a change.
       const changed = charterChangeNotes(prior, charter);

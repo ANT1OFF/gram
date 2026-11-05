@@ -83,9 +83,11 @@ describe.skipIf(!hasGit)("routines in the orchestration service", () => {
           const store = yield* ThreadStore;
           const { workspaceId } = yield* openOrchestrator(world);
           yield* orchestration.setCharter(workspaceId, { ...DEFAULT_CHARTER, routines: [triage] });
-          // The first look only takes a baseline.
-          yield* orchestration.tickRoutines;
-          const baseline = (yield* outboxOf(workspaceId)).routineRuns?.["ci triage"];
+          // The change wakes the routine timer, whose first look only takes a baseline.
+          const baseline = yield* waitReal(
+            "the routine's baseline",
+            outboxOf(workspaceId).pipe(Effect.map((outbox) => outbox.routineRuns?.["ci triage"])),
+          );
           expect(baseline).toMatchObject({ lastAt: expect.any(Number) });
           expect(baseline?.threadId).toBeUndefined();
 
@@ -130,8 +132,7 @@ describe.skipIf(!hasGit)("routines in the orchestration service", () => {
 
           // Removing the routine forgets its runs.
           yield* orchestration.setCharter(workspaceId, DEFAULT_CHARTER);
-          yield* orchestration.tickRoutines;
-          expect((yield* outboxOf(workspaceId)).routineRuns).toEqual({});
+          expect((yield* outboxOf(workspaceId)).routineRuns).toBeUndefined();
         }),
       ),
     GIT_HEAVY,
