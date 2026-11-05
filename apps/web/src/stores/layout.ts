@@ -27,25 +27,6 @@ export interface WidthBounds {
 }
 
 export const SIDEBAR_WIDTH: WidthBounds = { min: 180, max: 520, default: 248 };
-
-/** The share of the window an untouched sidebar takes, and the widest that grows to. */
-const SIDEBAR_AUTO_SHARE = 0.17;
-const SIDEBAR_AUTO_MAX = 312;
-
-/**
- * The sidebar's width for `stored` in a window this wide. Until the user drags it (or after a
- * double-click puts it back to the default) it follows the window: the default in a small one,
- * up to `SIDEBAR_AUTO_MAX` in a large one, so worker titles stop wrapping where there is room.
- * The shell applies it only while the right panel is closed (`useShellLayout`).
- * A width the user dragged to is kept as it is.
- */
-export const sidebarWidthFor = (stored: number, windowWidth: number): number =>
-  stored === SIDEBAR_WIDTH.default
-    ? Math.max(
-        SIDEBAR_WIDTH.default,
-        Math.min(SIDEBAR_AUTO_MAX, Math.round(windowWidth * SIDEBAR_AUTO_SHARE)),
-      )
-    : stored;
 /**
  * `max` only bounds a stored width: the window decides how wide the panel shows, through
  * `panelBounds`.

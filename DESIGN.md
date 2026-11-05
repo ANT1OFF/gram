@@ -44,9 +44,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.
 - **The reading column** (`thread-column`) is as wide as Settings → Appearance → Reading says and
-  leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). The sidebar's width
-  follows the window until the user drags its edge; the edge shows a grip while the pointer is
-  over the column.
+  leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). The sidebar keeps
+  the width the user gives it, and its edge shows a grip while the pointer is over the column.
 - **Icons: Lucide** at a 1.75 stroke, never as decoration and never emoji. Two sizes: 16 px in
   chrome (the title bar, the sidebar's header, the panel's tabs and the composer's toolbar) and
   14 px inline (rows, chips, cards, menus and docks). A disclosure chevron beside a glyph or a

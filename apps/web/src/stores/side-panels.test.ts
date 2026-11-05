@@ -20,7 +20,6 @@ import {
   type OverviewSection,
   sanitizeSidePanels,
   SIDEBAR_WIDTH,
-  sidebarWidthFor,
   useLayoutStore,
   type ShellFitInput,
 } from "./layout";
@@ -770,17 +769,5 @@ describe("side panels", () => {
     expect(s().boardLayout).toBe("lanes");
     expect(sanitizeBoardFilters({ boardLayout: "lanes" })).toEqual({ boardLayout: "lanes" });
     expect(sanitizeBoardFilters({ boardLayout: "table" })).toEqual({});
-  });
-});
-
-describe("sidebarWidthFor", () => {
-  it("follows the window until the user drags it", () => {
-    // Untouched: the default in a small window, wider in a large one, never past its cap.
-    expect(sidebarWidthFor(SIDEBAR_WIDTH.default, 1280)).toBe(SIDEBAR_WIDTH.default);
-    expect(sidebarWidthFor(SIDEBAR_WIDTH.default, 1728)).toBe(294);
-    expect(sidebarWidthFor(SIDEBAR_WIDTH.default, 2560)).toBe(312);
-    // Dragged: kept as it is, whatever the window.
-    expect(sidebarWidthFor(220, 2560)).toBe(220);
-    expect(sidebarWidthFor(400, 1280)).toBe(400);
   });
 });
