@@ -49,7 +49,8 @@ test("picks the worker's agent and model by keyboard, and starts the worker on t
   const model = page.getByRole("combobox", { name: "Worker model" });
   // The roster's default until something else is picked.
   await expect(agent).toContainText("Claude Code");
-  await expect(model).toContainText("opus");
+  // Named as the composer names it, not by its id.
+  await expect(model).toContainText("Claude Opus");
 
   await agent.focus();
   await page.keyboard.press("Enter");

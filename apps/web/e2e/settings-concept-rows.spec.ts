@@ -19,7 +19,7 @@ test("Open at launch at Last thread opens the thread shown last", async ({ page 
   // The home page shows its own content only once the launch has decided to stay.
   await expect(
     page
-      .getByRole("region", { name: "How Gram works" })
+      .getByRole("region", { name: "Pick a repository to start" })
       .or(page.getByText("Select a thread, or start a new one.")),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/$/);
