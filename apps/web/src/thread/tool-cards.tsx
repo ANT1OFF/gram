@@ -154,7 +154,7 @@ function ToolShell({
           <span title={display.label} className="flex shrink-0">
             <Swap swapKey={isMarkPhase(phase) ? "mark" : phase}>
               {isMarkPhase(phase) ? (
-                <StatusMark phase={phase} className={cn("size-3.5", display.tone)} />
+                <StatusMark phase={phase} className={cn("size-icon-row", display.tone)} />
               ) : (
                 <display.icon aria-hidden className={cn("size-icon-row", display.tone)} />
               )}
