@@ -81,6 +81,10 @@ export async function openContentsByKeyboard(page: Page): Promise<Locator> {
   await titlebarMore(page).focus();
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("titlebar-overflow-menu")).toBeVisible();
+  // Opening focus is deferred; visibility alone can let End race that initial focus.
+  await expect(
+    page.getByTestId("titlebar-overflow-menu").getByRole("menuitem").first(),
+  ).toBeFocused();
   await page.keyboard.press("End");
   await expect(page.getByTestId("menu-view")).toBeFocused();
   await page.keyboard.press("Enter");

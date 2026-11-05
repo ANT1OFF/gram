@@ -728,48 +728,49 @@ async function observeFrames(page: Page) {
 }
 
 test("trusted wheel during the unsettled jump wins over a late append", async ({ page }) => {
+  await page.clock.install();
   const threadId = await open(page);
-  // Measure the target through production navigation before timing input delivery. Cold row
-  // rendering can otherwise consume the entire takeover window before a native wheel arrives.
+  // Warm row measurements through production navigation, then return to the latest turn.
   await jump(page, 110);
   await jump(page, 119);
   const transcript = page.getByTestId("transcript");
   const box = (await transcript.boundingBox())!;
-  await observeFrames(page);
   // The pointer rests over the transcript for the wheel, so Contents opens from the keyboard: a
   // pointer leaving the bar's submenus closes them.
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await openContentsByKeyboard(page);
+  // Native input delivery crosses the driver/browser boundary and can take four or more frames
+  // on CI. Step the jump to visibility, then keep its settle clock paused until the trusted wheel
+  // arrives. The frame budget below still proves that input interrupts an unsettled jump.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+  await observeFrames(page);
   await page
     .getByTestId("toc")
     .getByRole("menuitem", { name: "Synthetic decision 111", exact: true })
-    .evaluate(async (el) => {
+    .evaluate((el) => {
       window.timingEvents?.push({
         kind: "jump",
         time: performance.now(),
         frame: window.timingFrames ?? 0,
       });
       (el as HTMLElement).click();
-      // Concurrent protocol calls can deliver the wheel before React applies the jump. Await
-      // the required target in this same call, retaining the takeover-window assertion below.
-      await new Promise<void>((resolve) => {
-        const ready = () => {
-          const row = document.querySelector('[data-message-id="nav-u110"]');
-          const view = document.querySelector('[data-testid="transcript"]');
-          const bounds = row?.getBoundingClientRect();
-          const viewport = view?.getBoundingClientRect();
-          if (bounds && viewport && bounds.bottom > viewport.top && bounds.top < viewport.bottom) {
-            window.timingEvents?.push({
-              kind: "visible",
-              time: performance.now(),
-              frame: window.timingFrames ?? 0,
-            });
-            resolve();
-          } else requestAnimationFrame(ready);
-        };
-        ready();
-      });
     });
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(16);
+      return transcript.evaluate((view) => {
+        const bounds = view.querySelector('[data-message-id="nav-u110"]')?.getBoundingClientRect();
+        const viewport = view.getBoundingClientRect();
+        if (!bounds || bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) return false;
+        window.timingEvents?.push({
+          kind: "visible",
+          time: performance.now(),
+          frame: window.timingFrames ?? 0,
+        });
+        return true;
+      });
+    })
+    .toBe(true);
   await page.mouse.wheel(0, 700);
   const target = transcript.locator('[data-message-id="nav-u110"]');
   await expect
@@ -788,6 +789,7 @@ test("trusted wheel during the unsettled jump wins over a late append", async ({
   // window. Counted from there, not from the click: frames a slow renderer spends reaching the
   // target are no part of the window.
   expect(wheel.frame - visible.frame).toBeLessThan(4);
+  await page.clock.resume();
   await expect(target).not.toBeInViewport();
   const manual = await geometry(page);
   await page.evaluate(
