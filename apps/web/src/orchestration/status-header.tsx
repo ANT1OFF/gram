@@ -23,7 +23,7 @@ import { workersByTab } from "./workers-model";
 
 /** Every item's shape: a quiet button that opens the view behind its count. */
 const ITEM =
-  "flex h-7 min-w-7 shrink-0 items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-xs text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "flex h-7 min-w-7 shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /** A count in the foreground, its word muted; the word drops first when the pane is narrow. */
 function Count({
@@ -48,7 +48,7 @@ function Count({
 /** A hover's list of workers, each with where it stands: "Faster cold start · Editing code". */
 function WorkersHint({ title, workers }: { title: string; workers: readonly HeaderWorker[] }) {
   return (
-    <div className="flex max-w-80 flex-col gap-0.5 text-xs">
+    <div className="flex max-w-80 flex-col gap-0.5 text-meta">
       <span className="font-medium">{title}</span>
       {workers.length === 0 ? (
         <span className="text-muted-foreground">None now</span>
@@ -250,7 +250,7 @@ function LimitItem() {
 function AllActivitySwitch({ threadId, on }: { threadId: Thread["id"]; on: boolean }) {
   const id = `all-activity-${threadId}`;
   return (
-    <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="flex shrink-0 items-center gap-1.5 text-meta text-muted-foreground">
       <label htmlFor={id} className="cursor-default @max-2xl:sr-only">
         Show all activity
       </label>

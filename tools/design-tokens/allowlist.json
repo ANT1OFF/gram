@@ -423,9 +423,6 @@
     "apps/web/src/orchestration/repository-checklist.tsx": {
       "text-size text-xs": 2
     },
-    "apps/web/src/orchestration/since-you-left.tsx": {
-      "text-size text-xs": 1
-    },
     "apps/web/src/orchestration/stage-editor.tsx": {
       "text-size text-xs": 2
     },

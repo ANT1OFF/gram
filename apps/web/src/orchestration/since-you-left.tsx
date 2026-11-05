@@ -72,7 +72,7 @@ export function SinceYouLeftCard({
         <section
           aria-label="Since you left"
           data-testid="since-you-left"
-          className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1 text-xs"
+          className="flex shrink-0 items-center gap-inset border-b border-border px-3 py-1 text-meta"
         >
           <History aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <p className="flex min-w-0 flex-1 items-center gap-x-1 overflow-hidden whitespace-nowrap">
@@ -111,7 +111,7 @@ export function SinceYouLeftCard({
           <button
             type="button"
             aria-label="Dismiss"
-            className="flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setDismissed(true)}
           >
             <X aria-hidden className="size-3.5" />

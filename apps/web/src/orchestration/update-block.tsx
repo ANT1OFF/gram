@@ -162,7 +162,7 @@ function QuietUpdate({
       data-digests={digests.length}
       data-replies={replies.length}
       data-open={open}
-      className="w-full rounded-(--radius-md) border border-border/70 bg-muted/20 px-2.5 py-1"
+      className="w-full rounded-md border border-border/70 bg-muted/20 px-2.5 py-1"
     >
       <button
         type="button"
@@ -170,7 +170,7 @@ function QuietUpdate({
         aria-expanded={open}
         aria-controls={bodyId}
         aria-label={["Update", ...said, time].filter((word) => word !== undefined).join(", ")}
-        className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-meta outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => {
           setOpen(!open);
           setOpened(true);
@@ -212,7 +212,7 @@ function QuietUpdate({
             ))}
             {renderReply !== undefined &&
               replies.map((reply) => (
-                <div key={reply.id} data-testid="update-block-reply" className="text-sm">
+                <div key={reply.id} data-testid="update-block-reply" className="text-reading">
                   {renderReply(reply)}
                 </div>
               ))}
