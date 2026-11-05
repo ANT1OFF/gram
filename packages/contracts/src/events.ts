@@ -194,6 +194,8 @@ export const ServerEvent = Schema.Union([
    * `close_question`); clients refetch what they read of it.
    */
   Schema.Struct({ type: Schema.Literal("memory.changed"), workspaceId: WorkspaceId }),
+  /** A routine of the workspace was saved, removed or ran; clients refetch `routine.list`. */
+  Schema.Struct({ type: Schema.Literal("routines.changed"), workspaceId: WorkspaceId }),
   /** A dream of the workspace started, ended, was adopted or went; clients refetch `dream.list`. */
   Schema.Struct({ type: Schema.Literal("dreams.changed"), workspaceId: WorkspaceId }),
   /** A thread of the workspace produced a file (`outputs.ts`); clients refetch `workspace.outputs`. */

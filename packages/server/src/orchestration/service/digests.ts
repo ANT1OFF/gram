@@ -628,10 +628,10 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
     });
 
   // Dreams' seam (`dreams.ts`).
-  const addNote: OrchestrationShape["addNote"] = (workspaceId, note) =>
+  const addNote: OrchestrationShape["addNote"] = (workspaceId, note, reason) =>
     Effect.gen(function* () {
       yield* updateOutbox(workspaceId, (outbox) => [withNotes(outbox, [note]), undefined]);
-      yield* wake(workspaceId, "memory consolidated", true);
+      yield* wake(workspaceId, reason ?? "memory consolidated", true);
     });
 
   const noteQuietly: OrchestrationShape["noteQuietly"] = (workspaceId, note) =>

@@ -6,6 +6,7 @@ import { AgentUnavailable, InvalidState, NotFound, ThreadNotFound } from "../err
 import { ProjectId, ThreadId, WorkspaceId } from "../ids.ts";
 import { FeatureCards } from "../feature-cards.ts";
 import { OrchestratorLedger } from "../orchestration.ts";
+import { Routine, RoutineDraft, RoutineId, RoutinePatch } from "../routines.ts";
 import { FinishedWorker, FinishedWorkerDetail, FinishedWorkersPage } from "../reaching-workers.ts";
 import { TaskModelSelection } from "../task-preflight.ts";
 import {
@@ -372,5 +373,39 @@ export const OrchestrationRpcs = RpcGroup.make(
     payload: threadRef,
     success: Thread,
     error: errors(ThreadNotFound, InvalidState),
+  }),
+  /** The workspace's routines, by name. */
+  Rpc.make("routine.list", {
+    payload: { workspaceId: WorkspaceId },
+    success: Schema.Array(Routine),
+    error: errors(NotFound),
+  }),
+  /**
+   * The user's new routine. A worker target names one of the workspace's projects; past
+   * `ROUTINES_PER_WORKSPACE_MAX`, or with a name another routine has, it is `InvalidState`.
+   */
+  Rpc.make("routine.create", {
+    payload: { workspaceId: WorkspaceId, draft: RoutineDraft },
+    success: Routine,
+    error: errors(NotFound, InvalidState),
+  }),
+  /** Changes the fields given; turning one on schedules it from now, never for a missed run. */
+  Rpc.make("routine.update", {
+    payload: { id: RoutineId, patch: RoutinePatch },
+    success: Routine,
+    error: errors(NotFound, InvalidState),
+  }),
+  Rpc.make("routine.remove", {
+    payload: { id: RoutineId },
+    error: errors(NotFound),
+  }),
+  /**
+   * Runs it now, off its schedule, under the same rules as a due run: a paused workspace or a live
+   * worker from its last run refuses it with `InvalidState`. The routine with the run recorded.
+   */
+  Rpc.make("routine.run", {
+    payload: { id: RoutineId },
+    success: Routine,
+    error: errors(NotFound, InvalidState),
   }),
 );

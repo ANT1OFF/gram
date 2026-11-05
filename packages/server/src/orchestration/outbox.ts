@@ -335,6 +335,8 @@ export const StoredHeldBrief = Schema.Struct({
     group: Schema.optionalKey(Schema.String),
     identities: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
     plan: Schema.optionalKey(Schema.Array(Schema.String)),
+    /** The routine whose run it is, which the worker carries once it starts. */
+    routine: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
   }),
   /** The project's name, for the card. */
   projectName: Schema.String,

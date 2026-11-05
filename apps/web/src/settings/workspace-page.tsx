@@ -47,6 +47,7 @@ import { IdleCompactField } from "./idle-compact-field";
 import { PauseAtLimitField } from "./pause-at-limit-field";
 import { RosterEditor } from "./roster-editor";
 import { RowMenuButton, type RowAction } from "./row-menu";
+import { RoutinesSection } from "./routines-section";
 import { SETTINGS_CARD, SettingsGroup } from "./settings-group";
 import { WorkerBriefFooterField } from "./worker-brief-footer-field";
 import { WorkerModeField } from "./worker-mode-field";
@@ -182,6 +183,7 @@ export function WorkspaceSettingsPage({
           onChange={(next) => void changes.saveCharter(next, "Merge policy saved")}
         />
       </SettingsGroup>
+      <RoutinesSection state={state} projects={projects} />
       <MoreOptions state={state} changes={changes} />
     </div>
   );

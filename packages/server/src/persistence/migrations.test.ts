@@ -45,6 +45,7 @@ describe("migration ordering gate", () => {
       expect(resolved.map(([id, name]) => [id, name])).toEqual([
         [1, "baseline"],
         [2, "merge_freezes"],
+        [3, "routines"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -129,6 +130,7 @@ describe("the baseline", () => {
         "index messages_thread_seq",
         "index messages_turn",
         "index orchestration_events_workspace",
+        "index routines_workspace",
         "index thread_outputs_at",
         "index thread_wakes_thread",
         "index turns_started",
@@ -162,6 +164,7 @@ describe("the baseline", () => {
         "table projects",
         "table queue_items",
         "table requests",
+        "table routines",
         "table schema_migrations",
         "table settings",
         "table settings_audit",
@@ -195,6 +198,7 @@ describe("the baseline", () => {
       expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
         [1, "baseline"],
         [2, "merge_freezes"],
+        [3, "routines"],
       ]);
       const sql = yield* SqlClient.SqlClient;
       expect(yield* sql`SELECT id, rev FROM feed_revision`).toEqual([{ id: 0, rev: 0 }]);
@@ -214,7 +218,11 @@ describe("the baseline", () => {
       yield* Effect.gen(function* () {
         const store = yield* ThreadStore;
         expect((yield* store.listProjects).map((p) => p.root)).toEqual(["/invented/baseline"]);
-        expect((yield* applied).map((row) => row.name)).toEqual(["baseline", "merge_freezes"]);
+        expect((yield* applied).map((row) => row.name)).toEqual([
+          "baseline",
+          "merge_freezes",
+          "routines",
+        ]);
       }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
     }),
   );
@@ -229,7 +237,7 @@ describe("the baseline", () => {
       yield* Effect.void.pipe(Effect.provide(open(migrations)));
       const next = {
         ...migrations,
-        "0003_example": Effect.gen(function* () {
+        "0004_example": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`ALTER TABLE projects ADD COLUMN example TEXT`;
         }),
@@ -244,7 +252,8 @@ describe("the baseline", () => {
           expect((yield* applied).map((row) => [row.migration_id, row.name])).toEqual([
             [1, "baseline"],
             [2, "merge_freezes"],
-            [3, "example"],
+            [3, "routines"],
+            [4, "example"],
           ]);
         }).pipe(Effect.provide(open(next)));
       }

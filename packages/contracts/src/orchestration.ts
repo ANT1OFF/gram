@@ -45,6 +45,8 @@ export const SpawnedBy = Schema.Struct({
   threadId: ThreadId,
   /** Slug of the feature the worker was spawned for; workers sharing it are one ledger group. */
   feature: Schema.String,
+  /** The routine whose run started it, by id and its name then; absent for any other worker. */
+  routine: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
 });
 export type SpawnedBy = typeof SpawnedBy.Type;
 

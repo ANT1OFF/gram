@@ -54,6 +54,8 @@ import { OrchestrationMemory } from "./memory.ts";
 import { decodeOutbox } from "./outbox.ts";
 import { wrapUpText } from "./rules.ts";
 import { Orchestration, OrchestrationLive } from "./service.ts";
+import { RoutinesLive } from "../routines/routines.ts";
+import { RoutineAppToolsLive } from "../routines/tools.ts";
 import { ComposerPresence } from "../runtime/composer-presence.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
@@ -468,11 +470,13 @@ export const serverLayer = (
   Layer.mergeAll(
     OrchestrationAppToolsLive,
     OrchestratorAppToolsLive.pipe(Layer.provideMerge(PrDependenciesLive)),
+    RoutineAppToolsLive,
     PrAppToolsLive.pipe(
       Layer.provideMerge(MergeWhenReadyLive.pipe(Layer.provide(fakeGh(world)))),
       Layer.provide(fakeGh(world)),
     ),
   ).pipe(
+    Layer.provideMerge(RoutinesLive),
     Layer.provideMerge(OrchestrationLive),
     Layer.provideMerge(ComposerPresence.layer),
     Layer.provideMerge(localChecksOf(world)),

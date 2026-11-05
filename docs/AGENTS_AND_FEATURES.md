@@ -180,6 +180,30 @@ expiry: every read checks the time, whatever the timers did, so a thread that st
 restart past the expiry, never keeps it. A closed thread's freezes end with it. Its end looks again
 at every armed merge in the repo, and fires `freezeLifted` wakes.
 
+### Routines
+
+A routine is a workspace's saved brief on a schedule: daily or weekly at an `HH:MM` local time, or
+every 1 to 168 hours from its last run. Each time it comes due it starts a worker in one of the
+workspace's projects (on one of the charter's worker models, else its default), or puts its brief
+in the orchestrator's next digest and wakes it. The user keeps them in the workspace's settings
+(Routines: on and off, Run now, Edit, Remove, the last and next run); the orchestrator keeps them
+with `routine_list`, `routine_create` and `routine_update` (`remove: true` deletes one). Their
+schedule is a few words: `daily 09:00`, `weekly mon 09:00` or `every 6 hours`.
+
+- A routine's worker is the orchestrator's, spawned through the same `spawn_worker` path, so the
+  workspace's autonomy, worker cap, limits, approvals and merge gates apply unchanged. A run that
+  would need the user's card (one worker past the cap) starts nothing and is recorded as failed,
+  and the orchestrator's next digest says why. Its brief opens by saying a routine started it, and
+  its header says "From routine <name>".
+- A worker is bound `routine_create` alone, and its call always asks the user: a forced card that
+  `bypassPermissions` and Full autonomy don't lift.
+- A run missed while Gram was closed runs once, a minute after the next start; the next one is
+  reckoned from it, never once per miss. While the worker from a routine's last run is still live
+  (or its held brief still waits), a due run is skipped and recorded so. A paused workspace pauses
+  its routines: a run that falls due waits and runs once on the resume.
+- Times are read in the zone the machine was in when the routine was saved, so a daylight-saving
+  change keeps 09:00 at 09:00; a time the change skips runs once that night.
+
 ## Accounts, models and speed
 
 Codex and Claude Code are the only executable harnesses. Select one when starting a thread. Signed-out agents remain selectable and

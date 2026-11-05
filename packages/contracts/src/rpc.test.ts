@@ -308,6 +308,7 @@ describe("ServerEvent", () => {
       { type: "orchestration.changed", workspaceId: "w1" },
       { type: "memory.changed", workspaceId: "w1" },
       { type: "dreams.changed", workspaceId: "w1" },
+      { type: "routines.changed", workspaceId: "w1" },
       { type: "outputs.changed", workspaceId: "w1" },
       { type: "thread.suggestions", threadId: "t1", turnId: "turn-1", replies: ["Push it"] },
       { type: "thread.suggestions", threadId: "t1", turnId: "turn-1", replies: [], stale: true },

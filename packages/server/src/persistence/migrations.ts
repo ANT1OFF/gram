@@ -387,9 +387,20 @@ const mergeFreezes = Effect.gen(function* () {
   yield* sql`CREATE TABLE merge_freezes (key TEXT PRIMARY KEY, data TEXT NOT NULL)`;
 });
 
+/**
+ * Routines (`routines/routines.ts`): a workspace's saved briefs on a schedule, one row per routine,
+ * its schedule, last run and next run in its data.
+ */
+const routines = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE routines (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, data TEXT NOT NULL)`;
+  yield* sql`CREATE INDEX routines_workspace ON routines (workspace_id)`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
+  "0003_routines": routines,
 };
 
 /**

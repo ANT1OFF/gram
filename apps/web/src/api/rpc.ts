@@ -21,6 +21,7 @@ import { profilesRpc } from "./profiles/rpc";
 import { projectsRpc } from "./projects/rpc";
 import { pullRequestsRpc } from "./pull-requests/rpc";
 import { reviewRequestsRpc } from "./review-requests/rpc";
+import { routinesRpc } from "./routines/rpc";
 import { threadWakesRpc } from "./thread-wakes/rpc";
 import { sessionsRpc } from "./sessions/rpc";
 import { settingsRpc } from "./settings/rpc";
@@ -90,6 +91,7 @@ export async function createRpcApi(url: string): Promise<Api> {
     ...projectsRpc(domain),
     ...pullRequestsRpc(domain),
     ...reviewRequestsRpc(domain),
+    ...routinesRpc(domain),
     ...threadWakesRpc(domain),
     ...sessionsRpc(domain),
     ...settingsRpc(domain),

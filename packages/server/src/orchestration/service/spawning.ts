@@ -587,7 +587,13 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   model,
                   mode,
                   workspaceId,
-                  spawnedBy: { threadId: caller.id, feature: slug },
+                  spawnedBy: {
+                    threadId: caller.id,
+                    feature: slug,
+                    ...(input.routine === undefined
+                      ? {}
+                      : { routine: { id: input.routine.id, name: input.routine.name } }),
+                  },
                   extraCheckouts,
                   additionalDirectories: [
                     ...extraCheckouts.map((extra) => extra.path),

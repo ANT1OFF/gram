@@ -126,6 +126,7 @@ export class NotFound extends Schema.TaggedError<NotFound>()("NotFound", {
     "wait",
     "message",
     "question",
+    "routine",
   ]),
   id: Schema.String,
   /** Human-readable, e.g. "Folder not found: ~/code/x". */
