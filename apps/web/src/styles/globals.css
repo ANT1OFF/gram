@@ -162,6 +162,23 @@
     outline-offset: -2px;
   }
 }
+/* The thread's reading column: the transcript, the composer and the strips beside them, as wide
+   as Settings → Appearance → Reading says. Where the pane is wider, it leans toward the sidebar
+   (--thread-lean of the spare room on its start side; 0.5 centres it), so a wide window doesn't
+   leave a gulf between the sidebar and what you read. Margins in % are of the pane's width. */
+@utility thread-column {
+  width: 100%;
+  max-width: var(--thread-max-width);
+  margin-inline-start: max(0px, calc((100% - var(--thread-max-width)) * var(--thread-lean)));
+  margin-inline-end: auto;
+}
+/* Something floating over the column's middle (Jump to latest), placed with -translate-x-1/2. */
+@utility thread-column-center {
+  left: calc(
+    max(0px, calc((100% - var(--thread-max-width)) * var(--thread-lean))) +
+      min(100%, var(--thread-max-width)) / 2
+  );
+}
 @utility focus-ring {
   outline: var(--focus-width) solid var(--focus-ring);
   outline-offset: var(--focus-offset);

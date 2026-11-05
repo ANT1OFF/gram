@@ -353,7 +353,7 @@ function ConfiguredNewThreadDraft() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <form
         ref={formRef}
-        className="mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-8 p-6 pb-10"
+        className="flex w-full thread-column flex-col gap-8 p-6 pb-10"
         aria-label="New thread"
         onSubmit={(event) => {
           event.preventDefault();
@@ -673,7 +673,7 @@ function ConfiguredNewThreadDraft() {
                 stage === "failed" && <RotateCw aria-hidden data-icon="inline-start" />
               )}
               {createLabel}
-              <ShortcutKbd id="draft.create" className="opacity-70" />
+              <ShortcutKbd id="draft.create" cap />
             </Button>
           </PressScale>
         </div>

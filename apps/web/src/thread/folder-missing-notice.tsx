@@ -23,7 +23,7 @@ export function FolderMissingNotice({ threadId }: { threadId: ThreadId }) {
     <aside
       aria-label="Folder missing"
       data-testid="folder-missing-notice"
-      className="mx-auto flex w-full max-w-(--thread-max-width) shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-6 py-2 text-reading"
+      className="flex w-full thread-column shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-6 py-2 text-reading"
     >
       <FolderX aria-hidden className="size-4 shrink-0 text-warning-text" />
       <p className="min-w-0 flex-1">

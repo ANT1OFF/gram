@@ -35,7 +35,7 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon
-        render={<ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />}
+        render={<ChevronDownIcon className="pointer-events-none size-3.5 text-muted-foreground" />}
       />
     </SelectPrimitive.Trigger>
   );
@@ -131,7 +131,8 @@ function SelectItem({
           <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center" />
         }
       >
-        <CheckIcon className="pointer-events-none" />
+        {/* A menu's check is an inline glyph, as in the context menu (DESIGN.md, Icons). */}
+        <CheckIcon className="pointer-events-none size-3.5" />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
   );

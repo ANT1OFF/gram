@@ -640,7 +640,7 @@ export function Transcript({
         messages.length > 0 && (
           <Button
             className={cn(
-              "absolute left-1/2 bottom-6 z-10 -translate-x-1/2",
+              "absolute thread-column-center bottom-6 z-10 -translate-x-1/2",
               pressing && "pointer-events-none",
             )}
             variant="secondary"
@@ -656,6 +656,7 @@ export function Transcript({
           chapters={chapters}
           currentId={currentId}
           onJump={onChapterJump}
+          scrollable={virtualizer.getTotalSize() > (virtualizer.scrollRect?.height ?? Infinity)}
           earlier={earlier}
           loadingEarlier={loadingEarlier}
           earlierFailed={earlierFailed}
@@ -805,7 +806,7 @@ export function Transcript({
             <FileRefsProvider threadId={threadId}>
               <AwaitingToolsProvider threadId={threadId}>
                 <div
-                  className="relative mx-auto w-full max-w-(--thread-max-width)"
+                  className="relative w-full thread-column"
                   style={{ height: virtualizer.getTotalSize() }}
                 >
                   {earlier ? (
@@ -989,7 +990,7 @@ function FollowingLive({
     />
   );
   const pill =
-    "absolute bottom-6 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-meta shadow-raised";
+    "absolute bottom-6 thread-column-center z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-meta shadow-raised";
   return following ? (
     <span role="status" data-testid="following-live" className={cn(pill, "text-muted-foreground")}>
       {dot}

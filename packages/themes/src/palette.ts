@@ -189,7 +189,8 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
   const accent = deriveAccent(s, surfaces, target);
   const onAccent = pickOnAccent(accent, s, target.text) ?? "#000000";
   const warning = ui(s.yellow);
-  const fgSubtle = ui(s.muted);
+  // A shade toward the text, so hints and glyphs read at a glance rather than only at the floor.
+  const fgSubtle = ui(mix(s.muted, s.text, 0.15));
   const diffAddBg = mix(surface2, s.green, 0.13);
   const diffDelBg = mix(surface2, s.red, 0.13);
   // Hunk rows show page text and line numbers on the add/remove tints; the text shifts to hold its
@@ -240,9 +241,11 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     "surface-3": surface3,
     "surface-hover": surfaceHover,
     fg,
-    "fg-muted": onDiff(text(mix(s.text, s.muted, contrast === "more" ? 0.25 : 0.5))),
+    // Metadata and second lines: well clear of the floor, still a step below the text.
+    "fg-muted": onDiff(text(mix(s.text, s.muted, contrast === "more" ? 0.25 : 0.4))),
     "fg-subtle": fgSubtle,
-    "border-subtle": mix(surface2, s.text, dark ? 0.1 : 0.12),
+    // Card and control edges: visible against the page in both modes, still a hairline.
+    "border-subtle": mix(surface2, s.text, 0.14),
     "border-strong": ui(mix(surface2, s.muted, 0.7)),
     accent,
     "accent-hover": shiftLightness(accent, dark ? 0.05 : -0.05),

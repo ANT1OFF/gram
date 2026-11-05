@@ -210,6 +210,8 @@ function WorkersBody() {
   const rows = sections.flatMap((section) =>
     section.groups.flatMap((group) => group.features.flatMap((feature) => feature.rows)),
   );
+  // Rows name their repo only when the list spans more than one; otherwise it repeats on each.
+  const repos = new Set(rows.map((row) => row.repo)).size > 1;
   const activeIndex = Math.min(active, rows.length - 1);
 
   // Opened on a section: its first row active, the section in view, once it has rows.
@@ -331,6 +333,7 @@ function WorkersBody() {
                               row={row}
                               index={at}
                               active={at === activeIndex}
+                              repo={repos}
                               onHover={() => setActive(at)}
                               onOpen={() => pick(row)}
                             />
@@ -377,12 +380,15 @@ function WorkerListRow({
   row,
   index,
   active,
+  repo,
   onHover,
   onOpen,
 }: {
   row: WorkerRow;
   index: number;
   active: boolean;
+  /** Whether it names its repo: only where the list spans more than one. */
+  repo: boolean;
   onHover: () => void;
   onOpen: () => void;
 }) {
@@ -400,7 +406,7 @@ function WorkerListRow({
       onClick={onOpen}
       className={cn(
         "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-reading",
-        active && "bg-accent text-accent-foreground",
+        active && "row-cursor",
       )}
     >
       <glyph.icon aria-hidden className={cn("size-3.5 shrink-0", glyph.tone)} />
@@ -414,7 +420,7 @@ function WorkerListRow({
           className="size-3.5 shrink-0 text-muted-foreground"
         />
       )}
-      <span className="shrink-0 text-meta text-muted-foreground">{row.repo}</span>
+      {repo && <span className="shrink-0 text-meta text-muted-foreground">{row.repo}</span>}
       <span
         data-testid="worker-now"
         title={row.waiting?.hint}

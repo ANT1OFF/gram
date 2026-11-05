@@ -444,7 +444,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
         aria-expanded={open}
         aria-label={`Plan: ${goal || "the agent's todo list"}, ${progress.done} of ${progress.total} done${line === undefined ? "" : `. ${line}`}`}
         onClick={() => setOpen(!open)}
-        className="mx-auto flex h-8 w-full max-w-(--thread-max-width) items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
+        className="flex h-8 w-full thread-column items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
       >
         {/* While the thread works, the header's status is the one thing that moves, so the ring
             only counts. */}
@@ -482,7 +482,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
         // composer out of a short grid pane.
         <div
           data-testid="plan-strip-body"
-          className="mx-auto max-h-[calc(var(--pane-height,100vh)*0.4)] max-w-(--thread-max-width) overflow-y-auto px-6 pb-3 @max-sm:px-3"
+          className="max-h-[calc(var(--pane-height,100vh)*0.4)] thread-column overflow-y-auto px-6 pb-3 @max-sm:px-3"
         >
           {editingGoal ? (
             <div className="mb-1.5 flex">

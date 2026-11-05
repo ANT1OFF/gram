@@ -10,6 +10,7 @@ import {
   panelBounds,
   panelWidthFor,
   shellPage,
+  sidebarWidthFor,
   useLayoutStore,
 } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -64,7 +65,7 @@ export function useShellLayout() {
     threadInView: hasThread,
     threadQuiet,
     focusMode,
-    sidebarWidth,
+    sidebarWidth: sidebarWidthFor(sidebarWidth, windowWidth),
     sidebarPeek: settingsStrip ? false : sidebarPeek,
     overviewSidebar: settingsStrip ? "compact" : overviewSidebar,
     panelOpen,

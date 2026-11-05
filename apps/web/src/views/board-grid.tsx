@@ -85,26 +85,26 @@ export function StationSteps({
       aria-label={`${label}, step ${at + 1} of ${FEATURE_STATIONS.length}`}
       data-testid="grid-stage"
       data-station={station}
-      className="flex min-w-0 items-center gap-2 text-meta"
+      className="flex min-w-0 items-center gap-2 text-body"
     >
-      <span aria-hidden className="flex shrink-0 items-center gap-0.5">
+      <span aria-hidden className="flex shrink-0 items-center gap-1">
         {FEATURE_STATIONS.map((each, index) => (
           <i
             key={each}
             className={cn(
-              "h-1.5 w-2.5 rounded-full transition-colors duration-(--dur-base)",
+              "h-2 w-3.5 rounded-full transition-colors duration-(--dur-base)",
               index < at
-                ? "bg-muted-foreground/70"
+                ? "bg-muted-foreground"
                 : index === at
                   ? tone === undefined
                     ? "bg-foreground/80"
                     : STEP_TONE[tone]
-                  : "bg-border",
+                  : "bg-border-strong/50",
             )}
           />
         ))}
       </span>
-      <span className="truncate text-foreground/80">{label}</span>
+      <span className="truncate font-medium text-foreground">{label}</span>
     </span>
   );
 }

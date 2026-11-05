@@ -38,10 +38,19 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   around a list's rows and headings, 16 px between sections and at a pane's edges.
 - **Titles and metadata:** a title at 13 to 14 px in `fg` (`text-body-strong` or `text-reading`),
   its metadata (where it is from, its state, a time or a count) at 12 px in `fg-muted`
-  (`text-meta`), never smaller. A title wraps to two lines before it is cut short.
+  (`text-meta`), never smaller. A title wraps to two lines before it is cut short. Metadata a
+  heading or the whole list already says is left out: no repo on each row when every row has the
+  same one, no workspace under its own heading.
+- **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
+  `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.
+- **The reading column** (`thread-column`) is as wide as Settings → Appearance → Reading says and
+  leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). The sidebar's width
+  follows the window until the user drags its edge; the edge shows a grip while the pointer is
+  over the column.
 - **Icons: Lucide** at a 1.75 stroke, never as decoration and never emoji. Two sizes: 16 px in
   chrome (the title bar, the sidebar's header, the panel's tabs and the composer's toolbar) and
-  14 px inline (rows, chips, cards, menus and docks).
+  14 px inline (rows, chips, cards, menus and docks). A disclosure chevron beside a glyph or a
+  value, and a menu's check, are inline glyphs (14 px) wherever they sit.
   - An icon button is at least 28 px square (`icon-sm` for chrome, `icon-xs` inline), with a
     background on hover and focus. Its tooltip names it and its shortcut at once, and its
     accessible name says the same; a `title` on an icon `Button` becomes that tooltip.

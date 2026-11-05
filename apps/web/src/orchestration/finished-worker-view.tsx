@@ -136,7 +136,7 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
         ) : detail.archived !== undefined ? (
           <div
             data-testid="finished-archived"
-            className="mx-auto min-h-0 w-full max-w-(--thread-max-width) flex-1 overflow-y-auto px-6 py-4 text-reading leading-relaxed"
+            className="min-h-0 w-full thread-column flex-1 overflow-y-auto px-6 py-4 text-reading leading-relaxed"
           >
             <MessageResponse>{detail.archived}</MessageResponse>
           </div>
@@ -168,7 +168,7 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
     <section
       aria-label="What it did"
       data-testid="finished-facts"
-      className="mx-auto flex w-full max-w-(--thread-max-width) shrink-0 flex-col gap-2 px-6 py-3 text-reading"
+      className="flex w-full thread-column shrink-0 flex-col gap-2 px-6 py-3 text-reading"
     >
       {detail.brief !== undefined && (
         <div className="rounded-md border border-border bg-card/40 px-3 py-2">

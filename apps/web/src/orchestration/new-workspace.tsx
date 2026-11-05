@@ -365,7 +365,7 @@ function SheetForm({
           <Button type="submit" data-testid="new-workspace-start" disabled={busy}>
             {busy && <Spinner aria-hidden />}
             {created === undefined ? "Start" : "Open orchestrator"}
-            <ShortcutKbd id="draft.create" className="opacity-70" />
+            <ShortcutKbd id="draft.create" cap />
           </Button>
         </PressScale>
         <Button type="button" variant="ghost" onClick={cancel}>

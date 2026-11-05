@@ -86,7 +86,7 @@ export function SubagentStrip({
       ref={ref}
       data-testid="subagent-strip"
       // Shrinks before the composer does: in a short pane an open list scrolls rather than push it out.
-      className="@container mx-auto flex min-h-0 w-full max-w-(--thread-max-width) shrink flex-col px-6"
+      className="@container flex min-h-0 w-full thread-column shrink flex-col px-6"
     >
       <ul
         aria-label="Running in the background"

@@ -104,7 +104,7 @@ export function AppShell() {
             : `${left}px minmax(0,1fr) ${right}px`,
         }}
       >
-        <div className="relative order-1 flex min-h-0 min-w-0 flex-col overflow-hidden">
+        <div className="group/side relative order-1 flex min-h-0 min-w-0 flex-col overflow-hidden">
           {settingsStrip ? (
             <SettingsStrip />
           ) : (
@@ -147,7 +147,7 @@ export function AppShell() {
         {reviewFocus && <ReviewStrip side={panelLeft ? "right" : "left"} />}
         <div
           className={cn(
-            "relative z-10 flex min-h-0 min-w-0 flex-col overflow-hidden",
+            "group/side relative z-10 flex min-h-0 min-w-0 flex-col overflow-hidden",
             panelLeft ? "order-2" : "order-3",
           )}
         >

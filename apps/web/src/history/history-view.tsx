@@ -343,6 +343,7 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
                   index={at}
                   active={at === activeIndex}
                   resuming={resuming === entry.threadId}
+                  grouped={by === "orchestrator"}
                   when={historyWhen(entry.finishedAt, by, now)}
                   whenLong={doneWhenLong(entry.finishedAt, now)}
                   onHover={() => setActive(at)}
@@ -392,6 +393,7 @@ function HistoryRow({
   index,
   active,
   resuming,
+  grouped,
   when,
   whenLong,
   onHover,
@@ -401,6 +403,8 @@ function HistoryRow({
   index: number;
   active: boolean;
   resuming: boolean;
+  /** Under its workspace's heading: the row leaves the workspace's name to it. */
+  grouped: boolean;
   when: string;
   whenLong: string;
   onHover: () => void;
@@ -408,17 +412,26 @@ function HistoryRow({
 }) {
   const glyph = entry.outcome === undefined ? IMPORTED_GLYPH : OUTCOME_GLYPH[entry.outcome];
   const word = entry.outcome === undefined ? "resume" : OUTCOME_LABEL[entry.outcome];
-  // A workspace named for its one repo says it once.
-  const where = [entry.place, entry.repo]
-    .filter((part, i, parts) => part !== "" && (i === 0 || part !== parts[0]))
+  // A workspace named for its one repo says it once, whatever its case ("Gram · gram" is "Gram").
+  const full = [entry.place, entry.repo]
+    .filter(
+      (part, i, parts) =>
+        part !== "" && (i === 0 || part.toLowerCase() !== parts[0]!.toLowerCase()),
+    )
     .join(" · ");
+  // Under the workspace's own heading, only the repo, and nothing where the repo is the workspace.
+  const where = grouped
+    ? entry.repo.toLowerCase() === entry.place.toLowerCase()
+      ? ""
+      : entry.repo
+    : full;
   return (
     <div
       id={`history-row-${index}`}
       role="option"
       aria-selected={active}
       aria-busy={resuming || undefined}
-      aria-label={`${entry.title}, ${where}, ${word}, ${whenLong}${entry.agent === undefined ? "" : `, ${agentLabel(entry.agent)}`}`}
+      aria-label={`${entry.title}, ${full}, ${word}, ${whenLong}${entry.agent === undefined ? "" : `, ${agentLabel(entry.agent)}`}`}
       data-testid="history-row"
       data-thread-id={entry.threadId}
       data-kind={entry.kind}
@@ -436,12 +449,14 @@ function HistoryRow({
       <span data-testid="history-title" className="min-w-0 truncate">
         {entry.title}
       </span>
-      <span
-        data-testid="history-where"
-        className="min-w-0 shrink truncate text-meta text-muted-foreground"
-      >
-        {where}
-      </span>
+      {where !== "" && (
+        <span
+          data-testid="history-where"
+          className="min-w-0 shrink-[4] truncate text-meta text-muted-foreground"
+        >
+          {where}
+        </span>
+      )}
       <span className="ml-auto flex shrink-0 items-center gap-2 pl-3 text-meta text-muted-foreground">
         {entry.agent !== undefined && <AgentIcon agent={entry.agent} className="size-3.5" />}
         <span data-testid="history-outcome">{word}</span>

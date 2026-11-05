@@ -364,7 +364,7 @@ export function NewTaskDraft({
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <form
         ref={formRef}
-        className="mx-auto flex w-full max-w-(--thread-max-width) flex-col gap-5 p-6"
+        className="flex w-full thread-column flex-col gap-5 p-6"
         aria-label="New task"
         onSubmit={(event) => {
           event.preventDefault();
@@ -682,7 +682,7 @@ export function NewTaskDraft({
               <Button type="submit" disabled={!valid || sending}>
                 {sending && <Spinner aria-hidden />}
                 {submitLabel}
-                <ShortcutKbd id="draft.create" className="opacity-70" />
+                <ShortcutKbd id="draft.create" cap />
               </Button>
             </PressScale>
             {target !== undefined && !makesOne && (

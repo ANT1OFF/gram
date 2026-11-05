@@ -120,13 +120,21 @@ export function SideResizeHandle({
       title={hint}
       data-testid={`${side}-resize`}
       className={cn(
-        "absolute inset-y-0 z-40 w-1.5 cursor-col-resize outline-none hover:bg-ring/40 focus-visible:bg-ring/50",
+        "group/resize absolute inset-y-0 z-40 flex w-1.5 cursor-col-resize items-center justify-center outline-none hover:bg-ring/40 focus-visible:bg-ring/50",
         // Inside the column: the column clips overflow while it animates.
         side === "left" ? "right-0" : "left-0",
       )}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick ?? (() => onResize(bounds.default))}
       onKeyDown={onKeyDown}
-    />
+    >
+      {/* The grip: shown while the pointer is over the column it sizes (`group/side`), so the edge
+          says it can be dragged before the pointer finds it. */}
+      <span
+        aria-hidden
+        data-testid={`${side}-resize-grip`}
+        className="h-8 w-1 rounded-full bg-border-strong opacity-0 transition-opacity duration-(--dur-fast) group-hover/side:opacity-60 group-hover/resize:opacity-100! group-focus-visible/resize:opacity-100!"
+      />
+    </div>
   );
 }
