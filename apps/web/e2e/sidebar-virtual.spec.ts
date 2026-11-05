@@ -266,7 +266,7 @@ test("a thread at work keeps its working dot when its row draws on scrolling", a
   await scrollOverview(page, 0);
   const row = threadRow(page, ids[0]!);
   await expect(row).toBeVisible();
-  await expect(row).toHaveAccessibleName(/Working/);
+  await expect(row).toHaveAccessibleName(/Running/);
   await expect(row.locator("span").first()).toHaveClass(/text-status-working/);
 });
 

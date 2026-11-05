@@ -45,7 +45,6 @@ import {
   overviewSummary,
   plainActivity,
   plainRunning,
-  tileLetters,
   tileWorking,
   type OverviewState,
 } from "./overview-model";
@@ -109,7 +108,7 @@ export function OverviewRail() {
       data-testid="overview-rail"
       data-surface="chrome"
       {...{ [OVERVIEW_ROOT]: "compact" }}
-      className="flex min-h-0 flex-1 flex-col items-center border-r border-border bg-sidebar text-sidebar-foreground"
+      className="flex min-h-0 flex-1 flex-col items-center border-r border-sidebar-divider bg-sidebar text-sidebar-foreground"
     >
       <div
         onKeyDown={overviewKeys}
@@ -150,7 +149,7 @@ export function OverviewRail() {
   );
 }
 
-const Separator = () => <span aria-hidden className="h-px w-6 shrink-0 bg-border" />;
+const Separator = () => <span aria-hidden className="h-px w-6 shrink-0 bg-sidebar-divider" />;
 
 /**
  * Needs you as the open overview counts it, as a pill, amber while anything waits; it opens what
@@ -182,8 +181,9 @@ function RailNeedsYou() {
   );
 }
 
+/** A tile: its workspace's name in small words, cut short where it must; its flyout's head says the whole. */
 const TILE =
-  "relative grid size-9 shrink-0 place-items-center rounded-xs border border-sidebar-block-border bg-sidebar-block text-body font-semibold tracking-wide text-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring aria-current:border-foreground/35 aria-current:bg-sidebar-row-active aria-current:text-foreground";
+  "relative grid size-9 shrink-0 place-items-center rounded-xs border border-sidebar-block-border bg-sidebar-block px-0.5 text-caption font-medium text-muted-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring aria-current:border-foreground/35 aria-current:bg-sidebar-row-active aria-current:text-foreground";
 
 /** One tile per workspace, in the switcher's order, as the open overview's rows. */
 function WorkspaceTiles() {
@@ -275,7 +275,9 @@ function WorkspaceTile({
               ringing ? "gram-ring-breathe border-status-working/55" : "border-transparent",
             )}
           />
-          <span aria-hidden>{tileLetters(state.workspace.name)}</span>
+          <span aria-hidden data-testid="overview-tile-name" className="max-w-full truncate">
+            {state.workspace.name}
+          </span>
           {asks > 0 && (
             <span
               aria-hidden
@@ -332,7 +334,9 @@ function SoloTile() {
       }
       tile={
         <>
-          <span aria-hidden>so</span>
+          <span aria-hidden data-testid="overview-tile-name" className="max-w-full truncate">
+            Solo
+          </span>
           <TileCount count={solo.length} />
         </>
       }
@@ -470,7 +474,7 @@ function Flyout({
             onClick={onPick}
             className={cn(
               CARD_SURFACE,
-              "flex max-h-[min(32rem,var(--available-height))] w-72 flex-col gap-px overflow-y-auto p-2 text-body",
+              "flex max-h-[min(32rem,var(--available-height))] w-80 flex-col gap-px overflow-y-auto p-2 text-body",
             )}
           >
             {children}

@@ -2,15 +2,7 @@ import type { Thread, ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { GitFork, MessageSquareOff, X } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type DragEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useApi } from "@/api/context";
@@ -66,7 +58,7 @@ import { FindBar } from "./find-bar";
 import { copyMarkdown } from "./message-actions";
 import { forkedFromText } from "./fork-text";
 import { trackWrappedChips } from "./header-chips";
-import { LabelChip, labelTint, useThreadLabel } from "./label-chip";
+import { LabelChip, useThreadLabel } from "./label-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
 import { LapsedConnectorsNotice } from "./lapsed-connectors-notice";
 import { MergedCleanupNotice } from "./merged-cleanup-notice";
@@ -361,7 +353,6 @@ export function ThreadView({
   const needs = needsYou(summary) || summary.pendingRequests.length > 0;
   const activity = activityLine(status, detail, summary.activity);
   const display = threadStatusOf(summary, detail);
-  const tint = label === undefined ? undefined : labelTint(label.color);
   // A thread alone in Chat puts its header in the window's title bar: one bar, not two. The
   // title and the empty room move the window; everything after the title is a control.
   const inTitlebar = titlebarSlot !== null && titlebarThread === threadId && actions === undefined;
@@ -400,16 +391,12 @@ export function ThreadView({
         onDoubleClick={(event) => {
           if (onHeaderDoubleClick && !isControl(event.target)) onHeaderDoubleClick();
         }}
-        data-label-tint={tint === undefined ? undefined : label?.name}
-        style={tint === undefined ? undefined : ({ "--label-tint": tint } as CSSProperties)}
         data-in-titlebar={inTitlebar || undefined}
         className={cn(
           "flex items-center gap-2 text-reading",
           inTitlebar
             ? "relative h-full min-w-0 flex-1 rounded-[inherit] pr-1 pl-2 [&>*:not(:first-child)]:[-webkit-app-region:no-drag]"
             : "h-10 border-b border-border px-4 @max-sm:px-2",
-          tint !== undefined &&
-            "bg-[color-mix(in_oklab,var(--label-tint)_8%,transparent)] shadow-[inset_3px_0_0_var(--label-tint)]",
         )}
       >
         {/* The title truncates before any chip goes, and the chips drop whole rather than clip:
@@ -457,11 +444,12 @@ export function ThreadView({
             {thread.forkedFrom && (
               <ForkedFrom from={thread.forkedFrom} title={sourceTitle} hideClass={hideMd} />
             )}
-            {/* Named, not a dot: the header wears the label's colour, and a red one alone reads
-                  as an error that isn't there. */}
+            {/* Named and neutral: a red label's colour here would read as an error that isn't
+                  there, beside the one card that says when there is one. */}
             {label && (
               <LabelChip
                 label={label}
+                neutral
                 testId="pane-label"
                 className={cn("text-meta text-muted-foreground", hideMd)}
               />

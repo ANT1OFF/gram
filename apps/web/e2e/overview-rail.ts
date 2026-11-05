@@ -22,6 +22,6 @@ export async function openOrchestratorTile(
   await expect(page).toHaveURL(new RegExp(`/t/${orchestratorThreadId}$`));
   // Off the rail, as a user's pointer moves on, so no tile's hover flyout stays over the page.
   const box = (await rail.boundingBox())!;
-  await page.mouse.move(box.x + box.width + 300, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width + 400, box.y + box.height / 2);
   await expect(page.getByTestId("overview-flyout")).toHaveCount(0);
 }

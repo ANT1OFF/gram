@@ -60,7 +60,7 @@ describe("rowStatus", () => {
   it("reads an idle thread with a background subagent as working", () => {
     expect(rowStatus(open, "idle", "Explore: Thinking")).toMatchObject({
       icon: STATUS_DISPLAY.running.icon,
-      label: "Working",
+      label: "Running",
       working: true,
     });
   });
@@ -87,7 +87,7 @@ describe("rowStatus", () => {
       label: "CI failed",
       tone: "text-destructive",
     });
-    expect(rowStatus(plain, "idle", "Running tests", attention).label).toBe("Working");
+    expect(rowStatus(plain, "idle", "Running tests", attention).label).toBe("Running");
   });
 
   it("reads Compacting while the turn compacts, its hint naming who asked for it", () => {
@@ -105,7 +105,7 @@ describe("rowStatus", () => {
     });
     expect(statusHint(compacting, "Compacting context")).toBe("Compacting context to make room");
     const working = rowStatus(plain, "running", "Running tests");
-    expect(statusHint(working, "Running tests")).toBe("Working: Running tests");
+    expect(statusHint(working, "Running tests")).toBe("Running: Running tests");
     // Only a running thread compacts; a request waiting outranks a stale compaction.
     expect(
       rowStatus(plain, "needsApproval", undefined, undefined, [], { startedAt: 1 }).label,
@@ -136,7 +136,7 @@ describe("rowStatus", () => {
       working: false,
       running: 3,
     });
-    expect(rowStatus(merged, "running", undefined, undefined, work).label).toBe("Working");
+    expect(rowStatus(merged, "running", undefined, undefined, work).label).toBe("Running");
     expect(rowStatus(merged, "needsInput", undefined, undefined, work).label).toBe("Needs input");
     const attention = { reason: "ciFailed", key: "ci:1:abc", label: "CI failed" } as const;
     expect(rowStatus(merged, "idle", undefined, attention, work).running).toBe(3);
@@ -164,7 +164,7 @@ describe("rowStatus", () => {
 
   it("never lets completion hide a live status", () => {
     expect(rowStatus(merged, "needsInput", undefined).label).toBe("Needs input");
-    expect(rowStatus(merged, "running", undefined).label).toBe("Working");
+    expect(rowStatus(merged, "running", undefined).label).toBe("Running");
   });
 });
 

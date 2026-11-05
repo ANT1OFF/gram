@@ -43,7 +43,7 @@ test("shows a shared-child restart wait while another thread remains usable", as
   await expect(page.getByTestId("agent-error")).toHaveCount(0);
   await expect(waiting).toHaveText(detail);
   await page.evaluate(() => window.gramMock!.simulateStatus("t-release" as never, "idle"));
-  await expect(threadRow(page, "t-release")).toHaveAccessibleName("Release checklist, Idle");
+  await expect(threadRow(page, "t-release")).toHaveAccessibleName("Release checklist, Stopped");
   await expect(waiting).toHaveCount(0);
   await expect(page.getByTestId("thread-starting-detail")).toHaveCount(0);
 });

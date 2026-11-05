@@ -655,13 +655,18 @@ test("the overview lists a workspace's workers under it, and a worker's thread n
   for (const threadId of [made.orchestratorThreadId, made.working, made.waiting[0]]) {
     await expect(soloRow(page, threadId)).toHaveCount(0);
   }
-  // A worker waiting on a request says so on its row, and one in review carries its PR's chip.
+  // A worker waiting on a request says so on its row, and one in review names its PR: in a chip
+  // where it fits beside the row's words, else on the row's hover card.
   await expect(threadRow(page, made.waiting[0])).toHaveAccessibleName(/^Trigger form, asks you, /);
-  await expect(
-    workspace
-      .locator(`[data-testid="overview-pr-chips"][data-thread-id="${made.inReview}"]`)
-      .getByTestId("overview-pr-chip"),
-  ).toHaveAccessibleName(/^PR #212 /);
+  const reviewChip = workspace
+    .locator(`[data-testid="overview-pr-chips"][data-thread-id="${made.inReview}"]`)
+    .getByTestId("overview-pr-chip");
+  if ((await reviewChip.count()) > 0) await expect(reviewChip).toHaveAccessibleName(/^PR #212 /);
+  else {
+    await threadRow(page, made.inReview).hover();
+    await expect(page.getByTestId("overview-worker-card")).toContainText("#212");
+    await page.mouse.move(0, 0);
+  }
   // The overview holds no requests of its own: each is asked once, in the orchestrator's ask stack.
   await expect(page.getByTestId("overview-sidebar").getByTestId("approval-card")).toHaveCount(0);
 

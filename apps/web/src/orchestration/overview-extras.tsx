@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { History, Search } from "lucide-react";
-import { Fragment, useMemo } from "react";
+import { ChevronDown, History, Search } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { recentDone, recentWhen, OUTCOME_LABEL, type RecentDone } from "@/history/history-model";
@@ -173,15 +173,46 @@ export function OverviewDone() {
       }),
     ),
   );
+  const viewed = useParams({ strict: false }).threadId;
+  const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
+  // Past `DONE_SHOWN` the rest fold behind one line, so a busy day's Done never pushes what needs
+  // you off screen; the open thread's row stays in sight.
+  const folded = !all && rows.length > DONE_SHOWN;
+  const shown = folded
+    ? rows.filter((row, index) => index < DONE_SHOWN || row.threadId === viewed)
+    : rows;
+  const more = rows.length - shown.length;
   return (
     <Section id="doneToday" title="Done" count={rows.length}>
-      {rows.map((row) => (
+      {shown.map((row) => (
         <DoneRow key={row.threadId} row={row} now={now} />
       ))}
+      {rows.length > DONE_SHOWN && (more > 0 || all) && (
+        <button
+          type="button"
+          {...{ [STOP]: "" }}
+          data-testid="overview-done-more"
+          aria-expanded={all}
+          onClick={() => setAll(!all)}
+          className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 transition-transform duration-(--dur-fast)",
+              !all && "-rotate-90",
+            )}
+          />
+          {all ? "Show fewer" : `${more} more`}
+        </button>
+      )}
     </Section>
   );
 }
+
+/** How many Done rows show before the rest fold behind "N more". */
+export const DONE_SHOWN = 5;
 
 const NO_PROJECTS: readonly never[] = [];
 

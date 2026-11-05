@@ -139,6 +139,9 @@
   /* The Workspaces block: a shade off the sidebar toward the text colour, so it reads in either mode. */
   --sidebar-block-bg: color-mix(in srgb, var(--fg) 4%, var(--sidebar-bg));
   --sidebar-block-border: var(--border-subtle);
+  /* The line down a workspace's workers and the sidebar's edge: a plain divider in dark, firmer in
+     light (below), where a subtle border all but vanishes on the pale chrome. */
+  --sidebar-divider: var(--border-subtle);
 
   --thread-bg: var(--surface-2);
   /* The thread column: the transcript, the composer and the strips beside them. Settings →
@@ -218,6 +221,11 @@
    @gram/themes mirrors the strengths. */
 [data-mode="light"] {
   --scrim-strength: 0.82;
+  /* On pale chrome a 14% accent and a surface-3 fill barely show: the open thread's row, its
+     workspace's line and the sidebar's group lines take a step more, still restrained. */
+  --selected-bg: color-mix(in oklab, var(--accent) 20%, var(--surface-3));
+  --sidebar-row-active: color-mix(in oklab, var(--fg) 7%, var(--surface-3));
+  --sidebar-divider: color-mix(in srgb, var(--border-strong) 40%, var(--border-subtle));
 }
 
 [data-mode="light"][data-contrast="more"] {

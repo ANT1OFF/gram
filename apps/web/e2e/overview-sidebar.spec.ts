@@ -1416,6 +1416,14 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
   const chips = overview(page).locator(
     `[data-testid="overview-pr-chips"][data-thread-id="${made.live}"] [data-testid="overview-pr-chip"]`,
   );
+  // The status words win: at the default width the two chips can't sit beside them, so they wait
+  // on the hover card and the words stay whole.
+  await expect(worker(page, made.live)).toContainText("Running tests");
+  await expect(chips).toHaveCount(0);
+  // Given room, they take the line's end.
+  const edge = page.getByTestId("left-resize");
+  await edge.focus();
+  for (let i = 0; i < 12; i++) await page.keyboard.press("ArrowRight");
   await expect(chips).toHaveCount(2);
   // Its own first, red for what blocks the merge; the draft stays grey while its round runs. The
   // worker runs, so its failing CI is its own to fix: a wrench, not the user's red ×. The bot's
@@ -1574,7 +1582,7 @@ test("a solo thread at work trades its age for a pulsing dot, and can't be marke
   await expect(age).toHaveCount(0);
   // Off the row, its last activity stays on its hover, under its whole title, and in its name.
   await expect(row).toHaveAttribute("title", /^.+\nLast activity \d{2}:\d{2}$/);
-  await expect(row).toHaveAttribute("aria-label", /, Working, Last activity \d{2}:\d{2}$/);
+  await expect(row).toHaveAttribute("aria-label", /, Running, Last activity \d{2}:\d{2}$/);
 
   await row.click({ button: "right" });
   await expect(page.getByTestId("menu-done")).toHaveAttribute("data-disabled", /.*/);
@@ -1603,7 +1611,8 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
     page.locator(`[data-testid="overview-worker"][data-thread-id="${threadId}"]`);
   const waits = (threadId: string) => row(threadId).getByTestId("overview-worker-waiting");
 
-  // Its own PR is in the chip beside the words, so the words leave its number out.
+  // Its own PR is in the chip beside the words, or on the hover card where the chip doesn't fit,
+  // so the words leave its number out.
   await expect(waits(made.ci)).toHaveText("Waiting · checks");
   await expect(waits(made.ci)).toHaveAttribute("data-kind", "checks");
   await expect(waits(made.reviewing)).toHaveText("Waiting · review");

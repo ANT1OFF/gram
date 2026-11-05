@@ -85,7 +85,7 @@ test("reconnect snapshots replace old activity while subsequent live events stil
     window.gramMock!.simulateStatus("t-deps" as never, "running", "Reading a.ts"),
   );
   await showHint();
-  await expect(hint).toHaveText("Working: Reading a.ts");
+  await expect(hint).toHaveText("Running: Reading a.ts");
 
   await reconnect({ status: "running", activity: "Running tests after reconnect" });
   await showHint();
@@ -103,7 +103,7 @@ test("reconnect snapshots replace old activity while subsequent live events stil
     contentType: "application/json",
   });
   // Identical oracle before and after: the fresh snapshot must replace the old live line.
-  await expect(hint).toHaveText("Working: Running tests after reconnect");
+  await expect(hint).toHaveText("Running: Running tests after reconnect");
 
   await page.evaluate(() =>
     window.gramMock!.simulateStatus("t-deps" as never, "idle", "Subagent: checking output"),
@@ -112,17 +112,17 @@ test("reconnect snapshots replace old activity while subsequent live events stil
   await reconnect({ status: "idle" });
   await expect(icon).toHaveAttribute("data-working", "false");
   await showHint();
-  await expect(hint).toHaveText("Idle");
+  await expect(hint).toHaveText("Stopped");
 
   // An explicit empty live line overrides a snapshot only until the next snapshot arrives.
   await page.evaluate(() => window.gramMock!.simulateStatus("t-deps" as never, "idle"));
   await reconnect({ status: "idle", activity: "Subagent: resumed checks" });
   await expect(icon).toHaveAttribute("data-working", "true");
   await showHint();
-  await expect(hint).toHaveText("Working: Subagent: resumed checks");
+  await expect(hint).toHaveText("Running: Subagent: resumed checks");
   await page.evaluate(() => window.gramMock!.simulateStatus("t-deps" as never, "idle"));
   await expect(icon).toHaveAttribute("data-working", "false");
   await showHint();
-  await expect(hint).toHaveText("Idle");
+  await expect(hint).toHaveText("Stopped");
   expect(errors).toEqual([]);
 });

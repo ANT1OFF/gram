@@ -1,6 +1,6 @@
 import { PreviewCard } from "@base-ui/react/preview-card";
 import { ledgerPrsOf, type FeatureCardPr, type ThreadId } from "@gram/contracts";
-import { useMemo, type MouseEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type Ref } from "react";
 
 import { useApi } from "@/api/context";
 import { openExternalUrl } from "@/api/open-external";
@@ -67,7 +67,8 @@ export const shownPrNumbers = (chips: readonly PrChip[]): readonly { number: num
  * `card={false}` in the compact rail's flyout, itself a card: a chip's own card would sit outside it
  * and close it, so there the chip's name carries what its card would say. `dense`, on an overview
  * row's status line, 16 px tall, so the line keeps its height. `ghost` draws them unseen and
- * inert, to hold their room inside a row's button while the real ones sit over it.
+ * inert, to hold their room inside a row's button while the real ones sit over it; `ghostRef` is
+ * that room's, for `useChipsFit`.
  */
 export function WorkerPrChips({
   threadId,
@@ -76,6 +77,7 @@ export function WorkerPrChips({
   card = true,
   dense = false,
   ghost = false,
+  ghostRef,
   className = "pr-1.5 pb-1 pl-6",
 }: {
   threadId: ThreadId;
@@ -85,6 +87,7 @@ export function WorkerPrChips({
   card?: boolean;
   dense?: boolean;
   ghost?: boolean;
+  ghostRef?: Ref<HTMLSpanElement> | undefined;
   /** Where the chips sit: under an overview row's name by default. */
   className?: string;
 }) {
@@ -108,7 +111,7 @@ export function WorkerPrChips({
   );
   if (ghost) {
     return (
-      <span aria-hidden className={cn("invisible flex shrink-0 gap-1", className)}>
+      <span ref={ghostRef} aria-hidden className={cn("invisible flex shrink-0 gap-1", className)}>
         {shown.map((chip) => (
           <span key={chip.entry.key} className={chipClass(chip, dense)}>
             <PrChipFace chip={chip} />
@@ -236,4 +239,51 @@ function PrChipButton({
       </PreviewCard.Portal>
     </PreviewCard.Root>
   );
+}
+
+/**
+ * Whether a row's PR chips fit beside its status words. The status line is one line that wraps
+ * what doesn't fit out of sight: its words come first and take what they need, and the chips' unseen
+ * room (`ghost`) follows them, wrapping to the hidden line when they can't sit beside the words.
+ * There, the real chips aren't drawn: the status wins, and the row's hover card names the PR.
+ * `count` is how many chips there are, so their room is measured again as they come and go.
+ */
+export function useChipsFit(count: number): {
+  line: Ref<HTMLSpanElement>;
+  words: Ref<HTMLSpanElement>;
+  ghost: Ref<HTMLSpanElement>;
+  fits: boolean;
+} {
+  const line = useRef<HTMLSpanElement>(null);
+  const words = useRef<HTMLSpanElement>(null);
+  const ghost = useRef<HTMLSpanElement>(null);
+  const [fits, setFits] = useState(true);
+  useLayoutEffect(() => {
+    const at = line.current;
+    // No chips, nothing to fit.
+    if (at === null || count === 0) return setFits(true);
+    const measure = () => {
+      const room = ghost.current;
+      if (room === null) return setFits(true);
+      const outer = at.getBoundingClientRect();
+      // On the line's own row, or wrapped below it into the hidden one.
+      setFits(room.getBoundingClientRect().top - outer.top < Math.max(1, outer.height / 2));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    // Measured on the next frame, never inside the observer's own delivery.
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
+    observer.observe(at);
+    if (words.current !== null) observer.observe(words.current);
+    if (ghost.current !== null) observer.observe(ghost.current);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [count]);
+  return { line, words, ghost, fits };
 }

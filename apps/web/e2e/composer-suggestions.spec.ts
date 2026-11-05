@@ -48,7 +48,7 @@ test("→ takes a suggestion, ⌥→ a word, ⌥↓ ⌥↑ cycle, and nothing is
   await expect(composer).toHaveValue(`run the e${FIRST.slice("run the e".length)}`);
   await expect(ghost).toHaveCount(0);
   // Accepting only types: the thread's only user messages are the one sent above and before.
-  await expect(page.getByTestId("pane-status")).toHaveText("Idle");
+  await expect(page.getByTestId("pane-status")).toHaveText("Stopped");
   await expect(page.getByTestId("message-user").filter({ hasText: "run the e2e" })).toHaveCount(0);
 
   // One ⌘Z takes the whole acceptance back.

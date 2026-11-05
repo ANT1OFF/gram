@@ -178,13 +178,14 @@ export const railTone = (worker: FeatureCardWorker, facts: RailFacts): RailTone 
   });
 
 /**
- * A tone as a status dot: one colour per tone wherever a worker's dot is drawn (`StatusDot`). Amber
- * is for what needs you and nothing else; a worker stalled on its own next step (attention) is a
- * solid neutral dot. Hollow is a wait on something outside it, and only that.
+ * A tone as a status dot: one colour per state wherever a worker's dot is drawn (`StatusDot`), and
+ * few states. Amber is for what needs you and nothing else; a worker at rest, whether it stalled on
+ * its own next step (attention) or has nothing left (idle), has stopped: one grey dot, its row's
+ * words saying which. Hollow is a wait on something outside it, and only that.
  */
 export const TONE_DOT: Readonly<Record<RailTone, string>> = {
   needs: "bg-status-needs-mark",
-  attention: "bg-foreground",
+  attention: "bg-status-idle",
   error: "bg-destructive",
   working: "bg-status-working",
   // Busy on CI or a review rather than a turn: the working colour, hollow.

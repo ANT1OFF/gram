@@ -22,19 +22,22 @@ export function useThreadLabel(thread: Thread | undefined): Label | undefined {
  * The label's name as a chip with a colour dot; the name carries the meaning, never the colour alone.
  * `compact` is the sidebar row's, which already wears the colour down its edge: the dot alone, with
  * the name in the tooltip and for screen readers. A label without a plain colour keeps its name.
+ * `neutral` is the thread header's: the name alone, no colour, so a red label never reads as an alarm.
  */
 export function LabelChip({
   label,
   testId,
   className,
   compact = false,
+  neutral = false,
 }: {
   label: Label;
   testId: string;
   className?: string;
   compact?: boolean;
+  neutral?: boolean;
 }) {
-  const tint = labelTint(label.color);
+  const tint = neutral ? undefined : labelTint(label.color);
   const dotOnly = compact && tint !== undefined;
   return (
     <span

@@ -972,9 +972,13 @@ describe("MessageBlock agent errors", () => {
     const card = screen.getByTestId("agent-error");
     expect(card.dataset["state"]).toBe("retried");
     expect(card.getAttribute("role")).toBe("status");
-    expect(screen.getByTestId("agent-error-retried").textContent).toMatch(/Retried · \d\d:\d\d$/);
+    // Where it stands leads; the failure it got past is the line under it.
+    expect(screen.getByTestId("agent-error-retried").textContent).toMatch(
+      /^Recovered · \d\d:\d\d$/,
+    );
+    expect(card.dataset["recovered"]).toBe("true");
+    expect(screen.getByTestId("agent-error-history").textContent).toContain(error.text);
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
-    expect(screen.getByTestId("agent-error-recovered").textContent).toBe(" · recovered");
     expect(card.querySelector(".text-destructive")).toBeNull();
   });
 

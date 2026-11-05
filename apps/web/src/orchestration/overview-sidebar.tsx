@@ -100,10 +100,10 @@ import {
   type RunningWorker,
 } from "./overview-model";
 import { CURRENT_ROW, ROW, ROW_STATUS, RowMenu, Section, SETTLED, STOP } from "./overview-section";
-import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
+import { shownPrNumbers, useChipsFit, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
 import { nowBesidePrs, TONE_DOT, type RailTone } from "./rail-model";
-import { StatusDot, StatusLegendButton } from "./status-dot";
+import { StatusDot } from "./status-dot";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
 import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
@@ -290,7 +290,7 @@ export function OverviewSidebar() {
       data-testid="overview-sidebar"
       data-surface="chrome"
       {...{ [OVERVIEW_ROOT]: "open" }}
-      className="flex min-h-0 flex-1 flex-col border-r border-border bg-sidebar text-sidebar-foreground"
+      className="flex min-h-0 flex-1 flex-col border-r border-sidebar-divider bg-sidebar text-sidebar-foreground"
     >
       {/* The title bar's height. Hide sidebar leads, after macOS's window buttons, in the spot the
           title bar's Show sidebar takes while it is hidden, so the toggle never moves. Too narrow
@@ -474,12 +474,7 @@ function Orchestrators() {
   const ledgers = useOrchestratorLedgers(workspaceIds);
   if (workspaces.length === 0) return null;
   return (
-    <Section
-      id="orchestrators"
-      title="Orchestrators"
-      count={workspaces.length}
-      action={<StatusLegendButton testId="overview-status-legend" className="-my-0.5" />}
-    >
+    <Section id="orchestrators" title="Orchestrators" count={workspaces.length}>
       {workspaces.map((state) => {
         const id = state.workspace.id;
         return (
@@ -726,7 +721,7 @@ function WorkspaceFeatures({
   return (
     <div
       data-testid="overview-workers"
-      className="mb-1 ml-3 flex flex-col gap-px border-l border-border pl-2"
+      className="mb-1 ml-3 flex flex-col gap-px border-l border-sidebar-divider pl-2"
     >
       <PresenceList>
         {items.map((item) =>
@@ -828,7 +823,9 @@ export function WorkerRow({
     className: cn(ROW, "items-start", CURRENT_ROW, settled && SETTLED),
   };
   const prChips = useWorkerPrChips(row.threadId, row.prs);
-  // The PRs its chips show, which its words then leave out: each said once.
+  const { line, words, ghost, fits } = useChipsFit(prChips.length);
+  // The PRs its chips show, which its words then leave out: each said once, in the chip or, where
+  // the chip doesn't fit, on the row's hover card.
   const shownPrs = shownPrNumbers(prChips);
   const body = (
     <>
@@ -850,10 +847,14 @@ export function WorkerRow({
         )}
       </span>
       {/* At work, the thread's own step and what it runs, as its tree row says them, else the
-          card's now line. An ask or a failure is all the row says. Too narrow for both, the chips
-          take a line of their own rather than squeeze the words out. */}
-      <span className={cn(ROW_STATUS, "h-auto min-h-lh flex-wrap")}>
-        <span className="grid min-w-16 flex-[1_1_0] grid-cols-[minmax(0,1fr)]">
+          card's now line. An ask or a failure is all the row says. The words win: the chips sit
+          at the line's end only while they fit beside them, and otherwise wrap out of sight to
+          the hover card (`useChipsFit`). */}
+      <span ref={line} className={cn(ROW_STATUS, "flex-wrap content-start overflow-hidden")}>
+        <span
+          ref={words}
+          className="grid max-w-full min-w-0 flex-[0_1_auto] grid-cols-[minmax(0,1fr)]"
+        >
           {starting ? (
             <span
               data-testid="overview-worker-starting"
@@ -875,13 +876,14 @@ export function WorkerRow({
           chips={prChips}
           dense
           ghost
+          ghostRef={ghost}
           className="ml-auto"
         />
       </span>
     </>
   );
   // The PR chips sit over the row's status line, outside its button: each is a button of its own.
-  const chips = (
+  const chips = fits && (
     <WorkerPrChips
       threadId={row.threadId}
       cardPrs={row.prs}
@@ -1194,10 +1196,7 @@ function HeldRow({ held }: { held: FeatureCardHeld }) {
       data-held-id={held.id}
       className="grid grid-cols-[0.625rem_minmax(0,1fr)] items-center gap-x-2 px-1.5 py-1"
     >
-      <span
-        aria-hidden
-        className="size-2 justify-self-center rounded-full border border-dashed border-muted-foreground"
-      />
+      <StatusDot state="held" className="justify-self-center" />
       <span className="truncate text-muted-foreground">{held.title}</span>
       <span className="col-start-2 truncate text-meta text-muted-foreground tabular-nums">
         held · {heldStateText(held, now)}
