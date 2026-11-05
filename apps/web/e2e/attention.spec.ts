@@ -70,7 +70,7 @@ test("answering an idle thread's independent approval returns it to idle without
   });
   await page.getByTestId("approval-allow").click();
   await expect(page.getByTestId("approval-card")).toHaveCount(0);
-  await expect(page.getByTestId("pane-status")).toHaveText("Idle");
+  await expect(page.getByTestId("pane-status")).toHaveText("Stopped");
   await expect(page.locator('[data-surface="composer"]')).toHaveAttribute("data-sheen-passes", "0");
 });
 
@@ -113,7 +113,7 @@ test("a turn completed in a maximized-away pane skips its sheen when restored", 
   });
   // The mock's idle reaches the app a little later; restored before it has, the pane would see
   // its turn complete in view.
-  await expect(panes.nth(0).getByTestId("pane-status")).toHaveText("Idle");
+  await expect(panes.nth(0).getByTestId("pane-status")).toHaveText("Stopped");
   await expect(panes.nth(0).locator('[data-surface="composer"]')).toHaveAttribute(
     "data-sheen-passes",
     "0",

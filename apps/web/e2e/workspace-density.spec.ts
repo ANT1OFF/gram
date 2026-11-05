@@ -50,9 +50,10 @@ for (const mode of ["light", "dark"] as const) {
 
     for (const width of [180, 280, 380, 280, 180]) {
       await resizePane(page, width);
-      // At work while its PR fails CI: neither fact replaces the other.
+      // At work while its PR fails CI: the step always shows, and the failing PR's chip beside it
+      // wherever it fits; short of room it waits on the row's hover card rather than cut the step.
       await expect(working.getByTestId("overview-worker-step")).toBeVisible();
-      await expect(failingPr.locator('[data-checks="failing"]')).toBeVisible();
+      if (width >= 380) await expect(failingPr.locator('[data-checks="failing"]')).toBeVisible();
       await expect(resting.getByTestId("overview-worker-step")).toHaveCount(0);
       await expect(working.getByTestId("overview-worker-title")).toHaveText(
         "Improve workspace navigation and preserve approval boundaries",

@@ -495,11 +495,10 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
         <span className="max-w-[50%] shrink-0 truncate font-medium text-foreground">
           {goal || "Plan"}
         </span>
+        {/* Neutral even when the turn failed: the error's card in the transcript is the one
+            alarm. */}
         {lead !== undefined && (
-          <span
-            data-testid="plan-strip-turn"
-            className={cn("shrink-0", turn === "failed" && "text-destructive")}
-          >
+          <span data-testid="plan-strip-turn" className="shrink-0">
             · {lead}
           </span>
         )}

@@ -326,7 +326,7 @@ describe("ThreadView header", () => {
     expect(screen.queryByTestId("branch-chip")).toBeNull();
   });
 
-  it("names the thread's label and tints the header with it", async () => {
+  it("names the thread's label in a neutral chip, the header untinted", async () => {
     const [label] = await api.labels();
     const { thread } = useThreadsStore.getState().byId[FLAKY]!;
     useThreadsStore.getState().applyEvent({
@@ -336,7 +336,9 @@ describe("ThreadView header", () => {
     renderWithApi(<ThreadView threadId={FLAKY} focused={false} />, api);
 
     expect((await screen.findByTestId("pane-label")).textContent).toContain(label!.name);
-    expect(screen.getByTestId("pane-header").dataset["labelTint"]).toBe(label!.name);
+    // One alarm: a red label never tints the header or dots its chip.
+    expect(screen.getByTestId("pane-header").getAttribute("style")).toBeNull();
+    expect(screen.getByTestId("pane-label").querySelector("[style]")).toBeNull();
   });
 
   it("leaves pushing to the PR panel, with no push button of its own", async () => {

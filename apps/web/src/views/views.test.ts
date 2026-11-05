@@ -112,7 +112,8 @@ describe("soloThreads", () => {
       summary("pinned", { ...done, pinned: true }, 6),
       summary("parked", { ...done, parked: true }, 5),
     ];
-    expect(ids(soloThreads(threads, new Set()))).toEqual(["pinned", "open", "resumed", "asking"]);
+    // What needs you leads, however old.
+    expect(ids(soloThreads(threads, new Set()))).toEqual(["asking", "pinned", "open", "resumed"]);
     expect(ids(doneSoloThreads(threads, new Set()))).toEqual(["done"]);
     expect(ids(parkedSoloThreads(threads, new Set()))).toEqual(["parked"]);
   });

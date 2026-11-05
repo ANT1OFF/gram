@@ -71,12 +71,12 @@ export const RAIL_TONES: Readonly<
   Record<RailTone, { icon: LucideIcon; tone: string; label: string }>
 > = {
   needs: { icon: CircleAlert, tone: "text-status-needs-mark", label: "Needs you" },
-  attention: { icon: CircleAlert, tone: "text-foreground", label: "Needs attention" },
+  attention: { icon: CircleDot, tone: "text-status-idle", label: "Stopped" },
   error: { icon: CircleAlert, tone: "text-destructive", label: "Failed" },
-  working: { icon: Spinner, tone: "text-status-working", label: "Working" },
+  working: { icon: Spinner, tone: "text-status-working", label: "Running" },
   waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting" },
-  idle: { icon: CircleDot, tone: "text-status-idle", label: "Idle" },
-  merged: { icon: GitMerge, tone: "text-merged", label: "Merged" },
+  idle: { icon: CircleDot, tone: "text-status-idle", label: "Stopped" },
+  merged: { icon: GitMerge, tone: "text-merged", label: "Done" },
 };
 
 /** Who has an open ask in the workspace's stack, and each thread's live status. */

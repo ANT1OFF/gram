@@ -74,18 +74,21 @@ export const runningSummary = (work: readonly RunningWork[]): string => {
   return `Running: ${list}`;
 };
 
-/** Glyph shape + text label per runtime status, so status never relies on colour alone. */
+/**
+ * Glyph shape + text label per runtime status, so status never relies on colour alone. The words are
+ * the status dots' few (`STATUS_DOTS`): running, stopped, failed, and needs you by what it needs.
+ */
 export const STATUS_DISPLAY: Record<
   ThreadStatus,
   { icon: LucideIcon; label: string; tone: string }
 > = {
-  cold: { icon: CircleDashed, label: "Idle", tone: "text-status-idle" },
+  cold: { icon: CircleDashed, label: "Stopped", tone: "text-status-idle" },
   starting: { icon: Spinner, label: "Starting…", tone: "text-status-working" },
-  idle: { icon: CircleDot, label: "Idle", tone: "text-status-idle" },
-  running: { icon: Spinner, label: "Working", tone: "text-status-working" },
+  idle: { icon: CircleDot, label: "Stopped", tone: "text-status-idle" },
+  running: { icon: Spinner, label: "Running", tone: "text-status-working" },
   needsApproval: { icon: CircleAlert, label: "Needs approval", tone: "text-status-needs" },
   needsInput: { icon: CircleAlert, label: "Needs input", tone: "text-status-needs" },
-  error: { icon: CircleAlert, label: "Error", tone: "text-destructive" },
+  error: { icon: CircleAlert, label: "Failed", tone: "text-destructive" },
   ended: { icon: CircleCheck, label: "Ended", tone: "text-muted-foreground" },
 };
 

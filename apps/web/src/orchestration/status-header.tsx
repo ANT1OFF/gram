@@ -21,14 +21,17 @@ import { workersByTab } from "./workers-model";
 const ITEM =
   "flex h-7 min-w-7 shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-/** A count in the foreground, its word muted; the word drops first when the pane is narrow. */
+/** A count in the foreground, its word muted; narrow, the word shortens ("review") but stays. */
 function Count({
   n,
   word,
+  short = word,
   className,
 }: {
   n: number;
   word: string;
+  /** Its word where the strip is narrow: shorter, never gone, so a number never stands alone. */
+  short?: string;
   className?: string | undefined;
 }) {
   return (
@@ -36,7 +39,14 @@ function Count({
       <span data-testid="status-count" className={cn("font-medium text-foreground", className)}>
         {n}
       </span>
-      <span className="@max-3xl:hidden">{word}</span>
+      <span data-testid="status-word" className="@max-3xl:hidden">
+        {word}
+      </span>
+      {short !== word && (
+        <span data-testid="status-word-short" className="hidden @max-3xl:inline">
+          {short}
+        </span>
+      )}
     </>
   );
 }
@@ -168,7 +178,7 @@ function StatusStrip({
           onClick={() => openBoard(workspaceId)}
         >
           <Eye aria-hidden className="size-3.5 shrink-0" />
-          <Count n={review} word="in review" />
+          <Count n={review} word="in review" short="review" />
         </Item>
         <Item
           testId="status-merged"
@@ -177,7 +187,7 @@ function StatusStrip({
           onClick={() => useHistoryStore.getState().show("workers")}
         >
           <GitMerge aria-hidden className={cn("size-3.5 shrink-0", merged > 0 && "text-merged")} />
-          <Count n={merged} word="merged today" />
+          <Count n={merged} word="merged today" short="merged" />
         </Item>
         {digests !== undefined && (
           <SinceYouLeft key={`since-you-left:${threadId}`} thread={thread} digests={digests} />

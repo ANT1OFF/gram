@@ -509,13 +509,3 @@ export const foldByKey = (
  */
 export const tileWorking = (state: OverviewState, working: number): boolean =>
   state === "working" || (state === "idle" && working > 0);
-
-/**
- * A workspace's tile in the compact rail: the first two letters or digits of its name, as written,
- * "?" for a name with none.
- */
-export const tileLetters = (name: string): string =>
-  [...name]
-    .filter((char) => /[\p{L}\p{N}]/u.test(char))
-    .slice(0, 2)
-    .join("") || "?";

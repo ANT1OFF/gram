@@ -121,7 +121,7 @@ describe("threads store events", () => {
     };
     expect(display().working).toBe(true);
     applyEvent({ type: "threads.snapshot", threads: [base] });
-    expect(display()).toMatchObject({ working: false, label: "Idle" });
+    expect(display()).toMatchObject({ working: false, label: "Stopped" });
   });
 
   it("does not hide a snapshot's new subagent behind the previous empty status line", () => {

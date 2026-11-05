@@ -19,7 +19,6 @@ import {
   stateWordShown,
   rowTone,
   stationDotClass,
-  tileLetters,
   tileWorking,
   steplessLine,
   workLineText,
@@ -475,16 +474,7 @@ describe("stationDotClass", () => {
   });
 });
 
-describe("tileLetters", () => {
-  it("marks a tile with the first two letters or digits of the name", () => {
-    expect(tileLetters("gram")).toBe("gr");
-    expect(tileLetters("Billing API")).toBe("Bi");
-    expect(tileLetters("a-b")).toBe("ab");
-    expect(tileLetters("Ølstue")).toBe("Øl");
-    expect(tileLetters("9 lives")).toBe("9l");
-    expect(tileLetters("—")).toBe("?");
-  });
-
+describe("tileWorking", () => {
   it("rings a tile while its orchestrator works, asks or not, and not while it rests", () => {
     expect(tileWorking("working", 0)).toBe(true);
     expect(tileWorking("idle", 2)).toBe(true);

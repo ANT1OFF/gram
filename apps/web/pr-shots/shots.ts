@@ -2228,7 +2228,7 @@ export const SHOTS: readonly Shot[] = [
       await page.setViewportSize({ width: 1440, height: 1200 });
       await openThread(page);
       await page.getByTestId("approval-allow").click();
-      await expect(page.getByTestId("pane-status")).toHaveText("Idle");
+      await expect(page.getByTestId("pane-status")).toHaveText("Stopped");
       const groups = page.getByTestId("tool-group");
       for (let i = 0; i < (await groups.count()); i++) {
         const toggle = groups.nth(i).getByRole("button").first();
@@ -2262,7 +2262,7 @@ export const SHOTS: readonly Shot[] = [
       });
       // Highlighted: Shiki has coloured the tokens, so the block is shown as it stays.
       await code.locator("span[style]").first().waitFor();
-      await expect(page.getByTestId("pane-status")).toHaveText("Idle");
+      await expect(page.getByTestId("pane-status")).toHaveText("Stopped");
       await code.scrollIntoViewIfNeeded();
     },
     element: (page) => page.getByTestId("transcript"),

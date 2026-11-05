@@ -166,9 +166,10 @@ test("a retry that went through turns the failed card into a quiet receipt, said
   const card = page.getByTestId("agent-error").last();
   await card.getByRole("button", { name: "Retry" }).click();
   await expect(card).toHaveAttribute("data-state", "retried");
-  await expect(card.getByTestId("agent-error-retried")).toHaveText(/Retried · \d\d:\d\d$/);
   await expect(card.getByRole("button", { name: "Retry" })).toHaveCount(0);
-  await expect(card.getByTestId("agent-error-recovered")).toBeVisible();
+  // Once the retry ran through, the receipt leads with where it stands.
+  await expect(card).toHaveAttribute("data-recovered", "true");
+  await expect(card.getByTestId("agent-error-retried")).toHaveText(/^Recovered · \d\d:\d\d$/);
   // The retry's own words aren't said a second time: the receipt stands for them.
   await expect(
     page.getByTestId("message-user").filter({ hasText: "Run the e2e suite" }),

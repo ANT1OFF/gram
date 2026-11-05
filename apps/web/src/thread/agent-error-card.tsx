@@ -77,8 +77,11 @@ function useAttempt(threadId: ThreadId, error: ThreadError): AttemptFacts | unde
 }
 
 /** "Retried · 14:05": when the message went again. */
-const retriedLabel = (retried: RetryReceipt): string =>
-  retried.at === undefined ? "Retried" : `Retried · ${formatStamp(retried.at)}`;
+/** "Recovered · 14:05" once the retry ran through, else "Retried · 14:05". */
+const retriedLabel = (retried: RetryReceipt): string => {
+  const word = retried.recovered ? "Recovered" : "Retried";
+  return retried.at === undefined ? word : `${word} · ${formatStamp(retried.at)}`;
+};
 
 /**
  * The attempts before the one a card shows, behind a disclosure: "1 earlier attempt", each with
@@ -121,8 +124,8 @@ function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
  *
  * The attempts at one message are one card: the newest failure's, "attempt 2 of 2 · needs action",
  * with the attempts before it behind a disclosure; their own cards draw nothing. Once a retry went
- * through, that card is a quiet receipt, "Retried · 14:05 · recovered", no longer red and with no
- * Retry of its own, above the reply that came of it.
+ * through, that card is a quiet receipt led by where it stands, "Recovered · 14:05", with the
+ * failure under it, no longer red and with no Retry of its own, above the reply that came of it.
  */
 export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
   // A thread the server no longer has, a finished worker's, has no feed to read attempts from.
@@ -197,20 +200,21 @@ function ErrorCard({
         data-testid="agent-error"
         data-kind={error.kind}
         data-state="retried"
+        data-recovered={retried.recovered || undefined}
         className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-border p-2.5 text-reading text-muted-foreground"
       >
         <RotateCw aria-hidden className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-meta font-medium">
+          {/* What it is now leads; the failure it got past is the line under it. */}
+          <p data-testid="agent-error-retried" className="text-meta font-medium text-foreground">
+            {retriedLabel(retried)}
+          </p>
+          <p data-testid="agent-error-history" className="text-meta break-words">
             {failureLabel(error.kind)}
             {attempt !== undefined && attempt.attempt > 1 && ` · attempt ${attempt.attempt}`}
-            <span data-testid="agent-error-retried" className="text-foreground">
-              {" · "}
-              {retriedLabel(retried)}
-            </span>
-            {retried.recovered && <span data-testid="agent-error-recovered">{" · recovered"}</span>}
+            {": "}
+            {error.text}
           </p>
-          <p className="break-words">{error.text}</p>
           <EarlierAttempts earlier={attempt?.earlier ?? []} />
         </div>
       </div>

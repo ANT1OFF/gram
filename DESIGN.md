@@ -27,11 +27,14 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     or outlined.
   - An orchestrator's sidebar line carries at most one amber marker, its count; a worker that
     needs you takes the amber dot like everywhere else, and its row says "asks you".
-  - **One dot per state**, the same in the sidebar, on the Board and in Workers (`StatusDot`):
-    filled is where it stands (amber needs you, the accent works and pulses, red failed, grey
-    idle, a neutral dot needs attention, the merged colour merged), a hollow ring waits on
-    something outside it (checks, a review, a wake), and a dashed ring is held (paused by you, or
-    until a usage limit resets). The sidebar's Orchestrators header opens the legend.
+  - **One dot per state, and few states**, the same in the sidebar, on the Board and in Workers
+    (`StatusDot`): amber needs you, the accent is running and pulses, a hollow accent ring is
+    waiting on something outside it (checks, a review, a wake, a usage limit), grey has stopped,
+    the merged colour is done, and red failed. The row beside a dot says its state in words, with
+    the reason for a wait ("Waiting · checks"), so the dots need no legend.
+  - **One alarm per failure:** the error's card in the transcript and the thread's one red dot.
+    Everything else stays neutral: the plan strip, the title bar, a label's chip (named, never
+    tinted). A retry that ran through leads with "Recovered", its failure the line under it.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
     purpose), Full autonomy, a key clash, and the usage meter from 90% of a limit (red once
     spent with no credits).
@@ -41,7 +44,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   Lists, menus and the sidebar share one row shape. Every sidebar row, whatever it lists (a
   workspace, a worker, a solo thread, a PR, a Done item), takes two lines (`ROW`, `ROW_STATUS`):
   its mark and title, with a count, time or mark at the right edge, then one muted status line
-  with its badges (a worker's PR chips) at the right edge. Marks centre on one column and titles
+  with its badges (a worker's PR chips) at the right edge only while they fit beside the words:
+  the status wins, and the row's hover names the PR. What needs you is listed first, and Done
+  shows five rows before the rest fold behind "N more". Marks centre on one column and titles
   start on one edge, the pill, Search, section titles and Open History included.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings, 16 px between sections and at a pane's edges.

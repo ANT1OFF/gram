@@ -201,7 +201,7 @@ test("approval counter buttons keep keyboard focus and shortcuts answer the sele
   await expect(page.getByRole("region", { name: "Allow Command 1?" })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("approval-card")).toHaveCount(0);
-  await expect(page.getByTestId("pane-status")).toHaveText("Idle");
+  await expect(page.getByTestId("pane-status")).toHaveText("Stopped");
 });
 
 test("keyboard only: layout presets, ⌘⌥ arrows between panes, and ⌘W", async ({ page }) => {

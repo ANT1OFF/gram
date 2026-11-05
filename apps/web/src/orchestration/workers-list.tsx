@@ -75,14 +75,14 @@ export const workerGlideId = (threadId: ThreadId) => `worker-name-${threadId}`;
 
 /** A row's state as the sidebar's and the Board's dot (`StatusDot`), and its name. */
 const GLYPHS: Readonly<Record<WorkerGlyph, { state: DotState; label: string }>> = {
-  working: { state: "working", label: "Working" },
+  working: { state: "working", label: "Running" },
   waiting: { state: "waiting", label: "Waiting" },
   needsYou: { state: "needs", label: "Needs you" },
-  error: { state: "error", label: "Error" },
-  idle: { state: "idle", label: "Idle" },
-  merged: { state: "merged", label: "Merged" },
+  error: { state: "error", label: "Failed" },
+  idle: { state: "idle", label: "Stopped" },
+  merged: { state: "merged", label: "Done" },
   delivered: { state: "done", label: "Done" },
-  archived: { state: "archived", label: "Archived" },
+  archived: { state: "archived", label: "Done" },
 };
 
 const EMPTY = "No workers yet";
