@@ -1120,7 +1120,11 @@ describe.skipIf(process.platform === "win32")("the configured local check", () =
           dir,
           nodePath.join(dir, "check.log"),
           { base: { PATH: LAUNCHD_PATH }, pathValue: LAUNCHD_PATH },
-          { isolation: LOCAL_CHECK_ISOLATION, command: "sleep 5", timeoutMs: 20 },
+          {
+            isolation: LOCAL_CHECK_ISOLATION,
+            command: "trap 'echo timeout-cleanup >&2' TERM; sleep 5; :",
+            timeoutMs: 20,
+          },
         ),
       ).toEqual({
         ok: false,

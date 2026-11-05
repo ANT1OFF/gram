@@ -1124,7 +1124,12 @@ const spawnCommand = (
             clearTimeout(timer);
             void stop().then(() => resolve(told()));
           };
-          const timer = setTimeout(() => settle(() => timedOut(log, timeoutMs)), timeoutMs);
+          const timer = setTimeout(() => {
+            // Like the exit handler, capture the check's output before stopping its group:
+            // bash can print a termination notice while its children are being killed.
+            const result = timedOut(log, timeoutMs);
+            settle(() => result);
+          }, timeoutMs);
           release = () => {
             settled = true;
             clearTimeout(timer);

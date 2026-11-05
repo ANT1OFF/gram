@@ -178,7 +178,9 @@ describe("ThreadArchive", () => {
   );
 });
 
-describe.skipIf(!hasGit)("dreams", () => {
+// These integration scenarios launch dozens of isolated file helpers. With 350 ms of launch
+// contention per helper, valid runs exceed 30 s; keep the real confinement checks and their caps.
+describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
   it.effect(
     "Codex Dream uses normal permissions and retains all six bounded bridge operations",
     () =>
