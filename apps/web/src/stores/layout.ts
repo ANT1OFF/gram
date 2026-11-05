@@ -82,6 +82,7 @@ const PANEL_TABS: readonly RightPanelTab[] = [
   "connectors",
   "reviews",
   "notifications",
+  "workers",
 ];
 
 /** The tabs that are a review: they open wide, and can take the window in focus. */
