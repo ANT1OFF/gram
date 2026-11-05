@@ -137,8 +137,8 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   await expect(focus).toContainText("Focus review");
   expect(await overflows(page)).toBe(false);
   // Beside the strip (and its More, where tabs fold into it), not across the row from them.
-  const more = panel.getByTestId("panel-more");
-  const before = (await more.count()) > 0 ? more : panel.getByRole("tab").last();
+  const panelMore = panel.getByTestId("panel-more");
+  const before = (await panelMore.count()) > 0 ? panelMore : panel.getByRole("tab").last();
   await expect(before).toBeVisible();
   const gap = await focus.evaluate(
     (button, more) => button.getBoundingClientRect().left - more!.getBoundingClientRect().right,

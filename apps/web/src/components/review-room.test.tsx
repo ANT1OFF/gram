@@ -53,10 +53,12 @@ describe("ReviewRoomOffer", () => {
   });
 });
 
+/** Past the hook's settle delay, so a cramped review takes focus. */
+const settle = () => act(() => vi.advanceTimersByTime(500));
+
 describe("useAutoReviewFocus", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
-  const settle = () => act(() => vi.advanceTimersByTime(500));
 
   it("takes Focus review on its own once the layout settles too narrow to read", () => {
     render(<Room />);
