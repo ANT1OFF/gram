@@ -485,7 +485,11 @@ test("Needs you counts the asks across every workspace, and lists them by worksp
   const count = Number(await needs.getAttribute("data-count"));
   expect(count).toBeGreaterThan(1);
   await expect(needs).toContainText(`${count} need you`);
-  await expect(needs).toHaveAttribute("title", /^Inbox/);
+  // Its hover says its scope, every workspace, and its kinds, beside a workspace's own count.
+  await expect(needs).toHaveAttribute(
+    "title",
+    new RegExp(`^Inbox.*\\n${count} need you across all workspaces: \\d+ approvals?`),
+  );
   await needs.click();
   const inbox = page.getByTestId("inbox");
   await expect(inbox).toBeVisible();

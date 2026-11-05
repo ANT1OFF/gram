@@ -45,7 +45,6 @@ import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { OrchestratorBanner, OrchestratorChips, WorkerBanner } from "@/orchestration/worker-banner";
 import { CatchUpCard } from "@/orchestration/catch-up-card";
 import { FailuresCard } from "@/orchestration/failures-card";
-import { SinceYouLeftCard } from "@/orchestration/since-you-left";
 import { StatusHeader } from "@/orchestration/status-header";
 import { useAllActivity } from "@/stores/all-activity";
 import { OrchestratorStreamProvider, useOrchestratorStream } from "@/orchestration/stream-context";
@@ -587,14 +586,7 @@ export function ThreadView({
           {detail}
         </p>
       )}
-      <StatusHeader thread={thread} />
-      {stream !== undefined && (
-        <SinceYouLeftCard
-          key={`since-you-left:${thread.id}`}
-          thread={thread}
-          digests={stream.plan.digests}
-        />
-      )}
+      <StatusHeader thread={thread} digests={stream?.plan.digests} />
       <WaitingTray threadId={threadId} />
       <PlanStrip threadId={threadId} />
       <WorkerBanner thread={thread} />

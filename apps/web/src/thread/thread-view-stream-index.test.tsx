@@ -42,7 +42,7 @@ vi.mock("./transcript", async (original) => ({
     return <div data-testid="transcript" />;
   },
 }));
-vi.mock("@/orchestration/since-you-left", () => ({ SinceYouLeftCard: () => null }));
+vi.mock("@/orchestration/since-you-left", () => ({ SinceYouLeft: () => null }));
 // A stream that folds the thread's first message, as a digest folded into a later one's line.
 vi.mock("@/orchestration/stream-context", async (original) => ({
   ...(await original<typeof StreamContextModule>()),

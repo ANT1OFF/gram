@@ -1,7 +1,7 @@
 import type { ThreadId } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { namesText, statusHeaderCounts } from "./status-header-model";
+import { statusHeaderCounts } from "./status-header-model";
 import type { WorkerRow, WorkersByTab } from "./workers-model";
 
 const NOW = new Date(2026, 10, 5, 14, 0).getTime();
@@ -59,16 +59,5 @@ describe("the status header's counts", () => {
     expect(counts.waiting).toBe(2);
     expect(counts.inReview.map((w) => w.threadId)).toEqual(["c"]);
     expect(counts.mergedToday.map((w) => w.threadId)).toEqual(["e"]);
-  });
-
-  it("names a couple of workers and counts the rest", () => {
-    const workers = ["Inline comments", "Faster cold start", "Shortcut sheet"].map((title, i) => ({
-      threadId: `t${i}` as ThreadId,
-      title,
-      now: "",
-    }));
-    expect(namesText(workers)).toBe("Inline comments, Faster cold start +1");
-    expect(namesText(workers.slice(0, 1))).toBe("Inline comments");
-    expect(namesText([])).toBe("");
   });
 });

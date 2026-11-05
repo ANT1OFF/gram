@@ -1,6 +1,5 @@
-import type { Thread, WorkspaceId } from "@gram/contracts";
-import { Link } from "@tanstack/react-router";
-import { ChartNoAxesCombined, Eye, GitMerge, Inbox, Workflow } from "lucide-react";
+import type { DeliveredDigest, Thread, WorkspaceId } from "@gram/contracts";
+import { Eye, GitMerge, Inbox, Workflow } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
@@ -9,14 +8,19 @@ import { useHistoryStore } from "@/history/history-view";
 import { showInbox } from "@/inbox/inbox-store";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
-import { LimitBar, useLimitsNow } from "@/shell/usage-meter";
 import { useAllActivity } from "@/stores/all-activity";
 import { useThreadsStore } from "@/stores/threads";
-import { limitTone, tightestLimit, useUsageLimits } from "@/stores/usage-limits";
-import { limitSummaryText, meterText, resetText } from "@/usage/limit-format";
 
+import {
+  kindsText,
+  sectionOf,
+  THREADS_GROUP,
+  type NeedsYouGroup,
+  type NeedsYouItem,
+} from "./needs-you-items";
 import { useOpenBoard } from "./open-board";
-import { namesText, statusHeaderCounts, type HeaderWorker } from "./status-header-model";
+import { SinceYouLeft } from "./since-you-left";
+import { statusHeaderCounts, type HeaderWorker } from "./status-header-model";
 import { useNeedsYouList } from "./use-needs-you";
 import { useOrchestratorLedgers } from "./use-orchestration";
 import { useWorkersListStore } from "./workers-list";
@@ -105,25 +109,36 @@ function Item({
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /**
- * The orchestrator's status header: a compact strip at the top of its chat that is always current
- * and never a message. Running, Waiting on you, In review and Merged today, each opening the view it
- * counts (⌘J's Now, Needs you, the Board, History), the tightest subscription limit as a small
- * meter, and the switch that shows every digest and reply in the chat. Background events change
- * these counts rather than adding to the transcript.
+ * The orchestrator's status header: one compact row at the top of its chat that is always current
+ * and never a message. Running, what needs you here (and how much elsewhere), In review and Merged
+ * today, each opening the view it counts (⌘J's Now, the Inbox, the Board, History), then "Since
+ * you left" while there is an absence to sum up, and the switch that shows every digest and reply
+ * in the chat. Names and breakdowns are on hover; the subscription limit is the title bar's.
+ * Background events change these counts rather than adding to the transcript.
  */
-export function StatusHeader({ thread }: { thread: Thread }) {
+export function StatusHeader({
+  thread,
+  digests,
+}: {
+  thread: Thread;
+  /** The digests the orchestrator was given, which "Since you left" folds; none before they load. */
+  digests?: readonly DeliveredDigest[] | undefined;
+}) {
   const workspaceId = thread.workspaceId;
   if (thread.role !== "orchestrator" || workspaceId === undefined) return null;
-  return <StatusStrip threadId={thread.id} workspaceId={workspaceId} />;
+  return <StatusStrip thread={thread} workspaceId={workspaceId} digests={digests} />;
 }
 
 function StatusStrip({
-  threadId,
+  thread,
   workspaceId,
+  digests,
 }: {
-  threadId: Thread["id"];
+  thread: Thread;
   workspaceId: WorkspaceId;
+  digests: readonly DeliveredDigest[] | undefined;
 }) {
+  const threadId = thread.id;
   const ids = useMemo(() => [workspaceId], [workspaceId]);
   const ledger = useOrchestratorLedgers(ids).get(workspaceId);
   const byId = useThreadsStore((s) => s.byId);
@@ -131,7 +146,8 @@ function StatusStrip({
   // Minute resolution is enough for "today" and the hover's lines.
   const now = useNow(true, undefined, 60_000);
   const groups = useNeedsYouList().groups;
-  const waiting = groups.find((group) => group.workspaceId === workspaceId)?.items.length ?? 0;
+  const here = groups.find((group) => group.workspaceId === workspaceId)?.items ?? NONE;
+  const waiting = here.length;
   const counts = useMemo(
     () => statusHeaderCounts(workersByTab(ledger, { byId, statusDetail, now }), waiting, now),
     [ledger, byId, statusDetail, now, waiting],
@@ -161,36 +177,12 @@ function StatusStrip({
             className={cn("size-3.5 shrink-0", running > 0 && "text-status-working")}
           />
           <Count n={running} word="running" />
-          {running > 0 && (
-            <span
-              data-testid="status-running-names"
-              className="max-w-56 min-w-0 truncate @max-5xl:hidden"
-            >
-              {namesText(counts.running)}
-            </span>
-          )}
         </Item>
-        <Item
-          testId="status-waiting"
-          count={waiting}
-          label={`${waiting} waiting on you, open Inbox`}
-          hint={
-            waiting === 0
-              ? "Nothing waits on you"
-              : `${waiting} ${plural(waiting, "item waits", "items wait")} on you`
-          }
-          onClick={() => showInbox({ workspaceId })}
-        >
-          <Inbox
-            aria-hidden
-            className={cn("size-3.5 shrink-0", waiting > 0 && "text-status-needs-mark")}
-          />
-          <Count
-            n={waiting}
-            word="waiting on you"
-            className={waiting > 0 ? "text-status-needs" : undefined}
-          />
-        </Item>
+        <WaitingItem
+          workspaceId={workspaceId}
+          here={here}
+          others={groups.filter((group) => group.workspaceId !== workspaceId)}
+        />
         <Item
           testId="status-review"
           label={`${review} in review, open the Board`}
@@ -209,46 +201,102 @@ function StatusStrip({
           <GitMerge aria-hidden className={cn("size-3.5 shrink-0", merged > 0 && "text-merged")} />
           <Count n={merged} word="merged today" />
         </Item>
-        <LimitItem />
+        {digests !== undefined && (
+          <SinceYouLeft key={`since-you-left:${threadId}`} thread={thread} digests={digests} />
+        )}
       </div>
       <AllActivitySwitch threadId={threadId} on={all} />
     </div>
   );
 }
 
-/** The tightest subscription limit as a small meter, toned as the title bar's; it opens Usage. */
-function LimitItem() {
-  const limits = useUsageLimits((s) => s.limits);
-  const now = useLimitsNow(limits);
-  const tightest = tightestLimit(limits, now);
-  if (tightest === undefined) return null;
-  const tone = limitTone(tightest.limit);
-  const summary = limitSummaryText(tightest);
-  const reset =
-    tightest.limit.resetsAt === undefined
-      ? ""
-      : `, resets ${resetText(tightest.limit.resetsAt, now)}`;
+const NONE: readonly NeedsYouItem[] = [];
+
+const groupName = (group: NeedsYouGroup) =>
+  group.key === THREADS_GROUP ? "Threads outside a workspace" : group.name;
+
+/**
+ * What needs you in this workspace, and how much needs you elsewhere, so it reads beside the
+ * sidebar's count across every workspace: "0 need you here · 2 elsewhere". Both are shares of the
+ * one Needs you list, so here plus elsewhere is always the sidebar's total. Errors here are named
+ * apart from asks; the hover breaks each down by kind. It opens the Inbox on the newest ask here,
+ * or anywhere when nothing here asks.
+ */
+function WaitingItem({
+  workspaceId,
+  here,
+  others,
+}: {
+  workspaceId: WorkspaceId;
+  here: readonly NeedsYouItem[];
+  others: readonly NeedsYouGroup[];
+}) {
+  const waiting = here.length;
+  const errors = here.filter((item) => sectionOf(item) === "errors").length;
+  const elsewhere = others.reduce((n, group) => n + group.items.length, 0);
+  const verb = plural(waiting, "needs you here", "need you here");
+  const label = [
+    `${waiting} ${verb}`,
+    errors > 0 ? `${errors} ${plural(errors, "is an error", "are errors")}` : undefined,
+    elsewhere > 0 ? `${elsewhere} elsewhere` : undefined,
+  ]
+    .filter((part) => part !== undefined)
+    .join(", ");
   return (
-    <Hint
-      label={`${summary}${reset}`}
-      side="bottom"
-      render={
-        <Link
-          to="/usage"
-          data-testid="status-limit"
-          aria-label={`${summary}, open Usage`}
-          className={cn(
-            ITEM,
-            tone === "warning" && "text-warning hover:text-warning",
-            tone === "spent" && "text-destructive hover:text-destructive",
-          )}
-        />
-      }
+    <Item
+      testId="status-waiting"
+      count={waiting}
+      label={`${label}, open Inbox`}
+      hint={<WaitingHint here={here} others={others} />}
+      onClick={() => showInbox({ workspaceId })}
     >
-      <ChartNoAxesCombined aria-hidden className="size-3.5 shrink-0" />
-      <LimitBar limit={tightest.limit} className="w-8" />
-      <span className="@max-4xl:hidden">{meterText(tightest)}</span>
-    </Hint>
+      <Inbox
+        aria-hidden
+        className={cn("size-3.5 shrink-0", waiting > 0 && "text-status-needs-mark")}
+      />
+      <Count n={waiting} word={verb} className={waiting > 0 ? "text-status-needs" : undefined} />
+      {errors > 0 && (
+        <span data-testid="status-waiting-errors" className="text-destructive">
+          · <span className="font-medium tabular-nums">{errors}</span>{" "}
+          <span className="@max-3xl:hidden">{plural(errors, "error", "errors")}</span>
+        </span>
+      )}
+      {elsewhere > 0 && (
+        <span data-testid="status-elsewhere" data-count={elsewhere}>
+          · <span className="font-medium text-foreground tabular-nums">{elsewhere}</span>{" "}
+          <span className="@max-3xl:hidden">elsewhere</span>
+        </span>
+      )}
+    </Item>
+  );
+}
+
+/** The waiting item's hover: here by kind, then each other workspace's share by kind. */
+function WaitingHint({
+  here,
+  others,
+}: {
+  here: readonly NeedsYouItem[];
+  others: readonly NeedsYouGroup[];
+}) {
+  return (
+    <div data-testid="status-waiting-hint" className="flex max-w-80 flex-col gap-0.5 text-meta">
+      <span>
+        <span className="font-medium">Here: </span>
+        {here.length === 0 ? "nothing needs you" : kindsText(here)}
+      </span>
+      {others.map((group) => (
+        <span key={group.key} className="truncate">
+          <span className="font-medium">{groupName(group)}: </span>
+          {kindsText(group.items)}
+        </span>
+      ))}
+      <span className="text-muted-foreground">
+        {here.length + others.reduce((n, group) => n + group.items.length, 0) === 0
+          ? "The Inbox is empty"
+          : "Opens the Inbox on the newest ask"}
+      </span>
+    </div>
   );
 }
 

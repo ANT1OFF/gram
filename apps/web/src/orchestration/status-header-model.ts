@@ -55,10 +55,3 @@ export const statusHeaderCounts = (
     mergedToday: mergedToday.map(named),
   };
 };
-
-/** "Inline comments, Faster cold start +1": up to `max` titles, and how many more. */
-export const namesText = (workers: readonly HeaderWorker[], max = 2): string => {
-  const shown = workers.slice(0, max).map((worker) => worker.title);
-  const more = workers.length - shown.length;
-  return more > 0 ? `${shown.join(", ")} +${more}` : shown.join(", ");
-};

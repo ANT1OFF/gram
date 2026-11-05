@@ -365,3 +365,47 @@ export const stepItem = (
   if (at === -1) return by === 1 ? items[0] : items.at(-1);
   return items[(((at + by) % items.length) + items.length) % items.length];
 };
+
+/** Whether the item asks the user something, rather than reporting an error: what a count opens on. */
+const asks = (item: Pick<NeedsYouItem, "kind">) =>
+  item.kind === "approval" || item.kind === "question" || item.kind === "plan";
+
+/**
+ * The item to open on when the user came for what needs them (a count, a question): the newest
+ * request (approval, plan or question), else the newest other wait, else the newest error. Items
+ * that keep no time count as oldest; ties keep the list's order.
+ */
+export const newestAsk = (items: readonly NeedsYouItem[]): NeedsYouItem | undefined => {
+  const tiers = [
+    items.filter(asks),
+    items.filter((item) => !asks(item) && item.kind !== "failure"),
+    items,
+  ];
+  const tier = tiers.find((each) => each.length > 0);
+  return tier === undefined ? undefined : newestFirst(tier)[0];
+};
+
+/** The newest item listed in section `key`, for an Inbox that remembers the kind last looked at. */
+export const newestOfKind = (
+  items: readonly NeedsYouItem[],
+  key: NeedsYouSectionKey,
+): NeedsYouItem | undefined => newestFirst(items.filter((item) => sectionOf(item) === key))[0];
+
+const KIND_WORDS: Readonly<Record<NeedsYouSectionKey, readonly [string, string]>> = {
+  approvals: ["approval", "approvals"],
+  questions: ["question", "questions"],
+  reviews: ["review", "reviews"],
+  drafts: ["draft", "drafts"],
+  steps: ["step to take", "steps to take"],
+  errors: ["error", "errors"],
+};
+
+/** "1 question, 1 error": what `items` ask by kind, in the Inbox's order, so asks and errors stay apart. */
+export const kindsText = (items: readonly NeedsYouItem[]): string =>
+  SECTION_ORDER.map((key) => {
+    const n = items.filter((item) => sectionOf(item) === key).length;
+    const [one, many] = KIND_WORDS[key];
+    return n === 0 ? "" : `${n} ${n === 1 ? one : many}`;
+  })
+    .filter((words) => words !== "")
+    .join(", ");
