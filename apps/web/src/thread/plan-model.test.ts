@@ -10,6 +10,7 @@ import {
   moveStep,
   stepPrBadge,
   stripLine,
+  stripState,
   stripSteps,
   withStep,
 } from "./plan-model";
@@ -42,6 +43,39 @@ describe("the header's plan strip", () => {
     expect(stripLine([plan.steps[0]!, plan.steps[2]!])).toBe("Next: Update FEATURES.md");
     expect(stripLine([{ text: "Lanes", status: "done" }])).toBeUndefined();
     expect(stripLine([])).toBeUndefined();
+  });
+
+  it("says where the turn stands, never a step as running once the turn is over", () => {
+    expect(stripState(plan.steps, "running", false)).toEqual({
+      lead: undefined,
+      line: "Fix Parked lane focus",
+      count: true,
+    });
+    // Stopped or failed: where it stopped, and what comes next, in place of the count.
+    expect(stripState(plan.steps, "stopped", false)).toEqual({
+      lead: "Stopped at step 1/3",
+      line: "Next: Fix Parked lane focus",
+      count: false,
+    });
+    expect(stripState(plan.steps, "failed", false)?.lead).toBe("Failed at step 1/3");
+    // A turn that ended: what comes next, with the count.
+    expect(stripState(plan.steps, "ended", false)).toEqual({
+      lead: undefined,
+      line: "Next: Fix Parked lane focus",
+      count: true,
+    });
+    const todo = [
+      { text: "Reproducing the flake", status: "doing" as const },
+      { text: "Fix it", status: "todo" as const },
+    ];
+    // The agent's todo list is its turn's: gone once that turn ends, its running words left out
+    // when stopped.
+    expect(stripState(todo, "ended", true)).toBeUndefined();
+    expect(stripState(todo, "stopped", true)).toEqual({
+      lead: "Stopped at step 0/2",
+      line: undefined,
+      count: false,
+    });
   });
 });
 

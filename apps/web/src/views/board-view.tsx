@@ -57,6 +57,8 @@ import { useLayoutStore } from "@/stores/layout";
 import { StageChip } from "@/orchestration/stage-stepper";
 
 import { GroupBand } from "./board-group";
+import { StatusDot } from "@/orchestration/status-dot";
+
 import { GridHeads, GridLine, Status } from "./board-grid";
 import { BoardHeader } from "./board-header";
 import { useViewStore } from "./view-store";
@@ -128,7 +130,9 @@ function WorkerChip({
           />
         }
       >
-        <tone.icon aria-hidden className={cn("mt-0.5 size-3.5 shrink-0", tone.tone)} />
+        <span className="flex h-lh shrink-0 items-center">
+          <StatusDot state={worker.tone} data-testid="rail-dot" />
+        </span>
         {named ? (
           <span
             data-testid="rail-worker-title"
@@ -143,7 +147,7 @@ function WorkerChip({
       <span
         className={cn(
           // In a narrow lane the PR and the overlap wrap under the words rather than cut them.
-          "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-4.5 text-meta text-muted-foreground",
+          "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-3.5 text-meta text-muted-foreground",
           !named && worker.pr === undefined && overlap === undefined && "hidden",
         )}
       >

@@ -65,82 +65,95 @@ export const shownPrNumbers = (chips: readonly PrChip[]): readonly { number: num
 
 /**
  * `card={false}` in the compact rail's flyout, itself a card: a chip's own card would sit outside it
- * and close it, so there the chip's name carries what its card would say.
+ * and close it, so there the chip's name carries what its card would say. `dense`, on an overview
+ * row's status line, 16 px tall, so the line keeps its height. `ghost` draws them unseen and
+ * inert, to hold their room inside a row's button while the real ones sit over it.
  */
 export function WorkerPrChips({
   threadId,
   cardPrs,
+  chips: given,
   card = true,
+  dense = false,
+  ghost = false,
   className = "pr-1.5 pb-1 pl-6",
 }: {
   threadId: ThreadId;
   cardPrs: readonly FeatureCardPr[];
+  /** The chips, when the caller already has them (`useWorkerPrChips`). */
+  chips?: readonly PrChip[] | undefined;
   card?: boolean;
+  dense?: boolean;
+  ghost?: boolean;
   /** Where the chips sit: under an overview row's name by default. */
   className?: string;
 }) {
-  const chips = useWorkerPrChips(threadId, cardPrs);
+  const own = useWorkerPrChips(threadId, cardPrs);
+  const chips = given ?? own;
   if (chips.length === 0) return null;
   const shown = chips.slice(0, MAX_PR_CHIPS);
   const more = chips.length - shown.length;
+  const moreText = more > 0 && (
+    <span
+      data-testid={ghost ? undefined : "overview-pr-more"}
+      role={ghost ? undefined : "img"}
+      aria-label={ghost ? undefined : `${more} more pull ${more === 1 ? "request" : "requests"}`}
+      className={cn(
+        "inline-flex items-center px-1 text-meta text-muted-foreground tabular-nums",
+        dense ? "h-4" : "h-5",
+      )}
+    >
+      +{more}
+    </span>
+  );
+  if (ghost) {
+    return (
+      <span aria-hidden className={cn("invisible flex shrink-0 gap-1", className)}>
+        {shown.map((chip) => (
+          <span key={chip.entry.key} className={chipClass(chip, dense)}>
+            <PrChipFace chip={chip} />
+          </span>
+        ))}
+        {moreText}
+      </span>
+    );
+  }
   return (
     <div
       role="group"
       aria-label="Pull requests"
       data-testid="overview-pr-chips"
       data-thread-id={threadId}
-      className={cn("flex flex-wrap gap-1", className)}
+      className={cn("flex gap-1", dense ? "flex-nowrap" : "flex-wrap", className)}
     >
       {shown.map((chip) => (
-        <PrChipButton key={chip.entry.key} chip={chip} threadId={threadId} card={card} />
+        <PrChipButton
+          key={chip.entry.key}
+          chip={chip}
+          threadId={threadId}
+          card={card}
+          dense={dense}
+        />
       ))}
-      {more > 0 && (
-        <span
-          data-testid="overview-pr-more"
-          role="img"
-          aria-label={`${more} more pull ${more === 1 ? "request" : "requests"}`}
-          className="inline-flex h-5 items-center px-1 text-meta text-muted-foreground tabular-nums"
-        >
-          +{more}
-        </span>
-      )}
+      {moreText}
     </div>
   );
 }
 
-function PrChipButton({
-  chip,
-  threadId,
-  card,
-}: {
-  chip: PrChip;
-  threadId: ThreadId;
-  card: boolean;
-}) {
-  const api = useApi();
-  const { entry } = chip;
-  const open = (event: MouseEvent) => {
-    event.preventDefault();
-    if (entry.own) openPrPanel(threadId);
-    else void openExternalUrl(api, entry.url);
-  };
-  const { marks } = chip;
-  const props = {
-    "data-testid": "overview-pr-chip",
-    "data-pr": entry.number,
-    "data-tone": chip.tone,
-    "data-state": chip.kind,
-    "data-merge": marks.merge?.kind,
-    "aria-label": chip.label,
-    onClick: open,
-    className: cn(
-      "inline-flex h-5 cursor-default items-center gap-1 rounded-(--radius-sm) px-1.5 text-meta outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      TONE[chip.tone],
-      chip.kind === "merged" && "px-0.5",
-    ),
-  };
+/** A chip's box: its tone, and 16 px tall on a row's status line or 20 px elsewhere. */
+const chipClass = (chip: PrChip, dense: boolean) =>
+  cn(
+    "inline-flex cursor-default items-center gap-1 rounded-(--radius-sm) px-1.5 text-meta outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    dense ? "h-4" : "h-5",
+    TONE[chip.tone],
+    chip.kind === "merged" && "px-0.5",
+  );
+
+/** What a chip shows: its state's glyph, its number, then its checks, reviews and merge. */
+function PrChipFace({ chip }: { chip: PrChip }) {
+  const { entry, marks } = chip;
   // The state's glyph keeps GitHub's colour for it, whatever tints the chip.
-  const body = (
+  return (
     <>
       <PrMarkIcon group="state" mark={marks.state} data-state-glyph={marks.state.kind} />
       <span
@@ -163,6 +176,38 @@ function PrChipButton({
       <PrMarkIcon group="merge" mark={marks.merge} />
     </>
   );
+}
+
+function PrChipButton({
+  chip,
+  threadId,
+  card,
+  dense,
+}: {
+  chip: PrChip;
+  threadId: ThreadId;
+  card: boolean;
+  dense: boolean;
+}) {
+  const api = useApi();
+  const { entry } = chip;
+  const open = (event: MouseEvent) => {
+    event.preventDefault();
+    if (entry.own) openPrPanel(threadId);
+    else void openExternalUrl(api, entry.url);
+  };
+  const { marks } = chip;
+  const props = {
+    "data-testid": "overview-pr-chip",
+    "data-pr": entry.number,
+    "data-tone": chip.tone,
+    "data-state": chip.kind,
+    "data-merge": marks.merge?.kind,
+    "aria-label": chip.label,
+    onClick: open,
+    className: chipClass(chip, dense),
+  };
+  const body = <PrChipFace chip={chip} />;
   if (!card) {
     return (
       <button type="button" {...props}>

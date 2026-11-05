@@ -430,7 +430,8 @@ export interface OrchestratorLine {
 }
 
 /**
- * An orchestrator's line, whatever its number of workers: hollow while paused or parked, the working
+ * An orchestrator's line, whatever its number of workers: a dashed ring while paused or parked (the
+ * legend's held, as a held brief's), the working
  * colour while it or any of its workers works (the dot pulsing as a working worker's does), else
  * idle. What waits on the user is the line's count, its one amber marker, so the dot never is.
  */
@@ -442,7 +443,7 @@ export const orchestratorLine = (
   const busy = !held && (state === "working" || working > 0);
   return {
     dot: held
-      ? "border border-muted-foreground bg-transparent"
+      ? "border border-dashed border-muted-foreground bg-transparent"
       : busy
         ? "bg-status-working"
         : "bg-status-idle",

@@ -2,6 +2,7 @@ import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "
 import { useState } from "react";
 
 import { InboxButton } from "@/inbox/inbox-button";
+import { LaunchIssuesChip } from "@/launch-checks/banner";
 import { cn } from "@/lib/utils";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
@@ -30,8 +31,8 @@ const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
 
 /**
  * The chat column's title bar, icon-only and few: the workspace and its views, the thread's header
- * or Board's controls in the slot, then what wants your attention (a paused workspace, usage, the
- * bell), one "…" with everything else in words, and the panel. Narrow, what the slot carries folds
+ * or Board's controls in the slot, then what wants your attention (a setup problem folded from its
+ * banner, a paused workspace, usage, the bell), one "…" with everything else in words, and the panel. Narrow, what the slot carries folds
  * into "…" too.
  */
 export function ShellTitlebar({
@@ -137,6 +138,8 @@ export function ShellTitlebar({
         data-testid="titlebar-attention"
         className="flex shrink-0 items-center gap-0.5"
       >
+        {/* A setup problem seen once in its banner, folded here until dismissed. */}
+        <LaunchIssuesChip className="[-webkit-app-region:no-drag]" />
         {!soloBar && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
         {/* Before any setup there is no work of Gram's to meter. Narrow, the title needs the room
             more than the meter needs its words. */}

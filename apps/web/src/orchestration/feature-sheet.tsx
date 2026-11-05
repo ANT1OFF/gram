@@ -56,6 +56,7 @@ import { StageStepper } from "./stage-stepper";
 import { useSetGroup, useSetStage } from "./use-board-actions";
 import { useFeatureCards, useFeatureSummary } from "./use-feature-cards";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
+import { StatusDot } from "./status-dot";
 import { useWorkerWaitings } from "./use-waiting-on";
 import { useWorkersListStore } from "./workers-list";
 import { workingWorkerThreads } from "./tree-model";
@@ -755,7 +756,7 @@ function SheetContent({
                 data-tone={worker.tone}
                 className="flex min-w-0 items-center gap-2 text-meta"
               >
-                <tone.icon aria-label={tone.label} className={cn("size-3.5 shrink-0", tone.tone)} />
+                <StatusDot state={worker.tone} label={tone.label} />
                 <button
                   type="button"
                   onClick={(event) => onOpen(worker.threadId, event)}

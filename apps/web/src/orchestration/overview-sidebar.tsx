@@ -78,6 +78,7 @@ import {
 import { ledgerSlotsText } from "./overview-extras-model";
 import {
   foldByKey,
+  foldedSummaryText,
   nowLineShown,
   orchestratorHover,
   stateWord,
@@ -98,10 +99,11 @@ import {
   type ReportNext,
   type RunningWorker,
 } from "./overview-model";
-import { CURRENT_ROW, ROW, RowMenu, Section, SETTLED, STOP } from "./overview-section";
-import { WorkerPrChips } from "./overview-pr-chips";
+import { CURRENT_ROW, ROW, ROW_STATUS, RowMenu, Section, SETTLED, STOP } from "./overview-section";
+import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
-import { NESTED_TONE_DOT, type RailTone } from "./rail-model";
+import { nowBesidePrs, TONE_DOT, type RailTone } from "./rail-model";
+import { StatusDot, StatusLegendButton } from "./status-dot";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
 import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
@@ -429,7 +431,8 @@ function NeedsYou() {
       title={`${withHint(label, hint)}\n${scope}`}
       onClick={openAsks}
       className={cn(
-        "flex w-full shrink-0 items-center gap-2 rounded-(--radius-md) border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        // Its dot and words on the rows' marks and titles (`ROW`): one left edge down the column.
+        "flex h-8 w-full shrink-0 items-center gap-2 rounded-(--radius-md) border px-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
         count > 0
           ? "border-status-needs-mark/60 font-medium text-status-needs hover:bg-status-needs-mark/10"
           : "border-transparent text-muted-foreground hover:bg-sidebar-row-hover",
@@ -471,7 +474,12 @@ function Orchestrators() {
   const ledgers = useOrchestratorLedgers(workspaceIds);
   if (workspaces.length === 0) return null;
   return (
-    <Section id="orchestrators" title="Orchestrators" count={workspaces.length}>
+    <Section
+      id="orchestrators"
+      title="Orchestrators"
+      count={workspaces.length}
+      action={<StatusLegendButton testId="overview-status-legend" className="-my-0.5" />}
+    >
       {workspaces.map((state) => {
         const id = state.workspace.id;
         return (
@@ -566,7 +574,7 @@ function WorkspaceRow({
           render={
             <div
               className={cn(
-                "flex min-w-0 items-center gap-0.5 rounded-(--radius-sm)",
+                "flex min-w-0 items-start gap-0.5 rounded-(--radius-sm)",
                 here && "bg-sidebar-row-active",
               )}
             />
@@ -586,38 +594,21 @@ function WorkspaceRow({
             title={hover}
             onClick={() => switchTo(state.workspace)}
             onKeyDown={onKeyDown}
-            className={cn(ROW, "min-w-0 flex-1")}
+            className={cn(ROW, "min-w-0 flex-1 items-start")}
           >
             <span
               aria-hidden
               data-testid="overview-workspace-dot"
               data-working={line.pulse || undefined}
               className={cn(
-                "size-2 justify-self-center rounded-full",
+                DOT_ON_FIRST_LINE,
+                "rounded-full",
                 line.dot,
                 line.pulse && "gram-working",
               )}
             />
-            <span className="flex min-w-0 items-baseline gap-1.5">
-              <span className="truncate font-medium">{name}</span>
-              {empty && (
-                <span
-                  data-testid="overview-workspace-idle"
-                  className="shrink-0 text-meta text-muted-foreground"
-                >
-                  · idle
-                </span>
-              )}
-            </span>
-            <span className="flex items-center gap-1.5">
-              {stateWordShown(word) && (
-                <span
-                  data-testid="overview-workspace-state"
-                  className="text-meta whitespace-nowrap text-muted-foreground"
-                >
-                  {stateWord(word)}
-                </span>
-              )}
+            <span className="truncate font-medium">{name}</span>
+            <span className="flex h-lh items-center">
               {asks > 0 && (
                 <span
                   data-testid="overview-workspace-asks"
@@ -627,8 +618,35 @@ function WorkspaceRow({
                 </span>
               )}
             </span>
-            {waiting !== undefined && (
-              <WaitingLine waiting={waiting} testId="overview-orchestrator-waiting" />
+            {/* Its status line, as a worker's: idle, held, or its workers, else what its
+                orchestrator waits on. */}
+            {waiting !== undefined ? (
+              <span className={ROW_STATUS}>
+                <WaitingLine waiting={waiting} testId="overview-orchestrator-waiting" />
+              </span>
+            ) : (
+              <span className={ROW_STATUS}>
+                {empty ? (
+                  <span data-testid="overview-workspace-idle" className="truncate">
+                    Idle
+                  </span>
+                ) : (
+                  <span className="truncate">
+                    {stateWordShown(word) && (
+                      <span data-testid="overview-workspace-state" className="capitalize">
+                        {stateWord(word)}
+                        {live > 0 && " · "}
+                      </span>
+                    )}
+                    {live > 0 && foldedSummaryText({ live, working, asks: 0 })}
+                    {live === 0 &&
+                      !stateWordShown(word) &&
+                      (orchestratorBusy
+                        ? "Orchestrator at work"
+                        : `${ledger?.held?.length ?? 0} held`)}
+                  </span>
+                )}
+              </span>
             )}
           </button>
           <Hint
@@ -762,7 +780,7 @@ export function WorkerRow({
   const asking = row.askKey !== undefined;
   // One tone for its dot, its words and its count on the orchestrator's line, as the Board has it.
   const tone = rowTone(row, { status, working: busy });
-  const dot = NESTED_TONE_DOT[tone];
+  const dot = TONE_DOT[tone];
   const working = tone === "working";
   const waiting = rowWaiting(row, tone);
   // Ages to the minute.
@@ -805,51 +823,74 @@ export function WorkerRow({
     onClick,
     onKeyDown: rowMenuKeys,
     ...threadDragProps(row.threadId),
-    // Its title may take two lines, so a long one with an ask under it still reads whole; the dot
-    // and marks sit on its first line.
+    // Two lines like every row: its title, cut short with the whole of it on hover, and its status
+    // with its PR chips at the line's right edge. The dot sits on the title's line.
     className: cn(ROW, "items-start", CURRENT_ROW, settled && SETTLED),
   };
+  const prChips = useWorkerPrChips(row.threadId, row.prs);
+  // The PRs its chips show, which its words then leave out: each said once.
+  const shownPrs = shownPrNumbers(prChips);
   const body = (
     <>
-      <span
-        aria-hidden
+      <StatusDot
+        state={tone}
         data-testid="overview-worker-dot"
         data-tone={tone}
-        data-working={working || undefined}
-        className={cn(DOT_ON_FIRST_LINE, "rounded-full", dot, working && "gram-working")}
+        className={DOT_ON_FIRST_LINE}
       />
-      <span
-        data-testid="overview-worker-title"
-        className="line-clamp-2 [overflow-wrap:anywhere] text-foreground"
-      >
+      <span data-testid="overview-worker-title" className="truncate text-foreground">
         {row.title}
       </span>
       <span className="flex h-lh items-center gap-1.5 text-muted-foreground">
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
         {agent !== undefined && agent !== orchestratorAgent && (
-          <AgentIcon agent={agent} className="size-3" />
+          <span data-testid="overview-worker-agent" className="flex">
+            <AgentIcon agent={agent} className="size-3.5" />
+          </span>
         )}
       </span>
       {/* At work, the thread's own step and what it runs, as its tree row says them, else the
-          card's now line. An ask or a failure is all the row says. */}
-      {starting ? (
-        <span
-          data-testid="overview-worker-starting"
-          className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground"
-        >
-          {STARTING}
+          card's now line. An ask or a failure is all the row says. Too narrow for both, the chips
+          take a line of their own rather than squeeze the words out. */}
+      <span className={cn(ROW_STATUS, "h-auto min-h-lh flex-wrap")}>
+        <span className="grid min-w-16 flex-[1_1_0] grid-cols-[minmax(0,1fr)]">
+          {starting ? (
+            <span
+              data-testid="overview-worker-starting"
+              className="min-w-0 truncate text-meta text-muted-foreground"
+            >
+              {STARTING}
+            </span>
+          ) : working && !asking && !row.failed ? (
+            <WorkerStep row={row} />
+          ) : waiting !== undefined ? (
+            <WaitingLine waiting={waiting} testId="overview-worker-waiting" prs={shownPrs} />
+          ) : (
+            <WorkerNow row={row} asking={asking} tone={tone} prs={shownPrs} />
+          )}
         </span>
-      ) : working && !asking && !row.failed ? (
-        <WorkerStep row={row} />
-      ) : waiting !== undefined ? (
-        <WaitingLine waiting={waiting} testId="overview-worker-waiting" />
-      ) : (
-        <WorkerNow row={row} asking={asking} tone={tone} />
-      )}
+        <WorkerPrChips
+          threadId={row.threadId}
+          cardPrs={row.prs}
+          chips={prChips}
+          dense
+          ghost
+          className="ml-auto"
+        />
+      </span>
     </>
   );
-  // The PR chips sit under the row, outside its button: each is a button of its own.
-  const chips = <WorkerPrChips threadId={row.threadId} cardPrs={row.prs} card={card} />;
+  // The PR chips sit over the row's status line, outside its button: each is a button of its own.
+  const chips = (
+    <WorkerPrChips
+      threadId={row.threadId}
+      cardPrs={row.prs}
+      chips={prChips}
+      card={card}
+      dense
+      className="absolute right-1.5 bottom-1"
+    />
+  );
   if (!card) {
     return (
       <RowMenu menu={<WorkerRowMenuItems threadId={row.threadId} />}>
@@ -932,6 +973,8 @@ function usePickedPreview() {
   };
 }
 
+const NO_PRS: readonly { readonly number: number }[] = [];
+
 /** A worker's line while its agent session opens, before its first turn runs. */
 const STARTING = "Starting…";
 
@@ -946,16 +989,19 @@ function WorkerNow({
   row,
   asking,
   tone,
+  prs = NO_PRS,
 }: {
   row: OverviewWorkerRow;
   asking: boolean;
   tone: RailTone;
+  /** PRs its chips show beside it, left out of its words. */
+  prs?: readonly { readonly number: number }[];
 }) {
   if (!nowLineShown(row)) {
     return (
       <span
         data-testid="overview-worker-state"
-        className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground"
+        className="min-w-0 truncate text-meta text-muted-foreground"
       >
         {RAIL_TONES[tone].label}
       </span>
@@ -965,12 +1011,12 @@ function WorkerNow({
     <Swap
       swapKey={row.now}
       className={cn(
-        "col-span-2 col-start-2 min-w-0 truncate text-meta",
+        "min-w-0 truncate text-meta",
         asking ? "text-foreground" : row.failed ? "text-destructive" : "text-muted-foreground",
       )}
     >
       <span data-testid="overview-worker-now" className="truncate">
-        {row.now}
+        {nowBesidePrs(row.now, prs)}
       </span>
     </Swap>
   );
@@ -986,7 +1032,7 @@ function WorkerStep({ row }: { row: OverviewWorkerRow }) {
     <span
       data-testid="overview-worker-step"
       title={shown === step ? undefined : step}
-      className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground"
+      className="min-w-0 truncate text-meta text-muted-foreground"
     >
       {shown}
     </span>
@@ -1098,19 +1144,25 @@ function WorkerCard({
  * What a worker or an orchestrator at rest waits on, as a row's second line: an hourglass and the
  * short label, muted, as calm as an idle row. The whole list is on the row's hover.
  */
-function WaitingLine({ waiting, testId }: { waiting: WaitingOn; testId: string }) {
+function WaitingLine({
+  waiting,
+  testId,
+  prs = NO_PRS,
+}: {
+  waiting: WaitingOn;
+  testId: string;
+  /** PRs its row's chips show, left out of its words. */
+  prs?: readonly { readonly number: number }[];
+}) {
   return (
-    <Swap
-      swapKey={waiting.label}
-      className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground"
-    >
+    <Swap swapKey={waiting.label} className="min-w-0 truncate text-meta text-muted-foreground">
       <span
         data-testid={testId}
         data-kind={waiting.kind}
         className="flex min-w-0 items-center gap-1"
       >
         <Hourglass aria-hidden className="size-3.5 shrink-0" />
-        <span className="truncate">{waiting.label}</span>
+        <span className="truncate">{nowBesidePrs(waiting.label, prs)}</span>
       </span>
     </Swap>
   );
@@ -1154,8 +1206,11 @@ function HeldRow({ held }: { held: FeatureCardHeld }) {
   );
 }
 
-/** A solo row's height before it draws, and the space between rows (the section's `gap-px`). */
-const SOLO_ROW = 28;
+/**
+ * A solo row's height (two lines: 20 px and 16 px, and 4 px above and below), and the space
+ * between rows (the section's `gap-px`).
+ */
+const SOLO_ROW = 44;
 const SOLO_GAP = 1;
 
 const soloKey = (summary: ThreadSummary) => summary.thread.id;
@@ -1238,7 +1293,7 @@ function FoldedThreads({
             : `${label}, ${threads.length}. ${hint}`
         }
         onClick={() => setOpen(!open)}
-        className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronDown
           aria-hidden
@@ -1403,7 +1458,6 @@ export function SoloRow({
   const title = threadDisplayTitle(thread);
   const lastActive = display.working ? `Last activity ${formatStamp(thread.lastActivityAt)}` : "";
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);
-  const active = display.working || display.tone === "text-status-needs";
   return (
     <RowMenu menu={<RowMenuItems threadId={thread.id} />}>
       <button
@@ -1432,18 +1486,26 @@ export function SoloRow({
             display.working && "gram-working",
           )}
         />
-        {/* At work or needing you, two lines; at rest, one, which keeps the virtual list's rows
-            anchored as what is above them grows. Its hover says the whole of it. */}
-        <span className={active ? "line-clamp-2 [overflow-wrap:anywhere]" : "truncate"}>
-          {title}
+        {/* Two lines like every row, at work or at rest, so the virtual list's rows keep one
+            height and stay anchored as what is above them grows: its title, cut short with the
+            whole of it on hover, its last activity at the edge, and its status under it. */}
+        <span className="truncate">{title}</span>
+        <span className="flex h-lh items-center text-meta text-muted-foreground">
+          {!display.working && (
+            <span className="tabular-nums">{formatRelative(thread.lastActivityAt, now)}</span>
+          )}
         </span>
-        {!display.working && (
-          <span className="flex h-lh items-center">
-            <span className="text-meta text-muted-foreground tabular-nums">
-              {formatRelative(thread.lastActivityAt, now)}
-            </span>
+        <span data-testid="overview-solo-status" className={ROW_STATUS}>
+          <span
+            className={cn(
+              "truncate",
+              display.tone === "text-status-needs" && "text-status-needs",
+              display.tone === "text-destructive" && "text-destructive",
+            )}
+          >
+            {display.label}
           </span>
-        )}
+        </span>
       </button>
     </RowMenu>
   );

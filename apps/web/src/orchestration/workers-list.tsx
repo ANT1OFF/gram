@@ -1,18 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
-import {
-  Archive,
-  CircleAlert,
-  CircleCheck,
-  CircleDot,
-  GitMerge,
-  HandGrab,
-  History,
-  Hourglass,
-  Search,
-  type LucideIcon,
-} from "lucide-react";
+import { HandGrab, History, Search } from "lucide-react";
 import { Fragment, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { create } from "zustand";
 
@@ -23,7 +12,7 @@ import { listIndexForKey } from "@/lib/list-keys";
 import { useNow } from "@/lib/use-now";
 import { returnFocusTo, useOpener } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
-import { GlideText, PresenceItem, PresenceList, Spinner, Swap } from "@/motion";
+import { GlideText, PresenceItem, PresenceList, Swap } from "@/motion";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -32,6 +21,7 @@ import { askKeysByThread } from "./ask-model";
 import { useWorkspaceAsks } from "./ask-stack";
 import { keepBeside } from "./beside-store";
 import { boardWorkspaceFor } from "./board-model";
+import { StatusDot, type DotState } from "./status-dot";
 import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { useWorkspaceStatuses } from "./use-workspace-statuses";
 import {
@@ -83,15 +73,16 @@ export const useWorkersListStore = create<WorkersListState>()((set) => ({
 /** The id a worker's name glides by between the list and the worker view's crumbs. */
 export const workerGlideId = (threadId: ThreadId) => `worker-name-${threadId}`;
 
-const GLYPHS: Readonly<Record<WorkerGlyph, { icon: LucideIcon; tone: string; label: string }>> = {
-  working: { icon: Spinner, tone: "text-status-working", label: "Working" },
-  waiting: { icon: Hourglass, tone: "text-status-working", label: "Waiting" },
-  needsYou: { icon: CircleAlert, tone: "text-status-needs-mark", label: "Needs you" },
-  error: { icon: CircleAlert, tone: "text-destructive", label: "Error" },
-  idle: { icon: CircleDot, tone: "text-status-idle", label: "Idle" },
-  merged: { icon: GitMerge, tone: "text-merged", label: "Merged" },
-  delivered: { icon: CircleCheck, tone: "text-muted-foreground", label: "Done" },
-  archived: { icon: Archive, tone: "text-muted-foreground", label: "Archived" },
+/** A row's state as the sidebar's and the Board's dot (`StatusDot`), and its name. */
+const GLYPHS: Readonly<Record<WorkerGlyph, { state: DotState; label: string }>> = {
+  working: { state: "working", label: "Working" },
+  waiting: { state: "waiting", label: "Waiting" },
+  needsYou: { state: "needs", label: "Needs you" },
+  error: { state: "error", label: "Error" },
+  idle: { state: "idle", label: "Idle" },
+  merged: { state: "merged", label: "Merged" },
+  delivered: { state: "done", label: "Done" },
+  archived: { state: "archived", label: "Archived" },
 };
 
 const EMPTY = "No workers yet";
@@ -409,7 +400,9 @@ function WorkerListRow({
         active && "row-cursor",
       )}
     >
-      <glyph.icon aria-hidden className={cn("size-3.5 shrink-0", glyph.tone)} />
+      <span className="flex size-3.5 shrink-0 items-center justify-center">
+        <StatusDot state={glyph.state} />
+      </span>
       <span className="sr-only">{glyph.label}: </span>
       <GlideText glideId={workerGlideId(row.threadId)} className="min-w-0 truncate">
         {row.title}

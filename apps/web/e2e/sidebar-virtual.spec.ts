@@ -369,7 +369,13 @@ test("rows in view stay put when what is above them grows, as the browser keeps 
     await mock.saveWorkspace({ name: "docs", projectIds: [home.id], homeProjectId: home.id });
   });
   await expect(overview(page).getByTestId("overview-section-orchestrators")).toBeVisible();
-  await scrollOverview(page, 2_000);
+  // Down to about the 60th row, by the drawn rows' own height rather than a fixed one.
+  const pitch = await rows(page)
+    .first()
+    .evaluate(
+      (row) => row.closest<HTMLElement>("[data-index]")!.getBoundingClientRect().height + 1,
+    );
+  await scrollOverview(page, Math.round(60 * pitch));
   const row = rows(page).and(page.getByRole("button", { name: /^Quiet thread 60,/ }));
   await expect(row).toBeInViewport();
   const top = async () => (await row.boundingBox())!.y;

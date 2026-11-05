@@ -31,7 +31,7 @@ import {
   workerSlots,
   type OverviewPrRow,
 } from "./overview-extras-model";
-import { CURRENT_ROW, ROW, RowMenu, Section, STOP } from "./overview-section";
+import { CURRENT_ROW, ROW, ROW_MARK, ROW_STATUS, RowMenu, Section, STOP } from "./overview-section";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
@@ -76,8 +76,8 @@ export function OverviewPullRequests() {
 }
 
 /**
- * A PR on one line: its worst mark in the vocabulary (`worstPrMark`) and its title. Its tooltip and
- * name say the rest: `repo#n · author`, which list it is on and every mark.
+ * A PR in the rows' two lines: its worst mark in the vocabulary (`worstPrMark`) and its title, then
+ * `repo#n · author`. Its tooltip and name say the rest: which list it is on and every mark.
  */
 function PrRow({ row }: { row: OverviewPrRow }) {
   const api = useApi();
@@ -97,18 +97,21 @@ function PrRow({ row }: { row: OverviewPrRow }) {
       aria-label={`Open ${row.ref} on GitHub: ${row.title}, ${words}, ${sub}, ${label}`}
       title={`${label} · ${sub}\n${prTooltipOf(row.facts, marks)}`}
       onClick={() => void openExternalUrl(api, row.url).catch(() => {})}
-      className={ROW}
+      className={cn(ROW, "items-start")}
     >
       <span
         data-testid="overview-pr-glyph"
         data-state={row.glyph.kind}
         data-worst={worst.mark.kind}
-        className="flex justify-self-center"
+        className={ROW_MARK}
       >
         <PrMarkIcon group={worst.group} mark={worst.mark} />
       </span>
       <span data-testid="overview-pr-title" className="col-span-2 truncate">
         {row.title}
+      </span>
+      <span data-testid="overview-pr-sub" className={ROW_STATUS}>
+        <span className="truncate">{sub}</span>
       </span>
     </button>
   );
@@ -130,7 +133,7 @@ export function OverviewSearch() {
       aria-keyshortcuts={hint === "" ? undefined : hint}
       title={withHint("Search threads, workers and commands", hint)}
       onClick={() => useLayoutStore.getState().openPalette()}
-      className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--radius-sm) px-2.5 text-left text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+      className="flex h-8 w-full shrink-0 items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
     >
       <Search aria-hidden className="size-3.5 shrink-0" />
       <span className="flex-1">Search</span>
@@ -140,8 +143,8 @@ export function OverviewSearch() {
 }
 
 /**
- * Done: the few chats that finished last, each one muted line with no status under it, so they
- * never compete with the live rows above. History, at the column's foot, has the rest.
+ * Done: the few chats that finished last, each in the rows' two lines (its title and when, then
+ * its outcome and where), muted until hovered, so they never compete with the live rows above. History, at the column's foot, has the rest.
  */
 export function OverviewDone() {
   const api = useApi();
@@ -182,7 +185,7 @@ export function OverviewDone() {
 
 const NO_PROJECTS: readonly never[] = [];
 
-/** A finished chat: its outcome's glyph, its title and when, all muted until hovered. */
+/** A finished chat: its outcome's glyph, its title and when, its outcome and place; muted until hovered. */
 function DoneRow({ row, now }: { row: RecentDone; now: number }) {
   const openThread = useOpenThread();
   const viewed = useParams({ strict: false }).threadId === row.threadId;
@@ -211,11 +214,16 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
           CURRENT_ROW,
         )}
       >
-        <span aria-hidden className="flex h-lh items-center justify-self-center">
+        <span aria-hidden className={ROW_MARK}>
           {Icon !== undefined && <Icon className="size-3.5" />}
         </span>
-        <span className="line-clamp-2 [overflow-wrap:anywhere]">{row.title}</span>
+        <span className="truncate">{row.title}</span>
         <span className="flex h-lh items-center text-meta tabular-nums">{when}</span>
+        <span data-testid="overview-done-status" className={ROW_STATUS}>
+          <span className="truncate">
+            <span className="capitalize">{word}</span> · {row.place}
+          </span>
+        </span>
       </button>
     </RowMenu>
   );
@@ -238,9 +246,10 @@ export function OverviewHistory() {
         aria-keyshortcuts={hint === "" ? undefined : hint}
         title={withHint("Finished workers, done and archived threads, past CLI sessions", hint)}
         onClick={() => useHistoryStore.getState().show()}
-        className="flex h-8 w-full items-center gap-2 rounded-(--radius-sm) px-1.5 text-left text-body text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+        className="flex h-8 w-full items-center gap-1.5 rounded-(--radius-sm) pr-1.5 pl-1 text-left text-body text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
       >
-        <History aria-hidden className="size-4 shrink-0" />
+        {/* An inline glyph, on Search's and the rows' marks. */}
+        <History aria-hidden className="size-3.5 shrink-0" />
         <span className="flex-1">Open History</span>
         {hint !== "" && <kbd className="font-sans text-meta tabular-nums">{hint}</kbd>}
       </button>

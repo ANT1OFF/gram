@@ -220,8 +220,8 @@ test("a worker's agent shows only when it isn't its orchestrator's, and always i
   page,
 }) => {
   const made = await start(page);
-  // The agent's glyph, not the hourglass of what the row waits on.
-  const glyph = worker(page, made.inReview).locator("svg:not(.lucide-hourglass)");
+  // The agent's glyph, not the hourglass of what the row waits on or its PR chips' marks.
+  const glyph = worker(page, made.inReview).getByTestId("overview-worker-agent");
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
   await expect(glyph).toHaveCount(0);
   await worker(page, made.inReview).hover();
@@ -1603,9 +1603,10 @@ test("a calm worker and its orchestrator say what they wait on, the whole list o
     page.locator(`[data-testid="overview-worker"][data-thread-id="${threadId}"]`);
   const waits = (threadId: string) => row(threadId).getByTestId("overview-worker-waiting");
 
-  await expect(waits(made.ci)).toHaveText("Waiting · checks on #341");
+  // Its own PR is in the chip beside the words, so the words leave its number out.
+  await expect(waits(made.ci)).toHaveText("Waiting · checks");
   await expect(waits(made.ci)).toHaveAttribute("data-kind", "checks");
-  await expect(waits(made.reviewing)).toHaveText("Waiting · review on #343");
+  await expect(waits(made.reviewing)).toHaveText("Waiting · review");
   await expect(waits(made.stacked)).toHaveText("Waiting · #341 to merge");
   await expect(waits(made.merging)).toHaveText("Waiting · merge of #345");
   await expect(waits(made.release)).toHaveText("Waiting · Release run");

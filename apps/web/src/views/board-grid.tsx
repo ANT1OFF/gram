@@ -4,11 +4,13 @@ import {
   type FeatureStage,
   type FeatureStation,
   type ThreadId,
+  type WorkspaceId,
 } from "@gram/contracts";
 import { CircleAlert, Layers } from "lucide-react";
-import type { MouseEvent, ReactNode } from "react";
+import { useMemo, type MouseEvent, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
+import { formatStamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { RowPlace } from "@/lib/virtual-rows";
 import { FeatureMenu, PausedBadge, RAIL_TONES } from "@/orchestration/feature-sheet";
@@ -23,6 +25,8 @@ import {
   type RailWorker,
 } from "@/orchestration/rail-model";
 import { StageChip } from "@/orchestration/stage-stepper";
+import { StatusDot } from "@/orchestration/status-dot";
+import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { useFeatureSummary } from "@/orchestration/use-feature-cards";
 
 // The Board as a grid: a row per feature with its cells side by side, Task · Stage · Now · Pull
@@ -31,9 +35,14 @@ import { useFeatureSummary } from "@/orchestration/use-feature-cards";
 // under it. The stations stay in each Stage cell as a segmented bar under the station's name; the
 // lanes are the other layout (board-view.tsx).
 
-/** The grid's four columns, shared by its heads and every row so the cells line up. */
+/**
+ * The grid's four columns, shared by its heads and every row so the cells line up. Each is as wide
+ * as what it holds needs: a task's name to 22 rem, the stage bar's fixed 9, the PR's chips and words
+ * to 12, and Now, which carries the worker's latest report, the rest. The table stops at 72 rem, so
+ * a wide window doesn't push the PR column to the far edge.
+ */
 export const GRID_COLUMNS =
-  "grid grid-cols-[minmax(10rem,2.2fr)_minmax(8.5rem,10rem)_minmax(8rem,2fr)_minmax(6rem,1fr)] gap-x-4";
+  "grid max-w-6xl grid-cols-[minmax(10rem,18rem)_9rem_minmax(12rem,1fr)_minmax(7rem,12rem)] gap-x-6";
 
 /** The column heads over the rows. */
 export function GridHeads() {
@@ -41,15 +50,14 @@ export function GridHeads() {
     <div
       aria-hidden
       data-testid="board-grid-heads"
-      className={cn(
-        GRID_COLUMNS,
-        "sticky top-0 z-10 border-b border-border bg-thread px-4 py-1.5 text-meta text-muted-foreground",
-      )}
+      className="sticky top-0 z-10 border-b border-border bg-thread px-4 py-1.5 text-meta text-muted-foreground"
     >
-      <span>Task</span>
-      <span>Stage</span>
-      <span>Now</span>
-      <span>Pull request</span>
+      <div className={GRID_COLUMNS}>
+        <span>Task</span>
+        <span>Stage</span>
+        <span>Now</span>
+        <span>Pull request</span>
+      </div>
     </div>
   );
 }
@@ -205,12 +213,14 @@ const HINT_MS = 200;
  * dock). It carries the lanes' chip's test hooks, so either layout is driven the same way.
  */
 function NowCell({
+  workspaceId,
   worker,
   station,
   asking,
   shown,
   onOpen,
 }: {
+  workspaceId: WorkspaceId;
   worker: RailWorker;
   station: FeatureStation;
   asking: boolean;
@@ -225,6 +235,7 @@ function NowCell({
     ...(worker.waiting === undefined ? [] : [worker.waiting.hint]),
     ...(asking ? ["Click to answer in Asks"] : []),
   ].join("\n");
+  const report = useLatestReport(workspaceId, worker.threadId);
   return (
     <div
       data-testid="rail-worker"
@@ -232,50 +243,87 @@ function NowCell({
       data-station={station}
       data-tone={worker.tone}
       data-asking={asking || undefined}
-      className="flex min-w-0 items-start gap-1.5 text-meta"
+      className="flex min-w-0 flex-col gap-0.5 text-meta"
     >
-      <Hint
-        label={hint}
-        delay={HINT_MS}
-        render={
-          <button
-            type="button"
-            data-testid="rail-worker-open"
-            onClick={(event) => onOpen(worker.threadId, event)}
-            aria-label={`${worker.title}, ${tone.label}, ${worker.now}`}
-            className="flex min-w-0 items-start gap-1.5 rounded-sm text-left outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        }
-      >
-        <tone.icon aria-hidden className={cn("mt-px size-3.5 shrink-0", tone.tone)} />
-        {/* Its PRs are in the cell beside it: each said once. */}
-        <Status tone={worker.tone} now={nowBesidePrs(worker.now, shown)} />
-      </Hint>
-      {overlap !== undefined && (
+      <div className="flex min-w-0 items-start gap-1.5">
         <Hint
-          label={overlap}
+          label={hint}
+          delay={HINT_MS}
           render={
-            <span
-              data-testid="rail-overlap"
-              className="mt-px flex shrink-0 items-center text-muted-foreground"
+            <button
+              type="button"
+              data-testid="rail-worker-open"
+              onClick={(event) => onOpen(worker.threadId, event)}
+              aria-label={`${worker.title}, ${tone.label}, ${worker.now}`}
+              className="flex min-w-0 items-start gap-2 rounded-sm text-left outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
             />
           }
         >
-          <Layers aria-hidden className="size-3.5" />
-          <span className="sr-only">{overlap}</span>
+          {/* The sidebar's and Workers' dot for its state. */}
+          <span className="flex h-lh shrink-0 items-center">
+            <StatusDot state={worker.tone} data-testid="rail-dot" />
+          </span>
+          {/* Its PRs are in the cell beside it: each said once. */}
+          <Status tone={worker.tone} now={nowBesidePrs(worker.now, shown)} />
         </Hint>
+        {overlap !== undefined && (
+          <Hint
+            label={overlap}
+            render={
+              <span
+                data-testid="rail-overlap"
+                className="flex h-lh shrink-0 items-center text-muted-foreground"
+              />
+            }
+          >
+            <Layers aria-hidden className="size-3.5" />
+            <span className="sr-only">{overlap}</span>
+          </Hint>
+        )}
+      </div>
+      {/* Its latest report, in the room the row has: when, then what it said. */}
+      {report !== undefined && (
+        <p
+          data-testid="grid-report"
+          title={report.summary}
+          className="line-clamp-2 min-w-0 pl-4 break-words text-muted-foreground"
+        >
+          <time dateTime={new Date(report.at).toISOString()} className="tabular-nums">
+            {formatStamp(report.at)}
+          </time>
+          {" · "}
+          {report.summary}
+        </p>
       )}
     </div>
   );
 }
 
+/** A worker's latest report from its workspace's ledger, if it has made one. */
+function useLatestReport(
+  workspaceId: WorkspaceId,
+  threadId: ThreadId,
+): { readonly summary: string; readonly at: number } | undefined {
+  const { data: ledger } = useOrchestratorLedger(workspaceId);
+  return useMemo(() => {
+    const report = ledger?.features
+      .flatMap((feature) => feature.workers)
+      .find((worker) => worker.threadId === threadId)?.lastReport;
+    return report === undefined || report.summary.trim() === ""
+      ? undefined
+      : { summary: report.summary, at: report.at };
+  }, [ledger, threadId]);
+}
+
 /** A worker's Stage, Now and Pull request cells. */
 function WorkerCells({
+  workspaceId,
   worker,
   station,
   asking,
   onOpen,
 }: {
+  workspaceId: WorkspaceId;
   worker: RailWorker;
   station: FeatureStation;
   asking: boolean;
@@ -286,6 +334,7 @@ function WorkerCells({
     <>
       <StationSteps station={station} tone={worker.tone} />
       <NowCell
+        workspaceId={workspaceId}
         worker={worker}
         station={station}
         asking={asking}
@@ -427,6 +476,7 @@ export function GridLine({
         </div>
         {only !== undefined ? (
           <WorkerCells
+            workspaceId={row.card.workspaceId}
             worker={only.worker}
             station={only.station}
             asking={asking.has(only.worker.threadId)}
@@ -460,6 +510,7 @@ export function GridLine({
               <GridRow sub>
                 <SubTask>{worker.title}</SubTask>
                 <WorkerCells
+                  workspaceId={row.card.workspaceId}
                   worker={worker}
                   station={station}
                   asking={asking.has(worker.threadId)}
