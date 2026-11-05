@@ -13,7 +13,7 @@ import {
 } from "@/stores/layout";
 import { useViewStore } from "@/views/view-store";
 
-import { INBOX_DOCK_WIDTH, useInboxStore } from "./inbox-store";
+import { INBOX_CHAT_MIN_WIDTH, INBOX_DOCK_WIDTH, useInboxStore } from "./inbox-store";
 
 // Where the Inbox opens: docked in the side panel's column, beside the thread it answers for, or,
 // where that column has no room for its list and detail side by side (a narrow window) or the
@@ -38,8 +38,9 @@ export interface InboxDockFit {
 
 /**
  * The docked Inbox in a window laid out as `input`, at the dragged `width`: it takes the panel's
- * column, which the panel gives up while it shows, and leaves the chat `CHAT_MIN_WIDTH`. Undefined
- * where it can't sit at `INBOX_DOCK_WIDTH.min` beside the chat: the Inbox is then a dialog.
+ * column, which the panel gives up while it shows, and leaves the chat `INBOX_CHAT_MIN_WIDTH` where
+ * the window has it, never less than `CHAT_MIN_WIDTH`. Undefined where it can't sit at
+ * `INBOX_DOCK_WIDTH.min` beside the chat: the Inbox is then a dialog.
  */
 export function inboxDockFit(input: InboxDockInput, width: number): InboxDockFit | undefined {
   const fit = fitShell({
@@ -55,8 +56,11 @@ export function inboxDockFit(input: InboxDockInput, width: number): InboxDockFit
     reviewRequestsPlacement: "hidden",
     openPrsPlacement: "hidden",
   });
-  const max = Math.floor(input.windowWidth - fit.sidebarWidth - CHAT_MIN_WIDTH);
-  if (max < INBOX_DOCK_WIDTH.min) return undefined;
+  const room = Math.floor(input.windowWidth - fit.sidebarWidth - CHAT_MIN_WIDTH);
+  if (room < INBOX_DOCK_WIDTH.min) return undefined;
+  // Dragged wider, it stops where the transcript beside it is still readable.
+  const readable = Math.floor(input.windowWidth - fit.sidebarWidth - INBOX_CHAT_MIN_WIDTH);
+  const max = Math.min(room, Math.max(INBOX_DOCK_WIDTH.min, readable));
   const bounds = { ...INBOX_DOCK_WIDTH, max };
   return {
     sidebar: fit.sidebar,

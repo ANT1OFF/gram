@@ -86,6 +86,10 @@ import { WorkerFields } from "./worker-fields";
 
 const labelCls = "text-meta font-medium text-muted-foreground";
 
+/** What Start says while an agent's readiness is checked: the agent by name, once it is known. */
+const checkingAgent = (model: { agent: string } | undefined): string =>
+  model === undefined ? "Checking agents…" : `Checking ${agentLabel(model.agent)}…`;
+
 /**
  * The New form for the orchestrator (⌘N's `/new-task`) or, with `initialWay` "direct" (⌥⌘N), for
  * one worker to start on at once: what needs doing, and the workspace it goes to. A repo with no
@@ -253,6 +257,19 @@ export function NewTaskDraft({
   const [hold, setHold] = useState(false);
   const holdId = useId();
   const formRef = useRef<HTMLFormElement>(null);
+  // Control and approvals, which the summary beside Start opens to the control that changes it.
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const openControls = () => {
+    setControlsOpen(true);
+    // The autonomy picker, which the merge part names; else the hold switch.
+    requestAnimationFrame(() => {
+      const form = formRef.current;
+      focusIfConnected(
+        form?.querySelector<HTMLElement>('[data-testid="workspace-autonomy-trigger"]') ??
+          form?.querySelector<HTMLElement>('[data-testid="task-hold"] [role="switch"]'),
+      );
+    });
+  };
 
   // A repeat start: the target is the one the last task went to and no new workspace is made, so
   // who does it and where it runs fold to one line until Change unfolds them.
@@ -375,6 +392,24 @@ export function NewTaskDraft({
       : makesOne
         ? "Start workspace and worker"
         : "Start worker";
+  // What Start waits on while a check runs, in its own words on the button: the task's selection,
+  // then each agent's readiness, then the workspace's autonomy the summary beside it names.
+  const checking: string | undefined =
+    target === undefined || sending
+      ? undefined
+      : selection.isError
+        ? undefined
+        : selection.data === undefined || selection.isFetching
+          ? "Checking agents…"
+          : preflight.checking
+            ? checkingAgent(orchestratorModel)
+            : way === "direct" && workerPreflight.checking
+              ? checkingAgent(workerModel)
+              : hasImages && imagePreflight.checking
+                ? checkingAgent(inputModel)
+                : target.kind === "workspace" && workspace === undefined
+                  ? "Checking the workspace…"
+                  : undefined;
   const budget = ledger?.budget;
   // The level the line beside Start names: the new workspace's pick, else the workspace's own.
   // Undefined while a named workspace hasn't loaded: the line waits rather than show the default.
@@ -628,14 +663,11 @@ export function NewTaskDraft({
         )}
 
         <div className="flex flex-col gap-3">
-          {orchestratorModel === undefined ? (
-            <p className="text-meta text-muted-foreground">Checking the task's selected harness…</p>
-          ) : (
-            way === "plan" && (
-              <p className="text-meta text-muted-foreground">
-                {`Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)}`}
-              </p>
-            )
+          {/* While the check runs, Start says so itself (`checking`); no line here. */}
+          {orchestratorModel !== undefined && way === "plan" && (
+            <p className="text-meta text-muted-foreground">
+              {`Orchestrator: ${agentLabel(orchestratorModel.agent)} · ${nameOf(orchestratorModel)}`}
+            </p>
           )}
           {/* A direct worker's workspace still opens its orchestrator, so one that can't run
               blocks starting: shown then, and only then. */}
@@ -695,10 +727,22 @@ export function NewTaskDraft({
           )}
           <div className="flex flex-wrap items-center gap-3">
             <PressScale>
-              <Button type="submit" disabled={!valid || sending}>
-                {sending && <Spinner aria-hidden />}
-                {submitLabel}
-                <ShortcutKbd id="draft.create" cap />
+              <Button
+                type="submit"
+                disabled={!valid || sending}
+                data-testid="task-submit"
+                data-checking={checking === undefined ? undefined : ""}
+                // Its action stays its name while the check runs; the words say why it waits.
+                aria-label={checking === undefined ? undefined : `${submitLabel}, ${checking}`}
+                title={
+                  checking === undefined && !sending && prompt.trim() === ""
+                    ? "Say what needs doing first"
+                    : undefined
+                }
+              >
+                {(sending || checking !== undefined) && <Spinner aria-hidden />}
+                {checking === undefined ? submitLabel : <span>{checking}</span>}
+                {checking === undefined && <ShortcutKbd id="draft.create" cap />}
               </Button>
             </PressScale>
             {target !== undefined && (
@@ -712,8 +756,11 @@ export function NewTaskDraft({
                 ) : (
                   <TaskAuthorityLine
                     way={way}
+                    workspace={name}
+                    makesOne={makesOne}
                     autonomy={autonomy}
                     hold={way === "direct" && hold}
+                    onChange={makesOne ? undefined : openControls}
                   />
                 )}
                 {way === "plan" && budget !== undefined && (
@@ -727,7 +774,7 @@ export function NewTaskDraft({
               </span>
             )}
           </div>
-          <ControlDetails>
+          <ControlDetails open={controlsOpen} onOpenChange={setControlsOpen}>
             {way === "direct" && (
               <div data-testid="task-hold" className="flex items-start gap-2">
                 <Switch

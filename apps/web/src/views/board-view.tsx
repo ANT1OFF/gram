@@ -59,6 +59,7 @@ import { StageChip } from "@/orchestration/stage-stepper";
 import { GroupBand } from "./board-group";
 import { StatusDot } from "@/orchestration/status-dot";
 
+import { DoneBand, doneRows } from "./board-done";
 import { GridHeads, GridLine, Status } from "./board-grid";
 import { BoardHeader } from "./board-header";
 import { useViewStore } from "./view-store";
@@ -529,6 +530,11 @@ function RailBoard({ state }: { state: WorkspaceState }) {
     () => boardRows(railRows(cards, facts, finishedShown ? "all" : "shown"), finishedShown),
     [cards, facts, finishedShown],
   );
+  // Under the lines, what has left them for Done, while finished work is hidden.
+  const done = useMemo(
+    () => (finishedShown ? [] : doneRows(railRows(cards, facts, "all"))),
+    [cards, facts, finishedShown],
+  );
   // What Show finished would add: counted against the Board as it shows with them hidden.
   const hidden = useMemo(
     () => hiddenWorkerCount(cards, boardRows(railRows(cards, facts), false)),
@@ -666,6 +672,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
             </VirtualRows>
           </GlideList>
         )}
+        <DoneBand workspaceId={workspaceId} rows={done} repos={repos} onOpen={onOpen} />
       </div>
       <UndoLine testId="board-undo" />
     </div>

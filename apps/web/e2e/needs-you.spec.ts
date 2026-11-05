@@ -229,6 +229,49 @@ test("a window too narrow to dock it, and Quiet, open the Inbox as a dialog", as
   await expect(page.getByTestId("quiet-layer")).toBeVisible();
 });
 
+test("docked, its list starts compact beside a readable chat, and its divider and toggle size it", async ({
+  page,
+}) => {
+  await start(page);
+  await page.setViewportSize({ width: 1728, height: 1000 });
+  await page.keyboard.press("ControlOrMeta+Shift+I");
+  await expect(inbox(page)).toHaveAttribute("data-docked", "");
+  const list = inbox(page).getByTestId("inbox-list");
+  // Compact: a line a request, its where in its tooltip and the detail's.
+  await expect(list).toHaveAttribute("data-compact", "");
+  const compact = (await list.boundingBox())!.width;
+  expect(compact).toBeLessThan(260);
+  // The chat beside it keeps a readable width.
+  const chat = (await page.getByLabel("Message", { exact: true }).boundingBox())!.width;
+  expect(chat).toBeGreaterThan(480);
+  // The keys stay in the footer.
+  await expect(inbox(page).getByTestId("inbox-keys")).toContainText("j k move");
+
+  // Compact list toggles the full list, two lines a request.
+  const toggle = inbox(page).getByTestId("inbox-compact");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await toggle.click();
+  await expect(list).not.toHaveAttribute("data-compact");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect((await list.boundingBox())!.width).toBeGreaterThan(compact + 80);
+
+  // The divider drags it; double-click puts it back.
+  const divider = inbox(page).getByTestId("inbox-list-resize");
+  await expect(divider).toHaveAttribute("aria-label", "Resize request list");
+  const box = (await divider.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 140, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect(list).toHaveAttribute("data-compact", "");
+  await divider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(divider).toHaveAttribute("aria-valuenow", /\d+/);
+  await divider.dblclick();
+  await expect(list).toHaveAttribute("data-compact", "");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+});
+
 test("answers in the detail go out through the one path, with Undo, and nothing twice", async ({
   page,
 }) => {

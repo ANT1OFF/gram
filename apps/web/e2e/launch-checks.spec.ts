@@ -306,8 +306,10 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
   await page.goto("/");
   const welcome = page.getByTestId("welcome");
-  // It leads with the repository; how Gram works is one line of three steps below it.
+  // It leads with the repository and one line on what a workspace is; the steps are optional.
   await expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeVisible();
+  await expect(welcome.getByTestId("welcome-line")).toContainText("A workspace groups");
+  await welcome.getByRole("button", { name: "How it works" }).click();
   await expect(
     welcome.getByRole("list", { name: "How Gram works" }).getByRole("listitem"),
   ).toHaveText([/^You give tasks/, /^An orchestrator briefs workers/, /^Each worker opens a PR/]);

@@ -36,6 +36,14 @@ test('a finished worker with no messages shows its outcome, not "No messages yet
   await expect(outcome.getByTestId("thread-outcome-report")).toContainText(
     /Last report · \d\d:\d\d/,
   );
+  // What it ended with, from what Gram saved: its PR's state, its checks, its branch, its files.
+  await expect(outcome.getByTestId("thread-outcome-pr-state")).toHaveText("· Merged");
+  await expect(outcome.getByTestId("thread-outcome-checks")).toContainText("Passed");
+  await expect(outcome.getByTestId("thread-outcome-branch")).toContainText("feat/release-notes");
+  await expect(outcome.getByTestId("thread-outcome-branch")).toContainText("into main");
+  await expect(outcome.getByTestId("thread-outcome-changed")).toContainText(
+    "None left in its worktree; its changes are in PR #61",
+  );
   const pr = outcome.getByTestId("thread-outcome-pr");
   await expect(pr).toContainText("#61");
   await expect(page.getByText("No messages yet.")).toHaveCount(0);

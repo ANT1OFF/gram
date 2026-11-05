@@ -65,6 +65,7 @@ export function SideResizeHandle({
   onActive,
   onDoubleClick,
   hint = "Drag to resize, double-click to reset",
+  testId,
 }: {
   side: "left" | "right";
   label: string;
@@ -75,6 +76,8 @@ export function SideResizeHandle({
   /** Replaces the reset; `hint` should say what it does instead. */
   onDoubleClick?: (() => void) | undefined;
   hint?: string;
+  /** Its test id where another handle shares its side; `${side}-resize` by default. */
+  testId?: string;
 }) {
   // Dragging the left panel's edge right widens it; the right panel's edge widens to the left.
   const direction = side === "left" ? 1 : -1;
@@ -118,7 +121,7 @@ export function SideResizeHandle({
       aria-valuemin={bounds.min}
       aria-valuemax={bounds.max}
       title={hint}
-      data-testid={`${side}-resize`}
+      data-testid={testId ?? `${side}-resize`}
       className={cn(
         "group/resize absolute inset-y-0 z-40 flex w-1.5 cursor-col-resize items-center justify-center outline-none hover:bg-ring/40 focus-visible:bg-ring/50",
         // Inside the column: the column clips overflow while it animates.
@@ -132,7 +135,7 @@ export function SideResizeHandle({
           says it can be dragged before the pointer finds it. */}
       <span
         aria-hidden
-        data-testid={`${side}-resize-grip`}
+        data-testid={`${testId ?? `${side}-resize`}-grip`}
         className="h-8 w-1 rounded-full bg-border-strong opacity-0 transition-opacity duration-(--dur-fast) group-hover/side:opacity-60 group-hover/resize:opacity-100! group-focus-visible/resize:opacity-100!"
       />
     </div>

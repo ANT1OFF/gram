@@ -61,7 +61,7 @@ afterEach(() => {
 });
 
 describe("first run", () => {
-  it("is one screen: a repository to pick, the agents beside Open, and how Gram works in a line", async () => {
+  it("is one screen: a repository to pick, the agents beside Open, and one line on what a workspace is", async () => {
     const { api, render, updateSettings } = load(withOnboarding({}));
     for (const profile of await api.listProfiles()) await api.removeProfile(profile.id);
     render();
@@ -76,7 +76,12 @@ describe("first run", () => {
     // The agents' readiness sits right before the actions it gates.
     const strip = welcome.getByTestId("welcome-agents");
     expect(strip.nextElementSibling?.contains(welcome.getByTestId("welcome-open"))).toBe(true);
-    // How Gram works is one line of three steps, shown without asking.
+    // One plain line says what a workspace and its orchestrator are; the steps are optional.
+    expect(welcome.getByTestId("welcome-line").textContent).toBe(
+      "A workspace groups your repositories, and its orchestrator coordinates the agents that work in them.",
+    );
+    expect(welcome.queryByRole("list", { name: "How Gram works" })).toBeNull();
+    fireEvent.click(welcome.getByRole("button", { name: "How it works" }));
     expect(
       within(welcome.getByRole("list", { name: "How Gram works" }))
         .getAllByRole("listitem")
@@ -86,7 +91,6 @@ describe("first run", () => {
       expect.stringContaining("An orchestrator briefs workers"),
       expect.stringContaining("Each worker opens a PR"),
     ]);
-    expect(welcome.queryByRole("button", { name: "How it works" })).toBeNull();
     // Every agent ready: each says so, and there is nothing to re-check.
     const agents = within(await welcome.findByRole("list", { name: "Agents" })).getAllByRole(
       "listitem",

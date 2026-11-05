@@ -1,7 +1,7 @@
 import type { ProjectId, Thread, ThreadId } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { resumeBrief, threadDidWork } from "./empty-thread";
+import { checksOutcome, resumeBrief, threadDidWork } from "./empty-thread";
 
 const thread = (fields: Partial<Thread> = {}): Thread =>
   ({
@@ -69,5 +69,15 @@ describe("resumeBrief", () => {
 
   it("says only what it has", () => {
     expect(resumeBrief("Docs", undefined, undefined)).toBe('Pick up where "Docs" left off.');
+  });
+});
+
+describe("checksOutcome", () => {
+  it("says how a saved PR's checks last read, in words", () => {
+    expect(checksOutcome("passing")?.word).toBe("Passed");
+    expect(checksOutcome("failing")?.word).toBe("Failed");
+    expect(checksOutcome("pending")?.word).toBe("Still running when it was saved");
+    expect(checksOutcome("none")?.word).toBe("None ran");
+    expect(checksOutcome(undefined)).toBeUndefined();
   });
 });

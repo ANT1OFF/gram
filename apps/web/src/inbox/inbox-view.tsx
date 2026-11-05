@@ -1,5 +1,13 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { AlarmClock, Bell, CircleCheck, Inbox as InboxIcon, X } from "lucide-react";
+import {
+  AlarmClock,
+  Bell,
+  CircleCheck,
+  Inbox as InboxIcon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  X,
+} from "lucide-react";
 import {
   useEffect,
   useId,
@@ -32,12 +40,20 @@ import {
 import { NeedsYouStrip } from "@/orchestration/needs-you-strip";
 import { useNeedsYouJump, useNeedsYouList } from "@/orchestration/use-needs-you";
 import { paneComposerNow } from "@/shell/pane-focus";
+import { SideResizeHandle } from "@/shell/side-resize";
 import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useNotificationHistory, unreadNotifications } from "@/stores/notifications";
 
 import { InboxDetail } from "./inbox-detail";
 import { useInboxDock } from "./inbox-dock";
-import { INBOX_DOCKED, useInboxStore } from "./inbox-store";
+import {
+  INBOX_DOCKED,
+  INBOX_LIST_COMPACT,
+  INBOX_LIST_COMPACT_BELOW,
+  INBOX_LIST_WIDTH,
+  inboxListWidth,
+  useInboxStore,
+} from "./inbox-store";
 
 // The Inbox: everything that needs the user, across every workspace, in one place. A list by kind
 // (errors, approvals, questions, reviews, steps, drafts) with the category strip above it, and the
@@ -239,6 +255,14 @@ function InboxBody({
   const now = useNow(true, undefined, 60_000);
   const unread = useNotificationHistory(unreadNotifications);
   const listRef = useRef<HTMLDivElement>(null);
+  // The request list beside the detail: compact (a line a request) or full, by its width, which
+  // its divider drags and Compact list toggles.
+  const listWidth = inboxListWidth(
+    useInboxStore((s) => s.listWidth),
+    docked,
+  );
+  const compact = listWidth < INBOX_LIST_COMPACT_BELOW;
+  const setListWidth = useInboxStore((s) => s.setListWidth);
   const total = sections.reduce((n, section) => n + section.items.length, 0);
   const shown = sectionsIn(sections, category);
   const items = shown.flatMap((section) => section.items);
@@ -361,6 +385,26 @@ function InboxBody({
           Later
           {later.length > 0 && <span className="tabular-nums">{later.length}</span>}
         </Hint>
+        {!showLater && total > 0 && (
+          <Hint
+            label={compact ? "Full list" : "Compact list"}
+            side="bottom"
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-pressed={compact}
+                aria-label="Compact list"
+                data-testid="inbox-compact"
+                onClick={() =>
+                  setListWidth(compact ? INBOX_LIST_WIDTH.default : INBOX_LIST_COMPACT)
+                }
+              />
+            }
+          >
+            {compact ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
+          </Hint>
+        )}
         <Button
           size="xs"
           variant="ghost"
@@ -399,45 +443,67 @@ function InboxBody({
       ) : total === 0 ? (
         <Empty laterCount={later.length} />
       ) : (
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
+          {/* The detail keeps room for an answer's choices however wide the list is dragged. */}
           <div
-            ref={listRef}
-            role="listbox"
-            aria-label="Needs you"
-            tabIndex={0}
-            aria-activedescendant={current === undefined ? undefined : `inbox-row-${index}`}
-            data-testid="inbox-list"
-            className={cn(
-              "shrink-0 overflow-y-auto border-r border-border p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-              docked ? "w-[min(22rem,46%)]" : "w-[min(22rem,36%)]",
-            )}
+            className="flex min-h-0 max-w-[calc(100%-18rem)] shrink-0 flex-col border-r border-border"
+            style={{ width: listWidth }}
           >
-            {shown.map((section) => (
-              <section
-                key={section.key}
-                aria-label={section.label}
-                data-testid="inbox-section"
-                data-section={section.key}
-              >
-                <SectionHead label={section.label} count={section.items.length} />
-                {section.items.map((item) => (
-                  <InboxRow
-                    key={item.key}
-                    item={item}
-                    section={section}
-                    index={items.indexOf(item)}
-                    now={now}
-                    selected={item.key === current?.key}
-                    onSelect={() => select(item.key)}
-                  />
-                ))}
-              </section>
-            ))}
+            <div
+              ref={listRef}
+              role="listbox"
+              aria-label="Needs you"
+              tabIndex={0}
+              aria-activedescendant={current === undefined ? undefined : `inbox-row-${index}`}
+              data-testid="inbox-list"
+              data-compact={compact ? "" : undefined}
+              className="min-h-0 flex-1 overflow-y-auto p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
+              {shown.map((section) => (
+                <section
+                  key={section.key}
+                  aria-label={section.label}
+                  data-testid="inbox-section"
+                  data-section={section.key}
+                >
+                  <SectionHead label={section.label} count={section.items.length} />
+                  {section.items.map((item) => (
+                    <InboxRow
+                      key={item.key}
+                      item={item}
+                      section={section}
+                      index={items.indexOf(item)}
+                      now={now}
+                      selected={item.key === current?.key}
+                      compact={compact}
+                      onSelect={() => select(item.key)}
+                    />
+                  ))}
+                </section>
+              ))}
+            </div>
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             {current !== undefined && (
               <InboxDetail item={current} now={now} docked={docked} onOpenThread={jump} />
             )}
+          </div>
+          {/* The list's divider, over its edge; after the detail, so Tab goes list, detail, it. */}
+          <div
+            className="pointer-events-none absolute inset-y-0 left-0 max-w-[calc(100%-18rem)] *:pointer-events-auto"
+            style={{ width: listWidth }}
+          >
+            <SideResizeHandle
+              side="left"
+              label="Resize request list"
+              testId="inbox-list-resize"
+              width={listWidth}
+              bounds={INBOX_LIST_WIDTH}
+              onResize={(width) => setListWidth(width)}
+              onActive={() => {}}
+              onDoubleClick={() => setListWidth(undefined)}
+              hint="Drag to resize the list, double-click to reset"
+            />
           </div>
         </div>
       )}
@@ -497,6 +563,7 @@ function InboxRow({
   index,
   now,
   selected,
+  compact,
   onSelect,
 }: {
   item: NeedsYouItem;
@@ -504,6 +571,8 @@ function InboxRow({
   index: number;
   now: number;
   selected: boolean;
+  /** One line: its kind and title; where it is from is its tooltip and the detail's. */
+  compact: boolean;
   onSelect: () => void;
 }) {
   const kind = kindOf(item);
@@ -527,9 +596,13 @@ function InboxRow({
       data-thread-id={item.threadId}
       data-workspace={item.workspaceId}
       data-selected={selected || undefined}
+      title={compact ? [title, where].filter(Boolean).join("\n") : undefined}
       onClick={onSelect}
       className={cn(
-        "grid min-h-9 cursor-default grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-2 rounded-(--radius-md) px-2 py-1.5",
+        "grid cursor-default items-start gap-x-2 rounded-(--radius-md) px-2",
+        compact
+          ? "min-h-7 grid-cols-[1rem_minmax(0,1fr)] py-1"
+          : "min-h-9 grid-cols-[1rem_minmax(0,1fr)_auto] py-1.5",
         selected ? "row-cursor" : "hover:bg-accent",
       )}
     >
@@ -557,12 +630,15 @@ function InboxRow({
         </span>
         <span
           data-testid="inbox-item-where"
-          className={cn("truncate text-meta text-muted-foreground", !item.owned && "italic")}
+          className={cn(
+            compact ? "sr-only" : "truncate text-meta text-muted-foreground",
+            !item.owned && "italic",
+          )}
         >
           {where}
         </span>
       </span>
-      {item.at !== undefined && (
+      {!compact && item.at !== undefined && (
         <span className="text-meta leading-5 text-muted-foreground tabular-nums">
           {formatRelative(item.at, now)}
         </span>
