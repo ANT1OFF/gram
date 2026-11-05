@@ -10,6 +10,7 @@ import { MockInvalidState } from "../mock-fs";
 import {
   mockCreatedPrDetail,
   mockDiff,
+  mockDiffChunk,
   mockGitState,
   mockPrDetail,
   type MockCreated,
@@ -111,6 +112,7 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
       world.summary(threadId);
       return mockDiff(threadId, scope, options);
     },
+    gitDiffChunk: async (threadId, request) => mockDiffChunk(threadId, request),
     prDetail,
     prCheckDiagnostic: async (_threadId, selection) => ({
       ...selection,

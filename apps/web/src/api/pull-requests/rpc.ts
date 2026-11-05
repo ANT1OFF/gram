@@ -11,6 +11,7 @@ export const pullRequestsRpc = ({ client }: RpcContext): PullRequestsApi => ({
         ...(options?.ignoreWhitespace === true ? { ignoreWhitespace: true } : {}),
       }),
     ),
+  gitDiffChunk: (threadId, request) => run(client["git.diffChunk"]({ threadId, ...request })),
   prDetail: (threadId) => run(client["git.prDetail"]({ threadId })),
   prCheckDiagnostic: (threadId, selection) =>
     run(client["git.prCheckDiagnostic"]({ threadId, selection })),

@@ -17,6 +17,7 @@ import { PrStatusResult } from "../pr-status.ts";
 import { GitRefreshPayload } from "../git-refresh.ts";
 import { FastForwardResult, UpstreamSync, UpstreamSyncFields } from "../git-upstream-sync.ts";
 import { UpstreamRefStatus, UpstreamStatusFields } from "../git-upstream.ts";
+import { DiffChunk, DiffChunkFields } from "../diff-chunk.ts";
 import { BranchList, Diff, DiffScope, GitState, PrChecksResult, PrDetailResult } from "../git.ts";
 import {
   PrMergeOptions,
@@ -108,6 +109,15 @@ export const GitRpcs = RpcGroup.make(
       ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
     },
     success: Diff,
+    error: errors(ThreadNotFound, GitError, NotFound),
+  }),
+  /**
+   * One file of `git.diff`'s diff in a bounded chunk of hunks, from `cursor`, or its summary: for a
+   * file too large to send whole. Reads only. `NotFound` when the file isn't in that diff.
+   */
+  Rpc.make("git.diffChunk", {
+    payload: { ...threadRef, ...DiffChunkFields },
+    success: DiffChunk,
     error: errors(ThreadNotFound, GitError, NotFound),
   }),
   Rpc.make("git.prDetail", {

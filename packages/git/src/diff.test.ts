@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import {
   DIFF_TOO_LARGE_NOTE,
+  diffBytes,
   gitDiff,
+  MAX_DIFF_READ_BYTES,
   MAX_UNTRACKED_FILES,
   MAX_VIEW_BYTES,
   parseGitDiff,
@@ -21,6 +23,10 @@ import { ProcLive } from "./proc.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
 
 const provide = Effect.provide(ProcLive);
+
+/** An all-added file of `lines` 64-byte lines, as `git diff` writes it. */
+const addedFile = (name: string, lines: number) =>
+  `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n@@ -0,0 +1,${lines} @@\n${"+".concat("y".repeat(63), "\n").repeat(lines)}`;
 
 describe("parseGitDiff", () => {
   it("reads the path from the +++ line even with ' b/' in the name", () => {
@@ -118,11 +124,22 @@ describe("parseGitDiff", () => {
     expect(files[0]).toMatchObject({ path: "n.md", added: 1, removed: 1 });
   });
 
-  it("drops over-cap bodies with the shared note", () => {
+  it("lists the largest files without their bodies past the view cap", () => {
     expect(
       parseGitDiffCapped("diff --git a/a.txt b/a.txt\n+++ b/a.txt\n@@ -0,0 +1 @@\n+x\n"),
     ).toMatchObject({ note: undefined });
-    expect(parseGitDiffCapped("x".repeat(MAX_VIEW_BYTES + 1))).toEqual({
+    const big = MAX_VIEW_BYTES / 64 + 1024;
+    const capped = parseGitDiffCapped(`${addedFile("small.txt", 3)}${addedFile("big.txt", big)}`);
+    expect(capped.note).toBeUndefined();
+    expect(capped.files.map((f) => [f.path, f.note, f.added, f.diff === ""])).toEqual([
+      ["small.txt", undefined, 3, false],
+      ["big.txt", "too large", big, true],
+    ]);
+    expect(diffBytes(capped.files)).toBeLessThanOrEqual(MAX_VIEW_BYTES);
+  });
+
+  it("doesn't list a diff past the read cap, or one git's output was cut from", () => {
+    expect(parseGitDiffCapped("x".repeat(MAX_DIFF_READ_BYTES + 1))).toEqual({
       files: [],
       note: DIFF_TOO_LARGE_NOTE,
     });
@@ -239,31 +256,44 @@ describe.skipIf(!hasGit)("gitDiff", () => {
     }).pipe(provide),
   );
 
-  it.live("caps oversized working-tree and branch diffs", () =>
+  it.live("lists an oversized file without its body and keeps the rest reviewable", () =>
     Effect.gen(function* () {
       const repo = makeRepo(tmp());
       write(nodePath.join(repo, "other.txt"), "one\n");
       run(repo, "add", "-A");
       run(repo, "commit", "-qm", "base");
       run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
-      write(
-        nodePath.join(repo, "big.txt"),
-        `${"x".repeat(63)}\n`.repeat(MAX_VIEW_BYTES / 64 + 1024),
-      );
+      const lines = MAX_VIEW_BYTES / 64 + 1024;
+      write(nodePath.join(repo, "big.txt"), `${"x".repeat(63)}\n`.repeat(lines));
       write(nodePath.join(repo, "tracked.txt"), "changed\n");
       run(repo, "add", "big.txt");
       write(nodePath.join(repo, "new.txt"), "untracked\n");
       const working = yield* gitDiff(repo);
-      expect(working).toMatchObject({ repo: true, files: [], note: DIFF_TOO_LARGE_NOTE });
+      expect(working.note).toBeUndefined();
       expect(working.base).toBeUndefined();
+      expect(working.files?.map((f) => [f.path, f.note, f.added])).toEqual([
+        ["big.txt", "too large", lines],
+        ["tracked.txt", undefined, 1],
+        ["new.txt", undefined, 1],
+      ]);
+      expect(Buffer.byteLength(JSON.stringify(working))).toBeLessThanOrEqual(MAX_VIEW_BYTES);
       run(repo, "checkout", "-q", "-b", "feat");
       run(repo, "add", "-A");
       run(repo, "commit", "-qm", "huge");
-      expect(yield* gitDiff(repo)).toMatchObject({
-        files: [],
-        note: DIFF_TOO_LARGE_NOTE,
-        base: "origin/main",
-      });
+      const branch = yield* gitDiff(repo);
+      expect(branch).toMatchObject({ base: "origin/main" });
+      expect(branch.note).toBeUndefined();
+      expect(branch.files?.map((f) => [f.path, f.note])).toEqual([
+        ["big.txt", "too large"],
+        ["new.txt", undefined],
+        ["tracked.txt", undefined],
+      ]);
+      // Past the read cap, nothing is listed and the note says why.
+      write(
+        nodePath.join(repo, "big.txt"),
+        `${"z".repeat(63)}\n`.repeat(MAX_DIFF_READ_BYTES / 64 + 1024),
+      );
+      expect(yield* gitDiff(repo)).toMatchObject({ files: [], note: DIFF_TOO_LARGE_NOTE });
       write(nodePath.join(repo, "big.txt"), "small again\n");
       run(repo, "add", "-A");
       run(repo, "commit", "-qm", "shrink");

@@ -1,14 +1,20 @@
-import type {
-  Diff,
-  DiffFile,
-  DiffScope,
-  GitState,
-  PrDetailResult,
-  PrReviewState,
-  PrState,
-  PrStatus,
-  ThreadId,
-  TurnId,
+import {
+  chunkLimits,
+  chunkPatch,
+  generatedKind,
+  summarizePatch,
+  type Diff,
+  type DiffChunk,
+  type DiffChunkRequest,
+  type DiffFile,
+  type DiffScope,
+  type GitState,
+  type PrDetailResult,
+  type PrReviewState,
+  type PrState,
+  type PrStatus,
+  type ThreadId,
+  type TurnId,
 } from "@gram/contracts";
 
 import { MOCK_HEAD_OID } from "./mock-review";
@@ -187,6 +193,41 @@ const UNCOMMITTED: DiffFile[] = [
 /** t-deps's finished turn, seeded on its reply so the transcript offers a files chip. */
 export const MOCK_DEPS_TURN = "turn-deps-1" as TurnId;
 
+/**
+ * t-deps's lockfile bump in full, +212 −188 over 25 hunks: what `git.diffChunk` pages through when
+ * the listing sends the file without its body.
+ */
+function depsLockPatch(): string {
+  const rows: string[] = [];
+  const packages = ["vitest", "zod", "vite", "esbuild", "rollup", "@vitest/expect", "tinypool"];
+  for (let h = 0; h < 25; h++) {
+    const name = `${packages[h % packages.length]}${h < packages.length ? "" : `-${h}`}`;
+    const removed = h < 13 ? 8 : 7;
+    const added = h < 12 ? 9 : 8;
+    const oldStart = 40 + h * 60;
+    const newStart = oldStart + h;
+    rows.push(`@@ -${oldStart},${removed + 2} +${newStart},${added + 2} @@ packages:`);
+    rows.push(`   /${name}@5.0.${h}:`);
+    for (let i = 0; i < removed; i++) {
+      rows.push(
+        `-    ${i === 0 ? "resolution" : `dependency-${i}`}: {integrity: sha512-${(h * 17 + i).toString(36).repeat(6)}}`,
+      );
+    }
+    for (let i = 0; i < added; i++) {
+      rows.push(
+        `+    ${i === 0 ? "resolution" : `dependency-${i}`}: {integrity: sha512-${(h * 29 + i).toString(36).repeat(6)}}`,
+      );
+    }
+    rows.push("     dev: true");
+  }
+  return rows.join("\n");
+}
+
+/** Whole patches of the files the mock lists without their bodies, by path. */
+const FULL_PATCHES: Readonly<Record<string, () => string>> = {
+  "pnpm-lock.yaml": depsLockPatch,
+};
+
 const DEPS_TURN_FILES: DiffFile[] = [
   {
     path: "package.json",
@@ -261,6 +302,76 @@ export function withoutWhitespaceChanges(file: DiffFile): DiffFile | undefined {
     additions: lines.filter((line) => line.startsWith("+")).length,
     deletions: lines.filter((line) => line.startsWith("-")).length,
     patch: lines.join("\n"),
+  };
+}
+
+/** Shaped like the contract's `NotFound` for a file no longer in the diff. */
+class MockFileNotFound extends Error {
+  readonly _tag = "NotFound";
+  readonly entity = "file";
+  readonly id: string;
+
+  constructor(id: string) {
+    super(`${id} isn't in this diff any more. Refresh the diff to see what changed.`);
+    this.id = id;
+  }
+}
+
+/** A short stand-in for the server's fingerprint of a patch. */
+const fingerprint = (text: string) => {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (Math.imul(hash, 31) + text.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(16);
+};
+
+/**
+ * `git.diffChunk` over the mock's diffs: a file the listing sent too large is paged through its whole
+ * patch, the same way the server pages, and a missing file is `NotFound`.
+ */
+export function mockDiffChunk(threadId: ThreadId, request: DiffChunkRequest): DiffChunk {
+  const file = mockDiff(threadId, request.scope, {
+    ignoreWhitespace: request.ignoreWhitespace,
+  }).files?.find((f) => f.path === request.path);
+  if (file === undefined) {
+    throw new MockFileNotFound(request.path);
+  }
+  const patch = file.tooLarge ? (FULL_PATCHES[file.path]?.() ?? "") : file.patch;
+  const kind = file.binary ? undefined : generatedKind(file.path, patch);
+  const base = {
+    path: file.path,
+    fingerprint: fingerprint(patch),
+    binary: file.binary,
+    partial: false,
+    ...(kind === undefined ? {} : { generated: kind }),
+  };
+  if (request.fingerprint !== undefined && request.fingerprint !== base.fingerprint) {
+    return {
+      ...base,
+      changed: true,
+      patch: "",
+      totalHunks: 0,
+      additions: file.additions,
+      deletions: file.deletions,
+      clippedLines: 0,
+    };
+  }
+  if (request.mode === "summary") {
+    const summary = summarizePatch(file.path, patch);
+    return {
+      ...base,
+      changed: false,
+      patch: "",
+      totalHunks: summary.hunks,
+      additions: summary.additions,
+      deletions: summary.deletions,
+      clippedLines: 0,
+      summary,
+    };
+  }
+  return {
+    ...base,
+    changed: false,
+    ...chunkPatch(patch, request.cursor, chunkLimits(request.hunks)),
   };
 }
 

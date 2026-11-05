@@ -11,6 +11,7 @@ export * from "./checkpoints.ts";
 export * from "./turn-undo.ts";
 export * from "./claude-settings.ts";
 export * from "./diff.ts";
+export * from "./diff-file.ts";
 export * from "./errors.ts";
 export * from "./exec.ts";
 export * from "./git-state-runtime.ts";

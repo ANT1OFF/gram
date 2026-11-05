@@ -2,6 +2,7 @@ import { GitError, NotFound, type Diff, type ThreadId, type TurnId } from "@gram
 import {
   Checkpoints,
   git,
+  MAX_DIFF_READ_BYTES,
   parseGitDiffCapped,
   tryRepoTop,
   withoutWhitespaceChanges,
@@ -16,17 +17,21 @@ import { endCheckpointId } from "./turn-hooks.ts";
  */
 const checkpointsDiffIgnoringWhitespace = (top: string, start: string, end: string) =>
   Effect.gen(function* () {
-    const out = yield* git(top, [
-      "-c",
-      "core.quotepath=false",
-      "-c",
-      "diff.mnemonicPrefix=false",
-      "diff",
-      "--no-color",
-      "-w",
-      start,
-      end,
-    ]).pipe(Effect.mapError(toGitError));
+    const out = yield* git(
+      top,
+      [
+        "-c",
+        "core.quotepath=false",
+        "-c",
+        "diff.mnemonicPrefix=false",
+        "diff",
+        "--no-color",
+        "-w",
+        start,
+        end,
+      ],
+      { maxOutputBytes: MAX_DIFF_READ_BYTES },
+    ).pipe(Effect.mapError(toGitError));
     if (out.status !== 0) {
       return yield* new GitError({
         message: out.stderr.trim() || "git diff failed",

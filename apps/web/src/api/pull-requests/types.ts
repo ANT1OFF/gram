@@ -5,6 +5,8 @@ import type {
   BoundPr,
   CreatedPr,
   Diff,
+  DiffChunk,
+  DiffChunkRequest,
   DiffScope,
   HiddenPr,
   MergeStrategy,
@@ -28,6 +30,8 @@ export interface PullRequestsApi {
     scope: DiffScope,
     options?: { ignoreWhitespace?: boolean },
   ): Promise<Diff>;
+  /** One file of `gitDiff`'s diff a bounded chunk of hunks at a time, or its summary. Reads only. */
+  gitDiffChunk(threadId: ThreadId, request: DiffChunkRequest): Promise<DiffChunk>;
   prDetail(threadId: ThreadId): Promise<PrDetailResult>;
   /** The PR's checks alone, one small request where `prDetail` fetches the whole PR and its diff. */
   prChecks(threadId: ThreadId): Promise<PrChecksResult>;
