@@ -7,7 +7,7 @@ import { useWindowWidth } from "@/shell/side-resize";
 import {
   clampWidth,
   fitShell,
-  panelBounds,
+  panelBoundsFor,
   panelWidthFor,
   shellPage,
   useLayoutStore,
@@ -87,13 +87,14 @@ export function useShellLayout() {
   }, [windowWidth, hasThread, threadQuiet, page, chatBusy, setShellContext]);
 
   const left = fit.sidebarWidth;
-  const bounds = panelBounds(windowWidth, left);
+  // Beside a review the chat keeps more room, so the drag stops there too.
+  const bounds = panelBoundsFor({ panelTab, chatBusy, windowWidth }, left);
   const shownWidth = clampWidth(
     panelWidthFor(
       { panelTab, panelWidth, reviewWidth, windowWidth, chatBusy },
       unfocused.sidebarWidth,
     ),
-    panelBounds(windowWidth, unfocused.sidebarWidth),
+    panelBoundsFor({ panelTab, chatBusy, windowWidth }, unfocused.sidebarWidth),
   );
   return {
     fit,
@@ -106,6 +107,8 @@ export function useShellLayout() {
     panelShown: fit.panel !== "none",
     expanded: fit.panel === "over",
     reviewFocus: fit.reviewFocus,
+    /** A review held too narrow to read beside the chat: the panel offers Focus review. */
+    reviewCramped: fit.reviewCramped,
     left,
     right: fit.panelWidth,
     bounds,

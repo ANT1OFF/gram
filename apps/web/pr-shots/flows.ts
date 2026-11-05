@@ -453,8 +453,8 @@ const steps: readonly Shot[] = [
           "Run the e2e suite",
         ),
       );
-      await expect(page.locator('[data-testid="agent-error"][data-state="retried"]')).toHaveCount(
-        1,
+      await expect(page.getByTestId("agent-error-attempt-number")).toContainText(
+        "attempt 2 of 2 · needs action",
       );
     },
   },
@@ -530,6 +530,22 @@ const steps: readonly Shot[] = [
       await page.getByLabel("Message", { exact: true }).focus();
       await expect(page.getByTestId("stop-key")).toHaveCSS("opacity", "1");
     },
+  },
+  {
+    name: "old-thread",
+    title: "Find old work: a finished worker whose conversation isn't on this computer",
+    open: async (page) => {
+      await page.goto("/t/t-docs");
+      await page.getByRole("button", { name: /^Release notes for 0.9, Gram, merged/ }).click();
+      await expect(
+        page.getByRole("heading", { name: "Worker: Release notes for 0.9", exact: true }),
+      ).toBeVisible();
+    },
+  },
+  {
+    name: "first-run",
+    title: "First run: no workspace yet, the start card with its steps and agent",
+    open: tour("01-first-run"),
   },
 ];
 

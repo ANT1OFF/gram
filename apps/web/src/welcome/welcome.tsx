@@ -22,7 +22,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { create } from "zustand";
 
 import { AgentIcon } from "@/agents/agent-display";
@@ -49,7 +49,7 @@ import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 
 import { matchRepos, RECENT_LIMIT } from "./repo-search";
-import { toolRows, type ToolState } from "./tools";
+import { runsWith, toolRows, type ToolState } from "./tools";
 
 /**
  * Whether this app session shows the first-run screen; decided once, when settings first load, so
@@ -93,9 +93,10 @@ export function Welcome() {
 }
 
 /** What Gram does, in the order it happens. */
-const STEPS: readonly { icon: LucideIcon; title: string; line: ReactNode }[] = [
+const STEPS: readonly { icon: LucideIcon; short: string; title: string; line: ReactNode }[] = [
   {
     icon: MessageSquare,
+    short: "You give tasks",
     title: "You give tasks",
     line: (
       <>
@@ -105,11 +106,13 @@ const STEPS: readonly { icon: LucideIcon; title: string; line: ReactNode }[] = [
   },
   {
     icon: Network,
+    short: "An orchestrator briefs workers",
     title: "An orchestrator plans them and briefs workers",
     line: "One per workspace. It splits a task into pieces and follows each one through.",
   },
   {
     icon: GitPullRequest,
+    short: "Each worker opens a PR",
     title: "Workers run Claude Code or Codex",
     line: "Each in its own worktree, on your own subscription, and each opens a pull request.",
   },
@@ -238,6 +241,7 @@ function FirstRun() {
               <ArrowRight data-icon="inline-end" />
             </Button>
           )}
+          {picked !== undefined && <RunsWith />}
           {picked === undefined ? (
             // Nothing to pick: the other sources are the way in, so they stand on their own.
             <>
@@ -299,57 +303,45 @@ function FirstRun() {
 }
 
 /**
- * How Gram works, folded under one line until asked for: the first run leads with the repository,
- * and the team, orchestrator and worktree model is there for whoever wants it first.
+ * How Gram works, as one line of three numbered steps under the start: who gives the work, who
+ * plans it and who does it. Each step's fuller line is on its hover and focus.
  */
 function HowItWorks() {
-  const [open, setOpen] = useState(false);
-  const id = useId();
   return (
-    <div className="flex flex-col gap-2 border-t border-border pt-4">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-expanded={open}
-          aria-controls={id}
-          data-testid="welcome-how"
-          className="-ml-2.5"
-          onClick={() => setOpen((was) => !was)}
-        >
-          <ChevronRight
-            data-icon="inline-start"
-            className={cn("transition-transform duration-(--dur-fast)", open && "rotate-90")}
-          />
-          How it works
-        </Button>
-        <span className="text-meta text-muted-foreground">
-          Tasks, the orchestrator and its workers, in three steps.
-        </span>
-      </div>
-      <Expand open={open}>
-        {open && (
-          <ol
-            id={id}
-            aria-label="How Gram works"
-            data-testid="welcome-steps"
-            className="flex flex-col gap-3"
-          >
-            {STEPS.map(({ icon: Icon, title, line }) => (
-              <li key={title} className="flex items-start gap-3">
-                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent text-muted-foreground">
-                  <Icon aria-hidden className="size-4" />
-                </span>
-                <span className="flex min-w-0 flex-col gap-0.5">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-4">
+      <span className="text-caption font-medium text-muted-foreground uppercase">How it works</span>
+      <ol
+        aria-label="How Gram works"
+        data-testid="welcome-steps"
+        className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-meta"
+      >
+        {STEPS.map(({ icon: Icon, short, title, line }, index) => (
+          <li key={title} className="flex items-center gap-1.5">
+            {index > 0 && (
+              <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            )}
+            <Hint
+              label={
+                <span className="flex flex-col gap-0.5">
                   <span className="font-medium">{title}</span>
-                  <span className="text-meta text-muted-foreground">{line}</span>
+                  <span>{line}</span>
                 </span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </Expand>
+              }
+              render={
+                <span
+                  // Focusable, so each step's fuller line reaches the keyboard too.
+                  tabIndex={0}
+                  className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:focus-ring"
+                />
+              }
+            >
+              <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="text-foreground">{short}</span>
+              {title !== short && <span className="sr-only">: {title}</span>}
+            </Hint>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -613,6 +605,33 @@ function RecentRepos({
   );
 }
 
+/**
+ * Beside Open, the agent its work runs on ("Runs with Codex"), or with none ready, what to do
+ * first. Reads the same launch checks as the strip above, while they load says nothing.
+ */
+function RunsWith() {
+  const { checks } = useLaunchChecks();
+  if (checks === undefined) return null;
+  const { ready, agents, words } = runsWith(toolRows(checks));
+  return (
+    <span
+      data-testid="welcome-runs-with"
+      data-ready={ready}
+      className={cn(
+        "flex min-w-0 items-center gap-1.5 text-meta",
+        ready ? "text-muted-foreground" : "text-warning",
+      )}
+    >
+      {ready ? (
+        agents.map((agent) => <AgentIcon key={agent} agent={agent} className="size-3.5" />)
+      ) : (
+        <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+      )}
+      {words}
+    </span>
+  );
+}
+
 /** How each state reads beside its icon: never by colour alone. */
 const STATE: Readonly<Record<ToolState, { icon: LucideIcon; words: string; className: string }>> = {
   ready: { icon: CircleCheck, words: "Ready", className: "text-success" },
@@ -694,7 +713,12 @@ function AgentStrip() {
                       <OutboundLink
                         href={row.installUrl}
                         title={`How to install ${row.name}`}
-                        className={buttonVariants({ size: "xs", variant: "outline" })}
+                        // Optional, with another agent ready: a quiet link, not a second start.
+                        className={buttonVariants({
+                          size: "xs",
+                          variant: row.state === "optional" ? "ghost" : "outline",
+                          className: row.state === "optional" ? "text-muted-foreground" : undefined,
+                        })}
                       >
                         Install {row.name}
                         <ExternalLink data-icon="inline-end" aria-hidden />

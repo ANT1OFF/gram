@@ -19,14 +19,31 @@ export interface RetryReceipt {
   /** The newest attempt of the same message, the one that needs action when it failed too. */
   readonly latestMessageId: string;
   readonly latestFailed: boolean;
+  /** The newest attempt ran to its end without failing: the turn recovered. */
+  readonly recovered: boolean;
+}
+
+/** A failure the run's one card lists under its disclosure: an attempt before the one it shows. */
+export interface EarlierAttempt {
+  readonly attempt: number;
+  readonly error: ThreadError;
 }
 
 /** A failed turn's place in the run of attempts at one message. */
 export interface AttemptFacts {
   /** 1 for the first try, 2 for its first retry, and so on. */
   readonly attempt: number;
+  /** How many attempts at the message there have been so far, this one included. */
+  readonly of: number;
   /** Set once the message was sent again after it. */
   readonly retried?: RetryReceipt | undefined;
+  /**
+   * The run's card stands for this failure: a later failure at the same message shows it among its
+   * earlier attempts, so its own card draws nothing.
+   */
+  readonly folded: boolean;
+  /** On the run's card: the failures before the one it shows, oldest first. */
+  readonly earlier: readonly EarlierAttempt[];
 }
 
 const textOf = (message: GramUIMessage): string | undefined => {
@@ -52,43 +69,41 @@ interface Turn {
   readonly text: string | undefined;
   readonly at: number | undefined;
   readonly errors: ThreadError[];
+  /** Its reply's end was written as completed. */
+  completed: boolean;
 }
 
-/**
- * Each failed turn's attempt facts by `errorKey`: which try it was at its message, and, once the
- * same words were sent again, that retry and the newest attempt after it. Only an identical message
- * counts as a retry; anything else the user wrote is a new turn of its own.
- */
-export const attemptsOf = (
-  messages: readonly GramUIMessage[],
-): ReadonlyMap<string, AttemptFacts> => {
-  // The transcript as user turns, each with the errors its reply ended on.
+/** A run of the same words sent one after another, each failure but the last retried. */
+type Run = readonly Turn[];
+
+/** The transcript as user turns, each with the errors its reply ended on, and its runs of retries. */
+const runsOf = (messages: readonly GramUIMessage[]): { turns: Turn[]; runs: Run[] } => {
   const turns: Turn[] = [];
+  const turnOf = new Map<string, Turn>();
   for (const message of messages) {
     if (sentByUser(message)) {
-      turns.push({
+      const turn: Turn = {
         messageId: message.id,
         text: textOf(message),
         at: message.metadata?.createdAt,
         errors: [],
-      });
+        completed: false,
+      };
+      turns.push(turn);
+      const turnId = message.metadata?.turnId;
+      if (turnId !== undefined) turnOf.set(turnId, turn);
       continue;
     }
-    if (message.role !== "assistant") continue;
+    if (message.role !== "assistant" || message.metadata?.parentToolUseId !== undefined) continue;
     const errors = errorsIn(message);
-    if (errors.length === 0) continue;
-    const owner =
-      errors[0]?.turnId === undefined
-        ? undefined
-        : turns.findLast(
-            (turn) =>
-              messages.find((m) => m.id === turn.messageId)?.metadata?.turnId === errors[0]?.turnId,
-          );
-    (owner ?? turns.at(-1))?.errors.push(...errors);
+    const turnId = errors[0]?.turnId ?? message.metadata?.turnId;
+    const owner = (turnId === undefined ? undefined : turnOf.get(turnId)) ?? turns.at(-1);
+    if (owner === undefined) continue;
+    owner.errors.push(...errors);
+    if (message.metadata?.turnEnd?.reason === "completed") owner.completed = true;
   }
 
-  const out = new Map<string, AttemptFacts>();
-  // Runs of the same words sent one after another, each failure but the last retried.
+  const runs: Run[] = [];
   for (let i = 0; i < turns.length; i++) {
     const first = turns[i]!;
     if (first.errors.length === 0 || first.text === undefined) continue;
@@ -99,14 +114,40 @@ export const attemptsOf = (
       run.push(next);
       if (next.errors.length === 0) break;
     }
+    runs.push(run);
+    i += run.length - 1;
+  }
+  return { turns, runs };
+};
+
+/**
+ * Each failed turn's attempt facts by `errorKey`: which try it was at its message, and, once the
+ * same words were sent again, that retry and the newest attempt after it. Only an identical message
+ * counts as a retry; anything else the user wrote is a new turn of its own.
+ *
+ * A run of attempts shows as one card: the last failure's, with the failures before it listed as
+ * `earlier` and each of those `folded`.
+ */
+export const attemptsOf = (
+  messages: readonly GramUIMessage[],
+): ReadonlyMap<string, AttemptFacts> => {
+  const out = new Map<string, AttemptFacts>();
+  for (const run of runsOf(messages).runs) {
     const latest = run.at(-1)!;
+    const failures = run.flatMap((turn, index) =>
+      turn.errors.map((error) => ({ attempt: index + 1, error })),
+    );
+    const shown = failures.at(-1)!;
+    const recovered = latest.errors.length === 0 && latest.completed;
     run.forEach((turn, index) => {
       const retry = run[index + 1];
       for (const error of turn.errors) {
         const key = errorKey(error);
         if (out.has(key)) continue;
+        const card = error === shown.error;
         out.set(key, {
           attempt: index + 1,
+          of: run.length,
           retried:
             retry === undefined
               ? undefined
@@ -116,14 +157,55 @@ export const attemptsOf = (
                   failed: retry.errors.length > 0,
                   latestMessageId: latest.messageId,
                   latestFailed: latest.errors.length > 0,
+                  recovered,
                 },
+          folded: !card,
+          earlier: card ? failures.slice(0, -1) : [],
         });
       }
     });
-    i += run.length - 1;
   }
   return out;
 };
+
+/** Parts that draw nothing on their own, so a reply of only these and folded failures is empty. */
+const SILENT_PARTS: ReadonlySet<string> = new Set([
+  "step-start",
+  "data-tool-image",
+  "data-subagent-usage",
+]);
+
+/**
+ * The messages a run of retries leaves out of the transcript: each retry's user message, which
+ * repeats the words above it, and a reply that is nothing but a failure the run's card stands for.
+ * The run's card says which attempt it is and lists the ones before it.
+ */
+export const retryHiddenOf = (messages: readonly GramUIMessage[]): ReadonlySet<string> => {
+  const { runs } = runsOf(messages);
+  if (runs.length === 0) return NO_HIDDEN;
+  const attempts = attemptsOf(messages);
+  const hidden = new Set<string>();
+  for (const run of runs) for (const turn of run.slice(1)) hidden.add(turn.messageId);
+  for (const message of messages) {
+    if (message.role !== "assistant" || message.metadata?.parentToolUseId !== undefined) continue;
+    let folded = false;
+    const drawn = message.parts.some((part) => {
+      if (part.type === "data-agent-error") {
+        if (attempts.get(errorKey(part.data))?.folded === true) {
+          folded = true;
+          return false;
+        }
+        return true;
+      }
+      if (part.type === "text") return part.text.trim() !== "";
+      return !SILENT_PARTS.has(part.type);
+    });
+    if (folded && !drawn) hidden.add(message.id);
+  }
+  return hidden;
+};
+
+const NO_HIDDEN: ReadonlySet<string> = new Set();
 
 /** How long after the user pressed Stop the turn may still end and be theirs to have stopped. */
 const STOP_SETTLE_MS = 120_000;

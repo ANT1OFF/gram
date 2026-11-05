@@ -5,6 +5,8 @@ test("the PR panel shows reviewers, requests a review and edits labels", async (
   await page.goto("/t/t-flaky");
   await page.getByRole("tab", { name: "PR", exact: true }).click();
   const panel = page.getByTestId("pr-panel");
+  // Reviewers, labels and watching wait folded under what blocks the merge.
+  await panel.getByTestId("pr-manage-toggle").click();
 
   const reviewers = panel.getByRole("list", { name: "Reviewers" });
   await expect(reviewers.getByRole("listitem")).toHaveCount(4);

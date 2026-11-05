@@ -30,7 +30,12 @@ test("the PR overview leads with what blocks the merge and one next step", async
   const panel = page.getByTestId("pr-panel");
 
   const blocked = panel.getByTestId("pr-merge-blocked");
-  await expect(blocked).toHaveText(/^Blocked: 1 failing check, changes requested/);
+  await expect(blocked).toHaveText(
+    "Merge blocked · 3 blockers: check, changes requested, review bot",
+  );
+  // The header line above doesn't repeat what the summary says.
+  await expect(panel.getByTestId("pr-merge-state")).toHaveCount(0);
+  await expect(panel.getByTestId("review-decision")).toHaveCount(0);
   const reasons = panel.getByRole("list", { name: "What blocks the merge" }).getByRole("listitem");
   await expect(reasons.first()).toHaveText("test (windows) failing");
   await expect(reasons.nth(1)).toHaveText("Changes requested by reviewer");
@@ -41,7 +46,13 @@ test("the PR overview leads with what blocks the merge and one next step", async
     (await blocked.getAttribute("id"))!,
   );
 
-  // The summary and its step sit above the reviewers, the labels and what the agent watches.
+  // The summary and its step sit above the reviewers, the labels and what the agent watches,
+  // which wait folded while something blocks the merge.
+  const manage = panel.getByTestId("pr-manage-toggle");
+  await expect(manage).toHaveAttribute("aria-expanded", "false");
+  await expect(manage).toContainText("4 reviewers · 2 labels · not watching");
+  await expect(panel.getByTestId("pr-watch")).toHaveCount(0);
+  await manage.click();
   const top = async (locator: ReturnType<typeof panel.getByTestId>) =>
     (await locator.boundingBox())!.y;
   const summary = await top(panel.getByTestId("pr-blockers"));

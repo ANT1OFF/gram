@@ -9,13 +9,14 @@ import { NewFormHeader } from "./who-does-it";
 afterEach(cleanup);
 
 describe("NewFormHeader", () => {
-  it("is one title, Who does it, where it goes and one line", () => {
+  it("is one title, then the goal, where it goes, Who does it and one line", () => {
     const onWho = vi.fn();
     render(
       <TooltipProvider>
         <NewFormHeader
           who="worker"
           onWho={onWho}
+          goal={<textarea aria-label="What needs doing" />}
           where={<span>Synthetic workspace</span>}
           line="Synthetic line"
         />
@@ -25,21 +26,28 @@ describe("NewFormHeader", () => {
     const who = screen.getByRole("radiogroup", { name: "Who does it" });
     const radios = within(who).getAllByRole("radio");
     expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual([
-      "Agent team (orchestrator)",
-      "One worker to PR",
-      "Single agent chat",
+      "Task",
+      "Team",
+      "Chat",
     ]);
-    // Each choice says who owns the work in one line, under its name.
+    // Each choice says what comes of it in one sentence, under its plain name.
     expect(radios.map((radio) => radio.textContent)).toEqual([
-      "Agent team (orchestrator)An orchestrator plans it and runs workers for you.",
-      "One worker → PROne agent works on it in its own worktree and opens a pull request.",
-      "Single agent chatA single chat with one agent in a folder. No workspace or orchestrator.",
+      "TaskOne worker does it in its own worktree and opens a pull request.",
+      "TeamAn orchestrator splits it up, runs workers and sees their pull requests merged.",
+      "ChatYou and one agent in a folder. No workspace or orchestrator.",
     ]);
     expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual([
-      "false",
       "true",
       "false",
+      "false",
     ]);
+    // The goal leads, then where it runs, then who does it.
+    const goal = screen.getByRole("textbox", { name: "What needs doing" });
+    const whereGroup = screen.getByRole("group", { name: "Where it runs" });
+    expect(
+      goal.compareDocumentPosition(whereGroup) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(whereGroup.compareDocumentPosition(who) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Where it goes is a named group of its own before the prompt, not an "in" chip.
     const where = screen.getByRole("group", { name: "Where it runs" });
     expect(within(where).getByText("Synthetic workspace")).toBeTruthy();
@@ -47,7 +55,7 @@ describe("NewFormHeader", () => {
 
     fireEvent.click(radios[2]!);
     expect(onWho).toHaveBeenCalledWith("me");
-    fireEvent.click(radios[1]!);
+    fireEvent.click(radios[0]!);
     expect(onWho).toHaveBeenCalledTimes(1);
   });
 
@@ -68,7 +76,7 @@ describe("NewFormHeader", () => {
     expect(screen.queryByRole("radiogroup", { name: "Who does it" })).toBeNull();
     expect(screen.queryByRole("group", { name: "Where it runs" })).toBeNull();
     const summary = screen.getByRole("group", { name: "Who does it and where it runs" });
-    expect(summary.textContent).toContain("One worker to PR");
+    expect(summary.textContent).toContain("Task");
     expect(screen.getByTestId("new-summary-where").textContent).toBe(
       " · Alpha · alpha-repo · New worktree, new branch",
     );

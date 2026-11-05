@@ -1,7 +1,7 @@
 import type { ProjectId, Thread, ThreadId } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { threadDidWork } from "./empty-thread";
+import { resumeBrief, threadDidWork } from "./empty-thread";
 
 const thread = (fields: Partial<Thread> = {}): Thread =>
   ({
@@ -43,5 +43,31 @@ describe("threadDidWork", () => {
         lastReport: { threadId: "t1" as ThreadId, state: "done", summary: "Done.", at: 5 },
       } as never),
     ).toBe(true);
+  });
+});
+
+describe("resumeBrief", () => {
+  it("names the thread, quotes its last report and points at its PR", () => {
+    const at = new Date(2026, 10, 5, 8, 33).getTime();
+    const brief = resumeBrief(
+      "Release notes for 0.9",
+      { at, summary: "0.9 notes cover undo.\n" },
+      { number: 61, repo: "example/docs", state: "merged" },
+    );
+    expect(brief).toBe(
+      [
+        'Pick up where "Release notes for 0.9" left off.',
+        "",
+        `Its last report (${brief.match(/\((.+)\):/)?.[1]}):`,
+        "0.9 notes cover undo.",
+        "",
+        "Its pull request: #61 in example/docs (merged).",
+      ].join("\n"),
+    );
+    expect(brief).toContain("08:33");
+  });
+
+  it("says only what it has", () => {
+    expect(resumeBrief("Docs", undefined, undefined)).toBe('Pick up where "Docs" left off.');
   });
 });

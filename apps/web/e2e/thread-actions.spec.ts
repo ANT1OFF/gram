@@ -151,7 +151,7 @@ test("Stop leaves a receipt at the turn's end, and Continue picks the turn up", 
   await expect(receipt).toHaveCount(0);
 });
 
-test("a retry that went through turns the failed card into a receipt linking the new attempt", async ({
+test("a retry that went through turns the failed card into a quiet receipt, said once", async ({
   page,
 }) => {
   await page.goto("/t/t-docs");
@@ -168,5 +168,39 @@ test("a retry that went through turns the failed card into a receipt linking the
   await expect(card).toHaveAttribute("data-state", "retried");
   await expect(card.getByTestId("agent-error-retried")).toHaveText(/Retried · \d\d:\d\d$/);
   await expect(card.getByRole("button", { name: "Retry" })).toHaveCount(0);
-  await expect(card.getByTestId("agent-error-attempt")).toHaveText("View new attempt");
+  await expect(card.getByTestId("agent-error-recovered")).toBeVisible();
+  // The retry's own words aren't said a second time: the receipt stands for them.
+  await expect(
+    page.getByTestId("message-user").filter({ hasText: "Run the e2e suite" }),
+  ).toHaveCount(1);
+});
+
+test("a retry that failed too is one card: the newest attempt, with the earlier one folded", async ({
+  page,
+}) => {
+  await page.goto("/t/t-docs");
+  await page.getByLabel("Message", { exact: true }).waitFor();
+  const rateLimit = { kind: "rateLimit", retryable: true, text: "Rate limited (HTTP 429)." };
+  await page.evaluate(
+    (error) =>
+      window.gramMock!.simulateTurnError("t-docs" as never, error as never, "Run the e2e suite"),
+    rateLimit,
+  );
+  await expect(page.getByTestId("agent-error")).toHaveCount(1);
+  await page.evaluate(
+    (error) =>
+      window.gramMock!.simulateTurnError("t-docs" as never, error as never, "Run the e2e suite"),
+    rateLimit,
+  );
+  const card = page.getByTestId("agent-error");
+  await expect(card).toHaveCount(1);
+  await expect(card).toHaveAttribute("data-state", "failed");
+  await expect(card.getByTestId("agent-error-attempt-number")).toHaveText(
+    " · attempt 2 of 2 · needs action",
+  );
+  await expect(
+    page.getByTestId("message-user").filter({ hasText: "Run the e2e suite" }),
+  ).toHaveCount(1);
+  await card.getByRole("button", { name: "1 earlier attempt" }).click();
+  await expect(card.getByTestId("agent-error-earlier-attempt")).toContainText("Attempt 1");
 });

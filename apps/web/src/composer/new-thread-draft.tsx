@@ -29,6 +29,7 @@ import { folderProblem } from "@/new-thread/fs-errors";
 import { ProjectPicker } from "@/new-thread/project-picker";
 import { useFolderStatus, useIsGitRepo } from "@/new-thread/use-folder";
 import { FolderPicker } from "@/new-thread/where-chips";
+import { ChatAuthorityLine } from "@/new-thread/authority-line";
 import { NewFormHeader, WHO_ENTRY, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import type { TaskTarget } from "@/orchestration/task-model";
@@ -376,166 +377,173 @@ function ConfiguredNewThreadDraft() {
                 />
               </WhereStop>
             }
-            line="You and one agent in one folder: no workspace, and no orchestrator turn to pay for."
-          />
-
-          <div
-            ref={slabRef}
-            data-surface="composer"
-            data-dragging={dragging ? "true" : undefined}
-            className={SLAB}
-            onKeyDownCapture={dictation.onKeyDownCapture}
-            onDragOver={(event) => event.preventDefault()}
-            onDragEnter={(event) => {
-              if (event.dataTransfer.types.includes("Files")) setDragging(true);
-            }}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                setDragging(false);
-              }
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragging(false);
-              attachments.add(event.dataTransfer.files);
-            }}
-          >
-            {mentions.open && (
-              <MentionMenu
-                id={mentions.id}
-                entries={mentions.entries}
-                activeIndex={mentions.activeIndex}
-                onChoose={mentions.choose}
-              />
-            )}
-            <AttachmentChips
-              items={attachments.items}
-              onRemove={attachments.remove}
-              className="px-3 pt-3"
-            />
-            <div className="relative">
-              {partialInline && (
-                <DictationMirror ref={mirrorRef} text={prompt} partial={dictation.partial} />
-              )}
-              <textarea
-                {...mentions.textareaProps}
-                aria-label="First prompt"
-                role="combobox"
-                aria-expanded={mentions.open}
-                aria-controls={mentions.open ? mentions.id : undefined}
-                aria-activedescendant={
-                  mentions.open ? `${mentions.id}-${mentions.activeIndex}` : undefined
-                }
-                aria-autocomplete="list"
-                className={cn(SLAB_TEXTAREA, "relative")}
-                // Cleared from the start of dictation, so the first words don't land on it.
-                placeholder={
-                  dictation.active
-                    ? ""
-                    : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
-                }
-                value={prompt}
-                onFocus={(event) => {
-                  mentions.textareaProps.onFocus();
-                  trackCaret(event.currentTarget);
-                  dictation.prewarm();
-                }}
-                onSelect={(event) => {
-                  mentions.textareaProps.onSelect(event);
-                  trackCaret(event.currentTarget);
-                }}
-                onScroll={(event) => {
-                  if (mirrorRef.current)
-                    mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
-                }}
-                onChange={(event) => {
-                  setPrompt(event.target.value);
-                  dictation.typed();
-                  trackCaret(event.target);
-                  mentions.onChange(event.target.value, event.target.selectionStart);
-                }}
-                onKeyDown={(event) => {
-                  if (mentions.onKeyDown(event)) return;
-                  // The same key that sends a message in a thread starts this one.
-                  const { value, selectionStart } = event.currentTarget;
-                  if (
-                    (!inOpenFence(value.slice(0, selectionStart)) &&
-                      enterSends(event.nativeEvent, sendKey)) ||
-                    shortcutPressed("draft.create", event.nativeEvent)
-                  ) {
+            goal={
+              <div className="flex flex-col gap-2">
+                <span className={labelCls}>What needs doing</span>
+                <div
+                  ref={slabRef}
+                  data-surface="composer"
+                  data-dragging={dragging ? "true" : undefined}
+                  className={SLAB}
+                  onKeyDownCapture={dictation.onKeyDownCapture}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragEnter={(event) => {
+                    if (event.dataTransfer.types.includes("Files")) setDragging(true);
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      setDragging(false);
+                    }
+                  }}
+                  onDrop={(event) => {
                     event.preventDefault();
-                    void create();
-                  }
-                }}
-                onPaste={(event) => {
-                  if (attachments.add(event.clipboardData.files)) event.preventDefault();
-                  else mentions.onPaste();
-                }}
-              />
-            </div>
-            {dictation.partial !== "" && (!caretAtEnd || (partialInline && partialOverflows)) && (
-              <DictationStrip partial={dictation.partial} />
-            )}
-            <DictationError state={dictation.state} />
-            <fieldset className="flex flex-wrap items-center gap-1 px-2 pb-2">
-              <legend className="sr-only">Agent</legend>
-              {discovering ? (
-                <span role="status" className="px-2 text-meta text-muted-foreground">
-                  Discovering local agents…
-                </span>
-              ) : (
-                <AgentFields ghost value={choice} onChange={setChoice} />
-              )}
-              <Select
-                value={mode}
-                items={MODE_OPTIONS}
-                onValueChange={(value) => {
-                  if (value === null) return;
-                  modeConfirm.pick(value);
-                  setMode(value as PermissionMode);
-                }}
-              >
-                <PickerTrigger
-                  size="sm"
-                  label="Mode"
-                  value={modeLabel}
-                  labelled={false}
-                  icon={
-                    <Swap swapKey={mode}>
-                      <ModeIcon aria-hidden className="size-4" />
-                    </Swap>
-                  }
-                  confirm={modeConfirm.landed}
-                  tip={[`Mode: ${modeLabel}`, modeWarned].filter(Boolean).join("\n")}
-                  aria-description={modeWarned}
-                  data-warning={modeWarned ? "true" : undefined}
-                  className={cn(GHOST_TRIGGER, modeWarned && "text-warning hover:text-warning")}
-                />
-                <SelectContent>
-                  {MODE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value} description={o.description}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span
-                aria-live="polite"
-                data-testid="draft-dictation-status"
-                className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
-              >
-                {dictation.active ? dictationStatus(dictation.state) : undefined}
-              </span>
-              {dictation.available && (
-                <DictationButton
-                  state={dictation.state}
-                  hint={dictateHint}
-                  level={dictation.level}
-                  onToggle={dictation.toggle}
-                />
-              )}
-            </fieldset>
-          </div>
+                    setDragging(false);
+                    attachments.add(event.dataTransfer.files);
+                  }}
+                >
+                  {mentions.open && (
+                    <MentionMenu
+                      id={mentions.id}
+                      entries={mentions.entries}
+                      activeIndex={mentions.activeIndex}
+                      onChoose={mentions.choose}
+                    />
+                  )}
+                  <AttachmentChips
+                    items={attachments.items}
+                    onRemove={attachments.remove}
+                    className="px-3 pt-3"
+                  />
+                  <div className="relative">
+                    {partialInline && (
+                      <DictationMirror ref={mirrorRef} text={prompt} partial={dictation.partial} />
+                    )}
+                    <textarea
+                      {...mentions.textareaProps}
+                      aria-label="First prompt"
+                      role="combobox"
+                      aria-expanded={mentions.open}
+                      aria-controls={mentions.open ? mentions.id : undefined}
+                      aria-activedescendant={
+                        mentions.open ? `${mentions.id}-${mentions.activeIndex}` : undefined
+                      }
+                      aria-autocomplete="list"
+                      className={cn(SLAB_TEXTAREA, "relative")}
+                      // Cleared from the start of dictation, so the first words don't land on it.
+                      placeholder={
+                        dictation.active
+                          ? ""
+                          : "Describe the task. Type @ to mention a file, or paste or drop files to attach them. Or leave it empty to start the agent now and write to it in the thread."
+                      }
+                      value={prompt}
+                      onFocus={(event) => {
+                        mentions.textareaProps.onFocus();
+                        trackCaret(event.currentTarget);
+                        dictation.prewarm();
+                      }}
+                      onSelect={(event) => {
+                        mentions.textareaProps.onSelect(event);
+                        trackCaret(event.currentTarget);
+                      }}
+                      onScroll={(event) => {
+                        if (mirrorRef.current)
+                          mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
+                      }}
+                      onChange={(event) => {
+                        setPrompt(event.target.value);
+                        dictation.typed();
+                        trackCaret(event.target);
+                        mentions.onChange(event.target.value, event.target.selectionStart);
+                      }}
+                      onKeyDown={(event) => {
+                        if (mentions.onKeyDown(event)) return;
+                        // The same key that sends a message in a thread starts this one.
+                        const { value, selectionStart } = event.currentTarget;
+                        if (
+                          (!inOpenFence(value.slice(0, selectionStart)) &&
+                            enterSends(event.nativeEvent, sendKey)) ||
+                          shortcutPressed("draft.create", event.nativeEvent)
+                        ) {
+                          event.preventDefault();
+                          void create();
+                        }
+                      }}
+                      onPaste={(event) => {
+                        if (attachments.add(event.clipboardData.files)) event.preventDefault();
+                        else mentions.onPaste();
+                      }}
+                    />
+                  </div>
+                  {dictation.partial !== "" &&
+                    (!caretAtEnd || (partialInline && partialOverflows)) && (
+                      <DictationStrip partial={dictation.partial} />
+                    )}
+                  <DictationError state={dictation.state} />
+                  <fieldset className="flex flex-wrap items-center gap-1 px-2 pb-2">
+                    <legend className="sr-only">Agent</legend>
+                    {discovering ? (
+                      <span role="status" className="px-2 text-meta text-muted-foreground">
+                        Discovering local agents…
+                      </span>
+                    ) : (
+                      <AgentFields ghost value={choice} onChange={setChoice} />
+                    )}
+                    <Select
+                      value={mode}
+                      items={MODE_OPTIONS}
+                      onValueChange={(value) => {
+                        if (value === null) return;
+                        modeConfirm.pick(value);
+                        setMode(value as PermissionMode);
+                      }}
+                    >
+                      <PickerTrigger
+                        size="sm"
+                        label="Mode"
+                        value={modeLabel}
+                        labelled={false}
+                        icon={
+                          <Swap swapKey={mode}>
+                            <ModeIcon aria-hidden className="size-4" />
+                          </Swap>
+                        }
+                        confirm={modeConfirm.landed}
+                        tip={[`Mode: ${modeLabel}`, modeWarned].filter(Boolean).join("\n")}
+                        aria-description={modeWarned}
+                        data-warning={modeWarned ? "true" : undefined}
+                        className={cn(
+                          GHOST_TRIGGER,
+                          modeWarned && "text-warning hover:text-warning",
+                        )}
+                      />
+                      <SelectContent>
+                        {MODE_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value} description={o.description}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span
+                      aria-live="polite"
+                      data-testid="draft-dictation-status"
+                      className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
+                    >
+                      {dictation.active ? dictationStatus(dictation.state) : undefined}
+                    </span>
+                    {dictation.available && (
+                      <DictationButton
+                        state={dictation.state}
+                        hint={dictateHint}
+                        level={dictation.level}
+                        onToggle={dictation.toggle}
+                      />
+                    )}
+                  </fieldset>
+                </div>
+              </div>
+            }
+          />
 
           <HarnessPreflightNote
             result={preflight.result}
@@ -676,6 +684,10 @@ function ConfiguredNewThreadDraft() {
               <ShortcutKbd id="draft.create" cap />
             </Button>
           </PressScale>
+          {/* Beside Create: who acts and what the agent asks first, from the mode picked above. */}
+          <span className="flex min-w-0 flex-1 basis-64">
+            <ChatAuthorityLine mode={mode} />
+          </span>
         </div>
       </form>
     </div>

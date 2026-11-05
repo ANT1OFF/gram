@@ -33,6 +33,7 @@ import { isReviewTab, reviewsTabShown, useLayoutStore, type RightPanelTab } from
 import { useThreadsStore } from "@/stores/threads";
 
 import { tabFolds, tabNamed, useTabLabelFit } from "./panel-tab-labels";
+import { ReviewRoomOffer, useKeepReadingPlace } from "./review-room";
 import type * as PanelTabs from "./right-panel-tabs";
 
 interface PanelTab {
@@ -127,6 +128,8 @@ export function RightPanel() {
   // On a review the action beside the tabs is Focus review, in words; elsewhere an icon at the end.
   const reviewAction = isReviewTab(tab) && !expanded;
   const labelFit = useTabLabelFit(tabList, tab);
+  const aside = useRef<HTMLElement>(null);
+  useKeepReadingPlace(aside);
   useEffect(() => {
     // The bell may select a tab beyond the narrow strip's edge without focusing that tab.
     tabList.current
@@ -176,6 +179,7 @@ export function RightPanel() {
 
   return (
     <aside
+      ref={aside}
       data-testid="right-panel"
       data-surface="chrome"
       className="flex min-h-0 flex-1 flex-col border-l border-border bg-panel"
@@ -253,6 +257,7 @@ export function RightPanel() {
             <ExpandToggle />
           )}
         </div>
+        {reviewAction && !focused && <ReviewRoomOffer />}
         <Suspense fallback={null}>
           <RightPanelTabs
             threadId={threadId}

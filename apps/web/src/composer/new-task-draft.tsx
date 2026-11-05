@@ -55,7 +55,10 @@ import { useOrchestratorLedger, useWorkspacesQuery } from "@/orchestration/use-o
 import { useServerSettings } from "@/settings-sync/store";
 import { EXPLAIN } from "@/lib/explain";
 import { cn } from "@/lib/utils";
+import { AuthorityExplainer } from "@/new-thread/authority-explainer";
+import { TaskAuthorityLine } from "@/new-thread/authority-line";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
+import { ControlDetails } from "@/new-thread/control-details";
 import { NewFormHeader, WHO_ENTRY, WhereFact, WhereStop, type Who } from "@/new-thread/who-does-it";
 import { WorkspaceAutonomy } from "@/new-thread/workspace-autonomy";
 import { useLayoutStore } from "@/stores/layout";
@@ -280,7 +283,9 @@ export function NewTaskDraft({
     !preflight.blocked &&
     (way !== "direct" || (workerModel !== undefined && !workerPreflight.blocked)) &&
     (!hasImages || !imagePreflight.blocked) &&
-    (way === "plan" || repo !== undefined);
+    (way === "plan" || repo !== undefined) &&
+    // The line beside Start names the workspace's autonomy: never start on a level not yet read.
+    (target.kind !== "workspace" || workspace !== undefined);
 
   const send = async () => {
     // A final still on its way would land after the draft is gone: stop, keeping what was heard,
@@ -371,7 +376,13 @@ export function NewTaskDraft({
         ? "Start workspace and worker"
         : "Start worker";
   const budget = ledger?.budget;
-  const repoName = repo?.name ?? name;
+  // The level the line beside Start names: the new workspace's pick, else the workspace's own.
+  // Undefined while a named workspace hasn't loaded: the line waits rather than show the default.
+  const autonomy = makesOne
+    ? (pickedAutonomy ?? autonomyOf(DEFAULT_CHARTER))
+    : workspace === undefined
+      ? undefined
+      : autonomyOf(workspace.charter);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -388,6 +399,139 @@ export function NewTaskDraft({
           who={way === "direct" ? "worker" : "orchestrator"}
           onWho={pickWho}
           disabled={attachments.uploading}
+          goal={
+            <div className="flex flex-col gap-2">
+              <span className={labelCls}>What needs doing</span>
+              <div
+                className={SLAB}
+                onKeyDownCapture={dictation.onKeyDownCapture}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  attachments.add(event.dataTransfer.files);
+                }}
+              >
+                {mentions.open && (
+                  <MentionMenu
+                    id={mentions.id}
+                    entries={mentions.entries}
+                    activeIndex={mentions.activeIndex}
+                    onChoose={mentions.choose}
+                  />
+                )}
+                <AttachmentChips
+                  items={attachments.items}
+                  onRemove={attachments.remove}
+                  className="px-2 pt-2"
+                />
+                <div className="relative">
+                  {partialInline && (
+                    <DictationMirror
+                      ref={mirrorRef}
+                      text={prompt}
+                      partial={dictation.partial}
+                      className="px-4 pt-3 pb-1"
+                    />
+                  )}
+                  <textarea
+                    {...mentions.textareaProps}
+                    aria-label="What needs doing"
+                    role="combobox"
+                    aria-expanded={mentions.open}
+                    aria-controls={mentions.open ? mentions.id : undefined}
+                    aria-activedescendant={
+                      mentions.open ? `${mentions.id}-${mentions.activeIndex}` : undefined
+                    }
+                    aria-autocomplete="list"
+                    rows={4}
+                    className={cn(SLAB_TEXTAREA, "relative min-h-28")}
+                    // Cleared from the start of dictation, so the first words don't land on it.
+                    placeholder={
+                      dictation.active
+                        ? ""
+                        : "Describe the change, the goal, or a bug. Type @ to mention a file, or paste or drop files to attach them."
+                    }
+                    value={prompt}
+                    onFocus={(event) => {
+                      mentions.textareaProps.onFocus();
+                      trackCaret(event.currentTarget);
+                      dictation.prewarm();
+                    }}
+                    onSelect={(event) => {
+                      mentions.textareaProps.onSelect(event);
+                      trackCaret(event.currentTarget);
+                    }}
+                    onScroll={(event) => {
+                      if (mirrorRef.current)
+                        mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
+                    }}
+                    onChange={(event) => {
+                      setPrompt(event.target.value);
+                      dictation.typed();
+                      trackCaret(event.target);
+                      mentions.onChange(event.target.value, event.target.selectionStart);
+                    }}
+                    onKeyDown={(event) => {
+                      if (mentions.onKeyDown(event)) return;
+                      const { value, selectionStart } = event.currentTarget;
+                      if (
+                        (!inOpenFence(value.slice(0, selectionStart)) &&
+                          enterSends(event.nativeEvent, sendKey)) ||
+                        shortcutPressed("draft.create", event.nativeEvent)
+                      ) {
+                        event.preventDefault();
+                        void send();
+                      }
+                    }}
+                    onPaste={(event) => {
+                      if (attachments.add(event.clipboardData.files)) event.preventDefault();
+                      else mentions.onPaste();
+                    }}
+                  />
+                </div>
+                {dictation.partial !== "" &&
+                  (!caretAtEnd || (partialInline && partialOverflows)) && (
+                    <DictationStrip partial={dictation.partial} />
+                  )}
+                <DictationError state={dictation.state} />
+                {(dictation.available || shownWorker !== undefined) && (
+                  <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
+                    {shownWorker !== undefined && (
+                      <div role="group" aria-label="Worker" className="contents">
+                        <span aria-hidden className="pl-1.5 text-meta text-muted-foreground">
+                          Worker
+                        </span>
+                        <WorkerFields
+                          choices={workerChoices}
+                          shown={shownWorker}
+                          disabled={sending}
+                          onPick={(key) => {
+                            if (targetKey !== undefined)
+                              setPickedWorker({ target: targetKey, key });
+                          }}
+                        />
+                      </div>
+                    )}
+                    <span
+                      aria-live="polite"
+                      data-testid="draft-dictation-status"
+                      className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
+                    >
+                      {dictation.active ? dictationStatus(dictation.state) : undefined}
+                    </span>
+                    {dictation.available && (
+                      <DictationButton
+                        state={dictation.state}
+                        hint={dictateHint}
+                        level={dictation.level}
+                        onToggle={dictation.toggle}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          }
           summary={
             folded
               ? {
@@ -464,12 +608,8 @@ export function NewTaskDraft({
           }
           line={
             target === undefined && settled
-              ? "Gram doesn't know a repository to start a workspace in yet. Pick Single agent chat to open one, or add one under Settings → Workspaces & merging."
-              : way === "plan"
-                ? `${makesOne ? `Makes a workspace for ${name}. Its` : `${name}'s`} orchestrator plans it, briefs workers into their own worktrees and follows their pull requests to merged.`
-                : hold
-                  ? `One worker starts now on a new branch of ${repoName}, in its own worktree, under your control: you direct it, and ${makesOne ? "the orchestrator of the workspace made for it" : "the orchestrator"} only follows its pull request until you hand it back.`
-                  : `One worker starts now on a new branch of ${repoName}, in its own worktree, with your words as its brief. ${makesOne ? "The workspace made for it" : "The orchestrator"} directs it like its own.`
+              ? "Gram doesn't know a repository to start a workspace in yet. Pick Chat to open one, or add one under Settings → Workspaces & merging."
+              : undefined
           }
         />
 
@@ -479,157 +619,6 @@ export function NewTaskDraft({
             value={pickedAutonomy ?? autonomyOf(DEFAULT_CHARTER)}
             onChange={(next) => useTaskDraftStore.getState().rememberAutonomy(next)}
           />
-        )}
-
-        <div className="flex flex-col gap-2">
-          <span className={labelCls}>What needs doing</span>
-          <div
-            className={SLAB}
-            onKeyDownCapture={dictation.onKeyDownCapture}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              attachments.add(event.dataTransfer.files);
-            }}
-          >
-            {mentions.open && (
-              <MentionMenu
-                id={mentions.id}
-                entries={mentions.entries}
-                activeIndex={mentions.activeIndex}
-                onChoose={mentions.choose}
-              />
-            )}
-            <AttachmentChips
-              items={attachments.items}
-              onRemove={attachments.remove}
-              className="px-2 pt-2"
-            />
-            <div className="relative">
-              {partialInline && (
-                <DictationMirror
-                  ref={mirrorRef}
-                  text={prompt}
-                  partial={dictation.partial}
-                  className="px-4 pt-3 pb-1"
-                />
-              )}
-              <textarea
-                {...mentions.textareaProps}
-                aria-label="What needs doing"
-                role="combobox"
-                aria-expanded={mentions.open}
-                aria-controls={mentions.open ? mentions.id : undefined}
-                aria-activedescendant={
-                  mentions.open ? `${mentions.id}-${mentions.activeIndex}` : undefined
-                }
-                aria-autocomplete="list"
-                rows={4}
-                className={cn(SLAB_TEXTAREA, "relative min-h-28")}
-                // Cleared from the start of dictation, so the first words don't land on it.
-                placeholder={
-                  dictation.active
-                    ? ""
-                    : "Describe the change, the goal, or a bug. Type @ to mention a file, or paste or drop files to attach them."
-                }
-                value={prompt}
-                onFocus={(event) => {
-                  mentions.textareaProps.onFocus();
-                  trackCaret(event.currentTarget);
-                  dictation.prewarm();
-                }}
-                onSelect={(event) => {
-                  mentions.textareaProps.onSelect(event);
-                  trackCaret(event.currentTarget);
-                }}
-                onScroll={(event) => {
-                  if (mirrorRef.current)
-                    mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
-                }}
-                onChange={(event) => {
-                  setPrompt(event.target.value);
-                  dictation.typed();
-                  trackCaret(event.target);
-                  mentions.onChange(event.target.value, event.target.selectionStart);
-                }}
-                onKeyDown={(event) => {
-                  if (mentions.onKeyDown(event)) return;
-                  const { value, selectionStart } = event.currentTarget;
-                  if (
-                    (!inOpenFence(value.slice(0, selectionStart)) &&
-                      enterSends(event.nativeEvent, sendKey)) ||
-                    shortcutPressed("draft.create", event.nativeEvent)
-                  ) {
-                    event.preventDefault();
-                    void send();
-                  }
-                }}
-                onPaste={(event) => {
-                  if (attachments.add(event.clipboardData.files)) event.preventDefault();
-                  else mentions.onPaste();
-                }}
-              />
-            </div>
-            {dictation.partial !== "" && (!caretAtEnd || (partialInline && partialOverflows)) && (
-              <DictationStrip partial={dictation.partial} />
-            )}
-            <DictationError state={dictation.state} />
-            {(dictation.available || shownWorker !== undefined) && (
-              <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
-                {shownWorker !== undefined && (
-                  <div role="group" aria-label="Worker" className="contents">
-                    <span aria-hidden className="pl-1.5 text-meta text-muted-foreground">
-                      Worker
-                    </span>
-                    <WorkerFields
-                      choices={workerChoices}
-                      shown={shownWorker}
-                      disabled={sending}
-                      onPick={(key) => {
-                        if (targetKey !== undefined) setPickedWorker({ target: targetKey, key });
-                      }}
-                    />
-                  </div>
-                )}
-                <span
-                  aria-live="polite"
-                  data-testid="draft-dictation-status"
-                  className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
-                >
-                  {dictation.active ? dictationStatus(dictation.state) : undefined}
-                </span>
-                {dictation.available && (
-                  <DictationButton
-                    state={dictation.state}
-                    hint={dictateHint}
-                    level={dictation.level}
-                    onToggle={dictation.toggle}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {way === "direct" && (
-          <div data-testid="task-hold" className="flex items-start gap-2">
-            <Switch
-              id={holdId}
-              aria-describedby={`${holdId}-line`}
-              checked={hold}
-              disabled={sending}
-              onCheckedChange={setHold}
-              className="mt-0.5"
-            />
-            <div className="flex min-w-0 flex-col gap-0.5 text-meta">
-              <label htmlFor={holdId} className="font-medium text-foreground">
-                Start under my control
-              </label>
-              <span id={`${holdId}-line`} className="text-muted-foreground">
-                {EXPLAIN.startHeld}
-              </span>
-            </div>
-          </div>
         )}
 
         {error && (
@@ -680,23 +669,21 @@ export function NewTaskDraft({
               {shownWorker.unavailable}. Pick another worker model.
             </p>
           )}
+          {way === "direct" && workerModel !== undefined && shownWorker === undefined && (
+            <p className="text-meta text-muted-foreground">
+              Worker: {agentLabel(workerModel.agent)} · {nameOf(workerModel)}
+            </p>
+          )}
           {way === "direct" && workerModel !== undefined && (
-            <>
-              {shownWorker === undefined && (
-                <p className="text-meta text-muted-foreground">
-                  Worker: {agentLabel(workerModel.agent)} · {nameOf(workerModel)}
-                </p>
-              )}
-              <HarnessPreflightNote
-                result={workerPreflight.result}
-                checking={workerPreflight.checking}
-                model={workerModel}
-                onRetry={async () => {
-                  await workerPreflight.recheck();
-                  await selection.refetch();
-                }}
-              />
-            </>
+            <HarnessPreflightNote
+              result={workerPreflight.result}
+              checking={workerPreflight.checking}
+              model={workerModel}
+              onRetry={async () => {
+                await workerPreflight.recheck();
+                await selection.refetch();
+              }}
+            />
           )}
           {hasImages && (
             <HarnessPreflightNote
@@ -706,11 +693,6 @@ export function NewTaskDraft({
               onRetry={imagePreflight.recheck}
             />
           )}
-          <HarnessSupportDetails
-            observation={way === "direct" ? workerPreflight.observation : preflight.observation}
-            imageInput={imagePreflight.result.support}
-            threadId={way === "direct" ? undefined : selection.data?.orchestratorThreadId}
-          />
           <div className="flex flex-wrap items-center gap-3">
             <PressScale>
               <Button type="submit" disabled={!valid || sending}>
@@ -719,21 +701,20 @@ export function NewTaskDraft({
                 <ShortcutKbd id="draft.create" cap />
               </Button>
             </PressScale>
-            {target !== undefined && !makesOne && (
-              // Beside Start, wrapping in its own column rather than under the button.
+            {target !== undefined && (
+              // Beside Start, wrapping in its own column rather than under the button: who acts
+              // and what still needs you, whatever is folded below.
               <span className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-1.5 text-meta text-muted-foreground">
-                <WorkspaceAutonomy
-                  state={workspace}
-                  autonomy={autonomyOf(workspace?.charter ?? DEFAULT_CHARTER)}
-                />
-                {way === "direct" && (
-                  // Who the worker answers to, beside what the workspace lets it do: the toggle
-                  // above decides it, and folded or not this is where Start says so.
-                  <span data-testid="task-owner" className="text-muted-foreground">
-                    {hold
-                      ? "You direct it until you hand it back."
-                      : "Its orchestrator directs it."}
+                {autonomy === undefined ? (
+                  <span data-testid="task-authority-pending">
+                    Reading this workspace's autonomy…
                   </span>
+                ) : (
+                  <TaskAuthorityLine
+                    way={way}
+                    autonomy={autonomy}
+                    hold={way === "direct" && hold}
+                  />
                 )}
                 {way === "plan" && budget !== undefined && (
                   <span
@@ -746,6 +727,43 @@ export function NewTaskDraft({
               </span>
             )}
           </div>
+          <ControlDetails>
+            {way === "direct" && (
+              <div data-testid="task-hold" className="flex items-start gap-2">
+                <Switch
+                  id={holdId}
+                  aria-describedby={`${holdId}-line`}
+                  checked={hold}
+                  disabled={sending}
+                  onCheckedChange={setHold}
+                  className="mt-0.5"
+                />
+                <div className="flex min-w-0 flex-col gap-0.5 text-meta">
+                  <label htmlFor={holdId} className="font-medium text-foreground">
+                    Start under my control
+                  </label>
+                  <span id={`${holdId}-line`} className="text-muted-foreground">
+                    {EXPLAIN.startHeld}
+                  </span>
+                </div>
+              </div>
+            )}
+            {target !== undefined && !makesOne && (
+              <div className="flex flex-col gap-1">
+                <span className={labelCls}>Workspace autonomy</span>
+                <WorkspaceAutonomy
+                  state={workspace}
+                  autonomy={autonomy ?? autonomyOf(DEFAULT_CHARTER)}
+                />
+              </div>
+            )}
+            <AuthorityExplainer />
+            <HarnessSupportDetails
+              observation={way === "direct" ? workerPreflight.observation : preflight.observation}
+              imageInput={imagePreflight.result.support}
+              threadId={way === "direct" ? undefined : selection.data?.orchestratorThreadId}
+            />
+          </ControlDetails>
         </div>
       </form>
     </div>

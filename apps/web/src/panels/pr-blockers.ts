@@ -194,6 +194,37 @@ export function mergeBlockersOf(
 export const blockedLineOf = (blockers: readonly MergeBlocker[]): string | undefined =>
   blockers.length === 0 ? undefined : `Blocked: ${blockers.map((b) => b.word).join(", ")}`;
 
+/** Each kind of blocker as a category in the summary's count line. */
+const CATEGORY: Record<MergeBlockerKind, string> = {
+  checks: "checks",
+  conflicts: "conflicts",
+  changes: "changes requested",
+  bot: "review bot",
+  review: "review required",
+  required: "GitHub rules",
+};
+
+/**
+ * The blockers counted and named by category, worst first, for the summary's one heading:
+ * `{ count: "3 blockers", categories: "checks, changes requested, review bot" }`. One failing check
+ * is a "check"; `undefined` for none.
+ */
+export const blockerSummaryOf = (
+  blockers: readonly MergeBlocker[],
+): { readonly count: string; readonly categories: string } | undefined =>
+  blockers.length === 0
+    ? undefined
+    : {
+        count: plural(blockers.length, "blocker"),
+        categories: blockers
+          .map((blocker) =>
+            blocker.kind === "checks" && blocker.word.startsWith("1 ")
+              ? "check"
+              : CATEGORY[blocker.kind],
+          )
+          .join(", "),
+      };
+
 /** The one next step: the worst blocker's, or the next one's when the worst has none to offer. */
 export const primaryBlockerAction = (
   blockers: readonly MergeBlocker[],

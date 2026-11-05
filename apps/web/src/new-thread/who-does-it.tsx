@@ -24,10 +24,10 @@ export const WHO_ENTRY: Readonly<Record<Who, Exclude<NewEntry, "workspace">>> = 
 };
 
 /**
- * Each choice named for the work it suits, with who owns that work in one line: an agent team,
- * whose orchestrator plans and briefs workers (`deliver`); one worker of that orchestrator in its
- * own worktree, through to a pull request (`startWorker`); and a single agent chat, a one-off
- * thread with no workspace.
+ * Each choice named plainly for the work it starts, with what comes of it in one sentence: a team,
+ * whose orchestrator plans and briefs workers (`deliver`); a task, one worker of that orchestrator
+ * in its own worktree through to a pull request (`startWorker`); and a chat, a one-off thread with
+ * one agent and no workspace.
  */
 export const WHO_CHOICES: readonly {
   readonly value: Who;
@@ -39,24 +39,23 @@ export const WHO_CHOICES: readonly {
   readonly shortcut: string;
 }[] = [
   {
-    value: "orchestrator",
-    label: "Agent team (orchestrator)",
-    line: "An orchestrator plans it and runs workers for you.",
-    icon: Network,
-    shortcut: "thread.new",
-  },
-  {
     value: "worker",
-    label: "One worker → PR",
-    spoken: "One worker to PR",
-    line: "One agent works on it in its own worktree and opens a pull request.",
+    label: "Task",
+    line: "One worker does it in its own worktree and opens a pull request.",
     icon: User,
     shortcut: "thread.newWorker",
   },
   {
+    value: "orchestrator",
+    label: "Team",
+    line: "An orchestrator splits it up, runs workers and sees their pull requests merged.",
+    icon: Network,
+    shortcut: "thread.new",
+  },
+  {
     value: "me",
-    label: "Single agent chat",
-    line: "A single chat with one agent in a folder. No workspace or orchestrator.",
+    label: "Chat",
+    line: "You and one agent in a folder. No workspace or orchestrator.",
     icon: MessageSquare,
     shortcut: "thread.newInProject",
   },
@@ -193,16 +192,18 @@ function NewFormSummary({
 }
 
 /**
- * The top of the one New form, the same whoever does it: the title, Who does it with each
- * choice's owner in a line, Where it runs (`where`: the workspace, the repository and the checkout,
- * or the folder, each named before submit), and one plain line on what happens next there.
+ * The top of the one New form, the same whoever does it, in the order a start is thought through:
+ * the title, the goal (`goal`, the brief), where it runs (`where`: the workspace, the repository and
+ * the checkout, or the folder, each named before submit), then Who does it, each choice with its
+ * outcome in a line. `line`, when given, says one more thing about where it runs.
  *
- * With `summary`, a repeat start to the remembered place, it folds all of that to one line naming
- * the same choices, which Change unfolds; the brief below is where typing starts.
+ * With `summary`, a repeat start to the remembered place, where it runs and who does it fold to
+ * one line naming the same choices, which Change unfolds; the brief stays first.
  */
 export function NewFormHeader({
   who,
   onWho,
+  goal,
   where,
   line,
   summary,
@@ -210,8 +211,10 @@ export function NewFormHeader({
 }: {
   who: Who;
   onWho: (who: Who) => void;
+  /** The brief, first under the title. */
+  goal?: ReactNode;
   where: ReactNode;
-  line: ReactNode;
+  line?: ReactNode;
   /** The places in words and how to unfold them; present only while the form is folded. */
   summary?: { readonly places: readonly string[]; readonly onExpand: () => void } | undefined;
   /** While a file is still uploading, which the other kind of draft couldn't take with it. */
@@ -220,22 +223,49 @@ export function NewFormHeader({
   const slab = useId();
   const labelId = useId();
   const whereId = useId();
+  const title = (
+    <header>
+      <h1 className="font-heading text-title">New</h1>
+    </header>
+  );
   if (summary !== undefined) {
     return (
-      <header className="flex flex-col gap-3">
-        <h1 className="font-heading text-title">New</h1>
+      <div className="flex flex-col gap-4">
+        {title}
+        {goal}
         <NewFormSummary
           who={who}
           places={summary.places}
           onExpand={summary.onExpand}
           disabled={disabled}
         />
-      </header>
+      </div>
     );
   }
   return (
-    <header className="flex flex-col gap-3">
-      <h1 className="font-heading text-title">New</h1>
+    <div className="flex flex-col gap-4">
+      {title}
+      {goal}
+      <div
+        role="group"
+        aria-labelledby={whereId}
+        data-testid="new-where"
+        className="flex min-w-0 flex-col gap-2"
+      >
+        <span id={whereId} className="text-meta font-medium text-muted-foreground">
+          Where it runs
+        </span>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">{where}</div>
+        {line !== undefined && (
+          <p
+            key={who}
+            data-testid="task-way-note"
+            className="gram-fade min-w-0 text-meta text-muted-foreground"
+          >
+            {line}
+          </p>
+        )}
+      </div>
       <div className="flex flex-col gap-2">
         <span id={labelId} className="text-meta font-medium text-muted-foreground">
           Who does it
@@ -257,24 +287,6 @@ export function NewFormHeader({
           ))}
         </div>
       </div>
-      <div
-        role="group"
-        aria-labelledby={whereId}
-        data-testid="new-where"
-        className="flex min-w-0 flex-col gap-2"
-      >
-        <span id={whereId} className="text-meta font-medium text-muted-foreground">
-          Where it runs
-        </span>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">{where}</div>
-        <p
-          key={who}
-          data-testid="task-way-note"
-          className="gram-fade min-w-0 text-meta text-muted-foreground"
-        >
-          {line}
-        </p>
-      </div>
-    </header>
+    </div>
   );
 }

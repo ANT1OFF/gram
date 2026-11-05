@@ -1,7 +1,7 @@
 import type { GramUIMessage, ThreadError, TurnId } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
-import { attemptsOf, errorKey, stopOf } from "./attempt-model";
+import { attemptsOf, errorKey, retryHiddenOf, stopOf } from "./attempt-model";
 
 const user = (id: string, text: string, createdAt?: number, turnId?: string): GramUIMessage => ({
   id,
@@ -46,14 +46,28 @@ describe("attemptsOf", () => {
     ]).get(errorKey(first));
     expect(facts).toEqual({
       attempt: 1,
+      of: 2,
       retried: {
         messageId: "u2",
         at: 20,
         failed: false,
         latestMessageId: "u2",
         latestFailed: false,
+        recovered: false,
       },
+      folded: false,
+      earlier: [],
     });
+  });
+
+  it("calls the turn recovered once the retry's reply ends completed", () => {
+    const facts = attemptsOf([
+      user("u1", "Run the suite", 1, "t1"),
+      failed("e1", first),
+      user("u2", "Run the suite", 20),
+      reply("a2", { turnEnd: { at: 30, reason: "completed" } }),
+    ]).get(errorKey(first));
+    expect(facts?.retried?.recovered).toBe(true);
   });
 
   it("says which attempt needs action when the retries failed too", () => {
@@ -74,7 +88,39 @@ describe("attemptsOf", () => {
       latestFailed: true,
     });
     expect(facts.get(errorKey(second))).toMatchObject({ attempt: 2, retried: { messageId: "u3" } });
-    expect(facts.get(errorKey(third))).toEqual({ attempt: 3, retried: undefined });
+    // One card for the run: the newest failure's, listing the two before it; theirs fold away.
+    expect(facts.get(errorKey(third))).toEqual({
+      attempt: 3,
+      of: 3,
+      retried: undefined,
+      folded: false,
+      earlier: [
+        { attempt: 1, error: first },
+        { attempt: 2, error: second },
+      ],
+    });
+    expect(facts.get(errorKey(first))?.folded).toBe(true);
+    expect(facts.get(errorKey(second))?.folded).toBe(true);
+  });
+
+  it("keeps the last failure's card as the receipt when a later retry went through", () => {
+    const second = failure(30);
+    const facts = attemptsOf([
+      user("u1", "Run the suite", 1, "t1"),
+      failed("e1", first),
+      user("u2", "Run the suite", 20),
+      failed("e2", second),
+      user("u3", "Run the suite", 40),
+      reply("a3", { turnEnd: { at: 50, reason: "completed" } }),
+    ]);
+    expect(facts.get(errorKey(first))?.folded).toBe(true);
+    expect(facts.get(errorKey(second))).toMatchObject({
+      attempt: 2,
+      of: 3,
+      folded: false,
+      earlier: [{ attempt: 1, error: first }],
+      retried: { messageId: "u3", failed: false, recovered: true },
+    });
   });
 
   it("doesn't call different words a retry", () => {
@@ -84,7 +130,68 @@ describe("attemptsOf", () => {
       user("u2", "Skip the e2e part", 20),
       reply("a2"),
     ]);
-    expect(facts.get(errorKey(first))).toEqual({ attempt: 1, retried: undefined });
+    expect(facts.get(errorKey(first))).toEqual({
+      attempt: 1,
+      of: 1,
+      retried: undefined,
+      folded: false,
+      earlier: [],
+    });
+  });
+});
+
+describe("retryHiddenOf", () => {
+  const first = failure(10, "t1");
+
+  it("leaves out each retry's repeated words and a reply that is only a folded failure", () => {
+    const second = failure(30);
+    expect([
+      ...retryHiddenOf([
+        user("u1", "Run the suite", 1, "t1"),
+        failed("e1", first),
+        user("u2", "Run the suite", 20),
+        failed("e2", second),
+      ]),
+    ]).toEqual(["u2", "e1"]);
+  });
+
+  it("keeps a reply that said something before it failed, and the receipt of a retry that worked", () => {
+    const second = failure(30);
+    const worked: GramUIMessage = {
+      id: "e1",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "Reading the tests.", state: "done" },
+        { type: "data-agent-error", id: "x", data: first },
+      ],
+    };
+    expect([
+      ...retryHiddenOf([
+        user("u1", "Run the suite", 1, "t1"),
+        worked,
+        user("u2", "Run the suite", 20),
+        failed("e2", second),
+      ]),
+    ]).toEqual(["u2"]);
+    expect([
+      ...retryHiddenOf([
+        user("u1", "Run the suite", 1, "t1"),
+        failed("e1", first),
+        user("u2", "Run the suite", 20),
+        reply("a2"),
+      ]),
+    ]).toEqual(["u2"]);
+  });
+
+  it("hides nothing without a retry", () => {
+    expect(retryHiddenOf([user("u1", "Run the suite", 1, "t1"), failed("e1", first)]).size).toBe(0);
+    expect(
+      retryHiddenOf([
+        user("u1", "Run the suite", 1, "t1"),
+        failed("e1", first),
+        user("u2", "Something else", 20),
+      ]).size,
+    ).toBe(0);
   });
 });
 

@@ -111,3 +111,28 @@ export function toolRows(checks: LaunchChecks): ToolRow[] {
 export const canStart = (rows: readonly ToolRow[]): boolean =>
   rows.some((row) => AGENTS.has(row.tool) && row.state === "ready") &&
   rows.some((row) => row.tool === "git" && row.state === "ready");
+
+/**
+ * The words beside the first run's Open: the agents a new workspace runs on, each one ready, or,
+ * with none ready, the one thing to do first. `ready` is false when Open would start nothing yet.
+ */
+export function runsWith(rows: readonly ToolRow[]): {
+  readonly ready: boolean;
+  readonly agents: readonly LaunchTool[];
+  readonly words: string;
+} {
+  const agents = rows.filter((row) => AGENTS.has(row.tool));
+  const ready = agents.filter((row) => row.state === "ready");
+  const gitReady = rows.every((row) => row.tool !== "git" || row.state === "ready");
+  const names = (list: readonly ToolRow[]) => list.map((row) => row.name).join(" or ");
+  if (ready.length > 0) {
+    const tools = ready.map((row) => row.tool);
+    return gitReady
+      ? { ready: true, agents: tools, words: `Runs with ${names(ready)}` }
+      : { ready: false, agents: tools, words: `Runs with ${names(ready)} once git is installed` };
+  }
+  const signIn = agents.filter((row) => row.state === "attention");
+  return signIn.length > 0
+    ? { ready: false, agents: [], words: `Sign in to ${names(signIn)} to start` }
+    : { ready: false, agents: [], words: `Install ${names(agents)} to start` };
+}

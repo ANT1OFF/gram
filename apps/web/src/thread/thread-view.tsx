@@ -457,11 +457,12 @@ export function ThreadView({
             {thread.forkedFrom && (
               <ForkedFrom from={thread.forkedFrom} title={sourceTitle} hideClass={hideMd} />
             )}
+            {/* Named, not a dot: the header wears the label's colour, and a red one alone reads
+                  as an error that isn't there. */}
             {label && (
               <LabelChip
                 label={label}
                 testId="pane-label"
-                compact
                 className={cn("text-meta text-muted-foreground", hideMd)}
               />
             )}

@@ -48,10 +48,10 @@ import { FolderMissing } from "./folder-missing";
 import { OutboundLink } from "./outbound-link";
 import { PanelMessage } from "./panel-message";
 import { PrActions, UpdateBranch } from "./pr-actions";
-import type { BlockerAction } from "./pr-blockers";
+import { mergeBlockersOf, type BlockerAction } from "./pr-blockers";
+import { PrManage } from "./pr-manage";
 import { keepSamePr, prDetailQuery, prDetailStamp } from "./pr-detail-query";
 import { ifTarget, identityOf, prTargetOf } from "./pr-identity";
-import { PrPeople } from "./pr-people";
 import { RefreshButton } from "./refresh-button";
 import { CreatePrButton } from "@/components/create-pr-dialog";
 import { PrElsewhereNotice } from "@/components/pr-elsewhere";
@@ -347,6 +347,19 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
   const decision = reviewWord(detail.reviewDecision);
   const setTab = useLayoutStore((s) => s.setPrPanelTab);
   const reveal = useReveal(panel);
+  const bot = reviewStatusOf(badge?.review);
+  // The summary says what blocks the merge; the header line above it leaves out what it repeats.
+  const blockers =
+    detail.state === "OPEN" && !detail.isDraft
+      ? mergeBlockersOf(detail, mergeState?.kind, bot)
+      : [];
+  const repeats = (kind: (typeof blockers)[number]["kind"]) =>
+    blockers.some((blocker) => blocker.kind === kind);
+  const showDecision =
+    decision !== undefined && !repeats("changes") && !repeats("review") && !repeats("required");
+  const showMergeState =
+    blockers.length === 0 || (mergeState?.kind !== "blocked" && mergeState?.kind !== "conflicts");
+  const [manageReveal, setManageReveal] = useState(0);
 
   // The summary's next step: open the section it lives in, then bring its row into view.
   const onBlocker = (step: BlockerAction) => {
@@ -378,7 +391,12 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
         setTab("review");
         return;
       case "requestReview":
-        panel.current?.querySelector<HTMLButtonElement>("[data-request-review]")?.click();
+        // Reviewers sit in the folded details: open them, then the form, once they've rendered.
+        setManageReveal((n) => n + 1);
+        setTimeout(
+          () => panel.current?.querySelector<HTMLButtonElement>("[data-request-review]")?.click(),
+          0,
+        );
         return;
       case "openCheck":
       case "fixConflicts":
@@ -431,13 +449,13 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
               −<NumberTicker value={detail.deletions} />
             </span>
           </span>
-          {decision !== undefined && <span data-testid="review-decision">{decision}</span>}
+          {showDecision && <span data-testid="review-decision">{decision}</span>}
           {detail.reviews !== undefined && detail.reviews > 0 && (
             <span data-testid="pr-reviews">
               {detail.reviews === 1 ? "1 review" : `${detail.reviews} reviews`}
             </span>
           )}
-          <PrChip group="merge" mark={mergeState} testId="pr-merge-state" />
+          {showMergeState && <PrChip group="merge" mark={mergeState} testId="pr-merge-state" />}
           <UpdateBranch
             threadId={threadId}
             number={detail.number}
@@ -461,22 +479,24 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
             </Button>
           </p>
         )}
-        {/* What blocks the merge and the next step lead; people and labels follow. */}
+        {/* What blocks the merge and the next step lead; people, labels and watching follow. */}
         <PrActions
           threadId={threadId}
           detail={detail}
           merge={mergeState?.kind}
-          bot={reviewStatusOf(badge?.review)}
+          bot={bot}
           onBlocker={onBlocker}
           onBind={bound ? undefined : () => setBindFormOpen(true)}
         />
-        <PrPeople threadId={threadId} detail={detail} />
       </header>
 
-      <PrWatch
+      <PrManage
         threadId={threadId}
+        detail={detail}
+        blocked={blockers.length > 0}
         bindFormOpen={bindFormOpen}
         onBindFormClose={() => setBindFormOpen(false)}
+        reveal={manageReveal}
       />
 
       {detail.body && <PrDescription key={detail.url} body={detail.body} />}

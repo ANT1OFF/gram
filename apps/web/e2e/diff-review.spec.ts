@@ -97,6 +97,8 @@ test("a patch of three files or fewer opens with its tree folded, and Files (n) 
 test("split view shows old and new side by side once the panel is wide enough", async ({
   page,
 }) => {
+  // Wide enough that the review reaches split width while the chat beside it keeps its 520 px.
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/t/t-docs");
   const panel = page.getByTestId("diff-panel");
   await expect(panel.getByTestId("patch")).toBeVisible();

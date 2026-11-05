@@ -35,6 +35,8 @@ test("removes an unused worktree from ⌘K, then binds a PR and watches its CI",
   // The PR strip's number opens the PR panel.
   await page.getByTestId("pr-row").getByTestId("pr-row-number").click();
   const panel = page.getByTestId("right-panel");
+  // Reviewers, labels and watching wait folded under what blocks the merge.
+  await panel.getByTestId("pr-manage-toggle").click();
   const binding = panel.getByTestId("pr-watch");
   const watch = binding.getByRole("switch", { name: "Watch CI" });
   await expect(watch).toHaveAttribute("aria-checked", "false");

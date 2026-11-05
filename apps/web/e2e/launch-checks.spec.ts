@@ -306,17 +306,17 @@ test("first run is one screen: how Gram works, the agents, a repository and past
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
   await page.goto("/");
   const welcome = page.getByTestId("welcome");
-  // It leads with the repository; how Gram works is folded under How it works.
+  // It leads with the repository; how Gram works is one line of three steps below it.
   await expect(welcome.getByRole("heading", { name: "Pick a repository to start" })).toBeVisible();
-  await expect(welcome.getByRole("list", { name: "How Gram works" })).toHaveCount(0);
-  await welcome.getByRole("button", { name: "How it works" }).click();
   await expect(
     welcome.getByRole("list", { name: "How Gram works" }).getByRole("listitem"),
-  ).toHaveText([
-    /^You give tasks/,
-    /^An orchestrator plans them and briefs workers/,
-    /^Workers run Claude Code or Codex/,
-  ]);
+  ).toHaveText([/^You give tasks/, /^An orchestrator briefs workers/, /^Each worker opens a PR/]);
+  // Open says what it runs with; before any workspace there is no Board to switch to.
+  await expect(welcome.getByTestId("welcome-runs-with")).toHaveText("Runs with Codex");
+  await expect(page.getByTestId("view-switcher")).toHaveCount(0);
+  await expect(page.getByTestId("overview-empty-hint")).toContainText(
+    "Your workspaces appear here.",
+  );
   // Codex alone is enough: Claude Code missing is shown, but is nothing to fix.
   await expect(welcome.getByRole("radio", { name: /^web/ })).toBeVisible();
   // Before any setup there are no pull requests or usage beside the welcome.

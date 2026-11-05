@@ -13,6 +13,7 @@ import {
   useNeedsYouList,
   useNeedsYouStep,
 } from "@/orchestration/use-needs-you";
+import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { nextNeedsYou } from "@/sidebar/grouping";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -109,6 +110,9 @@ export function ViewSwitcher({ className }: { className?: string }) {
   const hasWorkspace = useViewWorkspace() !== undefined;
   const slab = useId();
   const available = APP_VIEWS.filter((each) => viewAvailable(each, hasWorkspace));
+  // With no workspace yet there is no Board to switch to, and Chat alone is no choice.
+  const { workspaces, settled } = useWorkspacesQuery();
+  if (settled && workspaces.length === 0) return null;
   return (
     <div
       role="radiogroup"

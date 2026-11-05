@@ -62,6 +62,7 @@ import { useBeforeSetup } from "@/welcome/welcome";
 import { useAnsweredWorkers } from "./needs-you-store";
 import { askKeysByThread } from "./ask-model";
 import { NewEntryMenu } from "./new-entry-menu";
+import { OverviewEmptyHint } from "./overview-empty-hint";
 import { useWorkspaceAsks } from "./ask-stack";
 import { PAUSE_WORD, useWorkerPause, WorkerPauseMark, type WorkerPauseState } from "./worker-pause";
 import { keepBeside } from "./beside-store";
@@ -328,6 +329,7 @@ export function OverviewSidebar() {
           <OverviewSearch />
         </div>
         <Orchestrators />
+        <OverviewEmptyHint />
         {!hidden.includes("solo") && <SoloThreads />}
         {!beforeSetup && !hidden.includes("pullRequests") && <OverviewPullRequests />}
         {!hidden.includes("doneToday") && <OverviewDone />}

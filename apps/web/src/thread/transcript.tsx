@@ -30,6 +30,7 @@ import { StartingProgress } from "./starting-progress";
 import { startingSteps } from "./starting-progress-model";
 import { EmptyThread } from "./empty-thread";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
+import { retryHiddenOf } from "./attempt-model";
 import { MessageBlock } from "./message-block";
 import { isToolPart, type Chapter } from "./parts";
 import { runningSubagents } from "./subagent-strip-model";
@@ -287,6 +288,12 @@ export function Transcript({
     () => (orchestrated ? NO_FOLDS : turnFolds(messages, inProgress, workingCalls)),
     [messages, inProgress, orchestrated, workingCalls],
   );
+  // A run of retries reads as one card: each retry's repeat of the words, and a reply that is only a
+  // failure that card lists among its earlier attempts, draw nothing.
+  const retryHidden = useMemo(
+    () => (orchestrated ? NO_RETRY_HIDDEN : retryHiddenOf(messages)),
+    [messages, orchestrated],
+  );
   const keptFolds = useRef(NO_FOLDS);
   const folds = useMemo(() => reuseFolds(keptFolds.current, builtFolds), [builtFolds]);
   useLayoutEffect(() => {
@@ -349,6 +356,7 @@ export function Transcript({
     getScrollElement: () => scrollRef.current,
     estimateSize: (index) => {
       const message = messages[index];
+      if (message !== undefined && retryHidden.has(message.id)) return 0;
       return message ? estimateRowHeight(message, closedFold(message.id)) : 96;
     },
     overscan: 6,
@@ -858,6 +866,7 @@ export function Transcript({
                   {virtualizer.getVirtualItems().map((item) => {
                     const id = messages[item.index]!.id;
                     const closed = closedFold(id);
+                    const retried = retryHidden.has(id);
                     return (
                       <div
                         key={item.key}
@@ -868,22 +877,24 @@ export function Transcript({
                         tabIndex={-1}
                         className={cn(
                           "absolute top-0 left-0 w-full rounded-(--radius-md) px-6 outline-none transition-[background-color,box-shadow] duration-(--dur-fast) [contain:content] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset data-[flash=true]:bg-highlight/10 data-[flash=true]:ring-2 data-[flash=true]:ring-highlight/50 data-[flash=true]:ring-inset",
-                          closed?.empty !== true && "py-1.5",
+                          closed?.empty !== true && !retried && "py-1.5",
                         )}
                         style={{ transform: `translateY(${item.start}px)` }}
                       >
-                        <Row
-                          threadId={threadId}
-                          message={messages[item.index]!}
-                          streamingIds={streamingIds}
-                          subagents={subagents}
-                          subagentUsage={subagentUsage}
-                          animate={animate}
-                          turnEnd={turnEndOf(id)}
-                          turnUndos={turnUndos}
-                          fold={folds.get(id)}
-                          foldOpen={closed === undefined}
-                        />
+                        {!retried && (
+                          <Row
+                            threadId={threadId}
+                            message={messages[item.index]!}
+                            streamingIds={streamingIds}
+                            subagents={subagents}
+                            subagentUsage={subagentUsage}
+                            animate={animate}
+                            turnEnd={turnEndOf(id)}
+                            turnUndos={turnUndos}
+                            fold={folds.get(id)}
+                            foldOpen={closed === undefined}
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -921,6 +932,7 @@ export function Transcript({
 const ARRIVAL_MS = 3000;
 
 const NO_TURN_UNDOS: ReadonlyMap<TurnId, TurnUndoData> = new Map();
+const NO_RETRY_HIDDEN: ReadonlySet<string> = new Set();
 
 function Row({
   threadId,

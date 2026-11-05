@@ -1,11 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 // A finished worker whose conversation isn't stored here (the realistic mock seeds none for its
 // merged workers) shows what Gram kept of it, not "No messages yet"; a thread that never started
 // still says that.
-test('a finished worker with no messages shows its outcome, not "No messages yet"', async ({
-  page,
-}) => {
+const openReleaseNotes = async (page: Page) => {
   await page.addInitScript(() => {
     sessionStorage.setItem("gram.mock.orchestration", "realistic");
   });
@@ -19,7 +17,13 @@ test('a finished worker with no messages shows its outcome, not "No messages yet
   await expect(
     page.getByRole("heading", { name: "Worker: Release notes for 0.9", exact: true }),
   ).toBeVisible();
+  return page.getByTestId("thread-outcome");
+};
 
+test('a finished worker with no messages shows its outcome, not "No messages yet"', async ({
+  page,
+}) => {
+  await openReleaseNotes(page);
   const outcome = page.getByTestId("thread-outcome");
   await expect(outcome).toBeVisible();
   await expect(outcome.getByRole("heading", { name: /^Outcome/ })).toBeVisible();
@@ -41,4 +45,25 @@ test('a finished worker with no messages shows its outcome, not "No messages yet
     "aria-selected",
     "true",
   );
+});
+
+test("a finished worker's outcome finds it in History, or resumes from its report as a draft", async ({
+  page,
+}) => {
+  const outcome = await openReleaseNotes(page);
+  await expect(outcome.getByTestId("thread-outcome-pr")).toHaveText(/^Open PR #61/);
+
+  await outcome.getByRole("button", { name: "Find in History" }).click();
+  const history = page.getByTestId("history");
+  await expect(history.getByTestId("history-search")).toHaveValue("Release notes for 0.9");
+  await page.keyboard.press("Escape");
+  await expect(history).toHaveCount(0);
+
+  await outcome.getByRole("button", { name: "Resume from report" }).click();
+  // The normal New form, with the report as its brief: nothing starts until the user starts it.
+  await expect(page).toHaveURL(/\/new-task/);
+  const brief = page.getByLabel("What needs doing", { exact: true });
+  await expect(brief).toHaveValue(/^Pick up where "Release notes for 0.9" left off\./);
+  await expect(brief).toHaveValue(/0\.9 notes cover undo, empty states and the new shortcuts\./);
+  await expect(page.getByRole("button", { name: /^Start/ }).first()).toBeVisible();
 });

@@ -65,8 +65,10 @@ interface HistoryState {
   /** The chip it shows; kept between opens, so it opens where it was left. */
   readonly filter: HistoryFilter;
   toggle: () => void;
-  /** Opens it, on `filter` when given. */
-  show: (filter?: HistoryFilter) => void;
+  /** What its search starts on when it next opens, then let go of: `show`'s `query`. */
+  readonly seed?: string | undefined;
+  /** Opens it, on `filter` when given, searching `query` when given. */
+  show: (filter?: HistoryFilter, query?: string) => void;
   close: () => void;
   setFilter: (filter: HistoryFilter) => void;
 }
@@ -76,7 +78,7 @@ export const useHistoryStore = create<HistoryState>()((set) => ({
   open: false,
   filter: "all",
   toggle: () => set((s) => ({ open: !s.open })),
-  show: (filter) => set((s) => ({ open: true, filter: filter ?? s.filter })),
+  show: (filter, query) => set((s) => ({ open: true, filter: filter ?? s.filter, seed: query })),
   close: () => set({ open: false }),
   setFilter: (filter) => set({ filter }),
 }));
@@ -181,7 +183,12 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
   const by = useLayoutStore((s) => s.doneGrouping);
   const filter = useHistoryStore((s) => s.filter);
   const setFilter = useHistoryStore((s) => s.setFilter);
-  const [query, setQuery] = useState("");
+  // Read, not subscribed, and let go of once it opened, so the next open starts empty.
+  const [query, setQuery] = useState(() => useHistoryStore.getState().seed ?? "");
+  useEffect(() => {
+    if (useHistoryStore.getState().seed !== undefined)
+      useHistoryStore.setState({ seed: undefined });
+  }, []);
   const [active, setActive] = useState(0);
   const [limit, setLimit] = useState(DONE_PAGE);
   const [resuming, setResuming] = useState<string>();

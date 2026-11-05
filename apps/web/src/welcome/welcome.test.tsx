@@ -9,7 +9,7 @@ import { prefillDraftProject } from "@/composer/draft-prefill";
 import { renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { canStart, toolRows } from "./tools";
+import { canStart, runsWith, toolRows } from "./tools";
 import { useWelcome, Welcome } from "./welcome";
 
 const navigate = vi.fn(async (_to: unknown) => {});
@@ -61,7 +61,7 @@ afterEach(() => {
 });
 
 describe("first run", () => {
-  it("is one screen: a repository to pick, the agents beside Open, and how Gram works folded", async () => {
+  it("is one screen: a repository to pick, the agents beside Open, and how Gram works in a line", async () => {
     const { api, render, updateSettings } = load(withOnboarding({}));
     for (const profile of await api.listProfiles()) await api.removeProfile(profile.id);
     render();
@@ -76,21 +76,17 @@ describe("first run", () => {
     // The agents' readiness sits right before the actions it gates.
     const strip = welcome.getByTestId("welcome-agents");
     expect(strip.nextElementSibling?.contains(welcome.getByTestId("welcome-open"))).toBe(true);
-    // How Gram works is folded under How it works until asked for.
-    const how = welcome.getByRole("button", { name: "How it works" });
-    expect(how.getAttribute("aria-expanded")).toBe("false");
-    expect(welcome.queryByRole("list", { name: "How Gram works" })).toBeNull();
-    fireEvent.click(how);
-    expect(how.getAttribute("aria-expanded")).toBe("true");
+    // How Gram works is one line of three steps, shown without asking.
     expect(
       within(welcome.getByRole("list", { name: "How Gram works" }))
         .getAllByRole("listitem")
         .map((step) => step.textContent),
     ).toEqual([
       expect.stringContaining("You give tasks"),
-      expect.stringContaining("An orchestrator plans them and briefs workers"),
-      expect.stringContaining("Workers run Claude Code or Codex"),
+      expect.stringContaining("An orchestrator briefs workers"),
+      expect.stringContaining("Each worker opens a PR"),
     ]);
+    expect(welcome.queryByRole("button", { name: "How it works" })).toBeNull();
     // Every agent ready: each says so, and there is nothing to re-check.
     const agents = within(await welcome.findByRole("list", { name: "Agents" })).getAllByRole(
       "listitem",
@@ -99,6 +95,10 @@ describe("first run", () => {
     expect(agents.map((item) => within(item).queryByText("Ready") !== null)).toEqual([true, true]);
     expect(welcome.queryByRole("button", { name: "Check again" })).toBeNull();
     expect(welcome.queryByRole("link", { name: /^Install/ })).toBeNull();
+    // Beside Open, what its work runs on.
+    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe(
+      "Runs with Claude Code or Codex",
+    );
     // The most recent repository is picked, so the one primary action opens it; picking another
     // moves the check and the button with it.
     expect(welcome.getByRole("radio", { name: /^api/ }).getAttribute("aria-checked")).toBe("true");
@@ -246,6 +246,7 @@ describe("first run", () => {
     expect(install.getAttribute("href")).toBe("https://docs.claude.com/en/docs/claude-code/setup");
     expect(codex?.textContent).toContain("Ready");
     expect(within(codex!).queryByRole("link")).toBeNull();
+    expect(welcome.getByTestId("welcome-runs-with").textContent).toBe("Runs with Codex");
     fireEvent.click(within(claude!).getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(api.launchChecks).toHaveBeenCalledWith(true));
   });
@@ -346,5 +347,50 @@ describe("toolRows", () => {
       ["gh", "optional"],
     ]);
     expect(canStart(rows)).toBe(true);
+  });
+});
+
+const words = (checks: LaunchChecks) => runsWith(toolRows(checks));
+
+describe("runsWith", () => {
+  const base: LaunchChecks = {
+    checkedAt: 0,
+    tools: [{ tool: "git", found: true, version: "2.47.1" }],
+    claudeSignIn: "unknown",
+    ghSignedIn: true,
+  };
+
+  it("names the ready agent, or both when both are", () => {
+    const codex = {
+      ...base,
+      codexSignIn: "signedIn" as const,
+      tools: [...base.tools, { tool: "codex" as const, found: true, version: "0.160.0" }],
+    };
+    expect(words(codex)).toEqual({ ready: true, agents: ["codex"], words: "Runs with Codex" });
+    const both = {
+      ...codex,
+      claudeSignIn: "signedIn" as const,
+      tools: [...codex.tools, { tool: "claude" as const, found: true, version: "2.1.273" }],
+    };
+    expect(words(both).words).toBe("Runs with Claude Code or Codex");
+    expect(words({ ...both, tools: both.tools.filter((tool) => tool.tool !== "git") })).toEqual({
+      ready: false,
+      agents: ["claude", "codex"],
+      words: "Runs with Claude Code or Codex once git is installed",
+    });
+  });
+
+  it("says what to do first while no agent is ready", () => {
+    expect(words(base)).toEqual({
+      ready: false,
+      agents: [],
+      words: "Install Claude Code or Codex to start",
+    });
+    const signIn = {
+      ...base,
+      claudeSignIn: "notSignedIn" as const,
+      tools: [...base.tools, { tool: "claude" as const, found: true, version: "2.1.273" }],
+    };
+    expect(words(signIn).words).toBe("Sign in to Claude Code to start");
   });
 });
