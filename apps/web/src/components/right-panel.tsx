@@ -275,8 +275,9 @@ export function RightPanel() {
 }
 
 /** A tab's box, as `TabsTrigger` draws it: the strip's tabs and their measured copies share it. */
+// A bare tab is its 28 px minimum: the 16 px glyph and 6 px either side.
 const TAB_BOX =
-  "flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md px-2 text-meta font-medium";
+  "flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md px-1.5 text-meta font-medium";
 const MORE_BOX = "flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-meta font-medium";
 
 interface TabFaceProps {

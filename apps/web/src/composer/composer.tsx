@@ -1023,7 +1023,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
         onArrived={() => useSlabHandoff.getState().done()}
         data-surface="composer"
         data-dragging={dragging ? "true" : undefined}
-        className={cn(SLAB, "group/composer thread-column")}
+        className={cn(SLAB, "group/composer @container/composer thread-column")}
         onDragOver={(event) => event.preventDefault()}
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}
@@ -1289,14 +1289,16 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
             {/* Stop's key, beside it while you're in the composer, as it is in its tooltip. Its
-                room is kept, so focusing the composer doesn't shift the row. */}
+                room is kept, so focusing the composer doesn't shift the row. In a composer under
+                18 rem it goes, by width alone (never the toolbar's own fold, which measures it), so
+                a wide key such as "Ctrl+." can't push Stop out of the box; the tooltip keeps it. */}
             {action === "stop" && stopHint && (
               <kbd
                 aria-hidden
                 data-testid="stop-key"
                 className={cn(
                   KBD,
-                  "text-muted-foreground opacity-0 transition-opacity group-focus-within/composer:opacity-100",
+                  "text-muted-foreground opacity-0 transition-opacity group-focus-within/composer:opacity-100 @max-[18rem]/composer:hidden",
                 )}
               >
                 {stopHint}
