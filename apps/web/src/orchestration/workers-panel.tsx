@@ -19,7 +19,7 @@ import { ROW_MARK } from "./overview-section";
 import { StatusDot } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedgers } from "./use-orchestration";
-import { WorkersArtifacts } from "./workers-artifacts";
+import { WorkersDocs } from "./workers-docs";
 import { workersByTab } from "./workers-model";
 import {
   DONE_SHOWN,
@@ -131,7 +131,7 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
     >
       <Header query={query} onQuery={setQuery} />
       <div className="flex min-h-0 flex-1 flex-col gap-section overflow-y-auto px-section pt-inset pb-section">
-        <WorkersArtifacts workspaceId={workspaceId} />
+        <WorkersDocs workspaceId={workspaceId} />
         {searching && !matches ? (
           <p role="status" className="text-body text-muted-foreground">
             No matches
