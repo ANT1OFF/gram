@@ -15,10 +15,10 @@ import {
   useRevealInFileManager,
 } from "@/editor/use-open-in-editor";
 import { shortcutHint } from "@/keyboard/bindings";
-import { tidyUpBlocked } from "@/orchestration/board-model";
+import { DISCOVER_QUEUED, DISCOVER_SENT, tidyUpBlocked } from "@/orchestration/board-model";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { setWorkspacePaused } from "@/orchestration/pause-workspace";
-import { sendTidyUp } from "@/orchestration/use-board-actions";
+import { sendDiscover, sendTidyUp } from "@/orchestration/use-board-actions";
 import { useOrchestratorLedger, useWorkspaces } from "@/orchestration/use-orchestration";
 import { removeWorkspaceRepo } from "@/orchestration/workspace-repos";
 import { removableRepos } from "@/settings/workspace-settings-model";
@@ -547,6 +547,27 @@ export function useScopeCommands(
                         body: queued
                           ? "It starts once its current turn ends."
                           : "It summarises what it changed when it is done.",
+                      }),
+                    ),
+                  ),
+              },
+            ]
+          : []),
+        ...(tidyOrchestrator !== undefined && tidyUpBlocked(byId[tidyOrchestrator]) === undefined
+          ? [
+              {
+                id: `scope:discover:${workspaceId}`,
+                label: "Discover workspace",
+                keywords: "survey explore scan onboard starter tasks issues ci branches",
+                run: () =>
+                  attempt(
+                    "ask the orchestrator to discover the workspace",
+                    sendDiscover(api, tidyOrchestrator).then((queued) =>
+                      useThreadsStore.getState().applyEvent({
+                        type: "notify",
+                        kind: "info",
+                        title: "Asked the orchestrator to discover the workspace",
+                        body: queued ? DISCOVER_QUEUED : DISCOVER_SENT,
                       }),
                     ),
                   ),

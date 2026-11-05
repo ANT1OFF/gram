@@ -22,6 +22,15 @@ configured pass.
   [pause a workspace](#pausing-a-workspace).
 - **Hands-off or hands-on.** Every worker is a normal thread: open it to read the transcript,
   send it a message mid-turn, answer its question or stop it.
+- **Discover.** A new workspace starts by discovering itself, and **Discover workspace** in the
+  title bar's Workspace menu or the palette runs it again. It sends the orchestrator a message, as
+  Tidy up does: one worker, briefed to only read, surveys each repo (what it does, how it builds
+  and tests, open pull requests, failing CI on the default branch, open issues and branches with
+  no pull request and no commit in 30 days). The orchestrator records what it found in a
+  `repo.md` memory topic and asks one question with up to four starter tasks, each tied to a
+  finding, to tick. It starts only what you pick, at every autonomy level. The worker's
+  read-only limit is its brief, not a sandbox: in Supervised and Publish, anything it tried to
+  push or open would still ask you first.
 - **Memory.** Each orchestrator keeps file-based [workspace memory](#workspace-memory) of goals,
   decisions and your standing rulings, which you can edit. An optional
   [Dream](#dream-and-selected-harness-support) run consolidates it into a candidate you review.

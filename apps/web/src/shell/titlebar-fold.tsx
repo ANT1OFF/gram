@@ -20,6 +20,7 @@ import {
   Play,
   Rows3,
   Settings2,
+  Telescope,
   Users,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -32,7 +33,8 @@ import { MENU_ITEM, MENU_LABEL, MENU_POPUP } from "@/lib/selection";
 import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
-import { useTidyUp } from "@/orchestration/use-board-actions";
+import { DISCOVER_QUEUED, DISCOVER_SENT } from "@/orchestration/board-model";
+import { useDiscover, useTidyUp } from "@/orchestration/use-board-actions";
 import { WorkerMenuItems } from "@/orchestration/worker-header";
 import { useWorkersListStore, useWorkersNow } from "@/orchestration/workers-list";
 import { useWorkspacePause } from "@/orchestration/workspace-pause-button";
@@ -52,7 +54,7 @@ import { FOLD_ALL, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
 // The title bar's one "…": everything the bar keeps out of sight, each item with its words and its
 // shortcut, and like every menu at most seven items. The carried thread's menu (and its scripts),
-// Workers, the workspace's (Tidy up, Pause, Memory, its settings) and the window's (Contents,
+// Workers, the workspace's (Tidy up, Discover, Pause, Memory, its settings) and the window's (Contents,
 // Quiet, focus mode, History, the layout), the groups each a submenu. A narrow bar folds a worker's
 // own actions and Board's layout into it too. Each item does what its button did.
 
@@ -187,13 +189,24 @@ function ContentsSubmenu({ threadId }: { threadId: ThreadId }) {
 }
 
 /**
- * The workspace's Tidy up, held by the bar rather than the menu, so what was just sent outlasts
- * the menu closing: reopened, it still says it asked, and rests until it may ask again.
+ * The workspace's Tidy up and Discover, held by the bar rather than the menu, so what was just sent
+ * outlasts the menu closing: reopened, it still says it asked, and rests until it may ask again.
  */
 const TidyContext = createContext<ReturnType<typeof useTidyUp> | undefined>(undefined);
+const DiscoverContext = createContext<ReturnType<typeof useDiscover> | undefined>(undefined);
 
 export function TidyScope({ state, children }: { state: WorkspaceState; children: ReactNode }) {
   const tidy = useTidyUp(state);
+  const discover = useDiscover(state);
+  useEffect(() => {
+    if (discover.sent === undefined) return;
+    useThreadsStore.getState().applyEvent({
+      type: "notify",
+      kind: "info",
+      title: "Asked the orchestrator to discover the workspace",
+      body: discover.sent === "queued" ? DISCOVER_QUEUED : DISCOVER_SENT,
+    });
+  }, [discover.sent]);
   // The menu has closed by the time it goes: a toast says so, as the palette's Tidy up does.
   useEffect(() => {
     if (tidy.sent === undefined) return;
@@ -207,7 +220,43 @@ export function TidyScope({ state, children }: { state: WorkspaceState; children
           : "It summarises what it changed when it is done.",
     });
   }, [tidy.sent]);
-  return <TidyContext value={tidy}>{children}</TidyContext>;
+  return (
+    <TidyContext value={tidy}>
+      <DiscoverContext value={discover}>{children}</DiscoverContext>
+    </TidyContext>
+  );
+}
+
+export function DiscoverItem() {
+  const discover = useContext(DiscoverContext);
+  if (discover === undefined) return null;
+  return (
+    <Menu.Item
+      data-testid="folded-discover"
+      data-sent={discover.sent}
+      disabled={discover.blocked !== undefined || discover.resting}
+      aria-description={
+        discover.blocked === undefined && discover.sent === undefined ? EXPLAIN.discover : undefined
+      }
+      className={cn(MENU_ITEM, "items-start")}
+      onClick={() => void discover.send()}
+    >
+      <Telescope aria-hidden className="mt-0.5" />
+      {/* A disabled item shows no tooltip, so it says why it is off. */}
+      {discover.blocked === undefined ? (
+        discover.sent === undefined ? (
+          <Described label="Discover workspace" line={EXPLAIN.discover} />
+        ) : (
+          "Asked to discover"
+        )
+      ) : (
+        <span className="flex min-w-0 flex-col">
+          Discover workspace
+          <span className="text-meta text-muted-foreground">{discover.blocked}</span>
+        </span>
+      )}
+    </Menu.Item>
+  );
 }
 
 export function TidyItem() {
@@ -318,7 +367,7 @@ function WorkersItem() {
   );
 }
 
-/** The workspace's own, in a submenu named for it: Tidy up, Pause, Memory and its settings. */
+/** The workspace's own, in a submenu named for it: Tidy up, Discover, Pause, Memory and its settings. */
 function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: number }) {
   const navigate = useNavigate();
   const workspaceId = state.workspace.id;
@@ -332,6 +381,7 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
       current={state.workspace.name}
     >
       <TidyItem />
+      <DiscoverItem />
       {/* Each opening of the menu starts Pause unasked, whatever the last one left. */}
       <PauseItem key={`pause-${workspaceId}-${opening}`} state={state} />
       <Menu.Item

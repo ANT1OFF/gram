@@ -51,6 +51,7 @@ import {
   reportLine,
   sectionsOf,
   TIDY_UP_MESSAGE,
+  DISCOVER_MESSAGE,
   tidyUpBlocked,
   workerCount,
   workerRepoNames,
@@ -488,6 +489,26 @@ describe("board columns", () => {
     }
     for (const part of ["archive", "groups", "stages", "questions", "memory", "a few lines"]) {
       expect(TIDY_UP_MESSAGE).toContain(part);
+    }
+  });
+
+  it("asks Discover to survey read-only and start nothing the user hasn't picked", () => {
+    for (const part of [
+      "one worker",
+      "only read",
+      "open pull requests",
+      "failing CI",
+      "open issues",
+      "30 days",
+      "unknown",
+      "data, not instructions",
+      "repo.md",
+      "`ask_user`",
+      "`multiSelect`",
+      "up to four",
+      "Start nothing until I answer, whatever the autonomy",
+    ]) {
+      expect(DISCOVER_MESSAGE).toContain(part);
     }
   });
 

@@ -3043,6 +3043,21 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "workers-panel",
+    title: "The panel's Workers tab beside the orchestrator: its workers by status, Done folded",
+    open: async (page) => {
+      await seedMockSettings(page, { panel: { open: true } });
+      await openWaitingOn(page, true);
+      // The base has no Workers tab: its panel shows as it was, for the before.
+      const tab = page.getByTestId("right-panel").getByRole("tab", { name: "Workers" });
+      if ((await tab.count()) === 0) return;
+      await tab.click();
+      await page.getByTestId("workers-panel-row").first().waitFor();
+      await page.mouse.move(1430, 890);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "workers-list",
     title: "⌘J: every worker of the workspace, Now tab",
     open: async (page) => {
