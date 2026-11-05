@@ -31,7 +31,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     (`StatusDot`): amber needs you, the accent is running and pulses, a hollow accent ring is
     waiting on something outside it (checks, a review, a wake, a usage limit), grey has stopped,
     the merged colour is done, and red failed. The row beside a dot says its state in words, with
-    the reason for a wait ("Waiting · checks"), so the dots need no legend.
+    the reason for a wait ("Waiting · checks"), and the dot's hover says what its colour or fill
+    means ("Hollow: waiting on checks, a review, a wake or a limit"), so the dots need no legend.
+  - **One amber in each mode.** The needs-you text, its dots, its count's ring and the pill's
+    border are one hue (`status-needs` is `status-needs-mark` darkened to the text floor, never a
+    different colour); the light palettes of the Neutral family seed a true amber, not an orange.
   - **One alarm per failure:** the error's card in the transcript and the thread's one red dot.
     Everything else stays neutral: the plan strip, the title bar, a label's chip (named, never
     tinted). A retry that ran through leads with "Recovered", its failure the line under it.
@@ -42,38 +46,47 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   small marks (a key cap, a bar, a swatch) take 4 px (`radius-2xs`).
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
   Lists, menus and the sidebar share one row shape. Every sidebar row, whatever it lists (a
-  workspace, a worker, a solo thread, a PR, a Done item), takes two lines (`ROW`, `ROW_STATUS`):
-  its mark and title, with a count, time or mark at the right edge, then one muted status line
-  with its badges (a worker's PR chips) at the right edge only while they fit beside the words:
-  the status wins, and the row's hover names the PR. Both lines are 20 px (48 px a row with its
-  padding). A long title is cut in the middle (`MiddleTruncate`), so the ending that tells two
-  similar titles apart stays in view. What needs you is listed first, and Done
+  workspace, a worker, a solo thread, a PR, a Done item), is its mark and title (`ROW`,
+  `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
+  time, or its badges (a worker's PR chips) only while they fit beside the words: the status wins,
+  and the row's hover names the PR. The title has the row's whole width and wraps to a second
+  line before it is cut at its end, so its words are never split in the middle; lines are 20 px
+  (48 px a one-line title's row with its padding). What needs you is listed first, and Done
   shows five rows before the rest fold behind "N more". Marks centre on one column and titles
   start on one edge, the pill, Search, section titles and Open History included.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
   around a list's rows and headings, 16 px between sections and at a pane's edges.
+- **Separate by surface and space before lines.** A group of rows is a raised card whose fill is
+  the step off the page; in dark it takes no outline (`border-edge-group` is transparent there),
+  and light, whose raised step is faint, keeps a hairline. Inside it a hairline between rows is
+  the only line. Don't add a rule, a card edge or a glyph where space or the surface step already
+  says it.
 - **Settings descriptions** (a setting's or a group's line under its name) are `text-body` in
-  `text-description` (`--fg-description`, a step nearer `fg` than `fg-muted`), no wider than
+  `text-description` (`--fg-description`, the secondary `fg-muted`, so the name and what it does
+  read as two levels), no wider than
   `--description-measure`; a settings segment is a full 32 px target (`SEGMENT_ROOMY`). A row takes
   16 px above and below. Its main control (a segment, a field, a switch) leads; a row of small
   secondary toggles beside it (Sidebar sections' checkboxes) is `text-body`, muted until checked.
 - **Titles and metadata:** a title at 14 to 15 px in `fg` (`text-body-strong` or `text-reading`),
   its metadata (where it is from, its state, a time, a chip's word) at 13 px in `fg-muted`
   (`text-meta`), never smaller. `text-caption` is only for what is never read for meaning: a key
-  cap, a count badge, a footer's key legend. A title wraps to two lines before it is cut short,
-  except in the sidebar's two-line rows, where it takes one, cut in the middle, and its hover says
-  the whole of it. Metadata a heading or the whole list already says is left out: no repo on each
+  cap, a count badge, a footer's key legend. A title wraps to two lines before it is cut short at
+  its end, the sidebar's included, and its hover says the whole of it. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,
   `ShortcutKbd cap`), never a faded one; elsewhere a hint goes in the tooltip.
 - **The reading column** (`thread-column`) is as wide as Settings → Appearance → Reading says and
-  leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). Memory's rendered
+  leans toward the sidebar in a wide pane (`--thread-lean`, 0.5 centres it). Its prose (a
+  paragraph, a list, a quote) stops at `--reading-measure` (70 ch of its own size, about 85
+  characters) and leads at 22/14, while code, tables and cards take the column's full width. Memory's rendered
   files and its draft review (Dreams) use it too, the review widening to `--settings-column-wide`
   while a diff is open; Settings' pages take `settings-column` (60 rem, leaning `--settings-lean`).
   The sidebar keeps the width the user gives it, and its edge shows a grip while the pointer is
   over the column.
-- **Icons: Lucide** at one 1.75 stroke (`--icon-stroke`), never as decoration and never emoji.
-  One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
+- **Icons: Lucide** at one optical stroke, never as decoration and never emoji. `--icon-stroke`
+  (1.75) is the stroke at 16 px; each size token takes the stroke that draws the same line
+  (about 1.2 px) at its size (globals.css), so a 14 px chip glyph is no thinner than an 18 px
+  toolbar one. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
   sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
   menus, docks, buttons, the panel's tabs and its action, which give way to glyphs by width), and `size-icon-chip` 14 px beside meta text (a chip,
   a badge, a status line). A disclosure chevron is 14 px (`size-icon-chip`) wherever it sits:
@@ -91,7 +104,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `Inbox`, a needs-you mark or count `Hand`, review `Eye`, take over `HandGrab`, a question `MessageCircleQuestion`, an approval
     `ShieldQuestion`, a plan `ListChecks`, effort the gauge, usage and limits
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
-    Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`.
+    Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`, History `History`, a wait
+    `Hourglass`. A row a chevron already folds needs no second glyph (an orchestrator's update is
+    its chevron and time).
+  - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
+    beside the choice, never a row of bare play glyphs.
 - **A list row's trailing slot is its status, never an action:** History says what happened
   ("Merged", "Stopped", "Imported"), and what Enter does ("Open ⏎", "Resume ⏎") shows only on the
   cursor row, ahead of the status so the status column stays aligned.
@@ -142,12 +159,16 @@ selection are in [globals.css](apps/web/src/styles/globals.css) and
 | `text-body-strong` | 14 / 20 px  | 500      | A row's or card's title; an emphasised label.                     |
 | `text-reading`     | 15 / 24 px  | inherits | Content: messages, descriptions, inputs, a dialog's body.         |
 | `text-title`       | 17 / 24 px  | 600      | Dialog, pane and section titles.                                  |
-| `text-heading`     | 22 / 28 px  | 600      | A page's heading (a Settings page, an empty state, Welcome).      |
+| `text-heading`     | 24 / 32 px  | 600      | A page's heading (a Settings page, an empty state, Welcome).      |
 
 Every step but body-strong is a size of its own, every line height is on the 4 px grid, and meta
-sits two pixels above caption, so incidental text never passes for metadata. `fg-muted` is a third
-of the way from the text to the palette's muted seed: well over AA in every palette, still a clear
-step below `fg`.
+sits two pixels above caption, so incidental text never passes for metadata. Headings separate
+from body by size, weight and tracking together: title draws at −0.012 em and heading at −0.02 em
+(Inter is drawn for text sizes, so its display sizes tighten), caption opens to +0.01 em, and the
+rest keep Inter's own spacing (`--type-<step>-tracking`). `fg-muted` is 45% of the way from the
+text to the palette's muted seed in dark and 60% in light, where dark text on a pale page needs
+the larger step to look as far apart: well over AA in every palette, and a clear second level
+under a title.
 
 Markdown in the transcript keeps its own scale, sized by Settings → Appearance → Reading.
 
@@ -160,7 +181,11 @@ sections, at a pane's edges), as in `gap-inset` or `px-section`.
 **Radius.** `rounded-2xs` 4 px, `rounded-xs` 8, `rounded-sm` 12, `rounded-md` 14, `rounded-lg`
 and `rounded-xl` 16, `rounded-full` for pills and dots, and `--composer-radius` for the composer.
 
-**Elevation.** One step for every secondary surface: a card, a panel's block, a popover and a menu
+**Elevation.** Three surfaces: the chrome (`surface-1`), the page (`surface-2`) and one raised step
+(`surface-3`). In dark the raised step is a clear one (about 5% lightness over the lighter of the
+other two), so a card reads by its fill; Neutral Dark is near-black (`#131313` page, `#0b0b0b`
+chrome), not black. Hover sits a shade past the raised step. One step for every secondary
+surface: a card, a panel's block, a popover and a menu
 take `bg-card` or `bg-popover` (both `--surface-raised`, which is `surface-3`: the palettes hold
 muted text at AA there) and the edge `border-edge`, which carries the step in dark where a shadow
 doesn't show; a row that opens or acts (a tool row, an update, the files-changed row) takes the

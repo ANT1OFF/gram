@@ -23,7 +23,6 @@ import {
 import { useShallow } from "zustand/react/shallow";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
-import { MiddleTruncate } from "@/components/middle-truncate";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -100,7 +99,16 @@ import {
   type ReportNext,
   type RunningWorker,
 } from "./overview-model";
-import { CURRENT_ROW, ROW, ROW_STATUS, RowMenu, Section, SETTLED, STOP } from "./overview-section";
+import {
+  CURRENT_ROW,
+  ROW,
+  ROW_STATUS,
+  ROW_TITLE,
+  RowMenu,
+  Section,
+  SETTLED,
+  STOP,
+} from "./overview-section";
 import { shownPrNumbers, useChipsFit, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
 import { nowBesidePrs, TONE_DOT, type RailTone } from "./rail-model";
@@ -812,11 +820,13 @@ export function WorkerRow({
         data-tone={tone}
         className={DOT_ON_FIRST_LINE}
       />
-      <MiddleTruncate
+      {/* Its title wraps beside the trailing marks, which are rare (a pause, another agent). */}
+      <span
         data-testid="overview-worker-title"
-        className="text-foreground"
-        text={row.title}
-      />
+        className={cn(ROW_TITLE, "col-span-1 text-foreground")}
+      >
+        {row.title}
+      </span>
       <span className="flex h-lh items-center gap-1.5 text-muted-foreground">
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
         {agent !== undefined && agent !== orchestratorAgent && (
@@ -1142,7 +1152,7 @@ function WaitingLine({
         data-kind={waiting.kind}
         className="flex min-w-0 items-center gap-1"
       >
-        <Hourglass aria-hidden className="size-icon-row shrink-0" />
+        <Hourglass aria-hidden className="size-icon-chip shrink-0" />
         <span className="truncate">{nowBesidePrs(waiting.label, prs)}</span>
       </span>
     </Swap>
@@ -1158,7 +1168,7 @@ function WaitingList({ waiting }: { waiting: WaitingOn }) {
     >
       {waiting.reasons.map((reason, i) => (
         <li key={i} data-kind={reason.kind} className="flex min-w-0 gap-1.5">
-          <Hourglass aria-hidden className="mt-0.5 size-icon-row shrink-0" />
+          <Hourglass aria-hidden className="mt-0.75 size-icon-chip shrink-0" />
           <span className="min-w-0">{reason.detail}</span>
         </li>
       ))}
@@ -1464,15 +1474,10 @@ export function SoloRow({
             display.working && "gram-working",
           )}
         />
-        {/* Two lines like every row, at work or at rest, so the virtual list's rows keep one
-            height and stay anchored as what is above them grows: its title, cut short with the
-            whole of it on hover, its last activity at the edge, and its status under it. */}
-        <MiddleTruncate text={title} />
-        <span className="flex h-lh items-center text-meta text-muted-foreground">
-          {!display.working && (
-            <span className="tabular-nums">{formatRelative(thread.lastActivityAt, now)}</span>
-          )}
-        </span>
+        {/* Like every row: its title over the row's width, wrapping to a second line before it is
+            cut, and its status under it with its last activity at the edge. The virtual list
+            measures each row, so a two-line title keeps the rows under it anchored. */}
+        <span className={ROW_TITLE}>{title}</span>
         <span data-testid="overview-solo-status" className={ROW_STATUS}>
           <span
             className={cn(
@@ -1483,6 +1488,11 @@ export function SoloRow({
           >
             {display.label}
           </span>
+          {!display.working && (
+            <span className="ms-auto shrink-0 tabular-nums">
+              {formatRelative(thread.lastActivityAt, now)}
+            </span>
+          )}
         </span>
       </button>
     </RowMenu>

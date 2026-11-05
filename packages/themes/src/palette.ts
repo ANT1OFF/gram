@@ -169,10 +169,20 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
   const surface1 = s.surface;
   const surface2 = s.bg;
   const lighterSurface = luminance(surface1) > luminance(surface2) ? surface1 : surface2;
+  // A raised card, a field or a menu: in dark a clear step off the page, so a card reads by its fill
+  // rather than by an outline; in light, a step toward white, its edge carrying the rest.
   const surface3 = dark
-    ? shiftLightness(lighterSurface, 0.035)
+    ? shiftLightness(lighterSurface, 0.055)
     : mix(lighterSurface, "#ffffff", 0.5);
-  const surfaceHover = mix(surface2, s.text, 0.07);
+  // Hover sits a shade past the raised step in dark, so a row on a card still lights under the
+  // pointer; on a palette whose surfaces are already light enough that the shade would cost the text
+  // its floor, it keeps the plain step toward the text.
+  const plainHover = mix(surface2, s.text, 0.07);
+  const surfaceHover = dark
+    ? ([mix(surface3, s.text, 0.05), plainHover].find(
+        (hover) => contrastRatio(s.text, hover) >= target.text,
+      ) ?? plainHover)
+    : plainHover;
   const backdrop = dark ? "#000000" : "#ffffff";
   const surfaces = [
     surface1,
@@ -241,9 +251,11 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     "surface-3": surface3,
     "surface-hover": surfaceHover,
     fg,
-    // Metadata and second lines: well clear of the floor, still a step below the text. A third of
-    // the way to the muted seed, so a row's status reads at a glance beside its title.
-    "fg-muted": onDiff(text(mix(s.text, s.muted, contrast === "more" ? 0.2 : 0.32))),
+    // Metadata and second lines: well clear of the floor, and a clear step below the text, so a
+    // title and the status under it read as two levels rather than one flat block. Near halfway to
+    // the muted seed in dark, a little past it in light, where dark text on a pale page needs the
+    // larger step to look as far apart: firm enough to read at a glance, far enough to be secondary.
+    "fg-muted": onDiff(text(mix(s.text, s.muted, contrast === "more" ? 0.2 : dark ? 0.45 : 0.6))),
     "fg-subtle": fgSubtle,
     // Card and control edges: visible against the page in both modes, still a hairline.
     "border-subtle": mix(surface2, s.text, 0.14),

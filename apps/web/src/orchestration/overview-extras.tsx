@@ -8,7 +8,6 @@ import { recentDone, recentWhen, OUTCOME_LABEL, type RecentDone } from "@/histor
 import { OUTCOME_GLYPH, useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { openExternalUrl } from "@/api/open-external";
-import { MiddleTruncate } from "@/components/middle-truncate";
 import { PrMarkIcon } from "@/components/pr-marks";
 import { prMarksOf, prTooltipOf, worstPrMark } from "@/components/pr-marks-model";
 import { useOpenPrRows } from "@/reviews/open-prs";
@@ -32,7 +31,16 @@ import {
   workerSlots,
   type OverviewPrRow,
 } from "./overview-extras-model";
-import { CURRENT_ROW, ROW, ROW_MARK, ROW_STATUS, RowMenu, Section, STOP } from "./overview-section";
+import {
+  CURRENT_ROW,
+  ROW,
+  ROW_MARK,
+  ROW_STATUS,
+  ROW_TITLE,
+  RowMenu,
+  Section,
+  STOP,
+} from "./overview-section";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
@@ -108,7 +116,9 @@ function PrRow({ row }: { row: OverviewPrRow }) {
       >
         <PrMarkIcon group={worst.group} mark={worst.mark} />
       </span>
-      <MiddleTruncate data-testid="overview-pr-title" className="col-span-2" text={row.title} />
+      <span data-testid="overview-pr-title" className={ROW_TITLE}>
+        {row.title}
+      </span>
       <span data-testid="overview-pr-sub" className={ROW_STATUS}>
         <span className="truncate">{sub}</span>
       </span>
@@ -247,12 +257,12 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
         <span aria-hidden className={ROW_MARK}>
           {Icon !== undefined && <Icon className="size-icon-row" />}
         </span>
-        <MiddleTruncate text={row.title} />
-        <span className="flex h-lh items-center text-meta tabular-nums">{when}</span>
+        <span className={ROW_TITLE}>{row.title}</span>
         <span data-testid="overview-done-status" className={ROW_STATUS}>
           <span className="truncate">
             <span className="capitalize">{word}</span> · {row.place}
           </span>
+          {when !== "" && <span className="ms-auto shrink-0 tabular-nums">{when}</span>}
         </span>
       </button>
     </RowMenu>

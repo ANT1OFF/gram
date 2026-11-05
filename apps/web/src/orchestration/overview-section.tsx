@@ -14,15 +14,21 @@ import { overviewSectionFolded, useLayoutStore, type OverviewSection } from "@/s
 export const STOP = OVERVIEW_STOP;
 
 /**
- * Every row's shape, whatever it lists: a 10 px mark column, then its title on one line with what
- * trails it (a count, a time, a mark) on the right edge, and under the title one compact status
- * line (`ROW_STATUS`), its own trailing badges again at the right edge. Two lines, never more: a
- * long title is cut short and its hover says the whole of it.
+ * Every row's shape, whatever it lists: a 10 px mark column, then its title (`ROW_TITLE`), and under
+ * it one compact status line (`ROW_STATUS`) with what trails it (a time, its badges) at the right
+ * edge. A title takes the row's whole width and wraps to a second line before it is cut at its end;
+ * its hover says the whole of it.
  */
 export const ROW =
   "grid w-full cursor-default grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 py-1 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring";
 
-/** A row's status line, under its title: muted words, and its badges at the right edge. */
+/**
+ * A row's title: the row's full width, two lines at most, cut at the end. A word too long for the
+ * line breaks rather than pushing the row wide.
+ */
+export const ROW_TITLE = "col-span-2 line-clamp-2 [overflow-wrap:anywhere]";
+
+/** A row's status line, under its title: muted words, and its time or badges at the right edge. */
 export const ROW_STATUS =
   "col-span-2 col-start-2 flex h-lh min-w-0 items-center gap-x-1.5 text-meta text-muted-foreground";
 

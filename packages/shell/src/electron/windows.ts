@@ -37,8 +37,8 @@ export interface WindowContext {
 }
 
 // Neutral Dark, matching the default palette, until a saved theme or renderer sync replaces it.
-let theme: TitleBarTheme = { background: "#000000", foreground: "#f5f5f5", mode: "dark" };
-let windowBackground = "#0a0a0a";
+let theme: TitleBarTheme = { background: "#0b0b0b", foreground: "#f5f5f5", mode: "dark" };
+let windowBackground = "#131313";
 /** Where the last synced theme is saved, so the next launch opens on the right background. */
 let appearancePath: string | undefined;
 let vibrancyWanted = false;

@@ -43,20 +43,27 @@
   /* The type scale (DESIGN.md → Type scale). Each step brings its line height and default weight. */
   --text-caption: var(--type-caption-size);
   --text-caption--line-height: var(--type-caption-line);
+  --text-caption--letter-spacing: var(--type-caption-tracking);
   --text-meta: var(--type-meta-size);
   --text-meta--line-height: var(--type-meta-line);
+  --text-meta--letter-spacing: var(--type-meta-tracking);
   --text-body: var(--type-body-size);
   --text-body--line-height: var(--type-body-line);
+  --text-body--letter-spacing: var(--type-body-tracking);
   --text-body-strong: var(--type-body-strong-size);
   --text-body-strong--line-height: var(--type-body-strong-line);
+  --text-body-strong--letter-spacing: var(--type-body-strong-tracking);
   --text-body-strong--font-weight: var(--type-body-strong-weight);
   --text-reading: var(--type-reading-size);
   --text-reading--line-height: var(--type-reading-line);
+  --text-reading--letter-spacing: var(--type-reading-tracking);
   --text-title: var(--type-title-size);
   --text-title--line-height: var(--type-title-line);
+  --text-title--letter-spacing: var(--type-title-tracking);
   --text-title--font-weight: var(--type-title-weight);
   --text-heading: var(--type-heading-size);
   --text-heading--line-height: var(--type-heading-line);
+  --text-heading--letter-spacing: var(--type-heading-tracking);
   --text-heading--font-weight: var(--type-heading-weight);
   /* Inline code and paths in running text: a touch smaller than the text around it. */
   --text-code: 0.9em;
@@ -103,6 +110,7 @@
   /* A raised surface's edge, and an actionable row's (tokens.css, elevation). */
   --color-edge: var(--edge-raised);
   --color-edge-action: var(--edge-action);
+  --color-edge-group: var(--edge-group);
   --color-input: var(--border-strong);
   --color-ring: var(--focus-ring);
   --color-scrim: var(--scrim);
@@ -239,8 +247,30 @@
   ::selection {
     background-color: var(--selection);
   }
+  /* One optical stroke for every icon: Lucide draws on a 24-unit grid, so a fixed stroke would thin
+     a 14 px chip glyph and thicken an 18 px toolbar one. Each size token takes the stroke that draws
+     the same line as --icon-stroke does at 16 px (about 1.17 px), so a chip, a row and the title
+     bar's glyphs carry one weight. */
   .lucide {
     stroke-width: var(--icon-stroke);
+  }
+  .lucide:where(.size-icon-chip, .size-3\.5) {
+    stroke-width: calc(var(--icon-stroke) * 16 / 14);
+  }
+  .lucide:where(.size-3) {
+    stroke-width: calc(var(--icon-stroke) * 16 / 12);
+  }
+  .lucide:where(.size-icon-bar, .size-4\.5) {
+    stroke-width: calc(var(--icon-stroke) * 16 / 18);
+  }
+  .lucide:where(.size-5) {
+    stroke-width: calc(var(--icon-stroke) * 16 / 20);
+  }
+  .lucide:where(.size-6) {
+    stroke-width: calc(var(--icon-stroke) * 16 / 24);
+  }
+  .lucide:where(.size-7) {
+    stroke-width: calc(var(--icon-stroke) * 16 / 28);
   }
   /* A setting a link into Settings points at (`?highlight=`), marked until a click or a key. */
   [data-setting-spotlight] {
@@ -271,10 +301,17 @@
   ) {
   font-size: var(--transcript-text-size, 0.875rem);
 }
-/* Its line height follows its own size, 20 px at the default 14 px, rather than text-reading's,
-   which is set for the interface's larger reading step. */
+/* Its line height follows its own size, 22 px at the default 14 px, rather than text-reading's,
+   which is set for the interface's larger reading step: prose leads a little more openly than UI
+   text, so a long answer reads as paragraphs rather than a block. */
 [data-transcript] [data-slot="message-content"] {
-  line-height: calc(20 / 14);
+  line-height: calc(22 / 14);
+}
+/* Prose keeps a reading measure, about 85 characters, however wide the column is set: a paragraph,
+   a list or a quote stops there, while code, tables and the cards beside them use the column's full
+   width. In ch of its own size, so it follows Settings → Appearance → Reading's text size. */
+[data-transcript] [data-slot="message-content"] :is(p, ul, ol, blockquote) {
+  max-width: var(--reading-measure);
 }
 [data-transcript] [data-streamdown="heading-5"] {
   font-size: calc(1rem * var(--transcript-scale, 1));

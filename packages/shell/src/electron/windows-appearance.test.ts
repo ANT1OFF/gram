@@ -34,7 +34,7 @@ describe("window appearance bootstrap", () => {
       });
       const windows = await import("./windows.ts");
       windows.loadStoredAppearance("/mock/appearance.json");
-      expect(windows.themeColors()).toEqual({ background: "#0a0a0a", foreground: "#f5f5f5" });
+      expect(windows.themeColors()).toEqual({ background: "#131313", foreground: "#f5f5f5" });
       expect(mocks.nativeTheme.themeSource).toBe("dark");
       expect(mocks.writeFileSync).not.toHaveBeenCalled();
     },

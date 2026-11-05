@@ -60,9 +60,11 @@ test("picks a notification sound in Settings → Notifications", async ({ page }
     "aria-checked",
     "true",
   );
-  await section.getByRole("button", { name: "Preview Bell" }).click();
+  // One preview, named for the chosen sound, follows the choice.
+  await expect(section.getByRole("button", { name: "Preview Chime" })).toBeVisible();
   await sounds.getByRole("radio", { name: "Bell" }).click();
   await expect(sounds.getByRole("radio", { name: "Bell" })).toHaveAttribute("aria-checked", "true");
+  await section.getByRole("button", { name: "Preview Bell" }).click();
 
   await page.reload();
   await expect(

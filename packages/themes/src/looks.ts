@@ -41,11 +41,16 @@ export const TYPE_STEPS = [
 ] as const;
 export type TypeStep = (typeof TYPE_STEPS)[number];
 
-/** One step of the type scale, in pixels. `weight` is the default; a `font-*` class overrides it. */
+/**
+ * One step of the type scale, in pixels. `weight` is the default; a `font-*` class overrides it.
+ * `tracking` is letter spacing in em: Inter is drawn for text sizes, so the display steps tighten
+ * as they grow and the smallest opens a little, the way its optical sizes would.
+ */
 export interface TypeStyle {
   size: number;
   lineHeight: number;
   weight?: number;
+  tracking?: number;
 }
 
 export interface Look {
@@ -110,13 +115,15 @@ const glass: Look = {
     // Each step clearly apart from the next, every line height on the 4 px grid. Caption is only
     // for what is never read for meaning (a key cap, a count badge, an overline); metadata,
     // timestamps and chips are meta, a step under the UI text and a step above caption.
-    caption: { size: 11, lineHeight: 16 },
+    // Headings separate from body by size, weight and tracking at once: a title is 600 and drawn
+    // tighter, a page's heading a full step larger again, so neither reads as bold body text.
+    caption: { size: 11, lineHeight: 16, tracking: 0.01 },
     meta: { size: 13, lineHeight: 20 },
     body: { size: 14, lineHeight: 20 },
     "body-strong": { size: 14, lineHeight: 20, weight: 500 },
     reading: { size: 15, lineHeight: 24 },
-    title: { size: 17, lineHeight: 24, weight: 600 },
-    heading: { size: 22, lineHeight: 28, weight: 600 },
+    title: { size: 17, lineHeight: 24, weight: 600, tracking: -0.012 },
+    heading: { size: 24, lineHeight: 32, weight: 600, tracking: -0.02 },
   },
   radii: { "2xs": 4, xs: 8, sm: 12, md: 14, lg: 16, xl: 16, composer: 22 },
   density: {
