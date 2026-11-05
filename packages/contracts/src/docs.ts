@@ -1,9 +1,9 @@
 // A workspace's docs: reports, plans and analyses its threads publish with `publish_doc`, kept as
 // Markdown in Gram's own state (`<dataDir>/docs/<workspaceId>/`), never in a repo and never
-// uploaded. Each is a `<id>.md` file beside a `<id>.json` of what it is: title, the thread that
-// wrote it, when, and a revision that every save moves on, so an agent's update can't overwrite
-// an edit the user made since it last read the doc. Not claude.ai's Artifacts, which are pages
-// uploaded to claude.ai: these stay on this machine.
+// uploaded. Each is one `<id>.doc` record: a line of its metadata (title, the thread that wrote it,
+// when, and a revision that every save moves on, so an agent's update can't overwrite an edit the
+// user made since it last read the doc), then its Markdown. Not claude.ai's Artifacts, which are
+// pages uploaded to claude.ai: these stay on this machine.
 import * as Schema from "effect/Schema";
 import { ThreadId, WorkspaceId } from "./ids.ts";
 
@@ -31,26 +31,41 @@ export const DOC_EXCERPT_MAX = 280;
 export const DocEditor = Schema.Literals(["agent", "user"]);
 export type DocEditor = typeof DocEditor.Type;
 
-/** What a doc is, without its text. */
+/** The latest time a `Date` can hold, in epoch ms: a stored time past it is not one. */
+export const DOC_TIME_MAX = 8_640_000_000_000_000;
+/** The most revisions a doc counts to. */
+export const DOC_REVISION_MAX = 1_000_000_000;
+/** The longest thread or workspace id a doc records. */
+export const DOC_REF_MAX = 128;
+/**
+ * The most a doc's metadata line may take, serialised. Every field is bounded well under it; a
+ * publish whose line would pass it is refused, so a doc that was saved can always be read.
+ */
+export const DOC_META_MAX_BYTES = 16 * 1024;
+
+const bounded = (max: number) => Schema.String.check(Schema.isMaxLength(max));
+const DocTime = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: DOC_TIME_MAX }));
+
+/** What a doc is, without its text. Every field is bounded, so a decoded one is safe to show. */
 export const DocMeta = Schema.Struct({
   id: DocId,
-  workspaceId: WorkspaceId,
-  title: Schema.String,
+  workspaceId: WorkspaceId.check(Schema.isMaxLength(DOC_REF_MAX)),
+  title: bounded(DOC_TITLE_MAX),
   /** The thread that published it first. */
-  authorThreadId: ThreadId,
+  authorThreadId: ThreadId.check(Schema.isMaxLength(DOC_REF_MAX)),
   /** That thread's title when it published, so a closed thread's doc still says who wrote it. */
-  authorTitle: Schema.String,
+  authorTitle: bounded(DOC_TITLE_MAX),
   /** Epoch ms. */
-  createdAt: Schema.Number,
+  createdAt: DocTime,
   /** Epoch ms of the last save, the agent's or the user's. */
-  updatedAt: Schema.Number,
+  updatedAt: DocTime,
   updatedBy: DocEditor,
   /** Starts at 1 and moves on with every save. */
-  revision: Schema.Int,
+  revision: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: DOC_REVISION_MAX })),
   /** UTF-8 bytes of its Markdown. */
-  bytes: Schema.Int,
+  bytes: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: DOC_MAX_BYTES })),
   /** The opening prose, Markdown stripped, for a card's and a row's thumbnail. */
-  excerpt: Schema.String,
+  excerpt: bounded(DOC_EXCERPT_MAX),
 });
 export type DocMeta = typeof DocMeta.Type;
 
@@ -139,7 +154,10 @@ export const docExcerpt = (markdown: string, max = DOC_EXCERPT_MAX): string => {
 
 /** A title cut at a word to `DOC_TITLE_MAX`, with runs of whitespace made one space. */
 export const docTitle = (title: string): string => {
-  const one = title.replace(/\s+/g, " ").trim();
+  const one = title
+    .slice(0, DOC_TITLE_MAX * 4)
+    .replace(/\s+/g, " ")
+    .trim();
   if (one.length <= DOC_TITLE_MAX) return one;
   const cut = one.slice(0, DOC_TITLE_MAX - 1);
   const space = cut.lastIndexOf(" ");

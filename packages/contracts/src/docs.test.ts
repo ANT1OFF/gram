@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { DOC_TITLE_MAX, docExcerpt, docTitle } from "./docs.ts";
+import * as Schema from "effect/Schema";
+
+import { DOC_TITLE_MAX, DocMeta, docExcerpt, docTitle } from "./docs.ts";
 
 describe("docExcerpt", () => {
   it("keeps the opening prose and drops headings, fences, rules and Markdown marks", () => {
@@ -46,5 +48,40 @@ describe("docTitle", () => {
     const long = docTitle("plan ".repeat(60));
     expect(long.length).toBeLessThanOrEqual(DOC_TITLE_MAX);
     expect(long.endsWith("plan…")).toBe(true);
+  });
+});
+
+const decodes = (value: object) => Schema.decodeUnknownOption(DocMeta)(value)._tag === "Some";
+
+describe("DocMeta", () => {
+  const meta = {
+    id: "plan-3f9a2c",
+    workspaceId: "ws-1",
+    title: "Plan",
+    authorThreadId: "t-1",
+    authorTitle: "Worker",
+    createdAt: 1_700_000_000_000,
+    updatedAt: 1_700_000_000_000,
+    updatedBy: "agent",
+    revision: 1,
+    bytes: 1,
+    excerpt: "x",
+  };
+
+  it("bounds every field, times to what a Date can hold (review P2, P5)", () => {
+    expect(decodes(meta)).toBe(true);
+    for (const bad of [
+      { updatedAt: 1e100 },
+      { createdAt: -1 },
+      { updatedAt: 1.5 },
+      { revision: 0 },
+      { bytes: 256 * 1024 + 1 },
+      { title: "t".repeat(DOC_TITLE_MAX + 1) },
+      { authorTitle: "w".repeat(17_000) },
+      { excerpt: "e".repeat(281) },
+      { authorThreadId: "t".repeat(129) },
+    ]) {
+      expect(decodes({ ...meta, ...bad })).toBe(false);
+    }
   });
 });

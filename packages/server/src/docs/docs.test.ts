@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   DOC_MAX_BYTES,
+  DOC_TITLE_MAX,
   DocId,
   type ServerEvent,
   type ThreadId,
@@ -16,13 +17,16 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DocFileHooks } from "./doc-files.ts";
 import { makeDocs, newDocId, type DocAuthor } from "./docs.ts";
 
 const WS = "ws-docs" as WorkspaceId;
@@ -39,18 +43,25 @@ const ORCHESTRATOR: DocAuthor = {
 };
 
 /** Docs under a fresh `<tmp>/state/docs`, with the events they published. */
-const setup = Effect.gen(function* () {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "gram-docs-")));
-  yield* Effect.addFinalizer(() =>
-    Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
-  );
-  const root = join(dir, "state", "docs");
-  const events: ServerEvent[] = [];
-  const docs = makeDocs(root, (workspaceId) =>
-    Effect.sync(() => void events.push({ type: "docs.changed", workspaceId })),
-  );
-  return { dir, root, docs, events };
-});
+const setupWith = (hooks?: DocFileHooks) =>
+  Effect.gen(function* () {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "gram-docs-")));
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
+    );
+    const root = join(dir, "state", "docs");
+    const events: ServerEvent[] = [];
+    const docs = makeDocs(
+      root,
+      (workspaceId) => Effect.sync(() => void events.push({ type: "docs.changed", workspaceId })),
+      hooks,
+    );
+    return { dir, root, docs, events };
+  });
+const setup = setupWith();
+
+/** A record as the store writes it: its metadata line, then its Markdown. */
+const record = (meta: object, content: string) => `${JSON.stringify(meta)}\n${content}`;
 
 const REPORT = `# Harness features for gram: gap analysis
 
@@ -91,9 +102,9 @@ describe("docs", () => {
         excerpt: "Gram covers most of the harness surface. Feature · State Docs · New",
       });
       const folder = join(root, WS);
-      expect(readdirSync(folder).toSorted()).toEqual([`${meta.id}.json`, `${meta.id}.md`]);
-      expect(readFileSync(join(folder, `${meta.id}.md`), "utf8")).toBe(REPORT);
-      expect(JSON.parse(readFileSync(join(folder, `${meta.id}.json`), "utf8"))).toEqual(meta);
+      // One record: its metadata line, then the Markdown as published.
+      expect(readdirSync(folder)).toEqual([`${meta.id}.doc`]);
+      expect(readFileSync(join(folder, `${meta.id}.doc`), "utf8")).toBe(record(meta, REPORT));
       expect(events).toEqual([{ type: "docs.changed", workspaceId: WS }]);
       expect(yield* docs.read(WS, meta.id)).toEqual({ ...meta, content: REPORT });
     }).pipe(Effect.scoped),
@@ -111,8 +122,8 @@ describe("docs", () => {
           content: "Steps.",
         });
         expect(statSync(join(root, WS)).mode & 0o777).toBe(0o700);
-        expect(statSync(join(root, WS, `${meta.id}.md`)).mode & 0o777).toBe(0o600);
-        expect(statSync(join(root, WS, `${meta.id}.json`)).mode & 0o777).toBe(0o600);
+        expect(statSync(root).mode & 0o777).toBe(0o700);
+        expect(statSync(join(root, WS, `${meta.id}.doc`)).mode & 0o777).toBe(0o600);
       }).pipe(Effect.scoped),
   );
 
@@ -361,14 +372,14 @@ describe("doc paths", () => {
         const error = yield* Effect.flip(
           docs.publish({ workspaceId: WS, author: worker(1), title: "Plan", content: "x" }),
         );
-        expect(error.message).toContain("is a link or not a folder");
+        expect(error.message).toContain("is a link, not a folder, or not yours");
         expect(readdirSync(outside)).toEqual([]);
         expect((yield* Effect.flip(docs.list(WS))).message).toContain("is a link");
       }).pipe(Effect.scoped),
   );
 
   it.effect.skipIf(process.platform === "win32")(
-    "refuses to read a doc file that is a link, and a save replaces the link, not its target",
+    "refuses a doc file that is a link, reading and writing nothing through it",
     () =>
       Effect.gen(function* () {
         const { dir, root, docs } = yield* setup;
@@ -380,18 +391,18 @@ describe("doc paths", () => {
         });
         const secret = join(dir, "secret.txt");
         writeFileSync(secret, "not a doc");
-        const file = join(root, WS, `${meta.id}.md`);
+        const file = join(root, WS, `${meta.id}.doc`);
         rmSync(file);
         symlinkSync(secret, file);
         const error = yield* Effect.flip(docs.read(WS, meta.id));
         expect(error.message).toContain("isn't a plain file");
-        yield* docs.save(WS, meta.id, "replaced", 1);
+        const saved = yield* Effect.flip(docs.save(WS, meta.id, "replaced", 1));
+        expect(saved._tag).toBe("InvalidState");
         expect(readFileSync(secret, "utf8")).toBe("not a doc");
-        expect((yield* docs.read(WS, meta.id)).content).toBe("replaced");
       }).pipe(Effect.scoped),
   );
 
-  it.effect("ignores a metadata file that claims another doc or workspace", () =>
+  it.effect("leaves out a record that claims another doc or workspace, or doesn't read", () =>
     Effect.gen(function* () {
       const { root, docs } = yield* setup;
       const { meta } = yield* docs.publish({
@@ -402,15 +413,263 @@ describe("doc paths", () => {
       });
       const folder = join(root, WS);
       writeFileSync(
-        join(folder, "forged.json"),
-        JSON.stringify({ ...meta, id: "forged", workspaceId: OTHER_WS }),
+        join(folder, "forged.doc"),
+        record({ ...meta, id: "forged", workspaceId: OTHER_WS }, "x"),
       );
-      writeFileSync(join(folder, "forged.md"), "forged");
-      writeFileSync(join(folder, "broken.json"), "{");
-      writeFileSync(join(folder, "Not An Id.json"), JSON.stringify(meta));
-      expect((yield* docs.list(WS)).map((doc) => doc.id)).toEqual([meta.id]);
+      writeFileSync(join(folder, "broken.doc"), "{\nx");
+      writeFileSync(join(folder, "Not An Id.doc"), record(meta, "x"));
+      // Text that doesn't match the length its metadata says is a torn or tampered record.
+      writeFileSync(join(folder, "torn.doc"), record({ ...meta, id: "torn" }, "xx"));
+      // The list reads only each record's metadata line, so a torn one is listed; it won't open.
+      expect((yield* docs.list(WS)).map((doc) => doc.id)).toEqual([meta.id, "torn"]);
       const forged = yield* Effect.flip(docs.read(WS, "forged" as DocId));
       expect(forged.message).toContain("details don't read");
+      expect((yield* Effect.flip(docs.read(WS, "torn" as DocId))).message).toContain(
+        "details don't read",
+      );
+    }).pipe(Effect.scoped),
+  );
+});
+
+/** Swaps the workspace folder for a link to `outside`, as a racing local writer would. */
+const swap = (root: string, outside: string) => {
+  const folder = join(root, WS);
+  renameSync(folder, `${folder}.real`);
+  symlinkSync(outside, folder);
+};
+const swapBack = (root: string) => {
+  const folder = join(root, WS);
+  rmSync(folder);
+  renameSync(`${folder}.real`, folder);
+};
+
+// The independent review of #197 (P1–P5): a test for each finding.
+describe("doc review findings", () => {
+  it.effect("P1: a failed commit (a full disk at the rename) leaves the last saved doc whole", () =>
+    Effect.gen(function* () {
+      let full = false;
+      const { root, docs } = yield* setupWith({
+        rename: async (from, to) => {
+          if (full) throw Object.assign(new Error("no space"), { code: "ENOSPC" });
+          await rename(from, to);
+        },
+      });
+      const { meta } = yield* docs.publish({
+        workspaceId: WS,
+        author: worker(1),
+        title: "Plan",
+        content: "rev 1",
+      });
+      full = true;
+      const failed = yield* Effect.flip(
+        docs.publish({
+          workspaceId: WS,
+          author: worker(1),
+          id: meta.id,
+          revision: 1,
+          content: "rev 2",
+        }),
+      );
+      expect(failed._tag).toBe("FsError");
+      expect(failed.message).toContain("ENOSPC");
+      expect(failed.message).not.toContain(root);
+      const read = yield* docs.read(WS, meta.id);
+      expect([read.revision, read.content]).toEqual([1, "rev 1"]);
+      expect((yield* docs.list(WS)).map((doc) => doc.revision)).toEqual([1]);
+      // No temp file is left behind.
+      expect(readdirSync(join(root, WS))).toEqual([`${meta.id}.doc`]);
+      full = false;
+      const saved = yield* docs.publish({
+        workspaceId: WS,
+        author: worker(1),
+        id: meta.id,
+        revision: 1,
+        content: "rev 2",
+      });
+      expect(saved.meta.revision).toBe(2);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("P1: an unlocked read always sees one revision's text with that revision", () =>
+    Effect.gen(function* () {
+      const { docs } = yield* setup;
+      const { meta } = yield* docs.publish({
+        workspaceId: WS,
+        author: worker(1),
+        title: "Plan",
+        content: "rev 1",
+      });
+      const updates = Effect.forEach(
+        Array.from({ length: 30 }, (_, i) => i + 1),
+        (revision) =>
+          docs.publish({
+            workspaceId: WS,
+            author: worker(1),
+            id: meta.id,
+            revision,
+            content: `rev ${revision + 1}`,
+          }),
+      );
+      const reads = Effect.forEach(Array.from({ length: 60 }), () => docs.read(WS, meta.id), {
+        concurrency: 4,
+      });
+      const [, seen] = yield* Effect.all([updates, reads], { concurrency: 2 });
+      for (const doc of seen) expect(doc.content).toBe(`rev ${doc.revision}`);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(process.platform === "win32")(
+    "P2: refuses a docs root that is a link, writing nothing through it",
+    () =>
+      Effect.gen(function* () {
+        const { dir, root, docs } = yield* setup;
+        const outside = join(dir, "outside");
+        mkdirSync(outside);
+        mkdirSync(join(root, ".."), { recursive: true });
+        symlinkSync(outside, root);
+        const error = yield* Effect.flip(
+          docs.publish({ workspaceId: WS, author: worker(1), title: "Plan", content: "secret" }),
+        );
+        expect(error.message).toContain("is a link, not a folder, or not yours");
+        // `mkdir` may have made the empty workspace folder before the refusal; no doc is written.
+        expect(readdirSync(outside).flatMap((name) => readdirSync(join(outside, name)))).toEqual(
+          [],
+        );
+        expect((yield* Effect.flip(docs.list(WS))).message).toContain("is a link");
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(process.platform === "win32")(
+    "P2: a read whose folder is swapped for a link after the check returns nothing from outside",
+    () =>
+      Effect.gen(function* () {
+        let race: ((path: string) => Promise<void>) | undefined;
+        let after: ((path: string) => Promise<void>) | undefined;
+        const { dir, root, docs } = yield* setupWith({
+          beforeOpen: async (path) => race?.(path),
+          afterOpen: async (path) => after?.(path),
+        });
+        const { meta } = yield* docs.publish({
+          workspaceId: WS,
+          author: worker(1),
+          title: "Plan",
+          content: "mine",
+        });
+        // Outside, a record of the same name holding text that must never be served.
+        const outside = join(dir, "outside");
+        mkdirSync(outside);
+        writeFileSync(
+          join(outside, `${meta.id}.doc`),
+          record(meta, "SECRET").replace('"bytes":4', '"bytes":6'),
+        );
+
+        // Swapped and left: the folder is no longer the pinned one.
+        race = async () => {
+          race = undefined;
+          swap(root, outside);
+        };
+        const left = yield* Effect.flip(docs.read(WS, meta.id));
+        expect(left.message).toContain("changed during the operation");
+        swapBack(root);
+
+        // Swapped, then put back once the outside file is open: the file at the path is not it.
+        let opened = 0;
+        race = async () => {
+          race = undefined;
+          swap(root, outside);
+        };
+        after = async () => {
+          after = undefined;
+          opened += 1;
+          swapBack(root);
+        };
+        // The outside file's read fails its check and is dropped; the read tried again is ours.
+        expect((yield* docs.read(WS, meta.id)).content).toBe("mine");
+        expect(opened).toBe(1);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(process.platform === "win32")(
+    "P2: a write whose folder is swapped for a link after the check puts no text outside",
+    () =>
+      Effect.gen(function* () {
+        let race: ((path: string) => Promise<void>) | undefined;
+        const { dir, root, docs } = yield* setupWith({ beforeOpen: async (path) => race?.(path) });
+        const { meta } = yield* docs.publish({
+          workspaceId: WS,
+          author: worker(1),
+          title: "Plan",
+          content: "mine",
+        });
+        const outside = join(dir, "outside");
+        mkdirSync(outside);
+        race = async (path) => {
+          if (!path.includes(".tmp-")) return;
+          race = undefined;
+          swap(root, outside);
+        };
+        const error = yield* Effect.flip(docs.save(WS, meta.id, "SECRET", 1));
+        expect(error.message).toContain("changed during the operation");
+        for (const name of readdirSync(outside)) {
+          expect(readFileSync(join(outside, name), "utf8")).not.toContain("SECRET");
+        }
+        swapBack(root);
+        expect((yield* docs.read(WS, meta.id)).content).toBe("mine");
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("P2: an oversized author title is bounded, so the doc stays listed and readable", () =>
+    Effect.gen(function* () {
+      const { docs } = yield* setup;
+      const author = { ...worker(1), title: "w".repeat(17_000) };
+      const { meta } = yield* docs.publish({
+        workspaceId: WS,
+        author,
+        title: "t".repeat(17_000),
+        content: "x",
+      });
+      expect(meta.authorTitle.length).toBeLessThanOrEqual(DOC_TITLE_MAX);
+      expect(meta.title.length).toBeLessThanOrEqual(DOC_TITLE_MAX);
+      expect((yield* docs.list(WS)).map((doc) => doc.id)).toEqual([meta.id]);
+      expect((yield* docs.read(WS, meta.id)).content).toBe("x");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("P3: text that reads like a verdict publishes and reads back as text", () =>
+    Effect.gen(function* () {
+      const { docs } = yield* setup;
+      for (const content of ["not-plain", "too-big", "Missing", "NotPlain"]) {
+        const { meta } = yield* docs.publish({
+          workspaceId: WS,
+          author: worker(1),
+          title: content,
+          content,
+        });
+        expect((yield* docs.read(WS, meta.id)).content).toBe(content);
+      }
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("P5: metadata with an impossible time is left out, not thrown on", () =>
+    Effect.gen(function* () {
+      const { root, docs } = yield* setup;
+      const { meta } = yield* docs.publish({
+        workspaceId: WS,
+        author: worker(1),
+        title: "Real",
+        content: "x",
+      });
+      writeFileSync(
+        join(root, WS, "far-future.doc"),
+        record({ ...meta, id: "far-future", updatedAt: 1e100 }, "x"),
+      );
+      writeFileSync(
+        join(root, WS, "negative.doc"),
+        record({ ...meta, id: "negative", createdAt: -1 }, "x"),
+      );
+      expect((yield* docs.list(WS)).map((doc) => doc.id)).toEqual([meta.id]);
+      const error = yield* Effect.flip(docs.read(WS, "far-future" as DocId));
+      expect(error.message).toContain("details don't read");
     }).pipe(Effect.scoped),
   );
 });

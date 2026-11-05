@@ -1,17 +1,19 @@
 // A workspace's docs (`@gram/contracts` `docs.ts`): Markdown its threads publish with `publish_doc`
 // and the user edits in the doc pane, kept in Gram's state at `<dataDir>/docs/<workspaceId>/`, one
-// `<id>.md` beside one `<id>.json` of its metadata. Never in a repo, never uploaded.
+// `<id>.doc` record each: a line of its metadata, then its Markdown. Never in a repo, never uploaded.
 //
 // Every path is built here from two checked segments: the workspace id (`WORKSPACE_SEGMENT`) and the
-// doc id (`DOC_ID_PATTERN`, lowercase letters, digits and inner hyphens), so no input can name
-// `..`, a separator or another folder. On disk the workspace folder must be a real folder whose real
-// path is the docs root's own child, a doc file must be a singly linked regular file opened without
-// following a link, and a write goes to a fresh temp file renamed over the target, which replaces a
-// planted link rather than writing through it. Folders are 0700 and files 0600.
+// doc id (`DOC_ID_PATTERN`: lowercase letters, digits and inner hyphens), so no input can name `..`,
+// a separator or another folder. The file layer (`doc-files.ts`) pins the docs root and the
+// workspace folder for each operation and refuses a link in either. A save is one record renamed
+// into place, so a failed write leaves the last saved doc whole, and a read is one file, so its text
+// and its revision always belong together. Every metadata field is bounded, and a record whose
+// metadata line would pass its read cap is refused at the save, so whatever was saved can be read.
 
 import {
   DOC_ID_PATTERN,
   DOC_MAX_BYTES,
+  DOC_META_MAX_BYTES,
   DOCS_PER_WORKSPACE_MAX,
   DocMeta,
   docExcerpt,
@@ -26,25 +28,29 @@ import {
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
-import { isInside, realPath } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { randomBytes, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
+import {
+  DocRefusal,
+  listPinned,
+  openFolder,
+  readPinned,
+  writePinned,
+  type DocFileHooks,
+  type DocFolder,
+} from "./doc-files.ts";
 
 /** A workspace id as a folder name; ids are UUIDs, tests use short names. */
 const WORKSPACE_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
-/** A metadata file is small; one past this is not one of ours. */
-const META_MAX_BYTES = 16 * 1024;
 
 export type DocError = InvalidState | NotFound | FsError;
 
@@ -103,17 +109,6 @@ const fsError = (shown: string, error: unknown) => {
   });
 };
 
-const attempt = <A>(shown: string, run: () => Promise<A>): Effect.Effect<A, FsError> =>
-  Effect.tryPromise({ try: run, catch: (error) => fsError(shown, error) });
-
-/** `undefined` when the path isn't there; any other failure is an error. */
-const attemptExisting = <A>(shown: string, run: () => Promise<A>) =>
-  Effect.tryPromise({ try: run, catch: (error) => error }).pipe(
-    Effect.catch((error) =>
-      codeOf(error) === "ENOENT" ? Effect.succeed(undefined) : Effect.fail(fsError(shown, error)),
-    ),
-  );
-
 const kb = (bytes: number) => `${Math.ceil(bytes / 1024)} KB`;
 
 /** `gap-analysis-3f9a2c`: the title's words, then six random hex digits. */
@@ -133,36 +128,12 @@ export const newDocId = (title: string): DocId => {
 };
 
 const decodeMeta = Schema.decodeUnknownOption(DocMeta);
-const metaJson = (meta: DocMeta) => `${JSON.stringify(meta, null, 2)}\n`;
 
-/** A file's bytes, read without following a link and refused past `max` or with a second link. */
-const readFileBounded = (path: string, shown: string, max: number) =>
-  attemptExisting(shown, async () => {
-    const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    try {
-      const stats = await handle.stat();
-      if (!stats.isFile() || stats.nlink !== 1) return "not-plain" as const;
-      if (stats.size > max) return "too-big" as const;
-      const bytes = Buffer.alloc(max + 1);
-      let length = 0;
-      while (length < bytes.length) {
-        const { bytesRead } = await handle.read(bytes, length, bytes.length - length, null);
-        if (bytesRead === 0) break;
-        length += bytesRead;
-      }
-      if (length > max) return "too-big" as const;
-      return bytes.subarray(0, length).toString("utf8");
-    } finally {
-      await handle.close();
-    }
-  }).pipe(
-    // `O_NOFOLLOW` on a link fails with ELOOP (EMLINK on some BSDs): refused, not an access error.
-    Effect.catch((error) =>
-      /\((ELOOP|EMLINK)\)$/.test(error.message)
-        ? Effect.succeed("not-plain" as const)
-        : Effect.fail(error),
-    ),
-  );
+/** A doc's record: one line of its metadata, then its Markdown, committed by one rename. */
+const RECORD = ".doc";
+const recordName = (id: DocId) => `${id}${RECORD}`;
+const HEAD_MAX = DOC_META_MAX_BYTES + 1;
+const RECORD_MAX = HEAD_MAX + DOC_MAX_BYTES;
 
 const checkedId = (id: string) =>
   DOC_ID_PATTERN.test(id)
@@ -172,57 +143,41 @@ const checkedId = (id: string) =>
 const notFound = (id: string) =>
   new NotFound({ entity: "file", id, message: `No doc ${id} in this workspace` });
 
-const readMeta = (dir: string, workspaceId: WorkspaceId, id: DocId) =>
-  Effect.gen(function* () {
-    const text = yield* readFileBounded(join(dir, `${id}.json`), id, META_MAX_BYTES);
-    if (text === undefined) return undefined;
-    if (text === "not-plain" || text === "too-big") {
-      return yield* refuse(`The doc ${id} isn't a plain file, so it wasn't read`);
-    }
-    const parsed = yield* Effect.try({ try: () => JSON.parse(text) as unknown, catch: () => id });
-    const meta = decodeMeta(parsed);
-    // A file that says it is another doc, or another workspace's, is not this one.
-    if (meta._tag === "None" || meta.value.id !== id || meta.value.workspaceId !== workspaceId) {
-      return yield* refuse(`The doc ${id}'s details don't read, so it wasn't opened`);
-    }
-    return meta.value;
-  }).pipe(
-    Effect.catch((error) =>
-      typeof error === "string"
-        ? Effect.fail(refuse(`The doc ${id}'s details don't read, so it wasn't opened`))
-        : Effect.fail(error),
-    ),
-  );
+const unreadable = (id: string) =>
+  refuse(`The doc ${id}'s details don't read, so it wasn't opened`);
 
-const readContent = (dir: string, id: DocId) =>
-  Effect.gen(function* () {
-    const text = yield* readFileBounded(join(dir, `${id}.md`), id, DOC_MAX_BYTES);
-    if (text === undefined) return yield* notFound(id);
-    if (text === "not-plain") return yield* refuse(`The doc ${id} isn't a plain file`);
-    if (text === "too-big") return yield* refuse(`The doc ${id} is past ${kb(DOC_MAX_BYTES)}`);
-    return text;
-  });
+/**
+ * The metadata a record's first line holds, when it decodes, is in bounds and names this doc of
+ * this workspace; `undefined` otherwise.
+ */
+const metaOf = (head: string, workspaceId: WorkspaceId, id: DocId): DocMeta | undefined => {
+  const end = head.indexOf("\n");
+  if (end < 0 || end > DOC_META_MAX_BYTES) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(head.slice(0, end));
+  } catch {
+    return undefined;
+  }
+  const meta = decodeMeta(parsed);
+  // A record that says it is another doc, or another workspace's, is not this one.
+  if (meta._tag === "None" || meta.value.id !== id || meta.value.workspaceId !== workspaceId) {
+    return undefined;
+  }
+  return meta.value;
+};
 
-/** A fresh temp file beside the target, renamed over it: the old file or the new, never half. */
-const writeAtomic = (dir: string, name: string, shown: string, content: string) =>
-  Effect.gen(function* () {
-    const target = join(dir, name);
-    const existing = yield* attemptExisting(shown, () => lstat(target));
-    if (existing !== undefined && existing.isDirectory()) {
-      return yield* refuse(`The doc ${shown} is a folder`);
-    }
-    const temp = join(dir, `.tmp-${randomUUID()}`);
-    yield* attempt(shown, async () => {
-      try {
-        // `wx` refuses a name that exists, a link included, so the temp file is ours.
-        await writeFile(temp, content, { encoding: "utf8", flag: "wx", mode: 0o600 });
-        await rename(temp, target);
-      } catch (error) {
-        await unlink(temp).catch(() => undefined);
-        throw error;
-      }
-    });
-  });
+/** The record for `meta` and `content`, refused if its metadata is out of bounds. */
+const recordOf = (meta: DocMeta, content: string) => {
+  if (decodeMeta(meta)._tag === "None") {
+    return Effect.fail(refuse("The doc's details are out of bounds, so it wasn't saved"));
+  }
+  const line = JSON.stringify(meta);
+  if (Buffer.byteLength(line, "utf8") > DOC_META_MAX_BYTES) {
+    return Effect.fail(refuse("The doc's details are too long, so it wasn't saved"));
+  }
+  return Effect.succeed(`${line}\n${content}`);
+};
 
 const checkContent = (content: string) => {
   const bytes = Buffer.byteLength(content, "utf8");
@@ -231,87 +186,95 @@ const checkContent = (content: string) => {
     : Effect.succeed(bytes);
 };
 
-const listIn = (dir: string, workspaceId: WorkspaceId) =>
-  Effect.gen(function* () {
-    const entries = yield* attempt("folder", () => readdir(dir, { withFileTypes: true }));
-    const docs: DocMeta[] = [];
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-      const id = entry.name.slice(0, -".json".length);
-      if (!DOC_ID_PATTERN.test(id)) continue;
-      const meta = yield* readMeta(dir, workspaceId, id as DocId).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      );
-      if (meta !== undefined) docs.push(meta);
-    }
-    return docs.toSorted((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
-  });
+/** A refusal as `InvalidState`, any other failure as an `FsError` naming only `shown`. */
+const run = <A>(shown: string, io: () => Promise<A>): Effect.Effect<A, InvalidState | FsError> =>
+  Effect.tryPromise({ try: io, catch: (error) => error }).pipe(
+    Effect.catch((error) =>
+      Effect.fail(error instanceof DocRefusal ? refuse(error.message) : fsError(shown, error)),
+    ),
+  );
 
-/** Writes `content` and then `meta`: the metadata is the commit, so a doc is listed once whole. */
-const commit = (dir: string, meta: DocMeta, content: string) =>
-  Effect.gen(function* () {
-    yield* writeAtomic(dir, `${meta.id}.md`, meta.id, content);
-    yield* writeAtomic(dir, `${meta.id}.json`, meta.id, metaJson(meta));
-  });
-
-/** The docs under `root`, one folder per workspace. */
+/** The docs under `root`, one folder per workspace. `hooks` are tests' racing writer and full disk. */
 export const makeDocs = (
   root: string,
   publishChanged: (workspaceId: WorkspaceId) => Effect.Effect<void>,
+  hooks?: DocFileHooks,
 ): DocsShape => {
   const locks = makeKeyedLock<string>();
 
-  /**
-   * The workspace's folder: refused for an id that isn't a plain segment, a folder that is a link
-   * or not a folder, or one whose real path isn't the docs root's own child. `create` makes it (and
-   * the root) when missing; otherwise a missing folder is `undefined`, a workspace with no docs.
-   */
   const folder = (workspaceId: WorkspaceId, create: boolean) =>
+    WORKSPACE_SEGMENT.test(workspaceId)
+      ? run("folder", () => openFolder(root, workspaceId, create))
+      : Effect.fail(refuse("That isn't a workspace docs can be kept for"));
+
+  const readHead = (at: DocFolder, workspaceId: WorkspaceId, id: DocId) =>
     Effect.gen(function* () {
-      if (!WORKSPACE_SEGMENT.test(workspaceId)) {
-        return yield* refuse("That isn't a workspace docs can be kept for");
-      }
-      const abs = join(root, workspaceId);
-      if (create) {
-        yield* attempt("folder", () => mkdir(root, { recursive: true, mode: 0o700 }));
-        yield* attemptExisting("folder", () => mkdir(abs, { mode: 0o700 })).pipe(
-          Effect.catch((error) =>
-            error.message.endsWith("(EEXIST)") ? Effect.void : Effect.fail(error),
-          ),
+      const head = yield* run(id, () =>
+        readPinned(at, recordName(id), HEAD_MAX, { whole: false, hooks }),
+      );
+      if (head._tag === "Missing") return undefined;
+      if (head._tag !== "Read") return yield* unreadable(id);
+      return metaOf(head.text, workspaceId, id) ?? (yield* unreadable(id));
+    });
+
+  const listIn = (at: DocFolder, workspaceId: WorkspaceId) =>
+    Effect.gen(function* () {
+      const names = yield* run("folder", () => listPinned(at));
+      const docs: DocMeta[] = [];
+      for (const name of names) {
+        if (!name.endsWith(RECORD)) continue;
+        const id = name.slice(0, -RECORD.length);
+        if (!DOC_ID_PATTERN.test(id)) continue;
+        // One that doesn't read is left out of the list rather than failing it.
+        const meta = yield* readHead(at, workspaceId, id as DocId).pipe(
+          Effect.catch(() => Effect.succeed(undefined)),
         );
+        if (meta !== undefined) docs.push(meta);
       }
-      const stats = yield* attemptExisting("folder", () => lstat(abs));
-      if (stats === undefined) return undefined;
-      if (stats.isSymbolicLink() || !stats.isDirectory()) {
-        return yield* refuse(
-          "The workspace's docs folder is a link or not a folder, so nothing was read or written",
-        );
-      }
-      // The data dir itself may sit behind a link (`/tmp` on macOS): only the step from the root to
-      // the workspace folder is judged.
-      const realRoot = yield* attempt("folder", () => realPath(root));
-      const realAbs = yield* attempt("folder", () => realPath(abs));
-      if (realAbs !== join(realRoot, workspaceId) || !isInside(realRoot, realAbs)) {
-        return yield* refuse("The workspace's docs folder is outside Gram's docs");
-      }
-      return abs;
+      return docs.toSorted((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
     });
 
   const list: DocsShape["list"] = (workspaceId) =>
     Effect.gen(function* () {
-      const dir = yield* folder(workspaceId, false);
-      return dir === undefined ? [] : yield* listIn(dir, workspaceId);
+      const at = yield* folder(workspaceId, false);
+      return at === undefined ? [] : yield* listIn(at, workspaceId);
+    });
+
+  /** The whole record, read once: its metadata and text always belong together. */
+  const readDoc = (at: DocFolder, workspaceId: WorkspaceId, id: DocId) =>
+    Effect.gen(function* () {
+      const record = yield* run(id, () =>
+        readPinned(at, recordName(id), RECORD_MAX, { whole: true, hooks }),
+      );
+      switch (record._tag) {
+        case "Missing":
+          return undefined;
+        case "NotPlain":
+          return yield* refuse(`The doc ${id} isn't a plain file, so it wasn't read`);
+        case "TooBig":
+          return yield* refuse(`The doc ${id} is past ${kb(DOC_MAX_BYTES)}, so it wasn't read`);
+        case "Read":
+          break;
+      }
+      const meta = metaOf(record.text, workspaceId, id);
+      if (meta === undefined) return yield* unreadable(id);
+      const content = record.text.slice(record.text.indexOf("\n") + 1);
+      if (Buffer.byteLength(content, "utf8") !== meta.bytes) return yield* unreadable(id);
+      return { ...meta, content } satisfies Doc;
     });
 
   const read: DocsShape["read"] = (workspaceId, rawId) =>
     Effect.gen(function* () {
       const id = yield* checkedId(rawId);
-      const dir = yield* folder(workspaceId, false);
-      if (dir === undefined) return yield* notFound(id);
-      const meta = yield* readMeta(dir, workspaceId, id);
-      if (meta === undefined) return yield* notFound(id);
-      const content = yield* readContent(dir, id);
-      return { ...meta, content };
+      const at = yield* folder(workspaceId, false);
+      const doc = at === undefined ? undefined : yield* readDoc(at, workspaceId, id);
+      return doc ?? (yield* notFound(id));
+    });
+
+  const commit = (at: DocFolder, meta: DocMeta, content: string) =>
+    Effect.gen(function* () {
+      const record = yield* recordOf(meta, content);
+      yield* run(meta.id, () => writePinned(at, recordName(meta.id), record, hooks));
     });
 
   const publish: DocsShape["publish"] = (input) =>
@@ -322,12 +285,12 @@ export const makeDocs = (
         const content = redactText(input.content);
         const bytes = yield* checkContent(content);
         const now = yield* Clock.currentTimeMillis;
-        const dir = yield* folder(input.workspaceId, true);
-        if (dir === undefined) return yield* refuse("The workspace's docs folder couldn't be made");
+        const at = yield* folder(input.workspaceId, true);
+        if (at === undefined) return yield* refuse("The workspace's docs folder couldn't be made");
         if (input.id === undefined) {
           const title = docTitle(input.title ?? "");
           if (title === "") return yield* refuse("A new doc needs a title");
-          const existing = yield* listIn(dir, input.workspaceId);
+          const existing = yield* listIn(at, input.workspaceId);
           if (existing.length >= DOCS_PER_WORKSPACE_MAX) {
             return yield* refuse(
               `This workspace keeps at most ${DOCS_PER_WORKSPACE_MAX} docs; update one instead`,
@@ -340,7 +303,7 @@ export const makeDocs = (
             workspaceId: input.workspaceId,
             title,
             authorThreadId: input.author.threadId,
-            authorTitle: input.author.title,
+            authorTitle: docTitle(input.author.title) || "Untitled thread",
             createdAt: now,
             updatedAt: now,
             updatedBy: "agent",
@@ -348,12 +311,12 @@ export const makeDocs = (
             bytes,
             excerpt: docExcerpt(content),
           };
-          yield* commit(dir, meta, content);
+          yield* commit(at, meta, content);
           yield* publishChanged(input.workspaceId);
           return { meta, action: "published" as const };
         }
         const id = yield* checkedId(input.id);
-        const current = yield* readMeta(dir, input.workspaceId, id);
+        const current = yield* readHead(at, input.workspaceId, id);
         if (current === undefined) {
           return yield* refuse(
             `No doc ${id} in this workspace. Leave out \`id\` to publish a new one.`,
@@ -388,7 +351,7 @@ export const makeDocs = (
           bytes,
           excerpt: docExcerpt(content),
         };
-        yield* commit(dir, meta, content);
+        yield* commit(at, meta, content);
         yield* publishChanged(input.workspaceId);
         return { meta, action: "updated" as const };
       }),
@@ -400,9 +363,9 @@ export const makeDocs = (
       Effect.gen(function* () {
         const id = yield* checkedId(rawId);
         const bytes = yield* checkContent(content);
-        const dir = yield* folder(workspaceId, false);
-        if (dir === undefined) return yield* notFound(id);
-        const current = yield* readMeta(dir, workspaceId, id);
+        const at = yield* folder(workspaceId, false);
+        if (at === undefined) return yield* notFound(id);
+        const current = yield* readHead(at, workspaceId, id);
         if (current === undefined) return yield* notFound(id);
         if (revision !== current.revision) {
           return yield* refuse(
@@ -420,7 +383,7 @@ export const makeDocs = (
           bytes,
           excerpt: docExcerpt(content),
         };
-        yield* commit(dir, meta, content);
+        yield* commit(at, meta, content);
         yield* publishChanged(workspaceId);
         return meta;
       }),

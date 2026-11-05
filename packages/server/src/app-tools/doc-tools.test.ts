@@ -8,7 +8,7 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeDocs } from "../docs/docs.ts";
@@ -48,7 +48,8 @@ const setup = Effect.gen(function* () {
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => rmSync(dir, { recursive: true, force: true })),
   );
-  const docs = makeDocs(join(dir, "docs"), () => Effect.void);
+  const root = join(dir, "docs");
+  const docs = makeDocs(root, () => Effect.void);
   const chunks: Array<{ threadId: ThreadId; chunk: GramUIMessageChunk }> = [];
   const store = {
     getThread: (threadId: ThreadId) =>
@@ -73,7 +74,7 @@ const setup = Effect.gen(function* () {
     const named = (name: string) => bound.find((tool) => tool.descriptor.name === name)!;
     return { publish: named("publish_doc"), read: named("read_doc") };
   };
-  return { chunks, tools };
+  return { chunks, tools, root };
 });
 
 describe("publish_doc", () => {
@@ -205,6 +206,24 @@ describe("read_doc", () => {
       });
       const solo = yield* Effect.flip(tools(SOLO).read.run({ id }));
       expect(solo.message).toContain("Docs belong to a workspace");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("lists past a record with an impossible time instead of throwing (review P5)", () =>
+    Effect.gen(function* () {
+      const { tools, root } = yield* setup;
+      const { id } = (yield* tools(WORKER).publish.run({ title: "Plan", content: "A." })) as {
+        id: string;
+      };
+      const record = readFileSync(join(root, WS, `${id}.doc`), "utf8");
+      const [line, ...rest] = record.split("\n");
+      const meta = JSON.parse(line!) as Record<string, unknown>;
+      writeFileSync(
+        join(root, WS, "far-future.doc"),
+        `${JSON.stringify({ ...meta, id: "far-future", updatedAt: 1e100 })}\n${rest.join("\n")}`,
+      );
+      const listed = (yield* tools(ORCHESTRATOR).read.run({})) as { docs: Array<{ id: string }> };
+      expect(listed.docs.map((doc) => doc.id)).toEqual([id]);
     }).pipe(Effect.scoped),
   );
 });
