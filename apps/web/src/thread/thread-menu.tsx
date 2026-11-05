@@ -71,7 +71,7 @@ export function useThreadMenu(threadId: ThreadId): {
         <GitFork aria-hidden className="size-3.5" />
         Fork thread
       </Menu.Item>
-      {reason && <p className="px-2 py-1 text-xs text-muted-foreground">{reason}</p>}
+      {reason && <p className="px-2 py-1 text-meta text-muted-foreground">{reason}</p>}
       <ThreadMenuItems threadId={threadId} itemClassName={itemClassName} />
     </>
   );
@@ -83,7 +83,7 @@ export function useThreadMenu(threadId: ThreadId): {
           type="button"
           role="alert"
           title={`${error} (click to dismiss)`}
-          className="max-w-48 shrink truncate text-xs text-destructive @max-md:hidden"
+          className="max-w-48 shrink truncate text-meta text-destructive @max-md:hidden"
           onClick={clearError}
         >
           {error}

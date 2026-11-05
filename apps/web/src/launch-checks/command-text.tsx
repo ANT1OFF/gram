@@ -7,7 +7,7 @@ export function CommandText({ text }: { text: string }) {
     <span>
       {text.split("`").map((part, i) =>
         i % 2 === 1 ? (
-          <code key={i} className="rounded-sm bg-muted px-1 font-mono text-[0.9em]">
+          <code key={i} className="rounded-sm bg-muted px-1 font-mono text-code">
             {part}
           </code>
         ) : (

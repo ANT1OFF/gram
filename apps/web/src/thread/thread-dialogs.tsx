@@ -132,7 +132,7 @@ export function ThreadDialogs() {
       <ScriptShortcuts />
       {error !== undefined && (
         <DialogShell testId="thread-action-error" title="That didn't work" onClose={clearError}>
-          <p role="alert" className="text-sm">
+          <p role="alert" className="text-reading">
             {error}
           </p>
           <div className="flex justify-end">

@@ -397,7 +397,7 @@ export function ConnectorsSettings() {
           role="row"
           aria-label={row.name}
           data-testid="configured-connector"
-          className="grid grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,1fr))] items-start gap-x-3 border-t border-border px-3 py-2 text-xs"
+          className="grid grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,1fr))] items-start gap-x-3 border-t border-border px-3 py-2 text-meta"
         >
           <div role="rowheader" className="flex min-w-0 flex-col gap-0.5">
             <span className="truncate font-mono">{row.name}</span>
@@ -444,7 +444,7 @@ export function ConnectorsSettings() {
             ))}
           </SelectContent>
         </Select>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-meta text-muted-foreground">
           {cwd === undefined
             ? "Servers you have in every project. Pick a project to see its own as well."
             : "With this project's own servers."}
@@ -476,7 +476,7 @@ export function ConnectorsSettings() {
       {adding !== undefined && (
         <div className="overflow-hidden rounded-lg border border-border">
           {adding.note !== undefined && (
-            <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+            <p className="border-b border-border px-3 py-2 text-meta text-muted-foreground">
               {adding.note}
             </p>
           )}
@@ -495,12 +495,12 @@ export function ConnectorsSettings() {
         </div>
       )}
       {notice && (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="text-meta text-muted-foreground">
           {notice}
         </p>
       )}
       {action.error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {errorMessage(action.error)}
         </p>
       )}
@@ -511,12 +511,12 @@ export function ConnectorsSettings() {
           placeholder="Filter by name"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
-          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-meta outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       )}
 
       {query.isPending ? (
-        <p className="text-sm text-muted-foreground">Reading each agent&rsquo;s config…</p>
+        <p className="text-reading text-muted-foreground">Reading each agent&rsquo;s config…</p>
       ) : query.isError ? (
         <QueryError error={query.error} feature="Connectors" />
       ) : (
@@ -528,7 +528,7 @@ export function ConnectorsSettings() {
           <div role="rowgroup">
             <div
               role="row"
-              className="grid grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,1fr))] items-center gap-x-3 bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground"
+              className="grid grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,1fr))] items-center gap-x-3 bg-muted/30 px-3 py-1.5 text-meta text-muted-foreground"
             >
               <span role="columnheader">Server</span>
               {MCP_TARGETS.map((target) => {
@@ -545,7 +545,7 @@ export function ConnectorsSettings() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-5 px-1 text-xs"
+                        className="h-5 px-1 text-meta"
                         disabled={codexSignIns.isFetching}
                         title={SIGN_IN_NOTE.onRequest}
                         onClick={() => void checkCodex()}
@@ -564,7 +564,7 @@ export function ConnectorsSettings() {
               : [
                   <p
                     key={agent.target}
-                    className="border-t border-border px-3 py-2 text-xs text-muted-foreground"
+                    className="border-t border-border px-3 py-2 text-meta text-muted-foreground"
                   >
                     Couldn&rsquo;t read {MCP_TARGET_LABEL[agent.target]}&rsquo;s config:{" "}
                     {agent.error}
@@ -572,11 +572,11 @@ export function ConnectorsSettings() {
                 ],
           )}
           {matrix.total === 0 ? (
-            <p className="border-t border-border px-3 py-3 text-xs text-muted-foreground">
+            <p className="border-t border-border px-3 py-3 text-meta text-muted-foreground">
               No agent has an MCP server yet. “Add server…” sets one up.
             </p>
           ) : matrix.inUse.length + matrix.signedOut.length === 0 ? (
-            <p className="border-t border-border px-3 py-3 text-xs text-muted-foreground">
+            <p className="border-t border-border px-3 py-3 text-meta text-muted-foreground">
               No server matches “{filter.trim()}”.
             </p>
           ) : (
@@ -589,7 +589,7 @@ export function ConnectorsSettings() {
                     aria-expanded={showSignedOut}
                     aria-controls={signedOutId}
                     onClick={() => setSignedOutOpen(!showSignedOut)}
-                    className="flex w-full items-center gap-1.5 border-t border-border px-3 py-1.5 text-left text-xs text-muted-foreground outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
+                    className="flex w-full items-center gap-1.5 border-t border-border px-3 py-1.5 text-left text-meta text-muted-foreground outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
                   >
                     <ChevronRight
                       aria-hidden
@@ -613,7 +613,7 @@ export function ConnectorsSettings() {
           )}
         </div>
       )}
-      <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+      <ul className="flex flex-col gap-1 text-meta text-muted-foreground">
         {agents.flatMap((agent) =>
           [signInNote(agent), claudeAiNote(agent, now), agent.claudeAiUnavailable].flatMap(
             (note, i) => (note === undefined ? [] : [<li key={`${agent.target}-${i}`}>{note}</li>]),

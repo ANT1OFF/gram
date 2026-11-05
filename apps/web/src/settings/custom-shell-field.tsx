@@ -84,7 +84,7 @@ export function CustomShellField({
       </div>
       {status &&
         (status.ok ? (
-          <p role="status" className="text-xs text-muted-foreground">
+          <p role="status" className="text-meta text-muted-foreground">
             {status.text}
           </p>
         ) : (

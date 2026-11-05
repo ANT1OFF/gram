@@ -72,7 +72,7 @@ function AttachmentCount({ n }: { n: number }) {
   return (
     <span
       aria-label={`${n} attachment${n === 1 ? "" : "s"}`}
-      className="ml-1.5 inline-flex items-center gap-0.5 align-middle text-xs text-muted-foreground"
+      className="ml-1.5 inline-flex items-center gap-0.5 align-middle text-meta text-muted-foreground"
     >
       <Paperclip aria-hidden className="size-3.5" />
       {n}
@@ -87,7 +87,7 @@ function QueuedFrom({ origin }: { origin: MessageOrigin }) {
   return (
     <p
       data-testid="queue-origin"
-      className="mb-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-xs text-muted-foreground"
+      className="mb-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-meta text-muted-foreground"
     >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="shrink-0">From</span>
@@ -180,8 +180,12 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
     <PresenceList>
       {queue.length > 0 && (
         <PresenceItem key="queue" className="my-2">
-          <section data-testid="queue" aria-label="Queued messages" className="space-y-1 text-sm">
-            <h3 className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <section
+            data-testid="queue"
+            aria-label="Queued messages"
+            className="space-y-1 text-reading"
+          >
+            <h3 className="flex items-center gap-1.5 text-meta text-muted-foreground">
               <ListOrdered aria-hidden className="size-3.5" />
               Queued · sent when the turn ends
             </h3>
@@ -218,7 +222,7 @@ export function QueueList({ threadId }: { threadId: ThreadId }) {
                           >
                             <textarea
                               aria-label="Edit queued message"
-                              className="max-h-[min(16rem,40vh)] min-h-12 w-full rounded-(--radius-sm) border border-input bg-transparent p-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className="max-h-[min(16rem,40vh)] min-h-12 w-full rounded-(--radius-sm) border border-input bg-transparent p-1.5 text-reading outline-none focus-visible:ring-2 focus-visible:ring-ring"
                               value={editing.text}
                               onChange={(e) => setEditing({ id: item.id, text: e.target.value })}
                             />

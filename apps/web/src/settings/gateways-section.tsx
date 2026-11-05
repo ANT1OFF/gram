@@ -27,10 +27,10 @@ import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
 const OPENCODE = "OpenCode";
-const labelCls = "text-xs font-medium text-muted-foreground";
+const labelCls = "text-meta font-medium text-muted-foreground";
 const inputCls =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
-const noteCls = "flex items-start gap-1.5 text-xs text-muted-foreground";
+  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+const noteCls = "flex items-start gap-1.5 text-meta text-muted-foreground";
 const noteIconCls = "mt-px size-3.5 shrink-0";
 
 /** A url-safe id for a new profile, derived from its name and unique among `taken`. */
@@ -92,13 +92,13 @@ export function GatewaysSettings() {
   return (
     <div className="flex flex-col gap-4">
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {errorMessage(error)}
         </p>
       )}
-      {isPending && <p className="text-sm text-muted-foreground">Loading gateways…</p>}
+      {isPending && <p className="text-reading text-muted-foreground">Loading gateways…</p>}
       {profiles?.length === 0 && !adding && (
-        <p className="text-sm text-muted-foreground">No gateways yet.</p>
+        <p className="text-reading text-muted-foreground">No gateways yet.</p>
       )}
       {profiles && profiles.length > 0 && (
         <ul aria-label="Gateway profiles" className="flex flex-col gap-3">
@@ -140,14 +140,14 @@ export function GatewaysSettings() {
         </div>
       )}
       {seed.data && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="text-reading text-muted-foreground">
           {seed.data.added === 0
             ? "Nothing to import"
             : `Added ${plural(seed.data.added, "gateway")}`}
         </p>
       )}
       {seed.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {errorMessage(seed.error)}
         </p>
       )}
@@ -261,7 +261,7 @@ function ProfileForm({
       <label className="flex flex-col gap-1">
         <span className={labelCls}>Base URL</span>
         <input
-          className={cn(inputCls, "font-mono text-xs")}
+          className={cn(inputCls, "font-mono text-meta")}
           placeholder="https://gateway.example.com/v1"
           value={baseURL}
           onChange={(event) => setBaseURL(event.target.value)}
@@ -275,7 +275,7 @@ function ProfileForm({
           onChange={(event) => setCatalog(event.target.value)}
           placeholder="https://gateway.example.com/model-info"
         />
-        <span className="text-xs text-muted-foreground">
+        <span className="text-meta text-muted-foreground">
           Only if your gateway documents a public metadata endpoint. Gram sends no key to this URL.
         </span>
       </label>
@@ -299,13 +299,13 @@ function ProfileForm({
             value={key}
             onChange={(event) => setKey(event.target.value)}
           />
-          <span className="text-xs text-muted-foreground">
+          <span className="text-meta text-muted-foreground">
             Gram stores it once and never shows it again.
           </span>
         </div>
       )}
       {save.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {errorMessage(save.error)}
         </p>
       )}
@@ -367,13 +367,13 @@ function ProfileCard({
         actions={actions}
         render={<header className="flex flex-wrap items-center gap-2" />}
       >
-        <h3 className="text-sm font-medium">{profile.name}</h3>
+        <h3 className="text-reading font-medium">{profile.name}</h3>
         {profile.default && <Badge variant="secondary">Default</Badge>}
         <span className="ml-auto">
           <RowMenuButton label={`Gateway ${profile.name} actions`} actions={actions} />
         </span>
       </RowContextMenu>
-      <p className="font-mono text-xs text-muted-foreground">{profile.baseURL}</p>
+      <p className="font-mono text-meta text-muted-foreground">{profile.baseURL}</p>
       {removing && (
         <ConfirmStrip
           label={`Remove ${profile.name}`}
@@ -392,7 +392,7 @@ function ProfileCard({
       <Models profile={profile} />
       <HelperModel profile={profile} />
       {error !== undefined && error !== null && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {errorMessage(error)}
         </p>
       )}
@@ -535,7 +535,7 @@ function KeyField({
       </div>
       {result && <KeyResultNote result={result} />}
       {save.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {errorMessage(save.error)}
         </p>
       )}
@@ -562,11 +562,11 @@ function ImportKey({ profile, vault }: { profile: GatewayProfile; vault: VaultIn
         <div
           role="group"
           aria-label={`Import key from ${OPENCODE}`}
-          className="flex flex-col gap-2 rounded-md border border-border p-2 text-sm"
+          className="flex flex-col gap-2 rounded-md border border-border p-2 text-reading"
         >
           <p>
             Gram will read this gateway's API key from{" "}
-            <code className="font-mono text-xs">~/.local/share/opencode/auth.json</code> and store
+            <code className="font-mono text-meta">~/.local/share/opencode/auth.json</code> and store
             it in {vault?.label ?? "Gram's key store"}. The key isn't shown here.
           </p>
           <div className="flex gap-2">
@@ -594,14 +594,14 @@ function ImportKey({ profile, vault }: { profile: GatewayProfile; vault: VaultIn
             </Button>
           </WhyDisabled>
           {importKey.data?.imported === false && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               {OPENCODE} has no key for this gateway.
             </span>
           )}
         </div>
       )}
       {importKey.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {errorMessage(importKey.error)}
         </p>
       )}
@@ -622,7 +622,7 @@ function Models({ profile }: { profile: GatewayProfile }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">{plural(count, "model")}</span>
+        <span className="text-meta text-muted-foreground">{plural(count, "model")}</span>
         <WhyDisabled reason={keySet ? undefined : "Set a key first."}>
           <Button
             size="sm"
@@ -636,7 +636,7 @@ function Models({ profile }: { profile: GatewayProfile }) {
         </WhyDisabled>
       </div>
       {discover.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {errorMessage(discover.error)}
         </p>
       )}
@@ -671,7 +671,7 @@ function HelperModel({ profile }: { profile: GatewayProfile }) {
   if (profile.default !== true || profile.models.length === 0) return null;
   const choice = helperChoice(profile);
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="text-meta text-muted-foreground">
       Gateway helper model when selected: {choice?.model ?? "none"}. The rest is in{" "}
       <Link to="/settings/ai-helpers" className="underline underline-offset-2">
         AI helpers

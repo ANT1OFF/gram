@@ -15,7 +15,7 @@ import { Notice, useReviewAction } from "./review-thread-card";
 import { ToggleSwitch } from "./toggle-switch";
 
 const inputCls =
-  "h-7 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-7 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** Binding, unbinding and watching CI on the thread's PR, shared by the binding strip and the watch row. */
 export function usePrBinding(threadId: ThreadId) {
@@ -166,7 +166,7 @@ export function PrBinding({ threadId }: { threadId: ThreadId }) {
       data-testid="pr-binding"
       className="flex flex-col gap-1 border-b border-border px-3 py-2"
     >
-      <div className="flex flex-wrap items-center gap-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2 text-meta">
         {hasPr && (
           <>
             <ToggleSwitch

@@ -187,7 +187,7 @@ export function PrMarkLines({
   );
   if (lines.length === 0) return null;
   return (
-    <ul data-testid="pr-mark-lines" className={cn("flex flex-col gap-0.5 text-[11px]", className)}>
+    <ul data-testid="pr-mark-lines" className={cn("flex flex-col gap-0.5 text-caption", className)}>
       {lines.map(({ key, group, mark, line }) => {
         const display = markDisplay(group, mark);
         return (

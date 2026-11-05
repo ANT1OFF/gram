@@ -53,7 +53,7 @@ function Output({ text }: { text: string }) {
     <pre
       ref={ref}
       data-testid="cli-update-output"
-      className="max-h-32 overflow-auto rounded-sm bg-muted px-2 py-1 font-mono text-[0.7rem] leading-4 wrap-break-word whitespace-pre-wrap text-muted-foreground"
+      className="max-h-32 overflow-auto rounded-sm bg-muted px-2 py-1 font-mono text-caption leading-4 wrap-break-word whitespace-pre-wrap text-muted-foreground"
     >
       {text}
     </pre>
@@ -119,7 +119,7 @@ export function CliUpdatePanel({
     <div
       data-testid="cli-update-panel"
       data-state={phase}
-      className="ms-6 mt-1 mb-2 flex flex-col gap-1.5 rounded-md border border-border/60 p-2 text-xs"
+      className="ms-6 mt-1 mb-2 flex flex-col gap-1.5 rounded-md border border-border/60 p-2 text-meta"
     >
       {phase === "confirm" && step !== undefined && (
         <>
@@ -275,7 +275,7 @@ export function BannerCliUpdate({ agent }: { agent: GatewayAgentTool }) {
         aria-live="polite"
         data-testid="banner-cli-update"
         data-state="running"
-        className="flex items-center gap-1 text-xs text-muted-foreground"
+        className="flex items-center gap-1 text-meta text-muted-foreground"
       >
         <Spinner aria-hidden className="size-3.5" />
         Updating…
@@ -308,7 +308,7 @@ export function BannerCliUpdate({ agent }: { agent: GatewayAgentTool }) {
           aria-live="polite"
           data-testid="banner-cli-update"
           data-state={error === undefined ? state?.state : "refused"}
-          className={cn("flex basis-full items-center gap-1 text-xs", OUTCOME_TONE[outcome.tone])}
+          className={cn("flex basis-full items-center gap-1 text-meta", OUTCOME_TONE[outcome.tone])}
         >
           <span className="min-w-0">
             <CommandText text={outcome.text} />

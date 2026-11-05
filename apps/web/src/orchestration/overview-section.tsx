@@ -51,7 +51,7 @@ export function Section({
             aria-label={`${title}, ${count}`}
             title={`${title}, ${count}`}
             onClick={() => toggle(id)}
-            className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-caption font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronDown
               aria-hidden

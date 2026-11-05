@@ -189,7 +189,7 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
       data-layout={layout === "split" && splitFits ? "split" : "unified"}
       className="flex min-h-0 flex-1 flex-col"
     >
-      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 text-xs">
+      <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5 text-meta">
         <div
           role="radiogroup"
           aria-label="Diff scope"
@@ -224,7 +224,7 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
               aria-label="Turn"
               value={turnId}
               onChange={(event) => setPicked(event.target.value as TurnId)}
-              className="max-w-56 min-w-0 truncate rounded-(--radius-sm) border border-border bg-transparent px-1 py-0.5 text-xs"
+              className="max-w-56 min-w-0 truncate rounded-(--radius-sm) border border-border bg-transparent px-1 py-0.5 text-meta"
             >
               {turns.map((turn) => (
                 <option key={turn.turnId} value={turn.turnId}>
@@ -292,7 +292,7 @@ export function DiffPanel({ threadId }: { threadId: ThreadId }) {
               data-testid="diff-tree-toggle"
               title={treeOpen ? "Hide the file tree" : "Show the file tree"}
               onClick={smallPatch ? () => setSmallTreeOpen((open) => !open) : toggleTree}
-              className="flex items-center gap-1 rounded-(--radius-sm) px-1.5 py-1 text-xs whitespace-nowrap text-muted-foreground tabular-nums outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:text-foreground"
+              className="flex items-center gap-1 rounded-(--radius-sm) px-1.5 py-1 text-meta whitespace-nowrap text-muted-foreground tabular-nums outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:text-foreground"
             >
               <ListTree aria-hidden className="size-3.5" />
               Files ({fileCount})
@@ -473,12 +473,12 @@ function DiffBody({
     const base = (fallbackBase ?? diff.base)?.replace(/^origin\//, "");
     return (
       <>
-        <p data-testid="diff-empty" className="px-3 py-2 text-xs text-muted-foreground">
+        <p data-testid="diff-empty" className="px-3 py-2 text-meta text-muted-foreground">
           No changes{diff.branch ? ` on ${diff.branch}` : ""}
           {base && (scope !== "uncommitted" || fallbackBase) ? ` against ${base}` : ""}
           {ignoreWhitespace ? ", ignoring whitespace" : ""}
         </p>
-        {diff.note && <p className="px-3 pb-2 text-xs text-warning">{diff.note}</p>}
+        {diff.note && <p className="px-3 pb-2 text-meta text-warning">{diff.note}</p>}
       </>
     );
   }
@@ -490,7 +490,7 @@ function DiffBody({
 
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-meta text-muted-foreground">
         {diff.branch && (
           <span className="flex min-w-0 items-center gap-1 font-mono">
             <GitBranch aria-hidden className="size-3.5 shrink-0" />
@@ -509,11 +509,14 @@ function DiffBody({
         </span>
       </div>
       {fallbackBase && (
-        <p data-testid="diff-fallback" className="shrink-0 px-3 pb-2 text-xs text-muted-foreground">
+        <p
+          data-testid="diff-fallback"
+          className="shrink-0 px-3 pb-2 text-meta text-muted-foreground"
+        >
           No uncommitted changes. Showing branch vs {fallbackBase.replace(/^origin\//, "")}
         </p>
       )}
-      {diff.note && <p className="shrink-0 px-3 pb-2 text-xs text-warning">{diff.note}</p>}
+      {diff.note && <p className="shrink-0 px-3 pb-2 text-meta text-warning">{diff.note}</p>}
       <div
         className={cn(
           "flex min-h-0 flex-1 border-t border-border",

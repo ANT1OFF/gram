@@ -121,7 +121,7 @@ function TextEdit({
       onKeyDown={onKeyDown}
       onBlur={() => onDone(text.trim())}
       className={cn(
-        "min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 py-0.5 text-[13px] outline-none focus:border-primary",
+        "min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 py-0.5 text-body outline-none focus:border-primary",
         className,
       )}
     />
@@ -149,7 +149,7 @@ function StepPr({
       data-state={state}
       title={badge?.title}
       className={cn(
-        "inline-flex shrink-0 items-center gap-0.5 text-xs tabular-nums",
+        "inline-flex shrink-0 items-center gap-0.5 text-meta tabular-nums",
         state === "merged" ? "text-merged" : "text-muted-foreground",
       )}
     >
@@ -163,7 +163,7 @@ function TurnTodos({ items }: { items: readonly PlanItem[] }) {
   return (
     <ul
       aria-label="The agent's todo list for this turn"
-      className="mt-0.5 ml-5.5 flex flex-col gap-0.5 border-l border-border pl-2.5 text-xs text-muted-foreground"
+      className="mt-0.5 ml-5.5 flex flex-col gap-0.5 border-l border-border pl-2.5 text-meta text-muted-foreground"
     >
       {items.map((item, index) => {
         const display = TODO_ICON[item.status];
@@ -182,7 +182,7 @@ function TurnTodos({ items }: { items: readonly PlanItem[] }) {
           </li>
         );
       })}
-      <li className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+      <li className="flex items-center gap-1 text-caption text-muted-foreground/70">
         <Bot aria-hidden className="size-3.5" /> the agent's todo list for this turn
       </li>
     </ul>
@@ -259,7 +259,7 @@ function StepRow({
         ) : (
           <span
             className={cn(
-              "min-w-0 flex-1 text-[13px]",
+              "min-w-0 flex-1 text-body",
               (step.status === "done" || step.status === "dropped") && "text-muted-foreground",
               step.status === "dropped" && "line-through",
             )}
@@ -444,7 +444,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
         aria-expanded={open}
         aria-label={`Plan: ${goal || "the agent's todo list"}, ${progress.done} of ${progress.total} done${line === undefined ? "" : `. ${line}`}`}
         onClick={() => setOpen(!open)}
-        className="mx-auto flex h-8 w-full max-w-(--thread-max-width) items-center gap-2 px-6 text-xs text-muted-foreground hover:text-foreground @max-sm:px-3"
+        className="mx-auto flex h-8 w-full max-w-(--thread-max-width) items-center gap-2 px-6 text-meta text-muted-foreground hover:text-foreground @max-sm:px-3"
       >
         {/* While the thread works, the header's status is the one thing that moves, so the ring
             only counts. */}
@@ -536,7 +536,7 @@ export function PlanStrip({ threadId }: { threadId: ThreadId }) {
               />
             </div>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
             <span className="flex min-w-0 items-center gap-1">
               {plan === undefined || fromTodo ? (
                 <>

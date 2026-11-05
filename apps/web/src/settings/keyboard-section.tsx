@@ -37,13 +37,13 @@ export function KeyboardSection() {
 
   return (
     <div data-testid="keyboard-settings" className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-reading text-muted-foreground">
         <span>
-          Custom bindings live in <code className="font-mono text-xs">keybindings.json</code>
+          Custom bindings live in <code className="font-mono text-meta">keybindings.json</code>
           {path && (
             <>
               {" "}
-              (<span className="font-mono text-xs break-all">{path}</span>)
+              (<span className="font-mono text-meta break-all">{path}</span>)
             </>
           )}
           ; changes apply as soon as the file is saved.
@@ -63,7 +63,7 @@ export function KeyboardSection() {
       </div>
 
       {(problems.length > 0 || unknown.length > 0 || error) && (
-        <ul role="alert" className="flex flex-col gap-1 text-xs text-destructive">
+        <ul role="alert" className="flex flex-col gap-1 text-meta text-destructive">
           {problems.map((problem) => (
             <li key={problem}>{problem}</li>
           ))}
@@ -76,7 +76,7 @@ export function KeyboardSection() {
 
       {GROUPS.map((group) => (
         <SearchScope key={group} as="section" label={group} aria-label={group}>
-          <h3 className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          <h3 className="mb-1 text-caption font-medium tracking-wide text-muted-foreground uppercase">
             {group}
           </h3>
           <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
@@ -86,17 +86,17 @@ export function KeyboardSection() {
                 <BindingItem key={row.id} id={row.id} label={row.label}>
                   <span className="min-w-0 flex-1 truncate">{row.label}</span>
                   {row.conflicts.length > 0 && (
-                    <span className="flex items-center gap-1 text-xs text-warning">
+                    <span className="flex items-center gap-1 text-meta text-warning">
                       <AlertTriangle aria-hidden className="size-3.5" />
                       Same keys as {row.conflicts.join(", ")}
                     </span>
                   )}
                   {row.overridden && (
-                    <span className="rounded-sm border border-border px-1 text-[11px] text-muted-foreground">
+                    <span className="rounded-sm border border-border px-1 text-caption text-muted-foreground">
                       custom
                     </span>
                   )}
-                  <kbd className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">
+                  <kbd className="shrink-0 rounded-2xs border border-border bg-muted px-1.5 py-0.5 font-mono text-meta">
                     {row.keys === undefined ? "Off" : formatKeys(row.keys)}
                   </kbd>
                   <Button
@@ -145,7 +145,7 @@ function BindingItem({ id, label, children }: { id: string; label: string; child
     <li
       {...search}
       data-testid={`binding-${id}`}
-      className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-sm"
+      className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-reading"
     >
       {children}
     </li>

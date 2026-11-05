@@ -202,7 +202,7 @@ function PaneActions({ index, maximized }: { index: number; maximized: boolean }
 
   return (
     <span className="flex shrink-0 items-center gap-0.5">
-      <kbd className="px-1 font-mono text-[10px] text-muted-foreground @max-sm:hidden">
+      <kbd className="px-1 font-mono text-caption text-muted-foreground @max-sm:hidden">
         {index + 1}
       </kbd>
       <Button
@@ -256,10 +256,10 @@ function EmptyPane({ index }: { index: number }) {
 
   return (
     <div data-testid="empty-pane" className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-10 shrink-0 items-center border-b border-border px-4 text-sm text-muted-foreground">
+      <header className="flex h-10 shrink-0 items-center border-b border-border px-4 text-reading text-muted-foreground">
         Pane {index + 1}
       </header>
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 overflow-y-auto p-6 text-center text-sm text-muted-foreground">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 overflow-y-auto p-6 text-center text-reading text-muted-foreground">
         <SquareDashed aria-hidden ref={drawOn} strokeWidth={1.5} className="size-6 opacity-70" />
         <p>Empty pane</p>
         <Button variant="outline" size="sm" onClick={newThread}>
@@ -268,7 +268,7 @@ function EmptyPane({ index }: { index: number }) {
         </Button>
         {recent.length > 0 && (
           <section aria-label="Open a thread here" className="flex w-full max-w-64 flex-col gap-1">
-            <h3 className="text-[11px] font-medium tracking-wide uppercase">Open a thread here</h3>
+            <h3 className="text-caption font-medium tracking-wide uppercase">Open a thread here</h3>
             <ul className="flex flex-col">
               {recent.map((summary) => {
                 const { thread } = summary;
@@ -290,7 +290,7 @@ function EmptyPane({ index }: { index: number }) {
             </ul>
           </section>
         )}
-        <p className="text-xs">Or drag a thread here from the sidebar.</p>
+        <p className="text-meta">Or drag a thread here from the sidebar.</p>
       </div>
     </div>
   );

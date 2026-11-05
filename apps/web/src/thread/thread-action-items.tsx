@@ -76,7 +76,7 @@ export function ThreadContextMenuItems({
       <ContextMenuItem onClick={actions.rename}>
         <Pencil aria-hidden className="size-3.5" />
         Rename…
-        <kbd className="ml-auto pl-3 font-mono text-[10px] text-muted-foreground">
+        <kbd className="ml-auto pl-3 font-mono text-caption text-muted-foreground">
           {shortcutHint("thread.rename")}
         </kbd>
       </ContextMenuItem>
@@ -114,7 +114,7 @@ export function ThreadContextMenuItems({
       <ContextMenuItem className={DANGER} onClick={actions.close}>
         <X aria-hidden className="size-3.5" />
         Close thread…
-        <kbd className="ml-auto pl-3 font-mono text-[10px]">{shortcutHint("thread.close")}</kbd>
+        <kbd className="ml-auto pl-3 font-mono text-caption">{shortcutHint("thread.close")}</kbd>
       </ContextMenuItem>
       {SEPARATOR}
       <MoreContextMenuItem scope={threadScope(thread)} />

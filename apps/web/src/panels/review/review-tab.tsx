@@ -83,14 +83,14 @@ function ReviewView({ review, actions }: { review: PrReview; actions: ReviewActi
   const hasReview = review.latestReview !== undefined || review.threads.length > 0;
 
   return (
-    <div data-testid="review-panel" className="min-h-0 flex-1 overflow-y-auto text-sm">
+    <div data-testid="review-panel" className="min-h-0 flex-1 overflow-y-auto text-reading">
       {hasReview ? (
         <VerdictBanner review={review} actions={actions} />
       ) : (
         <NoReviewYet review={review} actions={actions} />
       )}
       {hasReview && files.length === 0 && (
-        <p role="status" className="px-3 py-4 text-center text-xs text-muted-foreground">
+        <p role="status" className="px-3 py-4 text-center text-meta text-muted-foreground">
           No unresolved findings
         </p>
       )}
@@ -101,7 +101,7 @@ function ReviewView({ review, actions }: { review: PrReview; actions: ReviewActi
           data-testid="review-file"
           className="border-b border-border py-2"
         >
-          <h4 className="flex items-center gap-2 px-3 pb-1 font-mono text-xs text-muted-foreground">
+          <h4 className="flex items-center gap-2 px-3 pb-1 font-mono text-meta text-muted-foreground">
             <span className="min-w-0 flex-1 truncate">{group.path}</span>
             <span className="shrink-0 tabular-nums">
               {group.current.length + group.outdated.length}
@@ -141,7 +141,7 @@ function ThreadList({ threads, actions }: { threads: ReviewThread[]; actions: Re
 function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
     <Collapsible>
-      <CollapsibleTrigger className="group flex w-full items-center gap-1 px-3 py-1 text-xs text-muted-foreground hover:text-foreground">
+      <CollapsibleTrigger className="group flex w-full items-center gap-1 px-3 py-1 text-meta text-muted-foreground hover:text-foreground">
         <ChevronRight
           aria-hidden
           className="size-3 transition-transform group-data-[panel-open]:rotate-90"
@@ -174,7 +174,7 @@ function VerdictBanner({ review, actions }: { review: PrReview; actions: ReviewA
         ) : (
           <span className="font-medium text-muted-foreground">No verdict yet</span>
         )}
-        <span className="text-xs text-muted-foreground">
+        <span className="text-meta text-muted-foreground">
           {state?.verdictOnHead
             ? "On head"
             : latest && !latest.onHead
@@ -182,13 +182,16 @@ function VerdictBanner({ review, actions }: { review: PrReview; actions: ReviewA
               : "No verdict on head"}
         </span>
         {state?.roundInFlight && (
-          <span data-testid="round-in-flight" className="flex items-center gap-1 text-xs text-info">
+          <span
+            data-testid="round-in-flight"
+            className="flex items-center gap-1 text-meta text-info"
+          >
             <Spinner aria-hidden className="size-3" />
             Round in progress
           </span>
         )}
       </div>
-      <p className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+      <p className="flex flex-wrap gap-x-2 text-meta text-muted-foreground">
         {latest && <span>{latest.author}</span>}
         {latest && <span>{agoText(latest.submittedAt)}</span>}
         {meta?.model && <span className="font-mono">{meta.model}</span>}
@@ -196,7 +199,7 @@ function VerdictBanner({ review, actions }: { review: PrReview; actions: ReviewA
         {meta?.strictness && <span>{meta.strictness}</span>}
       </p>
       {state && (
-        <p data-testid="review-counts" className="text-xs">
+        <p data-testid="review-counts" className="text-meta">
           <span className={cn(state.threads.blockers > 0 && "text-destructive")}>
             {plural(state.threads.blockers, "blocker")}
           </span>
@@ -232,7 +235,7 @@ function NoReviewYet({ review, actions }: { review: PrReview; actions: ReviewAct
   return (
     <div
       role="status"
-      className="flex flex-col items-center gap-3 p-6 text-center text-sm text-muted-foreground"
+      className="flex flex-col items-center gap-3 p-6 text-center text-reading text-muted-foreground"
     >
       <p>No bot review on this PR yet</p>
       <BulkActions

@@ -9,7 +9,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { THREAD_REF_TAG, resolveThreadRef, splitThreadLinks } from "./thread-refs";
 
 const CHIP =
-  "inline-flex max-w-[28ch] items-center gap-1 rounded-sm border px-1 align-baseline text-[0.92em] leading-snug font-medium";
+  "inline-flex max-w-[28ch] items-center gap-1 rounded-sm border px-1 align-baseline text-code leading-snug font-medium";
 
 /**
  * A link to another thread, as a compact chip under that thread's current title; muted, and not a

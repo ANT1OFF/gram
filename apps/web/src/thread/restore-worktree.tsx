@@ -66,7 +66,7 @@ export function RestoreWorktreeActions({ threadId }: { threadId: ThreadId }) {
         )
       )}
       {(gone !== undefined || error !== undefined) && (
-        <p data-testid="restore-worktree-problem" className="basis-full text-xs text-danger-text">
+        <p data-testid="restore-worktree-problem" className="basis-full text-meta text-danger-text">
           {error ?? branchGoneText(gone!)}
         </p>
       )}

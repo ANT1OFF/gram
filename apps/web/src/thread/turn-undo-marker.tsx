@@ -59,7 +59,7 @@ export function TurnUndoMarker({ undo }: { undo: TurnUndoData }) {
           : "Git failed partway through reversing that turn, so some of its files may have changed and others not."
       }
       data-testid="turn-undo-receipt"
-      className="my-3 flex w-full items-center gap-3 text-xs text-muted-foreground"
+      className="my-3 flex w-full items-center gap-3 text-meta text-muted-foreground"
     >
       <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
       <span className="flex min-w-0 items-center gap-1.5">
@@ -76,7 +76,7 @@ export function TurnUndoMarker({ undo }: { undo: TurnUndoData }) {
       <ul
         data-testid="turn-undo-failed"
         aria-label="Files that may have changed"
-        className="-mt-1 mb-3 text-center font-mono text-xs text-muted-foreground select-text"
+        className="-mt-1 mb-3 text-center font-mono text-meta text-muted-foreground select-text"
       >
         {undo.failed.map((path) => (
           <li key={path}>{path}</li>

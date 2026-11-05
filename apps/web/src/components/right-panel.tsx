@@ -271,8 +271,8 @@ export function RightPanel() {
 
 /** A tab's box, as `TabsTrigger` draws it: the strip's tabs and their measured copies share it. */
 const TAB_BOX =
-  "flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium";
-const MORE_BOX = "flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium";
+  "flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md px-2 text-meta font-medium";
+const MORE_BOX = "flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-meta font-medium";
 
 interface TabFaceProps {
   tab: PanelTab;
@@ -335,9 +335,9 @@ function MoreFace() {
 }
 
 const MENU_POPUP =
-  "z-50 min-w-44 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 min-w-44 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[highlighted]:row-cursor";
 
 /**
  * The rarer tabs, folded out of a short strip, each named with its icon. None has a count: a tab with
@@ -438,7 +438,7 @@ function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolea
           aria-label={label}
           data-testid="review-focus"
           data-words={words}
-          className="h-7 shrink-0 gap-0 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+          className="h-7 shrink-0 gap-0 px-1.5 text-meta text-muted-foreground hover:text-foreground"
           onClick={toggle}
         />
       }
@@ -451,7 +451,7 @@ function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolea
       <span aria-hidden data-action-label className={cn("overflow-hidden", !words && "max-w-0")}>
         <span data-action-label-text className="flex items-center gap-1.5 pl-1.5 whitespace-nowrap">
           {label}
-          {hint && <kbd className="font-sans text-[10px] text-muted-foreground">{hint}</kbd>}
+          {hint && <kbd className="font-sans text-caption text-muted-foreground">{hint}</kbd>}
         </span>
       </span>
     </Hint>

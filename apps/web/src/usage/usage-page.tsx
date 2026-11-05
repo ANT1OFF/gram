@@ -70,11 +70,11 @@ export function UsagePage() {
         data-testid="usage-overview"
       >
         <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h1 id="usage-title" className="font-heading text-xl font-semibold">
+          <h1 id="usage-title" className="font-heading text-heading">
             Usage
           </h1>
           {data !== undefined && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               {days === 1 ? "Last 24 hours" : `Last ${days} days`} · {rangeText(data)}
             </span>
           )}
@@ -105,13 +105,13 @@ export function UsagePage() {
         </header>
         <UsageLimitsSection provider={provider} history={data?.localLimitHistory?.observations} />
         {query.isPending ? (
-          <p role="status" className="text-sm text-muted-foreground">
+          <p role="status" className="text-reading text-muted-foreground">
             Reading usage history…
           </p>
         ) : query.isError ? (
           <div role="alert" className="rounded-lg border border-border p-5">
             <h2 className="font-medium">Usage unavailable</h2>
-            <p className="mt-2 text-sm text-muted-foreground">{errorMessage(query.error)}</p>
+            <p className="mt-2 text-reading text-muted-foreground">{errorMessage(query.error)}</p>
             <Button className="mt-4" variant="outline" onClick={() => void query.refetch()}>
               Retry
             </Button>
@@ -165,7 +165,7 @@ function UsageSnapshot({ data }: { data: UsageOverview }) {
     <>
       <section aria-labelledby="usage-tokens-title">
         <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
-          <h2 id="usage-tokens-title" className="text-sm font-semibold">
+          <h2 id="usage-tokens-title" className="text-reading font-semibold">
             Tokens
           </h2>
           {families.length > 0 && (
@@ -202,20 +202,20 @@ function UsageSnapshot({ data }: { data: UsageOverview }) {
         {noActivity ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <h3 className="font-medium">No recorded activity in this period</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-reading text-muted-foreground">
               Completed Gram turns and available local CLI requests with reported tokens appear
               here. Try a longer period for older activity.
             </p>
           </div>
         ) : data.recordedTurns === 0 ? (
-          <p role="status" className="text-sm text-muted-foreground">
+          <p role="status" className="text-reading text-muted-foreground">
             Activity exists, but no attributable token totals are available for this selection.
           </p>
         ) : (
           <>
             <TokensChart days={days} families={families} />
             <DailyTable days={days} families={families} />
-            <details className="mt-2 text-xs" data-testid="usage-model-detail">
+            <details className="mt-2 text-meta" data-testid="usage-model-detail">
               <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
                 Model and day detail
               </summary>
@@ -258,11 +258,11 @@ function Stat({
 }) {
   return (
     <div>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dt className="text-meta text-muted-foreground">{label}</dt>
       <dd
         data-testid={testId}
         data-value={value ?? undefined}
-        className="mt-0.5 text-xl font-medium"
+        className="mt-0.5 text-heading font-medium"
         title={
           value === undefined
             ? undefined
@@ -273,7 +273,7 @@ function Stat({
       >
         {text ?? (value === null || value === undefined ? "—" : compactTokens(value))}
       </dd>
-      {detail !== undefined && <dd className="text-xs text-muted-foreground">{detail}</dd>}
+      {detail !== undefined && <dd className="text-meta text-muted-foreground">{detail}</dd>}
     </div>
   );
 }

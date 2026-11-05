@@ -46,13 +46,13 @@ export function DialogShell({
           finalFocus={returnFocusTo(opener, returnFocus)}
           initialFocus={initialFocus}
           className={cn(
-            "fixed top-[20%] left-1/2 z-50 flex w-[min(32rem,90vw)] -translate-x-1/2 flex-col gap-4 rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-lg transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
+            "fixed top-[20%] left-1/2 z-50 flex w-[min(32rem,90vw)] -translate-x-1/2 flex-col gap-4 rounded-lg border border-border bg-popover p-5 text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0",
             className,
           )}
         >
-          <Dialog.Title className="font-heading text-base font-medium">{title}</Dialog.Title>
+          <Dialog.Title className="font-heading text-title">{title}</Dialog.Title>
           {description !== undefined && (
-            <Dialog.Description className="text-xs text-muted-foreground">
+            <Dialog.Description className="text-meta text-muted-foreground">
               {description}
             </Dialog.Description>
           )}

@@ -165,10 +165,10 @@ function FirstRun() {
     <section
       aria-labelledby="welcome-title"
       data-testid="welcome"
-      className="flex w-full max-w-xl flex-col gap-5 rounded-lg border border-border bg-card p-5 text-sm text-card-foreground"
+      className="flex w-full max-w-xl flex-col gap-5 rounded-lg border border-border bg-card p-5 text-reading text-card-foreground"
     >
       <div className="flex flex-col gap-3">
-        <h2 id="welcome-title" className="font-heading text-base font-medium">
+        <h2 id="welcome-title" className="font-heading text-title">
           How Gram works
         </h2>
         <ol aria-label="How Gram works" data-testid="welcome-steps" className="flex flex-col gap-3">
@@ -179,7 +179,7 @@ function FirstRun() {
               </span>
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="font-medium">{title}</span>
-                <span className="text-xs text-muted-foreground">{line}</span>
+                <span className="text-meta text-muted-foreground">{line}</span>
               </span>
             </li>
           ))}
@@ -188,8 +188,8 @@ function FirstRun() {
       <AgentStrip />
       <div className="flex flex-col gap-3 border-t border-border pt-4">
         <div className="flex flex-col gap-0.5">
-          <h3 className="font-heading text-sm font-medium">Pick a repository to start</h3>
-          <p className="text-xs text-muted-foreground">
+          <h3 className="font-heading text-reading font-medium">Pick a repository to start</h3>
+          <p className="text-meta text-muted-foreground">
             It becomes a workspace with its own orchestrator. You can add more repositories later.
           </p>
         </div>
@@ -259,7 +259,7 @@ function FirstRun() {
           {adding && <AddRepository onAdded={(project) => start(project)} />}
         </Expand>
         {error !== undefined && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-meta text-destructive">
             {error}
           </p>
         )}
@@ -307,7 +307,7 @@ function ImportSessions() {
           <History data-icon="inline-start" />
           Import past CLI sessions
         </Button>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-meta text-muted-foreground">
           Pick up a Claude Code or Codex session you started in a terminal.
         </span>
       </div>
@@ -327,7 +327,7 @@ function ImportSessions() {
                     role="radio"
                     aria-checked={repo.root === folder}
                     onClick={() => setRoot(repo.root)}
-                    className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring aria-checked:choice-selected"
+                    className="rounded-md border border-border px-2 py-0.5 text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring aria-checked:choice-selected"
                   >
                     {repo.name}
                   </button>
@@ -335,7 +335,7 @@ function ImportSessions() {
               </div>
             )}
             {folder === undefined ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 Pick a repository above first; sessions are listed by the folder they ran in.
               </p>
             ) : (
@@ -416,7 +416,7 @@ function RecentRepos({
               <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
             )}
             <span className="shrink-0 font-medium whitespace-nowrap">{repo.name}</span>
-            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+            <span className="min-w-0 truncate font-mono text-meta text-muted-foreground">
               {tildify(repo.root, home)}
             </span>
             <ChoiceCheck checked={checked} className="ml-auto" />
@@ -460,7 +460,7 @@ function AgentStrip() {
       .finally(() => setChecking(false));
   };
   return (
-    <div data-testid="welcome-agents" className="rounded-md bg-accent/60 px-3 py-1.5 text-xs">
+    <div data-testid="welcome-agents" className="rounded-md bg-accent/60 px-3 py-1.5 text-meta">
       {checks === undefined ? (
         <span role="status" className="block py-1 text-muted-foreground">
           Checking your agents…

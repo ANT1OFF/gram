@@ -125,7 +125,7 @@ export function WorkerCrumbs({
       }
     >
       <RoleGlyph thread={thread} testId="pane-role" />
-      <nav aria-label="Worker path" className="flex min-w-0 items-center gap-1 text-sm">
+      <nav aria-label="Worker path" className="flex min-w-0 items-center gap-1 text-reading">
         <Link
           to="/t/$threadId"
           params={{ threadId: spawnedBy.threadId }}
@@ -182,7 +182,7 @@ export function WorkerNowChip({ thread }: { thread: Thread }) {
   const { row } = useWorkerFacts(thread);
   if (thread.spawnedBy === undefined || row === undefined) return null;
   return (
-    <span data-testid="worker-now-status" className="shrink-0 text-xs text-muted-foreground">
+    <span data-testid="worker-now-status" className="shrink-0 text-meta text-muted-foreground">
       <Swap swapKey={row.now}>{row.now}</Swap>
     </span>
   );
@@ -210,7 +210,7 @@ function HoldChip({
     <span
       data-testid={ghost ? undefined : "worker-hold"}
       role="status"
-      className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border pl-1 text-xs text-foreground"
+      className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border pl-1 text-meta text-foreground"
     >
       <Hint
         label={`The orchestrator can't message it until you hand it back. It comes back by itself at its next report, or ${USER_HOLD_IDLE_MS / 60_000} minutes after your last message once idle.`}
@@ -244,7 +244,7 @@ function HoldChip({
 }
 
 const HEADER_BUTTON =
-  "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-xs text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-meta text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /** A worker's end states, where there is nothing left to take over. */
 const FINISHED = new Set(["merged", "delivered", "archived"]);

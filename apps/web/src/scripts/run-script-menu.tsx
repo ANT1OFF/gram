@@ -12,9 +12,9 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { startScript, useProjectScripts } from "./use-project-scripts";
 
 const POPUP =
-  "z-50 max-w-80 min-w-56 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 max-w-80 min-w-56 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-reading outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
 
 /** The exact line a script runs, and where, as its menu row's tooltip says it. */
 export const scriptCommandHint = (script: ProjectScript): string =>
@@ -80,18 +80,18 @@ export function RunScriptMenu({
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
           <Menu.Popup data-testid="run-script-popup" aria-label="Run script" className={POPUP}>
-            <div className="px-2 py-1 text-xs text-muted-foreground">
+            <div className="px-2 py-1 text-meta text-muted-foreground">
               Run in this thread's folder
             </div>
-            {isPending && <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</p>}
+            {isPending && <p className="px-2 py-1.5 text-meta text-muted-foreground">Loading…</p>}
             {isError && (
-              <p className="px-2 py-1.5 text-xs text-danger-text">Couldn't read the scripts.</p>
+              <p className="px-2 py-1.5 text-meta text-danger-text">Couldn't read the scripts.</p>
             )}
             {data?.problem !== undefined && (
-              <p className="px-2 py-1.5 text-xs text-danger-text">{data.problem}</p>
+              <p className="px-2 py-1.5 text-meta text-danger-text">{data.problem}</p>
             )}
             {data !== undefined && scripts.length === 0 && data.problem === undefined && (
-              <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              <p className="px-2 py-1.5 text-meta text-muted-foreground">
                 No project scripts yet.
                 {data.suggestions.length > 0 &&
                   ` ${data.suggestions.length === 1 ? "1 command" : `${data.suggestions.length} commands`} in this project can be added in one click.`}
@@ -112,12 +112,12 @@ export function RunScriptMenu({
               >
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate">{script.name}</span>
-                  <span className="truncate font-mono text-[11px] text-muted-foreground">
+                  <span className="truncate font-mono text-caption text-muted-foreground">
                     {script.command}
                   </span>
                 </span>
                 {script.shortcut !== undefined && (
-                  <kbd className="shrink-0 pl-3 font-mono text-[10px] text-muted-foreground">
+                  <kbd className="shrink-0 pl-3 font-mono text-caption text-muted-foreground">
                     {formatKeys(script.shortcut)}
                   </kbd>
                 )}
@@ -157,7 +157,7 @@ export function RunScriptMenuItems({
   if (scripts.length === 0) return null;
   return (
     <Menu.Group data-testid="folded-scripts">
-      <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
+      <Menu.GroupLabel className="px-2 pt-1 pb-0.5 text-caption font-medium text-muted-foreground">
         Run script
       </Menu.GroupLabel>
       {scripts.map((script) => (
@@ -171,7 +171,7 @@ export function RunScriptMenuItems({
           <Play aria-hidden />
           <span className="truncate">{script.name}</span>
           {script.shortcut !== undefined && (
-            <span className="ml-auto pl-4 text-xs text-muted-foreground">
+            <span className="ml-auto pl-4 text-meta text-muted-foreground">
               {formatKeys(script.shortcut)}
             </span>
           )}

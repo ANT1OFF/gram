@@ -52,7 +52,7 @@ export const goToThread = (threadId: ThreadId, event?: { preventDefault: () => v
 
 /** A banner line under a header: a glyph, its lead in words, the sentence, and any action. */
 const BANNER =
-  "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-xs text-foreground";
+  "flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-meta text-foreground";
 
 /**
  * What a worker's crumbs can't say, under the header and only while it applies: the repos a
@@ -116,7 +116,7 @@ export function WorkerBanner({ thread }: { thread: Thread }) {
       {repos !== undefined && (
         <p
           data-testid="worker-banner-repos"
-          className="flex min-w-0 items-start gap-1.5 border-b border-border bg-card/40 px-3 py-1 text-xs text-muted-foreground"
+          className="flex min-w-0 items-start gap-1.5 border-b border-border bg-card/40 px-3 py-1 text-meta text-muted-foreground"
         >
           <FolderGit2 aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0">
@@ -188,7 +188,7 @@ export function OrchestratorChips({
               type="button"
               onClick={() => showInbox({ workspaceId })}
               data-testid="banner-questions"
-              className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-status-needs outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-meta text-status-needs outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
             />
           }
         >
@@ -279,7 +279,7 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
       {files !== undefined && memoryIsEmpty(files) && (
         <p
           data-testid="banner-import-offer"
-          className="border-b border-border bg-card/40 px-3 py-1 text-xs text-muted-foreground"
+          className="border-b border-border bg-card/40 px-3 py-1 text-meta text-muted-foreground"
         >
           Its memory is empty.{" "}
           <Link
@@ -296,7 +296,7 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
         <div
           data-testid="orchestrator-banner-paused"
           role="status"
-          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1 text-xs text-foreground"
+          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1 text-meta text-foreground"
         >
           <Pause aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1">

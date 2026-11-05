@@ -88,16 +88,16 @@ export function AutomaticDreamField({
             />
           </Field>
           {error && (
-            <p role="alert" className="text-xs text-destructive">
+            <p role="alert" className="text-meta text-destructive">
               {error}
             </p>
           )}
-          <p data-testid="automatic-dream-progress" className="text-xs text-muted-foreground">
+          <p data-testid="automatic-dream-progress" className="text-meta text-muted-foreground">
             {status.data?.completed ?? 0} / {threshold} completed threads.{" "}
             {status.data?.detail ?? "Loading automatic Dream status…"}
           </p>
           {status.isError && (
-            <p role="alert" className="text-xs text-destructive">
+            <p role="alert" className="text-meta text-destructive">
               Automatic Dream status could not be loaded.
             </p>
           )}

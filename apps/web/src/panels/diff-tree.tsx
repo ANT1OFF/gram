@@ -135,7 +135,7 @@ export function DiffTree({
       role="tree"
       aria-label="Changed files"
       data-testid="diff-tree"
-      className={cn("p-1 text-xs", className)}
+      className={cn("p-1 text-meta", className)}
       onKeyDown={treeKeyDown}
     >
       {level(nodes, 1)}

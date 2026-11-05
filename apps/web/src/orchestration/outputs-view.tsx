@@ -99,7 +99,7 @@ function Segments<T extends string>({
           tabIndex={each === value ? 0 : -1}
           data-value={each}
           onClick={() => onChange(each)}
-          className="relative flex h-6 items-center rounded-(--radius-sm) px-2 text-[13px] text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
+          className="relative flex h-6 items-center rounded-(--radius-sm) px-2 text-body text-muted-foreground outline-none transition-colors duration-(--dur-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
         >
           {each === value && <SegmentSlab group={slab} className="bg-muted" />}
           {labels[each]}
@@ -223,7 +223,7 @@ function Tile({
           <Thumb output={output} seen={seen} />
         </div>
       )}
-      <div className="flex min-w-0 items-baseline gap-2 text-xs">
+      <div className="flex min-w-0 items-baseline gap-2 text-meta">
         <span className="min-w-0 flex-1 truncate">{name}</span>
         <span className="shrink-0 text-muted-foreground tabular-nums">{outputTime(output)}</span>
       </div>
@@ -275,13 +275,13 @@ function Viewer({
         <Dialog.Popup
           data-testid="output-viewer"
           data-surface="overlay"
-          className="fixed inset-6 z-50 flex flex-col gap-3 rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-lg transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed inset-6 z-50 flex flex-col gap-3 rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           <div className="flex min-w-0 items-center gap-2">
-            <Dialog.Title className="min-w-0 truncate font-heading text-sm font-medium">
+            <Dialog.Title className="min-w-0 truncate font-heading text-reading font-medium">
               {name}
             </Dialog.Title>
-            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+            <span className="shrink-0 text-meta text-muted-foreground tabular-nums">
               {outputTime(output)} · {formatBytes(output.size)}
             </span>
             <span className="flex-1" />
@@ -355,7 +355,7 @@ export function OutputsView({ workspaceId }: { workspaceId: WorkspaceId }) {
       <div
         role="status"
         data-testid="outputs-missing"
-        className="p-8 text-center text-sm text-muted-foreground"
+        className="p-8 text-center text-reading text-muted-foreground"
       >
         No such workspace.
       </div>
@@ -368,7 +368,7 @@ export function OutputsView({ workspaceId }: { workspaceId: WorkspaceId }) {
   return (
     <div data-testid="outputs-view" className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-2.5">
-        <h1 className="flex min-w-0 items-center gap-2 text-[15px] font-medium">
+        <h1 className="flex min-w-0 items-center gap-2 text-title">
           <Images aria-hidden className="size-4 shrink-0 text-muted-foreground" />
           <span className="truncate">Files · {state.workspace.name}</span>
         </h1>
@@ -397,7 +397,7 @@ export function OutputsView({ workspaceId }: { workspaceId: WorkspaceId }) {
           <div
             role="status"
             data-testid="outputs-empty"
-            className="flex flex-col items-center gap-1 p-10 text-center text-sm text-muted-foreground"
+            className="flex flex-col items-center gap-1 p-10 text-center text-reading text-muted-foreground"
           >
             <Images aria-hidden strokeWidth={1.5} className="mb-1 size-6 opacity-70" />
             <p className="text-foreground">No files yet</p>
@@ -406,7 +406,7 @@ export function OutputsView({ workspaceId }: { workspaceId: WorkspaceId }) {
           <div className="flex flex-col gap-5">
             {groups.map((group) => (
               <section key={group.key} aria-label={group.label} data-testid="output-group">
-                <h2 className="mb-2 text-xs font-medium text-muted-foreground">
+                <h2 className="mb-2 text-meta font-medium text-muted-foreground">
                   {group.label}
                   <span className="ml-1.5 font-normal tabular-nums">{group.outputs.length}</span>
                 </h2>

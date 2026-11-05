@@ -767,9 +767,9 @@ export function Transcript({
         }}
       >
         {loading ? (
-          <p className="p-6 text-sm text-muted-foreground">Loading conversation…</p>
+          <p className="p-6 text-reading text-muted-foreground">Loading conversation…</p>
         ) : messages.length === 0 ? (
-          <p className="p-6 text-sm text-muted-foreground">No messages yet.</p>
+          <p className="p-6 text-reading text-muted-foreground">No messages yet.</p>
         ) : (
           <PrRefsProvider threadId={threadId}>
             <FileRefsProvider threadId={threadId}>
@@ -959,7 +959,7 @@ function FollowingLive({
     />
   );
   const pill =
-    "absolute bottom-6 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-xs shadow-sm";
+    "absolute bottom-6 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-meta shadow-raised";
   return following ? (
     <span role="status" data-testid="following-live" className={cn(pill, "text-muted-foreground")}>
       {dot}

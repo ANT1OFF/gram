@@ -128,7 +128,7 @@ function SizeStepper({ value, onChange }: { value: number; onChange: (next: numb
       <output
         aria-live="polite"
         data-testid="transcript-text-size"
-        className="flex min-w-14 items-center justify-center text-sm tabular-nums"
+        className="flex min-w-14 items-center justify-center text-reading tabular-nums"
       >
         {value} px
       </output>
@@ -176,7 +176,7 @@ function ReadingPreview({ size, width }: { size: number; width: TranscriptWidth 
                 after{" "}
                 <code
                   data-streamdown="inline-code"
-                  className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm"
+                  className="rounded-2xs bg-muted px-1.5 py-0.5 font-mono text-reading"
                 >
                   timeout
                 </code>{" "}
@@ -184,7 +184,7 @@ function ReadingPreview({ size, width }: { size: number; width: TranscriptWidth 
               </p>
               <div
                 data-streamdown="code-block-body"
-                className="overflow-x-auto rounded-md border border-border bg-background p-4 font-mono text-sm"
+                className="overflow-x-auto rounded-md border border-border bg-background p-4 font-mono text-reading"
               >
                 <pre>
                   <code>vi.useFakeTimers();{"\n"}await vi.advanceTimersByTimeAsync(3_000);</code>

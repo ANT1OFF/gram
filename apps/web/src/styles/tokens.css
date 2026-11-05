@@ -112,6 +112,12 @@
   --elevation-overlay: var(--shadow-overlay);
   --elevation-composer: var(--shadow-composer);
 
+  /* A control laid over a picture (an attachment's remove button): dark in every palette, since
+     what is under it is the picture, not the theme. */
+  --media-scrim: rgb(0 0 0 / 0.6);
+  --media-scrim-hover: rgb(0 0 0 / 0.75);
+  --on-media: white;
+
   --chrome-bg: color-mix(in srgb, var(--surface-1) calc(var(--surface-alpha) * 100%), transparent);
 
   --sidebar-bg: var(--chrome-bg);

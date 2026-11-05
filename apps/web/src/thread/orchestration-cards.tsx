@@ -109,7 +109,7 @@ export function StatePill({
     <span
       data-testid={testId}
       title={iconOnly ? state.label : undefined}
-      className={cn("inline-flex shrink-0 items-center gap-1 text-xs", tone.className, className)}
+      className={cn("inline-flex shrink-0 items-center gap-1 text-meta", tone.className, className)}
     >
       <Swap swapKey={state.label}>
         <tone.icon aria-hidden className="size-3.5" />
@@ -119,9 +119,11 @@ export function StatePill({
   );
 }
 
-const CARD = "rounded-(--radius-md) border border-border bg-card/40 p-3 text-sm";
-const TRIGGER = "group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground";
-const PRE = "mt-1 overflow-x-auto rounded-sm bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap";
+const CARD = "rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading";
+const TRIGGER =
+  "group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground";
+const PRE =
+  "mt-1 overflow-x-auto rounded-sm bg-muted/40 p-2 font-mono text-meta whitespace-pre-wrap";
 
 function Disclosure({
   label,
@@ -161,11 +163,11 @@ function ThreadLink({ threadId, children }: { threadId: ThreadId; children: Reac
 /** A worker's PR: a link only when the address is one a browser should open. */
 function PrLink({ url, children }: { url: string | undefined; children: ReactNode }) {
   const href = safeLink(url);
-  if (href === undefined) return <span className="font-mono text-xs">{children}</span>;
+  if (href === undefined) return <span className="font-mono text-meta">{children}</span>;
   return (
     <OutboundLink
       href={href}
-      className="inline-flex w-fit items-center gap-1 font-mono text-xs text-link underline-offset-4 hover:underline"
+      className="inline-flex w-fit items-center gap-1 font-mono text-meta text-link underline-offset-4 hover:underline"
     >
       {children}
       <ExternalLink aria-hidden className="size-3.5" />
@@ -174,7 +176,7 @@ function PrLink({ url, children }: { url: string | undefined; children: ReactNod
 }
 
 function SectionHeading({ children }: { children: ReactNode }) {
-  return <h4 className="text-xs font-medium text-muted-foreground">{children}</h4>;
+  return <h4 className="text-meta font-medium text-muted-foreground">{children}</h4>;
 }
 
 /**
@@ -183,7 +185,7 @@ function SectionHeading({ children }: { children: ReactNode }) {
  */
 function WorkerText({ text, className }: { text: string; className?: string }) {
   return (
-    <p className={cn("text-xs whitespace-pre-wrap", className)}>
+    <p className={cn("text-meta whitespace-pre-wrap", className)}>
       <ThreadLinkedText text={text} />
     </p>
   );
@@ -216,7 +218,7 @@ function ReportItem({ report }: { report: DigestReport }) {
   const preview = report.summary.replaceAll(/\s+/g, " ").trim();
   return (
     <li className="flex flex-col gap-0.5">
-      <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs">
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-meta">
         <StatePill state={presentReportState(report.state)} />
         <span className="text-muted-foreground">{report.feature}</span>
         <ThreadLink threadId={report.threadId}>{report.title}</ThreadLink>
@@ -313,7 +315,7 @@ function LedgerTable({
   const sections = sectionsOf(features, groups);
   return (
     <div className="mt-1 overflow-x-auto">
-      <table data-testid="digest-ledger" className="w-full border-collapse text-left text-xs">
+      <table data-testid="digest-ledger" className="w-full border-collapse text-left text-meta">
         <thead className="text-muted-foreground">
           <tr>
             <th scope="col" className="pr-3 pb-1 font-normal">
@@ -397,7 +399,7 @@ export function OrchestrationDigestCard({
       <header className="flex flex-wrap items-center gap-x-2">
         <Network aria-hidden className="size-3.5 text-muted-foreground" />
         <h3 className="font-medium">{title}</h3>
-        <span className="text-xs text-muted-foreground">{digest.workspaceName}</span>
+        <span className="text-meta text-muted-foreground">{digest.workspaceName}</span>
       </header>
       <DigestDetails digest={digest} text={text} />
     </article>
@@ -420,14 +422,14 @@ export function DigestDetails({ digest, text }: { digest: OrchestrationDigest; t
       {digest.paused !== undefined && (
         <p
           data-testid="digest-paused"
-          className="flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-xs text-foreground"
+          className="flex items-center gap-1 rounded-sm border border-border px-2 py-1 text-meta text-foreground"
         >
           <CirclePause aria-hidden className="size-3.5 shrink-0" />
           {pauseText(digest.paused)}. Nothing is spawned or sent until you resume it.
         </p>
       )}
       {digest.reasons.length > 0 && (
-        <p data-testid="digest-reasons" className="text-xs text-muted-foreground">
+        <p data-testid="digest-reasons" className="text-meta text-muted-foreground">
           Woken by: {digest.reasons.join(", ")}
         </p>
       )}
@@ -438,7 +440,7 @@ export function DigestDetails({ digest, text }: { digest: OrchestrationDigest; t
             {digest.changes.map((change) => (
               <li
                 key={change.threadId}
-                className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-xs"
+                className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-meta"
               >
                 <span className="text-muted-foreground">{change.feature}</span>
                 <ThreadLink threadId={change.threadId}>{change.title}</ThreadLink>
@@ -454,7 +456,7 @@ export function DigestDetails({ digest, text }: { digest: OrchestrationDigest; t
         </section>
       )}
       {lines.length > 0 && (
-        <ul aria-label="Notes" className="flex list-disc flex-col gap-0.5 pl-4 text-xs">
+        <ul aria-label="Notes" className="flex list-disc flex-col gap-0.5 pl-4 text-meta">
           {lines.map((note) => (
             <li key={note}>{note}</li>
           ))}
@@ -484,7 +486,7 @@ export function DigestDetails({ digest, text }: { digest: OrchestrationDigest; t
         </section>
       )}
       {digest.features.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No workers yet.</p>
+        <p className="text-meta text-muted-foreground">No workers yet.</p>
       ) : (
         <Disclosure
           defaultOpen={!news}
@@ -496,7 +498,7 @@ export function DigestDetails({ digest, text }: { digest: OrchestrationDigest; t
       <p
         data-testid="digest-budget"
         className={cn(
-          "text-xs tabular-nums",
+          "text-meta tabular-nums",
           budgetSpent(digest.budget) ? "font-medium text-foreground" : "text-muted-foreground",
         )}
       >
@@ -532,7 +534,7 @@ export function WorkerReportCard({ report }: { report: WorkerReport }) {
         </h3>
         <StatePill state={state} testId="worker-report-state" />
       </header>
-      <WorkerText text={report.summary} className="text-sm" />
+      <WorkerText text={report.summary} className="text-reading" />
       {report.prUrl !== undefined && <PrLink url={report.prUrl}>{report.prUrl}</PrLink>}
       {report.interface !== undefined && (
         <Disclosure label="Interface for other workers">
@@ -565,10 +567,10 @@ export function MemoryWriteCard({ write }: { write: MemoryWrite }) {
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <NotebookPen aria-hidden className="size-3.5 text-muted-foreground" />
         <h3 className="font-medium">Memory</h3>
-        <span className="text-xs text-muted-foreground">{verb}</span>
-        <span className="font-mono text-xs">{write.path}</span>
+        <span className="text-meta text-muted-foreground">{verb}</span>
+        <span className="font-mono text-meta">{write.path}</span>
         {write.action === "write" && (
-          <span className="text-xs text-muted-foreground tabular-nums">
+          <span className="text-meta text-muted-foreground tabular-nums">
             {formatBytes(write.bytes)}
           </span>
         )}
@@ -577,7 +579,7 @@ export function MemoryWriteCard({ write }: { write: MemoryWrite }) {
         <Disclosure label={`Changes (${diffStat(diff)})`}>
           <pre
             data-testid="memory-diff"
-            className="mt-1 overflow-x-auto rounded-sm bg-muted/40 py-1 font-mono text-xs"
+            className="mt-1 overflow-x-auto rounded-sm bg-muted/40 py-1 font-mono text-meta"
           >
             {diff.map((line, i) => {
               const display = DIFF_LINE[line.kind];
@@ -599,7 +601,7 @@ export function HandoffDivider({ handoff }: { handoff: Handoff }) {
   return (
     <div
       data-testid="handoff"
-      className="my-3 flex items-center gap-3 text-xs font-medium tracking-wide text-muted-foreground uppercase"
+      className="my-3 flex items-center gap-3 text-meta font-medium tracking-wide text-muted-foreground uppercase"
     >
       <span className="h-px flex-1 bg-border" />
       {handoffLabel(handoff)}
@@ -629,7 +631,7 @@ export function WorkerAnswerCard({
       data-testid="worker-answer"
       className={cn(CARD, "my-2 flex flex-col gap-1.5 p-2.5")}
     >
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
         <MessageCircleReply aria-hidden className="size-3.5 text-muted-foreground" />
         <h3 className="font-medium">
           {inWorker ? (
@@ -646,17 +648,17 @@ export function WorkerAnswerCard({
           </span>
         )}
       </header>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-sm">
-        <dt className="text-xs text-muted-foreground">Q</dt>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-reading">
+        <dt className="text-meta text-muted-foreground">Q</dt>
         <dd>
           <WorkerText text={answer.question} />
         </dd>
-        <dt className="text-xs text-muted-foreground">A</dt>
+        <dt className="text-meta text-muted-foreground">A</dt>
         <dd>
           <WorkerText text={answer.answer} />
         </dd>
       </dl>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-caption text-muted-foreground">
         Allowed because this workspace is at Full autonomy. Write to the{" "}
         {inWorker ? "worker" : "worker's thread"} if you would have said otherwise.
       </p>
@@ -690,7 +692,7 @@ export function WorkerQuestionCard({
       data-stage={question.stage}
       className={cn(CARD, "my-2 flex flex-col gap-1.5 p-2.5")}
     >
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
         <MessageCircleQuestion
           aria-hidden
           className={cn("size-3.5", open ? "text-status-needs-mark" : "text-muted-foreground")}
@@ -721,13 +723,13 @@ export function WorkerQuestionCard({
         <>
           <WorkerText text={question.question} />
           {question.note !== undefined && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               <span className="font-medium text-foreground">Orchestrator:</span> {question.note}
             </p>
           )}
           {outcome !== undefined && (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-sm">
-              <dt className="text-xs text-muted-foreground">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-reading">
+              <dt className="text-meta text-muted-foreground">
                 {question.stage === "dismissed" ? "Why" : "A"}
               </dt>
               <dd data-testid="question-outcome">
@@ -763,15 +765,15 @@ export function DreamReportCard({
         <MoonStar aria-hidden className="size-3.5 text-muted-foreground" />
         <h3 className="font-medium">Dream</h3>
         <StatePill state={dreamStatus(report)} testId="dream-report-status" />
-        <span className="text-xs text-muted-foreground">{reviewSummary(report.files)}</span>
+        <span className="text-meta text-muted-foreground">{reviewSummary(report.files)}</span>
       </header>
-      {failure !== undefined && <p className="text-xs text-destructive">{failure}</p>}
+      {failure !== undefined && <p className="text-meta text-destructive">{failure}</p>}
       {changed.length > 0 && (
-        <ul data-testid="dream-report-files" className="flex flex-col gap-0.5 text-xs">
+        <ul data-testid="dream-report-files" className="flex flex-col gap-0.5 text-meta">
           {changed.map((file) => (
             <li key={file.path} className="flex items-center gap-2">
               <span className="min-w-0 truncate font-mono">{file.path}</span>
-              <StatePill state={presentFileStatus(file.status)} className="text-[11px]" />
+              <StatePill state={presentFileStatus(file.status)} className="text-caption" />
             </li>
           ))}
         </ul>
@@ -782,7 +784,7 @@ export function DreamReportCard({
         </Disclosure>
       )}
       {workspaceId !== undefined && (
-        <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <p className="flex flex-wrap items-center gap-x-2 text-meta text-muted-foreground">
           <Link
             to="/w/$workspaceId/memory"
             params={{ workspaceId }}

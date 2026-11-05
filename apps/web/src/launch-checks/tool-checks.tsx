@@ -92,7 +92,7 @@ export function ToolChecks() {
             className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-8"
           >
             <span className="font-mono text-muted-foreground">{tool.tool}</span>
-            <span className="text-right font-mono text-xs break-all">
+            <span className="text-right font-mono text-meta break-all">
               {toolSummary(tool, checks)}
               {tool.found && tool.unusable !== undefined && (
                 <span className="block text-destructive">{`can't start threads: ${tool.unusable}`}</span>
@@ -159,7 +159,7 @@ function RegistrySignIn() {
   return (
     <div
       data-testid="registry-sign-in"
-      className="flex min-h-7 items-center gap-2 text-xs text-warning"
+      className="flex min-h-7 items-center gap-2 text-meta text-warning"
     >
       <KeyRound aria-hidden className="size-3.5 shrink-0" />
       <span className="min-w-0">
@@ -207,10 +207,10 @@ function AgentStatusRow({
         <AgentIcon agent={agent} className="size-4" />
         <span className="font-medium">{name}</span>
         {shown !== undefined && (
-          <span className="font-mono text-xs text-muted-foreground">{shown}</span>
+          <span className="font-mono text-meta text-muted-foreground">{shown}</span>
         )}
         {runtime !== undefined && <SourceTag runtime={runtime} />}
-        {note !== undefined && <span className="text-xs text-muted-foreground">{note}</span>}
+        {note !== undefined && <span className="text-meta text-muted-foreground">{note}</span>}
         {runtime !== undefined && trouble === undefined && note === undefined && (
           <VerdictMark runtime={runtime} />
         )}
@@ -222,7 +222,7 @@ function AgentStatusRow({
                 <span
                   tabIndex={0}
                   className={cn(
-                    "flex min-w-0 items-center gap-1 rounded-sm text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    "flex min-w-0 items-center gap-1 rounded-sm text-meta outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                     tone,
                   )}
                 />

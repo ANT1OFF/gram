@@ -74,7 +74,7 @@ export function SourceTag({ runtime }: { runtime: AgentRuntime }) {
   return (
     <span
       data-testid="runtime-source"
-      className="rounded-sm bg-muted px-1 text-[0.7rem] leading-4 text-muted-foreground"
+      className="rounded-sm bg-muted px-1 text-caption leading-4 text-muted-foreground"
     >
       {SOURCE_LABEL[resolved.source]}
     </span>
@@ -135,7 +135,7 @@ export function NewerMark({ runtime }: { runtime: AgentRuntime }) {
           data-testid="runtime-newer"
           data-kind={note.kind}
           className={cn(
-            "flex min-w-0 items-center gap-1 rounded-sm text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+            "flex min-w-0 items-center gap-1 rounded-sm text-meta outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
             tone,
           )}
         />
@@ -165,7 +165,7 @@ export function ManagedUpdate({ runtime }: { runtime: AgentRuntime }) {
         data-testid="runtime-progress"
         aria-live="polite"
         className={cn(
-          "text-xs",
+          "text-meta",
           state?.state === "failed" ? "text-destructive" : "text-muted-foreground",
         )}
       >

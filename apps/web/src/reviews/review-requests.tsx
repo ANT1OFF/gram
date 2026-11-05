@@ -400,7 +400,7 @@ function ReviewRequestsList({
   if (requests.length === 0) {
     return (
       <RequestsMenu
-        render={<p id={id} className="py-1 pr-1 pl-3 text-[11px] text-muted-foreground" />}
+        render={<p id={id} className="py-1 pr-1 pl-3 text-caption text-muted-foreground" />}
       >
         None right now. Right-click to change what is listed.
       </RequestsMenu>
@@ -431,7 +431,7 @@ function FilteredRequests({
         shown={visible.length}
       />
       {visible.length === 0 ? (
-        <p className="px-3 py-2 text-[11px] text-muted-foreground">No PRs match this view.</p>
+        <p className="px-3 py-2 text-caption text-muted-foreground">No PRs match this view.</p>
       ) : !grouped ? (
         <ul className="flex flex-col">
           {visible.map((request) => (
@@ -482,13 +482,13 @@ function ReviewRequestCard({ request }: { request: ReviewRequest }) {
   const waitingOn = reviewRequestWaitingOn(request);
   return (
     <>
-      <p className="break-all text-xs text-muted-foreground">{prRefText(request)}</p>
+      <p className="break-all text-meta text-muted-foreground">{prRefText(request)}</p>
       <p className="break-words font-medium">{request.title || prRefText(request)}</p>
       <PrInformationDetails pr={request} />
       <PrStatusDetails pr={request} />
 
       {waitingOn !== undefined && (
-        <p className="text-xs text-muted-foreground">{waitingOn}, so this one can wait.</p>
+        <p className="text-meta text-muted-foreground">{waitingOn}, so this one can wait.</p>
       )}
     </>
   );
@@ -516,7 +516,7 @@ function ReviewRequestRow({
           data-testid="review-request"
           data-waiting={waiting}
           className={cn(
-            "flex min-w-0 rounded-(--sidebar-row-radius) py-1.5 pr-2 text-xs hover:bg-sidebar-row-hover",
+            "flex min-w-0 rounded-(--sidebar-row-radius) py-1.5 pr-2 text-meta hover:bg-sidebar-row-hover",
             grouped ? "pl-7" : "pl-3",
           )}
         />
@@ -554,7 +554,7 @@ function ReviewRequestRow({
               className={cn(
                 CARD_SURFACE,
                 prContextMenuKey,
-                "flex w-80 max-w-[calc(100vw-24px)] max-h-[min(var(--available-height),calc(100dvh-24px))] flex-col gap-2 overflow-y-auto overscroll-contain p-3 text-sm focus-visible:ring-2 focus-visible:ring-ring [&>*]:shrink-0",
+                "flex w-80 max-w-[calc(100vw-24px)] max-h-[min(var(--available-height),calc(100dvh-24px))] flex-col gap-2 overflow-y-auto overscroll-contain p-3 text-reading focus-visible:ring-2 focus-visible:ring-ring [&>*]:shrink-0",
               )}
             >
               <ReviewRequestCard request={request} />

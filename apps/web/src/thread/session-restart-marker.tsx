@@ -40,7 +40,7 @@ export function SessionRestartMarker({ restart }: { restart: SessionRestartData 
           : "The agent's session was restarted on the same conversation, and read its settings, MCP servers, connectors, instructions and skills again."
       }
       data-testid="session-restart"
-      className="my-3 flex w-full items-center gap-3 text-xs text-muted-foreground"
+      className="my-3 flex w-full items-center gap-3 text-meta text-muted-foreground"
     >
       <span aria-hidden className="h-px min-w-4 flex-1 bg-border" />
       <span className="flex min-w-0 items-center gap-1.5">

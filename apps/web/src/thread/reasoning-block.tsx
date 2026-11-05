@@ -14,7 +14,7 @@ export function ReasoningBlock({ isStreaming }: { isStreaming: boolean }) {
       <div
         data-testid="reasoning-note"
         role="status"
-        className="not-prose flex items-center gap-1.5 text-xs text-muted-foreground"
+        className="not-prose flex items-center gap-1.5 text-meta text-muted-foreground"
       >
         <BrainIcon aria-hidden className="size-3.5" />
         <Shimmer duration={1}>Thinking…</Shimmer>

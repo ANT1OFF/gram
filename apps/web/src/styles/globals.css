@@ -58,6 +58,8 @@
   --text-heading: var(--type-heading-size);
   --text-heading--line-height: var(--type-heading-line);
   --text-heading--font-weight: var(--type-heading-weight);
+  /* Inline code and paths in running text: a touch smaller than the text around it. */
+  --text-code: 0.9em;
 
   /* Named spacing on the 4 px step (Tailwind's --spacing is 4 px, so p-1 is 4 px and p-4 16 px). */
   --spacing-tight: calc(var(--spacing) * 1);
@@ -69,8 +71,6 @@
   --shadow-raised: var(--elevation-raised);
   --shadow-overlay: var(--elevation-overlay);
   --shadow-composer: var(--elevation-composer);
-  --shadow-card: var(--shadow-raised);
-  --shadow-popover: var(--shadow-overlay);
 
   /* shadcn names → semantic tokens */
   --color-background: var(--surface-2);
@@ -132,6 +132,9 @@
   --color-sidebar-block-border: var(--sidebar-block-border);
   --color-thread: var(--thread-bg);
   --color-panel: var(--panel-bg);
+  --color-media-scrim: var(--media-scrim);
+  --color-media-scrim-hover: var(--media-scrim-hover);
+  --color-on-media: var(--on-media);
 }
 
 /* One selection and focus style; the tokens are in tokens.css and DESIGN.md says where each goes.
@@ -210,7 +213,7 @@
 
 /* Settings → Appearance → Reading (thread/reading.ts): a transcript's messages at the reading size,
    and the markdown in them scaled with it, so headings, code and tables keep their proportions.
-   Unlayered, so it wins over the text-sm the message and streamdown's elements carry; the
+   Unlayered, so it wins over the text-reading the message and streamdown's elements carry; the
    fallbacks are those classes' own sizes, the original look. Tool cards keep their sizes. */
 [data-transcript] [data-slot="message-content"],
 [data-transcript]

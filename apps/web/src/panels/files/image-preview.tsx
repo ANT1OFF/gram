@@ -63,11 +63,11 @@ export function CheckoutImage({
   const query = useCheckoutImage(threadId, path);
   if (query.status === "pending") return <Shimmer>{alt || "Loading image…"}</Shimmer>;
   if (query.status === "error") {
-    return <span className="text-xs text-danger-text">{filesProblem(query.error)}</span>;
+    return <span className="text-meta text-danger-text">{filesProblem(query.error)}</span>;
   }
   if (query.data.tooLarge || query.data.base64 === undefined) {
     return (
-      <span className="text-xs text-muted-foreground">
+      <span className="text-meta text-muted-foreground">
         {alt || "Image"} is too large to preview · {formatSize(query.data.size)}
       </span>
     );

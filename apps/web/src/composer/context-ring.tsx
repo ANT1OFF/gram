@@ -80,7 +80,7 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
           <Popover.Popup
             data-surface="overlay"
             aria-label="Usage"
-            className="origin-(--transform-origin) rounded-md border border-border bg-popover px-3 py-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="origin-(--transform-origin) rounded-md border border-border bg-popover px-3 py-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <UsageBar usage={usage} countUp={countUp} showCost={showCost} />
           </Popover.Popup>

@@ -23,7 +23,7 @@ import {
 import { useFocusOnOpen } from "./use-focus-on-open";
 
 const INPUT =
-  "h-7 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
+  "h-7 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-meta outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 const ICON_BUTTON =
   "grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40";
 
@@ -95,7 +95,7 @@ export function StageEditor({
     <form
       aria-label={`Plan of ${subject}`}
       data-testid="stage-editor"
-      className="flex max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card p-2.5 text-xs"
+      className="flex max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card p-2.5 text-meta"
       onSubmit={(event) => {
         event.preventDefault();
         submit();

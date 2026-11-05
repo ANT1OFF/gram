@@ -43,7 +43,7 @@ export function GridHeads() {
       data-testid="board-grid-heads"
       className={cn(
         GRID_COLUMNS,
-        "sticky top-0 z-10 border-b border-border bg-thread px-4 py-1.5 text-xs text-muted-foreground",
+        "sticky top-0 z-10 border-b border-border bg-thread px-4 py-1.5 text-meta text-muted-foreground",
       )}
     >
       <span>Task</span>
@@ -85,7 +85,7 @@ export function StationSteps({
       aria-label={`${label}, step ${at + 1} of ${FEATURE_STATIONS.length}`}
       data-testid="grid-stage"
       data-station={station}
-      className="flex min-w-0 items-center gap-2 text-xs"
+      className="flex min-w-0 items-center gap-2 text-meta"
     >
       <span aria-hidden className="flex shrink-0 items-center gap-0.5">
         {FEATURE_STATIONS.map((each, index) => (
@@ -179,7 +179,7 @@ function NowCell({
       data-station={station}
       data-tone={worker.tone}
       data-asking={asking || undefined}
-      className="flex min-w-0 items-start gap-1.5 text-xs"
+      className="flex min-w-0 items-start gap-1.5 text-meta"
     >
       <Hint
         label={hint}
@@ -262,7 +262,7 @@ function GridRow({ sub = false, children }: { sub?: boolean; children: ReactNode
 /** A worker under its feature's row: its title, indented, then its cells. */
 function SubTask({ children }: { children: ReactNode }) {
   return (
-    <span className="flex min-w-0 items-start gap-1.5 pl-3 text-xs text-foreground/80">
+    <span className="flex min-w-0 items-start gap-1.5 pl-3 text-meta text-foreground/80">
       <span aria-hidden className="mt-1.5 h-px w-2 shrink-0 bg-border-strong" />
       <span className="line-clamp-2 min-w-0 break-words">{children}</span>
     </span>
@@ -323,7 +323,7 @@ export function GridLine({
     >
       <GridRow>
         <div className="flex min-w-0 flex-col gap-1">
-          <span className="flex min-w-0 items-start gap-1.5 text-sm font-medium">
+          <span className="flex min-w-0 items-start gap-1.5 text-reading font-medium">
             {/* The name opens the feature's sheet; its menu sits beside it. */}
             <button
               type="button"
@@ -352,7 +352,7 @@ export function GridLine({
             />
           </span>
           {(stage !== undefined || summary !== undefined || repos) && (
-            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-meta">
               {stage !== undefined && <StageChip stage={stage} testId="rail-stage-chip" />}
               {repos && (
                 <span data-testid="rail-repos" className="truncate text-muted-foreground">
@@ -387,7 +387,7 @@ export function GridLine({
         ) : (
           <>
             <StationSteps station={FEATURE_STATIONS[row.reach] ?? "briefed"} />
-            <span data-testid="grid-workers" className="pt-px text-xs text-muted-foreground">
+            <span data-testid="grid-workers" className="pt-px text-meta text-muted-foreground">
               {workers.length} {workers.length === 1 ? "worker" : "workers"}
               {needs > 0 && (
                 <span className="text-status-needs">

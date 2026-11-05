@@ -118,19 +118,19 @@ export function SpeedField({
               {item.label}
             </SelectItem>
           ))}
-          <p className="max-w-72 px-2 py-1 text-xs text-muted-foreground">{usage}</p>
-          <p role="status" className="max-w-72 px-2 py-1 text-xs text-muted-foreground">
+          <p className="max-w-72 px-2 py-1 text-meta text-muted-foreground">{usage}</p>
+          <p role="status" className="max-w-72 px-2 py-1 text-meta text-muted-foreground">
             {report}
           </p>
         </SelectContent>
       </Select>
       {value === "fast" && !fast && (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="text-meta text-muted-foreground">
           Fast is not advertised for this model. Select Standard or retry model discovery.
         </p>
       )}
       {state && !ghost && (
-        <p role="status" className="max-w-80 text-xs text-muted-foreground">
+        <p role="status" className="max-w-80 text-meta text-muted-foreground">
           {state.detail ??
             (state.speed === "unknown"
               ? "CLI speed not reported."

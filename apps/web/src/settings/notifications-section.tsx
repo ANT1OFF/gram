@@ -50,7 +50,7 @@ export function NotificationsSection() {
   const radios = useRef<(HTMLButtonElement | null)[]>([]);
 
   if (!settings || !notifications) {
-    return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+    return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   }
 
   const failWith = (key: NotificationsKey) => (e: unknown) =>
@@ -141,7 +141,7 @@ export function NotificationsSection() {
           error={errorOf("sound")}
           detail={
             <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-1 text-meta text-muted-foreground">
                 <span>Preview</span>
                 {SOUNDS.map((sound) => (
                   <Hint
@@ -161,7 +161,7 @@ export function NotificationsSection() {
                 ))}
               </div>
               {motion === "off" && current !== undefined && (
-                <p data-testid="sound-motion-off" className="text-xs text-muted-foreground">
+                <p data-testid="sound-motion-off" className="text-meta text-muted-foreground">
                   Motion is Off, so notifications stay quiet. Preview still plays the sound.
                 </p>
               )}

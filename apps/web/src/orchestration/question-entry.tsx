@@ -46,7 +46,7 @@ import {
 import { useFocusOnOpen } from "./use-focus-on-open";
 
 const INPUT =
-  "rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
+  "rounded-md border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
 /**
  * A question's id, muted beside its text: a handle to refer to it by, not a label. Its hover and its
@@ -60,7 +60,7 @@ function IdChip({ id }: { id: string }) {
       render={
         <span
           aria-label={`${kind} ${id}`}
-          className="mt-0.5 shrink-0 rounded-sm border border-border px-1 font-mono text-[11px] text-muted-foreground"
+          className="mt-0.5 shrink-0 rounded-sm border border-border px-1 font-mono text-caption text-muted-foreground"
         />
       }
     >
@@ -223,7 +223,7 @@ export function OpenQuestion({
       {card.asker !== undefined && (
         <p
           data-testid="question-asker"
-          className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground"
+          className="flex min-w-0 items-center gap-1 text-caption text-muted-foreground"
         >
           <MessageCircleQuestion aria-hidden className="size-3.5 shrink-0 text-status-needs-mark" />
           <span className="min-w-0 flex-1 truncate">
@@ -238,7 +238,7 @@ export function OpenQuestion({
       )}
       <div className="flex min-w-0 items-start gap-2">
         {card.id !== undefined && <IdChip id={card.id} />}
-        <p id={questionId} className="min-w-0 flex-1 text-sm break-words">
+        <p id={questionId} className="min-w-0 flex-1 text-reading break-words">
           {card.text}
         </p>
         {mode === "idle" && (
@@ -246,7 +246,7 @@ export function OpenQuestion({
             {answering ? (
               <span
                 data-testid="question-answering"
-                className="inline-flex h-6 items-center gap-1 px-1 text-xs text-muted-foreground"
+                className="inline-flex h-6 items-center gap-1 px-1 text-meta text-muted-foreground"
               >
                 <ArrowDown aria-hidden className="size-3.5" />
                 In Asks
@@ -277,7 +277,7 @@ export function OpenQuestion({
         )}
       </div>
       {card.detail !== undefined && (
-        <p className="text-xs whitespace-pre-wrap text-muted-foreground">{card.detail}</p>
+        <p className="text-meta whitespace-pre-wrap text-muted-foreground">{card.detail}</p>
       )}
       {card.seenFrom !== undefined && (
         <OptionGallery
@@ -289,14 +289,14 @@ export function OpenQuestion({
         />
       )}
       {card.recommendation !== undefined && (
-        <p data-testid="question-recommendation" className="text-xs text-muted-foreground">
+        <p data-testid="question-recommendation" className="text-meta text-muted-foreground">
           <span className="font-medium text-foreground">Recommends:</span> {card.recommendation}
         </p>
       )}
       {card.note !== undefined && (
         <p
           data-testid="question-note"
-          className="flex items-start gap-1 text-xs text-muted-foreground"
+          className="flex items-start gap-1 text-meta text-muted-foreground"
         >
           <Bot aria-hidden className="mt-px size-3.5 shrink-0" />
           <span>
@@ -306,7 +306,7 @@ export function OpenQuestion({
       )}
       <ExpandPresence open={sheet && mode === "answering"}>
         <form
-          className="flex flex-col gap-1.5 pt-1 text-sm"
+          className="flex flex-col gap-1.5 pt-1 text-reading"
           onSubmit={(event) => {
             event.preventDefault();
             send();
@@ -347,7 +347,7 @@ export function OpenQuestion({
               title={unavailable ?? (answer === "" ? "Pick a choice first" : undefined)}
               hint={formatKeys("mod+enter")}
             />
-            <span className="min-w-0 truncate text-xs text-muted-foreground">
+            <span className="min-w-0 truncate text-meta text-muted-foreground">
               {worker ? "Goes straight to the worker" : "Goes to the orchestrator"}
             </span>
             <span className="flex-1" />
@@ -367,7 +367,7 @@ export function OpenQuestion({
       </ExpandPresence>
       <ExpandPresence open={mode === "dismissing"}>
         <form
-          className="flex flex-col gap-1.5 pt-1 text-sm"
+          className="flex flex-col gap-1.5 pt-1 text-reading"
           onSubmit={(event) => {
             event.preventDefault();
             dismiss();
@@ -399,7 +399,7 @@ export function OpenQuestion({
         </form>
       </ExpandPresence>
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -570,9 +570,12 @@ export function WorkerQuestionHistory({ question }: { question: WorkerQuestion }
       </span>
       <IdChip id={question.id} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm break-words text-muted-foreground">{question.question}</p>
-        {outcome !== undefined && <p className="text-xs break-words">{outcome}</p>}
-        <p data-testid="question-status" className="text-[11px] text-muted-foreground tabular-nums">
+        <p className="text-reading break-words text-muted-foreground">{question.question}</p>
+        {outcome !== undefined && <p className="text-meta break-words">{outcome}</p>}
+        <p
+          data-testid="question-status"
+          className="text-caption text-muted-foreground tabular-nums"
+        >
           {status}
         </p>
       </div>
@@ -621,8 +624,10 @@ export function ClosedQuestion({ question }: { question: MemoryQuestion }) {
       </span>
       {question.id !== undefined && <IdChip id={question.id} />}
       <div className="min-w-0 flex-1">
-        <p className="text-sm break-words text-muted-foreground">{question.text}</p>
-        {question.answer !== undefined && <p className="text-xs break-words">{question.answer}</p>}
+        <p className="text-reading break-words text-muted-foreground">{question.text}</p>
+        {question.answer !== undefined && (
+          <p className="text-meta break-words">{question.answer}</p>
+        )}
       </div>
     </li>
   );

@@ -63,11 +63,11 @@ export function CatchUpCard({ thread }: { thread: Thread }) {
       <div
         data-testid="worker-catch-up"
         data-source={isPending ? "pending" : helper == null ? "report" : "helper"}
-        className="flex items-start gap-2 border-b border-border bg-card/40 px-4 py-2 text-sm"
+        className="flex items-start gap-2 border-b border-border bg-card/40 px-4 py-2 text-reading"
       >
         <History aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <p className="line-clamp-2 min-w-0 flex-1" title={isPending ? undefined : text}>
-          <span className="mr-1.5 text-xs text-muted-foreground">Since you looked</span>
+          <span className="mr-1.5 text-meta text-muted-foreground">Since you looked</span>
           <Swap swapKey={isPending ? "pending" : "text"} className="inline">
             {isPending ? <Shimmer className="text-muted-foreground">Catching up</Shimmer> : text}
           </Swap>

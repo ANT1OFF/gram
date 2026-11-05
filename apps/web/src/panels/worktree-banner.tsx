@@ -17,7 +17,7 @@ export function WorktreeBanner({ threadId }: { threadId: ThreadId }) {
   return (
     <div
       data-testid="worktree-banner"
-      className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-1.5 text-xs text-muted-foreground"
+      className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-1.5 text-meta text-muted-foreground"
     >
       <GitBranch aria-hidden className="size-3.5 shrink-0" />
       <span className="min-w-0 truncate">

@@ -71,7 +71,7 @@ import { InlineConfirm } from "./inline-confirm";
 
 const SECTION = "flex flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3";
 const INPUT =
-  "rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
+  "rounded-md border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 const DATE = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
@@ -205,11 +205,11 @@ function StartFlow({
     <div
       data-testid="dream-start"
       data-kind={kind}
-      className="flex flex-col gap-3 rounded-(--radius-md) border border-border bg-card p-3 text-xs"
+      className="flex flex-col gap-3 rounded-(--radius-md) border border-border bg-card p-3 text-meta"
     >
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h3 className="text-sm font-medium">
+          <h3 className="text-reading font-medium">
             {importing ? "Draft from past sessions" : "Draft memory update"}
           </h3>
           <p className="text-muted-foreground">
@@ -253,7 +253,7 @@ function StartFlow({
               id={perRepoId}
               data-testid="dream-per-repo"
               inputMode="numeric"
-              className={cn(INPUT, "h-7 w-24 text-xs tabular-nums")}
+              className={cn(INPUT, "h-7 w-24 text-meta tabular-nums")}
               value={perRepoText}
               aria-invalid={perRepo === undefined}
               onChange={(event) => setPerRepoText(event.target.value)}
@@ -290,7 +290,7 @@ function StartFlow({
             id={budgetId}
             data-testid="dream-budget"
             inputMode="numeric"
-            className={cn(INPUT, "h-7 w-24 text-xs tabular-nums")}
+            className={cn(INPUT, "h-7 w-24 text-meta tabular-nums")}
             value={budgetText}
             aria-invalid={budget === undefined}
             onChange={(event) => setBudgetText(event.target.value)}
@@ -483,7 +483,7 @@ function StartFlow({
           id={instructionsId}
           rows={2}
           maxLength={DREAM_INSTRUCTIONS_MAX}
-          className={cn(INPUT, "resize-y py-1 text-xs")}
+          className={cn(INPUT, "resize-y py-1 text-meta")}
           value={instructions}
           placeholder="Focus on how the three repos deploy; ignore one-off debugging."
           onChange={(event) => setInstructions(event.target.value)}
@@ -633,14 +633,14 @@ function FileDiff({
       className="flex min-w-0 flex-1 flex-col gap-2"
     >
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <h4 className="font-mono text-sm">{file.path}</h4>
+        <h4 className="font-mono text-reading">{file.path}</h4>
         <StatePill state={presentFileStatus(file.status)} />
-        <span className="text-xs text-muted-foreground tabular-nums">{diffStat(diff)}</span>
+        <span className="text-meta text-muted-foreground tabular-nums">{diffStat(diff)}</span>
       </div>
       {conflict && (
         <fieldset
           data-testid="dream-conflict"
-          className="flex flex-col gap-1.5 rounded-(--radius-md) border border-status-needs-mark/60 bg-card p-2 text-xs"
+          className="flex flex-col gap-1.5 rounded-(--radius-md) border border-status-needs-mark/60 bg-card p-2 text-meta"
         >
           <legend className="sr-only">Which side of {file.path} to keep</legend>
           <p>
@@ -726,15 +726,15 @@ function FileDiff({
         </fieldset>
       )}
       {merged && !mergeReady ? (
-        <p data-testid="dream-merge-pending" className="text-xs text-muted-foreground">
+        <p data-testid="dream-merge-pending" className="text-meta text-muted-foreground">
           {file.merge?.status === "running"
             ? "The merged file shows here when the model is done."
             : "No merged file to show. Try again, or choose a side."}
         </p>
       ) : diff.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Empty on both sides.</p>
+        <p className="text-meta text-muted-foreground">Empty on both sides.</p>
       ) : (
-        <pre className="max-h-96 overscroll-contain overflow-auto rounded-sm bg-muted/40 py-1 font-mono text-xs">
+        <pre className="max-h-96 overscroll-contain overflow-auto rounded-sm bg-muted/40 py-1 font-mono text-meta">
           {diff.map((line, i) => {
             const display = DIFF_LINE[line.kind];
             return (
@@ -888,11 +888,11 @@ function Review({
       )}
     >
       <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <h3 className="text-sm font-medium">
+        <h3 className="text-reading font-medium">
           {data.dream.mode === "auto" ? "Inspect" : "Review"} · {dreamKindLabel(data.dream)}
         </h3>
         <StatePill state={dreamStatus(data.dream)} />
-        <span data-testid="dream-review-summary" className="text-xs text-muted-foreground">
+        <span data-testid="dream-review-summary" className="text-meta text-muted-foreground">
           {reviewSummary(data.files)}
           {data.memoryVersion !== undefined && data.memoryVersion !== ""
             ? ` · against version ${data.memoryVersion}`
@@ -913,7 +913,7 @@ function Review({
         className="min-h-0 flex-1 overscroll-contain overflow-y-auto"
       >
         {failure !== undefined && (
-          <p role="status" className="flex items-start gap-1.5 text-xs text-destructive">
+          <p role="status" className="flex items-start gap-1.5 text-meta text-destructive">
             <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
             {failure} It can only be discarded.
           </p>
@@ -922,7 +922,7 @@ function Review({
           <p
             role="alert"
             data-testid="dream-review-refreshed"
-            className="flex items-start gap-1.5 rounded-(--radius-sm) border border-warning/50 px-2 py-1.5 text-xs"
+            className="flex items-start gap-1.5 rounded-(--radius-sm) border border-warning/50 px-2 py-1.5 text-meta"
           >
             <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
             <span>
@@ -932,7 +932,7 @@ function Review({
           </p>
         )}
         {data.report !== undefined && (
-          <details open className="text-xs">
+          <details open className="text-meta">
             <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
               REPORT.md: what it merged, dropped and added, and why
             </summary>
@@ -956,14 +956,14 @@ function Review({
                   aria-current={open?.path === file.path ? "true" : undefined}
                   onClick={() => setSelected(file.path)}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-(--radius-sm) px-2 py-1 text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
+                    "flex w-full items-center gap-2 rounded-(--radius-sm) px-2 py-1 text-left text-meta outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
                     open?.path === file.path && "bg-sidebar-row-active",
                   )}
                 >
                   <span className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
-                  <StatePill state={presentFileStatus(file.status)} className="text-[11px]" />
+                  <StatePill state={presentFileStatus(file.status)} className="text-caption" />
                   {file.status === "conflict" && resolutions[file.path] !== undefined && (
-                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                    <span className="shrink-0 text-caption text-muted-foreground">
                       {sideLabel(resolutions[file.path]!)}
                     </span>
                   )}
@@ -971,7 +971,7 @@ function Review({
               </li>
             ))}
             {files.length === 0 && (
-              <li className="px-2 py-1 text-xs text-muted-foreground">
+              <li className="px-2 py-1 text-meta text-muted-foreground">
                 The update wrote no files.
               </li>
             )}
@@ -1008,7 +1008,7 @@ function Review({
           )}
         </div>
         {error !== undefined && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-meta text-destructive">
             {error}
           </p>
         )}
@@ -1036,7 +1036,7 @@ function Review({
           Discard
         </Button>
         {adopt.reason !== undefined && failure === undefined && (
-          <span data-testid="dream-adopt-reason" className="text-xs text-muted-foreground">
+          <span data-testid="dream-adopt-reason" className="text-meta text-muted-foreground">
             {adopt.reason}
           </span>
         )}
@@ -1108,7 +1108,7 @@ function DreamRow({
       data-status={dream.status}
       className="flex flex-col gap-1 border-t border-border pt-2 first:border-t-0 first:pt-0"
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta">
         <StatePill state={dreamStatus(dream)} testId="dream-status" />
         <span className="font-medium">{dreamKindLabel(dream)}</span>
         <span className="text-muted-foreground">
@@ -1179,7 +1179,7 @@ function DreamRow({
         <p
           data-testid="dream-failure"
           className={cn(
-            "text-xs",
+            "text-meta",
             // Cancelling was the user's own doing, so it is said without alarm.
             dream.status === "failed" ? "text-destructive" : "text-muted-foreground",
           )}
@@ -1188,7 +1188,7 @@ function DreamRow({
         </p>
       )}
       {(dream.notes ?? []).map((note) => (
-        <p key={note} className="text-xs text-muted-foreground">
+        <p key={note} className="text-meta text-muted-foreground">
           {note}
         </p>
       ))}
@@ -1204,7 +1204,7 @@ function DreamRow({
         {discardWarning()}
       </InlineConfirm>
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -1222,7 +1222,7 @@ function ModeChoice({ mode, onChange }: { mode: DreamMode; onChange: (mode: Drea
   return (
     <fieldset
       data-testid="dream-mode"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta"
     >
       <legend className="float-left me-1 text-muted-foreground">When this update is ready</legend>
       <label className="flex items-center gap-1.5">
@@ -1299,7 +1299,7 @@ export function DreamsSection({
   return (
     <section ref={ref} aria-label="Dreams" data-testid="dreams" className={SECTION}>
       <h2 className="sr-only">Draft memory update</h2>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         Dreams: Gram rereads finished threads and drafts an update to this workspace&rsquo;s memory,
         with a source for each change. One runs at a time.
       </p>
@@ -1332,11 +1332,11 @@ export function DreamsSection({
         <ModeChoice mode={mode} onChange={setMode} />
       </div>
       {running && (
-        <p data-testid="dream-busy" className="text-xs text-muted-foreground">
+        <p data-testid="dream-busy" className="text-meta text-muted-foreground">
           A run is under way; the next can start once it ends or you cancel it below.
         </p>
       )}
-      <p role="status" data-testid="dream-mode-note" className="text-xs text-muted-foreground">
+      <p role="status" data-testid="dream-mode-note" className="text-meta text-muted-foreground">
         {mode === "auto"
           ? "This update is saved to memory without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore. The agent still keeps to its sandbox and asks before anything it would normally ask about."
           : "Memory changes only after you review the draft and adopt it. The agent still keeps to its sandbox and asks before anything it would normally ask about."}
@@ -1344,7 +1344,7 @@ export function DreamsSection({
       {suggestion !== undefined && starting === undefined && (
         <p
           data-testid="dream-backlog"
-          className="flex flex-wrap items-center gap-2 rounded-(--radius-sm) border border-border px-2 py-1.5 text-xs"
+          className="flex flex-wrap items-center gap-2 rounded-(--radius-sm) border border-border px-2 py-1.5 text-meta"
         >
           <span className="min-w-0 flex-1">{suggestion}</span>
           <Button
@@ -1374,13 +1374,13 @@ export function DreamsSection({
       ) : dreams.data === undefined ? (
         <PanelMessage loading>Loading memory updates…</PanelMessage>
       ) : dreams.data.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           No updates drafted yet. Draft memory update rereads finished threads and drafts changes
           for you to review.
         </p>
       ) : (
         <div className="flex flex-col gap-2 border-t border-border pt-3">
-          <h3 className="text-xs font-medium text-muted-foreground">Drafted updates</h3>
+          <h3 className="text-meta font-medium text-muted-foreground">Drafted updates</h3>
           <ul className="flex flex-col gap-2">
             <PresenceList>
               {dreams.data.map((dream) => (

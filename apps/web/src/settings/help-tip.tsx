@@ -53,7 +53,7 @@ export function SettingDescription({ id, children }: { id?: string; children: Re
     <p
       id={id}
       data-setting-description=""
-      className="text-xs leading-snug text-pretty text-muted-foreground"
+      className="text-meta leading-snug text-pretty text-muted-foreground"
     >
       {children}
     </p>

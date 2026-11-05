@@ -34,7 +34,7 @@ const POLICY_LABEL: Record<MergeReviewPolicy, string> = {
   bot: "Review bot",
 };
 
-const SELECT = cn(inputCls, "h-7 w-auto max-w-none text-xs");
+const SELECT = cn(inputCls, "h-7 w-auto max-w-none text-meta");
 
 type Override = NonNullable<OrchestratorCharter["repoMergeReviewPolicies"]>[number];
 
@@ -98,7 +98,7 @@ export function MergeReviewPolicyField({
           disabled={disabled}
           onChange={(mergeReviewPolicy) => onChange({ ...charter, mergeReviewPolicy })}
         />
-        <p data-testid="resolved-merge-review-policy" className="text-xs text-muted-foreground">
+        <p data-testid="resolved-merge-review-policy" className="text-meta text-muted-foreground">
           Resolves to {mergeReviewPolicyOf(charter, "", bots)} now.
         </p>
       </Field>
@@ -115,8 +115,8 @@ export function MergeReviewPolicyField({
                 data-testid="repo-override"
                 className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1"
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-xs">{override.repo}</span>
-                <span className="text-xs text-muted-foreground tabular-nums">
+                <span className="min-w-0 flex-1 truncate font-mono text-meta">{override.repo}</span>
+                <span className="text-meta text-muted-foreground tabular-nums">
                   {mergeReviewPolicyOf(charter, override.repo, bots)}
                 </span>
                 <select
@@ -211,7 +211,7 @@ function AddOverride({
         <input
           id={id}
           aria-label="Repository (owner/repo)"
-          className={cn(inputCls, "h-7 w-56 font-mono text-xs")}
+          className={cn(inputCls, "h-7 w-56 font-mono text-meta")}
           placeholder="owner/repo"
           spellCheck={false}
           autoComplete="off"
@@ -241,7 +241,7 @@ function AddOverride({
         </Button>
       </form>
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}

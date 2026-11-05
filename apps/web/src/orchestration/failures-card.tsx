@@ -121,7 +121,7 @@ export function FailureRowView({
     >
       <CauseIcon step={row.step} />
       <div className="min-w-0 flex-1">
-        <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm">
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-reading">
           <span data-testid="board-failure-cause" className="shrink-0 font-medium text-destructive">
             {row.cause}
           </span>
@@ -141,7 +141,7 @@ export function FailureRowView({
           {failure.pr !== undefined && (
             <span
               data-testid="board-failure-pr"
-              className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums"
+              className="shrink-0 font-mono text-meta text-muted-foreground tabular-nums"
             >
               #{failure.pr.number}
             </span>
@@ -150,7 +150,7 @@ export function FailureRowView({
         <p
           data-testid="board-failure-detail"
           title={row.detail}
-          className="truncate text-xs text-muted-foreground"
+          className="truncate text-meta text-muted-foreground"
         >
           {row.detail}
         </p>
@@ -217,7 +217,7 @@ export function FailuresCard({
         aria-label="Failing"
         className="overflow-hidden rounded-(--radius-lg) border border-destructive/40 bg-card"
       >
-        <h2 className="flex items-center gap-1.5 border-b border-border px-3 py-1.5 text-xs font-medium text-destructive">
+        <h2 className="flex items-center gap-1.5 border-b border-border px-3 py-1.5 text-meta font-medium text-destructive">
           <CircleAlert aria-hidden className="size-3.5" />
           Failing
           <span className="text-muted-foreground tabular-nums">{failures.length}</span>
@@ -232,7 +232,7 @@ export function FailuresCard({
             type="button"
             data-testid="board-failing-more"
             onClick={() => setAll(!all)}
-            className="w-full border-t border-border px-3 py-1 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full border-t border-border px-3 py-1 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             {all ? "Show fewer" : `Show ${more} more`}
           </button>

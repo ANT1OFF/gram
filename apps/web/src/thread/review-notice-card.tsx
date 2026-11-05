@@ -49,7 +49,7 @@ export function FindingList({
   if (findings.length === 0) return null;
   return (
     <section aria-label={label} className="flex flex-col gap-1">
-      <h4 className={cn("text-xs font-medium", tone)}>
+      <h4 className={cn("text-meta font-medium", tone)}>
         {label} ({findings.length})
       </h4>
       <ul className="flex flex-col gap-1.5">
@@ -57,7 +57,7 @@ export function FindingList({
           const where =
             finding.line === undefined ? finding.path : `${finding.path}:${finding.line}`;
           return (
-            <li key={finding.reviewThreadId} className="flex flex-col text-xs">
+            <li key={finding.reviewThreadId} className="flex flex-col text-meta">
               {finding.url ? (
                 <OutboundLink
                   href={finding.url}
@@ -84,15 +84,15 @@ export function ReviewNoticeCard({ notice, text }: { notice: ReviewNotice; text:
     <article
       aria-label={title}
       data-testid="review-notice"
-      className="flex w-full max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-sm"
+      className="flex w-full max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading"
     >
       <header className="flex flex-wrap items-baseline gap-x-2">
         <h3 className="font-medium">{title}</h3>
         {notice.round !== undefined && (
-          <span className="text-xs text-muted-foreground">Round {notice.round}</span>
+          <span className="text-meta text-muted-foreground">Round {notice.round}</span>
         )}
       </header>
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta">
         <VerdictLabel verdict={notice.verdict} />
         {notice.mergeState !== undefined && (
           <span className="text-muted-foreground">
@@ -105,7 +105,7 @@ export function ReviewNoticeCard({ notice, text }: { notice: ReviewNotice; text:
           {notice.ciFailed.map((name) => (
             <li
               key={name}
-              className="flex items-center gap-1 rounded-sm border border-destructive/40 px-1 text-xs text-destructive"
+              className="flex items-center gap-1 rounded-sm border border-destructive/40 px-1 text-meta text-destructive"
             >
               <CircleX aria-hidden className="size-3.5" />
               <span>Failing: {name}</span>
@@ -124,7 +124,7 @@ export function ReviewNoticeCard({ notice, text }: { notice: ReviewNotice; text:
 function NoticeText({ text }: { text: string }) {
   return (
     <Collapsible>
-      <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+      <CollapsibleTrigger className="group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground">
         <ChevronRight
           aria-hidden
           className="size-3.5 transition-transform group-data-[panel-open]:rotate-90"
@@ -134,7 +134,7 @@ function NoticeText({ text }: { text: string }) {
       <CollapsibleContent className="gram-collapse">
         <pre
           data-testid="notice-text"
-          className="mt-1 overflow-x-auto rounded-sm bg-muted/40 p-2 font-mono text-xs whitespace-pre-wrap"
+          className="mt-1 overflow-x-auto rounded-sm bg-muted/40 p-2 font-mono text-meta whitespace-pre-wrap"
         >
           {text}
         </pre>
@@ -157,12 +157,12 @@ export function HumanReviewNoticeCard({
     <article
       aria-label={title}
       data-testid="human-review-notice"
-      className="flex w-full max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-sm"
+      className="flex w-full max-w-xl flex-col gap-2 rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading"
     >
       <h3 className="font-medium">{title}</h3>
       <ul aria-label="Reviews" className="flex flex-col gap-1.5">
         {notice.reviews.map((review) => (
-          <li key={review.id} className="flex flex-col gap-0.5 text-xs">
+          <li key={review.id} className="flex flex-col gap-0.5 text-meta">
             <span className="flex flex-wrap items-center gap-x-2">
               <span className="font-medium">{review.author}</span>
               <VerdictLabel verdict={review.verdict} />

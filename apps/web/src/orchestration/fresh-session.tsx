@@ -25,7 +25,7 @@ export function HandingOff({
       data-testid="handing-off"
       title={compact ? "Handing off to a fresh session" : undefined}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground",
+        "inline-flex shrink-0 items-center gap-1 text-meta text-muted-foreground",
         className,
       )}
     >
@@ -82,9 +82,9 @@ function ConfirmDialog({ state, onClose }: { state: WorkspaceState; onClose: () 
       description={`${state.workspace.name}'s orchestrator`}
       onClose={onClose}
     >
-      <p className="text-sm">{FRESH_SESSION_EXPLANATION}</p>
+      <p className="text-reading">{FRESH_SESSION_EXPLANATION}</p>
       {!handoff.available && (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="text-meta text-muted-foreground">
           This workspace has no orchestrator open, so there is no session to replace.
         </p>
       )}

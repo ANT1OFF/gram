@@ -8,10 +8,10 @@ import { SETTINGS_CARD } from "./settings-group";
 /** Settings → General → Agent may browse: the public hosts agents open without asking, to remove. */
 export function AgentBrowseSection() {
   const { hosts, remove } = useAgentBrowseHosts();
-  if (hosts === undefined) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (hosts === undefined) return <p className="text-reading text-muted-foreground">Loading…</p>;
   if (hosts.length === 0) {
     return (
-      <p className="px-1 text-sm text-muted-foreground">
+      <p className="px-1 text-reading text-muted-foreground">
         No hosts: an agent asks before it opens any public site.
       </p>
     );
@@ -26,7 +26,7 @@ export function AgentBrowseSection() {
           <RowContextMenu
             key={host}
             actions={actions}
-            render={<li aria-label={host} className="flex items-center gap-2 text-sm" />}
+            render={<li aria-label={host} className="flex items-center gap-2 text-reading" />}
           >
             <Globe aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate font-mono">{host}</span>

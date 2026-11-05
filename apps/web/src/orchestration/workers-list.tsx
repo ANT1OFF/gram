@@ -156,7 +156,7 @@ export function WorkersList() {
             if (useWorkersListStore.getState().gliding !== undefined) return false;
             return returnFocusTo(opener)();
           }}
-          className="fixed top-[12%] left-1/2 z-50 flex max-h-[70vh] w-[min(38rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[12%] left-1/2 z-50 flex max-h-[70vh] w-[min(38rem,92vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && <WorkersBody />}
         </Dialog.Popup>
@@ -265,8 +265,8 @@ function WorkersBody() {
   return (
     <div className="flex min-h-0 flex-col" onKeyDown={onKeyDown}>
       <div className="flex items-center gap-3 border-b border-border px-3 py-2">
-        <Dialog.Title className="font-heading text-sm font-medium">Workers</Dialog.Title>
-        <span className="ml-auto truncate text-xs text-muted-foreground">
+        <Dialog.Title className="font-heading text-reading font-medium">Workers</Dialog.Title>
+        <span className="ml-auto truncate text-meta text-muted-foreground">
           {tree?.workspace.name}
         </span>
       </div>
@@ -277,7 +277,7 @@ function WorkersBody() {
           data-testid="workers-search"
           aria-label="Search workers"
           placeholder="Search workers"
-          className="h-9 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="h-9 flex-1 bg-transparent text-reading outline-none placeholder:text-muted-foreground"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -294,7 +294,7 @@ function WorkersBody() {
         className="min-h-0 overflow-y-auto p-1 outline-none"
       >
         {rows.length === 0 && (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+          <p className="px-3 py-6 text-center text-reading text-muted-foreground">
             {query.trim() !== "" ? "No matches" : EMPTY}
           </p>
         )}
@@ -305,7 +305,7 @@ function WorkersBody() {
             aria-label={section.label}
             className="mb-1"
           >
-            <h2 className="flex items-center gap-1 px-2 pt-2 pb-0.5 text-xs font-medium text-foreground">
+            <h2 className="flex items-center gap-1 px-2 pt-2 pb-0.5 text-meta font-medium text-foreground">
               {section.label}
               <span className="tabular-nums text-muted-foreground">{section.count}</span>
             </h2>
@@ -318,7 +318,7 @@ function WorkersBody() {
                     aria-label={feature.feature}
                     className="mb-1"
                   >
-                    <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-muted-foreground">
+                    <div className="px-2 pt-1 pb-0.5 text-caption font-medium text-muted-foreground">
                       {feature.feature}
                     </div>
                     <PresenceList>
@@ -347,7 +347,7 @@ function WorkersBody() {
       </div>
       <div
         data-testid="workers-keys"
-        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground"
+        className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
         <span>
           <kbd className="font-sans">{keyLabel("⏎")}</kbd> open
@@ -362,7 +362,7 @@ function WorkersBody() {
             useWorkersListStore.getState().close();
             useHistoryStore.getState().show("workers");
           }}
-          className="ml-auto flex items-center gap-1.5 rounded-(--radius-sm) px-1 text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="ml-auto flex items-center gap-1.5 rounded-(--radius-sm) px-1 text-caption text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <History aria-hidden className="size-3.5" />
           Finished in History
@@ -399,7 +399,7 @@ function WorkerListRow({
       onMouseMove={onHover}
       onClick={onOpen}
       className={cn(
-        "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+        "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-reading",
         active && "bg-accent text-accent-foreground",
       )}
     >
@@ -414,11 +414,11 @@ function WorkerListRow({
           className="size-3.5 shrink-0 text-muted-foreground"
         />
       )}
-      <span className="shrink-0 text-xs text-muted-foreground">{row.repo}</span>
+      <span className="shrink-0 text-meta text-muted-foreground">{row.repo}</span>
       <span
         data-testid="worker-now"
         title={row.waiting?.hint}
-        className="ml-auto shrink-0 pl-3 text-right text-xs text-muted-foreground"
+        className="ml-auto shrink-0 pl-3 text-right text-meta text-muted-foreground"
       >
         <Swap swapKey={row.now}>{row.now}</Swap>
       </span>

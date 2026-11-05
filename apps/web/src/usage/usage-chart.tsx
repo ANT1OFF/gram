@@ -29,13 +29,13 @@ export function FamilyLegend({
   return (
     <ul
       aria-label="Models"
-      className={cn("flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground", className)}
+      className={cn("flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted-foreground", className)}
     >
       {families.map((family) => (
         <li key={family} className="flex items-center gap-1.5">
           <span
             aria-hidden
-            className="size-2 rounded-[2px]"
+            className="size-2 rounded-2xs"
             style={{ background: FAMILY_COLOR[family] }}
           />
           {FAMILY_LABEL[family]}
@@ -70,7 +70,7 @@ export function TokensChart({
       <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-2">
         <div
           aria-hidden
-          className="flex -translate-y-1.5 flex-col justify-between text-right text-[11px] text-muted-foreground tabular-nums"
+          className="flex -translate-y-1.5 flex-col justify-between text-right text-caption text-muted-foreground tabular-nums"
           style={{ height: PLOT_HEIGHT }}
         >
           <span>{compactTokens(top)}</span>
@@ -94,7 +94,7 @@ export function TokensChart({
             >
               <div
                 className={cn(
-                  "flex w-full max-w-6 flex-col-reverse gap-[2px] overflow-hidden rounded-t-[3px]",
+                  "flex w-full max-w-6 flex-col-reverse gap-0.5 overflow-hidden rounded-t-2xs",
                   hover !== undefined && hover !== i && "opacity-60",
                 )}
                 style={{ height: `${(day.total / top) * 100}%` }}
@@ -115,7 +115,7 @@ export function TokensChart({
         <div />
         <div
           aria-hidden
-          className="relative mt-1.5 h-4 text-[11px] text-muted-foreground tabular-nums"
+          className="relative mt-1.5 h-4 text-caption text-muted-foreground tabular-nums"
         >
           {ticks.map((i) => (
             <span
@@ -134,12 +134,12 @@ export function TokensChart({
             </span>
           ))}
         </div>
-        <p className="col-span-2 mt-3 mb-1.5 text-xs text-muted-foreground">
+        <p className="col-span-2 mt-3 mb-1.5 text-meta text-muted-foreground">
           Cache read, share of input
         </p>
         <div
           aria-hidden
-          className="flex -translate-y-1.5 flex-col justify-between text-right text-[11px] text-muted-foreground tabular-nums"
+          className="flex -translate-y-1.5 flex-col justify-between text-right text-caption text-muted-foreground tabular-nums"
           style={{ height: STRIP_HEIGHT }}
         >
           <span>100%</span>
@@ -160,7 +160,7 @@ export function TokensChart({
             >
               <span
                 className={cn(
-                  "block w-full max-w-6 rounded-t-[2px] bg-muted-foreground/55",
+                  "block w-full max-w-6 rounded-t-2xs bg-muted-foreground/55",
                   hover !== undefined && hover !== i && "opacity-60",
                 )}
                 style={{ height: `${day.input === 0 ? 0 : (day.cacheRead / day.input) * 100}%` }}
@@ -200,7 +200,7 @@ function DayTip({
     <div
       role="status"
       data-testid="usage-chart-tip"
-      className="pointer-events-none absolute top-0 z-10 w-48 rounded-md border border-border bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-md"
+      className="pointer-events-none absolute top-0 z-10 w-48 rounded-md border border-border bg-popover px-2.5 py-2 text-meta text-popover-foreground shadow-overlay"
       style={{
         left: `calc(2.75rem + 0.5rem + (100% - 3.25rem) * ${at})`,
         transform: at > 0.6 ? "translateX(calc(-100% - 12px))" : "translateX(12px)",
@@ -214,7 +214,7 @@ function DayTip({
               <dt className="flex items-center gap-1.5 text-muted-foreground">
                 <span
                   aria-hidden
-                  className="size-2 rounded-[2px]"
+                  className="size-2 rounded-2xs"
                   style={{ background: FAMILY_COLOR[family] }}
                 />
                 {FAMILY_LABEL[family]}
@@ -245,7 +245,7 @@ export function DailyTable({
   families: readonly Family[];
 }) {
   return (
-    <details className="mt-3 text-xs">
+    <details className="mt-3 text-meta">
       <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
         Daily values (UTC)
       </summary>

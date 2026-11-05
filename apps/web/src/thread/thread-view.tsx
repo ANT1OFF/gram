@@ -348,7 +348,7 @@ export function ThreadView({
   if (phase === "gone" || (!summary && ready)) return <ThreadGone threadId={threadId} />;
   if (!summary) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+      <div className="flex flex-1 items-center justify-center text-reading text-muted-foreground">
         Loading…
       </div>
     );
@@ -405,7 +405,7 @@ export function ThreadView({
         style={tint === undefined ? undefined : ({ "--label-tint": tint } as CSSProperties)}
         data-in-titlebar={inTitlebar || undefined}
         className={cn(
-          "flex items-center gap-2 text-sm",
+          "flex items-center gap-2 text-reading",
           inTitlebar
             ? "relative h-full min-w-0 flex-1 rounded-[inherit] pr-1 pl-2 [&>*:not(:first-child)]:[-webkit-app-region:no-drag]"
             : "h-10 border-b border-border px-4 @max-sm:px-2",
@@ -463,7 +463,7 @@ export function ThreadView({
                 label={label}
                 testId="pane-label"
                 compact
-                className={cn("text-xs text-muted-foreground", hideMd)}
+                className={cn("text-meta text-muted-foreground", hideMd)}
               />
             )}
             {/* The branch is the agents' working detail, not the thread's name: the thread menu
@@ -471,7 +471,7 @@ export function ThreadView({
             <WorktreeMissingChip
               git={summary.git}
               testId="pane-folder-missing"
-              className={cn("text-xs", hideSm)}
+              className={cn("text-meta", hideSm)}
             />
             {!prOnStrip && pr && summary.git?.pr && (
               <ContextMenu>
@@ -481,7 +481,7 @@ export function ThreadView({
                     git={summary.git}
                     thread={thread}
                     testId="pane-pr-badge"
-                    className="text-xs text-muted-foreground"
+                    className="text-meta text-muted-foreground"
                   />
                 </ContextMenuTrigger>
                 <ContextMenuContent>
@@ -512,12 +512,12 @@ export function ThreadView({
               threadId={threadId}
               testId="pane-pr-elsewhere"
               compact
-              className={cn("text-xs text-muted-foreground", hideMd)}
+              className={cn("text-meta text-muted-foreground", hideMd)}
             />
             <PortChips
               threadId={threadId}
               ports={summary.ports}
-              className={cn("text-xs text-muted-foreground", hideSm)}
+              className={cn("text-meta text-muted-foreground", hideSm)}
             />
             <HeaderWakeChip threadId={threadId} />
             <FakeAgentBadge className={hideSm} />
@@ -582,7 +582,7 @@ export function ThreadView({
           role="status"
           aria-live="polite"
           data-testid="thread-starting-detail"
-          className="shrink-0 px-4 py-2 text-xs wrap-anywhere text-muted-foreground"
+          className="shrink-0 px-4 py-2 text-meta wrap-anywhere text-muted-foreground"
         >
           {detail}
         </p>
@@ -764,7 +764,7 @@ function ThreadGone({ threadId }: { threadId: ThreadId }) {
   });
   if (finished.isPending) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+      <div className="flex flex-1 items-center justify-center text-reading text-muted-foreground">
         Loading…
       </div>
     );
@@ -783,7 +783,7 @@ function ThreadGoneNotice({ threadId }: { threadId: ThreadId }) {
   return (
     <div
       data-testid="thread-gone"
-      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-reading text-muted-foreground"
     >
       <MessageSquareOff aria-hidden className="size-6" />
       <p>This thread no longer exists.</p>

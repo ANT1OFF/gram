@@ -221,7 +221,7 @@ export function PatchView({
       data-layout={layout}
       data-wrap={layout === "split" || wrap}
       className={cn(
-        "font-mono text-xs leading-5",
+        "font-mono text-meta leading-5",
         layout === "unified" && !wrap && "overflow-x-auto",
       )}
     >
@@ -639,5 +639,5 @@ function Sign({ kind, className }: { kind: PatchLineKind; className?: string }) 
 }
 
 function PatchNote({ children }: { children: string }) {
-  return <p className="px-3 py-2 text-xs text-muted-foreground">{children}</p>;
+  return <p className="px-3 py-2 text-meta text-muted-foreground">{children}</p>;
 }

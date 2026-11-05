@@ -133,7 +133,7 @@ export function CommandPalette() {
             if (useThreadDialogs.getState().dialog !== undefined) return false;
             return returnFocusTo(opener)();
           }}
-          className="fixed top-[15%] left-1/2 z-50 flex max-h-[60vh] w-[min(36rem,90vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+          className="fixed top-[15%] left-1/2 z-50 flex max-h-[60vh] w-[min(36rem,90vw)] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
         >
           {open && (
             <PaletteBody
@@ -980,7 +980,7 @@ function PaletteBody({
         {scopeTitle !== undefined && (
           <span
             data-testid="palette-scope"
-            className="flex max-w-48 shrink-0 items-center gap-1 rounded-sm bg-accent py-0.5 pr-0.5 pl-1.5 text-xs text-accent-foreground"
+            className="flex max-w-48 shrink-0 items-center gap-1 rounded-sm bg-accent py-0.5 pr-0.5 pl-1.5 text-meta text-accent-foreground"
           >
             <span className="truncate">{scopeTitle}</span>
             <button
@@ -1004,7 +1004,7 @@ function PaletteBody({
           aria-expanded
           aria-controls="palette-results"
           aria-activedescendant={activeIndex === -1 ? undefined : `palette-item-${activeIndex}`}
-          className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="h-11 min-w-0 flex-1 bg-transparent text-reading outline-none placeholder:text-muted-foreground"
           placeholder={
             scope === undefined
               ? "Go to a thread, worker or PR… (> for commands)"
@@ -1039,15 +1039,15 @@ function PaletteBody({
       >
         <div id="palette-results" role="listbox" className="min-h-0 overflow-y-auto p-1">
           {sections.length === 0 && (!searchMode || messageSearch.status !== "searching") && (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">No matches</p>
+            <p className="px-3 py-6 text-center text-reading text-muted-foreground">No matches</p>
           )}
           {sections.map((section) => (
             <div key={section.id} role="group" aria-label={section.label} className="mb-1">
-              <div className="px-2 py-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              <div className="px-2 py-1 text-caption font-medium tracking-wide text-muted-foreground uppercase">
                 {section.label}
               </div>
               {section.id === "filtered" && section.items.length === 0 && (
-                <p className="px-2 py-2 text-sm text-muted-foreground">No filtered matches</p>
+                <p className="px-2 py-2 text-reading text-muted-foreground">No filtered matches</p>
               )}
               {section.items.map((item) => {
                 index++;
@@ -1063,7 +1063,7 @@ function PaletteBody({
                     onMouseMove={() => setActive(itemIndex)}
                     onClick={() => run(item)}
                     className={cn(
-                      "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+                      "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-reading",
                       itemIndex === activeIndex && "row-cursor",
                       item.unavailable !== undefined && "text-muted-foreground",
                     )}
@@ -1079,13 +1079,13 @@ function PaletteBody({
                     {item.hint && (
                       <span
                         data-palette-hint
-                        className="ml-auto shrink-0 truncate text-xs text-muted-foreground"
+                        className="ml-auto shrink-0 truncate text-meta text-muted-foreground"
                       >
                         {item.hint}
                       </span>
                     )}
                     {item.shortcut && (
-                      <kbd className="ml-auto shrink-0 pl-3 font-mono text-[10px] text-muted-foreground">
+                      <kbd className="ml-auto shrink-0 pl-3 font-mono text-caption text-muted-foreground">
                         {item.shortcut}
                       </kbd>
                     )}
@@ -1105,7 +1105,7 @@ function PaletteBody({
       </Swap>
       <div
         data-testid="palette-keys"
-        className="flex gap-3 border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground"
+        className="flex gap-3 border-t border-border px-3 py-1.5 text-caption text-muted-foreground"
       >
         <span>
           <kbd className="font-mono">⏎</kbd> open
@@ -1153,7 +1153,11 @@ function ReopenNote({
         : undefined;
   if (!note) return null;
   return (
-    <p role="status" data-testid="reopen-note" className="px-3 py-2 text-xs text-muted-foreground">
+    <p
+      role="status"
+      data-testid="reopen-note"
+      className="px-3 py-2 text-meta text-muted-foreground"
+    >
       {note}
     </p>
   );
@@ -1179,7 +1183,11 @@ function ResumeNote({
           : undefined;
   if (!note) return null;
   return (
-    <p role="status" data-testid="resume-note" className="px-3 py-2 text-xs text-muted-foreground">
+    <p
+      role="status"
+      data-testid="resume-note"
+      className="px-3 py-2 text-meta text-muted-foreground"
+    >
       {note}
     </p>
   );
@@ -1201,7 +1209,7 @@ function MessageSearchNote({ search }: { search: ThreadSearchState }) {
     <p
       role="status"
       data-testid="message-search-note"
-      className="px-3 py-2 text-xs text-muted-foreground"
+      className="px-3 py-2 text-meta text-muted-foreground"
     >
       {note}
     </p>

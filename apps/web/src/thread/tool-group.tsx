@@ -43,7 +43,7 @@ export function ToolGroup({
         aria-expanded={open}
         aria-controls={bodyId}
         className={cn(
-          "flex max-w-full items-center gap-1 rounded-sm py-0.5 text-left text-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+          "flex max-w-full items-center gap-1 rounded-sm py-0.5 text-left text-reading outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
           active || waiting ? "text-foreground" : "text-muted-foreground",
         )}
         onClick={() => {
@@ -121,7 +121,7 @@ export function TurnFoldRow({
       data-state={turn.state}
       aria-expanded={open}
       className={cn(
-        "flex max-w-full items-center gap-1 self-start rounded-sm py-0.5 text-left text-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+        "flex max-w-full items-center gap-1 self-start rounded-sm py-0.5 text-left text-reading outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
         running ? "text-foreground" : "text-muted-foreground",
       )}
       onClick={onToggle}

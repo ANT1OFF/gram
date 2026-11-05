@@ -46,7 +46,7 @@ export function CloseAllThreadsDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
     >
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {error}
         </p>
       )}

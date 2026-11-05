@@ -83,7 +83,7 @@ export function PathField({ value, onChange, debounceMs }: PathFieldProps) {
         autoComplete="off"
         spellCheck={false}
         placeholder="~/Documents/code/my-repo"
-        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         value={value}
         onChange={(event) => change(event.target.value)}
         onFocus={() => setOpen(true)}
@@ -100,7 +100,7 @@ export function PathField({ value, onChange, debounceMs }: PathFieldProps) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={transition}
-            className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-popover"
+            className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-overlay"
           >
             {matches.map((entry, i) => (
               <li
@@ -120,7 +120,7 @@ export function PathField({ value, onChange, debounceMs }: PathFieldProps) {
                 ) : (
                   <Folder aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                 )}
-                <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                <span className="min-w-0 flex-1 truncate font-mono text-meta">
                   <span className="text-foreground">{entry.name.slice(0, leaf.length)}</span>
                   <span className={cn(leaf ? "text-muted-foreground" : "text-foreground")}>
                     {entry.name.slice(leaf.length)}

@@ -63,7 +63,7 @@ export function OverviewPullRequests() {
           {both && rows[i - 1]?.kind !== row.kind && (
             <h3
               data-testid="overview-pr-kind"
-              className="px-1.5 pt-1 pb-0.5 text-xs font-medium text-muted-foreground"
+              className="px-1.5 pt-1 pb-0.5 text-meta font-medium text-muted-foreground"
             >
               {PR_KIND_LABEL[row.kind]}
             </h3>
@@ -134,7 +134,7 @@ export function OverviewSearch() {
     >
       <Search aria-hidden className="size-3.5 shrink-0" />
       <span className="flex-1">Search</span>
-      {hint !== "" && <kbd className="font-sans text-xs tabular-nums">{hint}</kbd>}
+      {hint !== "" && <kbd className="font-sans text-meta tabular-nums">{hint}</kbd>}
     </button>
   );
 }
@@ -214,7 +214,7 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
           {Icon !== undefined && <Icon className="size-3.5" />}
         </span>
         <span className="truncate">{row.title}</span>
-        <span className="text-xs tabular-nums">{when}</span>
+        <span className="text-meta tabular-nums">{when}</span>
       </button>
     </RowMenu>
   );
@@ -237,11 +237,11 @@ export function OverviewHistory() {
         aria-keyshortcuts={hint === "" ? undefined : hint}
         title={withHint("Finished workers, done and archived threads, past CLI sessions", hint)}
         onClick={() => useHistoryStore.getState().show()}
-        className="flex h-8 w-full items-center gap-2 rounded-(--radius-sm) px-1.5 text-left text-[13px] text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+        className="flex h-8 w-full items-center gap-2 rounded-(--radius-sm) px-1.5 text-left text-body text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
       >
         <History aria-hidden className="size-4 shrink-0" />
         <span className="flex-1">Open History</span>
-        {hint !== "" && <kbd className="font-sans text-xs tabular-nums">{hint}</kbd>}
+        {hint !== "" && <kbd className="font-sans text-meta tabular-nums">{hint}</kbd>}
       </button>
     </div>
   );
@@ -264,7 +264,7 @@ export function OverviewFoot() {
   return (
     <div
       data-testid="overview-foot"
-      className="grid shrink-0 gap-2 border-t border-border px-3.5 pt-2.5 pb-3 text-xs text-muted-foreground tabular-nums"
+      className="grid shrink-0 gap-2 border-t border-border px-3.5 pt-2.5 pb-3 text-meta text-muted-foreground tabular-nums"
     >
       {meters.map((meter) => (
         <div
@@ -301,7 +301,7 @@ export function OverviewFoot() {
                   key={i}
                   data-taken={taken || undefined}
                   className={cn(
-                    "block size-1.5 rounded-[2px]",
+                    "block size-1.5 rounded-2xs",
                     taken ? "bg-muted-foreground" : "bg-border",
                   )}
                 />

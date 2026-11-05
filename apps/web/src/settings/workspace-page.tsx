@@ -102,17 +102,17 @@ export function WorkspaceSettingsPage({
     holder === undefined ? undefined : store.byId[holder]?.thread,
   );
 
-  if (isPending) return <p className="text-sm text-muted-foreground">Loading workspace…</p>;
+  if (isPending) return <p className="text-reading text-muted-foreground">Loading workspace…</p>;
   if (state === undefined) {
     return (
-      <div data-testid="workspace-page-missing" className="flex flex-col gap-2 text-sm">
+      <div data-testid="workspace-page-missing" className="flex flex-col gap-2 text-reading">
         {sheet === undefined && <BackLink />}
         <p className="text-muted-foreground">No such workspace. It may have been removed.</p>
       </div>
     );
   }
   return (
-    <div data-testid="workspace-page" className="flex flex-col gap-8 text-sm">
+    <div data-testid="workspace-page" className="flex flex-col gap-8 text-reading">
       <Header state={state} changes={changes} sheet={sheet} />
       <Basics state={state} projects={projects} changes={changes} />
       <SettingsGroup
@@ -135,7 +135,7 @@ export function WorkspaceSettingsPage({
         {state.workspace.projectIds.map((projectId) => (
           <div key={projectId} className="flex flex-col gap-2">
             {state.workspace.projectIds.length > 1 && (
-              <p className="text-xs font-medium">{projectNameOf(projects, projectId)}</p>
+              <p className="text-meta font-medium">{projectNameOf(projects, projectId)}</p>
             )}
             <ProjectScriptsEditor projectId={projectId} />
           </div>
@@ -191,7 +191,7 @@ function BackLink() {
     <Link
       to="/settings/workspaces"
       data-testid="workspace-page-back"
-      className="inline-flex w-fit items-center gap-0.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="inline-flex w-fit items-center gap-0.5 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <ChevronLeft aria-hidden className="size-3.5" />
       Workspaces
@@ -246,7 +246,7 @@ function Header({
         <h2
           id={sheet?.titleId}
           data-testid="workspace-page-title"
-          className="min-w-0 truncate font-heading text-lg font-medium"
+          className="min-w-0 truncate font-heading text-heading font-medium"
         >
           {workspace.name}
         </h2>
@@ -254,7 +254,7 @@ function Header({
         {paused !== undefined && (
           <span
             data-testid="workspace-paused"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+            className="inline-flex items-center gap-1 text-meta text-muted-foreground"
           >
             <CirclePause aria-hidden className="size-3" />
             Paused
@@ -298,12 +298,12 @@ function Header({
         </div>
       </div>
       {paused !== undefined && (
-        <p data-testid="workspace-pause-reason" className="text-xs text-muted-foreground">
+        <p data-testid="workspace-pause-reason" className="text-meta text-muted-foreground">
           {pauseText(paused)}. Nothing new starts until you resume.
         </p>
       )}
       {changes.error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {changes.error}
         </p>
       )}
@@ -365,7 +365,7 @@ function Basics({
           picked={workspace.projectIds}
           onToggle={toggle}
           onPendingChange={setTicking}
-          empty={<p className="text-xs text-muted-foreground">No repositories yet.</p>}
+          empty={<p className="text-meta text-muted-foreground">No repositories yet.</p>}
         />
         <AddRepository
           defaultPath={home === undefined ? undefined : parentFolder(home)}
@@ -380,7 +380,7 @@ function Basics({
           }
         />
         {error !== undefined && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-meta text-destructive">
             {error}
           </p>
         )}
@@ -465,7 +465,7 @@ function NameField({ state, changes }: { state: WorkspaceState; changes: Changes
         }}
       />
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -554,7 +554,7 @@ function MoreOptions({ state, changes }: { state: WorkspaceState; changes: Chang
         aria-controls={id}
         data-testid="workspace-advanced"
         onClick={() => setOpen(!open)}
-        className="flex min-h-7 items-center gap-1 rounded-sm px-1 font-caption text-xs font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-h-7 items-center gap-1 rounded-sm px-1 font-caption text-meta font-medium tracking-wide text-muted-foreground uppercase outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronRight
           aria-hidden

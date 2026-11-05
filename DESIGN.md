@@ -100,10 +100,9 @@ and `rounded-xl` 16, `rounded-full` for pills and dots, and `--composer-radius` 
 popover, a dialog, a toast), `shadow-composer` for the composer slab. More contrast and forced
 colours turn them off.
 
-**Selection and focus.** The keyboard cursor row (`row-cursor`), a picked choice
-(`choice-selected`) and the focus ring (`focus-ring`) have their own tokens, defined with the
-selection work in tokens.css and globals.css; `bg-sidebar-row-active` marks the current place in
-the sidebar.
+**Selection and focus.** The `row-cursor`, `choice-selected`, `focus-ring` and
+`focus-ring-inset` utilities in globals.css, as described under Look; `bg-sidebar-row-active`
+marks the current place in the sidebar.
 
 **The drift check.** `node tools/design-tokens/check.mjs` (part of `bun run lint`) flags in
 `apps/web/src`: text sizes outside the scale (`text-xs`, `text-[13px]`), raw arbitrary spacing
@@ -111,8 +110,8 @@ the sidebar.
 (`shadow-md`), and colours that skip the palette (`#hex`, `bg-[rgb(…)]`, `bg-black/75`).
 Arbitrary values built from tokens (`pl-[max(--spacing(2),var(--x))]`) pass. Existing uses are
 counted per file in [its allowlist](tools/design-tokens/allowlist.json), which only shrinks: move
-a file onto the tokens, then run the check with `--write` to record it. The allowlist's `mode`
-is `warn` while the sweep is under way and `error` after.
+a file onto the tokens, then run the check with `--write` to record it. Its `mode` is `error`, so
+the check fails `bun run lint` on any new use; an allowlist entry is for a deliberate exception.
 
 ## Voice
 

@@ -47,15 +47,15 @@ export function UsageSourcesSection({ data }: { data: UsageOverview | undefined 
       className="border-t border-border pt-5"
     >
       <div className="mb-1 flex flex-wrap items-baseline gap-x-2.5">
-        <h2 id="usage-sources-title" className="text-sm font-semibold">
+        <h2 id="usage-sources-title" className="text-reading font-semibold">
           Sources
         </h2>
-        <p className="text-xs text-muted-foreground">Gram's own turns, and on this computer:</p>
+        <p className="text-meta text-muted-foreground">Gram's own turns, and on this computer:</p>
       </div>
       {settings === undefined ? (
-        <p className="text-sm text-muted-foreground">Loading settings…</p>
+        <p className="text-reading text-muted-foreground">Loading settings…</p>
       ) : (
-        <div className="mt-2 grid gap-2.5 text-[13px]">
+        <div className="mt-2 grid gap-2.5 text-body">
           {(["claude", "codex"] as const).map((provider) => {
             const detail = usageHistoryEnabled(settings, provider) ? files(provider) : undefined;
             return (
@@ -68,7 +68,7 @@ export function UsageSourcesSection({ data }: { data: UsageOverview | undefined 
                 error={failed?.provider === provider ? failed.message : undefined}
                 detail={
                   detail === undefined ? undefined : (
-                    <span className="text-xs text-muted-foreground tabular-nums">{detail}</span>
+                    <span className="text-meta text-muted-foreground tabular-nums">{detail}</span>
                   )
                 }
               />
@@ -87,7 +87,7 @@ function Coverage({ data }: { data: UsageOverview }) {
     data.missingUsageTurns + data.invalidUsageTurns + data.unattributedTurns + data.openTurns;
   return (
     <details
-      className="mt-3 text-xs leading-relaxed text-muted-foreground"
+      className="mt-3 text-meta leading-relaxed text-muted-foreground"
       data-testid="usage-coverage"
     >
       <summary className="w-fit cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
@@ -98,7 +98,7 @@ function Coverage({ data }: { data: UsageOverview }) {
       <div className="mt-3 grid max-w-3xl gap-4">
         {history !== undefined && <HistoryCoverage data={data} />}
         <section aria-labelledby="usage-coverage-title">
-          <h3 id="usage-coverage-title" className="mb-1.5 text-[13px] font-medium text-foreground">
+          <h3 id="usage-coverage-title" className="mb-1.5 text-body font-medium text-foreground">
             Recording coverage
           </h3>
           <p>
@@ -140,7 +140,7 @@ function HistoryCoverage({ data }: { data: UsageOverview }) {
   const history = data.history!;
   return (
     <section aria-labelledby="usage-history-title" data-testid="usage-history-coverage">
-      <h3 id="usage-history-title" className="mb-1.5 text-[13px] font-medium text-foreground">
+      <h3 id="usage-history-title" className="mb-1.5 text-body font-medium text-foreground">
         Local history coverage
       </h3>
       <p>

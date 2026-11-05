@@ -153,7 +153,7 @@ export function ReplyField({
                 setText(chip);
                 own.current?.focus();
               }}
-              className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-full border border-border px-2 py-0.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               {chip}
             </button>
@@ -177,7 +177,7 @@ export function ReplyField({
           value={text}
           onChange={(event) => setText(event.target.value)}
           placeholder="Reply"
-          className="h-7 min-w-0 flex-1 rounded-(--radius-md) border border-border bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-7 min-w-0 flex-1 rounded-(--radius-md) border border-border bg-transparent px-2 text-reading outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
         />
         <SendAnswer
           type="submit"
@@ -191,12 +191,12 @@ export function ReplyField({
 }
 
 const DETAIL_TEXT =
-  "overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-[11px] break-words whitespace-pre-wrap";
+  "overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-caption break-words whitespace-pre-wrap";
 
 /** Everything an Allow covers that the ask's lines don't: where each member runs, the whole input. */
 function AskDetailsBody({ ask, where }: { ask: Ask; where: readonly AskMember[] }) {
   return (
-    <div className="mt-1 grid gap-1.5 text-xs">
+    <div className="mt-1 grid gap-1.5 text-meta">
       {where.length > 0 && (
         <ul className="grid gap-0.5 text-muted-foreground">
           {where.map((member) => (
@@ -228,7 +228,7 @@ function AskDetailsBody({ ask, where }: { ask: Ask; where: readonly AskMember[] 
             ))}
           </dl>
           {ask.details.scope.length > 0 && (
-            <p className="font-mono text-[11px]">{ask.details.scope.join(", ")}</p>
+            <p className="font-mono text-caption">{ask.details.scope.join(", ")}</p>
           )}
           <pre className={DETAIL_TEXT}>{ask.details.brief}</pre>
         </>
@@ -256,7 +256,7 @@ export function AskDetails({ ask, open = false }: { ask: Ask; open?: boolean }) 
     <Collapsible className="mt-1">
       <CollapsibleTrigger
         data-testid="ask-details"
-        className="group flex items-center gap-1 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex items-center gap-1 text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronRight
           aria-hidden
@@ -329,7 +329,7 @@ export function AskItem({
     >
       <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-status-needs-mark" />
       <div className="min-w-0 flex-1 basis-48">
-        <p className="text-sm break-words" data-testid="ask-title">
+        <p className="text-reading break-words" data-testid="ask-title">
           {ask.lead}
           {ask.command !== undefined && (
             <>
@@ -337,7 +337,7 @@ export function AskItem({
               <code
                 data-testid="ask-command"
                 title={ask.command}
-                className="inline font-mono text-[0.8rem] break-all"
+                className="inline font-mono text-body break-all"
               >
                 {ask.command}
               </code>
@@ -348,7 +348,7 @@ export function AskItem({
         {ask.extras.length > 0 && (
           <p
             data-testid="ask-extras"
-            className="font-mono text-[11px] break-all text-muted-foreground"
+            className="font-mono text-caption break-all text-muted-foreground"
           >
             {ask.extras.map((field, index) => (
               <span key={field.label}>
@@ -358,7 +358,7 @@ export function AskItem({
             ))}
           </p>
         )}
-        <p className="truncate text-xs text-muted-foreground" data-testid="ask-context">
+        <p className="truncate text-meta text-muted-foreground" data-testid="ask-context">
           {ask.context}
         </p>
         {ask.description !== undefined && ask.description.trim() !== "" && (
@@ -366,7 +366,7 @@ export function AskItem({
             text={ask.description}
             lines={2}
             testId="ask-description"
-            className="text-xs text-muted-foreground"
+            className="text-meta text-muted-foreground"
           />
         )}
         <AskDetails ask={ask} />
@@ -380,7 +380,7 @@ export function AskItem({
           />
         )}
         {problem !== undefined && (
-          <p role="alert" data-testid="ask-problem" className="mt-1 text-xs text-destructive">
+          <p role="alert" data-testid="ask-problem" className="mt-1 text-meta text-destructive">
             {problem}
           </p>
         )}

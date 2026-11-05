@@ -118,7 +118,7 @@ const cloneHint = (folder: string, repo: string) =>
 
 function CloneProgress({ id, label }: { id?: string; label: string }) {
   return (
-    <p id={id} role="status" className="text-xs text-muted-foreground">
+    <p id={id} role="status" className="text-meta text-muted-foreground">
       <Shimmer>{label}</Shimmer>
     </p>
   );
@@ -217,7 +217,7 @@ export function CloneOffer({
   if (!offered && error === undefined) return children;
   return (
     <div className="flex flex-col gap-1" data-testid="clone-offer">
-      <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <p className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground">
         <BookMarked aria-hidden className="size-3.5 shrink-0" />
         <span className="min-w-0 truncate">
           {cloneFolder === undefined
@@ -236,7 +236,7 @@ export function CloneOffer({
         </Button>
       </p>
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -396,7 +396,7 @@ export function AddRepository({
               spellCheck={false}
               disabled={busy}
               placeholder="~/code/repo or owner/repo"
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
               value={text}
               onChange={(event) => {
                 setText(event.target.value);
@@ -435,7 +435,7 @@ export function AddRepository({
                       input.kind === "folder" ? "Folder suggestions" : "Repository suggestions"
                     }
                     onMouseDown={(event) => event.preventDefault()}
-                    className="max-h-[min(16rem,var(--available-height))] overflow-y-auto overscroll-contain rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover"
+                    className="max-h-[min(16rem,var(--available-height))] overflow-y-auto overscroll-contain rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-overlay"
                   >
                     {suggestions.map((suggestion, i) => {
                       const Icon =
@@ -458,7 +458,7 @@ export function AddRepository({
                           className="flex h-7 cursor-default items-center gap-2 rounded-md px-2 aria-selected:bg-accent"
                         >
                           <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-                          <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                          <span className="min-w-0 flex-1 truncate font-mono text-meta">
                             {suggestion.label}
                           </span>
                         </li>
@@ -493,14 +493,14 @@ export function AddRepository({
       {pending?.cloning !== undefined ? (
         <CloneProgress id={hintId} label={pending.cloning} />
       ) : error !== undefined ? (
-        <p id={hintId} role="alert" className="text-xs text-destructive">
+        <p id={hintId} role="alert" className="text-meta text-destructive">
           {error}
         </p>
       ) : input.kind === "folder" && typed?.kind === "repo" ? (
         <p
           id={hintId}
           data-testid="folder-check"
-          className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+          className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground"
         >
           <FolderCheck aria-hidden className="size-3.5 shrink-0 text-success-text" />
           <span className="truncate font-mono">{tildify(typed.path, home)}</span>
@@ -510,17 +510,17 @@ export function AddRepository({
         <p
           id={hintId}
           data-testid="folder-check"
-          className="flex items-start gap-1.5 text-xs text-warning-text"
+          className="flex items-start gap-1.5 text-meta text-warning-text"
         >
           <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
           {typed.message}
         </p>
       ) : loadingRepos ? (
-        <p id={hintId} role="status" className="text-xs text-muted-foreground">
+        <p id={hintId} role="status" className="text-meta text-muted-foreground">
           <Shimmer>Loading your GitHub repositories…</Shimmer>
         </p>
       ) : (
-        <p id={hintId} className="text-xs text-muted-foreground">
+        <p id={hintId} className="text-meta text-muted-foreground">
           {hint}
         </p>
       )}

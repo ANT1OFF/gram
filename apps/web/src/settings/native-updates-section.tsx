@@ -68,7 +68,7 @@ export function NativeUpdatesSection({
   const step = nextStep(state);
   const problem = state.status === "error" ? state.message : null;
   return (
-    <div className="flex flex-col gap-3 text-sm" data-testid="updates" data-native="true">
+    <div className="flex flex-col gap-3 text-reading" data-testid="updates" data-native="true">
       <div className="rounded-md border border-border bg-card p-3" data-testid="native-status">
         <p className="font-medium">Running Gram {state.currentVersion}</p>
         <p className="mt-1 flex items-center gap-1.5 text-muted-foreground" aria-live="polite">

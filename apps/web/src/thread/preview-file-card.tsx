@@ -37,8 +37,8 @@ export function PreviewFileCard({ threadId, file }: { threadId: ThreadId; file: 
         title={file.path}
         onClick={open}
       >
-        <span className="block truncate text-sm font-medium">{name}</span>
-        <span className="block truncate text-xs text-muted-foreground">
+        <span className="block truncate text-reading font-medium">{name}</span>
+        <span className="block truncate text-meta text-muted-foreground">
           {KIND_LABEL[file.kind]} · {folderOf(file.path)}
         </span>
       </button>

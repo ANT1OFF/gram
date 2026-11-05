@@ -141,7 +141,7 @@ export function StoragePage() {
   };
 
   return (
-    <div className="flex flex-col gap-5 text-sm" data-testid="storage-page">
+    <div className="flex flex-col gap-5 text-reading" data-testid="storage-page">
       <DiskSummary
         free={report.data?.disk?.freeBytes}
         total={report.data?.disk?.totalBytes}
@@ -156,22 +156,22 @@ export function StoragePage() {
         <p
           role="status"
           data-testid="storage-status"
-          className="px-1 text-xs text-muted-foreground"
+          className="px-1 text-meta text-muted-foreground"
         >
           {status}
         </p>
       )}
       {error !== undefined && pending === undefined && (
-        <p role="alert" className="px-1 text-xs text-destructive">
+        <p role="alert" className="px-1 text-meta text-destructive">
           {error}
         </p>
       )}
       {report.status === "pending" ? (
-        <p className="px-1 text-xs text-muted-foreground">
+        <p className="px-1 text-meta text-muted-foreground">
           <Shimmer>Reading worktrees…</Shimmer>
         </p>
       ) : report.status === "error" ? (
-        <p role="alert" className="px-1 text-xs text-destructive">
+        <p role="alert" className="px-1 text-meta text-destructive">
           Couldn't read the worktrees: {errorMessage(report.error)}
         </p>
       ) : (
@@ -198,7 +198,7 @@ export function StoragePage() {
         ))
       )}
       {report.data !== undefined && report.data.failedRepos.length > 0 && (
-        <p className="px-1 text-xs text-muted-foreground">
+        <p className="px-1 text-meta text-muted-foreground">
           Couldn't list: {report.data.failedRepos.join(", ")}
         </p>
       )}
@@ -269,9 +269,9 @@ function DiskSummary({
             {free === undefined ? "Free space unknown" : `${formatBytes(free)} free`}
           </span>
           {total !== undefined && (
-            <span className="text-xs text-muted-foreground">of {formatBytes(total)}</span>
+            <span className="text-meta text-muted-foreground">of {formatBytes(total)}</span>
           )}
-          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+          <span className="ml-auto text-meta text-muted-foreground tabular-nums">
             {worktreeCount(count)} · {sizeLabel(worktrees)}
           </span>
         </div>
@@ -305,7 +305,7 @@ function CleanUpInactive({ onReview }: { onReview: (days: number) => void }) {
     <div className="flex flex-wrap items-center gap-3">
       <div className="flex min-w-48 flex-1 flex-col gap-0.5">
         <span className="font-medium">Clean up inactive</span>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-meta text-muted-foreground">
           Clean, pushed worktrees no thread uses. Branches stay.
         </span>
       </div>
@@ -352,18 +352,18 @@ function InactivePlan({
       onClose={onClose}
     >
       {plan.status === "pending" ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           <Shimmer>Working out what goes…</Shimmer>
         </p>
       ) : plan.status === "error" ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {errorMessage(plan.error)}
         </p>
       ) : entries.length === 0 ? (
-        <p className="text-sm">Nothing inactive that long.</p>
+        <p className="text-reading">Nothing inactive that long.</p>
       ) : (
         <>
-          <p className="text-sm" data-testid="storage-plan-summary">
+          <p className="text-reading" data-testid="storage-plan-summary">
             {worktreeCount(entries.length)}, {plan.data.partial ? "at least " : ""}
             {formatBytes(plan.data.bytes)}. Branches stay, so any can be restored.
           </p>
@@ -408,25 +408,25 @@ function ConfirmRemoval({
   return (
     <DialogShell testId="storage-confirm" title={pending.title} onClose={onCancel}>
       {named !== undefined ? (
-        <p className="text-sm" data-testid="storage-confirm-risk">
-          <span className="font-mono text-xs">{named.path}</span>{" "}
+        <p className="text-reading" data-testid="storage-confirm-risk">
+          <span className="font-mono text-meta">{named.path}</span>{" "}
           {risk !== undefined
             ? `has ${risk}. They're lost for good.`
             : "wasn't made by Gram. Its folder is deleted; its branch stays."}
         </p>
       ) : pending.prune === true ? (
         <>
-          <p className="text-sm">Their folders are already gone; this drops git's records.</p>
+          <p className="text-reading">Their folders are already gone; this drops git's records.</p>
           <EntryList entries={pending.entries} />
         </>
       ) : (
         <>
-          <p className="text-sm">{bytes}. Branches stay.</p>
+          <p className="text-reading">{bytes}. Branches stay.</p>
           <EntryList entries={pending.entries} />
         </>
       )}
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -452,7 +452,7 @@ function ConfirmRemoval({
 
 function EntryList({ entries }: { entries: readonly StorageWorktree[] }) {
   return (
-    <ul className="-mx-1 flex max-h-[40vh] flex-col overflow-y-auto text-xs">
+    <ul className="-mx-1 flex max-h-[40vh] flex-col overflow-y-auto text-meta">
       {entries.map((entry) => (
         <li key={entry.path} className="flex min-w-0 gap-2 px-1 py-1">
           <span className="shrink-0 font-mono font-medium">{worktreeName(entry)}</span>
@@ -540,7 +540,7 @@ function GroupSection({
           type="button"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="flex flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex flex-1 items-center gap-1.5 rounded-2xs text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             aria-hidden
@@ -552,7 +552,7 @@ function GroupSection({
           <h3 id={id} className={GROUP_TITLE}>
             {label}
           </h3>
-          <span className="text-xs text-muted-foreground tabular-nums">
+          <span className="text-meta text-muted-foreground tabular-nums">
             {entries.length} · {entries.length === 0 ? "0 B" : sizeLabel(total)}
           </span>
         </button>
@@ -606,16 +606,16 @@ function StorageRow({
     <li data-testid="storage-row" aria-label={name} className="flex flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
         <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate font-mono text-xs font-medium">{name}</span>
-        <span className="shrink-0 text-[11px] text-muted-foreground">{repo}</span>
+        <span className="truncate font-mono text-meta font-medium">{name}</span>
+        <span className="shrink-0 text-caption text-muted-foreground">{repo}</span>
         {state !== undefined && (
           <span
-            className={cn("shrink-0 text-[11px]", risk ? "text-warning" : "text-muted-foreground")}
+            className={cn("shrink-0 text-caption", risk ? "text-warning" : "text-muted-foreground")}
           >
             {state}
           </span>
         )}
-        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground tabular-nums">
+        <span className="ml-auto shrink-0 text-caption text-muted-foreground tabular-nums">
           {entry.missing
             ? "—"
             : size === undefined
@@ -627,7 +627,7 @@ function StorageRow({
         {entry.lastActivity > 0 && (
           <time
             dateTime={new Date(entry.lastActivity).toISOString()}
-            className="w-10 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums"
+            className="w-10 shrink-0 text-right text-caption text-muted-foreground tabular-nums"
           >
             {formatRelative(entry.lastActivity)}
           </time>
@@ -635,7 +635,7 @@ function StorageRow({
       </div>
       <div className="flex min-w-0 items-center gap-1 pl-5.5">
         <span
-          className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
+          className="min-w-0 flex-1 truncate font-mono text-caption text-muted-foreground"
           title={entry.path}
         >
           {entry.threadTitle !== undefined ? `“${entry.threadTitle}” · ` : ""}

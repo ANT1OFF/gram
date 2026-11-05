@@ -281,7 +281,7 @@ function RenameFeatureDialog({
           aria-label="Feature name"
           // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
-          className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           value={name}
           onChange={(event) => {
             setName(event.target.value);
@@ -289,7 +289,7 @@ function RenameFeatureDialog({
           }}
         />
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-reading text-destructive">
             {error}
           </p>
         )}
@@ -344,7 +344,7 @@ function NewGroupDialog({
           // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           placeholder="release-0-4"
-          className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -366,7 +366,7 @@ export function PausedBadge({ testId }: { testId: string }) {
   return (
     <span
       data-testid={testId}
-      className="shrink-0 rounded-sm bg-muted px-1.5 text-xs font-normal text-muted-foreground"
+      className="shrink-0 rounded-sm bg-muted px-1.5 text-meta font-normal text-muted-foreground"
     >
       Paused
     </span>
@@ -374,10 +374,10 @@ export function PausedBadge({ testId }: { testId: string }) {
 }
 
 const MENU_POPUP =
-  "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "z-50 min-w-40 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 const MENU_SEPARATOR = "my-1 h-px bg-border";
 const MENU_ITEM =
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-meta outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor";
 
 /** The feature's menu; in its own sheet, without Open. */
 export function FeatureMenu({
@@ -561,13 +561,13 @@ function SheetBody({
   return (
     <>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
-        <h2 id={titleId} className="min-w-0 truncate text-[15px] font-medium">
+        <h2 id={titleId} className="min-w-0 truncate text-title">
           {feature}
         </h2>
         {sheet !== undefined && sheet.needs > 0 && (
           <span
             data-testid="feature-sheet-needs"
-            className="shrink-0 rounded-sm border border-status-needs-mark/60 px-1.5 text-xs text-status-needs tabular-nums"
+            className="shrink-0 rounded-sm border border-status-needs-mark/60 px-1.5 text-meta text-status-needs tabular-nums"
           >
             {sheet.needs} need you
           </span>
@@ -586,7 +586,7 @@ function SheetBody({
         </Button>
       </header>
       {sheet === undefined ? (
-        <p role="status" className="p-5 text-sm text-muted-foreground">
+        <p role="status" className="p-5 text-reading text-muted-foreground">
           No workers left on it.
         </p>
       ) : (
@@ -596,7 +596,7 @@ function SheetBody({
   );
 }
 
-const SHEET_LABEL = "text-xs font-medium text-muted-foreground";
+const SHEET_LABEL = "text-meta font-medium text-muted-foreground";
 
 /** Where the feature stands in its plan, which a click on a step moves, and the plan's editor. */
 function StageSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feature: string }) {
@@ -615,7 +615,7 @@ function StageSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feat
             type="button"
             data-testid="feature-sheet-plan"
             onClick={() => editStage(true)}
-            className="inline-flex items-center gap-1 rounded-sm text-[11px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 rounded-sm text-caption text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Pencil aria-hidden className="size-3.5" />
             {stage === undefined ? "Set stage" : "Edit plan"}
@@ -631,7 +631,7 @@ function StageSection({ workspaceId, feature }: { workspaceId: WorkspaceId; feat
           }}
         />
       ) : (
-        !editing && <p className="text-xs text-muted-foreground">None set.</p>
+        !editing && <p className="text-meta text-muted-foreground">None set.</p>
       )}
       <ExpandPresence open={editing}>
         <StageEditor
@@ -690,11 +690,11 @@ function SheetContent({
   const summary = useFeatureSummary(sheet.row.card);
   const label = SHEET_LABEL;
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 text-sm">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 text-reading">
       <ol
         aria-label="Stations"
         data-testid="feature-sheet-stations"
-        className="grid grid-cols-5 gap-1 text-center text-xs"
+        className="grid grid-cols-5 gap-1 text-center text-meta"
       >
         {FEATURE_STATIONS.map((station, index) => (
           <li
@@ -709,7 +709,7 @@ function SheetContent({
             <span className="text-muted-foreground">{STATION_LABELS[station]}</span>
             <b
               className={cn(
-                "text-sm font-medium tabular-nums",
+                "text-reading font-medium tabular-nums",
                 sheet.counts[station] === 0 && "text-muted-foreground/60",
               )}
             >
@@ -733,7 +733,7 @@ function SheetContent({
               <li
                 key={`${pr.repo}#${pr.number}`}
                 data-testid="feature-sheet-pr"
-                className="flex min-w-0 items-center gap-2 text-xs"
+                className="flex min-w-0 items-center gap-2 text-meta"
               >
                 <PrChip pr={pr} />
                 <span className="min-w-0 truncate text-muted-foreground">{by}</span>
@@ -753,7 +753,7 @@ function SheetContent({
                 data-testid="feature-sheet-worker"
                 data-thread-id={worker.threadId}
                 data-tone={worker.tone}
-                className="flex min-w-0 items-center gap-2 text-xs"
+                className="flex min-w-0 items-center gap-2 text-meta"
               >
                 <tone.icon aria-label={tone.label} className={cn("size-3.5 shrink-0", tone.tone)} />
                 <button
@@ -806,7 +806,7 @@ export function FeatureSheet() {
           finalFocus={() =>
             useFeatureSheet.getState().returnFocus ? returnFocusTo(opener)() : false
           }
-          className="fixed inset-y-2 end-2 z-50 flex w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0"
+          className="fixed inset-y-2 end-2 z-50 flex w-[min(28rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-overlay outline-none transition-[translate,opacity] duration-(--dur-move-base) ease-(--ease-out) data-[ending-style]:translate-x-6 data-[ending-style]:opacity-0 data-[starting-style]:translate-x-6 data-[starting-style]:opacity-0"
         >
           {target !== undefined && (
             <SheetBody

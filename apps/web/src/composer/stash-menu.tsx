@@ -67,7 +67,7 @@ export function StashMenu({
           <Popover.Trigger
             data-testid="stash-trigger"
             aria-label={`Stashed drafts (${stashes.length})`}
-            className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="flex h-7 items-center gap-1 rounded-md px-2 text-meta font-medium text-muted-foreground tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         }
       >
@@ -80,10 +80,10 @@ export function StashMenu({
             data-testid="stash-menu"
             data-surface="overlay"
             aria-label="Stashed drafts"
-            className="w-80 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="w-80 origin-(--transform-origin) rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             {stashes.length === 0 ? (
-              <p className="px-2 py-1.5 text-sm text-muted-foreground">No stashed drafts.</p>
+              <p className="px-2 py-1.5 text-reading text-muted-foreground">No stashed drafts.</p>
             ) : (
               <ul aria-label="Stashed drafts" className="flex max-h-72 flex-col overflow-y-auto">
                 {stashes.map((stash) => (
@@ -91,14 +91,14 @@ export function StashMenu({
                     <button
                       type="button"
                       aria-label={`Restore draft: ${stashPreview(stash)}`}
-                      className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+                      className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm px-2 py-1.5 text-left text-reading outline-none hover:bg-accent focus-visible:bg-accent"
                       onClick={() => {
                         setOpen(false);
                         onRestore(stash);
                       }}
                     >
                       <span className="truncate">{stashPreview(stash)}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-meta text-muted-foreground">
                         {formatRelative(stash.createdAt)}
                         {stash.attachments.length > 0 && stash.text.trim() !== ""
                           ? ` · ${stash.attachments.length} attached`

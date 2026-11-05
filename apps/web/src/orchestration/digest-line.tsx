@@ -32,7 +32,7 @@ export function DigestLine({ digests }: { digests: readonly StreamDigest[] }) {
       <CollapsibleTrigger
         data-testid="digest-line-toggle"
         aria-label={[...said, words.time].filter((word) => word !== undefined).join(", ")}
-        className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full min-w-0 items-center gap-1.5 rounded-sm py-0.5 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronRight
           aria-hidden
@@ -52,10 +52,10 @@ export function DigestLine({ digests }: { digests: readonly StreamDigest[] }) {
                 key={message.id}
                 aria-label={title}
                 data-variant={digest.variant}
-                className="flex flex-col gap-2.5 text-sm"
+                className="flex flex-col gap-2.5 text-reading"
               >
                 {folded && (
-                  <h3 className="flex items-baseline gap-2 text-xs font-medium">
+                  <h3 className="flex items-baseline gap-2 text-meta font-medium">
                     {title}
                     {at !== undefined && (
                       <span className="font-normal text-muted-foreground tabular-nums">

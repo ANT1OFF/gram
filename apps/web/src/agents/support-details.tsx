@@ -34,7 +34,7 @@ export function HarnessSupportDetails({
   );
   if (observation === undefined) return null;
   return (
-    <details className="text-xs text-muted-foreground" data-testid="harness-support-details">
+    <details className="text-meta text-muted-foreground" data-testid="harness-support-details">
       <summary className="cursor-pointer">
         What this agent supports
         {observation.version === undefined ? "" : ` · CLI ${observation.version}`}

@@ -117,7 +117,7 @@ export function PrElsewhereNotice({ threadId }: { threadId: ThreadId }) {
   return (
     <div
       data-testid="pr-elsewhere"
-      className="flex flex-col items-center gap-2 px-4 pb-3 text-center text-xs text-muted-foreground"
+      className="flex flex-col items-center gap-2 px-4 pb-3 text-center text-meta text-muted-foreground"
     >
       <p>
         #{elsewhere.number} open on <span className="font-mono">{elsewhere.branch}</span> in{" "}

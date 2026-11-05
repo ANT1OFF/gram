@@ -21,10 +21,10 @@ export function SessionExpiredScreen() {
     >
       <div className="flex max-w-md flex-col items-center gap-3 text-center">
         <KeyRound aria-hidden className="size-6 text-muted-foreground" />
-        <h1 id="session-expired-title" className="font-heading text-lg font-medium">
+        <h1 id="session-expired-title" className="font-heading text-heading">
           Session expired
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-reading text-muted-foreground">
           This window&apos;s launch token is no longer accepted, usually because Gram restarted.
           Reopen Gram to start a new session.
         </p>

@@ -18,7 +18,7 @@ export function EditBanner({ threadId }: { threadId: ThreadId }) {
     <div
       role="status"
       data-testid="edit-banner"
-      className="mx-auto flex w-full max-w-(--thread-max-width) items-center gap-2 px-6 pt-2 text-xs text-muted-foreground"
+      className="mx-auto flex w-full max-w-(--thread-max-width) items-center gap-2 px-6 pt-2 text-meta text-muted-foreground"
     >
       <Pencil aria-hidden className="size-3.5 shrink-0" />
       <span>

@@ -87,7 +87,7 @@ export function UpdateNotice() {
           : "Update available"
       }
       data-testid="update-notice"
-      className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2 text-sm text-card-foreground"
+      className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2 text-reading text-card-foreground"
     >
       {targetTag ? (
         progress?.stage === "failed" ? (
@@ -115,7 +115,7 @@ export function UpdateNotice() {
           <span className="block text-muted-foreground">Available release: {offer.version}</span>
         )}
         {release?.notes && (
-          <span className="block text-xs text-muted-foreground wrap-anywhere">
+          <span className="block text-meta text-muted-foreground wrap-anywhere">
             {release.notes.slice(0, 220)}
             {release.notes.length > 220 ? "…" : ""}
           </span>

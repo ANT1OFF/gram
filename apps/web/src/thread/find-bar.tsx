@@ -89,12 +89,12 @@ export function FindBar({
           setCurrent(0);
         }}
         onKeyDown={onKeyDown}
-        className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        className="h-7 min-w-0 flex-1 bg-transparent text-reading outline-none placeholder:text-muted-foreground"
       />
       <span
         aria-live="polite"
         data-testid="find-status"
-        className="shrink-0 text-xs text-muted-foreground tabular-nums"
+        className="shrink-0 text-meta text-muted-foreground tabular-nums"
       >
         {statusText(search, index, messageIds.length)}
       </span>

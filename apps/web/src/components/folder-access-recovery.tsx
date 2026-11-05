@@ -46,7 +46,7 @@ export function FolderAccessRecovery({
   };
 
   return (
-    <div data-testid="folder-access-recovery" className="flex flex-col gap-2 p-3 text-xs">
+    <div data-testid="folder-access-recovery" className="flex flex-col gap-2 p-3 text-meta">
       <p role="alert" className="flex items-center gap-1.5 font-medium text-danger-text">
         <FolderLock aria-hidden className="size-3.5 shrink-0" />
         Gram can&apos;t read this folder

@@ -145,7 +145,7 @@ function ToolShell({
     >
       <CollapsibleTrigger
         aria-controls={bodyId}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-reading"
       >
         {/* The mark stays mounted from pending to done, so its arc can close into the check. */}
         {/* A native title: a tooltip trigger inside the row's toggle would take its click. */}
@@ -159,12 +159,12 @@ function ToolShell({
           </Swap>
         </span>
         <span className="shrink-0 font-medium">{words.label}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
           {summary}
         </span>
         {meta}
         {/* A finished row is the common case: its check says so, and the word is for a reader. */}
-        <span className={cn("shrink-0 text-xs", phase === "done" ? "sr-only" : display.tone)}>
+        <span className={cn("shrink-0 text-meta", phase === "done" ? "sr-only" : display.tone)}>
           {display.label}
         </span>
         <ChevronDown
@@ -181,16 +181,16 @@ function ToolShell({
       )}
       <Expand open={open} id={bodyId}>
         {opened && (
-          <div className="space-y-2 border-t border-border p-3 text-sm">
+          <div className="space-y-2 border-t border-border p-3 text-reading">
             {words.raw !== undefined && (
-              <p data-testid="tool-raw-name" className="text-xs text-muted-foreground">
+              <p data-testid="tool-raw-name" className="text-meta text-muted-foreground">
                 Tool <code className="font-mono text-foreground">{words.raw}</code>
               </p>
             )}
             {children}
             <ToolImages part={part} size="large" className="flex flex-wrap items-start gap-2" />
             {part.state === "output-error" && (
-              <pre className="overflow-x-auto font-mono text-xs whitespace-pre-wrap text-destructive">
+              <pre className="overflow-x-auto font-mono text-meta whitespace-pre-wrap text-destructive">
                 {part.errorText}
               </pre>
             )}
@@ -204,7 +204,7 @@ function ToolShell({
 const Pre = ({ children, className }: { children: ReactNode; className?: string }) => (
   <pre
     className={cn(
-      "max-h-64 overflow-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap",
+      "max-h-64 overflow-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap",
       className,
     )}
   >
@@ -235,7 +235,7 @@ function BashCard({ part }: { part: ToolPartOf<"Bash"> }) {
   return (
     <ToolShell part={part} name="Bash" summary={part.input?.command}>
       {part.input?.description && (
-        <p className="text-xs text-muted-foreground">{part.input.description}</p>
+        <p className="text-meta text-muted-foreground">{part.input.description}</p>
       )}
       <ShellCommand
         command={part.input?.command ?? ""}
@@ -252,7 +252,7 @@ function BashCard({ part }: { part: ToolPartOf<"Bash"> }) {
           <JsonText text={text} stable={stable} />
         </Pre>
       )}
-      {output?.interrupted && <p className="text-xs text-muted-foreground">Interrupted</p>}
+      {output?.interrupted && <p className="text-meta text-muted-foreground">Interrupted</p>}
     </ToolShell>
   );
 }
@@ -270,13 +270,13 @@ function ReadCard({ part }: { part: ToolPartOf<"Read"> }) {
       name="Read"
       summary={basename(input?.file_path ?? "")}
       meta={
-        range && <span className="shrink-0 font-mono text-xs text-muted-foreground">{range}</span>
+        range && <span className="shrink-0 font-mono text-meta text-muted-foreground">{range}</span>
       }
     >
-      <p className="truncate font-mono text-xs text-muted-foreground">{input?.file_path}</p>
+      <p className="truncate font-mono text-meta text-muted-foreground">{input?.file_path}</p>
       {output?.type === "text" && (
         <>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             {output.file.numLines} of {output.file.totalLines} lines
           </p>
           <Pre>{output.file.content}</Pre>
@@ -298,12 +298,12 @@ function SearchCard({ part }: { part: ToolPartOf<"Glob"> | ToolPartOf<"Grep"> })
       summary={part.input?.pattern}
       meta={
         output && (
-          <span className="shrink-0 text-xs text-muted-foreground">{output.numFiles} files</span>
+          <span className="shrink-0 text-meta text-muted-foreground">{output.numFiles} files</span>
         )
       }
     >
       {part.input?.path && (
-        <p className="font-mono text-xs text-muted-foreground">in {part.input.path}</p>
+        <p className="font-mono text-meta text-muted-foreground">in {part.input.path}</p>
       )}
       {output && output.filenames.length > 0 && <Pre>{output.filenames.join("\n")}</Pre>}
       {output && "content" in output && output.content && <Pre>{output.content}</Pre>}
@@ -312,11 +312,11 @@ function SearchCard({ part }: { part: ToolPartOf<"Glob"> | ToolPartOf<"Grep"> })
   );
 }
 
-const TASK_CHIP = "shrink-0 rounded-sm border border-border px-1 text-xs text-muted-foreground";
+const TASK_CHIP = "shrink-0 rounded-sm border border-border px-1 text-meta text-muted-foreground";
 
 /** A run's counts: there while the card is hovered or focused, kept in place so nothing jumps. */
 const USAGE_LINE =
-  "text-xs text-muted-foreground opacity-0 transition-opacity duration-(--dur-fast) group-focus-within/tool:opacity-100 group-hover/tool:opacity-100";
+  "text-meta text-muted-foreground opacity-0 transition-opacity duration-(--dur-fast) group-focus-within/tool:opacity-100 group-hover/tool:opacity-100";
 
 /**
  * The model the run actually used: its transcript reports the wire id even when the model was
@@ -424,9 +424,9 @@ function TaskCard({
         </p>
       )}
       {text !== undefined && <Pre>{text}</Pre>}
-      {note && <p className="truncate text-xs text-muted-foreground">{note}</p>}
+      {note && <p className="truncate text-meta text-muted-foreground">{note}</p>}
       {background && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           {running ? "Running in the background" : "Ran in the background"}
         </p>
       )}
@@ -447,10 +447,10 @@ function WebFetchCard({ part }: { part: ToolPartOf<"WebFetch"> }) {
   const { output, text } = splitOutput(part.state === "output-available" ? part.output : undefined);
   return (
     <ToolShell part={part} name="WebFetch" summary={part.input?.url}>
-      {part.input?.prompt && <p className="text-xs text-muted-foreground">{part.input.prompt}</p>}
+      {part.input?.prompt && <p className="text-meta text-muted-foreground">{part.input.prompt}</p>}
       {output && (
         <>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             {output.code} {output.codeText} · {formatCount(output.bytes)} bytes
           </p>
           <Pre>{output.result}</Pre>
@@ -474,7 +474,7 @@ function WebSearchCard({ part }: { part: ToolPartOf<"WebSearch"> }) {
         <Pre key={index}>{note}</Pre>
       ))}
       {links.length > 0 && (
-        <ul className="space-y-0.5 text-xs">
+        <ul className="space-y-0.5 text-meta">
           {links.map((link) => (
             <li key={link.url} className="truncate">
               <a
@@ -555,7 +555,7 @@ function GenericCard({ part, children }: { part: AnyToolPart; children?: ReactNo
           </Pre>
         ))}
       {codexAgent && part.state === "output-available" && (
-        <div className="space-y-2 text-xs">
+        <div className="space-y-2 text-meta">
           <p className="text-muted-foreground">Last reported agent states</p>
           {Object.entries(record(record(output)["lastKnownAgentStates"])).map(([id, value]) => {
             const state = record(value);
@@ -586,7 +586,7 @@ function GenericCard({ part, children }: { part: AnyToolPart; children?: ReactNo
         </Pre>
       )}
       {part.state === "output-available" && (noWebResults || emptyRead) && (
-        <p className="text-xs text-muted-foreground">No result details were provided.</p>
+        <p className="text-meta text-muted-foreground">No result details were provided.</p>
       )}
     </ToolShell>
   );

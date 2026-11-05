@@ -102,14 +102,14 @@ const LINK = "cursor-pointer rounded-sm underline-offset-2 hover:underline";
 /** How each kind of reference looks once it links: a path in prose gets a code span's font. */
 const KIND_CLASS: Record<string, string> = {
   code: "decoration-muted-foreground",
-  text: "font-mono text-[0.9em] decoration-muted-foreground",
+  text: "font-mono text-code decoration-muted-foreground",
   link: "wrap-anywhere font-medium text-primary underline",
 };
 
 /** A path elsewhere on the machine before it's known to be a file: only its font, as a code span. */
 const CANDIDATE_CLASS: Record<string, string> = {
   code: "",
-  text: "font-mono text-[0.9em]",
+  text: "font-mono text-code",
   link: "",
 };
 
@@ -251,7 +251,7 @@ function FileLink({
             data-surface="overlay"
             data-testid="file-ref-menu"
             aria-label="File"
-            className="flex max-w-md origin-(--transform-origin) items-center gap-1 rounded-md border border-border bg-popover py-0.5 ps-2 pe-0.5 text-xs text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="flex max-w-md origin-(--transform-origin) items-center gap-1 rounded-md border border-border bg-popover py-0.5 ps-2 pe-0.5 text-meta text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <span
               className="min-w-0 flex-1 truncate font-mono text-muted-foreground"

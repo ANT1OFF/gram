@@ -72,7 +72,7 @@ export function gatewayReady(choice: AgentChoice, profiles: readonly GatewayProf
 /** Stands in for the model picker while a gateway agent has no key to run with. */
 function AddKeyNote({ agent }: { agent: AgentKind }) {
   return (
-    <p className="flex h-8 items-center gap-1.5 text-xs text-muted-foreground">
+    <p className="flex h-8 items-center gap-1.5 text-meta text-muted-foreground">
       <KeyRound aria-hidden className="size-3.5 shrink-0" />
       {`${agentLabel(agent)} runs through your gateway.`}
       <Link
@@ -179,8 +179,8 @@ export function AgentFields({
         <span
           className={
             ghost
-              ? "flex h-7 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground"
-              : "flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm"
+              ? "flex h-7 items-center gap-1.5 px-2 text-meta font-medium text-muted-foreground"
+              : "flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-reading"
           }
         >
           <AgentIcon agent={agents[0] ?? value.agent} className="size-3.5 text-muted-foreground" />

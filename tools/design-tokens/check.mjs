@@ -68,7 +68,7 @@ export const RULES = [
   {
     id: "shadow",
     pattern: new RegExp(
-      String.raw`${B}shadow(?:-(?:2xs|xs|sm|md|lg|xl|2xl))?${E}|${B}shadow-\[[^\]\s]*(?:rgb|hsl|#)[^\]\s]*\]${E}`,
+      String.raw`${B}shadow(?:-(?:2xs|xs|sm|md|lg|xl|2xl|card|popover))?${E}|${B}shadow-\[[^\]\s]*(?:rgb|hsl|#)[^\]\s]*\]${E}`,
       "g",
     ),
     hint: () => "an elevation: shadow-raised, shadow-overlay or shadow-composer",

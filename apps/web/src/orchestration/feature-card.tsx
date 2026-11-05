@@ -100,7 +100,7 @@ export function PrChip({ pr, threadId }: { pr: FeatureCardPr; threadId?: ThreadI
     </>
   );
   const chip =
-    "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1 font-mono text-[11px] leading-5";
+    "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1 font-mono text-caption leading-5";
   const live = cn(
     chip,
     "text-foreground no-underline outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
@@ -167,7 +167,7 @@ function StageLine({ card }: { card: FeatureCard }) {
     <ol
       aria-label={`Stage: ${STATION_LABELS[card.station]}`}
       data-testid="feature-card-stations"
-      className="flex items-center gap-1 text-[11px]"
+      className="flex items-center gap-1 text-caption"
     >
       {FEATURE_STATIONS.map((station, i) => {
         const count = card.workers.filter((worker) => worker.station === station).length;
@@ -221,7 +221,7 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
     <li
       data-testid="feature-card-worker"
       data-station={worker.station}
-      className="flex min-w-0 items-center gap-2 text-xs"
+      className="flex min-w-0 items-center gap-2 text-meta"
     >
       <span
         aria-hidden
@@ -325,7 +325,7 @@ export function FeatureCardView({
       data-feature={card.feature}
       data-version={card.version}
       data-station={card.station}
-      className="my-1 flex w-full max-w-2xl flex-col gap-1.5 rounded-(--radius-md) border border-border bg-card/40 p-3 text-sm"
+      className="my-1 flex w-full max-w-2xl flex-col gap-1.5 rounded-(--radius-md) border border-border bg-card/40 p-3 text-reading"
     >
       <header className="flex min-w-0 items-center gap-2">
         <PulseOnce
@@ -347,13 +347,13 @@ export function FeatureCardView({
           </h3>
         </PulseOnce>
         {card.group !== undefined && (
-          <span className="truncate text-xs text-muted-foreground">{card.group}</span>
+          <span className="truncate text-meta text-muted-foreground">{card.group}</span>
         )}
         {card.stage !== undefined && (
           <span
             data-testid="feature-card-stage"
             title={card.stage.note}
-            className="max-w-40 truncate rounded-sm bg-muted px-1 text-[11px] text-muted-foreground"
+            className="max-w-40 truncate rounded-sm bg-muted px-1 text-caption text-muted-foreground"
           >
             {card.stage.current}
           </span>
@@ -362,14 +362,14 @@ export function FeatureCardView({
           <span
             data-testid="feature-card-updated"
             title={`Last moved at ${formatClockTime(card.updatedAt)}`}
-            className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
+            className="ml-auto shrink-0 text-meta text-muted-foreground tabular-nums"
           >
             {formatClockTime(card.updatedAt)}
           </span>
         )}
       </header>
       {summary !== undefined && (
-        <p data-testid="feature-card-summary" className="text-xs text-muted-foreground">
+        <p data-testid="feature-card-summary" className="text-meta text-muted-foreground">
           {summary}
         </p>
       )}
@@ -383,7 +383,7 @@ export function FeatureCardView({
         ))}
       </ul>
       {(overlaps.length > 0 || foreign.length > 0) && (
-        <ul data-testid="feature-card-overlap" className="flex flex-col gap-0.5 text-xs">
+        <ul data-testid="feature-card-overlap" className="flex flex-col gap-0.5 text-meta">
           {overlaps.map(({ key, a, b, files }) => (
             <li key={key} className="flex min-w-0 items-center gap-1 text-status-needs">
               <CircleAlert aria-hidden className="size-3.5 shrink-0" />
@@ -434,7 +434,7 @@ export function StreamLineView({ line, at }: { line: StreamLine; at?: number | u
     <p
       data-testid="stream-line"
       data-kind={line.kind}
-      className="flex min-w-0 items-center gap-1.5 py-0.5 text-xs"
+      className="flex min-w-0 items-center gap-1.5 py-0.5 text-meta"
     >
       <tone.icon aria-hidden className={cn("size-3.5 shrink-0", tone.className)} />
       {line.feature !== "" && <span className="text-muted-foreground">{line.feature}</span>}

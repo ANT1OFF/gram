@@ -37,7 +37,7 @@ export function SetDefaultFolder({ path, home }: { path: string; home: string | 
         type="button"
         size="xs"
         variant="ghost"
-        className="ml-auto h-5 shrink-0 px-1.5 text-xs"
+        className="ml-auto h-5 shrink-0 px-1.5 text-meta"
         disabled={save.isPending}
         onClick={() => save.mutate()}
       >

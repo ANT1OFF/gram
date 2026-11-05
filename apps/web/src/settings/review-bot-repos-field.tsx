@@ -38,7 +38,7 @@ export function ReviewBotReposField({
 
   return (
     <div className="flex flex-col gap-2" data-testid="review-bot-repos">
-      <label htmlFor={id} className="text-xs text-muted-foreground">
+      <label htmlFor={id} className="text-meta text-muted-foreground">
         Repositories with a review bot
       </label>
       {repos.length > 0 && (
@@ -46,7 +46,7 @@ export function ReviewBotReposField({
           {repos.map((repo) => (
             <li
               key={repo}
-              className="flex h-6 items-center gap-0.5 rounded-md border border-border pr-0.5 pl-2 font-mono text-xs"
+              className="flex h-6 items-center gap-0.5 rounded-md border border-border pr-0.5 pl-2 font-mono text-meta"
             >
               {repo}
               <Hint
@@ -93,7 +93,7 @@ export function ReviewBotReposField({
         </WhyDisabled>
       </div>
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -102,7 +102,7 @@ export function ReviewBotReposField({
           className="flex flex-wrap items-center gap-1"
           data-testid="review-bot-repo-suggestions"
         >
-          <span className="text-xs text-muted-foreground">A bot has reviewed in</span>
+          <span className="text-meta text-muted-foreground">A bot has reviewed in</span>
           {suggestions.map((repo) => (
             <Button
               key={repo}

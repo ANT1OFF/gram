@@ -16,7 +16,7 @@ const RECENT = 3;
 
 /** A file's name as a link to it in Files, where its size, cap and editor are. */
 const FILE_LINK =
-  "rounded-sm font-mono text-xs text-link underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring";
+  "rounded-sm font-mono text-meta text-link underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * A file's own headings, each a level under the file's name, so its `# Goals` doesn't stand as the
@@ -24,16 +24,16 @@ const FILE_LINK =
  */
 const HEADINGS = {
   h1: ({ children }: ComponentProps<"h1">) => (
-    <h3 className="mt-4 mb-2 text-base font-semibold first:mt-0">{children}</h3>
+    <h3 className="mt-4 mb-2 text-title first:mt-0">{children}</h3>
   ),
   h2: ({ children }: ComponentProps<"h2">) => (
-    <h4 className="mt-4 mb-2 text-sm font-semibold first:mt-0">{children}</h4>
+    <h4 className="mt-4 mb-2 text-reading font-semibold first:mt-0">{children}</h4>
   ),
   h3: ({ children }: ComponentProps<"h3">) => (
-    <h5 className="mt-3 mb-1.5 text-sm font-medium first:mt-0">{children}</h5>
+    <h5 className="mt-3 mb-1.5 text-reading font-medium first:mt-0">{children}</h5>
   ),
   h4: ({ children }: ComponentProps<"h4">) => (
-    <h6 className="mt-3 mb-1.5 text-sm font-medium first:mt-0">{children}</h6>
+    <h6 className="mt-3 mb-1.5 text-reading font-medium first:mt-0">{children}</h6>
   ),
 };
 
@@ -63,21 +63,21 @@ export function MemoryOverview({
       className="flex flex-col gap-4"
     >
       <h2 className="sr-only">Current memory</h2>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         What the orchestrator starts every session from. It writes here as it learns; so can you.
       </p>
       {files.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Memory is empty.</p>
+        <p className="text-meta text-muted-foreground">Memory is empty.</p>
       ) : (
         <>
           <div
             data-testid="memory-recent"
             className="flex flex-col gap-1 rounded-(--radius-md) border border-border bg-card/40 p-3"
           >
-            <h3 className="text-xs font-medium text-muted-foreground">Recently changed</h3>
+            <h3 className="text-meta font-medium text-muted-foreground">Recently changed</h3>
             <ul className="flex flex-col gap-0.5">
               {recent.map((file) => (
-                <li key={file.path} className="flex items-baseline gap-2 text-xs">
+                <li key={file.path} className="flex items-baseline gap-2 text-meta">
                   <button type="button" className={FILE_LINK} onClick={() => onOpen(file.path)}>
                     {file.path}
                   </button>
@@ -140,7 +140,7 @@ function OverviewFile({
         >
           {file.path}
         </button>
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <span className="text-meta text-muted-foreground tabular-nums">
           changed {agoText(file.modifiedAt, now)}
         </span>
         <Button
@@ -160,9 +160,9 @@ function OverviewFile({
       ) : content.data === undefined ? (
         <PanelMessage loading>Reading {file.path}…</PanelMessage>
       ) : content.data.content.trim() === "" ? (
-        <p className="text-xs text-muted-foreground">Empty.</p>
+        <p className="text-meta text-muted-foreground">Empty.</p>
       ) : (
-        <div className="max-w-3xl text-sm leading-relaxed [&_ol]:list-decimal [&_ol]:ps-5 [&_ul]:list-disc [&_ul]:ps-5">
+        <div className="max-w-3xl text-reading leading-relaxed [&_ol]:list-decimal [&_ol]:ps-5 [&_ul]:list-disc [&_ul]:ps-5">
           <MessageResponse components={HEADINGS}>{content.data.content}</MessageResponse>
         </div>
       )}

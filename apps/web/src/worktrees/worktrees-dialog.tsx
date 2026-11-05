@@ -155,23 +155,23 @@ export function WorktreesDialog({ repoPath, onClose }: { repoPath: string; onClo
           ref={statusRef}
           role="status"
           tabIndex={-1}
-          className="text-xs text-muted-foreground outline-none"
+          className="text-meta text-muted-foreground outline-none"
         >
           {removedStatus(removed.entries, removed.closed)}
         </p>
       )}
       {query.status === "pending" ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           <Shimmer>Loading worktrees…</Shimmer>
         </p>
       ) : query.status === "error" ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           Couldn't list the worktrees: {errorMessage(query.error)}
         </p>
       ) : (
         <>
           {unpickedFinished.length > 0 && (
-            <div className="flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center justify-between gap-2 text-meta">
               <span className="text-muted-foreground">
                 {plural(finishedRows.length, "worktree")} of archived or merged workers
               </span>
@@ -216,7 +216,7 @@ export function WorktreesDialog({ repoPath, onClose }: { repoPath: string; onClo
             }}
           />
         ) : (
-          <div className="flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center justify-between gap-2 text-meta">
             <span data-testid="worktree-selection" className="text-muted-foreground">
               {picked.length} selected · {size ?? <Shimmer>sizing…</Shimmer>}
             </span>
@@ -287,7 +287,7 @@ function WorktreeRow({
       aria-label={name}
       className="flex flex-col gap-1 border-b border-border px-1 py-2 last:border-b-0"
     >
-      <div className="flex min-w-0 items-center gap-2 text-sm">
+      <div className="flex min-w-0 items-center gap-2 text-reading">
         {onToggle ? (
           <input
             type="checkbox"
@@ -299,23 +299,26 @@ function WorktreeRow({
         ) : (
           <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         )}
-        <span className="shrink-0 font-mono text-xs font-medium">{name}</span>
+        <span className="shrink-0 font-mono text-meta font-medium">{name}</span>
         {entry.isMain && entry.branch && (
-          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+          <span className="shrink-0 font-mono text-caption text-muted-foreground">
             {entry.branch}
           </span>
         )}
-        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{usage}</span>
+        <span className="ml-auto shrink-0 text-caption text-muted-foreground">{usage}</span>
         {entry.lastActivity > 0 && (
           <time
             dateTime={new Date(entry.lastActivity).toISOString()}
-            className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
+            className="shrink-0 text-caption text-muted-foreground tabular-nums"
           >
             {formatRelative(entry.lastActivity)}
           </time>
         )}
       </div>
-      <p className="truncate pl-5.5 font-mono text-[11px] text-muted-foreground" title={entry.path}>
+      <p
+        className="truncate pl-5.5 font-mono text-caption text-muted-foreground"
+        title={entry.path}
+      >
         {entry.path}
       </p>
       {!entry.isMain && (
@@ -323,7 +326,7 @@ function WorktreeRow({
           <WorktreeStatus path={entry.path} />
           {merged !== undefined && user !== undefined ? (
             <div className="flex items-center gap-2">
-              <span data-testid="worktree-merged" className="text-xs text-merged">
+              <span data-testid="worktree-merged" className="text-meta text-merged">
                 #{merged.number} merged
               </span>
               <Button
@@ -341,12 +344,14 @@ function WorktreeRow({
               </Button>
             </div>
           ) : finished !== undefined ? (
-            <p data-testid="worktree-finished" className="text-xs text-muted-foreground">
+            <p data-testid="worktree-finished" className="text-meta text-muted-foreground">
               {finished === "archived" ? "Archived" : "Merged"} worker: select it to close it and
               remove its worktree
             </p>
           ) : inUse ? (
-            <p className="text-xs text-muted-foreground">Close the thread to remove its worktree</p>
+            <p className="text-meta text-muted-foreground">
+              Close the thread to remove its worktree
+            </p>
           ) : confirming ? (
             <RemoveConfirm entry={entry} onCancel={cancelRemove} onRemoved={onRemoved} />
           ) : (
@@ -375,26 +380,26 @@ function WorktreeStatus({ path }: { path: string }) {
   });
   if (status.status === "pending") {
     return (
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         <Shimmer>Checking for uncommitted work…</Shimmer>
       </p>
     );
   }
   if (status.status === "error") {
     return (
-      <p role="alert" className="text-xs text-destructive">
+      <p role="alert" className="text-meta text-destructive">
         Couldn't read its git status: {errorMessage(status.error)}
       </p>
     );
   }
   const warning = closeWarning(status.data);
   return warning ? (
-    <p data-testid="worktree-warning" className="flex items-start gap-1.5 text-xs">
+    <p data-testid="worktree-warning" className="flex items-start gap-1.5 text-meta">
       <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
       {warning}
     </p>
   ) : (
-    <p data-testid="worktree-clean" className="flex items-center gap-1.5 text-xs">
+    <p data-testid="worktree-clean" className="flex items-center gap-1.5 text-meta">
       <CircleCheck aria-hidden className="size-3.5 shrink-0 text-success" />
       Clean
     </p>
@@ -447,7 +452,7 @@ function RemoveConfirm({
       data-testid="worktree-remove"
       className="flex flex-col gap-2 rounded-md border border-border bg-card/40 p-2"
     >
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         The worktree folder will be removed. The branch and its commits are kept.
       </p>
       <PermissionChecklist
@@ -457,7 +462,7 @@ function RemoveConfirm({
       />
       {dirty !== undefined && <DirtyAlert changedFiles={dirty} />}
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}
@@ -582,7 +587,7 @@ function BulkRemove({
       data-testid="worktree-bulk-remove"
       className="flex flex-col gap-2 rounded-md border border-border bg-card/40 p-2"
     >
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         These worktree folders will be removed, freeing {size ?? "…"}. Their branches and commits
         are kept.
         {closing.size > 0 &&
@@ -646,11 +651,11 @@ function BulkEntry({
       aria-label={`Remove ${name}`}
       className="flex flex-col gap-1.5 border-b border-border pb-2 last:border-b-0 last:pb-0"
     >
-      <span className="font-mono text-xs font-medium">{name}</span>
+      <span className="font-mono text-meta font-medium">{name}</span>
       <PermissionChecklist rules={rules} skipped={skipped} onToggle={onToggle} />
       {dirty !== undefined && <DirtyAlert changedFiles={dirty} />}
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}

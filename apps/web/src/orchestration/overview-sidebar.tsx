@@ -319,7 +319,7 @@ export function OverviewSidebar() {
       </div>
       <div
         onKeyDown={overviewKeys}
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-2 pt-1 pb-3 text-[13px]"
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-2 pt-1 pb-3 text-body"
       >
         {/* What needs you, and the way to find anything else, as one block at the top. */}
         <div className="flex flex-col gap-1">
@@ -584,7 +584,7 @@ function WorkspaceRow({
               {empty && (
                 <span
                   data-testid="overview-workspace-idle"
-                  className="shrink-0 text-xs text-muted-foreground"
+                  className="shrink-0 text-meta text-muted-foreground"
                 >
                   · idle
                 </span>
@@ -594,7 +594,7 @@ function WorkspaceRow({
               {stateWordShown(word) && (
                 <span
                   data-testid="overview-workspace-state"
-                  className="text-xs whitespace-nowrap text-muted-foreground"
+                  className="text-meta whitespace-nowrap text-muted-foreground"
                 >
                   {stateWord(word)}
                 </span>
@@ -602,7 +602,7 @@ function WorkspaceRow({
               {asks > 0 && (
                 <span
                   data-testid="overview-workspace-asks"
-                  className="min-w-4.5 rounded-full border border-status-needs-mark/70 px-1.5 text-center text-[11px] leading-4 font-semibold text-status-needs tabular-nums"
+                  className="min-w-4.5 rounded-full border border-status-needs-mark/70 px-1.5 text-center text-caption leading-4 font-semibold text-status-needs tabular-nums"
                 >
                   {asks}
                 </span>
@@ -842,7 +842,7 @@ export function WorkerRow({
             <PreviewCard.Popup
               data-testid="overview-worker-card"
               data-surface="overlay"
-              className={cn(CARD_SURFACE, "flex w-72 flex-col gap-1.5 p-3 text-sm")}
+              className={cn(CARD_SURFACE, "flex w-72 flex-col gap-1.5 p-3 text-reading")}
             >
               <WorkerCard
                 row={row}
@@ -884,7 +884,7 @@ function WorkerNow({
     return (
       <span
         data-testid="overview-worker-state"
-        className="col-span-2 col-start-2 min-w-0 truncate text-xs text-muted-foreground"
+        className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground"
       >
         {RAIL_TONES[tone].label}
       </span>
@@ -894,7 +894,7 @@ function WorkerNow({
     <Swap
       swapKey={row.now}
       className={cn(
-        "col-span-2 col-start-2 min-w-0 truncate text-xs",
+        "col-span-2 col-start-2 min-w-0 truncate text-meta",
         asking ? "text-foreground" : row.failed ? "text-destructive" : "text-muted-foreground",
       )}
     >
@@ -915,7 +915,7 @@ function WorkerStep({ row }: { row: OverviewWorkerRow }) {
     <span
       data-testid="overview-worker-step"
       title={shown === step ? undefined : step}
-      className="col-span-2 col-start-2 min-w-0 truncate text-xs text-muted-foreground"
+      className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground"
     >
       {shown}
     </span>
@@ -927,7 +927,7 @@ function WorkerCardStep({ row }: { row: OverviewWorkerRow }) {
   const step = useWorkLine(row.threadId, row.report);
   if (step === undefined) return null;
   return (
-    <p data-testid="overview-worker-card-step" className="text-xs text-muted-foreground">
+    <p data-testid="overview-worker-card-step" className="text-meta text-muted-foreground">
       {step}
     </p>
   );
@@ -963,7 +963,7 @@ function WorkerCard({
     <>
       <p
         data-testid="overview-worker-card-feature"
-        className="truncate text-xs text-muted-foreground"
+        className="truncate text-meta text-muted-foreground"
       >
         {feature}
         {agent !== undefined && ` · ${agentLabel(agent)}`}
@@ -971,7 +971,7 @@ function WorkerCard({
       <p data-testid="overview-worker-card-title" className="font-medium">
         {row.title}
       </p>
-      <p className="flex min-w-0 items-center gap-1.5 text-xs">
+      <p className="flex min-w-0 items-center gap-1.5 text-meta">
         <span
           aria-hidden
           title={RAIL_TONES[tone].label}
@@ -1003,7 +1003,7 @@ function WorkerCard({
       {pause !== undefined && (
         <p
           data-testid="overview-worker-card-paused"
-          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          className="flex items-center gap-1.5 text-meta text-muted-foreground"
         >
           <WorkerPauseMark pause={pause} />
           {workerPauseHint(pause.state, pause.at)}
@@ -1014,7 +1014,7 @@ function WorkerCard({
           <PrChip pr={row.pr} threadId={row.threadId} />
         </span>
       )}
-      <p className="mt-0.5 flex gap-3 border-t border-border pt-1.5 text-xs text-muted-foreground">
+      <p className="mt-0.5 flex gap-3 border-t border-border pt-1.5 text-meta text-muted-foreground">
         <span>Click · open</span>
         <span>{keyLabel("⌥-click")} · peek</span>
         <span>{keyLabel("⌘-click")} · beside</span>
@@ -1031,7 +1031,7 @@ function WaitingLine({ waiting, testId }: { waiting: WaitingOn; testId: string }
   return (
     <Swap
       swapKey={waiting.label}
-      className="col-span-2 col-start-2 min-w-0 truncate text-xs text-muted-foreground"
+      className="col-span-2 col-start-2 min-w-0 truncate text-meta text-muted-foreground"
     >
       <span
         data-testid={testId}
@@ -1050,7 +1050,7 @@ function WaitingList({ waiting }: { waiting: WaitingOn }) {
   return (
     <ul
       data-testid="overview-worker-card-waits"
-      className="flex flex-col gap-0.5 text-xs text-muted-foreground"
+      className="flex flex-col gap-0.5 text-meta text-muted-foreground"
     >
       {waiting.reasons.map((reason, i) => (
         <li key={i} data-kind={reason.kind} className="flex min-w-0 gap-1.5">
@@ -1076,7 +1076,7 @@ function HeldRow({ held }: { held: FeatureCardHeld }) {
         className="size-2 justify-self-center rounded-full border border-dashed border-muted-foreground"
       />
       <span className="truncate text-muted-foreground">{held.title}</span>
-      <span className="col-start-2 truncate text-xs text-muted-foreground tabular-nums">
+      <span className="col-start-2 truncate text-meta text-muted-foreground tabular-nums">
         held · {heldStateText(held, now)}
       </span>
     </div>
@@ -1167,7 +1167,7 @@ function FoldedThreads({
             : `${label}, ${threads.length}. ${hint}`
         }
         onClick={() => setOpen(!open)}
-        className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-xs text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-6 w-full items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-left text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronDown
           aria-hidden
@@ -1254,7 +1254,7 @@ export function OrchestratorAtWork({
   const workspace = useWorkspaces().find((state) => state.workspace.id === workspaceId)?.workspace;
   const threadId = useThreadsStore((s) => workingOrchestrator(s, workspace ?? { id: workspaceId }));
   if (threadId === undefined) {
-    return <p className={cn("text-xs text-muted-foreground", className)}>{children}</p>;
+    return <p className={cn("text-meta text-muted-foreground", className)}>{children}</p>;
   }
   return <AtWorkLines threadId={threadId} own className={className} />;
 }
@@ -1292,7 +1292,7 @@ function AtWorkLines({
       title={at === undefined ? undefined : `Last activity ${formatClockTime(at)}`}
       onClick={onClick}
       className={cn(
-        "flex w-full min-w-0 cursor-default flex-col rounded-(--radius-sm) text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full min-w-0 cursor-default flex-col rounded-(--radius-sm) text-left text-meta outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
     >
@@ -1369,7 +1369,7 @@ export function SoloRow({
         </span>
         {!display.working && (
           <span className="flex h-lh items-center">
-            <span className="text-xs text-muted-foreground tabular-nums">
+            <span className="text-meta text-muted-foreground tabular-nums">
               {formatRelative(thread.lastActivityAt, now)}
             </span>
           </span>

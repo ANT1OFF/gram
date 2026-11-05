@@ -67,7 +67,7 @@ function ReadSourceImage({
       />
     );
   if (supported && query.status === "pending")
-    return <span className="text-xs text-muted-foreground">Loading image preview…</span>;
+    return <span className="text-meta text-muted-foreground">Loading image preview…</span>;
   return (
     <Hint
       label="Previews require an available image already attached to this thread. The provider's source details remain in the tool card."
@@ -75,7 +75,7 @@ function ReadSourceImage({
         <span
           tabIndex={0}
           data-testid="tool-image-missing"
-          className="text-xs text-muted-foreground"
+          className="text-meta text-muted-foreground"
         />
       }
     >
@@ -107,7 +107,7 @@ function HistoricalToolImage({
     !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)
   ) {
     return (
-      <span data-testid="tool-image-missing" className="text-xs text-muted-foreground">
+      <span data-testid="tool-image-missing" className="text-meta text-muted-foreground">
         Image preview unavailable: saved inline image is unsupported, invalid or too large.
       </span>
     );
@@ -149,7 +149,7 @@ function ToolImage({
   return (
     <span
       data-testid="tool-image-missing"
-      className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground"
+      className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-meta text-muted-foreground"
     >
       <ImageOff aria-hidden className="size-3.5" />
       {missingToolImageLabel(image, image.path === undefined ? "unstored" : "gone")}

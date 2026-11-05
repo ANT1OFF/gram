@@ -27,7 +27,7 @@ export function MentionMenu({
       id={id}
       role="listbox"
       aria-label="Files"
-      className="gram-pop absolute right-0 bottom-full left-0 isolate z-20 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-sm shadow-md"
+      className="gram-pop absolute right-0 bottom-full left-0 isolate z-20 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-reading shadow-overlay"
     >
       <ListHighlight
         targetId={`${id}-${activeIndex}`}
@@ -54,7 +54,7 @@ export function MentionMenu({
             )}
           >
             <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate font-mono text-xs">
+            <span className="truncate font-mono text-meta">
               <span className="text-muted-foreground">{path.slice(0, name)}</span>
               {path.slice(name)}
             </span>

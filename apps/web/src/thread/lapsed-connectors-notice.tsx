@@ -49,7 +49,7 @@ export function LapsedConnectorsNotice({ threadId }: { threadId: ThreadId }) {
     <aside
       aria-label="Connectors to sign in to again"
       data-testid="lapsed-connectors-notice"
-      className="mx-auto flex w-full max-w-(--thread-max-width) shrink-0 flex-col gap-1 px-6 py-2 text-sm"
+      className="mx-auto flex w-full max-w-(--thread-max-width) shrink-0 flex-col gap-1 px-6 py-2 text-reading"
     >
       {shown.map((name) => {
         const pending = signIns[name];
@@ -105,7 +105,7 @@ export function LapsedConnectorsNotice({ threadId }: { threadId: ThreadId }) {
         );
       })}
       {signIn.error && (
-        <p role="alert" className="pl-7 text-xs text-destructive">
+        <p role="alert" className="pl-7 text-meta text-destructive">
           {errorMessage(signIn.error)}
         </p>
       )}

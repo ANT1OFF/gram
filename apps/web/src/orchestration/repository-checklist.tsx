@@ -104,13 +104,15 @@ export function RepositoryChecklist({
               />
               <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               <span>{repo.name}</span>
-              <span className="truncate font-mono text-xs text-muted-foreground">{repo.root}</span>
+              <span className="truncate font-mono text-meta text-muted-foreground">
+                {repo.root}
+              </span>
             </label>
           </li>
         ))}
       </ul>
       {error !== undefined && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}

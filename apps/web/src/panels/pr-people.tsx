@@ -79,7 +79,7 @@ export function PrReviewers({ detail, children }: { detail: PrDetail; children?:
   return (
     <div
       data-testid="pr-reviewers"
-      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted-foreground"
     >
       {roster.length > 0 && <span>Reviewers</span>}
       {roster.length > 0 && (
@@ -109,7 +109,7 @@ export function PrReviewers({ detail, children }: { detail: PrDetail; children?:
 }
 
 const inputCls =
-  "h-7 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-7 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /** The comma- or space-separated names typed so far. */
 export const splitNames = (value: string): Array<string> =>

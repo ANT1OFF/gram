@@ -20,7 +20,7 @@ function Switch({ className, ...props }: Omit<SwitchPrimitive.Root.Props, "nativ
     >
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
-        className="pointer-events-none block size-3.5 rounded-full bg-background shadow-xs transition-transform duration-(--dur-move-fast) data-checked:translate-x-[calc(100%+1px)] data-unchecked:translate-x-px dark:data-checked:bg-primary-foreground"
+        className="pointer-events-none block size-3.5 rounded-full bg-background shadow-raised transition-transform duration-(--dur-move-fast) data-checked:translate-x-[calc(100%+1px)] data-unchecked:translate-x-px dark:data-checked:bg-primary-foreground"
       />
     </SwitchPrimitive.Root>
   );

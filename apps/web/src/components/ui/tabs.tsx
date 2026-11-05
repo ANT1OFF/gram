@@ -18,7 +18,7 @@ function TabsList({ className, children, ...props }: TabsPrimitive.List.Props) {
       {children}
       <TabsPrimitive.Indicator
         data-slot="tabs-indicator"
-        className="absolute bottom-[-1px] left-[var(--active-tab-left)] h-px w-[var(--active-tab-width)] bg-primary transition-[left,width] duration-(--dur-base) ease-(--ease-out)"
+        className="absolute -bottom-px left-[var(--active-tab-left)] h-px w-[var(--active-tab-width)] bg-primary transition-[left,width] duration-(--dur-base) ease-(--ease-out)"
       />
     </TabsPrimitive.List>
   );
@@ -29,7 +29,7 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
     <TabsPrimitive.Tab
       data-slot="tabs-trigger"
       className={cn(
-        "h-9 rounded-md px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:focus-ring-inset aria-selected:text-foreground",
+        "h-9 rounded-md px-2 text-meta font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:focus-ring-inset aria-selected:text-foreground",
         className,
       )}
       {...props}

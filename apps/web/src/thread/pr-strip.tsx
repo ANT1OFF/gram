@@ -55,16 +55,16 @@ import {
 } from "./pr-strip-model";
 
 const CHIP =
-  "flex h-6 shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 text-xs tabular-nums outline-none";
+  "flex h-6 shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 text-meta tabular-nums outline-none";
 const FOCUS = "focus-visible:ring-3 focus-visible:ring-ring/50";
 const ROW =
-  "flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card pr-1 pl-2.5 text-sm";
+  "flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card pr-1 pl-2.5 text-reading";
 const QUIET =
-  "flex items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground outline-none hover:text-foreground";
+  "flex items-center gap-1 rounded-sm px-1 text-meta text-muted-foreground outline-none hover:text-foreground";
 const MENU_ACTION =
-  "flex items-center gap-2 rounded-sm text-left text-xs text-muted-foreground outline-none hover:text-foreground disabled:opacity-50";
+  "flex items-center gap-2 rounded-sm text-left text-meta text-muted-foreground outline-none hover:text-foreground disabled:opacity-50";
 const POPUP =
-  "flex w-72 origin-(--transform-origin) flex-col gap-2 rounded-md border border-border bg-popover p-3 text-sm text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "flex w-72 origin-(--transform-origin) flex-col gap-2 rounded-md border border-border bg-popover p-3 text-reading text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 
 const CHECKS_TONE: Record<ChecksRollup, string> = {
   passing: "text-success",
@@ -515,7 +515,7 @@ function CiMenu({
             aria-label="CI monitoring"
             className={POPUP}
           >
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <div className="flex items-center justify-between text-meta text-muted-foreground">
               CI monitoring
               {url !== undefined && (
                 <button
@@ -530,7 +530,7 @@ function CiMenu({
               )}
             </div>
             {buckets.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No checks reported.</p>
+              <p className="text-meta text-muted-foreground">No checks reported.</p>
             ) : (
               <ul aria-label="Checks" className="flex flex-col gap-1">
                 {buckets.map((bucket) => {
@@ -627,7 +627,7 @@ function Toggle({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex items-start gap-2 text-xs">
+    <div className="flex items-start gap-2 text-meta">
       <ToggleSwitch on={on} label={label} disabled={disabled} onToggle={onToggle} />
       <div className="flex min-w-0 flex-col">
         <span className="font-medium">{label}</span>

@@ -78,7 +78,7 @@ export function WorkspaceAutonomy({
     <span
       data-testid="workspace-autonomy"
       data-autonomy={value}
-      className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+      className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-meta"
     >
       <Popover.Root
         open={open}
@@ -115,7 +115,7 @@ export function WorkspaceAutonomy({
               data-surface="overlay"
               aria-label="Workspace autonomy"
               data-testid="workspace-autonomy-menu"
-              className="flex w-80 flex-col gap-2 rounded-md border border-border bg-popover p-2 text-xs text-popover-foreground shadow-md outline-none"
+              className="flex w-80 flex-col gap-2 rounded-md border border-border bg-popover p-2 text-meta text-popover-foreground shadow-overlay outline-none"
             >
               <p className="px-1 text-muted-foreground">
                 What {state?.workspace.name ?? "this workspace"}'s orchestrator and workers may do
@@ -137,7 +137,7 @@ export function WorkspaceAutonomy({
                       onClick={() => pick(each.value)}
                       className="flex flex-col items-start gap-0.5 rounded-sm px-2 py-1.5 text-left outline-none hover:row-cursor focus-visible:focus-ring-inset disabled:opacity-50 aria-checked:choice-selected"
                     >
-                      <span className="flex w-full items-center gap-1.5 text-sm font-medium">
+                      <span className="flex w-full items-center gap-1.5 text-reading font-medium">
                         {each.label}
                         <ChoiceCheck checked={checked} className="ml-auto" />
                       </span>

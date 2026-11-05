@@ -70,7 +70,7 @@ export function NotificationStatusSetting() {
       keywords={["notifications", "permission", "test", "allowed", "banner", "alerts"]}
       error={error ?? refused}
     >
-      <span className="text-xs text-muted-foreground" data-testid="notification-status">
+      <span className="text-meta text-muted-foreground" data-testid="notification-status">
         {notificationStatusText(status)}
       </span>
       {status.supported && (

@@ -8,7 +8,7 @@ import { PROVIDER_COLOR } from "./usage-model";
 const WHOLE = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
 const number = (n: number) => WHOLE.format(n);
 const selectClass =
-  "h-8 max-w-full rounded-lg border border-border bg-background px-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-8 max-w-full rounded-lg border border-border bg-background px-2 text-reading outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /**
  * Every recorded model by UTC day with its token buckets, folded under the chart: the exact model
@@ -35,10 +35,10 @@ export function ModelTable({
     <section aria-labelledby="usage-model-title">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 id="usage-model-title" className="text-[13px] font-medium">
+          <h3 id="usage-model-title" className="text-body font-medium">
             Model / day
           </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-meta text-muted-foreground">
             Filter this table · {number(tokens)} known tokens in {filtered.length} rows
           </p>
         </div>
@@ -78,7 +78,7 @@ export function ModelTable({
         </div>
       </div>
       <div className="mt-4 max-h-96 overflow-auto rounded-xl border border-border">
-        <table className="w-full text-left text-xs tabular-nums" data-testid="usage-model-table">
+        <table className="w-full text-left text-meta tabular-nums" data-testid="usage-model-table">
           <caption className="sr-only">
             Known tokens by actual recorded model, provider and UTC start date
           </caption>
@@ -149,7 +149,9 @@ export function ModelTable({
           </tbody>
         </table>
         {filtered.length === 0 && (
-          <p className="p-4 text-sm text-muted-foreground">No rows match these table filters.</p>
+          <p className="p-4 text-reading text-muted-foreground">
+            No rows match these table filters.
+          </p>
         )}
       </div>
     </section>

@@ -23,7 +23,7 @@ export const PLACEMENT_OPTIONS = [
 ] as const satisfies readonly { value: ReviewRequestsPlacement; label: string }[];
 
 export const CARD_SURFACE =
-  "origin-(--transform-origin) rounded-md border border-border bg-popover text-popover-foreground shadow-md outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
+  "origin-(--transform-origin) rounded-md border border-border bg-popover text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0";
 
 /** Enter the scrollable preview without changing the row's Tab/owning-thread order. */
 export function usePrCardFocus() {
@@ -102,11 +102,11 @@ export function PrRowInformation({
             )}
           />
         </Hint>
-        <span className="min-w-0 flex-1 line-clamp-2 break-words font-medium text-[13px] leading-4">
+        <span className="min-w-0 flex-1 line-clamp-2 break-words font-medium text-body leading-4">
           {pr.title || ref}
         </span>
       </span>
-      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-5 text-[11px] text-muted-foreground">
+      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-5 text-caption text-muted-foreground">
         <span className="min-w-0 flex-1 truncate">
           <span>{grouped ? `#${pr.number}` : ref}</span>
           {author && (
@@ -118,7 +118,7 @@ export function PrRowInformation({
           )}
         </span>
       </span>
-      <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 pl-5 text-[10px] text-muted-foreground">
+      <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 pl-5 text-caption text-muted-foreground">
         <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
           {pr.labels?.slice(0, 1).map((label) => (
             <span key={label} className="max-w-24 truncate rounded-sm bg-muted px-1" title={label}>
@@ -186,7 +186,7 @@ function PrDiffStats({ pr }: { pr: PrInformation }) {
 /** Full metadata on hover and keyboard focus. Status text stays with the existing cards. */
 export function PrInformationDetails({ pr }: { pr: PrInformation }) {
   return (
-    <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+    <div className="flex flex-col gap-1 text-meta text-muted-foreground">
       {pr.author && (
         <p className="flex items-center gap-1 break-all">
           {pr.isBot ? (

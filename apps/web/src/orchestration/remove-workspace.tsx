@@ -107,7 +107,7 @@ export function RemoveWorkspaceDialog({
     >
       <ul
         data-testid="remove-workspace-happens"
-        className="flex list-disc flex-col gap-1 pl-4 text-sm"
+        className="flex list-disc flex-col gap-1 pl-4 text-reading"
       >
         {happens.map((line) => (
           <li key={line}>{line}</li>
@@ -115,14 +115,14 @@ export function RemoveWorkspaceDialog({
       </ul>
       <ul
         data-testid="remove-workspace-kept"
-        className="flex list-disc flex-col gap-1 pl-4 text-xs text-muted-foreground"
+        className="flex list-disc flex-col gap-1 pl-4 text-meta text-muted-foreground"
       >
         {kept.map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
       {workers !== undefined && (
-        <label className="flex items-start gap-2 text-sm">
+        <label className="flex items-start gap-2 text-reading">
           <input
             type="checkbox"
             className="mt-1"
@@ -131,14 +131,14 @@ export function RemoveWorkspaceDialog({
           />
           <span className="flex flex-col gap-0.5">
             Also close {workers}
-            <span className="text-xs text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               Worktrees and branches stay on disk either way.
             </span>
           </span>
         </label>
       )}
       {error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-reading text-destructive">
           {error}
         </p>
       )}

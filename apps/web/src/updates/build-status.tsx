@@ -68,7 +68,7 @@ export function BuildStatus({
           <TooltipContent role="tooltip">{PROVENANCE_NOTE}</TooltipContent>
         </Tooltip>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">
+      <p className="mt-1 text-meta text-muted-foreground">
         {build?.packaged === false
           ? "Development build · source identity unavailable"
           : build?.sourceCommit
@@ -88,7 +88,7 @@ export function BuildStatus({
         </p>
       )}
       {check?.channel && (
-        <p className="mt-2 text-xs text-muted-foreground">
+        <p className="mt-2 text-meta text-muted-foreground">
           Last checked: {check.channel === "prerelease" ? "Pre-release" : "Stable"}
           {check.checkedAt !== undefined && Number.isFinite(check.checkedAt) && (
             <>
@@ -109,7 +109,7 @@ export function BuildStatus({
           {!check.unavailable && latest && <> · Latest release {latest}</>}
         </p>
       )}
-      <p className="mt-2 text-xs text-muted-foreground">{PROVENANCE_NOTE}</p>
+      <p className="mt-2 text-meta text-muted-foreground">{PROVENANCE_NOTE}</p>
     </div>
   );
 }
@@ -121,7 +121,7 @@ export function ReleaseNotes({ release }: { release: ReleaseInfo }) {
     <div className="rounded-md border border-border p-3" data-testid="release-notes">
       <p className="font-medium">Release notes · {release.version}</p>
       {release.sourceCommit && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           Release source {release.sourceCommit.slice(0, 8)}
         </p>
       )}

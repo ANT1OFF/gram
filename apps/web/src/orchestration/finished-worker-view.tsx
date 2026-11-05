@@ -74,7 +74,7 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
     >
       <header
         data-testid="pane-header"
-        className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 text-sm"
+        className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 text-reading"
       >
         <h1
           aria-label={`Worker: ${worker.title}`}
@@ -95,13 +95,13 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
         ) : (
           <Archive aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         )}
-        <span data-testid="finished-when" className="shrink-0 text-xs text-muted-foreground">
+        <span data-testid="finished-when" className="shrink-0 text-meta text-muted-foreground">
           {row.now}
         </span>
       </header>
       <div
         data-testid="finished-note"
-        className="flex shrink-0 items-center gap-2 border-b border-border bg-card/40 px-4 py-1.5 text-xs text-muted-foreground"
+        className="flex shrink-0 items-center gap-2 border-b border-border bg-card/40 px-4 py-1.5 text-meta text-muted-foreground"
       >
         <Archive aria-hidden className="size-3.5 shrink-0" />
         <span className="min-w-0 flex-1 truncate">Worktree cleaned up · read-only</span>
@@ -136,12 +136,12 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
         ) : detail.archived !== undefined ? (
           <div
             data-testid="finished-archived"
-            className="mx-auto min-h-0 w-full max-w-(--thread-max-width) flex-1 overflow-y-auto px-6 py-4 text-sm leading-relaxed"
+            className="mx-auto min-h-0 w-full max-w-(--thread-max-width) flex-1 overflow-y-auto px-6 py-4 text-reading leading-relaxed"
           >
             <MessageResponse>{detail.archived}</MessageResponse>
           </div>
         ) : (
-          <p className="flex-1 px-6 py-8 text-center text-sm text-muted-foreground">
+          <p className="flex-1 px-6 py-8 text-center text-reading text-muted-foreground">
             No transcript kept
           </p>
         )}
@@ -168,11 +168,11 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
     <section
       aria-label="What it did"
       data-testid="finished-facts"
-      className="mx-auto flex w-full max-w-(--thread-max-width) shrink-0 flex-col gap-2 px-6 py-3 text-sm"
+      className="mx-auto flex w-full max-w-(--thread-max-width) shrink-0 flex-col gap-2 px-6 py-3 text-reading"
     >
       {detail.brief !== undefined && (
         <div className="rounded-md border border-border bg-card/40 px-3 py-2">
-          <div className="text-xs text-muted-foreground">Brief</div>
+          <div className="text-meta text-muted-foreground">Brief</div>
           <p data-testid="finished-brief" className="line-clamp-3" title={detail.brief}>
             {detail.brief}
           </p>
@@ -184,7 +184,7 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
             <OutboundLink
               key={`${pr.repo}#${pr.number}`}
               href={pr.url}
-              className="inline-flex items-center gap-1 text-xs text-foreground/80 hover:text-foreground"
+              className="inline-flex items-center gap-1 text-meta text-foreground/80 hover:text-foreground"
             >
               {pr.merged === true ? (
                 <GitMerge aria-hidden className="size-3.5 text-merged" />
@@ -197,7 +197,7 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
           {report !== undefined && (
             <p
               data-testid="finished-report"
-              className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+              className="min-w-0 flex-1 truncate text-meta text-muted-foreground"
               title={report.summary}
             >
               Reported {report.state}: {report.summary}
@@ -206,7 +206,7 @@ function FinishedFacts({ detail }: { detail: FinishedWorkerDetail }) {
         </div>
       )}
       {files.length > 0 && (
-        <div data-testid="finished-files" className="text-xs">
+        <div data-testid="finished-files" className="text-meta">
           <div className="flex items-center gap-1 text-muted-foreground">
             <FileDiff aria-hidden className="size-3.5" />
             {files.length} {files.length === 1 ? "file" : "files"} changed

@@ -274,7 +274,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
               event.stopPropagation();
               setDraft(undefined);
             }}
-            className="h-7 w-full rounded-md border border-input bg-transparent px-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="h-7 w-full rounded-md border border-input bg-transparent px-2 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </form>
         <ToolButton
@@ -313,7 +313,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
         recording={current?.recording === true}
       />
       {refused && (
-        <p role="alert" className="border-b border-border px-3 py-1.5 text-xs text-destructive">
+        <p role="alert" className="border-b border-border px-3 py-1.5 text-meta text-destructive">
           Only an address on localhost opens here, such as localhost:3000, or the full path of a
           Markdown or HTML file.
         </p>
@@ -321,7 +321,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
       {inspecting && !inspectionAvailable && (
         <p
           role="status"
-          className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground"
+          className="border-b border-border px-3 py-1.5 text-meta text-muted-foreground"
         >
           Browser inspection became unavailable. The live Preview is restored when readable; close
           inspection above.
@@ -431,7 +431,7 @@ function AgentActivity({
       role="status"
       aria-live="polite"
       data-testid="preview-activity"
-      className="flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-xs text-muted-foreground"
+      className="flex min-w-0 items-center gap-2 border-b border-border px-3 py-1 text-meta text-muted-foreground"
     >
       {recording && (
         <span

@@ -198,7 +198,7 @@ function ApprovalQueue({
           <span
             aria-live="polite"
             aria-atomic="true"
-            className="min-w-8 text-center font-mono text-xs text-muted-foreground"
+            className="min-w-8 text-center font-mono text-meta text-muted-foreground"
           >
             <span className="sr-only">Approval </span>
             {index + 1}/{requests.length}
@@ -276,7 +276,7 @@ function CardShell({
         data-request-id={requestId}
         data-sheet
         aria-label={typeof title === "string" ? title : undefined}
-        className="flex flex-col text-sm"
+        className="flex flex-col text-reading"
         onKeyDown={onKeyDown}
       >
         <h3 className="mb-2 flex items-center gap-2 font-medium">
@@ -304,7 +304,7 @@ function CardShell({
       aria-label={typeof title === "string" ? title : undefined}
       onKeyDown={onKeyDown}
       className={cn(
-        "border border-status-needs-mark/70 bg-card text-sm",
+        "border border-status-needs-mark/70 bg-card text-reading",
         compact
           ? "rounded-(--radius-md) p-2"
           : // Above the composer, the card keeps to a share of the pane: its body scrolls and its
@@ -315,7 +315,7 @@ function CardShell({
       <h3
         className={cn(
           "flex shrink-0 items-center gap-2 font-medium",
-          compact ? "mb-1.5 text-xs" : "mb-2",
+          compact ? "mb-1.5 text-meta" : "mb-2",
         )}
       >
         {icon}
@@ -361,7 +361,7 @@ function DetailFields({ fields }: { fields: readonly ApprovalDetailField[] }) {
 }
 
 const DETAIL_TEXT =
-  "overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 text-xs break-words whitespace-pre-wrap";
+  "overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 text-meta break-words whitespace-pre-wrap";
 
 /**
  * An app tool's input, folded away under its description, except an issue's, which is open: the
@@ -379,7 +379,7 @@ function ApprovalDetailsFold({
     <Collapsible className="mt-2" defaultOpen={open || details.kind === "issue"}>
       <CollapsibleTrigger
         data-testid="approval-details"
-        className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        className="group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground"
       >
         <ChevronRight
           aria-hidden
@@ -391,14 +391,14 @@ function ApprovalDetailsFold({
         {details.kind === "json" ? (
           <pre className={cn(DETAIL_TEXT, "mt-1 font-mono")}>{details.text}</pre>
         ) : details.kind === "issue" ? (
-          <div className="mt-1 flex flex-col gap-2 text-xs">
+          <div className="mt-1 flex flex-col gap-2 text-meta">
             <DetailFields fields={details.fields} />
             <p data-testid="approval-issue-body" className={DETAIL_TEXT}>
               {details.body}
             </p>
           </div>
         ) : (
-          <div className="mt-1 flex flex-col gap-2 text-xs">
+          <div className="mt-1 flex flex-col gap-2 text-meta">
             <DetailFields fields={details.fields} />
             {details.scope.length > 0 && (
               <div>
@@ -431,7 +431,7 @@ function ApprovalDetailsFold({
  */
 function DiffTable({ rows, fresh = false }: { rows: readonly SettingsDiffRow[]; fresh?: boolean }) {
   return (
-    <table className="w-full border-collapse text-xs">
+    <table className="w-full border-collapse text-meta">
       <thead>
         <tr className="text-left text-muted-foreground">
           <th scope="col" className="pr-3 pb-1 font-normal">
@@ -502,13 +502,13 @@ function ProposalWords({
         </p>
       )}
       {reason !== undefined && (
-        <p data-testid="settings-reason" className="text-xs break-words text-muted-foreground">
+        <p data-testid="settings-reason" className="text-meta break-words text-muted-foreground">
           Why: {reason}
         </p>
       )}
       {children}
       {notes !== undefined && notes.length > 0 && (
-        <ul data-testid="settings-notes" className="text-xs text-muted-foreground">
+        <ul data-testid="settings-notes" className="text-meta text-muted-foreground">
           {notes.map((note) => (
             <li key={note} className="break-words">
               {note}
@@ -560,8 +560,8 @@ function WorkspaceDiff({
     <div data-testid="workspace-diff" className="flex flex-col gap-2">
       <ProposalWords summary={summary} reason={card.reason} notes={card.notes}>
         <div>
-          <h4 className="pb-1 text-xs text-muted-foreground">Projects</h4>
-          <ul className="flex flex-col text-xs">
+          <h4 className="pb-1 text-meta text-muted-foreground">Projects</h4>
+          <ul className="flex flex-col text-meta">
             {card.projects.map((project) => (
               <li
                 key={project.root}
@@ -615,13 +615,13 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
     approvalSubject(request) !== JSON.stringify(request.input);
   return (
     <>
-      <pre className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap">
+      <pre className="overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta whitespace-pre-wrap">
         {approvalSubject(request)}
       </pre>
       {extras.length > 0 && (
         <p
           data-testid="approval-extras"
-          className="mt-1 font-mono text-[11px] break-all text-muted-foreground"
+          className="mt-1 font-mono text-caption break-all text-muted-foreground"
         >
           {extras.map((field, index) => (
             <span key={field.label}>
@@ -632,7 +632,7 @@ export function ApprovalInput({ request }: { request: ApprovalRequest }) {
         </p>
       )}
       {request.description && (
-        <p className="mt-2 text-xs text-muted-foreground">{request.description}</p>
+        <p className="mt-2 text-meta text-muted-foreground">{request.description}</p>
       )}
       {more && <ApprovalDetailsFold details={approvalDetails(request)} />}
     </>
@@ -787,7 +787,7 @@ export function ApprovalCard({
       }
     >
       {pause !== undefined ? (
-        <p data-testid="approval-summary" className={cn("break-words", compact && "text-xs")}>
+        <p data-testid="approval-summary" className={cn("break-words", compact && "text-meta")}>
           {pause.description}
         </p>
       ) : settings !== undefined ? (
@@ -798,7 +798,7 @@ export function ApprovalCard({
         <ApprovalInput request={request} />
       ) : (
         <>
-          <p data-testid="approval-summary" className={cn("break-words", compact && "text-xs")}>
+          <p data-testid="approval-summary" className={cn("break-words", compact && "text-meta")}>
             {summary}
           </p>
           {/* The inbox answers at a glance; the whole input is a click away in the thread. */}
@@ -811,10 +811,10 @@ export function ApprovalCard({
         </>
       )}
       {request.decisionReason && (
-        <p className="mt-1 text-xs text-muted-foreground">{request.decisionReason}</p>
+        <p className="mt-1 text-meta text-muted-foreground">{request.decisionReason}</p>
       )}
       {request.blockedPath && (
-        <p className="mt-1 font-mono text-xs text-warning">
+        <p className="mt-1 font-mono text-meta text-warning">
           Outside the workspace: {request.blockedPath}
         </p>
       )}
@@ -843,7 +843,7 @@ function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
       aria-label="What Always allow saves"
       className={cn(
         "mt-3 flex flex-col gap-2 rounded-(--radius-sm) border border-border bg-muted/30 p-2.5",
-        compact ? "text-xs" : "text-sm",
+        compact ? "text-meta" : "text-reading",
       )}
     >
       <p className="font-medium">
@@ -858,10 +858,10 @@ function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
             className="flex flex-col gap-0.5"
           >
             <span className="flex min-w-0 items-baseline gap-2">
-              <span className="shrink-0 text-xs text-muted-foreground">{rule.behavior}</span>
-              <code className="min-w-0 font-mono text-xs break-all">{rule.rule}</code>
+              <span className="shrink-0 text-meta text-muted-foreground">{rule.behavior}</span>
+              <code className="min-w-0 font-mono text-meta break-all">{rule.rule}</code>
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-meta text-muted-foreground">
               <span className="text-foreground">{REACH_WORD[rule.reach]}</span>
               {" · "}
               {rule.scope}
@@ -870,7 +870,7 @@ function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
           </li>
         ))}
       </ul>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         Nothing is saved until you choose Save and allow. Allow once saves nothing.
       </p>
     </div>
@@ -957,7 +957,7 @@ export function QuestionCard({
               aria-current={i === page ? "step" : undefined}
               onClick={() => setIndex(i)}
               className={cn(
-                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground uppercase",
+                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-caption text-muted-foreground uppercase",
                 i === page && "border-primary bg-primary/10 text-foreground",
               )}
             >
@@ -965,7 +965,7 @@ export function QuestionCard({
               {each.header}
             </button>
           ))}
-          <span className="ml-auto text-xs text-muted-foreground">
+          <span className="ml-auto text-meta text-muted-foreground">
             {page + 1} of {count}
           </span>
         </nav>
@@ -974,7 +974,7 @@ export function QuestionCard({
         <fieldset key={q.question} className="space-y-1.5">
           <legend className="mb-1">
             {count === 1 && (
-              <span className="mr-2 rounded-sm bg-muted px-1 text-[11px] text-muted-foreground uppercase">
+              <span className="mr-2 rounded-sm bg-muted px-1 text-caption text-muted-foreground uppercase">
                 {q.header}
               </span>
             )}
@@ -1063,7 +1063,7 @@ export function ChoiceList({
                 <RecommendedTag testId="choice-recommended" className="ml-1.5" />
               )}
               {option.description !== undefined && (
-                <span className="block text-xs text-muted-foreground">{option.description}</span>
+                <span className="block text-meta text-muted-foreground">{option.description}</span>
               )}
             </span>
           </label>
@@ -1088,7 +1088,7 @@ export function ChoiceList({
           type="text"
           aria-label={`Other answer: ${question}`}
           placeholder="Other…"
-          className="min-w-0 flex-1 rounded-(--radius-sm) border border-input bg-transparent px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-w-0 flex-1 rounded-(--radius-sm) border border-input bg-transparent px-2 py-1 text-reading outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={value.other}
           onFocus={() => {
             if (!multiSelect && !value.otherChosen) onChange(chooseOther(value, true, false));
@@ -1178,7 +1178,7 @@ export function PlanCard({ threadId, request }: { threadId: ThreadId; request: P
         <MessageResponse>{request.plan}</MessageResponse>
       </div>
       {request.planFilePath && (
-        <p className="mt-1 font-mono text-xs text-muted-foreground">{request.planFilePath}</p>
+        <p className="mt-1 font-mono text-meta text-muted-foreground">{request.planFilePath}</p>
       )}
       {stage === "approve" && (
         <div
@@ -1198,8 +1198,8 @@ export function PlanCard({ threadId, request }: { threadId: ThreadId; request: P
                 mode === option.mode && "border-primary bg-primary/10",
               )}
             >
-              <span className="block text-sm">{option.label}</span>
-              <span className="block text-xs text-muted-foreground">{option.hint}</span>
+              <span className="block text-reading">{option.label}</span>
+              <span className="block text-meta text-muted-foreground">{option.hint}</span>
             </button>
           ))}
         </div>
@@ -1208,7 +1208,7 @@ export function PlanCard({ threadId, request }: { threadId: ThreadId; request: P
         <textarea
           aria-label="What should change?"
           placeholder="What should change?"
-          className="mt-3 min-h-16 w-full rounded-(--radius-sm) border border-input bg-transparent p-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-3 min-h-16 w-full rounded-(--radius-sm) border border-input bg-transparent p-2 text-reading outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
         />

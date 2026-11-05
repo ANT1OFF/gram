@@ -69,7 +69,7 @@ export function UsageBar({
     <div
       data-testid="usage"
       data-slot="usage-meter"
-      className="flex items-center gap-3 py-1 text-[11px] whitespace-nowrap text-muted-foreground tabular-nums"
+      className="flex items-center gap-3 py-1 text-caption whitespace-nowrap text-muted-foreground tabular-nums"
     >
       {context.percent !== undefined ? (
         <ContextMeter percent={context.percent} tokens={tokens} />

@@ -13,7 +13,7 @@ export const SETTINGS_CARD =
   "flex flex-col rounded-lg border border-border/60 bg-card/40 [&>:not([hidden])~:not([hidden])]:border-t [&>*]:border-border/50 [&>*]:px-3 [&>*]:py-2.5";
 
 /** A group's title: clearly above a row's name, which is the body size at medium weight. */
-export const GROUP_TITLE = "font-heading text-[0.9375rem] font-semibold text-foreground";
+export const GROUP_TITLE = "font-heading text-title text-foreground";
 
 /**
  * A named group of settings within a page: its title and one plain sentence on what it is for, an

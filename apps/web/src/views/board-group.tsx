@@ -63,7 +63,7 @@ export function StageLine({
 }
 
 const ROW_ACTION =
-  "inline-flex shrink-0 items-center gap-1 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex shrink-0 items-center gap-1 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * Several features run as one effort: a band over their lines with the state and the stage of the
@@ -121,7 +121,7 @@ export function GroupBand({
           aria-expanded={!folded}
           aria-controls={linesId}
           onClick={() => useLayoutStore.getState().toggleWorkspaceNode(key)}
-          className="flex min-w-0 items-center gap-1.5 rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 items-center gap-1.5 rounded-sm text-reading font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             aria-hidden
@@ -143,7 +143,7 @@ export function GroupBand({
             className="size-3.5 shrink-0 text-status-needs-mark"
           />
         )}
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+        <span className="shrink-0 text-meta text-muted-foreground tabular-nums">
           {count} {count === 1 ? "feature" : "features"}
         </span>
         {group.stage !== undefined && (

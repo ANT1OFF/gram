@@ -46,16 +46,16 @@ export function WidgetCard({ widget }: { widget: WidgetData }) {
           <Dialog.Popup
             data-testid="widget-full"
             data-surface="overlay"
-            className="fixed inset-6 z-50 flex flex-col gap-3 rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-lg transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
+            className="fixed inset-6 z-50 flex flex-col gap-3 rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-overlay transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
-            <Dialog.Title className="truncate font-heading text-sm font-medium">
+            <Dialog.Title className="truncate font-heading text-reading font-medium">
               {widget.title}
             </Dialog.Title>
             <img src={src} alt={widget.title} className="min-h-0 flex-1 object-contain" />
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>
-      <figcaption className="truncate text-xs text-muted-foreground">{widget.title}</figcaption>
+      <figcaption className="truncate text-meta text-muted-foreground">{widget.title}</figcaption>
     </figure>
   );
 }

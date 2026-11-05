@@ -128,7 +128,7 @@ export function SearchEmptyState({ query }: { query: string }) {
       {searchWords(query).length > 0 && (
         <p
           data-testid="settings-search-empty"
-          className="text-sm text-muted-foreground [[data-settings-results]:has([data-setting-match])_&]:hidden"
+          className="text-reading text-muted-foreground [[data-settings-results]:has([data-setting-match])_&]:hidden"
         >
           No settings match “{query.trim()}”.
         </p>
@@ -182,7 +182,7 @@ export function SettingsSearchBox({
           if (query === "") onLeave();
           else onQueryChange("");
         }}
-        className="h-7 w-full rounded-md border border-input bg-transparent ps-7 pe-6 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="h-7 w-full rounded-md border border-input bg-transparent ps-7 pe-6 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       />
       {query !== "" && (
         <button

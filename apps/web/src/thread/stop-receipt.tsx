@@ -49,7 +49,7 @@ export function StopReceiptLine({ threadId }: { threadId: ThreadId }) {
       role="status"
       data-testid="stop-receipt"
       data-by-you={receipt.byYou}
-      className="my-2 flex items-center gap-3 text-xs text-muted-foreground"
+      className="my-2 flex items-center gap-3 text-meta text-muted-foreground"
     >
       <span aria-hidden className="h-px flex-1 bg-border" />
       <span className="flex items-center gap-1.5">

@@ -183,7 +183,7 @@ export function ContinueLatest({
         Continue latest session
       </Button>
       {note && (
-        <p role="status" className="basis-full text-xs text-muted-foreground">
+        <p role="status" className="basis-full text-meta text-muted-foreground">
           {note}
         </p>
       )}
@@ -203,7 +203,7 @@ function SessionPreviewNote({
 }) {
   if (preview.isPending) {
     return (
-      <p id={id} className="px-2 text-xs text-muted-foreground">
+      <p id={id} className="px-2 text-meta text-muted-foreground">
         Loading preview…
       </p>
     );
@@ -214,7 +214,7 @@ function SessionPreviewNote({
       id={id}
       data-testid="session-preview"
       aria-label="Session preview"
-      className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded-md bg-muted/50 px-2 py-1.5 text-xs"
+      className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded-md bg-muted/50 px-2 py-1.5 text-meta"
     >
       {preview.data.firstPrompt && (
         <>
@@ -308,10 +308,10 @@ export function ResumeSessions({
 
   let body;
   if (query.isPending) {
-    body = <p className="text-xs text-muted-foreground">Looking for past sessions…</p>;
+    body = <p className="text-meta text-muted-foreground">Looking for past sessions…</p>;
   } else if (query.isError) {
     body = (
-      <p className="text-xs text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         {isNotImplemented(query.error)
           ? "Listing past sessions isn't available yet."
           : `Couldn't list past sessions: ${errorMessage(query.error)}`}
@@ -319,10 +319,10 @@ export function ResumeSessions({
     );
   } else if (!query.data.supported && query.data.failures.length === 0) {
     body = (
-      <p className="text-xs text-muted-foreground">No agent here can list its past sessions.</p>
+      <p className="text-meta text-muted-foreground">No agent here can list its past sessions.</p>
     );
   } else if (query.data.sessions.length === 0) {
-    body = <p className="text-xs text-muted-foreground">No past sessions in this folder.</p>;
+    body = <p className="text-meta text-muted-foreground">No past sessions in this folder.</p>;
   } else {
     body = (
       <>
@@ -336,7 +336,7 @@ export function ResumeSessions({
                     role="group"
                     aria-label={`Delete “${session.title}”?`}
                     data-testid="confirm-delete"
-                    className="flex flex-wrap items-center gap-2 rounded-md bg-muted px-2 py-1.5 text-xs"
+                    className="flex flex-wrap items-center gap-2 rounded-md bg-muted px-2 py-1.5 text-meta"
                     onKeyDown={(event) => {
                       if (event.key !== "Escape") return;
                       // Cancels the confirmation only, not an app shortcut on Escape as well.
@@ -386,8 +386,8 @@ export function ResumeSessions({
                     pending === session.agentSessionId && "bg-muted",
                   )}
                 >
-                  <span className="truncate text-sm">{session.title}</span>
-                  <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="truncate text-reading">{session.title}</span>
+                  <span className="flex items-center gap-1.5 text-caption text-muted-foreground">
                     <span className="flex shrink-0 items-center gap-0.5 rounded-sm bg-muted px-1">
                       <AgentIcon agent={session.agent} className="size-3" />
                       {agentLabel(session.agent)}
@@ -433,18 +433,18 @@ export function ResumeSessions({
       aria-label="Resume a past session"
       className="flex flex-col gap-2 rounded-lg border border-border p-2"
     >
-      <h2 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <h2 className="flex items-center gap-1.5 text-meta font-medium text-muted-foreground">
         <History aria-hidden className="size-3.5" />
         Resume a past session
       </h2>
       {body}
       {query.data?.failures.map((failure) => (
-        <p key={failure.agent} className="text-xs text-warning">
+        <p key={failure.agent} className="text-meta text-warning">
           Couldn't list {agentLabel(failure.agent)} sessions: {failure.message}
         </p>
       ))}
       {error && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-meta text-destructive">
           {error}
         </p>
       )}

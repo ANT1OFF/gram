@@ -64,7 +64,7 @@ export function NotificationsPanel() {
         <p
           ref={header}
           tabIndex={-1}
-          className="min-w-0 flex-1 text-xs text-muted-foreground outline-none"
+          className="min-w-0 flex-1 text-meta text-muted-foreground outline-none"
         >
           {unread > 0 ? `${unread} unread` : "All caught up"}
         </p>
@@ -107,8 +107,8 @@ export function NotificationsPanel() {
         {entries.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-10 text-center text-muted-foreground">
             <Bell aria-hidden className="size-5" />
-            <p className="text-sm">No notifications yet</p>
-            <p className="text-xs">Notices stay here after their toasts close.</p>
+            <p className="text-reading">No notifications yet</p>
+            <p className="text-meta">Notices stay here after their toasts close.</p>
           </div>
         ) : (
           <ol aria-label="Stored notifications" className="divide-y divide-border">
@@ -121,7 +121,7 @@ export function NotificationsPanel() {
                   tabIndex={-1}
                   className="px-3 py-3"
                 >
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 text-meta text-muted-foreground">
                     <kind.icon aria-hidden className={cn("size-3.5 shrink-0", kind.tone)} />
                     <span>{kind.label}</span>
                     {!entry.read && (
@@ -152,21 +152,21 @@ export function NotificationsPanel() {
                       </Hint>
                     )}
                   </div>
-                  <p className="mt-2 text-sm leading-snug font-medium wrap-anywhere">
+                  <p className="mt-2 text-reading leading-snug font-medium wrap-anywhere">
                     {entry.title}
                   </p>
                   {entry.body && (
-                    <p className="mt-1 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground wrap-anywhere">
+                    <p className="mt-1 text-meta leading-relaxed whitespace-pre-wrap text-muted-foreground wrap-anywhere">
                       {entry.body}
                     </p>
                   )}
                   {entry.source && (
-                    <p className="mt-2 text-xs text-muted-foreground wrap-anywhere">
+                    <p className="mt-2 text-meta text-muted-foreground wrap-anywhere">
                       {entry.source}
                     </p>
                   )}
                   {entry.count > 1 && (
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-meta text-muted-foreground">
                       Seen {entry.count} times · first{" "}
                       <time dateTime={new Date(entry.firstSeen).toISOString()}>
                         {notificationTime(entry.firstSeen)}
@@ -174,7 +174,7 @@ export function NotificationsPanel() {
                     </p>
                   )}
                   {entry.threadIds.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-meta">
                       {entry.threadIds.map((id) => {
                         const target = byId[id];
                         return target ? (
@@ -205,7 +205,7 @@ export function NotificationsPanel() {
           </ol>
         )}
       </div>
-      <p className="shrink-0 border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
+      <p className="shrink-0 border-t border-border px-3 py-2 text-caption text-muted-foreground">
         {storageUnavailable
           ? "Session only · local storage unavailable"
           : "On this device · latest 100 · 30 days"}

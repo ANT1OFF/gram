@@ -154,13 +154,13 @@ export function ModelSelect({
   });
   if (listing.isPending && value === "")
     return (
-      <span role="status" className="text-xs text-muted-foreground">
+      <span role="status" className="text-meta text-muted-foreground">
         Loading models…
       </span>
     );
   if (listing.isError)
     return (
-      <div role="alert" className="flex items-center gap-2 text-xs text-destructive">
+      <div role="alert" className="flex items-center gap-2 text-meta text-destructive">
         <span>{errorMessage(listing.error)}</span>
         {retry.isError && <span>{errorMessage(retry.error)}</span>}
         <Button size="sm" variant="ghost" disabled={retry.isPending} onClick={() => retry.mutate()}>

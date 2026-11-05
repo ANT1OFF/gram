@@ -76,7 +76,7 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
     </>
   );
   const row =
-    "flex w-fit max-w-full min-w-0 items-center gap-1.5 text-xs whitespace-normal text-muted-foreground";
+    "flex w-fit max-w-full min-w-0 items-center gap-1.5 text-meta whitespace-normal text-muted-foreground";
   if (gone) {
     return (
       <p data-testid="message-origin" title="Thread not found" className={row}>

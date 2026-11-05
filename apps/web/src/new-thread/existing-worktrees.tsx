@@ -11,7 +11,7 @@ import { Shimmer } from "@/motion";
 import { baseName } from "./path";
 
 const inputCls =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /**
  * The repo's registered worktrees to open a thread in, newest activity first. A worktree another
@@ -41,17 +41,17 @@ export function ExistingWorktrees({
   return (
     <div className="flex flex-col gap-2">
       {repoPath === "" ? (
-        <p className="text-xs text-muted-foreground">Pick a git project to see its worktrees.</p>
+        <p className="text-meta text-muted-foreground">Pick a git project to see its worktrees.</p>
       ) : query.status === "pending" ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           <Shimmer>Loading worktrees…</Shimmer>
         </p>
       ) : query.status === "error" ? (
-        <p role="alert" className="text-xs text-danger-text">
+        <p role="alert" className="text-meta text-danger-text">
           {errorMessage(query.error)}
         </p>
       ) : worktrees.length === 0 ? (
-        <p className="text-xs text-muted-foreground">This repo has no other worktrees yet.</p>
+        <p className="text-meta text-muted-foreground">This repo has no other worktrees yet.</p>
       ) : (
         <div role="radiogroup" aria-label="Existing worktrees" className="flex flex-col gap-0.5">
           {worktrees.map((entry) => (
@@ -94,18 +94,18 @@ function WorktreeOption({
       disabled={entry.isOpen}
       title={entry.isOpen ? "A thread is already open in this worktree" : entry.path}
       onClick={onPick}
-      className="flex min-w-0 items-center gap-2 rounded-md border border-transparent px-2 py-1 text-left text-sm outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 disabled:hover:bg-transparent aria-checked:border-ring aria-checked:bg-accent"
+      className="flex min-w-0 items-center gap-2 rounded-md border border-transparent px-2 py-1 text-left text-reading outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60 disabled:hover:bg-transparent aria-checked:border-ring aria-checked:bg-accent"
     >
       <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="shrink-0 font-mono text-xs">{name}</span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+      <span className="shrink-0 font-mono text-meta">{name}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-caption text-muted-foreground">
         {entry.path}
       </span>
       {entry.isOpen ? (
-        <span className="shrink-0 text-[11px] text-muted-foreground">open in a thread</span>
+        <span className="shrink-0 text-caption text-muted-foreground">open in a thread</span>
       ) : (
         entry.lastActivity > 0 && (
-          <time className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+          <time className="shrink-0 text-caption text-muted-foreground tabular-nums">
             {formatRelative(entry.lastActivity)}
           </time>
         )

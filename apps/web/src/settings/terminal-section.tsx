@@ -27,7 +27,7 @@ export function TerminalSection() {
   const save = useSaveSettings();
   const [error, setError] = useState<string>();
 
-  if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   const shell = settings.terminal.shell ?? "powershell";
 
   const apply = (patch: SettingsPatch) => {

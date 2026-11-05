@@ -254,7 +254,7 @@ export function RecapCard({
       {waiting !== undefined && focused && shown === undefined && !boxOn && (
         <div
           data-testid="recap-pending"
-          className="my-2 flex items-center gap-2 px-3.5 py-1 text-xs text-muted-foreground"
+          className="my-2 flex items-center gap-2 px-3.5 py-1 text-meta text-muted-foreground"
         >
           <History aria-hidden className="size-3.5 text-primary" />
           <Shimmer>Where you left off…</Shimmer>
@@ -278,9 +278,9 @@ export function RecapCard({
             aria-label="Where you left off"
             // However it folds, the card as a whole keeps to a share of the pane: in a grid quarter
             // the plan strip and the header take their own rows, and the composer must still fit.
-            className="my-2 max-h-[calc(var(--pane-height,100vh)*0.4)] overflow-y-auto rounded-(--radius-md) border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-sm"
+            className="my-2 max-h-[calc(var(--pane-height,100vh)*0.4)] overflow-y-auto rounded-(--radius-md) border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-reading"
           >
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-meta text-muted-foreground">
               <History aria-hidden className="size-3.5 shrink-0 text-primary" />
               <span className="font-medium text-foreground">Where you left off</span>
               <span className="min-w-0 truncate">· Last active {agoText(shown.lastActiveAt)}</span>
@@ -312,7 +312,7 @@ export function RecapCard({
               onMore={(next) => setReadMore(next ? shown : undefined)}
             />
             {!folded && (shown.recap.next !== null || facts.length > 0) && (
-              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
                 {shown.recap.next !== null && (
                   <NextStep threadId={threadId} next={shown.recap.next} />
                 )}
@@ -404,7 +404,7 @@ function RecapText({
               data-testid="recap-more"
               aria-expanded={more}
               onClick={() => onMore(!more)}
-              className="rounded-sm text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-sm text-meta text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
             >
               {more ? "Less" : "More"}
             </button>
@@ -518,9 +518,9 @@ function WrapUpBox({
     <section
       data-testid="wrap-up"
       aria-label={leftOff === undefined ? "Turn recap" : "Where you left off"}
-      className="my-2 max-h-[calc(var(--pane-height,100vh)*0.4)] overflow-y-auto rounded-(--radius-md) border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-sm"
+      className="my-2 max-h-[calc(var(--pane-height,100vh)*0.4)] overflow-y-auto rounded-(--radius-md) border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-reading"
     >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-meta text-muted-foreground">
         {leftOff === undefined ? (
           <ListChecks aria-hidden className="size-3.5 shrink-0 text-primary" />
         ) : (

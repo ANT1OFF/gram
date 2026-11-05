@@ -109,7 +109,7 @@ const SETUP_STAGES: Record<CheckoutKind, string[]> = {
   existingWorktree: ["Start agent"],
 };
 
-const labelCls = "text-xs font-medium text-muted-foreground";
+const labelCls = "text-meta font-medium text-muted-foreground";
 
 /**
  * The inline `/new` draft: where the thread runs, on what, and the first prompt. While workspaces
@@ -478,7 +478,7 @@ function ConfiguredNewThreadDraft() {
             <fieldset className="flex flex-wrap items-center gap-1 px-2 pb-2">
               <legend className="sr-only">Agent</legend>
               {discovering ? (
-                <span role="status" className="px-2 text-xs text-muted-foreground">
+                <span role="status" className="px-2 text-meta text-muted-foreground">
                   Discovering local agents…
                 </span>
               ) : (
@@ -520,7 +520,7 @@ function ConfiguredNewThreadDraft() {
               <span
                 aria-live="polite"
                 data-testid="draft-dictation-status"
-                className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground"
+                className="min-w-0 flex-1 truncate px-1 text-meta text-muted-foreground"
               >
                 {dictation.active ? dictationStatus(dictation.state) : undefined}
               </span>
@@ -561,14 +561,14 @@ function ConfiguredNewThreadDraft() {
                   aria-checked={checkout === option.value}
                   disabled={notRepo && option.value !== "current"}
                   onClick={() => setCheckout(option.value)}
-                  className="rounded-md border border-border px-2 py-1 text-sm aria-checked:border-ring aria-checked:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md border border-border px-2 py-1 text-reading aria-checked:border-ring aria-checked:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {option.label}
                 </button>
               ))}
             </div>
             {notRepo && (
-              <p data-testid="checkout-note" className="text-xs text-muted-foreground">
+              <p data-testid="checkout-note" className="text-meta text-muted-foreground">
                 Not a git repository, so the thread runs in the folder itself. Run git init to use
                 worktrees.
               </p>
@@ -607,7 +607,7 @@ function ConfiguredNewThreadDraft() {
             )}
           </fieldset>
           {stage !== "draft" && (
-            <ol aria-label="Setup progress" className="flex flex-wrap items-center gap-2 text-xs">
+            <ol aria-label="Setup progress" className="flex flex-wrap items-center gap-2 text-meta">
               {SETUP_STAGES[checkout].map((step) => (
                 <li
                   key={step}
@@ -620,7 +620,7 @@ function ConfiguredNewThreadDraft() {
             </ol>
           )}
           {error && (
-            <p ref={errorRef} role="alert" className="text-sm text-destructive">
+            <p ref={errorRef} role="alert" className="text-reading text-destructive">
               {error}
             </p>
           )}

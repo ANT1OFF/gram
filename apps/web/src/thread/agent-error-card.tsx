@@ -154,11 +154,11 @@ function ErrorCard({
         data-testid="agent-error"
         data-kind={error.kind}
         data-state="retried"
-        className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-border p-2.5 text-sm text-muted-foreground"
+        className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-border p-2.5 text-reading text-muted-foreground"
       >
         <RotateCw aria-hidden className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium">
+          <p className="text-meta font-medium">
             {failureLabel(error.kind)}
             {attempt !== undefined && attempt.attempt > 1 && ` · attempt ${attempt.attempt}`}
             <span data-testid="agent-error-retried" className="text-foreground">
@@ -199,11 +199,11 @@ function ErrorCard({
       data-testid="agent-error"
       data-kind={error.kind}
       data-state="failed"
-      className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-destructive/40 p-2.5 text-sm"
+      className="my-2 flex items-start gap-2 rounded-(--radius-md) border border-destructive/40 p-2.5 text-reading"
     >
       <CircleX aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-destructive">
+        <p className="text-meta font-medium text-destructive">
           {failureLabel(error.kind)}
           {repeat && (
             <span data-testid="agent-error-attempt-number" className="text-foreground">
@@ -228,13 +228,13 @@ function ErrorCard({
           <Link
             to="/settings/gateways"
             data-testid="agent-error-gateways"
-            className="mt-1 inline-block text-xs text-link underline-offset-2 hover:underline"
+            className="mt-1 inline-block text-meta text-link underline-offset-2 hover:underline"
           >
             Gateway settings
           </Link>
         )}
         {unsent !== undefined && text !== undefined && (
-          <p data-testid="retry-unsent" className="mt-1 text-xs break-words text-foreground">
+          <p data-testid="retry-unsent" className="mt-1 text-meta break-words text-foreground">
             {unsent}
           </p>
         )}
@@ -284,7 +284,7 @@ function RetryTime({
       <p
         data-testid="agent-error-retry-time"
         data-known="false"
-        className="mt-1 text-xs text-muted-foreground"
+        className="mt-1 text-meta text-muted-foreground"
       >
         {at === undefined
           ? "The provider gave no retry time, so when this clears isn't known."
@@ -298,7 +298,7 @@ function RetryTime({
     <div
       data-testid="agent-error-retry-time"
       data-known="true"
-      className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+      className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-meta"
     >
       <span className="inline-flex items-center gap-1 font-medium text-foreground">
         <Clock aria-hidden className="size-3.5 text-muted-foreground" />

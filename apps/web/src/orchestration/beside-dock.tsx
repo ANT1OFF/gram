@@ -96,7 +96,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
   const display = threadStatusOf(summary, detail);
   return (
     <>
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-sm">
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-reading">
         <Swap swapKey={display.label}>
           <display.icon
             aria-hidden
@@ -147,7 +147,7 @@ function DockBody({ worker }: { worker: ThreadId }) {
       <div
         role="tablist"
         aria-label="What to watch"
-        className="isolate flex shrink-0 items-center gap-0.5 border-b border-border px-3 py-1.5 text-xs"
+        className="isolate flex shrink-0 items-center gap-0.5 border-b border-border px-3 py-1.5 text-meta"
       >
         {TABS.map(({ id, label }) => (
           <button
@@ -217,7 +217,7 @@ function WorkerLog({ threadId }: { threadId: ThreadId }) {
 const FOLLOW_SLACK = 24;
 
 const TERMINAL_PILL =
-  "absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-xs shadow-sm";
+  "absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-meta shadow-raised";
 
 /**
  * The worker's terminal: its newest command, its output growing as the transcript brings it in. It
@@ -246,7 +246,9 @@ function LiveTerminal({ threadId }: { threadId: ThreadId }) {
     [messages, backgroundCalls, outputByCall],
   );
   if (last === undefined) {
-    return <p className="px-4 py-6 text-center text-sm text-muted-foreground">No command yet</p>;
+    return (
+      <p className="px-4 py-6 text-center text-reading text-muted-foreground">No command yet</p>
+    );
   }
   // A new command opens at its bottom, followed.
   return <CommandView key={last.toolCallId} last={last} />;
@@ -293,7 +295,7 @@ function CommandView({ last }: { last: LastCommand }) {
           following.current = atBottom;
           setBehind(!atBottom);
         }}
-        className="min-h-0 flex-1 overflow-auto px-4 pt-3 pb-12 font-mono text-xs leading-relaxed whitespace-pre-wrap text-foreground/90"
+        className="min-h-0 flex-1 overflow-auto px-4 pt-3 pb-12 font-mono text-meta leading-relaxed whitespace-pre-wrap text-foreground/90"
       >
         <span className="text-muted-foreground">$ </span>
         {last.command}
@@ -303,7 +305,7 @@ function CommandView({ last }: { last: LastCommand }) {
         <span
           data-testid="beside-terminal-status"
           className={cn(
-            "absolute right-3 bottom-3 rounded-sm bg-popover px-1.5 py-0.5 text-xs",
+            "absolute right-3 bottom-3 rounded-sm bg-popover px-1.5 py-0.5 text-meta",
             status === "Done" ? "text-muted-foreground" : "text-destructive",
           )}
         >

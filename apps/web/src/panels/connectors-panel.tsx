@@ -275,7 +275,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
 
   return (
     <div data-testid="connectors-panel" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-meta text-muted-foreground">
         <span>MCP connectors</span>
         <Button
           size="sm"
@@ -303,7 +303,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
       {adding !== undefined && (
         <>
           {adding.note !== undefined && (
-            <p className="border-b border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <p className="border-b border-border bg-muted/30 px-3 py-2 text-meta text-muted-foreground">
               {adding.note}
             </p>
           )}
@@ -322,12 +322,15 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
         </>
       )}
       {notice && (
-        <p role="status" className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+        <p
+          role="status"
+          className="border-b border-border px-3 py-2 text-meta text-muted-foreground"
+        >
           {notice}
         </p>
       )}
       {action.error && (
-        <p role="alert" className="border-b border-border px-3 py-2 text-xs text-destructive">
+        <p role="alert" className="border-b border-border px-3 py-2 text-meta text-destructive">
           {errorMessage(action.error)}
         </p>
       )}
@@ -338,7 +341,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
           placeholder="Filter by name"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
-          className="shrink-0 border-b border-border bg-transparent px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus-visible:bg-accent/40"
+          className="shrink-0 border-b border-border bg-transparent px-3 py-1.5 text-meta outline-none placeholder:text-muted-foreground focus-visible:bg-accent/40"
         />
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -375,7 +378,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
                   aria-expanded={showSignedOut}
                   aria-controls={signedOutId}
                   onClick={() => setSignedOutOpen(!showSignedOut)}
-                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs text-muted-foreground outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
+                  className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-meta text-muted-foreground outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
                 >
                   <ChevronRight
                     aria-hidden
@@ -392,7 +395,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
                   {signInHints.map((hint) => (
                     <p
                       key={hint}
-                      className="border-b border-border px-3 py-2 text-xs text-muted-foreground"
+                      className="border-b border-border px-3 py-2 text-meta text-muted-foreground"
                     >
                       <CommandText text={hint} />
                     </p>
@@ -404,14 +407,14 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
           </>
         )}
         {connectors !== undefined && target !== undefined && target !== "claude" && (
-          <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          <p className="border-t border-border px-3 py-2 text-meta text-muted-foreground">
             {claudeHostedElsewhere(agentLabel)}
           </p>
         )}
         {query.data?.live === true && query.data.claudeAiUnavailable !== undefined && (
           <p
             data-testid="claude-ai-unavailable"
-            className="border-t border-border px-3 py-2 text-xs text-muted-foreground"
+            className="border-t border-border px-3 py-2 text-meta text-muted-foreground"
           >
             {query.data.claudeAiUnavailable}
           </p>
@@ -460,7 +463,7 @@ function SessionAsleep({
       {starting ? (
         <PanelMessage loading>Starting the session…</PanelMessage>
       ) : (
-        <div className="flex flex-col items-center gap-2 p-6 text-center text-sm text-muted-foreground">
+        <div className="flex flex-col items-center gap-2 p-6 text-center text-reading text-muted-foreground">
           <p role="status">{why ?? "The session isn't running."}</p>
           {(wake.hold === undefined || wake.hold.button) && (
             <Button size="sm" variant="outline" onClick={wake.start}>
@@ -475,7 +478,7 @@ function SessionAsleep({
           data-testid="connectors-snapshot"
           className="border-t border-border"
         >
-          <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+          <p className="border-b border-border px-3 py-1.5 text-meta text-muted-foreground">
             What {target === undefined ? "the agent" : MCP_TARGET_LABEL[target]} has configured. The
             live list shows once the session is up.
           </p>
@@ -485,7 +488,7 @@ function SessionAsleep({
                 key={`${server.scope}:${server.name}`}
                 data-testid="configured-connector"
                 aria-label={server.name}
-                className="flex items-center gap-2 px-3 py-2 text-xs"
+                className="flex items-center gap-2 px-3 py-2 text-meta"
               >
                 <span className="min-w-0 truncate font-mono">{server.name}</span>
                 <Badge variant="outline">
@@ -623,7 +626,7 @@ function ConnectorRow({
       <li
         data-testid="connector"
         aria-label={connector.name}
-        className="flex flex-col gap-1 px-3 py-1.5 text-xs"
+        className="flex flex-col gap-1 px-3 py-1.5 text-meta"
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {waiting ? (
@@ -676,7 +679,7 @@ function ConnectorRow({
     <li
       data-testid="connector"
       aria-label={connector.name}
-      className="flex flex-col gap-1 px-3 py-2 text-xs"
+      className="flex flex-col gap-1 px-3 py-2 text-meta"
     >
       <div className="flex items-center gap-2">
         <state.icon aria-hidden className={cn("size-3.5 shrink-0", state.tone)} />

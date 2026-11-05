@@ -55,9 +55,9 @@ const WORKSPACE_KEYWORDS = [
  */
 export function WorkspacesSettings() {
   const settings = useServerSettings((s) => s.settings);
-  if (!settings) return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   return (
-    <div className="flex flex-col gap-8 text-sm" data-testid="workspace-settings">
+    <div className="flex flex-col gap-8 text-reading" data-testid="workspace-settings">
       <WorkspaceList />
       <Defaults settings={settings} />
     </div>
@@ -195,20 +195,20 @@ function WorkspaceRow({
               {paused !== undefined ? (
                 <span
                   data-testid="workspace-paused"
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+                  className="inline-flex items-center gap-1 text-meta text-muted-foreground"
                 >
                   <CirclePause aria-hidden className="size-3" />
                   Paused
                 </span>
               ) : (
-                <span className="text-xs text-muted-foreground">Active</span>
+                <span className="text-meta text-muted-foreground">Active</span>
               )}
-              <span data-testid="workspace-working" className="text-xs text-muted-foreground">
+              <span data-testid="workspace-working" className="text-meta text-muted-foreground">
                 · {working} working
               </span>
             </span>
             <span
-              className="truncate text-xs text-muted-foreground"
+              className="truncate text-meta text-muted-foreground"
               data-testid="workspace-projects"
             >
               {repos.join(", ")}
@@ -227,7 +227,7 @@ function WorkspaceRow({
           </div>
         </RowContextMenu>
         {changes.error !== undefined && (
-          <p role="alert" className="px-3 pb-2 text-xs text-destructive">
+          <p role="alert" className="px-3 pb-2 text-meta text-destructive">
             {changes.error}
           </p>
         )}
@@ -363,7 +363,7 @@ function StartingRosterRow({ settings }: { settings: Settings }) {
       keywords={["roster", "worker models", "default", "new workspace"]}
       error={error}
       detail={
-        <p data-testid="starting-roster" className="text-xs text-muted-foreground">
+        <p data-testid="starting-roster" className="text-meta text-muted-foreground">
           {rosterLine(roster)}
         </p>
       }
