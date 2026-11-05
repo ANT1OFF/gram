@@ -48,6 +48,17 @@ export const REVIEW_CHAT_WIDTH = 800;
 export const REVIEW_STRIP_WIDTH = 48;
 /** The narrowest the chat (or grid) gets while the panel beside it is dragged wider. */
 export const CHAT_MIN_WIDTH = 360;
+/**
+ * The narrowest the chat gets beside a review, while the window has room for both: the transcript
+ * stays readable and the composer keeps its pickers' words. Short of that room it falls back to
+ * `CHAT_MIN_WIDTH`, and the review offers its focus instead.
+ */
+export const REVIEW_CHAT_MIN_WIDTH = 520;
+/**
+ * The narrowest a review reads well beside the chat. Held at its bound below this, the review is
+ * cramped and offers Focus review, which gives it the window.
+ */
+export const REVIEW_READ_WIDTH = 480;
 /** The compact overview's rail: a tile per workspace. */
 export const OVERVIEW_RAIL_WIDTH = 60;
 /** From this wide an automatic overview is open; narrower, it is compact. */
@@ -109,11 +120,36 @@ export const clampWidth = (width: number, bounds: WidthBounds): number =>
     ? Math.round(Math.min(bounds.max, Math.max(bounds.min, width)))
     : bounds.default;
 
-/** The panel's bounds in a window this wide, beside an overview `sidebar` wide. */
-export const panelBounds = (windowWidth: number, sidebar: number): WidthBounds => ({
+/**
+ * The panel's bounds in a window this wide, beside an overview `sidebar` wide, leaving the chat
+ * `chatMin`.
+ */
+export const panelBounds = (
+  windowWidth: number,
+  sidebar: number,
+  chatMin: number = CHAT_MIN_WIDTH,
+): WidthBounds => ({
   ...PANEL_WIDTH,
-  max: Math.max(PANEL_WIDTH.min, Math.floor(windowWidth - sidebar - CHAT_MIN_WIDTH)),
+  max: Math.max(PANEL_WIDTH.min, Math.floor(windowWidth - sidebar - chatMin)),
 });
+
+/**
+ * The narrowest the chat gets beside the panel on its tab: `REVIEW_CHAT_MIN_WIDTH` beside a review
+ * while the window holds it and the panel's minimum, else `CHAT_MIN_WIDTH`.
+ */
+export const chatMinWidth = (
+  state: Pick<LayoutState, "panelTab" | "chatBusy" | "windowWidth">,
+  sidebar: number,
+): number =>
+  reviewSized(state) && state.windowWidth - sidebar - REVIEW_CHAT_MIN_WIDTH >= PANEL_WIDTH.min
+    ? REVIEW_CHAT_MIN_WIDTH
+    : CHAT_MIN_WIDTH;
+
+/** `panelBounds` for the panel's tab: a review leaves the chat more room than the other tabs. */
+export const panelBoundsFor = (
+  state: Pick<LayoutState, "panelTab" | "chatBusy" | "windowWidth">,
+  sidebar: number,
+): WidthBounds => panelBounds(state.windowWidth, sidebar, chatMinWidth(state, sidebar));
 
 /** What the shell knows of the window and route, kept beside the stored panels for the toggles. */
 interface ShellContext {
@@ -175,6 +211,11 @@ export interface ShellFit {
    * the overview hidden.
    */
   reviewFocus: boolean;
+  /**
+   * A review beside the chat held at its bound below `REVIEW_READ_WIDTH`: the window has no room to
+   * read it and the conversation side by side, so the panel offers Focus review.
+   */
+  reviewCramped: boolean;
 }
 
 /**
@@ -240,15 +281,31 @@ export function fitShell(input: ShellFitInput): ShellFit {
       panelRoom,
       sidebarRoom,
       reviewFocus: true,
+      reviewCramped: false,
     };
   }
+  const bounds = panelBoundsFor(input, sidebarWidth);
   const panelWidth =
     panel === "side"
-      ? clampWidth(panelWidthFor(input, sidebarWidth), panelBounds(input.windowWidth, sidebarWidth))
+      ? clampWidth(panelWidthFor(input, sidebarWidth), bounds)
       : panel === "over"
         ? beside
         : 0;
-  return { sidebar, sidebarWidth, panel, panelWidth, panelRoom, sidebarRoom, reviewFocus: false };
+  const reviewCramped =
+    panel === "side" &&
+    reviewSized(input) &&
+    panelWidth >= bounds.max &&
+    panelWidth < REVIEW_READ_WIDTH;
+  return {
+    sidebar,
+    sidebarWidth,
+    panel,
+    panelWidth,
+    panelRoom,
+    sidebarRoom,
+    reviewFocus: false,
+    reviewCramped,
+  };
 }
 
 /** The Diff tab of a thread with nothing to diff, where the stored panel stays closed. */

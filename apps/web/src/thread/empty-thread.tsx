@@ -1,7 +1,10 @@
-import type { Thread, ThreadId, WorkerLedgerEntry } from "@gram/contracts";
-import { FileDiff, GitPullRequest } from "lucide-react";
+import type { DraftId, Thread, ThreadId, WorkerLedgerEntry } from "@gram/contracts";
+import { useNavigate } from "@tanstack/react-router";
+import { FileDiff, GitPullRequest, History, Play } from "lucide-react";
 
+import { carryDraft } from "@/composer/draft-prefill";
 import { Button } from "@/components/ui/button";
+import { useHistoryStore } from "@/history/history-view";
 import { formatStamp } from "@/lib/time";
 import { reportLine } from "@/orchestration/board-model";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
@@ -44,11 +47,34 @@ export const threadDidWork = (thread: Thread, entry: WorkerLedgerEntry | undefin
 const files = (n: number) => `${n} ${n === 1 ? "file" : "files"} changed`;
 
 /**
+ * The brief "Resume from report" starts a new draft with: what the thread was, its last report and
+ * its PR, for the user to edit and start like any other. Nothing of the old conversation is in it,
+ * since that isn't here.
+ */
+export const resumeBrief = (
+  title: string,
+  report: { readonly at: number; readonly summary: string } | undefined,
+  pr: OutcomePr | undefined,
+): string => {
+  const lines = [`Pick up where "${title}" left off.`];
+  if (report !== undefined) {
+    lines.push("", `Its last report (${formatStamp(report.at)}):`, report.summary.trim());
+  }
+  if (pr !== undefined) {
+    const where = pr.repo === undefined ? "" : ` in ${pr.repo}`;
+    const state = pr.state === undefined ? "" : ` (${pr.state})`;
+    lines.push("", `Its pull request: #${pr.number}${where}${state}.`);
+  }
+  return lines.join("\n");
+};
+
+/**
  * A transcript with no messages. A thread that hasn't started says so; one that did work whose
  * conversation isn't here, such as a finished worker opened from History, shows what Gram kept of
  * it: how it ended, its last report, its PR and its changed files, each a click from its panel.
  */
 export function EmptyThread({ threadId }: { threadId: ThreadId }) {
+  const navigate = useNavigate();
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   const git = useThreadsStore((s) => s.byId[threadId]?.git);
   const worker = thread?.spawnedBy !== undefined;
@@ -72,6 +98,23 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
       : `${pr?.state === "merged" ? "Merged" : "Completed"} ${formatStamp(thread.completedAt)}`;
   const show = (panel: "pr" | "diff") =>
     useLayoutStore.getState().requestPanel({ threadId, panel }, threadId);
+  // A new draft with the report as its brief, through the same New form and its Start as any other:
+  // a worker's to a new worker of its workspace, anything else to a one-off thread.
+  const resume = () => {
+    carryDraft({
+      text: resumeBrief(thread.title, report, pr),
+      draftId: crypto.randomUUID() as DraftId,
+      attachments: [],
+    });
+    if (worker && thread.workspaceId !== undefined) {
+      void navigate({
+        to: "/new-task",
+        search: { way: "direct", workspace: thread.workspaceId },
+      });
+    } else {
+      void navigate({ to: "/new" });
+    }
+  };
 
   return (
     <section
@@ -101,37 +144,62 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
           <p className="whitespace-pre-line">{reportLine(report.summary, SUMMARY_MAX)}</p>
         </div>
       )}
-      {(pr !== undefined || changed > 0) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {pr !== undefined && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              data-testid="thread-outcome-pr"
-              onClick={() => show("pr")}
-            >
-              <GitPullRequest data-icon="inline-start" />#{pr.number}
-              {pr.repo !== undefined && (
-                <span className="text-muted-foreground">{pr.repo.split("/").at(-1)}</span>
-              )}
-              {pr.state !== undefined && <span className="text-muted-foreground">{pr.state}</span>}
-            </Button>
-          )}
-          {changed > 0 && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              data-testid="thread-outcome-files"
-              onClick={() => show("diff")}
-            >
-              <FileDiff data-icon="inline-start" />
-              {files(changed)}
-            </Button>
-          )}
-        </div>
-      )}
+      <div
+        role="group"
+        aria-label="What to do next"
+        data-testid="thread-outcome-actions"
+        className="flex flex-wrap items-center gap-2"
+      >
+        {pr !== undefined && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="thread-outcome-pr"
+            onClick={() => show("pr")}
+          >
+            <GitPullRequest data-icon="inline-start" />
+            Open PR #{pr.number}
+            {pr.repo !== undefined && (
+              <span className="text-muted-foreground">{pr.repo.split("/").at(-1)}</span>
+            )}
+            {pr.state !== undefined && <span className="text-muted-foreground">{pr.state}</span>}
+          </Button>
+        )}
+        {changed > 0 && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="thread-outcome-files"
+            onClick={() => show("diff")}
+          >
+            <FileDiff data-icon="inline-start" />
+            {files(changed)}
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          data-testid="thread-outcome-history"
+          onClick={() => useHistoryStore.getState().show("all", thread.title)}
+        >
+          <History data-icon="inline-start" />
+          Find in History
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          data-testid="thread-outcome-resume"
+          title="Opens New with its last report as the brief. Nothing starts until you start it."
+          onClick={resume}
+        >
+          <Play data-icon="inline-start" />
+          Resume from report
+        </Button>
+      </div>
     </section>
   );
 }

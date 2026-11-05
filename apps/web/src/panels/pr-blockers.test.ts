@@ -5,6 +5,7 @@ import { mockPrDetail } from "@/api/mock-git";
 
 import {
   blockedLineOf,
+  blockerSummaryOf,
   fixConflictsMessage,
   mergeBlockersOf,
   primaryBlockerAction,
@@ -42,6 +43,24 @@ describe("mergeBlockersOf", () => {
     expect(blockedLineOf(blockers)).toBe(
       "Blocked: 1 failing check, changes requested, review bot: 2 blockers",
     );
+  });
+
+  it("counts the blockers and names each one's category for the summary's heading", () => {
+    expect(blockerSummaryOf(mergeBlockersOf(detail(), "blocked", BOT_BLOCKERS))).toEqual({
+      count: "3 blockers",
+      categories: "check, changes requested, review bot",
+    });
+    const two = { ...detail(), reviewDecision: "", checkRuns: [run("a"), run("b")] };
+    expect(blockerSummaryOf(mergeBlockersOf(two, "conflicts"))).toEqual({
+      count: "2 blockers",
+      categories: "checks, conflicts",
+    });
+    const required = { ...detail(), reviewDecision: "REVIEW_REQUIRED", checkRuns: [] };
+    expect(blockerSummaryOf(mergeBlockersOf(required, "blocked"))).toEqual({
+      count: "1 blocker",
+      categories: "review required",
+    });
+    expect(blockerSummaryOf([])).toBeUndefined();
   });
 
   it("leads with inspecting a failing Actions job, whose evidence the panel can show", () => {

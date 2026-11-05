@@ -1,20 +1,26 @@
 import type { GramUIMessage, ThreadError, ThreadId, ThreadStatus, TurnId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
-import { ArrowDown, CircleX, Clock, RotateCw } from "lucide-react";
+import { ChevronRight, CircleX, Clock, RotateCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatStamp } from "@/lib/time";
 import { feedMessages, useThreadFeed } from "@/stores/feeds";
-import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 import { useUsageLimits } from "@/stores/usage-limits";
 import { useNow } from "@/lib/use-now";
 import { resetText } from "@/usage/limit-format";
 
-import { attemptsOf, errorKey, type AttemptFacts, type RetryReceipt } from "./attempt-model";
+import {
+  attemptsOf,
+  errorKey,
+  type AttemptFacts,
+  type EarlierAttempt,
+  type RetryReceipt,
+} from "./attempt-model";
 import { failureLabel } from "./failure-kinds";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
 import { retryKey, retryTimeOf, useRetrySchedule } from "./retry-time";
@@ -70,19 +76,53 @@ function useAttempt(threadId: ThreadId, error: ThreadError): AttemptFacts | unde
   return attempts.get(errorKey(error));
 }
 
-/** "Retried · 14:05", and how that went when it failed too. */
-const retriedLabel = (retried: RetryReceipt): string => {
-  const at = retried.at === undefined ? "" : ` · ${formatStamp(retried.at)}`;
-  return retried.failed ? `Retried${at} · failed again` : `Retried${at}`;
-};
+/** "Retried · 14:05": when the message went again. */
+const retriedLabel = (retried: RetryReceipt): string =>
+  retried.at === undefined ? "Retried" : `Retried · ${formatStamp(retried.at)}`;
+
+/**
+ * The attempts before the one a card shows, behind a disclosure: "1 earlier attempt", each with
+ * its number, when it failed and what it said.
+ */
+function EarlierAttempts({ earlier }: { earlier: readonly EarlierAttempt[] }) {
+  if (earlier.length === 0) return null;
+  const count = earlier.length === 1 ? "1 earlier attempt" : `${earlier.length} earlier attempts`;
+  return (
+    <Collapsible data-testid="agent-error-earlier" className="mt-1">
+      <CollapsibleTrigger className="group inline-flex items-center gap-1 rounded-sm text-meta text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-9">
+        <ChevronRight
+          aria-hidden
+          className="size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90"
+        />
+        {count}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="gram-collapse">
+        <ol className="mt-1 flex flex-col gap-1 border-l border-border pl-3 text-meta text-muted-foreground">
+          {earlier.map(({ attempt, error }) => (
+            <li key={errorKey(error)} data-testid="agent-error-earlier-attempt">
+              <span className="font-medium text-foreground">
+                {`Attempt ${attempt} · ${formatStamp(error.at)}`}
+              </span>
+              {` · ${failureLabel(error.kind)}`}
+              <p className="break-words">{error.text}</p>
+            </li>
+          ))}
+        </ol>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 /**
  * Where a turn failed, in the transcript: Gram's sentence for it, and a retry that sends the
  * turn's message again while that still makes sense: the failure may clear, it is still the thread's
  * last error, and nothing is running. A retry that fails says so under the turn's own failure, until
- * the next try. Once the message was sent again the card is a receipt: "Retried · 14:05", no longer
- * red and with no Retry of its own, and a link to the attempt that came of it, or, when that failed
- * too, to the newest attempt, which is the one that needs action.
+ * the next try.
+ *
+ * The attempts at one message are one card: the newest failure's, "attempt 2 of 2 · needs action",
+ * with the attempts before it behind a disclosure; their own cards draw nothing. Once a retry went
+ * through, that card is a quiet receipt, "Retried · 14:05 · recovered", no longer red and with no
+ * Retry of its own, above the reply that came of it.
  */
 export function AgentErrorCard({ threadId, error }: { threadId: ThreadId; error: ThreadError }) {
   // A thread the server no longer has, a finished worker's, has no feed to read attempts from.
@@ -147,8 +187,10 @@ function ErrorCard({
     }
   };
 
+  if (attempt?.folded === true) return null;
+
   if (retried !== undefined) {
-    const target = retried.latestFailed ? retried.latestMessageId : retried.messageId;
+    // Only the run's newest failure has a card, so a retry here is the one that didn't fail.
     return (
       <div
         role="status"
@@ -166,18 +208,11 @@ function ErrorCard({
               {" · "}
               {retriedLabel(retried)}
             </span>
+            {retried.recovered && <span data-testid="agent-error-recovered">{" · recovered"}</span>}
           </p>
           <p className="break-words">{error.text}</p>
+          <EarlierAttempts earlier={attempt?.earlier ?? []} />
         </div>
-        <Button
-          size="xs"
-          variant="ghost"
-          data-testid="agent-error-attempt"
-          onClick={() => useRevealStore.getState().reveal(threadId, target)}
-        >
-          <ArrowDown aria-hidden />
-          {retried.latestFailed ? "Go to the attempt that needs action" : "View new attempt"}
-        </Button>
       </div>
     );
   }
@@ -209,11 +244,12 @@ function ErrorCard({
           {failureLabel(error.kind)}
           {repeat && (
             <span data-testid="agent-error-attempt-number" className="text-foreground">
-              {` · attempt ${attempt.attempt} failed too · needs action`}
+              {` · attempt ${attempt.attempt} of ${attempt.of} · needs action`}
             </span>
           )}
         </p>
         <p className="break-words">{error.text}</p>
+        {repeat && <EarlierAttempts earlier={attempt.earlier} />}
         {limited && current && retried === undefined && (
           <RetryTime
             at={retryAt}

@@ -30,6 +30,7 @@ import { Dialog, DialogShell } from "@/thread/dialog-shell";
 
 import {
   blockedLineOf,
+  blockerSummaryOf,
   fixConflictsMessage,
   mergeBlockersOf,
   primaryBlockerAction,
@@ -119,6 +120,7 @@ export function PrActions({
   const open = detail.state === "OPEN";
   const blockers = open && !detail.isDraft ? mergeBlockersOf(detail, merge, bot) : [];
   const blocked = blockedLineOf(blockers);
+  const summary = blockerSummaryOf(blockers);
   const next = primaryBlockerAction(
     blockers.filter(
       (blocker) =>
@@ -199,15 +201,20 @@ export function PrActions({
 
   return (
     <div className="flex flex-col gap-1.5">
-      {blocked !== undefined && (
+      {summary !== undefined && (
         <div data-testid="pr-blockers" className="flex flex-col gap-1">
+          {/* One heading: that the merge is blocked, how many things block it and of what kind.
+              Each one's own words follow, and the header above leaves out what this repeats. */}
           <p
             id={reasonId}
             data-testid="pr-merge-blocked"
-            className="flex min-w-0 items-center gap-1.5 text-body-strong"
+            className="flex min-w-0 items-baseline gap-1.5 text-reading"
           >
-            <Ban aria-hidden className="size-3.5 shrink-0" />
-            {blocked}
+            <Ban aria-hidden className="size-3.5 shrink-0 self-center" />
+            <span className="shrink-0 font-medium">Merge blocked</span>{" "}
+            <span className="min-w-0 truncate text-muted-foreground">
+              · <span data-testid="pr-blocker-count">{summary.count}</span>: {summary.categories}
+            </span>
           </p>
           <ul
             aria-label="What blocks the merge"

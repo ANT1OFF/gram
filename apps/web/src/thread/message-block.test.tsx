@@ -940,7 +940,7 @@ describe("MessageBlock agent errors", () => {
     logged.mockClear();
   });
 
-  it("reads as a receipt once the message was sent again, linking the new attempt", () => {
+  it("reads as a quiet receipt once the message was sent again, recovered once that ended well", () => {
     // Read on the retry's own day, so it says its clock alone.
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 10, 4, 14, 6));
     onTestFinished(() => clock.mockRestore());
@@ -953,6 +953,7 @@ describe("MessageBlock agent errors", () => {
     const built: GramUIMessage = {
       id: "a2",
       role: "assistant",
+      metadata: { turnEnd: { at: Date.UTC(2026, 10, 4, 14, 6), reason: "completed" } },
       parts: [{ type: "text", text: "Built.", state: "done" }],
     };
     show(vi.fn(), error, "idle");
@@ -973,10 +974,11 @@ describe("MessageBlock agent errors", () => {
     expect(card.getAttribute("role")).toBe("status");
     expect(screen.getByTestId("agent-error-retried").textContent).toMatch(/Retried · \d\d:\d\d$/);
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
-    expect(screen.getByTestId("agent-error-attempt").textContent).toBe("View new attempt");
+    expect(screen.getByTestId("agent-error-recovered").textContent).toBe(" · recovered");
+    expect(card.querySelector(".text-destructive")).toBeNull();
   });
 
-  it("keeps Retry on the newest attempt when the retry failed too, and says it needs action", () => {
+  it("shows the attempts as one card on the newest, with the earlier ones behind a disclosure", async () => {
     const second = { ...error, turnId: "turn-2", at: 9 } as const;
     const again: GramUIMessage = {
       id: "u2",
@@ -1017,12 +1019,18 @@ describe("MessageBlock agent errors", () => {
       </>,
       {} as never,
     );
-    const [old, newest] = screen.getAllByTestId("agent-error");
-    expect(old?.dataset["state"]).toBe("retried");
-    expect(old?.textContent).toContain("failed again");
+    // The first attempt's card folds into the newest one.
+    const [newest, ...rest] = screen.getAllByTestId("agent-error");
+    expect(rest).toHaveLength(0);
     expect(newest?.dataset["state"]).toBe("failed");
-    expect(newest?.textContent).toContain("attempt 2 failed too · needs action");
+    expect(newest?.textContent).toContain("attempt 2 of 2 · needs action");
     expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
+    const earlier = screen.getByRole("button", { name: "1 earlier attempt" });
+    expect(screen.queryByTestId("agent-error-earlier-attempt")).toBeNull();
+    await userEvent.click(earlier);
+    expect((await screen.findByTestId("agent-error-earlier-attempt")).textContent).toContain(
+      "Attempt 1",
+    );
   });
 
   it("says plainly when the provider gave no retry time, with Usage beside it", () => {

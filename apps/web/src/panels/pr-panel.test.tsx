@@ -124,10 +124,22 @@ describe("PrPanel", () => {
 
     const panel = await screen.findByTestId("pr-panel");
     expect(within(panel).getByText("Make the retry test deterministic")).toBeTruthy();
-    expect(within(panel).getByTestId("review-decision").textContent).toBe("Changes requested");
+    // Changes requested blocks the merge: the summary says so, and the header line doesn't again.
+    expect(within(panel).queryByTestId("review-decision")).toBeNull();
+    expect(
+      within(panel).getByRole("list", { name: "What blocks the merge" }).textContent,
+    ).toContain("Changes requested by reviewer");
     expect(within(panel).getByTestId("pr-author").textContent).toBe("by alex");
     expect(within(panel).getByTestId("pr-reviews").textContent).toBe("1 review");
     expect(within(panel).queryByTestId("pr-merge-state")).toBeNull();
+    // Reviewers, labels and watching wait folded under the blockers, their counts in one line.
+    const manage = within(panel).getByTestId("pr-manage-toggle");
+    expect(manage.getAttribute("aria-expanded")).toBe("false");
+    expect(manage.textContent).toBe(
+      "Reviewers, labels and watching · 4 reviewers · 2 labels · not watching",
+    );
+    expect(within(panel).queryByRole("list", { name: "Reviewers" })).toBeNull();
+    fireEvent.click(manage);
     expect(within(panel).getByRole("list", { name: "Reviewers" }).textContent).toContain(
       "maria: Review requested",
     );
@@ -198,15 +210,17 @@ describe("PrPanel", () => {
     );
   });
 
-  it("shows the badge's merge state in the header when the badge is this PR", async () => {
+  it("leaves the badge's Blocked to the summary, which names what blocks", async () => {
     useThreadsStore.setState({
       byId: {
         [T]: { thread: { checkout: { path: "/repo" } }, git: mockGitState(T, undefined) },
       } as never,
     });
     renderWithApi(<PrPanel threadId={T} />, withResult(mockPrDetail(T)));
-    const chip = await screen.findByTestId("pr-merge-state");
-    expect(chip.textContent).toBe("Blocked");
+    // Blocked, the summary carries it: the header line drops its own Blocked chip.
+    const panel = await screen.findByTestId("pr-panel");
+    expect(within(panel).getByTestId("pr-blocker-count").textContent).toBe("2 blockers");
+    expect(within(panel).queryByTestId("pr-merge-state")).toBeNull();
   });
 
   it("drops the previous PR's detail and actions while a newly bound PR loads", async () => {
@@ -241,7 +255,7 @@ describe("PrPanel", () => {
     const panel = await screen.findByTestId("pr-panel");
 
     expect(within(panel).getByTestId("pr-merge-blocked").textContent).toBe(
-      "Blocked: 1 failing check, changes requested",
+      "Merge blocked · 2 blockers: check, changes requested",
     );
     const next = within(panel).getByTestId("pr-next-action");
     expect(next.textContent).toBe("Inspect test (windows) job");
@@ -251,6 +265,7 @@ describe("PrPanel", () => {
       "Inspect test (windows) job",
       "Merge…",
     ]);
+    fireEvent.click(within(panel).getByTestId("pr-manage-toggle"));
     const order = [
       within(panel).getByRole("heading", { name: "Make the retry test deterministic" }),
       within(panel).getByTestId("pr-blockers"),

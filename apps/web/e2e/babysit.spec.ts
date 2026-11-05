@@ -13,6 +13,8 @@ test("turns babysit on from the PR panel and shows the first review notice", asy
     "aria-selected",
     "true",
   );
+  // Reviewers, labels and watching wait folded under what blocks the merge.
+  await panel.getByTestId("pr-manage-toggle").click();
   const toggle = panel.getByRole("switch", { name: "Watch this PR" });
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await toggle.click();

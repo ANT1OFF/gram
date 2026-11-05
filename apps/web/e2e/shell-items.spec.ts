@@ -10,6 +10,8 @@ test("watches reviews and babysits with a round budget from the PR panel", async
   // The PR strip's number opens the PR panel.
   await page.getByTestId("pr-row").getByTestId("pr-row-number").click();
   const panel = page.getByTestId("right-panel");
+  // Reviewers, labels and watching wait folded under what blocks the merge.
+  await panel.getByTestId("pr-manage-toggle").click();
 
   const watch = panel.getByRole("switch", { name: "Watch reviews" });
   await expect(watch).toHaveAttribute("aria-checked", "false");

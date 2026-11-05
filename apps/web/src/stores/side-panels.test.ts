@@ -10,7 +10,9 @@ import {
   overviewShown,
   panelBounds,
   PANEL_WIDTH,
+  REVIEW_CHAT_MIN_WIDTH,
   REVIEW_CHAT_WIDTH,
+  REVIEW_READ_WIDTH,
   REVIEW_STRIP_WIDTH,
   REVIEW_WIDTH_SHARE,
   sanitizeBoardFilters,
@@ -123,12 +125,58 @@ describe("review width", () => {
     expect(fit({ panelTab: "diff", windowWidth: 1600 }).panelWidth).toBe(
       1600 - SIDEBAR_WIDTH.default - REVIEW_CHAT_WIDTH,
     );
-    expect(fit({ panelTab: "diff", windowWidth: 1600, panelWidth: 950 }).panelWidth).toBe(950);
-    expect(fit({ panelTab: "diff", windowWidth: 1000 }).panelWidth).toBe(PANEL_WIDTH.default);
-    // A drag goes past the chat's room, down to its minimum.
-    expect(fit({ panelTab: "diff", windowWidth: 1600, reviewWidth: 1200 }).panelWidth).toBe(
-      1600 - SIDEBAR_WIDTH.default - CHAT_MIN_WIDTH,
+    expect(fit({ panelTab: "diff", windowWidth: 1600, panelWidth: 800 }).panelWidth).toBe(800);
+    // Never so wide that the chat beside it drops below its review minimum.
+    expect(fit({ panelTab: "diff", windowWidth: 1600, panelWidth: 950 }).panelWidth).toBe(
+      1600 - SIDEBAR_WIDTH.default - REVIEW_CHAT_MIN_WIDTH,
     );
+    expect(fit({ panelTab: "diff", windowWidth: 1000 }).panelWidth).toBe(PANEL_WIDTH.default);
+    // A drag goes past the chat's room, down to the chat's minimum beside a review.
+    expect(fit({ panelTab: "diff", windowWidth: 1600, reviewWidth: 1200 }).panelWidth).toBe(
+      1600 - SIDEBAR_WIDTH.default - REVIEW_CHAT_MIN_WIDTH,
+    );
+  });
+
+  it("keeps the chat readable beside a review, and the other tabs' drag as before", () => {
+    // Beside a review the chat keeps its composer's words; beside a terminal, its usual minimum.
+    expect(fit({ panelTab: "pr", windowWidth: 1440, reviewWidth: 1200 })).toMatchObject({
+      panelWidth: 1440 - SIDEBAR_WIDTH.default - REVIEW_CHAT_MIN_WIDTH,
+      reviewCramped: false,
+    });
+    expect(fit({ panelTab: "terminal", windowWidth: 1440, panelWidth: 1200 }).panelWidth).toBe(
+      1440 - SIDEBAR_WIDTH.default - CHAT_MIN_WIDTH,
+    );
+    // Beside a board, a grid or an orchestrator the review is no wider than the others.
+    expect(
+      fit({ panelTab: "diff", windowWidth: 1440, panelWidth: 1200, chatBusy: true }).panelWidth,
+    ).toBe(1440 - SIDEBAR_WIDTH.default - CHAT_MIN_WIDTH);
+  });
+
+  it("says a review is cramped once it is held below its reading width", () => {
+    // 1024 wide with the rail: a review dragged wide stops 520 short of the window and can't read.
+    const rail = { overviewSidebar: "compact" as const, windowWidth: 1024 };
+    const held = fit({ ...rail, panelTab: "diff", reviewWidth: 600 });
+    expect(held.panelWidth).toBe(1024 - OVERVIEW_RAIL_WIDTH - REVIEW_CHAT_MIN_WIDTH);
+    expect(held.panelWidth).toBeLessThan(REVIEW_READ_WIDTH);
+    expect(held.reviewCramped).toBe(true);
+    // Narrowed by choice, below its bound, it isn't held there.
+    expect(fit({ ...rail, panelTab: "diff", reviewWidth: 300 }).reviewCramped).toBe(false);
+    // The usual width at that window fits beside the chat.
+    expect(fit({ ...rail, panelTab: "diff" }).reviewCramped).toBe(false);
+    // Wide enough for both, no offer however wide the drag.
+    expect(fit({ panelTab: "diff", windowWidth: 1728, reviewWidth: 2000 }).reviewCramped).toBe(
+      false,
+    );
+    // Too narrow to keep 520 for the chat: it falls back to its usual minimum and is cramped.
+    const tight = fit({ ...rail, windowWidth: 760, panelTab: "pr", reviewWidth: 600 });
+    expect(760 - tight.sidebarWidth - tight.panelWidth).toBe(CHAT_MIN_WIDTH);
+    expect(tight.reviewCramped).toBe(true);
+    // Other tabs, and a review in focus, are never cramped.
+    expect(fit({ ...rail, panelTab: "files", panelWidth: 600 }).reviewCramped).toBe(false);
+    expect(fit({ ...rail, panelTab: "diff", reviewWidth: 600, reviewFocus: true })).toMatchObject({
+      reviewFocus: true,
+      reviewCramped: false,
+    });
   });
 
   it("keeps the usual width beside a board, a grid or an orchestrator, which need the room", () => {
@@ -139,13 +187,13 @@ describe("review width", () => {
 
   it("keeps a review's drag apart from the other tabs' width", () => {
     s().setPanelTab("diff");
-    s().setReviewWidth(800);
-    expect(s()).toMatchObject({ reviewWidth: 800, panelWidth: PANEL_WIDTH.default });
-    expect(fit().panelWidth).toBe(800);
+    s().setReviewWidth(600);
+    expect(s()).toMatchObject({ reviewWidth: 600, panelWidth: PANEL_WIDTH.default });
+    expect(fit().panelWidth).toBe(600);
     s().setPanelTab("files");
     expect(fit().panelWidth).toBe(PANEL_WIDTH.default);
     s().setPanelTab("pr");
-    expect(fit().panelWidth).toBe(800);
+    expect(fit().panelWidth).toBe(600);
   });
 
   it("puts a review in focus and back, leaving a strip of the chat", () => {
@@ -186,8 +234,8 @@ describe("review width", () => {
     expect(s().reviewFocus).toBe(false);
     focused();
     // A drag gives the chat back at the width dragged to.
-    s().setReviewWidth(700);
-    expect(fit()).toMatchObject({ reviewFocus: false, panelWidth: 700 });
+    s().setReviewWidth(650);
+    expect(fit()).toMatchObject({ reviewFocus: false, panelWidth: 650 });
   });
 
   it("opens the panel on the Diff tab for focus from focus mode", () => {

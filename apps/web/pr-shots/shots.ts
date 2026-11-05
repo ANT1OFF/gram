@@ -658,7 +658,7 @@ const openDirectTask = async (page: Page, width: number) => {
   await page.setViewportSize({ width, height: 860 });
   await page.goto("/new-task?way=direct");
   await page.getByRole("form", { name: "New task" }).waitFor();
-  await page.getByTestId("task-way-note").waitFor();
+  await page.getByTestId("task-authority").waitFor();
   await page.getByRole("button", { name: /Start (workspace and )?worker/ }).waitFor();
   await page.waitForTimeout(600);
 };
@@ -3221,6 +3221,28 @@ export const SHOTS: readonly Shot[] = [
       await page.waitForTimeout(300);
     },
     element: (page) => page.getByTestId("command-palette"),
+  },
+  {
+    name: "review-narrow",
+    title:
+      "Review dragged wide in a 1024 px window: the chat keeps its room, Focus review is offered",
+    modes: ["dark"],
+    open: async (page) => {
+      await page.setViewportSize({ width: 1024, height: 860 });
+      await page.goto("/t/t-flaky");
+      const handle = page.getByRole("separator", { name: "Resize right panel" });
+      await handle.waitFor();
+      const box = (await handle.boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x - 200, y, { steps: 4 });
+      await page.mouse.move(x - 400, y, { steps: 4 });
+      await page.mouse.up();
+      await page.mouse.move(1020, 850);
+      await page.waitForTimeout(600);
+    },
   },
 ];
 
