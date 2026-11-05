@@ -501,8 +501,15 @@ function OverflowMenu({
   const [hint, setHint] = useState(false);
   const closedAt = useRef(0);
   // Closed from a submenu (a chapter in View ▸ Contents, say), focus comes back here too, not to
-  // the submenu's trigger that closes with it.
+  // the submenu's trigger that closes with it. Unless something has taken it since: Workers' list
+  // or a dialog an item opened keeps it.
   const trigger = useRef<HTMLButtonElement>(null);
+  const returnFocus = () => {
+    const active = document.activeElement;
+    const unclaimed =
+      active === null || active === document.body || active.closest('[role="menu"]') !== null;
+    return unclaimed ? trigger.current : false;
+  };
   const menu = (
     <Menu.Root
       onOpenChange={(open) => {
@@ -553,7 +560,7 @@ function OverflowMenu({
               each a submenu of its own, Workers beside them. */}
           <Menu.Popup
             data-testid="titlebar-overflow-menu"
-            finalFocus={trigger}
+            finalFocus={returnFocus}
             className={cn(MENU_POPUP, "w-64")}
           >
             <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
