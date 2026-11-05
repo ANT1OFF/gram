@@ -2,6 +2,7 @@ import {
   ciFixOwnedPrs,
   ciFixPrKey,
   ledgerPrsOf,
+  type BabysitStopReason,
   type OrchestratorLedger,
   type ThreadId,
   type ThreadSummary,
@@ -10,11 +11,22 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 
+import { STOP_REASON_TEXT } from "@/panels/review/babysit-model";
 import { unseenAttention } from "@/sidebar/attention";
 import { needsYou } from "@/sidebar/grouping";
 import { failureLabel } from "@/thread/failure-kinds";
 
 import { liveWorkerEntry, workerTitle } from "./board-model";
+
+/**
+ * What a stopped Watch PR (babysit) reads as in the Inbox: the watch stopped, in plain words, not a
+ * failing PR. "Watching #172 stopped: PR merged", or without a reason or number when it has none.
+ */
+export const watchStoppedText = (
+  number: number | undefined,
+  reason: BabysitStopReason | undefined,
+): string =>
+  `Watching ${number === undefined ? "the PR" : `#${number}`} stopped${reason === undefined ? "" : `: ${STOP_REASON_TEXT[reason]}`}`;
 
 // What needs the user beside the asks, shared by every view that counts it: workers stopped on an
 // error, and failing CI that no live worker owns (`ciFixOwnedPrs`). The Board and the orchestrator's
@@ -225,7 +237,11 @@ export const threadNeedsItems = (
             attention.key,
           ]
         : thread.babysit?.phase === "stopped"
-          ? ["babysit", "Watch PR stopped", `babysit:${thread.lastActivityAt}`]
+          ? [
+              "babysit",
+              watchStoppedText(pr?.number, thread.babysit.stopReason),
+              `babysit:${thread.lastActivityAt}`,
+            ]
           : ["thread", "Needs you", `${summary.status}:${thread.lastActivityAt}`];
     const id = `failure:${kind}:${thread.id}:${occurrence}`;
     if (hidden.has(id)) return [];

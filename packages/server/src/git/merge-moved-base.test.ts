@@ -7,8 +7,10 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import { Pr, Proc, ProcTimeout } from "@gram/git";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -296,6 +298,41 @@ const scenario = <E, R>(
 
 const ids = (head: string) => Number(head[0]);
 
+/** #5's turn left standing for a recheck's while after its pass, its merge refused; the others queue on it. */
+const lingering = (world: {
+  readonly service: MergeWhenReady["Service"];
+  readonly threads: ReadonlyArray<ThreadId>;
+  readonly launches: ReadonlyArray<number>;
+  readonly running: () => ReadonlyArray<string>;
+  readonly finish: (head: string, base: string) => Effect.Effect<void>;
+}) =>
+  Effect.gen(function* () {
+    yield* world.service.check(world.threads[0]!);
+    yield* waitReal(
+      "the first's check runs and holds the turn",
+      Effect.sync(() => world.running().some((key) => ids(key) === 5)),
+    );
+    for (const id of world.threads.slice(1)) yield* world.service.check(id);
+    yield* world.finish(headOf(5), RECORDED);
+    yield* waitReal(
+      "the first's merge refused",
+      Effect.sync(() => world.launches.includes(5)),
+    );
+  });
+
+const disarm = (store: ThreadStore["Service"], id: ThreadId) =>
+  store.updateThread(id, (t) => {
+    if (t.boundPr === undefined) return t;
+    const { mergeWhenReady: _gone, ...rest } = t.boundPr;
+    return { ...t, boundPr: rest };
+  });
+
+const waitsOn = (store: ThreadStore["Service"], id: ThreadId, number: number) =>
+  Effect.map(
+    store.getThread(id),
+    (t) => t.boundPr?.mergeWaiting?.why.includes(`project#${number}, whose merge`) === true,
+  );
+
 describe("armed merges on a base that moved", () => {
   it.live("one merges and the next doesn't stall on the base GitHub recorded for it", () =>
     scenario(
@@ -414,6 +451,125 @@ describe("armed merges on a base that moved", () => {
         }),
     ),
   );
+
+  describe("a turn whose holder is no longer armed", () => {
+    // #5 takes the turn, its check passes, and its merge is refused: it stays armed and keeps the
+    // turn for a recheck's while (long here), its check no longer running. The others queue on it.
+    const LINGER = { passed: [], launch: () => "refused" as const, recheckMs: 60_000 };
+
+    it.live("passes on once the holder's PR merged, so the next doesn't wait forever", () =>
+      scenario({ numbers: [5, 6], ...LINGER }, (world) =>
+        Effect.gen(function* () {
+          const { service, store, threads, ensured } = world;
+          yield* lingering(world);
+          yield* service.check(threads[1]!);
+          expect(yield* waitsOn(store, threads[1]!, 5)).toBe(true);
+          // Merged by someone else, say: its intent is gone, its turn left behind.
+          yield* disarm(store, threads[0]!);
+          yield* service.check(threads[1]!);
+          yield* waitReal(
+            "the second takes the turn",
+            Effect.sync(() => ensured.some(([head]) => ids(head) === 6)),
+          );
+          expect((yield* store.getThread(threads[1]!)).boundPr?.mergeWaiting).toBeUndefined();
+        }),
+      ),
+    );
+
+    it.live("goes to one of two PRs that find it stale at once, and they don't run together", () =>
+      scenario({ numbers: [5, 6, 7], ...LINGER }, (world) =>
+        Effect.gen(function* () {
+          const { service, store, threads, ensured, mostAtOnce } = world;
+          yield* lingering(world);
+          yield* disarm(store, threads[0]!);
+          // Reading the stale holder takes a while: both look while the other is reading.
+          const original = store.getThread;
+          store.getThread = (id) =>
+            id === threads[0]
+              ? Effect.sleep(Duration.millis(30)).pipe(Effect.andThen(original(id)))
+              : original(id);
+          yield* Effect.all([service.check(threads[1]!), service.check(threads[2]!)], {
+            concurrency: "unbounded",
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                store.getThread = original;
+              }),
+            ),
+          );
+          yield* waitReal(
+            "one takes the turn",
+            Effect.sync(() => ensured.some(([head]) => ids(head) !== 5)),
+          );
+          yield* Effect.sleep(Duration.millis(100));
+          const took = ensured.filter(([head]) => ids(head) !== 5).map(([head]) => ids(head));
+          expect(took).toHaveLength(1);
+          expect(mostAtOnce()).toBe(1);
+          const other = took[0] === 6 ? threads[2]! : threads[1]!;
+          expect(yield* waitsOn(store, other, took[0]!)).toBe(true);
+        }),
+      ),
+    );
+
+    it.live("stays with its holder when it is re-armed while another PR drops it", () =>
+      scenario({ numbers: [5, 6], ...LINGER }, (world) =>
+        Effect.gen(function* () {
+          const { service, store, threads, ensured } = world;
+          yield* lingering(world);
+          yield* disarm(store, threads[0]!);
+          // The holder is re-armed as #6 comes to drop it: the re-arm wins.
+          const rearming = yield* Deferred.make<void>();
+          const rearm = yield* service
+            .mutate(
+              threads[0]!,
+              Deferred.succeed(rearming, undefined).pipe(
+                Effect.andThen(Effect.sleep(Duration.millis(50))),
+                Effect.andThen(
+                  store.updateThread(threads[0]!, (t) => ({
+                    ...t,
+                    boundPr: {
+                      ...t.boundPr!,
+                      mergeWhenReady: { method: "squash", allowedBy: "user", setAt: 99 },
+                    },
+                  })),
+                ),
+              ),
+            )
+            .pipe(Effect.forkScoped);
+          yield* Deferred.await(rearming);
+          yield* service.check(threads[1]!);
+          yield* Fiber.join(rearm);
+          expect(ensured.some(([head]) => ids(head) === 6)).toBe(false);
+          expect(yield* waitsOn(store, threads[1]!, 5)).toBe(true);
+        }),
+      ),
+    );
+
+    it.live("stays with a holder whose check still runs, armed or not", () =>
+      scenario(
+        { numbers: [5, 6], passed: [] },
+        ({ service, store, threads, ensured, running, finish, mostAtOnce }) =>
+          Effect.gen(function* () {
+            yield* service.check(threads[0]!);
+            yield* waitReal(
+              "the first's check runs",
+              Effect.sync(() => running().some((key) => ids(key) === 5)),
+            );
+            yield* disarm(store, threads[0]!);
+            yield* service.check(threads[1]!);
+            // Taking it now would run two checks at once; it is handed on as the check ends.
+            expect(ensured.some(([head]) => ids(head) === 6)).toBe(false);
+            expect(yield* waitsOn(store, threads[1]!, 5)).toBe(true);
+            yield* finish(headOf(5), RECORDED);
+            yield* waitReal(
+              "the second's check, once the first's ended",
+              Effect.sync(() => ensured.some(([head]) => ids(head) === 6)),
+            );
+            expect(mostAtOnce()).toBe(1);
+          }),
+      ),
+    );
+  });
 
   describe("a merge Gram can't say went through", () => {
     const both = [

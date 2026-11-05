@@ -116,6 +116,16 @@ const heldMessage = (intent: MergeIntent) =>
     ...(intent.hold === undefined ? [] : [intent.hold]),
   ].join("; ")}); only it can lift the hold.`;
 
+/**
+ * Why Gram won't merge a pull request Watch PR is actively watching: Watch PR follows the review and
+ * hands the merge to the user, so it says so in plain words and how to let Gram merge instead. Only
+ * an active watch holds the merge; a stopped or done one does not.
+ */
+const watchingMergeRefusal = (thread: Thread): string => {
+  const pr = thread.boundPr === undefined ? "this pull request" : prName(thread.boundPr);
+  return `Watch PR is on for ${pr}: while it watches the review, the user merges. Turn Watch PR off to let Gram merge it, or ask the user to merge it.`;
+};
+
 /** Auto-merge is refused on a thread in babysit mode, where the user merges. */
 const refuseInBabysit = (thread: Thread) =>
   thread.babysit === undefined
@@ -757,11 +767,8 @@ export const PrAppToolsLive = Layer.effectDiscard(
             .getThread((input.threadId ?? caller) as ThreadId)
             .pipe(Effect.mapError(failed(MERGE)));
           yield* refuseOrchestratorPr(MERGE, thread);
-          if (thread.babysit !== undefined) {
-            return yield* new AppToolError({
-              tool: MERGE,
-              message: "Not in babysit mode, where the user merges.",
-            });
+          if (thread.babysit?.phase === "watching") {
+            return yield* new AppToolError({ tool: MERGE, message: watchingMergeRefusal(thread) });
           }
           const after = (input.after ?? []).map((text) => ({ text, ref: parsePrRef(text) }));
           const bad = after.find((entry) => entry.ref === undefined);
@@ -915,10 +922,11 @@ export const PrAppToolsLive = Layer.effectDiscard(
         call,
       ) =>
         Effect.gen(function* () {
-          // Babysit may have started while the card waited, or the orchestrator held the merge.
+          // Watch PR may have started watching while the card waited, or the orchestrator held the
+          // merge. Only an active watch hands the merge to the user; a stopped or done one does not.
           const latest = yield* store.getThread(thread.id);
-          if (latest.babysit !== undefined) {
-            return yield* new AppToolError({ tool: MERGE, message: "Not in babysit mode." });
+          if (latest.babysit?.phase === "watching") {
+            return yield* new AppToolError({ tool: MERGE, message: watchingMergeRefusal(latest) });
           }
           if (!enabled) yield* refuseOverHold(MERGE, caller, latest);
           const byOrchestrator = thread.id !== caller;
@@ -983,9 +991,9 @@ export const PrAppToolsLive = Layer.effectDiscard(
                   "The approved intent or the workspace's delegation changed during the call; call it again.";
                 return t;
               }
-              if (t.parked || t.babysit !== undefined) {
+              if (t.parked || t.babysit?.phase === "watching") {
                 refused =
-                  "This thread is parked or in babysit mode; call it again after that changes.";
+                  "This thread is parked or watching its PR; call it again after that changes.";
                 return t;
               }
               refused =

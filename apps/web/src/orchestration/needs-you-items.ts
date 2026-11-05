@@ -16,7 +16,7 @@ import type { FailureItem } from "./needs-you-model";
 // thread it opens and the message it scrolls to. Every answer still goes through its source's own
 // path. No React.
 
-type NeedsYouKind = "approval" | "question" | "plan" | "wait" | "failure";
+type NeedsYouKind = "approval" | "question" | "plan" | "wait" | "failure" | "watch";
 
 export interface NeedsYouItem {
   /** Unique across the list. */
@@ -139,11 +139,14 @@ const waitItem = (summary: NeedsYouThread, item: WaitItem): NeedsYouItem => {
   };
 };
 
-/** One item for a failure; `live` says whether its worker still runs to own it. */
+/**
+ * One item for a failure; `live` says whether its worker still runs to own it. A stopped Watch PR
+ * (babysit) is its own `watch` kind, not an error: it stands apart from failing PRs in the list.
+ */
 const failureItem = (failure: FailureItem, live: (id: ThreadId) => boolean): NeedsYouItem => ({
   key: failure.key,
   ids: failure.ids,
-  kind: "failure",
+  kind: failure.failure.kind === "babysit" ? "watch" : "failure",
   title: failure.failure.tag,
   where: failure.failure.title,
   threadId: failure.failure.threadId,
@@ -277,6 +280,8 @@ export const sectionOf = (item: Pick<NeedsYouItem, "kind" | "wait">): NeedsYouSe
       return "questions";
     case "failure":
       return "errors";
+    case "watch":
+      return "steps";
     case "wait":
       switch (item.wait?.view.kind) {
         case "review":

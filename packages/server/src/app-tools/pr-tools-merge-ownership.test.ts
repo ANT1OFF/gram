@@ -1,6 +1,6 @@
 // merge_when_ready: unbinding, worker ownership and stacked PRs.
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER } from "@gram/contracts";
+import { DEFAULT_CHARTER, initialBabysitState } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -555,6 +555,56 @@ describe("merge_when_ready", () => {
         }),
       );
     }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(!hasGit)(
+    "an active Watch PR hands the merge to the user; a stopped one lets Gram merge",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const runtimes = yield* ThreadRuntimes;
+            const registry = yield* AppToolRegistry;
+            const { session } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "watch-merge" });
+            yield* completeTurn(worker.session);
+            world.prHeads.set(12, { headRefName: worker.thread.checkout.branch! });
+            yield* registry
+              .forThread(worker.thread.id, "worker")
+              .find((t) => t.descriptor.name === "pr_bind")!
+              .run({ repo: "acme/app", number: 12 });
+            const definition = registry.definitions.find(
+              (t) => t.descriptor.name === "merge_when_ready",
+            )!;
+
+            // While Watch PR is actively watching, the merge is the user's: refused in plain words.
+            yield* runtimes.updateThread(worker.thread.id, (t) => ({
+              ...t,
+              babysit: initialBabysitState(1),
+            }));
+            const refused = yield* definition.resolve!(worker.thread.id, {}).pipe(Effect.flip);
+            expect(refused.message).toContain("Watch PR is on");
+            expect(refused.message).not.toContain("Not in babysit mode");
+
+            // Once Watch PR has stopped, it no longer holds the merge: resolve goes through.
+            yield* runtimes.updateThread(worker.thread.id, (t) => ({
+              ...t,
+              babysit: {
+                ...initialBabysitState(1),
+                phase: "stopped" as const,
+                stopReason: "rounds" as const,
+              },
+            }));
+            const target = yield* definition.resolve!(worker.thread.id, {});
+            expect((target as { pr?: { repo: string; number: number } }).pr).toMatchObject({
+              repo: "acme/app",
+              number: 12,
+            });
+          }),
+        );
+      }).pipe(Effect.scoped),
   );
 
   it.effect.skipIf(!hasGit)(

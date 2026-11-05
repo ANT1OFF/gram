@@ -1,6 +1,6 @@
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlarmClock, SquareArrowOutUpRight, X } from "lucide-react";
+import { AlarmClock, RotateCw, SquareArrowOutUpRight, X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -23,6 +23,7 @@ import {
   useMemoryQuestionAnswer,
   useWorkerQuestionActions,
 } from "@/orchestration/question-entry";
+import { useThreadsStore } from "@/stores/threads";
 import { RequestCards, SheetRequestCards } from "@/thread/request-cards";
 import { WaitingItemRow } from "@/thread/waiting-tray";
 
@@ -237,6 +238,40 @@ function AskDetail({ item }: { item: NeedsYouItem }) {
   );
 }
 
+/**
+ * A stopped Watch PR, read in full: what stopped the watch, in plain words, and a one-click Resume
+ * that turns Watch PR back on. Not a failure — the watch ended, it didn't fail; where the PR is gone
+ * (merged or closed) there is nothing to resume, so it only says so.
+ */
+function WatchStoppedBody({ item, onResume }: { item: NeedsYouItem; onResume: () => void }) {
+  const babysit = useThreadsStore((s) =>
+    item.threadId === undefined ? undefined : s.byId[item.threadId]?.thread.babysit,
+  );
+  const reason = babysit?.stopReason;
+  const gone = reason === "prMerged" || reason === "prClosed";
+  return (
+    <div data-testid="inbox-watch-stopped" className="flex flex-col gap-3 px-2">
+      <p className="text-body break-words">
+        {item.title}. Watch PR hands the merge to you; it does not merge on its own.
+      </p>
+      {!gone && (
+        <div>
+          <Button
+            size="xs"
+            variant="outline"
+            data-testid="inbox-watch-resume"
+            disabled={item.threadId === undefined}
+            onClick={onResume}
+          >
+            <RotateCw aria-hidden data-icon="inline-start" />
+            Resume watching
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The selected item in full, with its answers, Open thread, Later and Dismiss. */
 export function InboxDetail({
   item,
@@ -340,6 +375,8 @@ export function InboxDetail({
               onDone={() => actions.done(item)}
             />
           </ul>
+        ) : item.kind === "watch" ? (
+          <WatchStoppedBody item={item} onResume={() => actions.resume(item)} />
         ) : item.failure !== undefined ? (
           <ul>
             <FailureRowView item={item.failure} />
