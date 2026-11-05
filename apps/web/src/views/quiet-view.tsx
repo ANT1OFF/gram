@@ -281,7 +281,7 @@ export function QuietView({ workspaceId }: ViewProps) {
         <Swap swapKey={card?.ask.key ?? "empty"} as="div" className="w-full max-w-xl">
           {card === undefined ? (
             <div data-testid="quiet-empty" className="grid gap-1.5 text-center">
-              <p className="text-heading font-normal">Nothing needs you.</p>
+              <p className="text-heading font-normal">Nothing needs you</p>
               <p data-testid="quiet-summary" className="text-reading text-muted-foreground">
                 {quietSummary(strip)}
               </p>

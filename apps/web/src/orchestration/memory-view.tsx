@@ -40,6 +40,7 @@ import { DreamsSection } from "./dreams-section";
 import { InlineConfirm } from "./inline-confirm";
 import { MemoryOverview } from "./memory-overview";
 import {
+  dreamWaitsForReview,
   memoryCapFor,
   memoryIsEmpty,
   memoryPathProblem,
@@ -462,7 +463,7 @@ function Files({
             ))}
           </PresenceList>
           {files.length === 0 && (
-            <li className="px-2 py-1 text-meta text-muted-foreground">No files yet.</li>
+            <li className="px-2 py-1 text-meta text-muted-foreground">No files yet</li>
           )}
         </ul>
         {open === undefined ? (
@@ -605,13 +606,8 @@ function UpdateTabMark({ workspaceId }: { workspaceId: WorkspaceId }) {
     retry: false,
   });
   const list = dreams.data ?? [];
-  const waiting = list.filter(
-    (dream) =>
-      dream.status === "completed" &&
-      dream.adoptedVersion === undefined &&
-      // An Auto run waits on nobody, unless its adoption stopped and handed it to you.
-      (dream.mode !== "auto" || dream.adoptionFailure !== undefined),
-  ).length;
+  // An Auto run waits on nobody, unless its adoption stopped and handed it to you.
+  const waiting = list.filter(dreamWaitsForReview).length;
   const running = list.some((dream) => dream.status === "running" || dream.status === "pending");
   if (waiting > 0) {
     return (

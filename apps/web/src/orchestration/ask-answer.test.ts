@@ -46,7 +46,7 @@ describe("answering an ask from outside the stack", () => {
     // Gone from every view that reads the stack's asks, before anything is sent.
     const hidden = hiddenIds(useAskStackStore.getState());
     expect(asksOf({ groups, hidden })).toEqual([]);
-    expect(useAskStackStore.getState().held.map((h) => h.done)).toEqual(["Allowed 3"]);
+    expect(useAskStackStore.getState().held.map((h) => h.done)).toEqual(["Allowed 3 once"]);
     expect(respondMany).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(UNDO_MS);

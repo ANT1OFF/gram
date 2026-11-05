@@ -72,7 +72,7 @@ describe("an ask's notification", () => {
     expect(n.title).toBe("Allow git push × 3?");
     expect(n.subtitle).toBe("agent-platform · mail-trigger · Worker a and 2 more");
     expect(n.body).toBe(PUSH);
-    expect(n.button).toEqual({ label: "Allow 3", option: 0 });
+    expect(n.button).toEqual({ label: "Allow 3 once", option: 0 });
     expect(ask.options[0]!.action).toEqual({ kind: "group", decision: "allow" });
     expect(n.openThreadId).toBe(ORCH);
     expect(n.id).toBe(awayAskId(askScope(ask, W)));
@@ -83,7 +83,7 @@ describe("an ask's notification", () => {
       askFor(entry("a", approval("r-a", { command: "npm test", timeout: 120000 }))),
     );
     expect(timed.body).toBe("npm test\ntimeout: 120000");
-    expect(timed.button).toEqual({ label: "Allow", option: 0 });
+    expect(timed.button).toEqual({ label: "Allow once", option: 0 });
     const long = notice(
       askFor(entry("a", approval("r-a", { command: "npm test", env: "x".repeat(200) }))),
     );
@@ -195,7 +195,7 @@ describe("an ask's notification", () => {
     const shown = notice(ask);
     expect(checkAwayAction(all([ask]), shown)).toMatchObject({
       ask,
-      done: "Allowed 2",
+      done: "Allowed 2 once",
       action: { kind: "group", decision: "allow" },
     });
     // Answered or hidden: gone from the list.
@@ -210,7 +210,7 @@ describe("an ask's notification", () => {
     expect(checkAwayAction(all([ask]), notice(ask, { actions: false }))).toBeUndefined();
     // A forged button for another option (Deny) is refused.
     expect(
-      checkAwayAction(all([ask]), { ...shown, button: { label: "Allow 2", option: 1 } }),
+      checkAwayAction(all([ask]), { ...shown, button: { label: "Allow 2 once", option: 1 } }),
     ).toBeUndefined();
   });
   it("checks the raw input, before any normalizing: a tab, a newline or a bidi mark offers Open", () => {
@@ -230,7 +230,7 @@ describe("an ask's notification", () => {
     expect(awayAsk(plain, true)).toEqual({
       text: "ls\ncwd: /tmp/a b",
       whole: true,
-      button: { label: "Allow", option: 0 },
+      button: { label: "Allow once", option: 0 },
     });
   });
 

@@ -55,7 +55,14 @@ import {
   type Choice,
 } from "./choice-model";
 import {
+  ALLOW_ONCE,
+  DENY,
+  alwaysAllowLabel,
+  alwaysAllowOpenLabel,
+  alwaysRuleLines,
   alwaysRules,
+  approvalReceipt,
+  canAlwaysAllow,
   appToolSummary,
   limitPauseAsk,
   approvalDetails,
@@ -65,9 +72,11 @@ import {
   settingsProposal,
   workspaceProposal,
   type AlwaysRule,
+  type ApprovalReceipt,
   type ApprovalDetailField,
   type ApprovalDetails,
 } from "./request-model";
+import { ApprovalReceiptLine, useApprovalReceipts } from "./approval-receipt";
 import { RoleChip } from "./role-chip";
 
 type RoleFields = Pick<Thread, "role" | "spawnedBy">;
@@ -99,6 +108,17 @@ export function SheetRequestCards({ children }: { children: ReactNode }) {
   return <SheetContext value={true}>{children}</SheetContext>;
 }
 
+/** Whether an approval card opens on what "Always allow this rule…" would keep. */
+const AlwaysPreviewContext = createContext(false);
+
+/**
+ * Approval cards inside open on their "Always allow this rule…" preview: the Inbox's "Always allow
+ * this rule…" leads here, so its press is not asked for twice.
+ */
+export function AlwaysPreviewRequestCards({ children }: { children: ReactNode }) {
+  return <AlwaysPreviewContext value={true}>{children}</AlwaysPreviewContext>;
+}
+
 /** A card's shortcut hint, which the inbox leaves out as its cards own no shortcuts. */
 function CardKbd({ id }: { id: string }) {
   return useContext(CompactContext) ? null : <ShortcutKbd id={id} cap />;
@@ -127,8 +147,11 @@ export function RequestCards({
     [pending, answered],
   );
   const approvals = requests.filter((request) => request.kind === "approval");
+  const sheet = useContext(SheetContext);
   return (
     <RequestRoleContext value={thread}>
+      {/* What the last answer did, in the thread, until the next card lands. */}
+      {!sheet && approvals.length === 0 && <ApprovalReceiptLine threadId={threadId} />}
       {/* A card lands, and an answered one folds away, so the transcript above never jumps. */}
       <PresenceList>
         {requests.map((request) =>
@@ -226,11 +249,12 @@ function ApprovalQueue({
 function useRespond(threadId: ThreadId, request: PendingRequest) {
   const api = useApi();
   const [pending, setPending] = useState(false);
-  const respond = async (answer: RequestAnswer) => {
+  const respond = async (answer: RequestAnswer, receipt?: ApprovalReceipt) => {
     if (pending) return;
     setPending(true);
     try {
       await api.respond(threadId, request.id, answer);
+      if (receipt !== undefined) useApprovalReceipts.getState().show(threadId, receipt);
     } catch (error) {
       console.error("respond", error);
       setPending(false);
@@ -659,21 +683,33 @@ export function ApprovalCard({
   const workspace = pause === undefined ? workspaceProposal(request) : undefined;
   // Outward app tools restrict scopes to `["once"]`; absent means every scope is allowed. A browse
   // card's "always" is the host's place in Settings → Agent may browse, not a permission rule.
-  // "Always allow…" never saves on its first press: it shows exactly what it would keep, and where,
+  // "Always allow this rule…" never saves on its first press: it shows exactly what it would keep, and where,
   // and saves only from there. A card with nothing to show offers no "always" at all.
   const rules = alwaysRules(request);
-  const canAlways = rules.length > 0 && (request.scopes?.includes("always") ?? true);
-  const [confirming, setConfirming] = useState(false);
+  const canAlways = canAlwaysAllow(request);
+  // Opened from the Inbox's "Always allow this rule…", the card starts on what it would keep.
+  const preview = useContext(AlwaysPreviewContext);
+  const [confirming, setConfirming] = useState(preview && canAlways);
+  // The receipt says what was chosen, in its scope, where the card was. A limit pause, a settings
+  // change and a workspace say their own outcome, so only a tool's approval has one.
+  const plain = pause === undefined && settings === undefined && workspace === undefined;
   const allow = (scope: "once" | "always") =>
-    void respond({ kind: "approval", decision: "allow", scope });
-  const deny = () => void respond({ kind: "approval", decision: "deny", scope: "once" });
+    void respond(
+      { kind: "approval", decision: "allow", scope },
+      plain ? approvalReceipt(request, scope) : undefined,
+    );
+  const deny = () =>
+    void respond(
+      { kind: "approval", decision: "deny", scope: "once" },
+      plain ? approvalReceipt(request, "deny") : undefined,
+    );
   const always = () => (confirming ? allow("always") : setConfirming(true));
 
   useShortcut(
     {
       id: "approval.allow",
       keys: "enter",
-      label: "Allow once",
+      label: ALLOW_ONCE,
       group: "Thread",
       once: true,
       run: () => allow("once"),
@@ -684,7 +720,7 @@ export function ApprovalCard({
     {
       id: "approval.always",
       keys: "alt+enter",
-      label: "Always allow…",
+      label: alwaysAllowOpenLabel(1),
       group: "Thread",
       when: () => canAlways,
       // Once per press, for both steps: a held ⌥⏎ opens the preview and nothing more, so saving
@@ -695,7 +731,7 @@ export function ApprovalCard({
     active && pause === undefined,
   );
   useShortcut(
-    { id: "approval.deny", keys: "escape", label: "Deny", group: "Thread", once: true, run: deny },
+    { id: "approval.deny", keys: "escape", label: DENY, group: "Thread", once: true, run: deny },
     active && pause === undefined,
   );
 
@@ -746,7 +782,7 @@ export function ApprovalCard({
                   ? "Create workspace"
                   : settings !== undefined || workspace !== undefined
                     ? "Apply changes"
-                    : "Allow once"}{" "}
+                    : ALLOW_ONCE}{" "}
                 <CardKbd id="approval.allow" />
               </Button>
             </PressScale>
@@ -759,7 +795,7 @@ export function ApprovalCard({
                 disabled={pending}
                 onClick={always}
               >
-                {confirming ? alwaysConfirmLabel(rules.length) : "Always allow…"}{" "}
+                {confirming ? alwaysAllowLabel(rules.length) : alwaysAllowOpenLabel(rules.length)}{" "}
                 <CardKbd id="approval.always" />
               </Button>
             )}
@@ -781,7 +817,7 @@ export function ApprovalCard({
               disabled={pending}
               onClick={deny}
             >
-              Deny <CardKbd id="approval.deny" />
+              {DENY} <CardKbd id="approval.deny" />
             </Button>
           </>
         )
@@ -824,27 +860,14 @@ export function ApprovalCard({
   );
 }
 
-const REACH_WORD: Record<AlwaysRule["reach"], string> = {
-  thread: "This thread",
-  repository: "This repository",
-  project: "This project",
-  everywhere: "Everywhere",
-};
-
 /**
- * "Always allow…"'s second press, in the same verb as its first: "Always allow this rule", or
- * "Always allow these 2 rules".
- */
-export const alwaysConfirmLabel = (count: number): string =>
-  count === 1 ? "Always allow this rule" : `Always allow these ${count} rules`;
-
-/**
- * What "Always allow…" would keep, before it keeps it: each rule in the agent's own spelling, what
- * it does, how far it reaches and where it is written. Nothing is saved until its second press,
- * "Always allow this rule".
+ * What "Always allow this rule…" would keep, before it keeps it, as three labelled lines a rule:
+ * Rule (what it does, in the agent's own spelling), Applies to (how far it reaches) and Saved in
+ * (where it is written). Nothing is saved until its second press, "Always allow this rule".
  */
 function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
   const compact = useContext(CompactContext);
+  const save = alwaysAllowLabel(rules.length);
   return (
     <div
       data-testid="approval-always-rules"
@@ -855,35 +878,38 @@ function AlwaysRules({ rules }: { rules: readonly AlwaysRule[] }) {
         compact ? "text-meta" : "text-reading",
       )}
     >
-      <p className="font-medium">
-        {rules.length === 1
-          ? "Always allow this rule?"
-          : `Always allow these ${rules.length} rules?`}
-      </p>
+      <p className="font-medium">{save}?</p>
       <ul className="flex flex-col gap-2">
-        {rules.map((rule, index) => (
-          <li
-            key={`${rule.rule}:${index}`}
-            data-testid="approval-always-rule"
-            data-reach={rule.reach}
-            className="flex flex-col gap-0.5"
-          >
-            <span className="flex min-w-0 items-baseline gap-2">
-              <span className="shrink-0 text-meta text-muted-foreground">{rule.behavior}</span>
-              <code className="min-w-0 font-mono text-meta break-all">{rule.rule}</code>
-            </span>
-            <span className="text-meta text-muted-foreground">
-              <span className="text-foreground">{REACH_WORD[rule.reach]}</span>
-              {" · "}
-              {rule.scope}
-              {rule.kept !== undefined && ` · kept in ${rule.kept}`}
-            </span>
-          </li>
-        ))}
+        {rules.map((rule, index) => {
+          const lines = alwaysRuleLines(rule);
+          return (
+            <li
+              key={`${rule.rule}:${index}`}
+              data-testid="approval-always-rule"
+              data-reach={rule.reach}
+            >
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-meta">
+                <dt className="text-muted-foreground">Rule</dt>
+                <dd data-testid="approval-always-rule-text">
+                  <code className="font-mono break-all">{lines.rule}</code>
+                </dd>
+                <dt className="text-muted-foreground">Applies to</dt>
+                <dd data-testid="approval-always-applies">{lines.appliesTo}</dd>
+                {lines.savedIn !== undefined && (
+                  <>
+                    <dt className="text-muted-foreground">Saved in</dt>
+                    <dd data-testid="approval-always-saved" className="break-all">
+                      {lines.savedIn}
+                    </dd>
+                  </>
+                )}
+              </dl>
+            </li>
+          );
+        })}
       </ul>
       <p className="text-meta text-muted-foreground">
-        Nothing is saved until you choose {alwaysConfirmLabel(rules.length)}. Allow once saves
-        nothing.
+        Nothing is saved until you choose {save}. {ALLOW_ONCE} saves nothing.
       </p>
     </div>
   );

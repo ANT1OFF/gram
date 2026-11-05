@@ -158,6 +158,30 @@ export const dreamActions = (
   discard: !dreamRunning(dream),
 });
 
+/**
+ * Whether a finished run waits on you: it is not adopted yet, and it either waits for your review or
+ * was set to save on its own and stopped, which hands it back to you.
+ */
+export const dreamWaitsForReview = (
+  dream: Pick<Dream, "status" | "adoptedVersion" | "mode" | "adoptionFailure">,
+): boolean =>
+  dream.status === "completed" &&
+  dream.adoptedVersion === undefined &&
+  (dream.mode !== "auto" || dream.adoptionFailure !== undefined);
+
+/**
+ * The runs in the order they are read: the ones that wait for your review first, then the rest
+ * (running, failed, adopted) as the server lists them, newest first.
+ */
+export const orderDreams = <
+  D extends Pick<Dream, "status" | "adoptedVersion" | "mode" | "adoptionFailure">,
+>(
+  dreams: readonly D[],
+): { readonly ready: readonly D[]; readonly rest: readonly D[] } => ({
+  ready: dreams.filter(dreamWaitsForReview),
+  rest: dreams.filter((dream) => !dreamWaitsForReview(dream)),
+});
+
 const FILE_STATUS: Record<DreamFileStatus, StatePresentation> = {
   added: { label: "Added", tone: "success" },
   changed: { label: "Changed", tone: "working" },

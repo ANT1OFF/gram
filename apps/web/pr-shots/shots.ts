@@ -1190,7 +1190,7 @@ export const SHOTS: readonly Shot[] = [
       await folder.press("Enter");
       await page.waitForTimeout(400);
     },
-    element: (page) => page.getByRole("region", { name: "Branches" }),
+    element: (page) => page.getByRole("region", { name: "Folders & branches" }),
   },
   {
     name: "settings-folder-draft",
@@ -1202,7 +1202,7 @@ export const SHOTS: readonly Shot[] = [
       await page.getByLabel("Default folder", { exact: true }).fill("~/work/sandbox");
       await page.waitForTimeout(300);
     },
-    element: (page) => page.getByRole("region", { name: "Branches" }),
+    element: (page) => page.getByRole("region", { name: "Folders & branches" }),
   },
   {
     name: "settings-folder-invalid",
@@ -1216,7 +1216,7 @@ export const SHOTS: readonly Shot[] = [
       await folder.press("Enter");
       await page.waitForTimeout(300);
     },
-    element: (page) => page.getByRole("region", { name: "Branches" }),
+    element: (page) => page.getByRole("region", { name: "Folders & branches" }),
   },
   {
     name: "diff-too-large",

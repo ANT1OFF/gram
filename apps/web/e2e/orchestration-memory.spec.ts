@@ -504,8 +504,9 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await expect(flow.getByTestId("dream-harness-mode")).toHaveText(CLAUDE_DREAM_POLICY);
   // The run's adoption mode is beside the actions that start it, and beside Start.
   await expect(dreams.getByTestId("dream-mode-note")).toHaveText(
-    "Memory changes only after you review the draft and adopt it. The agent still keeps to its sandbox and asks before anything it would normally ask about.",
+    "Memory changes only after you review the draft and adopt it.",
   );
+  await expect(dreams.getByTestId("dream-runs-rule")).toContainText("in the agent's sandbox");
   await expect(flow.getByTestId("dream-start-mode")).toHaveText("Waits for your review");
   await expect(flow).toContainText("A dream runs on Claude Code, Codex.");
 

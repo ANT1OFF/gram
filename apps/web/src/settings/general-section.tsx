@@ -75,7 +75,10 @@ const PANEL_SIDES = [
   { value: "left", label: "Left" },
 ] as const;
 
-/** Settings → General: new-thread defaults and layout. */
+/**
+ * Settings → General: Launch, Navigation, Folders & branches, Sending and Running work, each a group
+ * the nav links to (`GENERAL_ANCHORS`).
+ */
 export function GeneralSection() {
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
@@ -106,7 +109,7 @@ export function GeneralSection() {
       <SettingsGroup
         label="Launch"
         anchor={GENERAL_ANCHORS.launch}
-        description="What Gram opens at launch, how it starts, and how the left sidebar looks."
+        description="What Gram opens when it starts, and how it keeps running."
       >
         <SettingRow
           label="Open at launch"
@@ -126,6 +129,14 @@ export function GeneralSection() {
             }
           />
         </SettingRow>
+        <LaunchAtLoginSetting />
+        <KeepInTraySetting />
+      </SettingsGroup>
+      <SettingsGroup
+        label="Navigation"
+        anchor={GENERAL_ANCHORS.navigation}
+        description="How the left sidebar looks, and where the side panel sits."
+      >
         <SettingRow
           label="Overview sidebar"
           description={`The left column of threads.${overviewHint ? ` ${overviewHint} hides or shows it.` : ""}`}
@@ -190,12 +201,23 @@ export function GeneralSection() {
             }}
           />
         </SettingRow>
-        <LaunchAtLoginSetting />
-        <KeepInTraySetting />
+        <SettingRow
+          label="Side panel"
+          description="Where the Diff, PR, Files and Terminal panel sits."
+          onReset={resetOf("panelSide")}
+          error={errorOf("panelSide")}
+        >
+          <OptionGroup
+            label="Side panel"
+            options={PANEL_SIDES}
+            value={settings.panel.side}
+            onChange={(side) => applyTo("panelSide")({ panel: { side } })}
+          />
+        </SettingRow>
       </SettingsGroup>
       <SettingsGroup
-        label="Branches"
-        anchor={GENERAL_ANCHORS.branches}
+        label="Folders & branches"
+        anchor={GENERAL_ANCHORS.folders}
         description="Where new threads and clones start, and how their branches are named."
       >
         <FolderField
@@ -237,9 +259,9 @@ export function GeneralSection() {
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup
-        label="Composer"
-        anchor={GENERAL_ANCHORS.composer}
-        description="How you send a message, and where the side panel sits."
+        label="Sending"
+        anchor={GENERAL_ANCHORS.sending}
+        description="Which keys send a message."
       >
         <SettingRow
           label="Send with"
@@ -252,19 +274,6 @@ export function GeneralSection() {
             options={SEND_KEYS}
             value={sendKeyOf(settings)}
             onChange={(sendKey) => applyTo("sendKey")({ composer: { sendKey } })}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Side panel"
-          description="Where the Diff, PR, Files and Terminal panel sits."
-          onReset={resetOf("panelSide")}
-          error={errorOf("panelSide")}
-        >
-          <OptionGroup
-            label="Side panel"
-            options={PANEL_SIDES}
-            value={settings.panel.side}
-            onChange={(side) => applyTo("panelSide")({ panel: { side } })}
           />
         </SettingRow>
       </SettingsGroup>
@@ -504,7 +513,7 @@ function FolderField({
       htmlFor={id}
       onReset={onReset}
       error={invalid ?? error}
-      status={unsaved ? <SaveHint id={hintId} /> : undefined}
+      hint={unsaved ? <SaveHint id={hintId} /> : undefined}
       undoKey={id}
     >
       <input

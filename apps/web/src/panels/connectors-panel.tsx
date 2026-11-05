@@ -467,7 +467,7 @@ function SessionAsleep({
           <p role="status">{why ?? "The session isn't running."}</p>
           {(wake.hold === undefined || wake.hold.button) && (
             <Button size="sm" variant="outline" onClick={wake.start}>
-              {wake.problem === undefined ? "Start session" : "Try again"}
+              {wake.problem === undefined ? "Start session" : "Retry"}
             </Button>
           )}
         </div>

@@ -71,8 +71,37 @@ describe("the ask stack's asks", () => {
     expect(ask.count).toBe(3);
     expect(ask.key).toBe("r-a,r-b,r-c");
     expect(ask.context).toBe("mail · Title of a and 2 more");
-    expect(ask.options.map((option) => option.label)).toEqual(["Allow 3", "Deny"]);
+    expect(ask.options.map((option) => option.label)).toEqual(["Allow 3 once", "Deny"]);
     expect(ask.options[0]!.action).toEqual({ kind: "group", decision: "allow" });
+  });
+
+  it("offers the thread card's verbs, Always allow this rule… for one ask with a rule to keep", () => {
+    const rule = {
+      ...push("r-a"),
+      suggestions: [
+        {
+          type: "addRules" as const,
+          rules: [{ toolName: "Bash", ruleContent: "git push:*" }],
+          behavior: "allow" as const,
+          destination: "localSettings" as const,
+        },
+      ],
+    };
+    const ask = askOf(groupInbox([entry("a", undefined, rule)])[0]!);
+    expect(ask.options.map((option) => option.label)).toEqual([
+      "Allow once",
+      "Always allow this rule…",
+      "Deny",
+    ]);
+    // It opens the card on what it would keep; it never saves from here.
+    expect(ask.options[1]!.action).toEqual({ kind: "open", threadId: "a", always: true });
+    expect(ask.options.map((option) => option.done)).toEqual(["Allowed once", "Opened", "Denied"]);
+    // Still one row of verbs, however long the always label.
+    expect(choiceLayout(ask.options)).toBe("row");
+    // An agent that keeps no rule, or a card restricted to once, offers no always.
+    expect(askOf(groupInbox([entry("a", undefined, push("r-b"))])[0]!).options).toHaveLength(2);
+    const once = { ...rule, scopes: ["once" as const] };
+    expect(askOf(groupInbox([entry("a", undefined, once)])[0]!).options).toHaveLength(2);
   });
 
   it("names a tool that isn't a command beside its exact subject", () => {
@@ -85,7 +114,7 @@ describe("the ask stack's asks", () => {
     const ask = askOf(groupInbox([entry("a", "docs", write)])[0]!);
     expect(ask.lead).toBe("Allow Write");
     expect(ask.command).toBe("docs/setup.md");
-    expect(ask.options.map((option) => option.label)).toEqual(["Allow", "Deny"]);
+    expect(ask.options.map((option) => option.label)).toEqual(["Allow once", "Deny"]);
   });
 
   it("shows a question's own options, and answers in words when it has none", () => {
@@ -221,7 +250,7 @@ describe("the ask stack's asks", () => {
     ]);
     const [ask] = asksOf({ groups, hidden: new Set(["r-a", "r-b"]) });
     expect(ask!.ids).toEqual(["r-c"]);
-    expect(ask!.options[0]!.label).toBe("Allow");
+    expect(ask!.options[0]!.label).toBe("Allow once");
     expect(asksOf({ groups, hidden: new Set(["r-a", "r-b", "r-c"]) })).toEqual([]);
   });
 

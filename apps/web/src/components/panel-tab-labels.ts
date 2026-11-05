@@ -26,11 +26,16 @@ export interface LabelFit {
   readonly fold: boolean;
 }
 
-/** The order names give way in: the action's words outlast every name but the open tab's. */
+/**
+ * The order names give way in: the action's words outlast every tab's name, the open tab's too, so
+ * on a review Focus review stays the one labelled way out of a tight panel. The open tab still
+ * reads as open without its name: on its background and underlined, and named on hover.
+ */
 const TIERS: readonly Omit<LabelFit, "fold">[] = [
   { tabs: "all", action: true },
   { tabs: "primary", action: true },
   { tabs: "active", action: true },
+  { tabs: "none", action: true },
   { tabs: "primary", action: false },
   { tabs: "active", action: false },
   { tabs: "none", action: false },
@@ -48,7 +53,7 @@ export const tabFolds = (tab: Pick<TabWidths, "active" | "primary" | "pinned">):
  * The most names that fit `available` px, with `gap` px between tabs, `action` px for the words of
  * an action beside them (0 for none) and `more` px for a More menu that the rarer tabs fold into
  * (0 for none): every tab named, else the primary tabs and the open one, else only the open one,
- * else none; the action's words go before any name but the open tab's. Short of every name, the
+ * else none; the action's words give way only after every name has. Short of every name, the
  * rarer tabs fold into More wherever that takes less room. The strip scrolls only once even the
  * bare icons don't fit.
  */

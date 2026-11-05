@@ -233,7 +233,7 @@ function NowCell({
   const hint = [
     worker.title,
     ...(worker.waiting === undefined ? [] : [worker.waiting.hint]),
-    ...(asking ? ["Click to answer in Asks"] : []),
+    ...(asking ? ["Click to answer in the Inbox"] : []),
   ].join("\n");
   const report = useLatestReport(workspaceId, worker.threadId);
   return (

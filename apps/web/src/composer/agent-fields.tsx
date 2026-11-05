@@ -368,7 +368,7 @@ export function AgentFields({
                   value={value.speed}
                   onChange={(speed) => onChange({ ...value, speed })}
                   ghost={ghost}
-                  labelled={value.speed === "fast" && sized("speed")}
+                  labelled={sized("speed")}
                 />
               ) : (
                 <UnavailableSlot label="Speed" reason={`${agentLabel(value.agent)} has one speed`}>

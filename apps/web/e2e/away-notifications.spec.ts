@@ -123,7 +123,7 @@ test("Allow on a notification answers the ask through the one path, and it is go
   expect(note).toMatchObject({
     title: "Allow git push × 3?",
     subtitle: expect.stringContaining("agent-platform"),
-    actions: ["Allow 3"],
+    actions: ["Allow 3 once"],
   });
   // Only asks interrupt: nothing else the seed did raised one.
   const before = await recorded(page);
@@ -210,7 +210,7 @@ test("titles come from the template with helpers off, and from the helper with t
   );
   const on = await noteWith(page, "npm run build:r-on");
   expect(on.title).toBe("A worker wants a build");
-  expect(on.actions).toEqual(["Allow"]);
+  expect(on.actions).toEqual(["Allow once"]);
 
   await page.evaluate(() => window.gramMock!.updateSettings({ helpers: { enabled: false } }));
   await page.evaluate(

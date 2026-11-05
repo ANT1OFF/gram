@@ -359,7 +359,9 @@ function MoreTabs({
     <Menu.Root>
       <Hint
         label={`More tabs: ${faces.map((f) => f.tab.label).join(", ")}`}
-        side="bottom"
+        // Beside it, not under it: back on the trigger after its menu closes, the hint stays open,
+        // and under it it would cover the review bar's View menu.
+        side="left"
         render={
           <Menu.Trigger
             data-panel-more
@@ -423,8 +425,9 @@ function ExpandToggle() {
 
 /**
  * Beside a review's tabs, puts the review in focus, leaving a strip of the chat, and gives the chat
- * back. Its words fold away, leaving the icon, only once the row has no room for them. The words
- * live in a `[data-action-label]` that collapses rather than unmounts, so they can be measured.
+ * back. Its words fold away, leaving the icon, only once the row has no room for them, after every
+ * tab's name. Its shortcut is in its tooltip, so the words stay short. The words live in a
+ * `[data-action-label]` that collapses rather than unmounts, so they can be measured.
  */
 function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolean }) {
   const toggle = useLayoutStore((s) => s.toggleReviewFocus);
@@ -454,9 +457,8 @@ function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolea
         <Focus aria-hidden className="size-4" />
       )}
       <span aria-hidden data-action-label className={cn("overflow-hidden", !words && "max-w-0")}>
-        <span data-action-label-text className="flex items-center gap-1.5 pl-1.5 whitespace-nowrap">
+        <span data-action-label-text className="block pl-1.5 whitespace-nowrap">
           {label}
-          {hint && <kbd className="font-sans text-caption text-muted-foreground">{hint}</kbd>}
         </span>
       </span>
     </Hint>

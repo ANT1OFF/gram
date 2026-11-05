@@ -442,8 +442,9 @@ test("Settings is focused: the overview gives way to Back, and General's section
   const sections = page.getByTestId("settings-page-sections");
   await expect(sections.getByRole("link")).toHaveText([
     "Launch",
-    "Branches",
-    "Composer",
+    "Navigation",
+    "Folders & branches",
+    "Sending",
     "Running work",
     "Editor",
     "Links",

@@ -195,8 +195,8 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   },
   { id: "thread.rename", keys: "f2", label: "Rename thread…", group: "Thread" },
   { id: "thread.close", keys: "mod+alt+w", label: "Close thread…", group: "Thread" },
-  { id: "approval.allow", keys: "enter", label: "Allow", group: "Thread" },
-  { id: "approval.always", keys: "alt+enter", label: "Allow always", group: "Thread" },
+  { id: "approval.allow", keys: "enter", label: "Allow once", group: "Thread" },
+  { id: "approval.always", keys: "alt+enter", label: "Always allow this rule…", group: "Thread" },
   { id: "approval.deny", keys: "escape", label: "Deny", group: "Thread" },
   {
     id: "composer.send",

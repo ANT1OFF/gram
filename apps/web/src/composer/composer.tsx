@@ -944,19 +944,18 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
   // than letting the rest move up. Each says its value in words while the row has room ("Claude
   // Opus", "Extra high", "Plan"); short of it, in a compact word ("Opus", "X-high"); then the
   // pickers take a row of their own; and only at the narrowest do they give up their words for
-  // glyphs named in their tooltips, then fold into "…" from the right. Speed has words only for
-  // Fast: Standard is no news.
+  // glyphs named in their tooltips, then fold into "…" from the right. Speed says its value in a
+  // word too ("Default", "Standard", "Fast"), its category on hover, as the others do.
   const hasEffort = efforts.length > 0;
   const speedApplies = model !== undefined && (model.agent === "claude" || model.agent === "codex");
-  const fastSpeed = model?.speed === "fast";
   const blocks = useMemo(
     () => [
       { id: "model", foldable: false },
       { id: "effort", foldable: true, ...(hasEffort ? {} : { glyph: true }) },
       { id: "mode", foldable: true },
-      { id: "speed", foldable: true, glyph: !(speedApplies && fastSpeed) },
+      { id: "speed", foldable: true, ...(speedApplies ? {} : { glyph: true }) },
     ],
-    [hasEffort, speedApplies, fastSpeed],
+    [hasEffort, speedApplies],
   );
   const toolbar = useToolbarLayout(blocks);
   const { ref: toolbarRef, size: labelOf, folded, wrapped } = toolbar;
@@ -1235,7 +1234,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
                   value={model.speed}
                   state={summary?.thread.speedState ?? { speed: "unknown" }}
                   ghost
-                  labelled={fastSpeed && labelOf("speed")}
+                  labelled={labelOf("speed")}
                   onChange={onSpeed}
                 />
               ) : (

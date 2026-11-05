@@ -7,7 +7,9 @@ import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
 import { installKeyboard } from "@/keyboard/registry";
 
+import { useApprovalReceipts } from "./approval-receipt";
 import {
+  AlwaysPreviewRequestCards,
   ApprovalCard,
   ApprovalInput,
   CompactRequestCards,
@@ -406,7 +408,7 @@ describe("ApprovalCard", () => {
     expect(respond).toHaveBeenCalledTimes(1);
   });
 
-  it("names its buttons Allow once and Always allow…, and keeps Deny one click", () => {
+  it("names its buttons Allow once, Always allow this rule… and Deny", () => {
     const { api } = fakeApi();
     render(
       <ApiProvider api={api}>
@@ -414,7 +416,7 @@ describe("ApprovalCard", () => {
       </ApiProvider>,
     );
     expect(screen.getByTestId("approval-allow").textContent).toContain("Allow once");
-    expect(screen.getByTestId("approval-always").textContent).toContain("Always allow…");
+    expect(screen.getByTestId("approval-always").textContent).toContain("Always allow this rule…");
     expect(screen.getByTestId("approval-deny").textContent).toContain("Deny");
   });
 
@@ -447,6 +449,21 @@ describe("ApprovalCard", () => {
     expect(rule.textContent).toContain("This repository");
     expect(rule.textContent).toContain("all its worktrees");
     expect(rule.textContent).toContain(".claude/settings.local.json at the repository root");
+    // Three labelled lines: Rule, Applies to, Saved in.
+    expect([...rule.querySelectorAll("dt")].map((term) => term.textContent)).toEqual([
+      "Rule",
+      "Applies to",
+      "Saved in",
+    ]);
+    expect(screen.getByTestId("approval-always-rule-text").textContent).toBe(
+      "Allow Bash(git push:*)",
+    );
+    expect(screen.getByTestId("approval-always-applies").textContent).toMatch(
+      /^This repository: the main checkout and all its worktrees/,
+    );
+    expect(screen.getByTestId("approval-always-saved").textContent).toBe(
+      ".claude/settings.local.json at the repository root",
+    );
     // Back leaves it unsaved; Deny is still one click.
     fireEvent.click(screen.getByTestId("approval-always-back"));
     expect(screen.queryByTestId("approval-always-rules")).toBeNull();
@@ -460,6 +477,46 @@ describe("ApprovalCard", () => {
         scope: "always",
       }),
     );
+    // The receipt says the scope that was chosen: the rule, how far it reaches and where it is kept.
+    await waitFor(() =>
+      expect(useApprovalReceipts.getState().byThread[T]).toMatchObject({
+        decision: "always",
+        label: "Always allowed",
+        subject: "Bash(git push:*)",
+        scope: "This repository · saved in .claude/settings.local.json at the repository root",
+      }),
+    );
+  });
+
+  it("says Allowed once, or Denied, as its receipt", async () => {
+    const { api } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <ApprovalCard threadId={T} request={approval} active={false} />
+      </ApiProvider>,
+    );
+    fireEvent.click(screen.getByTestId("approval-allow"));
+    await waitFor(() =>
+      expect(useApprovalReceipts.getState().byThread[T]).toMatchObject({
+        decision: "once",
+        label: "Allowed once",
+      }),
+    );
+    expect(useApprovalReceipts.getState().byThread[T]?.scope).toBeUndefined();
+  });
+
+  it("opens on the always preview where the Inbox's Always allow this rule… led", () => {
+    const { api, respond } = fakeApi();
+    render(
+      <ApiProvider api={api}>
+        <AlwaysPreviewRequestCards>
+          <ApprovalCard threadId={T} request={approval} active={false} />
+        </AlwaysPreviewRequestCards>
+      </ApiProvider>,
+    );
+    expect(screen.getByTestId("approval-always-rules")).toBeTruthy();
+    expect(screen.getByTestId("approval-always").textContent).toContain("Always allow this rule");
+    expect(respond).not.toHaveBeenCalled();
   });
 
   it("ignores the keyboard when not active and hides Allow always without suggestions", () => {

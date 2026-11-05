@@ -29,8 +29,8 @@ test("an agent's request for a new host asks once, and Always lists it under Age
   const card = page.getByTestId("approval-card");
   await expect(card).toContainText(`Let the agent open ${HOST} in the Preview pane?`);
   await expect(card).toContainText("Settings → Agent may browse");
-  // "Always allow…" shows the host and where it is kept before it saves anything.
-  await card.getByRole("button", { name: /^Always allow…/ }).click();
+  // "Always allow this rule…" shows the host and where it is kept before it saves anything.
+  await card.getByRole("button", { name: /^Always allow this rule…/ }).click();
   await expect(card.getByTestId("approval-always-rule")).toContainText(HOST);
   await expect(card.getByTestId("approval-always-rule")).toContainText("Agent may browse");
   expect(await page.evaluate(() => window.gramMock?.agentBrowseHosts)).toEqual([]);

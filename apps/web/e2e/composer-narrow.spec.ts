@@ -59,9 +59,12 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await expect(tooltip).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // Speed at the CLI's default keeps its slot, as its glyph; nothing waits in "…".
+  // Speed at the CLI's default keeps its slot, named with its value (its word shows when the row
+  // has room, and is the first to go short of it); nothing waits in "…".
   const more = toolbar.getByRole("button", { name: "More composer controls" });
-  await expect(toolbar.getByRole("combobox", { name: /^Speed/ })).toBeVisible();
+  const speed = toolbar.getByRole("combobox", { name: /^Speed/ });
+  await expect(speed).toBeVisible();
+  await expect(speed).toHaveAccessibleName("Speed: Default");
   await expect(more).toHaveCount(0);
 
   // Short of room, the model's name goes compact first; the others keep their words.

@@ -400,7 +400,7 @@ export function PreviewPane({ threadId }: { threadId: ThreadId }) {
                 variant="outline"
                 onClick={() => bridge?.reload(threadId)}
               >
-                Try again
+                Retry
               </Button>
             </div>
           )

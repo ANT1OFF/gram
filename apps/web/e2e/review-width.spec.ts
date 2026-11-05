@@ -155,27 +155,32 @@ test("Wrap lines and Ignore whitespace change the diff and are remembered", asyn
   await expect(clock.locator('tr[data-kind="add"]')).toHaveCount(2);
   await expect(clock.getByTestId("patch")).toHaveAttribute("data-wrap", "false");
 
-  const wrap = diff.getByRole("button", { name: "Wrap lines" });
-  const ignore = diff.getByRole("button", { name: "Ignore whitespace" });
+  // Both sit in the one labelled View menu, which stays open while its checks change.
+  await diff.getByRole("button", { name: /^View/ }).click();
+  const wrap = page.getByRole("menuitemcheckbox", { name: "Wrap lines" });
+  const ignore = page.getByRole("menuitemcheckbox", { name: "Ignore whitespace" });
   await wrap.click();
-  await expect(wrap).toHaveAttribute("aria-pressed", "true");
+  await expect(wrap).toHaveAttribute("aria-checked", "true");
   await expect(clock.getByTestId("patch")).toHaveAttribute("data-wrap", "true");
   await ignore.click();
-  await expect(ignore).toHaveAttribute("aria-pressed", "true");
+  await expect(ignore).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
   // The re-indented line is context now.
   await expect(clock.locator('tr[data-kind="add"]')).toHaveCount(1);
   await expect(clock.locator('tr[data-kind="del"]')).toHaveCount(1);
 
   await page.reload();
   const again = page.getByTestId("diff-panel");
-  await expect(again.getByRole("button", { name: "Wrap lines" })).toHaveAttribute(
-    "aria-pressed",
+  await again.getByRole("button", { name: /^View/ }).click();
+  await expect(page.getByRole("menuitemcheckbox", { name: "Wrap lines" })).toHaveAttribute(
+    "aria-checked",
     "true",
   );
-  await expect(again.getByRole("button", { name: "Ignore whitespace" })).toHaveAttribute(
-    "aria-pressed",
+  await expect(page.getByRole("menuitemcheckbox", { name: "Ignore whitespace" })).toHaveAttribute(
+    "aria-checked",
     "true",
   );
+  await page.keyboard.press("Escape");
   const reloaded = again.locator('[data-testid="diff-file"][data-path="src/clock.ts"]');
   await reloaded.locator("[data-diff-file-header]").click();
   await expect(reloaded.locator('tr[data-kind="add"]')).toHaveCount(1);

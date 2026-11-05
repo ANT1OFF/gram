@@ -24,7 +24,7 @@ import {
   useWorkerQuestionActions,
 } from "@/orchestration/question-entry";
 import { useThreadsStore } from "@/stores/threads";
-import { RequestCards, SheetRequestCards } from "@/thread/request-cards";
+import { AlwaysPreviewRequestCards, RequestCards, SheetRequestCards } from "@/thread/request-cards";
 import { WaitingItemRow } from "@/thread/waiting-tray";
 
 import { InboxContext } from "./inbox-context";
@@ -105,7 +105,16 @@ function WorkerQuestionFull({ worker }: { worker: NonNullable<Ask["worker"]> }) 
 }
 
 /** An ask read in full: its own card, answered through its own path. */
-function AskInFull({ ask, orchestratorId }: { ask: Ask; orchestratorId: ThreadId | undefined }) {
+function AskInFull({
+  ask,
+  orchestratorId,
+  always,
+}: {
+  ask: Ask;
+  orchestratorId: ThreadId | undefined;
+  /** Opened by "Always allow this rule…": the card starts on what it would keep. */
+  always: boolean;
+}) {
   if (ask.memory !== undefined) {
     return <MemoryQuestionFull memory={ask.memory} orchestratorId={orchestratorId} />;
   }
@@ -113,11 +122,12 @@ function AskInFull({ ask, orchestratorId }: { ask: Ask; orchestratorId: ThreadId
   // A request is answered by its own card, the one its thread shows.
   const first = ask.group?.entries[0];
   if (first === undefined) return null;
-  return (
+  const cards = (
     <SheetRequestCards>
       <RequestCards threadId={first.threadId} requests={[first.request]} focused={false} />
     </SheetRequestCards>
   );
+  return always ? <AlwaysPreviewRequestCards>{cards}</AlwaysPreviewRequestCards> : cards;
 }
 
 /**
@@ -130,7 +140,7 @@ function AskInPlace({
 }: {
   ask: Ask;
   /** An option that opens the ask in full: the pane draws its card instead. */
-  onFull: () => void;
+  onFull: (option: AskOption) => void;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -149,7 +159,7 @@ function AskInPlace({
   const send = (done: string, action: SendAction) => holdAnswer(api, ask, done, action, onMemory);
   const choose = (option: AskOption) => {
     const { action } = option;
-    if (action.kind === "open" || action.kind === "board") return onFull();
+    if (action.kind === "open" || action.kind === "board") return onFull(option);
     setPicked(undefined);
     send(option.done, action);
   };
@@ -206,6 +216,7 @@ function AskInPlace({
 function AskDetail({ item }: { item: NeedsYouItem }) {
   const ask = item.ask!;
   const [full, setFull] = useState(() => answersInFull(ask));
+  const [always, setAlways] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const orchestratorId = useDerivedAsks(
     (s) => s.asks.find((w) => w.workspaceId === item.workspaceId)?.orchestratorThreadId,
@@ -215,10 +226,16 @@ function AskDetail({ item }: { item: NeedsYouItem }) {
   return (
     <div ref={root} data-testid="inbox-ask" data-full={full || undefined}>
       {full ? (
-        <AskInFull ask={ask} orchestratorId={orchestratorId} />
+        <AskInFull ask={ask} orchestratorId={orchestratorId} always={always} />
       ) : (
         <>
-          <AskInPlace ask={ask} onFull={() => setFull(true)} />
+          <AskInPlace
+            ask={ask}
+            onFull={(option) => {
+              setAlways(option.action.kind === "open" && option.action.always === true);
+              setFull(true);
+            }}
+          />
           {/* A question's own card: an answer in words too ("Other…"), and its answer row kept in
               sight however long it runs. */}
           {(ask.memory !== undefined || ask.worker !== undefined) && ask.options.length > 0 && (

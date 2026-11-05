@@ -192,7 +192,7 @@ test("nothing asked: the empty field says what is going on", async ({ page }) =>
   await page.getByTestId("titlebar-overflow").click();
   await page.getByTestId("menu-view").click();
   await page.getByTestId("folded-quiet").click();
-  await expect(quiet(page).getByTestId("quiet-empty")).toContainText("Nothing needs you.");
+  await expect(quiet(page).getByTestId("quiet-empty")).toContainText("Nothing needs you");
   await expect(quiet(page).getByTestId("quiet-summary")).toHaveText(/workers? (is|are) busy\./);
   await quiet(page).getByTestId("quiet-menu").click();
   // No workspaces in this seed, so nothing to pause: the menu is New task and Settings.

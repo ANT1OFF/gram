@@ -198,7 +198,7 @@ function IdleMinutesField({
       htmlFor="settings-idle-minutes"
       onReset={onReset}
       error={invalid ?? saveError}
-      status={dirty ? <SaveHint id={hintId} /> : undefined}
+      hint={dirty ? <SaveHint id={hintId} /> : undefined}
       undoKey={IDLE_MINUTES_ID}
     >
       <span className="flex items-center gap-1.5">

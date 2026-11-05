@@ -341,22 +341,27 @@ const renderSpeed = (
 };
 
 describe("AgentFields speed", () => {
-  it("keeps Speed's slot in the prompt box, as its glyph, while there is nothing to pick", async () => {
+  it("keeps Speed's slot in the prompt box, its value in a word, while there is nothing to pick", async () => {
     // The CLI decides, though Fast is there: the slot stays, so the row reads as a thread's does.
     renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
-    const decides = await screen.findByRole("combobox", { name: "Speed: CLI default" });
-    expect(decides.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
+    const decides = await screen.findByRole("combobox", { name: "Speed: Default" });
+    expect(decides.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
+    expect(decides.textContent).toContain("Default");
     cleanup();
     // Standard is all the model offers.
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard"], true);
     expect(await screen.findByRole("combobox", { name: "Speed: Standard" })).toBeTruthy();
   });
 
-  it("shows Speed in the prompt box with Fast to pick, and always outside it", async () => {
+  it("says Speed's value in the prompt box as effort and mode do, and in full outside it", async () => {
+    const user = userEvent.setup();
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard", "fast"], true);
-    // In the prompt box Speed is its glyph alone, as in a thread's composer.
-    const glyph = await screen.findByRole("combobox", { name: "Speed: Standard" });
-    expect(glyph.querySelector("[data-toolbar-label]")?.className).toContain("sr-only");
+    // A short value with room, as the model, effort and mode show theirs; the category on hover.
+    const speed = await screen.findByRole("combobox", { name: "Speed: Standard" });
+    expect(speed.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
+    expect(speed.querySelector("[data-toolbar-label]")?.textContent).toBe("Standard");
+    await user.hover(speed);
+    expect(await screen.findByText("Speed: Standard")).toBeTruthy();
     cleanup();
     renderSpeed({ agent: "claude", model: "m" }, ["standard"], false);
     expect((await screen.findByLabelText("Speed")).textContent).toContain("CLI default");

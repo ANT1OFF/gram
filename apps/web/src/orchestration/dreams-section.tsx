@@ -27,7 +27,6 @@ import { choiceFromModel } from "@/composer/default-choice";
 import { QueryError } from "@/components/not-available";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useModelNames } from "@/composer/models";
-import { EXPLAIN } from "@/lib/explain";
 import { agoText, formatDay } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -54,6 +53,7 @@ import {
   dreamKindLabel,
   dreamStatus,
   mergeable,
+  orderDreams,
   presentFileStatus,
   PER_REPO_DEFAULT,
   PER_REPO_MAX,
@@ -563,7 +563,7 @@ function MergeStatus({
         <span className="min-w-0 flex-1">{error ?? merge?.error ?? "The merge failed."}</span>
         <Button size="xs" variant="ghost" data-testid="dream-merge-again" onClick={onMerge}>
           <RotateCcw data-icon="inline-start" />
-          Try again
+          Retry
         </Button>
       </p>
     );
@@ -1065,20 +1065,17 @@ function Review({
 }
 
 /**
- * One run as a card: its state and when, then where it reads from, where its result goes and what
- * ran it, and one primary next action (watch it, review it, or open its thread), the rest quieter.
+ * One run as a card: its state and when, then what it read and what ran it on one line, and one
+ * primary next action (review it, watch it, or open its thread), the rest quieter.
  */
 function DreamRow({
   dream,
-  workspaceName,
   now,
   reviewing,
   onReview,
   children,
 }: {
   dream: Dream;
-  /** Whose memory the run updates. */
-  workspaceName: string;
   now: number;
   reviewing: boolean;
   onReview: () => void;
@@ -1136,25 +1133,18 @@ function DreamRow({
           {dream.endedAt !== undefined && ` · ended ${agoText(dream.endedAt, now)}`}
         </span>
       </div>
-      <dl data-testid="dream-facts" className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-body">
-        <dt className="text-muted-foreground">Source</dt>
-        <dd className="min-w-0">{dreamKindLabel(dream)}</dd>
-        <dt className="text-muted-foreground">Destination</dt>
-        <dd className="min-w-0">
-          {workspaceName} memory ·{" "}
-          {dream.mode === "auto" ? "saved if it checks out" : "you review it"}
-        </dd>
-        <dt className="text-muted-foreground">Agent</dt>
-        <dd className="min-w-0">
-          {agentLabel(dream.model.agent)} · {nameOf(dream.model)}
-          {showCost && dream.usage?.costUsd !== undefined && (
-            <span data-testid="dream-cost" className="text-muted-foreground tabular-nums">
-              {" "}
-              · {usd(dream.usage.costUsd)}
-            </span>
-          )}
-        </dd>
-      </dl>
+      {/* What differs from run to run: what it read, what ran it, and an Auto run's own rule. Where
+          it lands, this workspace's memory, is said once above the list. */}
+      <p data-testid="dream-facts" className="text-body text-description">
+        {dreamKindLabel(dream)} · {agentLabel(dream.model.agent)} · {nameOf(dream.model)}
+        {dream.mode === "auto" && " · saved if it checks out"}
+        {showCost && dream.usage?.costUsd !== undefined && (
+          <span data-testid="dream-cost" className="tabular-nums">
+            {" "}
+            · {usd(dream.usage.costUsd)}
+          </span>
+        )}
+      </p>
       {failure !== undefined && (
         <p
           data-testid="dream-failure"
@@ -1250,13 +1240,26 @@ function DreamRow({
 
 /**
  * Whether the next run's result waits for your review or is adopted once it validates: a choice
- * for that run alone, beside the actions that start one.
+ * for that run alone, on one line in the summary beside the actions that start one.
  */
-function ModeChoice({ mode, onChange }: { mode: DreamMode; onChange: (mode: DreamMode) => void }) {
+function ModeChoice({
+  mode,
+  labelledBy,
+  onChange,
+}: {
+  mode: DreamMode;
+  /** The summary's term for it, "When this update is ready". */
+  labelledBy: string;
+  onChange: (mode: DreamMode) => void;
+}) {
   const name = useId();
   return (
-    <fieldset data-testid="dream-mode" className="flex flex-col gap-1.5 text-body">
-      <legend className="mb-1 font-medium">When this update is ready</legend>
+    <div
+      role="radiogroup"
+      aria-labelledby={labelledBy}
+      data-testid="dream-mode"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1"
+    >
       <label className="flex items-center gap-1.5">
         <input
           type="radio"
@@ -1279,7 +1282,52 @@ function ModeChoice({ mode, onChange }: { mode: DreamMode; onChange: (mode: Drea
         />
         Save it if it checks out
       </label>
-    </fieldset>
+    </div>
+  );
+}
+
+/** A heading and its runs, as cards, each with its review open under it when it is the one open. */
+function RunList({
+  testId,
+  title,
+  dreams,
+  now,
+  reviewing,
+  onReview,
+  review,
+}: {
+  testId: string;
+  title: string;
+  dreams: readonly Dream[];
+  now: number;
+  reviewing: DreamId | undefined;
+  onReview: (dream: DreamId | undefined) => void;
+  review: (dream: DreamId) => ReactNode;
+}) {
+  return (
+    <div data-testid={testId} className="flex flex-col gap-2.5">
+      <h3 className="text-body-strong">
+        {title}
+        <span className="ms-1.5 font-normal text-muted-foreground tabular-nums">
+          {dreams.length}
+        </span>
+      </h3>
+      <ul className="flex flex-col gap-2.5">
+        <PresenceList>
+          {dreams.map((dream) => (
+            <DreamRow
+              key={dream.id}
+              dream={dream}
+              now={now}
+              reviewing={reviewing === dream.id}
+              onReview={() => onReview(reviewing === dream.id ? undefined : dream.id)}
+            >
+              {reviewing === dream.id && review(dream.id)}
+            </DreamRow>
+          ))}
+        </PresenceList>
+      </ul>
+    </div>
   );
 }
 
@@ -1328,29 +1376,72 @@ export function DreamsSection({
   // Review or Auto for the next run, chosen beside its action.
   const [mode, setMode] = useState<DreamMode>("review");
 
+  const { ready, rest } = orderDreams(dreams.data ?? []);
+  const modeLabel = useId();
+  const reviewOf = (dream: DreamId) => (
+    <Review
+      key={dream}
+      workspaceId={workspaceId}
+      dreamId={dream}
+      onClose={() => review(undefined)}
+    />
+  );
+
   return (
     <section ref={ref} aria-label="Dreams" data-testid="dreams" className="flex flex-col gap-5">
+      {/* What waits on you comes first: a finished draft to review, ahead of starting another. */}
+      {ready.length > 0 && (
+        <RunList
+          testId="dream-ready"
+          title="Ready to review"
+          dreams={ready}
+          now={now}
+          reviewing={reviewing}
+          onReview={review}
+          review={reviewOf}
+        />
+      )}
       <div
         data-testid="dream-form"
         className="flex max-w-2xl flex-col gap-3 rounded-(--radius-md) border border-edge bg-card px-4 py-3.5"
       >
         <h2 className="text-body-strong">Draft memory update</h2>
         <p className="max-w-(--description-measure) text-body text-pretty text-description">
-          Dreams: {EXPLAIN.dreams} One runs at a time.
+          Gram rereads finished threads and drafts changes to memory, each with its source. Memory
+          changes only when a draft is adopted.
         </p>
-        <ModeChoice mode={mode} onChange={setMode} />
-        <p
-          role="status"
-          data-testid="dream-mode-note"
-          className="max-w-(--description-measure) text-body text-pretty text-description"
+        {/* Scope and adoption, once for every run: where it lands, how it is adopted, how it runs. */}
+        <dl
+          data-testid="dream-summary"
+          className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-body"
         >
-          {mode === "auto"
-            ? "This update is saved to memory without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore. The agent still keeps to its sandbox and asks before anything it would normally ask about."
-            : "Memory changes only after you review the draft and adopt it. The agent still keeps to its sandbox and asks before anything it would normally ask about."}
-        </p>
+          <dt className="text-muted-foreground">Updates</dt>
+          <dd className="min-w-0">{state.workspace.name} memory</dd>
+          <dt id={modeLabel} className="text-muted-foreground">
+            When this update is ready
+          </dt>
+          <dd className="flex min-w-0 flex-col gap-1">
+            <ModeChoice mode={mode} labelledBy={modeLabel} onChange={setMode} />
+            <p
+              role="status"
+              data-testid="dream-mode-note"
+              className="max-w-(--description-measure) text-pretty text-description"
+            >
+              {mode === "auto"
+                ? "Saved without another review or approval. If memory changed meanwhile, or the draft is invalid or can't be stored, nothing is saved. Earlier versions stay under History to restore."
+                : "Memory changes only after you review the draft and adopt it."}
+            </p>
+          </dd>
+          <dt className="text-muted-foreground">Runs</dt>
+          <dd data-testid="dream-runs-rule" className="min-w-0 text-description">
+            One at a time, in the agent's sandbox; it asks before anything it would normally ask
+            about.
+          </dd>
+        </dl>
         <div data-testid="dream-actions" className="flex flex-wrap gap-2">
           <Button
             size="sm"
+            variant={ready.length > 0 ? "outline" : "default"}
             data-testid="dream-now"
             disabled={running}
             title={running ? "One run per workspace at a time" : undefined}
@@ -1417,32 +1508,18 @@ export function DreamsSection({
           for you to review.
         </p>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          <h3 className="text-body-strong">Drafted updates</h3>
-          <ul className="flex flex-col gap-2.5">
-            <PresenceList>
-              {dreams.data.map((dream) => (
-                <DreamRow
-                  key={dream.id}
-                  dream={dream}
-                  workspaceName={state.workspace.name}
-                  now={now}
-                  reviewing={reviewing === dream.id}
-                  onReview={() => review(reviewing === dream.id ? undefined : dream.id)}
-                >
-                  {reviewing === dream.id && (
-                    <Review
-                      key={reviewing}
-                      workspaceId={workspaceId}
-                      dreamId={reviewing}
-                      onClose={() => review(undefined)}
-                    />
-                  )}
-                </DreamRow>
-              ))}
-            </PresenceList>
-          </ul>
-        </div>
+        rest.length > 0 && (
+          // Running, failed and adopted runs: the history under what waits on you.
+          <RunList
+            testId="dream-history"
+            title={ready.length > 0 ? "Other runs" : "Runs"}
+            dreams={rest}
+            now={now}
+            reviewing={reviewing}
+            onReview={review}
+            review={reviewOf}
+          />
+        )
       )}
       {/* A review of a run the list doesn't hold (yet), such as one opened from its thread. */}
       {reviewing !== undefined && !(dreams.data ?? []).some((dream) => dream.id === reviewing) && (
