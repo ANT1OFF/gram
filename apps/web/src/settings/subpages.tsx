@@ -43,7 +43,7 @@ export function SubpageRow({
           {badge}
         </span>
         {description !== undefined && (
-          <span className="text-xs text-muted-foreground">{description}</span>
+          <span className="text-meta text-muted-foreground">{description}</span>
         )}
       </span>
       <span className="ms-auto shrink-0 text-muted-foreground tabular-nums">{summary}</span>

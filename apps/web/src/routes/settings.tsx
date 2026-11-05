@@ -213,7 +213,7 @@ function PageSection({
         {...(page.keywords ? { keywords: page.keywords } : {})}
         aria-labelledby={titleId}
         data-settings-page={page.path}
-        className="flex flex-col gap-6 text-sm"
+        className="flex flex-col gap-6 text-reading"
       >
         <header className={cn("flex items-start gap-3", subpage && !searching && "hidden")}>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -221,7 +221,7 @@ function PageSection({
               <Link
                 to={group.path}
                 data-testid="settings-subpage-back"
-                className="inline-flex w-fit items-center gap-0.5 rounded-sm text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="inline-flex w-fit items-center gap-0.5 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 <ChevronLeft aria-hidden className="size-3.5" />
                 {group.label}
@@ -229,7 +229,7 @@ function PageSection({
             )}
             <h2
               id={titleId}
-              className="flex items-center gap-1.5 font-heading text-xl font-semibold tracking-tight"
+              className="flex items-center gap-1.5 font-heading text-heading tracking-tight"
             >
               {searching ? (
                 <Link

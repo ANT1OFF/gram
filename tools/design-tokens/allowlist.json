@@ -642,11 +642,6 @@
     "apps/web/src/routes/index.tsx": {
       "text-size text-sm": 1
     },
-    "apps/web/src/routes/settings.tsx": {
-      "text-size text-sm": 1,
-      "text-size text-xl": 1,
-      "text-size text-xs": 1
-    },
     "apps/web/src/scripts/project-scripts-editor.tsx": {
       "text-size text-[10px]": 1,
       "text-size text-[11px]": 1,
@@ -698,9 +693,6 @@
     "apps/web/src/settings/custom-shell-field.tsx": {
       "text-size text-xs": 1
     },
-    "apps/web/src/settings/diagnostics-section.tsx": {
-      "text-size text-xs": 2
-    },
     "apps/web/src/settings/dictate-key-row.tsx": {
       "radius rounded": 1,
       "text-size text-xs": 2
@@ -734,11 +726,6 @@
       "text-size text-[11px]": 2,
       "text-size text-sm": 2,
       "text-size text-xs": 5
-    },
-    "apps/web/src/settings/local-helper-settings.tsx": {
-      "radius rounded": 1,
-      "text-size text-sm": 1,
-      "text-size text-xs": 7
     },
     "apps/web/src/settings/merge-review-policy-field.tsx": {
       "text-size text-xs": 6
@@ -787,12 +774,6 @@
     },
     "apps/web/src/settings/settings-group.tsx": {
       "text-size text-[0.9375rem]": 1
-    },
-    "apps/web/src/settings/settings-nav.tsx": {
-      "spacing ms-[1.1875rem]": 1,
-      "text-size text-[0.8125rem]": 1,
-      "text-size text-base": 1,
-      "text-size text-sm": 1
     },
     "apps/web/src/settings/storage-page.tsx": {
       "radius rounded": 1,

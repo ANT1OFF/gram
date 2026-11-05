@@ -62,13 +62,13 @@ export function SettingsNav({
       <h1
         ref={headingRef}
         tabIndex={-1}
-        className="mb-2 px-2 font-heading text-base font-medium outline-none @max-2xl/settings:mb-0 @max-2xl/settings:shrink-0"
+        className="mb-2 px-2 font-heading text-title outline-none @max-2xl/settings:mb-0 @max-2xl/settings:shrink-0"
       >
         Settings
       </h1>
       {search}
       <SectionPicker groups={groups} current={current} onNavigate={onNavigate} />
-      <ul className="flex flex-col gap-0.5 text-sm @max-2xl/settings:hidden">
+      <ul className="flex flex-col gap-0.5 text-reading @max-2xl/settings:hidden">
         {groups.map((group) => {
           const Icon = group.icon;
           const open = group.id === current;
@@ -162,7 +162,7 @@ function SubpageLinks({
     <ul
       aria-label={`More in ${label}`}
       data-testid="settings-nav-subpages"
-      className="mt-0.5 mb-1 ms-[1.1875rem] flex flex-col border-s border-border/70 ps-1.5"
+      className="mt-0.5 mb-1 ms-5 flex flex-col border-s border-border/70 ps-1.5"
     >
       {pages.map((page) => (
         <li key={page.id}>
@@ -170,7 +170,7 @@ function SubpageLinks({
             to={page.path}
             aria-current={page.id === current ? "page" : undefined}
             onClick={onNavigate}
-            className="block rounded-md px-2 py-0.5 text-[0.8125rem] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
+            className="block rounded-md px-2 py-0.5 text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
           >
             {page.label}
           </Link>
@@ -190,7 +190,7 @@ function SectionLinks({ sections }: { sections: readonly SettingsAnchor[] }) {
     <ul
       aria-label="On this page"
       data-testid="settings-page-sections"
-      className="mt-0.5 mb-1 ms-[1.1875rem] flex flex-col border-s border-border/70 ps-1.5"
+      className="mt-0.5 mb-1 ms-5 flex flex-col border-s border-border/70 ps-1.5"
     >
       {sections.map((section) => (
         <li key={section.id}>
@@ -202,7 +202,7 @@ function SectionLinks({ sections }: { sections: readonly SettingsAnchor[] }) {
               document.getElementById(section.id)?.scrollIntoView({ block: "start" });
               pick(section.id);
             }}
-            className="block rounded-md px-2 py-0.5 text-[0.8125rem] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=location]:text-foreground"
+            className="block rounded-md px-2 py-0.5 text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=location]:text-foreground"
           >
             {section.label}
           </a>

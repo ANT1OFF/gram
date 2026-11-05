@@ -104,7 +104,7 @@ export function DiagnosticsSection() {
           error={error}
           detail={
             status && (
-              <p role="status" className="text-xs text-muted-foreground">
+              <p role="status" className="text-meta text-muted-foreground">
                 {status}
               </p>
             )
@@ -148,7 +148,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-8">
       <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-mono text-xs break-all">{value}</span>
+      <span className="text-right font-mono text-meta break-all">{value}</span>
     </div>
   );
 }

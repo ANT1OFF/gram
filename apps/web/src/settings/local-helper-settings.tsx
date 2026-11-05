@@ -118,7 +118,7 @@ export function LocalHelperSettings({
         detail={
           // The last attempt, or why a refresh failed; nothing to add before either.
           retryError !== undefined || status?.lastOutcome !== undefined ? (
-            <p role="status" className="text-xs text-muted-foreground">
+            <p role="status" className="text-meta text-muted-foreground">
               {retryError ?? `Last attempt: ${status?.lastOutcome}`}
             </p>
           ) : undefined
@@ -182,7 +182,7 @@ export function LocalHelperSettings({
         resetOf={resetOf}
         main={false}
       />
-      <p {...{ [LONG_COPY]: "privacy notice" }} className="text-xs text-muted-foreground">
+      <p {...{ [LONG_COPY]: "privacy notice" }} className="text-meta text-muted-foreground">
         Claude is tool-free; Codex uses guided generation with residual native tools and CLI host
         context. Helpers use Standard speed and redact keys from supplied context. Provider data
         policies and subscription limits apply. Gateway helpers require a separate explicit choice
@@ -269,7 +269,7 @@ function LocalProviderRows({
         onReset={resetOf(modelKey)}
         detail={
           <div className="flex flex-col gap-2" data-testid={`${provider}-helper-pick`}>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-meta text-muted-foreground">
               <span
                 className={cn(
                   (unavailable ||
@@ -288,7 +288,7 @@ function LocalProviderRows({
                 <TooltipTrigger
                   aria-label={`${name} helper information`}
                   aria-describedby={informationId}
-                  className="shrink-0 rounded p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="shrink-0 rounded-2xs p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Info aria-hidden className="size-3.5" />
                 </TooltipTrigger>
@@ -299,7 +299,7 @@ function LocalProviderRows({
               </Tooltip>
             </div>
             {provider === "codex" && (
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-meta leading-relaxed text-muted-foreground">
                 Guided generation uses your Codex subscription with no environment. Residual native
                 tools and CLI host instructions/skills may still participate.
               </p>
