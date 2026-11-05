@@ -208,6 +208,10 @@ for (const mode of ["dark", "light"] as const) {
     const made = await start(page, mode);
     await seedPrs(page, made);
     const overview = page.getByTestId("overview-sidebar");
+    // A row's chips sit beside its status words only where they fit (the words win), so the
+    // overview is given room to show every chip read here.
+    await page.getByTestId("left-resize").focus();
+    for (let i = 0; i < 12; i++) await page.keyboard.press("ArrowRight");
     const chips = overview.locator(
       `[data-testid="overview-pr-chips"][data-thread-id="${made.live}"] [data-testid="overview-pr-chip"]`,
     );
