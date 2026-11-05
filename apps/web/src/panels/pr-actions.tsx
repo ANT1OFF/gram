@@ -270,18 +270,20 @@ export function PrActions({
                 Ready for review
               </Button>
             ) : (
-              // Blocked, Merge steps back to a secondary button described by the blockers above; it
-              // still opens, for auto-merge or a merge the panel can't foresee GitHub allowing.
+              // Blocked, Merge steps back to a secondary button that says so, "Merge blocked · 3
+              // reasons…", described by the blockers above; it still opens, for auto-merge or a
+              // merge the panel can't foresee GitHub allowing.
               <Button
                 size="xs"
                 variant={blocked === undefined ? "default" : "outline"}
                 aria-describedby={blocked === undefined ? undefined : reasonId}
                 data-blocked={blocked !== undefined}
+                data-testid="pr-merge"
                 disabled={action.pending}
                 onClick={() => setConfirming("merge")}
               >
                 <GitMerge aria-hidden />
-                Merge…
+                {summary === undefined ? "Merge…" : `Merge blocked · ${summary.count}…`}
               </Button>
             )}
           </div>
@@ -293,6 +295,7 @@ export function PrActions({
         <MergeDialog
           threadId={threadId}
           detail={detail}
+          blocked={summary}
           pending={action.pending}
           notice={action.notice}
           onClose={() => setConfirming(undefined)}
@@ -380,6 +383,7 @@ export function UpdateBranch({
 function MergeDialog({
   threadId,
   detail,
+  blocked,
   pending,
   notice,
   onClose,
@@ -391,6 +395,8 @@ function MergeDialog({
   notice: NoticeState | undefined;
   onClose: () => void;
   onMerge: (strategy: MergeStrategy, auto: boolean) => void;
+  /** What blocks the merge, as the panel's summary counts it; the dialog says so too. */
+  blocked?: { readonly count: string; readonly categories: string } | undefined;
 }) {
   const api = useApi();
   const options = useQuery({
@@ -412,6 +418,18 @@ function MergeDialog({
       description={detail.title}
       onClose={onClose}
     >
+      {blocked !== undefined && (
+        <p
+          data-testid="pr-merge-dialog-blocked"
+          className="flex min-w-0 items-baseline gap-1.5 text-reading"
+        >
+          <Ban aria-hidden className="size-icon-row shrink-0 self-center" />
+          <span className="shrink-0 font-medium">Merge blocked</span>{" "}
+          <span className="min-w-0 text-muted-foreground">
+            · {blocked.count}: {blocked.categories}
+          </span>
+        </p>
+      )}
       {options.isPending ? (
         <p className="text-meta text-muted-foreground">Loading merge options…</p>
       ) : options.isError ? (

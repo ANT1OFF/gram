@@ -40,8 +40,8 @@ test("the PR overview leads with what blocks the merge and one next step", async
   await expect(reasons.first()).toHaveText("test (windows) failing");
   await expect(reasons.nth(1)).toHaveText("Changes requested by reviewer");
   const actions = panel.getByTestId("pr-actions").getByRole("button");
-  await expect(actions).toHaveText(["Inspect test (windows) job", "Merge…"]);
-  await expect(panel.getByRole("button", { name: "Merge…" })).toHaveAttribute(
+  await expect(actions).toHaveText(["Inspect test (windows) job", "Merge blocked · 3 reasons…"]);
+  await expect(panel.getByTestId("pr-merge")).toHaveAttribute(
     "aria-describedby",
     (await blocked.getAttribute("id"))!,
   );
@@ -88,7 +88,7 @@ test("rerun failed checks, then squash-merge the PR from the panel", async ({ pa
   );
   await expect(checks.getByRole("button", { name: "Rerun failed" })).toHaveCount(0);
 
-  await panel.getByRole("button", { name: "Merge…" }).click();
+  await panel.getByTestId("pr-merge").click();
   const dialog = page.getByTestId("pr-merge-dialog");
   await expect(dialog).toContainText("Merge #412 into main?");
   await expect(dialog.getByRole("radio", { name: "Squash and merge" })).toBeChecked();

@@ -19,13 +19,16 @@ vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => {} }));
 
 const THREAD = "t-steer" as ThreadId;
 
-const setup = ({ steers = true }: { steers?: boolean } = {}) => {
+const setup = ({
+  steers = true,
+  status = "running",
+}: { steers?: boolean; status?: "running" | "needsApproval" | "needsInput" } = {}) => {
   // Invented provider/CLI discovery and an explicitly accepted synthetic session, never host auth.
   sessionStorage.setItem(MOCK_SESSION_EXPIRED_KEY, "0");
   useThreadsStore.setState({
     byId: {
       [THREAD]: {
-        status: "running",
+        status,
         capabilities: { steer: steers },
         thread: { id: THREAD, checkout: { path: "/work/repo" } },
       },
@@ -245,6 +248,31 @@ describe("Composer steer", () => {
     expect(interrupt).not.toHaveBeenCalled();
     fireEvent.click(stop, { detail: 1 });
     expect(interrupt).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["needsApproval", "needsInput"] as const)(
+    "steps Stop back to an outline, with no turning ring, while the turn waits on you (%s)",
+    (status) => {
+      const { api, textarea } = setup({ status });
+      const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
+      fireEvent.change(textarea, { target: { value: "" } });
+      const stop = screen.getByRole("button", { name: "Stop" });
+      expect(stop.hasAttribute("data-waiting")).toBe(true);
+      expect(stop.className).not.toContain("bg-foreground");
+      expect(screen.queryByTestId("stop-ring")).toBeNull();
+      // It still stops the turn, as before.
+      fireEvent.click(stop, { detail: 1 });
+      expect(interrupt).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("keeps Stop the solid pill, its ring turning, while the turn runs", () => {
+    const { textarea } = setup();
+    fireEvent.change(textarea, { target: { value: "" } });
+    const stop = screen.getByRole("button", { name: "Stop" });
+    expect(stop.hasAttribute("data-waiting")).toBe(false);
+    expect(stop.className).toContain("bg-foreground");
+    expect(screen.getByTestId("stop-ring")).toBeTruthy();
   });
 
   it("turns to Steer while the modifier is down, and back", () => {

@@ -13,16 +13,26 @@ import type { ApprovalReceipt } from "./request-model";
 
 export const RECEIPT_MS = 8000;
 
+/** Which request the receipt answered, and the tool call it held: its row shows the receipt. */
+export interface ReceiptSource {
+  readonly requestId: string;
+  readonly toolUseId: string | undefined;
+}
+
 interface ApprovalReceiptsState {
-  readonly byThread: Readonly<Record<string, ApprovalReceipt & { readonly at: number }>>;
-  show: (threadId: ThreadId, receipt: ApprovalReceipt) => void;
+  readonly byThread: Readonly<
+    Record<string, ApprovalReceipt & Partial<ReceiptSource> & { readonly at: number }>
+  >;
+  show: (threadId: ThreadId, receipt: ApprovalReceipt, source?: ReceiptSource) => void;
   clear: (threadId: ThreadId, at: number) => void;
 }
 
 export const useApprovalReceipts = create<ApprovalReceiptsState>()((set) => ({
   byThread: {},
-  show: (threadId, receipt) =>
-    set((s) => ({ byThread: { ...s.byThread, [threadId]: { ...receipt, at: Date.now() } } })),
+  show: (threadId, receipt, source) =>
+    set((s) => ({
+      byThread: { ...s.byThread, [threadId]: { ...receipt, ...source, at: Date.now() } },
+    })),
   clear: (threadId, at) =>
     set((s) => {
       if (s.byThread[threadId]?.at !== at) return s;

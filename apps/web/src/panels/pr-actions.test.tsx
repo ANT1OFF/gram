@@ -31,7 +31,7 @@ describe("PrActions", () => {
       prMerge,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Merge…" }));
+    fireEvent.click(screen.getByTestId("pr-merge"));
     const dialog = await screen.findByTestId("pr-merge-dialog");
     expect(within(dialog).getByText("Merge #412 into main?")).toBeTruthy();
     expect(
@@ -53,7 +53,7 @@ describe("PrActions", () => {
       prMergeOptions: options(),
       prMerge,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Merge…" }));
+    fireEvent.click(screen.getByTestId("pr-merge"));
     fireEvent.click(
       await screen.findByRole("checkbox", {
         name: "Merge automatically once checks and reviews pass",
@@ -67,7 +67,7 @@ describe("PrActions", () => {
       prMergeOptions: options({ babysit: true }),
       prMerge,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Merge…" }));
+    fireEvent.click(screen.getByTestId("pr-merge"));
     const box = await screen.findByRole<HTMLInputElement>("checkbox");
     expect(box.disabled).toBe(true);
     expect(screen.getByTestId("auto-merge-babysit")).toBeTruthy();
@@ -81,7 +81,7 @@ describe("PrActions", () => {
       prMergeOptions: options(),
       prMerge,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Merge…" }));
+    fireEvent.click(screen.getByTestId("pr-merge"));
     const dialog = await screen.findByTestId("pr-merge-dialog");
     await within(dialog).findByRole("radio", { name: "Squash and merge" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Squash and merge" }));
@@ -181,13 +181,18 @@ describe("PrActions when blocked", () => {
     renderWithApi(<PrActions threadId={T} detail={detail()} merge="blocked" />, {
       prMergeOptions: options(),
     });
-    const merge = screen.getByRole("button", { name: "Merge…" });
+    // The button says the merge is blocked, and by how much, not only "Merge".
+    const merge = screen.getByRole("button", { name: "Merge blocked · 2 reasons…" });
     expect(merge.dataset["blocked"]).toBe("true");
     const reason = screen.getByTestId("pr-merge-blocked");
     expect(reason.textContent).toBe("Merge blocked · 2 reasons: check, changes requested");
     expect(merge.getAttribute("aria-describedby")).toBe(reason.id);
     fireEvent.click(merge);
     await screen.findByTestId("pr-merge-dialog");
+    // And so does the dialog it opens.
+    expect(screen.getByTestId("pr-merge-dialog-blocked").textContent).toBe(
+      "Merge blocked · 2 reasons: check, changes requested",
+    );
   });
 
   it("names each blocker, then leads the action row with the worst one's next step", () => {
@@ -216,7 +221,7 @@ describe("PrActions when blocked", () => {
     const row = within(screen.getByTestId("pr-actions")).getAllByRole("button");
     expect(row.map((button) => button.textContent)).toEqual([
       "Inspect test (windows) job",
-      "Merge…",
+      "Merge blocked · 3 reasons…",
     ]);
     fireEvent.click(row[0]!);
     expect(onBlocker).toHaveBeenCalledWith({
@@ -250,7 +255,7 @@ describe("PrActions when blocked", () => {
       prMergeOptions: options(),
     });
     expect(screen.queryByTestId("pr-next-action")).toBeNull();
-    expect(screen.getByRole("button", { name: "Merge…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merge blocked · 2 reasons…" })).toBeTruthy();
   });
 
   it("keeps Merge primary for a PR nothing blocks", () => {
@@ -260,5 +265,7 @@ describe("PrActions when blocked", () => {
     });
     expect(screen.getByRole("button", { name: "Merge…" }).dataset["blocked"]).toBe("false");
     expect(screen.queryByTestId("pr-merge-blocked")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Merge…" }));
+    expect(screen.queryByTestId("pr-merge-dialog-blocked")).toBeNull();
   });
 });

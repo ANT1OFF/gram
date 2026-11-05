@@ -37,7 +37,10 @@ configured pass.
   keeps working on what doesn't depend on it. The orchestrator answers only when the brief, a
   standing ruling or its memory settles it; otherwise the question reaches you as written.
   Actions your autonomy level holds back wait on an approval card, and changes to Gram's own
-  settings always do. The call's tool row reads "Waiting for your approval" until you answer.
+  settings always do. The call's tool row reads "Waiting for your approval" until you answer,
+  and its card sits right under that row; a card whose row isn't in view waits above the composer.
+  While a turn only waits on you, Stop steps back to an outline and the card's answer is the
+  primary step.
   **Allow once** saves nothing; **Always allow…** first shows the exact rule the agent offered
   and its widest reach as Claude Code applies it: this thread's session, the repository with all
   its worktrees (`.claude/settings.local.json` at the repository root), the project's shared

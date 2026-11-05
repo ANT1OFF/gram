@@ -259,11 +259,11 @@ describe("PrPanel", () => {
     );
     const next = within(panel).getByTestId("pr-next-action");
     expect(next.textContent).toBe("Inspect test (windows) job");
-    // The next step leads the action row, Merge… stepping back beside it.
+    // The next step leads the action row, Merge stepping back beside it and saying it's blocked.
     const row = within(within(panel).getByTestId("pr-actions")).getAllByRole("button");
     expect(row.map((button) => button.textContent)).toEqual([
       "Inspect test (windows) job",
-      "Merge…",
+      "Merge blocked · 2 reasons…",
     ]);
     fireEvent.click(within(panel).getByTestId("pr-manage-toggle"));
     const order = [

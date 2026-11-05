@@ -104,10 +104,15 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   const made = await open(page);
   await openWorker(page, made.asking);
   expect(await isHeld(page, made, made.asking)).toBe(false);
+  // While Take over is offered, a line under the header says what it would change.
+  await expect(page.getByTestId("worker-banner-take-over")).toContainText(
+    "the orchestrator stops messaging it until you hand it back",
+  );
 
   await page.getByTestId("worker-take-over").click();
   await expect(page.getByTestId("worker-hold")).toContainText("Under your control");
   await expect(page.getByTestId("worker-take-over")).toHaveCount(0);
+  await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
   expect(await isHeld(page, made, made.asking)).toBe(true);
   // Nothing was sent to it: its composer is untouched and no message of the user's appeared.
   await expect(composerOf(page, made.asking)).toHaveValue("");

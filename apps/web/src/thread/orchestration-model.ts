@@ -276,6 +276,13 @@ export const workerPauseLine = (pause: WorkerPause, at: number): string => {
 export const WORKER_HELD_LINE =
   "The orchestrator can't message or direct it while it's yours. Hand back returns it to the orchestrator.";
 
+/**
+ * What Take over changes, said under a worker's header while it is offered: who directs the
+ * worker after, and how that ends. A message typed into the worker takes it over the same way.
+ */
+export const WORKER_TAKE_OVER_LINE =
+  "Take over, or send it a message, to direct it yourself: the orchestrator stops messaging it until you hand it back.";
+
 /** When a hold ends without Hand back, for the held line's hint. */
 export const workerHeldEnds = (idleMinutes: number): string =>
   `It also returns by itself at its next report, or ${idleMinutes} minutes after your last message once it's idle.`;

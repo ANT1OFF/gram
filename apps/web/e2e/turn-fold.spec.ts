@@ -99,10 +99,13 @@ test("Stop names its shortcut, and the shortcut stops the turn", async ({ page }
   const approval = page.getByTestId("approval-card");
   await expect(approval).toBeVisible({ timeout: 20_000 });
   const stop = page.getByRole("button", { name: "Stop", exact: true });
-  await expect(page.getByTestId("stop-ring")).toBeVisible();
+  // Only waiting on the approval, nothing runs: Stop steps back to an outline with no turning
+  // ring, and the card's Allow once is the primary step.
+  await expect(stop).toHaveAttribute("data-waiting", "");
+  await expect(page.getByTestId("stop-ring")).toHaveCount(0);
   await stop.hover();
   await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText(
-    /^Stop · keeps the reply so far \((⌘|Ctrl\+)\.\)$/,
+    /^Stop the turn instead of answering \((⌘|Ctrl\+)\.\)$/,
   );
 
   await page.getByLabel("Message", { exact: true }).focus();
