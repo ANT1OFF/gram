@@ -89,13 +89,14 @@ test("the popover heads its columns and shows the credits an agent reports", asy
   await expect(popover.getByTestId("usage-limit-headings")).toHaveText(/Used\s*Resets at/);
   const codex = popover.getByRole("region", { name: "Codex" });
   await expect(codex.getByTestId("usage-provider-credits")).toHaveText("On credits · 1,250 left");
-  // A weekly reset days away carries its date, not just a time that could be today's.
+  // A weekly reset days away carries its date, not just a time that could be today's: the shared
+  // stamp, "8 Nov 07:45".
   await expect(
     popover
       .getByRole("region", { name: "Claude Code" })
       .locator('[data-window="weekly"]')
       .getByTestId("usage-limit-reset"),
-  ).toHaveText(/^[A-Za-z]{3}\D*\d{1,2}\D+\d{2}:\d{2}$/);
+  ).toHaveText(/^\d{1,2} [A-Z][a-z]{2}( \d{4})? \d{2}:\d{2}$/);
 });
 
 test("a workspace sets the share of a limit at which new workers pause", async ({ page }) => {
