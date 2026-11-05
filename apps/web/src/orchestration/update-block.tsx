@@ -45,7 +45,7 @@ export function UpdateBlock({
   renderReply?: ((reply: GramUIMessage) => ReactNode) | undefined;
 }) {
   const words = updateWords(lines, digests);
-  const quiet = replies !== undefined;
+  const quiet = replies !== undefined && replies.length > 0;
   const [toggled, setToggled] = useState<boolean>();
   const open = toggled ?? words.needsYou;
   const [everOpened, setOpened] = useState(false);

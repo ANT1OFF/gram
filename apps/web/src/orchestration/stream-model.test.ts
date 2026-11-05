@@ -323,9 +323,9 @@ const mergedDigest = (generation: number) =>
     ],
   });
 
-describe("the quiet stream", () => {
-  const ids = (messages: readonly GramUIMessage[]) => messages.map((message) => message.id);
+const ids = (messages: readonly GramUIMessage[]) => messages.map((message) => message.id);
 
+describe("the quiet stream", () => {
   it("folds digests that changed nothing for the user, and the replies to them, into one update", () => {
     const messages = [
       said("u1", 1, "user"),
@@ -425,6 +425,14 @@ describe("the quiet stream", () => {
     const plan = planStream(messages, [], { quiet: true });
     expect(ids(plan.messages)).toEqual(["d1", "r1", "d2", "r2", "d3", "r3"]);
     expect(plan.foldedInto.size).toBe(0);
+  });
+
+  it("leaves digests no reply answered as their update was", () => {
+    const messages = [digestMessage("d1", 1, digest(1)), digestMessage("d2", 2, digest(2))];
+    const plan = planStream(messages, [], { quiet: true });
+    expect(ids(plan.messages)).toEqual(["d2"]);
+    expect(plan.extras.get("d2")).not.toHaveProperty("replies");
+    expect(plan.extras.get("d2")?.digests.map((each) => each.message.id)).toEqual(["d1", "d2"]);
   });
 
   it("takes a folded reply's cards along to the update", () => {

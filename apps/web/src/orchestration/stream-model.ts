@@ -261,7 +261,8 @@ function foldQuiet(
         extras.delete(message.id);
       }
     }
-    extras.set(anchor.id, { lines, cards, digests, replies });
+    // Digests no reply answered read as they did: only replies make the update a quiet one.
+    extras.set(anchor.id, { lines, cards, digests, ...(replies.length > 0 ? { replies } : {}) });
     shown.push(anchor);
     group = [];
   };
