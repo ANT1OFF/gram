@@ -232,6 +232,7 @@ const scenes: readonly Shot[] = [
       await openOrchestrator(page, orchestrator);
       // The line into the Inbox; on a base from before it, the Asks dock shows the ask itself.
       const line = page.getByTestId("inbox-line-open");
+      await line.or(page.getByTestId("ask-stack")).first().waitFor();
       if ((await line.count()) > 0) await line.click();
       await page.getByTestId("ask-item").first().waitFor();
       await page.waitForTimeout(600);

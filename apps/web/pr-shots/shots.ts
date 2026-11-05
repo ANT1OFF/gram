@@ -1714,6 +1714,10 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await openNeedsYouSeeded(page);
       await page.getByTestId("overview-needs-you").click();
+      await page
+        .locator('[data-testid="inbox"], [data-testid="needs-you-popover"]')
+        .first()
+        .waitFor();
       if ((await page.getByTestId("inbox").count()) > 0) {
         await page.getByTestId("inbox-item").filter({ hasText: "gh pr merge 91 --squash" }).click();
       } else {
@@ -1730,6 +1734,10 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await openNeedsYouSeeded(page);
       await page.getByTestId("overview-needs-you").click();
+      await page
+        .locator('[data-testid="inbox"], [data-testid="needs-you-popover"]')
+        .first()
+        .waitFor();
       if ((await page.getByTestId("inbox").count()) > 0) {
         await page.getByTestId("inbox-item").filter({ hasText: "gh pr merge 91 --squash" }).click();
         await page.getByTestId("inbox-open-thread").click();

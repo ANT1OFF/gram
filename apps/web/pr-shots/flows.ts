@@ -35,6 +35,7 @@ const retryableError = async (page: Page) => {
 const questionInDock = async (page: Page) => {
   await openRealisticOrchestrator(page);
   await page.getByTestId("overview-needs-you").click();
+  await page.locator('[data-testid="inbox"], [data-testid="needs-you-popover"]').first().waitFor();
   // On a base from before the Inbox, the popover's row opens the ask in the dock.
   if ((await page.getByTestId("needs-you-popover").count()) > 0) {
     await page
@@ -67,6 +68,7 @@ const questionInBilling = async (page: Page) => {
   await openOrchestrator(page, orchestrator);
   // On a base from before the Inbox, the ask is in the orchestrator's dock.
   const line = page.getByTestId("inbox-line-open");
+  await line.or(page.getByTestId("ask-stack")).first().waitFor();
   if ((await line.count()) > 0) await line.click();
   const item = page.getByTestId("ask-item").filter({ hasText: "A refund webhook" });
   await item.getByTestId("ask-option").first().waitFor();
