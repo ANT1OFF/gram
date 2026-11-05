@@ -52,7 +52,13 @@ import { LocalChecks, type LocalCheck } from "./local-checks.ts";
 import { MergeFreezes } from "./merge-freezes.ts";
 import { GitRefresh } from "./platform.ts";
 import { GitStatePublisher } from "./publisher.ts";
-import { workerPrBlocker, workerPrIdentity } from "./worker-pr.ts";
+import {
+  explainOwnershipBlocker,
+  OWNERSHIP_BLOCKERS,
+  ownershipFix,
+  workerPrBlocker,
+  workerPrIdentity,
+} from "./worker-pr.ts";
 import { fence, FENCE_OPENER } from "./untrusted-fence.ts";
 import { makeKeyedLock } from "./keyed-lock.ts";
 
@@ -615,6 +621,7 @@ export const MergeWhenReadyLive = Layer.effect(
               // A pause landed since the badge: the intent waits for the resume.
               if (workspace?.paused !== undefined) return undefined;
               let why: string | undefined;
+              let fix: string | undefined;
               if (workspace === undefined) why = "the worker no longer belongs to a workspace";
               else if (autonomyOf(workspace.charter) !== "full")
                 why = "the workspace's autonomy is no longer full";
@@ -635,15 +642,17 @@ export const MergeWhenReadyLive = Layer.effect(
                   Effect.provideService(ThreadStore, store),
                   Effect.provideService(Proc, proc),
                 );
-                if (ownership !== undefined)
-                  why = `the pull request is no longer this worker's own: ${ownership}`;
+                if (ownership !== undefined) {
+                  why = `the pull request is no longer this worker's own: ${explainOwnershipBlocker(ownership).reason}`;
+                  fix = ownershipFix(ownership, "worker");
+                }
               }
               if (why !== undefined) {
                 yield* setIntent(threadId, bound, () => undefined, intent.setAt);
                 yield* tell(
                   thread.value,
                   bound,
-                  `merge_when_ready on ${prName(bound)} was dropped: ${why}. Ask for it again if it should still merge.`,
+                  `merge_when_ready on ${prName(bound)} was dropped: ${why}. Ask for it again if it should still merge.${fix === undefined ? "" : ` ${fix}`}`,
                 );
                 return undefined;
               }
@@ -1272,10 +1281,14 @@ export const MergeWhenReadyLive = Layer.effect(
         const ownership = yield* workerPrBlocker(thread.value, bound.repo, bound.number, head).pipe(
           Effect.provideService(ThreadStore, store),
           Effect.provideService(Proc, proc),
-          Effect.orElseSucceed(() => "its ownership couldn't be checked"),
+          Effect.orElseSucceed(() => OWNERSHIP_BLOCKERS.unverified),
         );
-        if (ownership !== undefined)
-          return { refused: `${prName(bound)} isn't this worker's own pull request: ${ownership}` };
+        if (ownership !== undefined) {
+          const { reason, fix, unblocks } = explainOwnershipBlocker(ownership);
+          return {
+            refused: `${prName(bound)} isn't this worker's own pull request: ${reason}${unblocks ? `. ${fix.replace(/\.$/, "")}` : ""}`,
+          };
+        }
         const configuration = yield* localChecks.configuration(cwd, thread.value.projectId);
         if (configuration.config === undefined) return { refused: configuration.reason };
         if (configuration.config.refusal !== undefined)

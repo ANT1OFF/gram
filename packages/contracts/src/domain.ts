@@ -890,6 +890,11 @@ export const ApprovalRequest = Schema.Struct({
   /** The model's own description of the call. */
   description: Schema.optionalKey(Schema.String),
   decisionReason: Schema.optionalKey(Schema.String),
+  /**
+   * Why an app tool call the workspace's `full` autonomy would otherwise cover still asks, in a few
+   * words for the orchestrator's ledger; `decisionReason` says it to the user.
+   */
+  autonomyNote: Schema.optionalKey(Schema.String),
   blockedPath: Schema.optionalKey(Schema.String),
   suggestions: Schema.Array(PermissionUpdate),
   /** Scopes the card may offer; absent means all. Outward app tools send `["once"]`. */

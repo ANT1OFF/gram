@@ -10,7 +10,9 @@ import {
 } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
@@ -20,7 +22,12 @@ import { ThreadPlans } from "../plans/service.ts";
 import { CheckoutService } from "../runtime/hooks.ts";
 import { ThreadRuntimes, type ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
 import { ThreadWaits } from "../waits/service.ts";
-import { defineAppTool, failed, type AppToolDefinition } from "./definition.ts";
+import {
+  defineAppTool,
+  failed,
+  type AppToolDefinition,
+  type AskedDespiteAutonomy,
+} from "./definition.ts";
 import { inputLengthProblem } from "./input.ts";
 import { dreamFileTools } from "./dream-tools.ts";
 import { sendFileTool } from "./file-tools.ts";
@@ -72,6 +79,12 @@ const boundFor = (definition: AppToolDefinition, audience: ToolAudience): boolea
     ? definition.audience?.includes("dream") === true
     : definition.audience === undefined || definition.audience.includes(audience);
 
+/**
+ * How long a tool's `whyAsked` may take before its card goes up without it: long enough for the
+ * ownership check's git and gh reads, short enough that the user isn't kept from the card.
+ */
+export const WHY_ASKED_TIMEOUT = Duration.seconds(5);
+
 /** Raises the approval card; fails closed on rejection or runtime cancellation. */
 export interface ApprovalGate {
   approve(
@@ -86,6 +99,8 @@ export interface ApprovalGate {
      */
     forced?: boolean,
     claims?: ReviewWriteClaims,
+    /** Why full autonomy didn't cover the call: on the card, and in the agent's refusal. */
+    why?: AskedDespiteAutonomy,
   ): Effect.Effect<void, AppToolError>;
 }
 
@@ -193,10 +208,14 @@ export const bindAppTools = (
         ? definition.delegatedAtFullAutonomy
         : undefined;
     const cardDetails = definition.cardDetails;
-    /** Whether a card was raised and approved for the call; `undefined` with no gate. */
+    const whyAsked = delegatedCall === undefined ? undefined : definition.whyAsked;
+    /**
+     * Whether a card was raised and approved for the call (`undefined` with no gate), and why full
+     * autonomy didn't cover it, if it would have but for the call itself.
+     */
     const approve = (decoded: unknown, target: unknown) =>
       Effect.gen(function* () {
-        if (gate === undefined) return undefined;
+        if (gate === undefined) return { carded: undefined, why: undefined };
         const asked =
           asksPerCall === undefined ? undefined : yield* asksPerCall(threadId, decoded, target);
         // A check that dies is a doubt, and a doubt is a card.
@@ -207,7 +226,7 @@ export const bindAppTools = (
                 Effect.catchCause(() => Effect.succeed(false)),
               );
         const verdict = alwaysAsks ? "forced" : approvalFor(descriptor.class, asked, delegated);
-        if (verdict === "none") return false;
+        if (verdict === "none") return { carded: false, why: undefined };
         const description =
           describeCall === undefined ? undefined : yield* describeCall(threadId, target);
         // The card's details are the input as it runs, in the schema's own encoding: a key the
@@ -216,8 +235,34 @@ export const bindAppTools = (
           cardDetails === undefined
             ? yield* encode(decoded).pipe(Effect.orElseSucceed(() => decoded))
             : cardDetails(target);
-        yield* gate.approve(threadId, descriptor, shown, description, verdict === "forced");
-        return true;
+        // Messaging only: read after the verdict, which it never changes. A hook that throws,
+        // fails, dies or takes too long leaves the card as it was before it existed.
+        const why =
+          whyAsked === undefined || verdict !== "class"
+            ? undefined
+            : yield* Effect.suspend(() => whyAsked(threadId, target)).pipe(
+                Effect.timeoutOption(WHY_ASKED_TIMEOUT),
+                Effect.map(Option.getOrUndefined),
+                // Only well-formed text reaches the card, so nothing past here can throw on it.
+                Effect.map((said) =>
+                  typeof said?.user === "string" &&
+                  typeof said.agent === "string" &&
+                  typeof said.tag === "string"
+                    ? said
+                    : undefined,
+                ),
+                Effect.catchCause(() => Effect.succeed(undefined)),
+              );
+        yield* gate.approve(
+          threadId,
+          descriptor,
+          shown,
+          description,
+          verdict === "forced",
+          {},
+          why,
+        );
+        return { carded: true, why };
       });
     const needsApproval =
       asksPerCall === undefined || descriptor.class === "outward"
@@ -275,8 +320,15 @@ export const bindAppTools = (
             ),
           );
           const target = yield* resolve(decoded);
-          const carded = yield* approve(decoded, target);
-          return yield* definition.handle(threadId, target, { carded });
+          const { carded, why } = yield* approve(decoded, target);
+          const result = yield* definition.handle(threadId, target, { carded });
+          // The agent learns why the user was asked, and how to go without next time.
+          return why === undefined ||
+            typeof result !== "object" ||
+            result === null ||
+            Array.isArray(result)
+            ? result
+            : { ...result, approvalNeededBecause: why.agent };
         }),
     };
   });
@@ -328,9 +380,10 @@ export const makeApprovalGate = (
    */
   const allowedForSession = new WeakMap<object, Set<string>>();
   return {
-    approve: (threadId, descriptor, input, description, forced = false, claims = {}) =>
+    approve: (threadId, descriptor, input, description, forced = false, claims = {}, why) =>
       Effect.gen(function* () {
         const { name } = descriptor;
+        const because = why === undefined ? "" : ` It needed the user: ${why.agent}`;
         const thread = yield* store.getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
         const answersBot =
           !forced &&
@@ -362,6 +415,9 @@ export const makeApprovalGate = (
             input:
               typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {},
             description: plainCardText(description ?? descriptor.description),
+            ...(why === undefined
+              ? {}
+              : { decisionReason: plainCardText(why.user), autonomyNote: plainCardText(why.tag) }),
             suggestions: [],
             scopes: descriptor.class === "outward" || once ? ["once"] : ["once", "session"],
           })
@@ -370,7 +426,7 @@ export const makeApprovalGate = (
               Effect.gen(function* () {
                 return yield* new AppToolError({
                   tool: name,
-                  message: `Gram did not execute ${name}: approval unavailable for thread ${threadId}.`,
+                  message: `Gram did not execute ${name}: approval unavailable for thread ${threadId}.${because}`,
                   approvalRequired: true,
                   approvalResolution: {
                     origin: "runtime",
@@ -394,8 +450,8 @@ export const makeApprovalGate = (
           return yield* new AppToolError({
             tool: name,
             message: userRejected
-              ? `The user declined ${name}.`
-              : `Gram did not execute ${name}: approval ${resolution.origin === "runtime" ? "cancelled by the runtime" : "denied without decision provenance"} (${resolution.reason}).${resolution.requestId === undefined ? "" : ` Request ${resolution.requestId}.`} Check the thread's current state before retrying.`,
+              ? `The user declined ${name}.${because}`
+              : `Gram did not execute ${name}: approval ${resolution.origin === "runtime" ? "cancelled by the runtime" : "denied without decision provenance"} (${resolution.reason}).${resolution.requestId === undefined ? "" : ` Request ${resolution.requestId}.`} Check the thread's current state before retrying.${because}`,
             approvalRequired: true,
             approvalResolution: resolution,
           });

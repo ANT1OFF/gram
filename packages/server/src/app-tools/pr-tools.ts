@@ -52,6 +52,7 @@ import { GitStatePublisher } from "../git/publisher.ts";
 import { parseRunRef, RunMonitor } from "../git/run-monitor.ts";
 import {
   withOwnedBranch,
+  ownershipAsk,
   workerOwnsPr as ownsPr,
   workerPrOwnership,
   workerPrIdentity,
@@ -532,6 +533,26 @@ export const PrAppToolsLive = Layer.effectDiscard(
                 }),
           } satisfies MergeTarget;
         }),
+      whyAsked: (caller, { thread, enabled, number, repo }) =>
+        Effect.gen(function* () {
+          // As the gate: a worker's exception is for its bound PR alone.
+          if (thread.id === caller && thread.boundPr?.number !== number) return undefined;
+          if (!(yield* mergeDelegated(caller, thread))) return undefined;
+          const ownership = yield* workerPrOwnership(thread, repo, number).pipe(
+            Effect.provideService(ThreadStore, store),
+            Effect.provideService(Proc, proc),
+          );
+          if (typeof ownership !== "string") return undefined;
+          return ownershipAsk(
+            ownership,
+            caller === thread.id ? "worker" : "orchestrator",
+            "merges a worker's own pull requests",
+            enabled
+              ? "Approve to merge it once GitHub allows it."
+              : "Approve to turn its auto-merge off.",
+            enabled ? "merge it" : "change its merge",
+          );
+        }),
       describe: (_caller, { thread, other, enabled, method, number, repo, title }) => {
         const pr = `${repo}#${number}${title === undefined ? "" : ` “${title}”`}`;
         const on = other ? `, on “${thread.title}”` : "";
@@ -705,7 +726,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: MERGE,
         class: "outward",
         description:
-          "Merge a pull request once it is ready, then end your turn: Gram squash-merges it (or `method`), pinned with --match-head-commit to the head it checked, once the workspace's merge review policy is satisfied, required checks are green and GitHub would merge it. Defaults to this thread's bound PR or its branch's new PR; threadId targets your worker. `pr` is a number in its checkout's repo or owner/repo#N (or URL), stacked PRs included; arming binds it unless another PR already has an intent. `after` lists PRs that must merge first, such as a release PR. `hold` keeps it waiting, with why, until `release: true` or `hold: null` (or an empty hold); `holdWaitsOn` says on whom: `person` (default; the user or a reviewer) or `agent` (a review bot's re-review, another worker's change). What an orchestrator holds, its worker can't lift. enabled: false drops the intent. The thread is told when it merges, or why GitHub refused. The user approves the call, except a worker on its own PR, or an orchestrator on its worker's, in a workspace whose autonomy is `full`: an open, non-fork PR from a branch observed in a worktree the worker holds in a workspace project. In Full Auto the same orchestrator may maintain or release an identical intent carrying its explicit user approval without another card; a change of target, method or scope, an approval without that provenance, and a worker's call on an orchestrator-held intent still ask. There the autonomy is asked again before merging.",
+          "Merge a pull request once it is ready, then end your turn: Gram squash-merges it (or `method`), pinned with --match-head-commit to the head it checked, once the workspace's merge review policy is satisfied, required checks are green and GitHub would merge it. Defaults to this thread's bound PR or its branch's new PR; threadId targets your worker. `pr` is a number in its checkout's repo or owner/repo#N (or URL), stacked PRs included; arming binds it unless another PR already has an intent. `after` lists PRs that must merge first, such as a release PR. `hold` keeps it waiting, with why, until `release: true` or `hold: null` (or an empty hold); `holdWaitsOn` says on whom: `person` (default; the user or a reviewer) or `agent` (a review bot's re-review, another worker's change). What an orchestrator holds, its worker can't lift. enabled: false drops the intent. The thread is told when it merges, or why GitHub refused. The user approves the call, except a worker on its own PR, or an orchestrator on its worker's, in a workspace whose autonomy is `full`: an open, non-fork PR from a branch observed in a worktree the worker holds in a workspace project (the one Gram gave it, not one it made itself). In Full Auto the same orchestrator may maintain or release an identical intent carrying its explicit user approval without another card; a change of target, method or scope, an approval without that provenance, and a worker's call on an orchestrator-held intent still ask. There the autonomy is asked again before merging.",
       },
       input: Schema.Struct({
         enabled: Schema.optionalKey(Schema.Boolean),
@@ -835,16 +856,18 @@ export const PrAppToolsLive = Layer.effectDiscard(
             policy === "solo"
               ? "fresh CI passes, or Gram's own full check of it merged onto its base passes, and GitHub allows it"
               : "it is approved on its head, green and clean";
-          const ownership = (yield* mergeDelegated(caller, thread))
+          return `Merge ${prName(pr)} (${method ?? thread.boundPr?.mergeWhenReady?.method ?? "squash"}) once ${condition}${afterRefs.length === 0 ? "" : `, after ${afterRefs.map(prName).join(", ")}`}${clearHold ? ", no hold" : hold === undefined ? "" : `, held: ${hold}`}${thread.id === caller ? "" : `, on “${thread.title}”`}`;
+        }),
+      // Read once a card is up: full auto would have merged it, but for the PR's ownership.
+      whyAsked: (caller, { thread, pr, enabled = true, method }) =>
+        Effect.gen(function* () {
+          const delegated = yield* mergeDelegated(caller, thread);
+          const ownership = delegated
             ? yield* workerPrOwnership(thread, pr.repo, pr.number).pipe(
                 Effect.provideService(ThreadStore, store),
                 Effect.provideService(Proc, proc),
               )
             : undefined;
-          const ownershipReason =
-            typeof ownership === "string"
-              ? ` Approval is required because PR ownership could not be verified: ${ownership}. No matching scoped user approval covers this call.`
-              : "";
           // Metadata only: no card body, thread title, account data or prompt text in diagnostics.
           yield* Effect.logInfo("merge approval context").pipe(
             Effect.annotateLogs({
@@ -861,7 +884,19 @@ export const PrAppToolsLive = Layer.effectDiscard(
                     : "owned-worktree-branch",
             }),
           );
-          return `Merge ${prName(pr)} (${method ?? thread.boundPr?.mergeWhenReady?.method ?? "squash"}) once ${condition}${afterRefs.length === 0 ? "" : `, after ${afterRefs.map(prName).join(", ")}`}${clearHold ? ", no hold" : hold === undefined ? "" : `, held: ${hold}`}${thread.id === caller ? "" : `, on “${thread.title}”`}${ownershipReason}`;
+          // An orchestrator's hold asks a worker whoever owns the PR.
+          if (
+            typeof ownership !== "string" ||
+            (caller === thread.id && thread.boundPr?.mergeWhenReady?.heldBy === "orchestrator")
+          )
+            return undefined;
+          return ownershipAsk(
+            ownership,
+            caller === thread.id ? "worker" : "orchestrator",
+            "merges a worker's own pull requests",
+            enabled ? "Approve to merge it once checks pass." : "Approve to stop merging it.",
+            enabled ? "merge it" : "change its merge",
+          );
         }),
       handle: (
         caller,
@@ -1121,6 +1156,26 @@ export const PrAppToolsLive = Layer.effectDiscard(
           if (bound === undefined || !(yield* mergeDelegated(caller, thread))) return false;
           return yield* workerOwnsPr(thread, bound.repo, bound.number);
         }).pipe(Effect.catchCause(() => Effect.succeed(false))),
+      whyAsked: (caller) =>
+        Effect.gen(function* () {
+          const thread = yield* store.getThread(caller);
+          const bound = thread.boundPr;
+          if (bound === undefined || !(yield* mergeDelegated(caller, thread))) return undefined;
+          const ownership = yield* workerPrOwnership(thread, bound.repo, bound.number).pipe(
+            Effect.provideService(ThreadStore, store),
+            Effect.provideService(Proc, proc),
+          );
+          if (typeof ownership !== "string") return undefined;
+          return ownershipAsk(
+            ownership,
+            "worker",
+            "runs Gram's check of a worker's own pull request",
+            // `runLocalCheck` refuses any PR that isn't the worker's own, approved or not.
+            "Gram checks only a worker's own pull request, so approving won't run it either.",
+            "run it",
+            false,
+          );
+        }).pipe(Effect.orElseSucceed(() => undefined)),
       describe: (caller) =>
         store.getThread(caller).pipe(
           Effect.map((thread) =>

@@ -56,7 +56,7 @@ const requestSummary = (request: PendingRequest): string => {
       ? request.questions.map((each) => each.question).join("\n")
       : request.kind === "plan"
         ? request.plan
-        : `${request.displayName}: ${
+        : `${request.displayName}${request.autonomyNote === undefined ? "" : ` (${request.autonomyNote})`}: ${
             request.description ??
             (typeof request.input["command"] === "string" ? request.input["command"] : "")
           }`;
