@@ -3,6 +3,7 @@ import { useEffect, type RefObject } from "react";
 import { create } from "zustand";
 
 import { Button } from "@/components/ui/button";
+import { inboxDocked } from "@/inbox/inbox-store";
 import { useShortcutHint } from "@/keyboard/use-shortcut-hint";
 import { fitShell, useLayoutStore, type LayoutState } from "@/stores/layout";
 
@@ -92,43 +93,59 @@ export const useReviewRoom = create<{ declined: boolean; dismissed: boolean }>()
 const SETTLE_MS = 400;
 
 /**
- * A review open in too little width to read beside the conversation goes into Focus review on its
- * own, which gives it the window and leaves the conversation a strip (Esc or Restore gives it back).
- * It waits for the layout to settle, so a drag of the panel's edge or the window's ends first. Left
- * while still short of room, it is not taken again until the review has had room: the offer under
- * the tabs says why and offers it.
+ * A review that comes to be held too narrow to read beside the conversation (its panel dragged
+ * wide, the window narrowed, a review opened in a narrow window) goes into Focus review on its own,
+ * which gives it the window and leaves the conversation a strip (Esc or Restore gives it back). It
+ * waits for the layout to settle, so a drag of the panel's edge or the window's ends first. A window
+ * that opens that way is left as it was, with the offer under the tabs: the conversation is what a
+ * launch shows. Left while still short of room, focus is not taken again until the review has had
+ * room. Mounted once, by the shell.
  */
-export function useAutoReviewFocus(active: boolean) {
+export function useAutoReviewFocus() {
   useEffect(() => {
-    if (!active) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let pressed = false;
+    // Set when the review runs short by a change, not on arrival: what the timer may act on.
+    let armed = false;
     const due = () => {
-      const s = useLayoutStore.getState();
-      const fit = fitShell(s);
-      return !fit.reviewFocus && fit.reviewCramped && !useReviewRoom.getState().declined;
+      const fit = fitShell(useLayoutStore.getState());
+      return (
+        armed &&
+        !fit.reviewFocus &&
+        fit.reviewCramped &&
+        !useReviewRoom.getState().declined &&
+        !inboxDocked()
+      );
     };
     const take = () => {
       timer = undefined;
       // Still dragging: once the pointer lets go.
-      if (pressed) return;
-      if (due()) useLayoutStore.getState().setReviewFocus(true);
+      if (pressed || !due()) return;
+      armed = false;
+      useLayoutStore.getState().setReviewFocus(true);
     };
     const schedule = () => {
       if (timer !== undefined) clearTimeout(timer);
       timer = due() ? setTimeout(take, SETTLE_MS) : undefined;
     };
-    const apply = (s: LayoutState, prev?: LayoutState) => {
+    const apply = (s: LayoutState, prev: LayoutState) => {
       const fit = fitShell(s);
-      if (fit.reviewFocus) return;
+      const before = fitShell(prev);
+      if (fit.reviewFocus) {
+        armed = false;
+        return;
+      }
       const room = useReviewRoom.getState();
-      if (prev !== undefined && fitShell(prev).reviewFocus) {
+      if (before.reviewFocus) {
         // Left focus: side by side is the user's choice while the room stays short.
         if (fit.reviewCramped && !room.declined) useReviewRoom.setState({ declined: true });
         return;
       }
-      if (!fit.reviewCramped && (room.declined || room.dismissed))
-        useReviewRoom.setState({ declined: false, dismissed: false });
+      if (!fit.reviewCramped) {
+        armed = false;
+        if (room.declined || room.dismissed)
+          useReviewRoom.setState({ declined: false, dismissed: false });
+      } else if (!before.reviewCramped) armed = true;
       schedule();
     };
     const down = () => {
@@ -141,7 +158,6 @@ export function useAutoReviewFocus(active: boolean) {
     window.addEventListener("pointerdown", down, true);
     window.addEventListener("pointerup", up, true);
     window.addEventListener("pointercancel", up, true);
-    apply(useLayoutStore.getState());
     const unsubscribe = useLayoutStore.subscribe(apply);
     return () => {
       unsubscribe();
@@ -150,7 +166,7 @@ export function useAutoReviewFocus(active: boolean) {
       window.removeEventListener("pointerup", up, true);
       window.removeEventListener("pointercancel", up, true);
     };
-  }, [active]);
+  }, []);
 }
 
 /**

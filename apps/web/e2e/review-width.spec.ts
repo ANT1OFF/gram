@@ -28,9 +28,9 @@ test("the Diff and PR tabs open wide, keep their own width, and give it back for
   await expect(tab(page, "Diff")).toHaveAttribute("aria-selected", "true");
   // 55% of the window, beside the 248 px overview.
   await expect.poll(() => widthOf(panel)).toBe(1320);
-  // In a narrower window, as far as it leaves the chat 640 px.
+  // In a narrower window, as far as it leaves the chat 800 px.
   await page.setViewportSize({ width: 1600, height: 900 });
-  await expect.poll(() => widthOf(panel)).toBe(1600 - 248 - 640);
+  await expect.poll(() => widthOf(panel)).toBe(1600 - 248 - 800);
   await page.setViewportSize({ width: 2400, height: 900 });
 
   await tab(page, "Files").click();
@@ -59,7 +59,7 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
   const shell = page.getByTestId("app-shell");
   const panel = page.getByTestId("right-panel");
   const chat = page.locator("main");
-  await expect.poll(() => widthOf(panel)).toBe(1440 - 248 - 640);
+  await expect.poll(() => widthOf(panel)).toBe(1440 - 248 - 800);
   const chatWidth = await widthOf(chat);
 
   await panel.getByRole("button", { name: "Focus review" }).click();
@@ -77,7 +77,7 @@ test("Focus review takes the window but for a strip of the chat, and Esc gives i
   await page.mouse.move(700, 600);
   await page.keyboard.press("Escape");
   await expect(shell).toHaveAttribute("data-review-focus", "false");
-  await expect.poll(() => widthOf(panel)).toBe(1440 - 248 - 640);
+  await expect.poll(() => widthOf(panel)).toBe(1440 - 248 - 800);
   await expect(chat).not.toHaveAttribute("inert");
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
 

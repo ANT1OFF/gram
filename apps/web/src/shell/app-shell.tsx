@@ -1,6 +1,7 @@
 import { Outlet } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { useAutoReviewFocus } from "@/components/review-room";
 import { RightPanel, useShowPanelRequests } from "@/components/right-panel";
 import { MenuBar } from "@/desktop/menu-bar";
 import { InboxDock } from "@/inbox/inbox-view";
@@ -58,6 +59,8 @@ export function AppShell() {
   useWorkspaceKeys();
   // The strip in Settings is no overview: entering or leaving Settings swaps nothing to carry.
   useCarryOverviewFocus(settingsStrip ? "none" : fit.sidebar);
+  // A review that runs too narrow to read beside the conversation takes the window on its own.
+  useAutoReviewFocus();
 
   // Settings, a new task and the board live in the chat's place, so going there brings it back.
   useEffect(() => {

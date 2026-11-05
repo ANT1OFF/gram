@@ -120,7 +120,7 @@ test("narrower still, only the open tab keeps its name, and it follows the open 
 test("a review at its ordinary width names Diff, PR, Files and Terminal, with Focus review in words beside them", async ({
   page,
 }) => {
-  // 1728 px leaves the review its widest beside a 640 px chat: 840 px.
+  // 1728 px leaves the review its widest beside an 800 px chat: 680 px.
   await page.setViewportSize({ width: 1728, height: 1000 });
   await page.goto("/t/t-flaky");
   const panel = page.getByTestId("right-panel");
@@ -128,7 +128,7 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
     "aria-selected",
     "true",
   );
-  await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(840);
+  await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(680);
   await expect
     .poll(() => named(page))
     .toEqual(expect.arrayContaining(["diff", "pr", "files", "terminal"]));
@@ -136,9 +136,8 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   await expect(focus).toHaveAttribute("data-words", "true");
   await expect(focus).toContainText("Focus review");
   expect(await overflows(page)).toBe(false);
-  // Beside the strip (and its More, where tabs fold into it), not across the row from them.
-  const panelMore = panel.getByTestId("panel-more");
-  const before = (await panelMore.count()) > 0 ? panelMore : panel.getByRole("tab").last();
+  // Beside the strip and its More, not across the row from them.
+  const before = panel.getByTestId("panel-more");
   await expect(before).toBeVisible();
   const gap = await focus.evaluate(
     (button, more) => button.getBoundingClientRect().left - more!.getBoundingClientRect().right,
@@ -146,9 +145,8 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   );
   expect(gap).toBeLessThan(24);
 
-  // Narrower (the review at its 352 px floor), the tabs give up their names, the open one's too,
-  // before Focus review its words.
-  await page.setViewportSize({ width: 1024, height: 1000 });
+  // Narrower, the tabs give up their names, the open one's too, before Focus review its words.
+  await page.setViewportSize({ width: 1180, height: 1000 });
   await expect.poll(() => named(page)).toEqual([]);
   await expect(focus).toHaveAttribute("data-words", "true");
   await expect(focus).toBeVisible();

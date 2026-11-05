@@ -33,7 +33,7 @@ import { isReviewTab, reviewsTabShown, useLayoutStore, type RightPanelTab } from
 import { useThreadsStore } from "@/stores/threads";
 
 import { tabFolds, tabNamed, useTabLabelFit } from "./panel-tab-labels";
-import { ReviewRoomOffer, useAutoReviewFocus, useKeepReadingPlace } from "./review-room";
+import { ReviewRoomOffer, useKeepReadingPlace } from "./review-room";
 import type * as PanelTabs from "./right-panel-tabs";
 
 interface PanelTab {
@@ -127,8 +127,6 @@ export function RightPanel() {
   const focused = useLayoutStore((s) => s.reviewFocus);
   // On a review the action beside the tabs is Focus review, in words; elsewhere an icon at the end.
   const reviewAction = isReviewTab(tab) && !expanded;
-  // Too narrow to read beside the conversation, a review takes the window on its own.
-  useAutoReviewFocus(reviewAction);
   const labelFit = useTabLabelFit(tabList, tab);
   const aside = useRef<HTMLElement>(null);
   useKeepReadingPlace(aside);
