@@ -353,7 +353,7 @@ test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ p
   await expect(
     page
       .getByRole("navigation", { name: "Settings sections" })
-      .getByRole("link", { name: "Workspaces", exact: true }),
+      .getByRole("link", { name: "Workspaces & merging", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   const workspace = page.getByTestId("workspace-page");
   await expect(workspace.getByTestId("workspace-page-title")).toHaveText("platform");
@@ -361,7 +361,7 @@ test("Settings → Workspaces keeps workspaces, charters and pauses", async ({ p
   const workers = workspace.getByLabel("Workers at once");
   await expect(workers).toHaveValue("10");
   // Its threads get every connector until the charter says otherwise; a list saves once it has
-  // an entry, and switching lists keeps what it lists. Connectors sit under Advanced.
+  // an entry, and switching lists keeps what it lists. Connectors sit under More options.
   const charterOf = () =>
     page.evaluate(
       async () =>

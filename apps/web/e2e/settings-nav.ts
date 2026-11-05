@@ -4,8 +4,30 @@ import type { Page } from "@playwright/test";
 export const settingsNav = (page: Page) =>
   page.getByRole("navigation", { name: "Settings sections" });
 
-/** Opens a page that sits under Settings → Advanced, such as Keyboard, through its row there. */
-export async function openAdvancedPage(page: Page, label: string) {
-  await settingsNav(page).getByRole("link", { name: "Advanced", exact: true }).click();
-  await page.getByTestId("settings-subpages").getByRole("link", { name: label }).click();
+/** The group each page that opens from one sits in, by the page's label. */
+const GROUP_OF: Readonly<Record<string, string>> = {
+  "AI helpers": "Agents & models",
+  Connectors: "Agents & models",
+  Gateways: "Agents & models",
+  "Review bots": "Workspaces & merging",
+  Storage: "Workspaces & merging",
+  Terminal: "Appearance",
+  Diagnostics: "About",
+  "What's New": "About",
+};
+
+/**
+ * Opens a Settings page the way a person would: its group in the nav, then, for a page within a
+ * group such as Gateways, its row at the end of the group's page.
+ */
+export async function openSettingsPage(page: Page, label: string) {
+  const group = GROUP_OF[label];
+  await settingsNav(page)
+    .getByRole("link", { name: group ?? label, exact: true })
+    .click();
+  if (group === undefined) return;
+  await page
+    .getByTestId("settings-subpages")
+    .getByRole("link", { name: new RegExp(`^${label}`) })
+    .click();
 }

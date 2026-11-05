@@ -332,7 +332,7 @@ describe("LaunchChecksBanner Update", () => {
     push({ state: "failed", ...run, problem: "failed", message: "stopped. Its output is below." });
     await waitFor(() =>
       expect(screen.getByTestId("banner-cli-update").textContent).toBe(
-        `${COMMAND} failed. Settings → Agents shows its output.`,
+        `${COMMAND} failed. Settings → Agents & models shows its output.`,
       ),
     );
   });

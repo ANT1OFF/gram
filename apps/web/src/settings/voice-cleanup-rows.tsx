@@ -1,4 +1,9 @@
-import { dictationCleanupOf, type Settings, type VoiceSettings } from "@gram/contracts";
+import {
+  DEFAULT_SETTINGS,
+  dictationCleanupOf,
+  type Settings,
+  type VoiceSettings,
+} from "@gram/contracts";
 
 import { Toggle } from "./fields";
 
@@ -16,6 +21,10 @@ export function VoiceCleanupRows({
   onChange: (patch: CleanupPatch) => void;
 }) {
   const cleanup = dictationCleanupOf(settings);
+  const initial = dictationCleanupOf(DEFAULT_SETTINGS);
+  /** A reset back to `value` while the switch differs from it. */
+  const resetTo = (now: boolean, value: boolean, patch: CleanupPatch) =>
+    now === value ? undefined : () => onChange(patch);
   return (
     <>
       <Toggle
@@ -23,6 +32,7 @@ export function VoiceCleanupRows({
         description={`Drops "um", "uh", "erm" and the like. Real words such as "like" stay.`}
         keywords={["filler", "um", "uh", "clean up", "hesitation"]}
         checked={cleanup.fillers}
+        onReset={resetTo(cleanup.fillers, initial.fillers, { removeFillers: initial.fillers })}
         onChange={(next) => onChange({ removeFillers: next })}
       />
       <Toggle
@@ -30,6 +40,9 @@ export function VoiceCleanupRows({
         description={`Say "new line", "new paragraph", or "open quote" and "close quote".`}
         keywords={["new line", "new paragraph", "line break", "quote", "formatting"]}
         checked={cleanup.formatting}
+        onReset={resetTo(cleanup.formatting, initial.formatting, {
+          spokenFormatting: initial.formatting,
+        })}
         onChange={(next) => onChange({ spokenFormatting: next })}
       />
       <Toggle
@@ -37,6 +50,7 @@ export function VoiceCleanupRows({
         description={`"foo underscore bar" types foo_bar. Say "literal" first to keep a symbol's word.`}
         keywords={["symbols", "underscore", "dot", "slash", "backtick", "paren", "code"]}
         checked={cleanup.symbols}
+        onReset={resetTo(cleanup.symbols, initial.symbols, { spokenSymbols: initial.symbols })}
         onChange={(next) => onChange({ spokenSymbols: next })}
         learnMore={
           <p>

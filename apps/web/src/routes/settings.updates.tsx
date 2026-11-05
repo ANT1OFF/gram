@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { UpdatesPage } from "@/settings/pages";
-
+/** Updates is part of About now; an old link to it lands there. */
 export const Route = createFileRoute("/settings/updates")({
-  component: UpdatesPage,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/settings/about", search, replace: true });
+  },
 });

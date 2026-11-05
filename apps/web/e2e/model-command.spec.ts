@@ -17,7 +17,7 @@ test("a /model typed into a thread moves its model picker, and is offered in Set
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("link", { name: "Agents", exact: true })
+    .getByRole("link", { name: "Agents & models", exact: true })
     .click();
   await page
     .getByTestId("model-suggestions")

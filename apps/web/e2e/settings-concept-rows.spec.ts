@@ -1,11 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Settings → General's Open at launch and Notify me about rows, each followed to what it changes.
+// Settings → General's Open at launch and Notifications' Notify me about, each followed to what it
+// changes.
 
 const general = (page: Page) => page.getByTestId("general-settings");
 
 const choice = (page: Page, group: string, name: string) =>
-  general(page).getByRole("radiogroup", { name: group }).getByRole("radio", { name });
+  page.getByRole("radiogroup", { name: group }).getByRole("radio", { name });
 
 test("Open at launch at Last thread opens the thread shown last", async ({ page }) => {
   // Four launches of the app in one test.
@@ -78,7 +79,7 @@ test("Notify me about at Asks only keeps failures out of desktop notifications",
       },
     });
   });
-  await page.goto("/settings/general");
+  await page.goto("/settings/notifications");
   await expect(choice(page, "Notify me about", "Asks and failures")).toHaveAttribute(
     "aria-checked",
     "true",

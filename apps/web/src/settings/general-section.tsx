@@ -1,7 +1,6 @@
 import {
   type LaunchAtLogin,
   DEFAULT_CLONE_FOLDER,
-  notifyAboutOf,
   keepAwakeOn,
   openAtLaunchOf,
   OVERVIEW_HIDDEN_BY_DEFAULT,
@@ -68,11 +67,6 @@ const OVERVIEW_SIDEBAR = [
   { value: "open", label: "Open" },
   { value: "compact", label: "Compact" },
   { value: "hidden", label: "Hidden" },
-] as const;
-
-const NOTIFY_ABOUT = [
-  { value: "asksAndFailures", label: "Asks and failures" },
-  { value: "asks", label: "Asks only" },
 ] as const;
 
 const PANEL_SIDES = [
@@ -273,44 +267,6 @@ export function GeneralSection() {
             options={PANEL_SIDES}
             value={settings.panel.side}
             onChange={(side) => applyTo("panelSide")({ panel: { side } })}
-          />
-        </SettingRow>
-      </SettingsGroup>
-      <SettingsGroup
-        label="Interruptions"
-        anchor={GENERAL_ANCHORS.interruptions}
-        description="How much Gram asks for your attention while you work elsewhere."
-      >
-        <Toggle
-          label="Quiet when idle"
-          description="After five idle minutes, switch to Quiet: only what needs you."
-          keywords={["quiet", "idle", "away", "calm"]}
-          checked={settings.layout?.quietWhenIdle === true}
-          onReset={resetOf("quietWhenIdle")}
-          error={errorOf("quietWhenIdle")}
-          onChange={(quietWhenIdle) =>
-            applyTo("quietWhenIdle")({ layout: { quietWhenIdle: quietWhenIdle ? true : null } })
-          }
-        />
-        <SettingRow
-          label="Notify me about"
-          description="What raises a desktop notification while Gram is in the background."
-          learnMore={<p>Asks always notify; the rest waits for Since you left.</p>}
-          keywords={["notifications", "interrupt", "failures", "errors", "asks"]}
-          onReset={resetOf("notifyAbout")}
-          error={errorOf("notifyAbout")}
-        >
-          <OptionGroup
-            label="Notify me about"
-            options={NOTIFY_ABOUT}
-            value={notifyAboutOf(settings)}
-            onChange={(notifyAbout) =>
-              applyTo("notifyAbout")({
-                notifications: {
-                  notifyAbout: notifyAbout === "asksAndFailures" ? null : notifyAbout,
-                },
-              })
-            }
           />
         </SettingRow>
       </SettingsGroup>

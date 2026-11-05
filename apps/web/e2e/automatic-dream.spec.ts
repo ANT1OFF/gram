@@ -34,10 +34,10 @@ test("automatic Dream is opt-in, validates its threshold, and saves its workspac
     .click();
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("link", { name: "Workspaces", exact: true })
+    .getByRole("link", { name: "Workspaces & merging", exact: true })
     .click();
   await open();
-  // Dream sits under Advanced on the workspace's own settings page.
+  // Dream sits under More options on the workspace's own settings page.
   const section = page.getByTestId("workspace-page");
   const toggle = section.getByRole("switch", { name: "Dream automatically" });
   await expect(toggle).not.toBeChecked();
@@ -68,7 +68,7 @@ test("automatic Dream is opt-in, validates its threshold, and saves its workspac
     .click();
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("link", { name: "Workspaces", exact: true })
+    .getByRole("link", { name: "Workspaces & merging", exact: true })
     .click();
   await open();
   await expect(threshold).toHaveValue("25");
@@ -86,7 +86,7 @@ test("automatic Dream is opt-in, validates its threshold, and saves its workspac
     .click();
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("link", { name: "Workspaces", exact: true })
+    .getByRole("link", { name: "Workspaces & merging", exact: true })
     .click();
   await open();
   await expect(toggle).not.toBeChecked();

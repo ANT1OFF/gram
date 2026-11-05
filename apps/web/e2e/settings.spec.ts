@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { openReviewsTab, reviewsInPanel } from "./reviews-panel";
-import { openAdvancedPage, settingsNav as nav } from "./settings-nav";
+import { openSettingsPage, settingsNav as nav } from "./settings-nav";
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
@@ -42,38 +42,48 @@ test("each tab is a page, with history, and Settings reopens on the last one", a
   await expect(general).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { level: 2, name: "General" })).toBeVisible();
 
-  // The groups, one link each; the rest open from Advanced.
+  // The groups, one link each, and no catch-all Advanced: each page sits in the group it is about.
   await expect(nav(page).locator(":scope > ul > li > a")).toHaveText([
     "General",
-    "Agents",
-    "Workspaces",
+    "Agents & models",
+    "Workspaces & merging",
     "Appearance",
     "Notifications",
+    "Keyboard",
     "Voice",
-    "Advanced",
+    "About",
   ]);
-  await expect(nav(page).getByRole("link", { name: "Workspaces" })).toHaveAttribute(
+  await expect(nav(page).getByRole("link", { name: "Workspaces & merging" })).toHaveAttribute(
     "href",
     "/settings/workspaces",
   );
-  await expect(nav(page).getByRole("link", { name: "Keyboard" })).toHaveCount(0);
-  const advanced = nav(page).getByRole("link", { name: "Advanced", exact: true });
-  await advanced.click();
-  await expect(page).toHaveURL(/\/settings\/advanced$/);
+  await expect(nav(page).getByRole("link", { name: "Advanced" })).toHaveCount(0);
+
+  // A group's own pages are linked at the end of its page and under it in the nav.
+  const about = nav(page).getByRole("link", { name: "About", exact: true });
+  await about.click();
+  await expect(page).toHaveURL(/\/settings\/about$/);
   const rows = page.getByTestId("settings-subpages");
-  await expect(rows.getByRole("link", { name: "What's New" })).toHaveAttribute(
+  await expect(rows.getByRole("link", { name: /What's New/ })).toHaveAttribute(
     "href",
     "/settings/help",
   );
-  // Nothing is experimental now, so there's no row for it.
-  await expect(rows.getByRole("link", { name: "Experimental" })).toHaveCount(0);
-
-  await rows.getByRole("link", { name: "Keyboard" }).click();
-  await expect(page).toHaveURL(/\/settings\/keyboard$/);
-  // A page under Advanced keeps Advanced current, and says where it sits.
-  await expect(advanced).toHaveAttribute("aria-current", "page");
+  await expect(nav(page).getByTestId("settings-nav-subpages").getByRole("link")).toHaveText([
+    "Diagnostics",
+    "What's New",
+  ]);
+  await rows.getByRole("link", { name: /Diagnostics/ }).click();
+  await expect(page).toHaveURL(/\/settings\/diagnostics$/);
+  // A page in a group keeps its group marked, and says where it sits.
+  await expect(about).toHaveAttribute("aria-current", "true");
+  await expect(
+    nav(page).getByTestId("settings-nav-subpages").getByRole("link", { name: "Diagnostics" }),
+  ).toHaveAttribute("aria-current", "page");
   await expect(general).not.toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("settings-subpage-back")).toHaveText("Advanced");
+  await expect(page.getByTestId("settings-subpage-back")).toHaveText("About");
+
+  await nav(page).getByRole("link", { name: "Keyboard", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/keyboard$/);
   await expect(page.getByTestId("general-settings")).toHaveCount(0);
   const scroller = page.locator("main :has(> [data-settings-results])");
   await scroller.evaluate((el) => el.scrollTo({ top: 400 }));
@@ -125,7 +135,7 @@ test("search finds settings on every page, grouped by page", async ({ page }) =>
   await expect(results).toContainText("OpenAI-compatible gateways");
   // Workspaces were under Experimental until 0.7, and the old word still finds them.
   await search.fill("experimental");
-  await expect(pageHeading("Workspaces")).toBeVisible();
+  await expect(pageHeading("Workspaces & merging")).toBeVisible();
   await expect(page.getByRole("switch", { name: /Resume workers on restart/ })).toBeVisible();
 
   // A page's name shows the whole page, and one query can match on several pages.
@@ -161,12 +171,12 @@ test("search finds settings on every page, grouped by page", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeFocused();
   await expect(page).toHaveURL(/\/settings\/general$/);
 
-  // Enter opens the page of the first match, with it marked: a row under Advanced included.
+  // Enter opens the page of the first match, with it marked: a page within a group included.
   await search.fill("log level");
   await search.press("Enter");
   await expect(page).toHaveURL(/\/settings\/diagnostics\?highlight=log/);
   await expect(search).toHaveValue("");
-  await expect(page.getByTestId("settings-subpage-back")).toHaveText("Advanced");
+  await expect(page.getByTestId("settings-subpage-back")).toHaveText("About");
   await expect(page.locator("[data-setting-spotlight]").first()).toBeInViewport();
   await page.goto("/settings/general");
   await page.keyboard.press("ControlOrMeta+f");
@@ -187,15 +197,36 @@ test("search finds settings on every page, grouped by page", async ({ page }) =>
   const scroller = page.locator("main :has(> [data-settings-results])");
   await scroller.evaluate((el) => el.scrollTo({ top: 200 }));
   await search.fill("font");
-  await nav(page).getByRole("link", { name: "Advanced", exact: true }).click();
+  await nav(page).getByRole("link", { name: "About", exact: true }).click();
   await expect(search).toHaveValue("");
-  await expect(pageHeading("Advanced")).toBeInViewport();
+  await expect(pageHeading("About")).toBeInViewport();
 
   // Back to the highlighted entry returns to where it was left, and doesn't mark it again.
   await page.goBack();
   await expect(page).toHaveURL(/\/settings\/appearance\?highlight=font/);
   await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBe(200);
   await expect(page.locator("[data-setting-spotlight]")).toHaveCount(0);
+});
+
+test("old Advanced and Updates links land on the pages' new homes", async ({ page }) => {
+  await page.goto("/settings/advanced");
+  await expect(page).toHaveURL(/\/settings\/general$/);
+  await page.goto("/settings/advanced/gateways");
+  await expect(page).toHaveURL(/\/settings\/gateways$/);
+  await expect(page.getByTestId("settings-subpage-back")).toHaveText("Agents & models");
+  await page.goto("/settings/advanced/updates");
+  await expect(page).toHaveURL(/\/settings\/about$/);
+  await page.goto("/settings/updates");
+  await expect(page).toHaveURL(/\/settings\/about$/);
+  await expect(
+    page.locator("[data-settings-results]").getByRole("heading", { level: 2, name: "About" }),
+  ).toBeVisible();
+
+  // The old word still finds what it held, each page under its new group.
+  await page.getByRole("textbox", { name: "Search settings" }).fill("advanced");
+  const results = page.locator("[data-settings-results]");
+  for (const name of ["Gateways", "Connectors", "Review bots", "Storage", "Keyboard"])
+    await expect(results.getByRole("heading", { level: 2, name })).toBeVisible();
 });
 
 test("a link into Settings lands on its page and marks the setting", async ({ page }) => {
@@ -215,9 +246,12 @@ test("a link into Settings lands on its page and marks the setting", async ({ pa
 });
 
 test("diagnostics set the log level and copy a report to the clipboard", async ({ page }) => {
+  // Which version this is shows on About; Diagnostics keeps the paths.
+  await page.goto("/settings/about");
+  await expect(page.locator("[data-settings-results]")).toContainText("1.0.0-mock");
   await page.goto("/settings/diagnostics");
   const diagnostics = page.getByTestId("diagnostics");
-  await expect(diagnostics).toContainText("1.0.0-mock");
+  await expect(diagnostics).toContainText("/mock/gram-state");
 
   await diagnostics.getByRole("radio", { name: "debug" }).click();
   await expect(diagnostics.getByRole("radio", { name: "debug" })).toHaveAttribute(
@@ -285,7 +319,7 @@ test("side panel position, fonts and the Windows shell apply live", async ({ pag
 
   await general.getByRole("radio", { name: "Left", exact: true }).click();
   await expect(page.getByTestId("app-shell")).toHaveAttribute("data-panel-side", "left");
-  await openAdvancedPage(page, "Terminal");
+  await openSettingsPage(page, "Terminal");
   const terminal = page.getByTestId("terminal-settings");
   await terminal.getByRole("radio", { name: "Git Bash" }).click();
   await expect(terminal.getByRole("radio", { name: "Git Bash" })).toHaveAttribute(
@@ -361,14 +395,13 @@ test("Settings is focused: the overview gives way to Back, and General's section
     "Launch",
     "Branches",
     "Composer",
-    "Interruptions",
     "Running work",
     "Editor",
     "Links",
   ]);
-  await sections.getByRole("link", { name: "Interruptions" }).click();
-  await expect(page.getByRole("region", { name: "Interruptions" })).toBeInViewport();
-  await expect(sections.getByRole("link", { name: "Interruptions" })).toHaveAttribute(
+  await sections.getByRole("link", { name: "Running work" }).click();
+  await expect(page.getByRole("region", { name: "Running work" })).toBeInViewport();
+  await expect(sections.getByRole("link", { name: "Running work" })).toHaveAttribute(
     "aria-current",
     "location",
   );

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { openAdvancedPage } from "./settings-nav";
+import { openSettingsPage } from "./settings-nav";
 
 const MOCK_AGENTS_KEY = "gram.mock.agents";
 
@@ -122,7 +122,7 @@ test("Claude Code and Codex use a gateway only after explicit selection, offered
 });
 
 test("the default gateway's helper model is picked in AI helpers and sticks", async ({ page }) => {
-  await openAdvancedPage(page, "AI helpers");
+  await openSettingsPage(page, "AI helpers");
   await page.getByRole("combobox", { name: "Helper source", exact: true }).click();
   await page.getByRole("option", { name: "Gateway (optional)", exact: true }).click();
   const picker = page.getByRole("combobox", { name: "Helper model for Personal Gateway" });
@@ -136,10 +136,10 @@ test("the default gateway's helper model is picked in AI helpers and sticks", as
   const chosen = (await picker.textContent()) ?? "";
 
   // Client-side, so the mock keeps the profile; a reload would reset it.
-  await openAdvancedPage(page, "Gateways");
+  await openSettingsPage(page, "Gateways");
   const litellm = page.getByRole("article", { name: "Personal Gateway" });
   await expect(litellm).toContainText("Gateway helper model when selected: claude-sonnet.");
-  await openAdvancedPage(page, "AI helpers");
+  await openSettingsPage(page, "AI helpers");
   await expect(picker).toHaveText(chosen);
 });
 

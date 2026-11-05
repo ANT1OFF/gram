@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { slowdown } from "./slowdown";
 
-import { openAdvancedPage, settingsNav } from "./settings-nav";
+import { openSettingsPage, settingsNav } from "./settings-nav";
 import { threadRow } from "./thread-row";
 
 // Chromium's fake microphone, granted without a prompt, so the real capture worklet runs and feeds
@@ -764,7 +764,7 @@ test("Settings: the push-to-talk key takes a modifier held alone or a chord, as 
   await expect(key).toHaveText(/^Right (⌃|Ctrl)$/);
 
   // The one binding: Settings → Keyboard shows what the Voice page set.
-  await openAdvancedPage(page, "Keyboard");
+  await openSettingsPage(page, "Keyboard");
   await expect(page.getByTestId("binding-composer.dictate").locator("kbd")).toHaveText(
     /^Right (⌃|Ctrl)$/,
   );

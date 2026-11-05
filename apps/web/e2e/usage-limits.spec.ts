@@ -103,7 +103,7 @@ test("a workspace sets the share of a limit at which new workers pause", async (
     .click();
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("link", { name: "Workspaces", exact: true })
+    .getByRole("link", { name: "Workspaces & merging", exact: true })
     .click();
   await page
     .getByRole("listitem", { name: "Workspace Limits fixture" })

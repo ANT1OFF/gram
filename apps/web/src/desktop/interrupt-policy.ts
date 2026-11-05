@@ -1,7 +1,7 @@
 import type { NotifyAbout, ServerEvent } from "@gram/contracts";
 
 // What may interrupt you with a desktop notification while the window isn't in front, in one table.
-// Only asks and failures do, or only asks with Settings → General → Notify me about at Asks only. Everything else waits for "Since you left" or stays in the app's own
+// Only asks and failures do, or only asks with Settings → Notifications → Notify me about at Asks only. Everything else waits for "Since you left" or stays in the app's own
 // notification center; macOS Focus can still hold even these.
 
 /** What happened, as far as interrupting goes. */

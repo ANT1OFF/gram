@@ -126,7 +126,7 @@ describe("UpdatePill", () => {
       notApplied: { version: "0.1.0-rc.18", reason: "See ShipIt_stderr.log." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Gram 0.1.0-rc.18 wasn't applied" }));
-    expect(navigate).toHaveBeenCalledWith({ to: "/settings/updates" });
+    expect(navigate).toHaveBeenCalledWith({ to: "/settings/about" });
   });
 
   it("checks again after a manual check failed", async () => {

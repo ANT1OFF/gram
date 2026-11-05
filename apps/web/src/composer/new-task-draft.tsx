@@ -410,7 +410,7 @@ export function NewTaskDraft({
           }
           line={
             target === undefined && settled
-              ? "Gram doesn't know a repository to start a workspace in yet. Pick Single agent chat to open one, or add one under Settings → Workspaces."
+              ? "Gram doesn't know a repository to start a workspace in yet. Pick Single agent chat to open one, or add one under Settings → Workspaces & merging."
               : way === "plan"
                 ? `${makesOne ? `Makes a workspace for ${name}. Its` : `${name}'s`} orchestrator plans it, briefs workers into their own worktrees and follows their pull requests to merged.`
                 : hold

@@ -64,7 +64,7 @@ for (const width of [1280, 390]) {
       });
       Object.defineProperty(window, "updateCalls", { value: calls });
     });
-    await page.goto("/settings/updates");
+    await page.goto("/settings/about");
     const section = page.getByTestId("updates");
     await expect(section.getByTestId("build-status")).toContainText("Running Gram 0.1.0-rc.2");
     await expect(section.getByTestId("build-status")).toContainText("Not checked yet");

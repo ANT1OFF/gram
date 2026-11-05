@@ -40,8 +40,8 @@ Download from the [latest release](https://github.com/ANT1OFF/gram/releases/late
   Applications. It is Developer ID signed and notarized.
 - **Linux AppImage:** `gram_<version>_x86_64.AppImage`. Make it executable and run it:
   `chmod +x gram_<version>_x86_64.AppImage && ./gram_<version>_x86_64.AppImage`. It needs FUSE 2
-  (`libfuse2t64` on Ubuntu 24.04) and updates itself from Settings → Updates.
-- **Linux .deb:** `sudo apt install ./gram_<version>_amd64.deb`. Settings → Updates says when a
+  (`libfuse2t64` on Ubuntu 24.04) and updates itself from Settings → About.
+- **Linux .deb:** `sudo apt install ./gram_<version>_amd64.deb`. Settings → About says when a
   new release is out; install it the same way.
 
 [Updates](docs/UPDATES.md#installing-a-release) covers checking the download against

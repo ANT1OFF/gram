@@ -12,15 +12,25 @@ import {
 import type { SettingsAnchor } from "./general-anchors";
 import type { SettingsGroupId, SettingsNavGroup } from "./pages";
 
+/** A page that opens from a group, as the nav links it. */
+export interface SettingsNavPage {
+  readonly id: string;
+  readonly label: string;
+  readonly path: string;
+}
+
 /**
- * Settings → the groups, one link each; the open one, or the one the open page opens from, is
- * `aria-current="page"`. In a narrow `@container/settings` it is a bar over the page instead, the
- * list folded into a picker, so the page keeps the width.
+ * Settings → the groups, one link each. The open group's link is `aria-current="page"`, or `"true"`
+ * while one of its own pages is open; those pages are linked under it, the open one current. In a
+ * narrow `@container/settings` it is a bar over the page instead, the list folded into a picker, so
+ * the page keeps the width.
  */
 export function SettingsNav({
   groups,
   current,
   sections,
+  subpages,
+  currentPage,
   badges,
   headingRef,
   search,
@@ -31,6 +41,10 @@ export function SettingsNav({
   current: SettingsGroupId | undefined;
   /** The open page's subsections, linked under its group; none while searching or on a sub-page. */
   sections?: readonly SettingsAnchor[] | undefined;
+  /** The pages that open from the open group, linked under it. */
+  subpages?: readonly SettingsNavPage[] | undefined;
+  /** The open page's id, which may be one of `subpages`. */
+  currentPage?: string | undefined;
   /** Extra content after a group's label, keyed by its id, such as the update dot. */
   badges?: Readonly<Partial<Record<SettingsGroupId, ReactNode>>>;
   /** The "Settings" heading, focusable from script (tabIndex -1). */
@@ -43,27 +57,30 @@ export function SettingsNav({
   return (
     <nav
       aria-label="Settings sections"
-      className="w-48 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex @max-2xl/settings:w-auto @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible @max-2xl/settings:border-r-0 @max-2xl/settings:border-b @max-2xl/settings:py-2 @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1"
+      className="w-56 shrink-0 overflow-y-auto border-r border-border p-3 @max-2xl/settings:flex @max-2xl/settings:w-auto @max-2xl/settings:items-center @max-2xl/settings:gap-2 @max-2xl/settings:overflow-visible @max-2xl/settings:border-r-0 @max-2xl/settings:border-b @max-2xl/settings:py-2 @max-2xl/settings:*:data-search:mb-0 @max-2xl/settings:*:data-search:min-w-0 @max-2xl/settings:*:data-search:flex-1"
     >
       <h1
         ref={headingRef}
         tabIndex={-1}
-        className="mb-2 px-2 font-heading text-base font-medium outline-none @max-2xl/settings:mb-0 @max-2xl/settings:shrink-0"
+        className="mb-2 px-2 font-heading text-title outline-none @max-2xl/settings:mb-0 @max-2xl/settings:shrink-0"
       >
         Settings
       </h1>
       {search}
       <SectionPicker groups={groups} current={current} onNavigate={onNavigate} />
-      <ul className="flex flex-col gap-0.5 text-sm @max-2xl/settings:hidden">
+      <ul className="flex flex-col gap-0.5 text-reading @max-2xl/settings:hidden">
         {groups.map((group) => {
           const Icon = group.icon;
+          const open = group.id === current;
+          const onSubpage =
+            open && subpages !== undefined && subpages.some((page) => page.id === currentPage);
           return (
             <li key={group.id}>
               <Link
                 to={group.path}
-                aria-current={group.id === current ? "page" : undefined}
+                aria-current={open ? (onSubpage ? "true" : "page") : undefined}
                 onClick={onNavigate}
-                className="flex items-center gap-2 rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
+                className="flex items-center gap-2 rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground aria-[current=true]:text-foreground"
               >
                 <Icon aria-hidden className="size-3.5 shrink-0" />
                 {group.label}
@@ -71,8 +88,16 @@ export function SettingsNav({
                   <span className="ms-auto flex items-center">{badges[group.id]}</span>
                 )}
               </Link>
-              {group.id === current && sections !== undefined && sections.length > 0 && (
+              {open && sections !== undefined && sections.length > 0 && (
                 <SectionLinks sections={sections} />
+              )}
+              {open && subpages !== undefined && subpages.length > 0 && (
+                <SubpageLinks
+                  pages={subpages}
+                  current={currentPage}
+                  label={group.label}
+                  onNavigate={onNavigate}
+                />
               )}
             </li>
           );
@@ -121,6 +146,40 @@ function SectionPicker({
   );
 }
 
+/** The pages that open from the open group, under its link; the open one is current. */
+function SubpageLinks({
+  pages,
+  current,
+  label,
+  onNavigate,
+}: {
+  pages: readonly SettingsNavPage[];
+  current: string | undefined;
+  label: string;
+  onNavigate: (() => void) | undefined;
+}) {
+  return (
+    <ul
+      aria-label={`More in ${label}`}
+      data-testid="settings-nav-subpages"
+      className="mt-0.5 mb-1 ms-5 flex flex-col border-s border-border/70 ps-1.5"
+    >
+      {pages.map((page) => (
+        <li key={page.id}>
+          <Link
+            to={page.path}
+            aria-current={page.id === current ? "page" : undefined}
+            onClick={onNavigate}
+            className="block rounded-md px-2 py-0.5 text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=page]:bg-accent aria-[current=page]:text-foreground"
+          >
+            {page.label}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * The open page's subsections under its link: a click scrolls to one, and the one at the top of
  * the page is marked as you scroll.
@@ -131,7 +190,7 @@ function SectionLinks({ sections }: { sections: readonly SettingsAnchor[] }) {
     <ul
       aria-label="On this page"
       data-testid="settings-page-sections"
-      className="mt-0.5 mb-1 ms-[1.1875rem] flex flex-col border-s border-border/70 ps-1.5"
+      className="mt-0.5 mb-1 ms-5 flex flex-col border-s border-border/70 ps-1.5"
     >
       {sections.map((section) => (
         <li key={section.id}>
@@ -143,7 +202,7 @@ function SectionLinks({ sections }: { sections: readonly SettingsAnchor[] }) {
               document.getElementById(section.id)?.scrollIntoView({ block: "start" });
               pick(section.id);
             }}
-            className="block rounded-md px-2 py-0.5 text-[0.8125rem] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=location]:text-foreground"
+            className="block rounded-md px-2 py-0.5 text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-[current=location]:text-foreground"
           >
             {section.label}
           </a>

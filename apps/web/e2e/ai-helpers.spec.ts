@@ -10,7 +10,6 @@ test("fresh helpers prefer local Haiku with independent destination consent", as
   await expect(
     page.getByRole("combobox", { name: "Helper context to Claude Code / Anthropic" }),
   ).toContainText("No context (off)");
-  await page.getByText("Advanced · fallback and context").click();
   await expect(page.getByText(/Claude is tool-free; Codex uses guided generation/)).toBeVisible();
   await expect(page.getByText("Helpers have no tools", { exact: false })).toHaveCount(0);
   await expect(
@@ -74,7 +73,8 @@ for (const width of [1440, 640]) {
       page.getByRole("combobox", { name: "Helper context to Claude Code / Anthropic" }),
     ).toContainText("No context (off)");
     const info = page.getByRole("button", { name: "Claude Code / Anthropic helper information" });
-    await effort.focus();
+    // The ⓘ belongs to the model's row, under its picker, so it is the next stop after it.
+    await model.focus();
     await page.keyboard.press("Tab");
     await expect(info).toBeFocused();
     await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toContainText(
@@ -104,7 +104,6 @@ for (const width of [1440, 640]) {
     await expect(
       page.getByRole("combobox", { name: "Helper context to Codex / OpenAI" }),
     ).toContainText("No context (off)");
-    await page.getByText("Advanced · fallback and context").click();
     await expect(page.getByText(/Claude is tool-free; Codex uses guided generation/)).toBeVisible();
     await expect(page.getByText("Helpers have no tools", { exact: false })).toHaveCount(0);
     const bounds = await page

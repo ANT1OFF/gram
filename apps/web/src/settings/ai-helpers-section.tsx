@@ -214,7 +214,7 @@ export function AiHelpersSection() {
       >
         <Toggle
           label="Use the helper model"
-          description="Titles, plans, recaps and reply suggestions through your chosen harness."
+          description="Titles, plans, recaps and reply suggestions, made in the background."
           keywords={["ai", "helper", "llm", "off switch", "privacy"]}
           checked={on}
           onReset={resetOf("enabled")}
@@ -223,8 +223,10 @@ export function AiHelpersSection() {
         />
         {source === "gateway" && (
           <SettingRow
-            label="Harness"
-            description="Which CLI runs the helper model."
+            label="Runs on"
+            description="Where helper jobs run: a local CLI or your gateway."
+            keywords={["harness", "source", "gateway"]}
+            onReset={resetOf("source")}
             error={errorOf("source")}
           >
             <HelperHarnessPicker

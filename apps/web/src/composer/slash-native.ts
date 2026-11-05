@@ -87,13 +87,13 @@ const NATIVE: ReadonlyArray<NativeSpec> = [
   {
     name: "mcp",
     action: "connectors",
-    description: "Open Settings → Connectors",
+    description: "Open Settings → Agents & models → Connectors",
     aliases: {},
   },
   {
     name: "login",
     action: "agentSettings",
-    description: "Open Settings → Agents to sign in",
+    description: "Open Settings → Agents & models to sign in",
     aliases: {},
   },
   { name: "help", action: "help", description: "Open Settings → Help" },

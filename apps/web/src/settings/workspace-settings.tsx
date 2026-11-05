@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SETTINGS,
   autonomyOf,
   continueAfterRestart,
   orchestratorConnectors,
@@ -257,6 +258,16 @@ function Defaults({ settings }: { settings: Settings }) {
         description="Ask cut-off workers once to carry on when Gram starts again."
         keywords={["restart", "resume", "crash", "update", "cut off", "continue"]}
         checked={continueAfterRestart(settings)}
+        onReset={
+          continueAfterRestart(settings) === continueAfterRestart(DEFAULT_SETTINGS)
+            ? undefined
+            : () => {
+                setContinueError(undefined);
+                save({
+                  workspaces: { continueAfterRestart: continueAfterRestart(DEFAULT_SETTINGS) },
+                }).catch((e: unknown) => setContinueError(errorMessage(e)));
+              }
+        }
         error={continueError}
         learnMore={
           <p>
@@ -280,6 +291,18 @@ function Defaults({ settings }: { settings: Settings }) {
         description="Let a Claude orchestrator send to your Claude Code sessions outside Gram."
         keywords={["ListAgents", "SendMessage", "peer", "cross-session", "message", "sessions"]}
         checked={orchestratorPeerMessaging(settings)}
+        onReset={
+          orchestratorPeerMessaging(settings) === orchestratorPeerMessaging(DEFAULT_SETTINGS)
+            ? undefined
+            : () => {
+                setPeerError(undefined);
+                save({
+                  workspaces: {
+                    orchestratorPeerMessaging: orchestratorPeerMessaging(DEFAULT_SETTINGS),
+                  },
+                }).catch((e: unknown) => setPeerError(errorMessage(e)));
+              }
+        }
         error={peerError}
         learnMore={
           <p>

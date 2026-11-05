@@ -109,7 +109,7 @@ export function UpdatePill({ size = "sm" }: { size?: "xs" | "sm" }) {
       case "check":
         return void nativeUpdates.check(savedChannel ?? state.channel);
       case "settings":
-        return void navigate({ to: "/settings/updates" });
+        return void navigate({ to: "/settings/about" });
       case "release":
         return state.releaseUrl ? void window.gram?.openExternal(state.releaseUrl) : undefined;
       case "none":

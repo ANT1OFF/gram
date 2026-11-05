@@ -93,7 +93,7 @@ describe("signed updater IPC", () => {
       await call(Channels.updatesInstall, { channel: "stable", tag: "v0.1.0", downgrade: false }),
     ).toEqual({
       updating: false,
-      error: "This Gram updates from the update button or Settings → Updates.",
+      error: "This Gram updates from the update button or Settings → About.",
     });
     expect(privateInstall).not.toHaveBeenCalled();
     expect(() => untrusted(Channels.updatesNativeInstall)).toThrow("untrusted sender");

@@ -610,7 +610,7 @@ const UPDATE_PILL_SHOTS: readonly Shot[] = [
     open: async (page) => {
       await seedNativeUpdate(page, signedReady);
       await page.setViewportSize({ width: 1180, height: 900 });
-      await page.goto("/settings/updates");
+      await page.goto("/settings/about");
       await page.getByTestId("updates").waitFor();
     },
   },
@@ -629,7 +629,7 @@ const UPDATE_PILL_SHOTS: readonly Shot[] = [
         });
       });
       await page.setViewportSize({ width: 1180, height: 900 });
-      await page.goto("/settings/updates");
+      await page.goto("/settings/about");
       await page.getByText(/Releases are read anonymously/).waitFor();
     },
   },
@@ -645,7 +645,7 @@ const UPDATE_PILL_SHOTS: readonly Shot[] = [
         message: "Didn't restart: an agent didn't stop cleanly. Nothing was installed.",
       });
       await page.setViewportSize({ width: 1180, height: 900 });
-      await page.goto("/settings/updates");
+      await page.goto("/settings/about");
       await page.getByTestId("updates").waitFor();
     },
   },
