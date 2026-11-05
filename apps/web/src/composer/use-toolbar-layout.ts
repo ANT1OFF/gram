@@ -106,12 +106,15 @@ export function useToolbarLayout<T extends HTMLElement = HTMLDivElement>(
       const known = widths.current.get(block.id);
       return known === undefined ? [] : [{ ...block, ...known }];
     });
+    // Each block counts the gap after it, as something always follows it on the shared row. On a
+    // row of their own nothing follows the last, so that row gets its gap back: without it the
+    // larger type's short words came a pixel or two short at 300 px and fell to glyphs.
     const next = toolbarLayout(
       inner - lead - fixed - SLACK,
       measured,
       OVERFLOW_WIDTH,
       LABEL_ROOM,
-      inner - lead - SLACK,
+      inner - lead - SLACK + gap,
     );
     if (!sameLayout(next, layout)) setLayout(next);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `tick` is the resize signal: something measured changed size

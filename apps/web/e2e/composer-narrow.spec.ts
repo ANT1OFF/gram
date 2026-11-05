@@ -139,6 +139,60 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await expect(toolbar.getByRole("combobox", { name: "Speed: Standard" })).toBeVisible();
 });
 
+/** Drags the right panel's edge `dx` pixels, negative towards the left. */
+async function dragPanel(page: Page, dx: number) {
+  const handle = page.getByRole("separator", { name: "Resize right panel" });
+  await expect.poll(async () => JSON.stringify(await handle.boundingBox())).not.toBe("null");
+  const box = (await handle.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx / 2, y, { steps: 4 });
+  await page.mouse.move(x + dx, y, { steps: 4 });
+  await page.mouse.up();
+}
+
+/** The words a toolbar picker shows beside its glyph: "" when the glyph stands alone. */
+const shownWords = (picker: Locator) =>
+  picker.evaluate((el) =>
+    [...el.querySelectorAll<HTMLElement>("[data-toolbar-label], [data-toolbar-compact]")]
+      .filter((words) => !words.classList.contains("sr-only") && words.offsetWidth > 0)
+      .map((words) => words.textContent ?? "")
+      .join("")
+      .trim(),
+  );
+
+// A 1024 px window with a review beside the chat leaves the composer some 490 px: short of room
+// for every value in full, but far from the 280 px where glyphs take over. Effort's default used to
+// have no short word, so there it went to its gauge alone while Mode still said "Ask".
+test("beside a review in a 1024 px window, effort keeps a short word", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.goto("/t/t-flaky");
+  const shell = page.getByTestId("app-shell");
+  // Dragged wide, the review takes Focus review on its own; Esc gives the chat back beside it.
+  await dragPanel(page, -400);
+  await expect(shell).toHaveAttribute("data-review-focus", "true");
+  await page.mouse.move(600, 600);
+  await page.keyboard.press("Escape");
+  await expect(shell).toHaveAttribute("data-review-focus", "false");
+  await expect(page.getByTestId("review-room-offer")).toBeVisible();
+
+  const toolbar = page.getByTestId("composer-toolbar");
+  // Its laid-out width, not its box: the chat eases back in from Focus review.
+  await expect.poll(() => toolbar.evaluate((el) => el.clientWidth)).toBeGreaterThan(400);
+  const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
+  await expect(effort).toHaveAccessibleName("Effort: Model default");
+  const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
+  await expect(mode).toHaveText(/^Ask/);
+  // A readable value of three letters or more, the compact one or the whole: never the gauge alone.
+  await expect.poll(() => shownWords(effort)).toMatch(/^(Model|Model default)$/);
+  await expect.poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Model/ }))).toMatch(
+    /^(Opus|Claude Opus)$/,
+  );
+  await expect(toolbar.getByRole("button", { name: "More composer controls" })).toHaveCount(0);
+});
+
 test("right-click on Send offers steering and sending into a new draft", async ({ page }) => {
   // Steer disappears when the scripted turn reaches approval; keep the turn running until clicked.
   await page.addInitScript(() => {
