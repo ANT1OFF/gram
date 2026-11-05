@@ -27,7 +27,7 @@ import { OptionGroup, rowInputCls, SettingRow, Toggle } from "./fields";
 import { DraftActions, dropUndo, offerUndo, SaveHint } from "./save-hint";
 import { claimTouchedRow, markSaved, markTouchedSaved } from "./saved-mark";
 import { GENERAL_ANCHORS } from "./general-anchors";
-import { SettingsGroup } from "./settings-group";
+import { SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
 const PREFIX_OPTIONS = BRANCH_PREFIXES.map((prefix) => ({ value: prefix, label: prefix }));
@@ -105,7 +105,7 @@ export function GeneralSection() {
     resetFor(settings, applyTo(key))(GENERAL_DEFAULTS[key]);
 
   return (
-    <div className="flex flex-col gap-6" data-testid="general-settings">
+    <div className={SETTINGS_STACK} data-testid="general-settings">
       <SettingsGroup
         label="Launch"
         anchor={GENERAL_ANCHORS.launch}

@@ -60,7 +60,7 @@ import { GroupBand } from "./board-group";
 import { StatusDot } from "@/orchestration/status-dot";
 
 import { DoneBand, doneRows } from "./board-done";
-import { GridHeads, GridLine, Status } from "./board-grid";
+import { GRID_WIDTH, GridHeads, GridLine, Status } from "./board-grid";
 import { BoardHeader } from "./board-header";
 import { useViewStore } from "./view-store";
 
@@ -603,76 +603,73 @@ function RailBoard({ state }: { state: WorkspaceState }) {
         className="min-h-0 flex-1 overflow-y-auto pb-2"
         style={{ "--board-lanes": laneTemplate(counts) } as CSSProperties}
       >
-        {rows.length > 0 && (grid ? <GridHeads /> : !listed && <LaneHeads counts={counts} />)}
-        {rows.length === 0 ? (
-          <div
-            role="status"
-            data-testid="rail-empty"
-            className="flex flex-col items-center gap-1 p-10 text-center text-reading text-muted-foreground"
-          >
-            <Columns3
-              aria-hidden
-              ref={drawOn}
-              strokeWidth={1.5}
-              className="mb-1 size-6 opacity-70"
-            />
-            {hidden > 0 ? (
-              <>
-                {/* Its finished work is in Done, as the sidebar has it; Show finished brings it here. */}
-                <p className="text-foreground">Nothing going now</p>
-                <p className="text-meta">Finished work is in Done.</p>
-              </>
-            ) : (
-              <>
-                <p className="text-foreground">No features yet</p>
-                <p className="text-meta">Ask the orchestrator to build one.</p>
-              </>
-            )}
-          </div>
-        ) : (
-          <GlideList id={`rail-${workspaceId}`}>
-            {/* Only the lines near the view draw: a workspace may hold many. */}
-            <VirtualRows
-              as="ul"
-              label="Features"
-              bare
-              items={entries}
-              rowKey={entryKey}
-              estimate={grid ? GRID_LINE_HEIGHT : LINE_HEIGHT}
-              overscan={LINE_OVERSCAN}
-              retainedKeys={editingGroups}
+        <div className={cn(grid && rows.length > 0 && GRID_WIDTH)}>
+          {rows.length > 0 && (grid ? <GridHeads /> : !listed && <LaneHeads counts={counts} />)}
+          {rows.length === 0 ? (
+            <div
+              role="status"
+              data-testid="rail-empty"
+              className="flex flex-col items-center gap-1 p-10 text-center text-reading text-muted-foreground"
             >
-              {(entry, index, place) =>
-                entry.kind === "line" ? (
-                  entry.headed === true ? (
-                    <OtherLine place={placed(place, index)}>{line(entry.row)}</OtherLine>
+              <Columns3 aria-hidden ref={drawOn} className="mb-1 size-icon-empty" />
+              {hidden > 0 ? (
+                <>
+                  {/* Its finished work is in Done, as the sidebar has it; Show finished brings it here. */}
+                  <p className="text-foreground">Nothing going now</p>
+                  <p className="text-meta">Finished work is in Done.</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-foreground">No features yet</p>
+                  <p className="text-meta">Ask the orchestrator to build one.</p>
+                </>
+              )}
+            </div>
+          ) : (
+            <GlideList id={`rail-${workspaceId}`}>
+              {/* Only the lines near the view draw: a workspace may hold many. */}
+              <VirtualRows
+                as="ul"
+                label="Features"
+                bare
+                items={entries}
+                rowKey={entryKey}
+                estimate={grid ? GRID_LINE_HEIGHT : LINE_HEIGHT}
+                overscan={LINE_OVERSCAN}
+                retainedKeys={editingGroups}
+              >
+                {(entry, index, place) =>
+                  entry.kind === "line" ? (
+                    entry.headed === true ? (
+                      <OtherLine place={placed(place, index)}>{line(entry.row)}</OtherLine>
+                    ) : (
+                      line(entry.row, placed(place, index))
+                    )
                   ) : (
-                    line(entry.row, placed(place, index))
+                    <GroupBand
+                      workspaceId={workspaceId}
+                      group={entry.group}
+                      setStage={setStage}
+                      editing={editingGroups.has(entryKey(entry))}
+                      onEditingChange={(editing) =>
+                        setEditingGroups((previous) => {
+                          const next = new Set(previous);
+                          if (editing) next.add(entryKey(entry));
+                          else next.delete(entryKey(entry));
+                          return next;
+                        })
+                      }
+                      place={placed(place, index)}
+                    >
+                      {entry.group.rows.map((row) => line(row))}
+                    </GroupBand>
                   )
-                ) : (
-                  <GroupBand
-                    workspaceId={workspaceId}
-                    group={entry.group}
-                    setStage={setStage}
-                    editing={editingGroups.has(entryKey(entry))}
-                    onEditingChange={(editing) =>
-                      setEditingGroups((previous) => {
-                        const next = new Set(previous);
-                        if (editing) next.add(entryKey(entry));
-                        else next.delete(entryKey(entry));
-                        return next;
-                      })
-                    }
-                    place={placed(place, index)}
-                  >
-                    {entry.group.rows.map((row) => line(row))}
-                  </GroupBand>
-                )
-              }
-            </VirtualRows>
-          </GlideList>
-        )}
-        <DoneBand workspaceId={workspaceId} rows={done} repos={repos} onOpen={onOpen} />
+                }
+              </VirtualRows>
+            </GlideList>
+          )}
+          <DoneBand workspaceId={workspaceId} rows={done} repos={repos} onOpen={onOpen} />
+        </div>
       </div>
       <UndoLine testId="board-undo" />
     </div>

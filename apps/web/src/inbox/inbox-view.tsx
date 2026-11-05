@@ -662,7 +662,7 @@ function LaterList({
         data-testid="inbox-empty"
         className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center text-reading text-muted-foreground"
       >
-        <AlarmClock aria-hidden className="size-5" />
+        <AlarmClock aria-hidden className="size-icon-empty" />
         <p className="font-medium text-foreground">Nothing for later</p>
         <p className="text-meta">Later puts an item away for an hour.</p>
       </div>
@@ -705,7 +705,7 @@ function Empty({ laterCount }: { laterCount: number }) {
       data-testid="inbox-empty"
       className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center text-reading text-muted-foreground"
     >
-      <CircleCheck aria-hidden className="size-5 text-success" />
+      <CircleCheck aria-hidden className="size-icon-empty text-success" />
       <p className="font-medium text-foreground">Nothing needs you</p>
       <p className="text-meta">Every workspace is clear.</p>
       {laterCount > 0 && (

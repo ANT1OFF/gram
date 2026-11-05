@@ -18,6 +18,7 @@ import { agentLabel } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { AutonomyChip } from "@/orchestration/autonomy-chip";
 import { askKeysByThread } from "@/orchestration/ask-model";
 import { useWorkspaceAsks } from "@/orchestration/ask-stack";
@@ -32,7 +33,7 @@ import { SettingRow, Toggle, inputCls } from "./fields";
 import { OrchestratorConnectorsField } from "./orchestrator-connectors-field";
 import { RowContextMenu, RowMenuButton, type RowAction } from "./row-menu";
 import { SearchScope } from "./search-scope";
-import { SettingsGroup } from "./settings-group";
+import { SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 import { useWorkspaceChanges } from "./workspace-actions";
 import { projectNameOf, sameRoster } from "./workspace-settings-model";
@@ -57,7 +58,7 @@ export function WorkspacesSettings() {
   const settings = useServerSettings((s) => s.settings);
   if (!settings) return <p className="text-reading text-muted-foreground">Loading settings…</p>;
   return (
-    <div className="flex flex-col gap-8 text-reading" data-testid="workspace-settings">
+    <div className={cn(SETTINGS_STACK, "text-reading")} data-testid="workspace-settings">
       <WorkspaceList />
       <Defaults settings={settings} />
     </div>

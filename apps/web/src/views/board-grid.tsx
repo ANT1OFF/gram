@@ -44,6 +44,13 @@ import { useFeatureSummary } from "@/orchestration/use-feature-cards";
 export const GRID_COLUMNS =
   "grid grid-cols-[minmax(10rem,15rem)_9rem_minmax(12rem,26rem)_minmax(7rem,12rem)] gap-x-6";
 
+/**
+ * The grid's own width: its columns at their widest (62 rem), their three gaps and the rows' inset
+ * either side. Its heads, rules and row hover stop there, so a wide window's spare room reads as
+ * margin after the table rather than as empty Now and Pull request columns running to the edge.
+ */
+export const GRID_WIDTH = "max-w-[calc(62rem+--spacing(26))]";
+
 /** The column heads over the rows. */
 export function GridHeads() {
   return (

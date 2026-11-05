@@ -21,7 +21,7 @@ import { NOTIFICATIONS_DEFAULTS, resetFor } from "./defaults";
 import { NotificationStatusSetting } from "./notification-status-row";
 import { OPTION_GROUP, OptionGroup, SettingRow, Toggle } from "./fields";
 import { ReviewBotReposField } from "./review-bot-repos-field";
-import { SettingsGroup } from "./settings-group";
+import { SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
 /** Where review requests and open PRs show until moved: the sidebar. Kept on this computer. */
@@ -117,7 +117,7 @@ export function NotificationsSection() {
   };
 
   return (
-    <div className="flex flex-col gap-6" data-testid="notification-settings">
+    <div className={SETTINGS_STACK} data-testid="notification-settings">
       <InterruptionRows />
       <SettingsGroup
         label="Desktop"

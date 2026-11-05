@@ -20,7 +20,7 @@ export function SessionExpiredScreen() {
       className="fixed inset-0 z-100 flex items-center justify-center bg-background p-6"
     >
       <div className="flex max-w-md flex-col items-center gap-3 text-center">
-        <KeyRound aria-hidden className="size-6 text-muted-foreground" />
+        <KeyRound aria-hidden className="size-icon-empty text-muted-foreground" />
         <h1 id="session-expired-title" className="font-heading text-heading">
           Session expired
         </h1>

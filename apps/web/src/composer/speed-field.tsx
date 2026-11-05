@@ -49,11 +49,12 @@ export const speedValueWord = (value: SpeedMode | undefined, state?: SpeedState)
         : "Fast";
 
 /**
- * The same, short of room: "Fast" keeps its word, as it is news; the default and Standard give
- * theirs up first, leaving the bolt, still named "Speed: Standard" and saying so on hover.
+ * The same, short of room: "Fast" keeps its word, as it is news; the default and Standard say the
+ * control's name, "Speed", as effort's default says "Effort", rather than leave a bare bolt to be
+ * learned; still named "Speed: Standard" and saying so on hover.
  */
 export const speedCompactWord = (value: SpeedMode | undefined): string =>
-  value === "fast" ? "Fast" : "";
+  value === "fast" ? "Fast" : "Speed";
 
 export const speedReport = (state?: SpeedState) =>
   state?.detail ??
