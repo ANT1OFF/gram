@@ -10,7 +10,9 @@ import {
 } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { randomUUID } from "node:crypto";
@@ -76,6 +78,12 @@ const boundFor = (definition: AppToolDefinition, audience: ToolAudience): boolea
   audience === "dream"
     ? definition.audience?.includes("dream") === true
     : definition.audience === undefined || definition.audience.includes(audience);
+
+/**
+ * How long a tool's `whyAsked` may take before its card goes up without it: long enough for the
+ * ownership check's git and gh reads, short enough that the user isn't kept from the card.
+ */
+export const WHY_ASKED_TIMEOUT = Duration.seconds(5);
 
 /** Raises the approval card; fails closed on rejection or runtime cancellation. */
 export interface ApprovalGate {
@@ -227,11 +235,22 @@ export const bindAppTools = (
           cardDetails === undefined
             ? yield* encode(decoded).pipe(Effect.orElseSucceed(() => decoded))
             : cardDetails(target);
-        // Messaging only: read after the verdict, which it never changes.
+        // Messaging only: read after the verdict, which it never changes. A hook that throws,
+        // fails, dies or takes too long leaves the card as it was before it existed.
         const why =
           whyAsked === undefined || verdict !== "class"
             ? undefined
-            : yield* whyAsked(threadId, target).pipe(
+            : yield* Effect.suspend(() => whyAsked(threadId, target)).pipe(
+                Effect.timeoutOption(WHY_ASKED_TIMEOUT),
+                Effect.map(Option.getOrUndefined),
+                // Only well-formed text reaches the card, so nothing past here can throw on it.
+                Effect.map((said) =>
+                  typeof said?.user === "string" &&
+                  typeof said.agent === "string" &&
+                  typeof said.tag === "string"
+                    ? said
+                    : undefined,
+                ),
                 Effect.catchCause(() => Effect.succeed(undefined)),
               );
         yield* gate.approve(

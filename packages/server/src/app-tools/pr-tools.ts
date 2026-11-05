@@ -1170,8 +1170,10 @@ export const PrAppToolsLive = Layer.effectDiscard(
             ownership,
             "worker",
             "runs Gram's check of a worker's own pull request",
-            "Approve to run the check on this machine.",
+            // `runLocalCheck` refuses any PR that isn't the worker's own, approved or not.
+            "Gram checks only a worker's own pull request, so approving won't run it either.",
             "run it",
+            false,
           );
         }).pipe(Effect.orElseSucceed(() => undefined)),
       describe: (caller) =>

@@ -13,6 +13,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { eventually } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadPlans } from "../plans/service.ts";
@@ -31,6 +32,7 @@ import {
   OWN_PR_REVIEW_TOOLS,
   REVIEW_BOT_THREAD_TOOLS,
   SPAWN_TASK_NEEDS_REASON,
+  WHY_ASKED_TIMEOUT,
 } from "./registry.ts";
 import { WAIT_DECISION_NEEDS_ASK_USER, waitAge } from "./wait-tools.ts";
 
@@ -252,6 +254,42 @@ describe("app tool policy", () => {
       ]);
     }),
   );
+
+  for (const hook of ["throws", "never resolves", "fails", "malformed"] as const) {
+    it.effect(`raises the card as before when whyAsked ${hook}`, () =>
+      Effect.gen(function* () {
+        const asked: Array<unknown> = [];
+        const [merge] = bindAppTools(
+          [
+            defineAppTool({
+              descriptor: { name: "merge", class: "outward", description: "" },
+              input: Schema.Struct({ n: Schema.Number }),
+              handle: (_threadId, { n }) => Effect.succeed({ merged: n }),
+              delegatedAtFullAutonomy: () => Effect.succeed(false),
+              whyAsked: () => {
+                if (hook === "throws") throw new Error("boom");
+                if (hook === "never resolves") return Effect.never;
+                if (hook === "fails") return Effect.fail(new Error("no")) as never;
+                return Effect.succeed({ user: 1 } as never);
+              },
+            }),
+          ],
+          "t1" as ThreadId,
+          {
+            approve: (_threadId, _descriptor, input, description, forced, _claims, reason) =>
+              Effect.sync(() => void asked.push([input, description, forced, reason])),
+          },
+        );
+        const call = yield* Effect.forkScoped(merge!.run({ n: 1 }));
+        if (hook === "never resolves") {
+          yield* TestClock.adjust(WHY_ASKED_TIMEOUT);
+        }
+        // Exactly today's path: the card, with no explanation, and the plain result.
+        expect(yield* Fiber.join(call)).toEqual({ merged: 1 });
+        expect(asked).toEqual([[{ n: 1 }, undefined, false, undefined]]);
+      }).pipe(Effect.scoped),
+    );
+  }
 
   it.effect(
     "asks the delegation about the resolved target, and refuses a key an outward tool doesn't take",

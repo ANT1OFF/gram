@@ -141,6 +141,8 @@ export const ownershipForAgent = (
 /**
  * A card full auto would have skipped but for ownership, said to each who reads it (the app tools'
  * `AskedDespiteAutonomy`): `covers` finishes "Full auto …" and `approving` says what approving does.
+ * `approvalActs: false` is for a tool that rechecks ownership after the card, so that approving it
+ * does nothing: the agent is then told so, and never to wait on the user.
  */
 export const ownershipAsk = (
   blocker: string,
@@ -148,11 +150,15 @@ export const ownershipAsk = (
   covers: string,
   approving: string,
   act?: string,
+  approvalActs = true,
 ) => {
-  const { reason } = explainOwnershipBlocker(blocker);
+  const { reason, unblocks } = explainOwnershipBlocker(blocker);
+  const agent = approvalActs
+    ? ownershipForAgent(blocker, audience, act)
+    : `Full auto covers only a worker's own pull request, and Gram couldn't confirm this one is the worker's own: ${reason}. ${unblocks ? ownershipFix(blocker, audience, act) : "Call again later if this was a hiccup; otherwise rely on CI."} The user's approval doesn't change this: Gram refuses it for a pull request that isn't the worker's own.`;
   return {
     user: `Full auto ${covers} without asking, but Gram couldn't confirm this one is the worker's own: ${reason}. ${approving}`,
-    agent: ownershipForAgent(blocker, audience, act),
+    agent,
     tag: `full auto, PR ownership unverified: ${reason}`,
   };
 };
