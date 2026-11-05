@@ -421,7 +421,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               return yield* toolError(
                 tool,
                 refusal(
-                  "unattended",
+                  "unattended_cap",
                   `It needs your approval: ${budget.liveWorkers} workers are live and the charter allows ${budget.maxConcurrentWorkers}, so no worker started.`,
                 ),
               );

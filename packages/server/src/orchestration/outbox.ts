@@ -337,6 +337,11 @@ export const StoredHeldBrief = Schema.Struct({
     plan: Schema.optionalKey(Schema.Array(Schema.String)),
     /** The routine whose run it is, which the worker carries once it starts. */
     routine: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+    /**
+     * A routine's brief, which nobody approves: kept, so its release (a reset, a probe, the user's
+     * click) is admitted against the cap under the spawn lock like the run that held it.
+     */
+    unattended: Schema.optionalKey(Schema.Literal(true)),
   }),
   /** The project's name, for the card. */
   projectName: Schema.String,
@@ -404,6 +409,8 @@ export const withoutWakes = (
 
 /** How many `notes` an outbox keeps; past it the oldest are dropped unsent. */
 const NOTES_KEPT = 10;
+/** How many once-only note keys an outbox remembers; far more than a restart could repeat. */
+export const NOTE_KEYS_KEPT = 100;
 
 /** The outbox with `added` after its notes, the oldest dropped past `NOTES_KEPT`. */
 export const withNotes = (outbox: OutboxState, added: ReadonlyArray<string>): OutboxState => {
@@ -480,6 +487,12 @@ export const OutboxState = Schema.Struct({
    * its id while older ones are dropped ahead of it. Absent means 0.
    */
   notesFrom: Schema.optionalKey(Schema.Int),
+  /**
+   * The keys of notes added once per occurrence (`addNote`'s `key`), newest last, at most
+   * `NOTE_KEYS_KEPT`: written in the same update as the note, so a note added again after a
+   * restart is recognised and not queued twice.
+   */
+  noteKeys: Schema.optionalKey(Schema.Array(Schema.String)),
   /** A digest has said the context is nearly full, and no reading since has been below that. */
   contextNoted: Schema.optionalKey(Schema.Boolean),
   /** The housekeeping conditions acknowledged digests have noted and that still held (`tidyNotes`). */

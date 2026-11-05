@@ -542,8 +542,8 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       if (found === undefined) return undefined;
       const { limit, project } = found;
       const now = yield* Clock.currentTimeMillis;
-      // Released later by a reset or by the user, never by the run that was held: not unattended.
-      const { priority: _priority, atLimit: _atLimit, unattended: _unattended, ...rest } = input;
+      // `unattended` stays: its release is admitted against the cap under the spawn lock as well.
+      const { priority: _priority, atLimit: _atLimit, ...rest } = input;
       const stored: StoredHeldBrief = {
         id: `held-${randomUUID().slice(0, 8)}`,
         callerId: caller.id,
@@ -853,6 +853,20 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
           continue;
         }
         yield* spawnBreaker.abandoned(claimed);
+        // An unattended brief found every slot taken under the spawn lock, which the look above
+        // can't promise: it waits for a slot, as one the look had found taken does.
+        if (spawned.error.startsWith("unattended_cap: ")) {
+          const live = /(\d+) workers are live/.exec(spawned.error)?.[1];
+          if (claimed.waitsForSlot !== true) {
+            notes.push(slotWaitNote(claimed, Number(live ?? slot.live), slot.cap));
+          }
+          yield* putBackHeld(workspaceId, {
+            ...claimed,
+            waitsForSlot: true,
+            retryAt: now + HELD_RETRY_MS,
+          });
+          continue;
+        }
         // Its feature was paused meanwhile: held as it was, without counting a try, until the
         // resume arms it again.
         if (spawned.error.startsWith("feature_paused: ")) {

@@ -106,6 +106,18 @@ export const RoutineBrief = Schema.String.check(
   Schema.isMaxLength(ROUTINE_BRIEF_MAX),
 );
 
+export const RoutineClaim = Schema.Struct({
+  requestId: Schema.String,
+  /** The scheduled time it is for; a Run now's is when it was clicked. */
+  slot: Schema.Number,
+  manual: Schema.optionalKey(Schema.Literal(true)),
+  /** It was held as this brief: once that brief is gone and no worker came of it, it settled. */
+  heldId: Schema.optionalKey(Schema.String),
+  /** It made this worker: once that worker is gone or finished, it settled. */
+  threadId: Schema.optionalKey(ThreadId),
+});
+export type RoutineClaim = typeof RoutineClaim.Type;
+
 export const Routine = Schema.Struct({
   id: RoutineId,
   workspaceId: WorkspaceId,
@@ -132,17 +144,13 @@ export const Routine = Schema.Struct({
   /** Epoch ms it next comes due; absent while it is off. Past it, it runs at once. */
   nextRunAt: Schema.optionalKey(Schema.Number),
   /**
-   * The run in progress, kept before it starts anything: its spawn's request id, named by the
-   * routine and the slot it is for, so a run a restart cut short finds the worker it made instead of
-   * making another. Cleared when the run is recorded.
+   * The routine's one unsettled run (its occurrence), kept before the run starts anything and
+   * until it settles: while its brief is held, its worker is being made, or its worker is live. Its
+   * `requestId`, named by the routine and the slot it is for, is the spawn's request id, so the
+   * worker it makes has one id however often the run is retried; `heldId` and `threadId` say how
+   * far it got. See `routines/routines.ts` for the lifecycle.
    */
-  claim: Schema.optionalKey(
-    Schema.Struct({
-      requestId: Schema.String,
-      slot: Schema.Number,
-      manual: Schema.optionalKey(Schema.Literal(true)),
-    }),
-  ),
+  claim: Schema.optionalKey(RoutineClaim),
   /** Due, and waiting on its workspace's pause: it runs once when the workspace resumes. */
   waiting: Schema.optionalKey(Schema.Literal("paused")),
 });

@@ -809,6 +809,7 @@ export const OrchestrationLive = Layer.effect(
       checkWorkerModel,
       addNote,
       noteQuietly,
+      withHeldReleases: (workspaceId, effect) => kit.heldLock.withLock(workspaceId, effect),
     });
   }),
 );

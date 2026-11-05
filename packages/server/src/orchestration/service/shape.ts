@@ -91,8 +91,9 @@ export interface SpawnWorkerInput {
    * Nobody is there to answer a card: a routine's run. Whatever would ask the user (one worker past
    * the charter's cap, a repo outside the workspace, the limit threshold's question) refuses
    * instead, with `unattended:` and why; the cap and the workspace's repos are checked under the
-   * spawn's own lock, so no other spawn lands between the check and the worker. Set by the routines
-   * engine alone, never by an agent's tool.
+   * spawn's own lock, so no other spawn lands between the check and the worker. Kept on a brief it
+   * held, so the brief's release is admitted the same way. Set by the routines engine alone, never
+   * by an agent's tool.
    */
   readonly unattended?: true | undefined;
 }
@@ -741,7 +742,23 @@ export interface OrchestrationShape {
    * how an adopted dream tells the orchestrator to re-read its memory. Kept with the other
    * notes, so only the newest ten survive until a digest goes.
    */
-  addNote(workspaceId: WorkspaceId, note: string, reason?: string): Effect.Effect<void>;
+  addNote(
+    workspaceId: WorkspaceId,
+    note: string,
+    reason?: string,
+    /** Adds it once: a later call with the same key (the same routine run, after a restart) does nothing. */
+    key?: string,
+  ): Effect.Effect<void>;
+  /**
+   * Runs `effect` while no held brief of the workspace is being released or cancelled: every release
+   * takes the brief out of the outbox and spawns it under this same lock, so inside it a brief is
+   * either still held or its worker exists, never between. The routines engine reads a run's state
+   * under it.
+   */
+  withHeldReleases<A, E, R>(
+    workspaceId: WorkspaceId,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R>;
   /**
    * Puts one line in the workspace's next digest without waking anyone: it goes whenever the next
    * digest does. How worktree cleanups are told, one line per pass rather than a notice a thread.

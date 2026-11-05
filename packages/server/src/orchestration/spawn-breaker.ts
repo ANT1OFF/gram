@@ -291,12 +291,8 @@ export const makeSpawnBreaker = (deps: Dependencies) =>
           const projectName = yield* deps.projectName(input, workspace);
           if (projectName === undefined) return;
           const at = yield* Clock.currentTimeMillis;
-          const {
-            priority: _priority,
-            atLimit: _atLimit,
-            unattended: _unattended,
-            ...rest
-          } = input;
+          // `unattended` stays: its release is admitted against the cap under the spawn lock as well.
+          const { priority: _priority, atLimit: _atLimit, ...rest } = input;
           const stored: StoredHeldBrief = existing ?? {
             id: `held-${randomUUID().slice(0, 8)}`,
             callerId,

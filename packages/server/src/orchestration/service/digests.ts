@@ -34,6 +34,7 @@ import { DECISIONS_FILE } from "../memory.ts";
 import {
   readOutbox as readStoredOutbox,
   notesEnd,
+  NOTE_KEYS_KEPT,
   storedSnapshot,
   withNotes,
   withNotesAcked,
@@ -628,9 +629,19 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
     });
 
   // Dreams' seam (`dreams.ts`).
-  const addNote: OrchestrationShape["addNote"] = (workspaceId, note, reason) =>
+  const addNote: OrchestrationShape["addNote"] = (workspaceId, note, reason, key) =>
     Effect.gen(function* () {
-      yield* updateOutbox(workspaceId, (outbox) => [withNotes(outbox, [note]), undefined]);
+      // With a key, the note and its key go in one write: one already there is the same occurrence.
+      const added = yield* updateOutbox(workspaceId, (outbox) => {
+        if (key === undefined) return [withNotes(outbox, [note]), true];
+        const keys = outbox.noteKeys ?? [];
+        if (keys.includes(key)) return [outbox, false];
+        return [
+          { ...withNotes(outbox, [note]), noteKeys: [...keys, key].slice(-NOTE_KEYS_KEPT) },
+          true,
+        ];
+      });
+      if (!added) return;
       yield* wake(workspaceId, reason ?? "memory consolidated", true);
     });
 
