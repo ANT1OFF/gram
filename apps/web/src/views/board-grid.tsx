@@ -37,12 +37,12 @@ import { useFeatureSummary } from "@/orchestration/use-feature-cards";
 
 /**
  * The grid's four columns, shared by its heads and every row so the cells line up. Each is as wide
- * as what it holds needs: a task's name to 22 rem, the stage bar's fixed 9, the PR's chips and words
- * to 12, and Now, which carries the worker's latest report, the rest. The table stops at 72 rem, so
- * a wide window doesn't push the PR column to the far edge.
+ * as what it holds needs and no wider: a task's name (two lines) to 15 rem, the stage bar's fixed
+ * 9, Now's state and latest report line to 26, and the PR's chips and words to 12. No column takes
+ * the rest, so a wide window leaves its room after the PR column, not before it.
  */
 export const GRID_COLUMNS =
-  "grid max-w-6xl grid-cols-[minmax(10rem,18rem)_9rem_minmax(12rem,1fr)_minmax(7rem,12rem)] gap-x-6";
+  "grid grid-cols-[minmax(10rem,15rem)_9rem_minmax(12rem,26rem)_minmax(7rem,12rem)] gap-x-6";
 
 /** The column heads over the rows. */
 export function GridHeads() {

@@ -13,13 +13,22 @@ import { cn } from "@/lib/utils";
  */
 export function ControlDetails({
   label = "Control and approvals",
+  open,
+  onOpenChange,
   children,
 }: {
   label?: string;
+  /** Held by the form when the summary beside Start opens it; else its own. */
+  open?: boolean | undefined;
+  onOpenChange?: ((open: boolean) => void) | undefined;
   children: ReactNode;
 }) {
   return (
-    <Collapsible data-testid="new-control-details">
+    <Collapsible
+      data-testid="new-control-details"
+      {...(open === undefined ? {} : { open })}
+      {...(onOpenChange === undefined ? {} : { onOpenChange: (next) => onOpenChange(next) })}
+    >
       <CollapsibleTrigger
         className={cn(
           "group flex items-center gap-1 rounded-sm text-meta text-muted-foreground hover:text-foreground",

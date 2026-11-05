@@ -1,11 +1,23 @@
-import type { DraftId, Thread, ThreadId, WorkerLedgerEntry } from "@gram/contracts";
+import type { DraftId, GitState, Thread, ThreadId, WorkerLedgerEntry } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { FileDiff, GitPullRequest, History, Play } from "lucide-react";
+import type { ReactNode } from "react";
+import {
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  FileDiff,
+  GitBranch,
+  GitPullRequest,
+  History,
+  Play,
+  type LucideIcon,
+} from "lucide-react";
 
 import { carryDraft } from "@/composer/draft-prefill";
 import { Button } from "@/components/ui/button";
 import { useHistoryStore } from "@/history/history-view";
 import { formatStamp } from "@/lib/time";
+import { cn } from "@/lib/utils";
 import { reportLine } from "@/orchestration/board-model";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { workerEntryOf } from "@/orchestration/workers-model";
@@ -22,9 +34,19 @@ interface OutcomePr {
   readonly state: "open" | "merged" | "closed" | undefined;
 }
 
-const outcomePr = (thread: Thread, entry: WorkerLedgerEntry | undefined): OutcomePr | undefined => {
+const outcomePr = (
+  thread: Thread,
+  entry: WorkerLedgerEntry | undefined,
+  git?: GitState | undefined,
+): OutcomePr | undefined => {
   if (entry?.pr !== undefined)
     return { number: entry.pr.number, repo: entry.pr.repo, state: entry.pr.state };
+  if (git?.pr !== undefined)
+    return {
+      number: git.pr.number,
+      repo: git.origin,
+      state: git.pr.state === "MERGED" ? "merged" : git.pr.state === "CLOSED" ? "closed" : "open",
+    };
   if (thread.boundPr !== undefined)
     return { number: thread.boundPr.number, repo: thread.boundPr.repo, state: undefined };
   const merged = thread.settledMerge?.merged.at(-1);
@@ -45,6 +67,48 @@ export const threadDidWork = (thread: Thread, entry: WorkerLedgerEntry | undefin
   entry?.lastReport !== undefined;
 
 const files = (n: number) => `${n} ${n === 1 ? "file" : "files"} changed`;
+
+/** A saved PR state in the outcome's words. */
+const PR_STATE: Readonly<Record<NonNullable<OutcomePr["state"]>, string>> = {
+  open: "Open",
+  merged: "Merged",
+  closed: "Closed without merging",
+};
+
+/** How a PR's checks last read, in words, with the mark and tone the outcome shows them in. */
+export const checksOutcome = (
+  checks: string | undefined,
+): { word: string; icon: LucideIcon; tone: string } | undefined => {
+  switch (checks) {
+    case "passing":
+      return { word: "Passed", icon: CircleCheck, tone: "text-success" };
+    case "failing":
+      return { word: "Failed", icon: CircleX, tone: "text-destructive" };
+    case "pending":
+      return { word: "Still running when it was saved", icon: CircleDashed, tone: "" };
+    case "none":
+      return { word: "None ran", icon: CircleDashed, tone: "" };
+    default:
+      return undefined;
+  }
+};
+
+/** GitHub's review decision in words; undefined where none was read. */
+const REVIEW: Readonly<Record<string, string>> = {
+  APPROVED: "Approved",
+  CHANGES_REQUESTED: "Changes requested",
+  REVIEW_REQUIRED: "Review required",
+};
+
+/** One labelled fact of the saved outcome: its term, then its value and the action beside it. */
+function Fact({ term, testId, children }: { term: string; testId: string; children: ReactNode }) {
+  return (
+    <div data-testid={testId} className="contents">
+      <dt className="text-meta text-muted-foreground">{term}</dt>
+      <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">{children}</dd>
+    </div>
+  );
+}
 
 /**
  * The brief "Resume from report" starts a new draft with: what the thread was, its last report and
@@ -90,8 +154,13 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   }
 
   const report = entry?.lastReport;
-  const pr = outcomePr(thread, entry);
+  const pr = outcomePr(thread, entry, git);
   const changed = entry?.changedFiles ?? git?.changedFiles ?? 0;
+  const checks = checksOutcome(entry?.pr?.checks ?? git?.pr?.checks);
+  const review =
+    entry?.pr?.reviewDecision === undefined ? undefined : REVIEW[entry.pr.reviewDecision];
+  const branch = entry?.branch ?? git?.branch ?? thread.checkout.branch;
+  const base = git?.pr?.baseRef;
   const ended =
     thread.completedAt === undefined
       ? undefined
@@ -136,6 +205,85 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
           Gram saved about its work.
         </p>
       </div>
+      {/* What Gram saved of how it ended: its PR and checks, its branch and its files. */}
+      <dl
+        aria-label="Saved outcome"
+        data-testid="thread-outcome-facts"
+        className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2"
+      >
+        {pr !== undefined && (
+          <Fact term="Pull request" testId="thread-outcome-fact-pr">
+            <span className="tabular-nums">
+              #{pr.number}
+              {pr.repo !== undefined && (
+                <span className="text-muted-foreground"> {pr.repo.split("/").at(-1)}</span>
+              )}
+            </span>
+            {pr.state !== undefined && (
+              <span data-testid="thread-outcome-pr-state">· {PR_STATE[pr.state]}</span>
+            )}
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              data-testid="thread-outcome-pr"
+              onClick={() => show("pr")}
+            >
+              <GitPullRequest data-icon="inline-start" />
+              Open PR #{pr.number}
+            </Button>
+          </Fact>
+        )}
+        {checks !== undefined && (
+          <Fact term="Checks" testId="thread-outcome-checks">
+            <span className="flex items-center gap-1.5">
+              <checks.icon aria-hidden className={cn("size-3.5 shrink-0", checks.tone)} />
+              {checks.word}
+            </span>
+          </Fact>
+        )}
+        {review !== undefined && (
+          <Fact term="Review" testId="thread-outcome-review">
+            {review}
+          </Fact>
+        )}
+        {branch !== undefined && (
+          <Fact term="Branch" testId="thread-outcome-branch">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <GitBranch aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate font-mono text-meta">{branch}</span>
+              {base !== undefined && (
+                <span className="text-meta text-muted-foreground">
+                  into <span className="font-mono">{base}</span>
+                </span>
+              )}
+            </span>
+          </Fact>
+        )}
+        <Fact term="Files" testId="thread-outcome-changed">
+          {changed > 0 ? (
+            <>
+              <span className="tabular-nums">{files(changed)}</span>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                data-testid="thread-outcome-files"
+                onClick={() => show("diff")}
+              >
+                <FileDiff data-icon="inline-start" />
+                Show changes
+              </Button>
+            </>
+          ) : (
+            <span className="text-muted-foreground">
+              {pr === undefined
+                ? "None left in its worktree"
+                : `None left in its worktree; its changes are in PR #${pr.number}`}
+            </span>
+          )}
+        </Fact>
+      </dl>
       {report !== undefined && (
         <div data-testid="thread-outcome-report" className="flex flex-col gap-0.5">
           <p className="text-meta text-muted-foreground tabular-nums">
@@ -150,34 +298,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
         data-testid="thread-outcome-actions"
         className="flex flex-wrap items-center gap-2"
       >
-        {pr !== undefined && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            data-testid="thread-outcome-pr"
-            onClick={() => show("pr")}
-          >
-            <GitPullRequest data-icon="inline-start" />
-            Open PR #{pr.number}
-            {pr.repo !== undefined && (
-              <span className="text-muted-foreground">{pr.repo.split("/").at(-1)}</span>
-            )}
-            {pr.state !== undefined && <span className="text-muted-foreground">{pr.state}</span>}
-          </Button>
-        )}
-        {changed > 0 && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            data-testid="thread-outcome-files"
-            onClick={() => show("diff")}
-          >
-            <FileDiff data-icon="inline-start" />
-            {files(changed)}
-          </Button>
-        )}
         <Button
           type="button"
           size="sm"

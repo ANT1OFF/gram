@@ -180,9 +180,32 @@ describe("worker entry intent", () => {
     });
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
     expect(start).not.toHaveBeenCalled();
-    expect(
-      (screen.getByRole("button", { name: /Start workspace and worker/ }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    // Start says what it waits on, on the button itself, keeping its action as its name.
+    const button = screen.getByRole("button", {
+      name: "Start workspace and worker, Checking agents…",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe("Checking agents…");
+    expect(screen.queryByText(/Checking the task's selected harness/)).toBeNull();
+  });
+
+  it("enables Start, in its own words, once the check passes", async () => {
+    setup(
+      async () => ({
+        orchestrator: { agent: "claude", model: "synthetic-model" },
+        worker: { agent: "codex", model: "synthetic-model" },
+      }),
+      undefined,
+      "direct",
+    );
+    fireEvent.change(screen.getByLabelText("What needs doing"), {
+      target: { value: "Synthetic task" },
+    });
+    await waitFor(() => {
+      const button = screen.getByTestId("task-submit") as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      expect(button.hasAttribute("data-checking")).toBe(false);
+      expect(button.textContent).toMatch(/^Start workspace and worker/);
+    });
   });
 });

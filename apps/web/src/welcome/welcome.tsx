@@ -93,11 +93,10 @@ export function Welcome() {
 }
 
 /** What Gram does, in the order it happens. */
-const STEPS: readonly { icon: LucideIcon; short: string; title: string; line: ReactNode }[] = [
+const STEPS: readonly { icon: LucideIcon; short: string; line: ReactNode }[] = [
   {
     icon: MessageSquare,
     short: "You give tasks",
-    title: "You give tasks",
     line: (
       <>
         In plain words, from New <ShortcutKbd id="thread.new" /> or an orchestrator's chat.
@@ -107,14 +106,12 @@ const STEPS: readonly { icon: LucideIcon; short: string; title: string; line: Re
   {
     icon: Network,
     short: "An orchestrator briefs workers",
-    title: "An orchestrator plans them and briefs workers",
     line: "One per workspace. It splits a task into pieces and follows each one through.",
   },
   {
     icon: GitPullRequest,
     short: "Each worker opens a PR",
-    title: "Workers run Claude Code or Codex",
-    line: "Each in its own worktree, on your own subscription, and each opens a pull request.",
+    line: "Workers run Claude Code or Codex, each in its own worktree, on your own subscription.",
   },
 ];
 
@@ -187,8 +184,9 @@ function FirstRun() {
           <h2 id="welcome-title" className="font-heading text-title">
             Pick a repository to start
           </h2>
-          <p className="text-meta text-muted-foreground">
-            It becomes a workspace with its own orchestrator. You can add more repositories later.
+          <p data-testid="welcome-line" className="text-meta text-muted-foreground">
+            A workspace groups your repositories, and its orchestrator coordinates the agents that
+            work in them.
           </p>
         </div>
         {searchable && (
@@ -303,45 +301,48 @@ function FirstRun() {
 }
 
 /**
- * How Gram works, as one line of three numbered steps under the start: who gives the work, who
- * plans it and who does it. Each step's fuller line is on its hover and focus.
+ * How Gram works, folded under the start: the line under the heading says what a workspace and
+ * its orchestrator are, so the three steps (who gives the work, who plans it and who does it) are
+ * there for whoever wants them, each with its fuller line.
  */
 function HowItWorks() {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-4">
-      <span className="text-caption font-medium text-muted-foreground uppercase">How it works</span>
-      <ol
-        aria-label="How Gram works"
-        data-testid="welcome-steps"
-        className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-meta"
+    <div className="flex flex-col gap-2 border-t border-border pt-4">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-expanded={open}
+        data-testid="welcome-how"
+        className="-ml-2.5 self-start"
+        onClick={() => setOpen((was) => !was)}
       >
-        {STEPS.map(({ icon: Icon, short, title, line }, index) => (
-          <li key={title} className="flex items-center gap-1.5">
-            {index > 0 && (
-              <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-            )}
-            <Hint
-              label={
-                <span className="flex flex-col gap-0.5">
-                  <span className="font-medium">{title}</span>
-                  <span>{line}</span>
+        <ChevronRight
+          data-icon="inline-start"
+          className={cn("transition-transform duration-(--dur-fast)", open && "rotate-90")}
+        />
+        How it works
+      </Button>
+      <Expand open={open}>
+        {open && (
+          <ol
+            aria-label="How Gram works"
+            data-testid="welcome-steps"
+            className="flex flex-col gap-2 text-meta"
+          >
+            {STEPS.map(({ icon: Icon, short, line }) => (
+              <li key={short} className="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2">
+                <Icon aria-hidden className="mt-0.5 size-3.5 text-muted-foreground" />
+                <span className="flex flex-col">
+                  <span className="font-medium text-foreground">{short}</span>
+                  <span className="text-muted-foreground">{line}</span>
                 </span>
-              }
-              render={
-                <span
-                  // Focusable, so each step's fuller line reaches the keyboard too.
-                  tabIndex={0}
-                  className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:focus-ring"
-                />
-              }
-            >
-              <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="text-foreground">{short}</span>
-              {title !== short && <span className="sr-only">: {title}</span>}
-            </Hint>
-          </li>
-        ))}
-      </ol>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Expand>
     </div>
   );
 }
