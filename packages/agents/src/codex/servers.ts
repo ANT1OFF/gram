@@ -55,7 +55,7 @@ import type { CodexRuntimeSource, ManagedCodex } from "./runtime.ts";
 import { makeThreadOwnership } from "./thread-ownership.ts";
 import { acquireHeld } from "../servers-hold.ts";
 import { CODEX_CLI_VERSION } from "./version.ts";
-import { writeCodexLine } from "./stdio.ts";
+import { codexLineReader, writeCodexLine } from "./stdio.ts";
 
 export interface CodexServer {
   readonly prepareForSwitch?: Effect.Effect<void, AgentUnavailable>;
@@ -286,16 +286,11 @@ const homeIdentity = (env: Readonly<Record<string, string | undefined>>): string
 const childIo = (child: ChildProcess) =>
   Effect.gen(function* () {
     const lines = yield* Queue.unbounded<string, CodexRpcError | Cause.Done>();
-    let buffer = "";
     let stderr = "";
-    child.stdout?.on("data", (data: Buffer) => {
-      buffer += data.toString();
-      let index: number;
-      while ((index = buffer.indexOf("\n")) >= 0) {
-        Queue.offerUnsafe(lines, buffer.slice(0, index));
-        buffer = buffer.slice(index + 1);
-      }
-    });
+    child.stdout?.on(
+      "data",
+      codexLineReader((line) => Queue.offerUnsafe(lines, line)),
+    );
     child.stderr?.on("data", (data: Buffer) => {
       stderr = (stderr + data.toString()).slice(-2_000);
     });
