@@ -186,12 +186,17 @@ export function PickerTrigger({
     >
       {/* The glyph stands in for words, never beside the ones it repeats: "Effort: High" says
           what a gauge only hints at, so it draws only once the dimension's word gives way, beside
-          the value alone ("High") or alone. `useToolbarLayout` counts it as `GLYPH` while it isn't
-          drawn. */}
+          the value alone ("High") or alone. While the words show it is still laid out, invisible
+          and out of the flow, so `useToolbarLayout` measures the width it would take rather than
+          assume one. */}
       {glyph && (
         <span
+          aria-hidden
           data-toolbar-glyph
-          className={size === "icon" || size === "value" ? "contents" : "hidden"}
+          className={cn(
+            "flex shrink-0 items-center",
+            size !== "icon" && size !== "value" && "pointer-events-none invisible absolute",
+          )}
         >
           {glyph}
         </span>

@@ -22,9 +22,12 @@ const LABEL_GAP = 6;
 export const CHEVRON = 20;
 const SEPARATOR = 9;
 /**
- * What a picker's glyph takes (18 px, `size-icon-bar`, and the gap after it), drawn only alone,
- * once its words give way: in full and short the words stand in its place (`PickerTrigger`).
- * Constant for the same reason as `CHEVRON`: the measure can't see it while it isn't drawn.
+ * What a picker's glyph is expected to take (18 px, `size-icon-bar`, and the gap after it). It is
+ * measured: in full and short words the glyph is still laid out, invisible and out of the flow
+ * (`PickerTrigger`), so its real width counts. An assumed width that differed from the drawn one
+ * by even 2 px (the effort gauge's) let the value-alone step and a row of their own flip between
+ * each other until React stopped it ("Maximum update depth exceeded"). This is only the fallback
+ * for a glyph not laid out at all.
  */
 export const GLYPH = 24;
 /** Slack for rounding and the gaps between groups, so a fit is never a pixel short. */
@@ -100,8 +103,10 @@ export function useToolbarLayout<T extends HTMLElement = HTMLDivElement>(
       const value = words("[data-toolbar-value]") ?? short;
       const decor = rule + (node.querySelector('[role="combobox"]') === null ? 0 : CHEVRON);
       // A picker whose glyph draws only beside its value alone, or alone, is that much narrower
-      // with its words.
-      const glyphless = node.querySelector("[data-toolbar-glyph]") === null ? 0 : GLYPH;
+      // with its words: by the glyph's own width, measured whether it shows or not, and its gap.
+      const glyphNode = node.querySelector<HTMLElement>("[data-toolbar-glyph]");
+      const glyphWidth = glyphNode?.getBoundingClientRect().width ?? 0;
+      const glyphless = glyphNode === null ? 0 : glyphWidth > 0 ? glyphWidth + LABEL_GAP : GLYPH;
       const bare =
         shown -
         (size === "full"

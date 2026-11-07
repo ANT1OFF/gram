@@ -155,10 +155,8 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
     .getByRole("menu", { name: "Mode" })
     .getByRole("menuitemradio", { name: "Plan" })
     .click();
-  const at260 = await dump(page);
   await squeeze(page, 720);
-  await page.waitForTimeout(1000);
-  await expect(mode, `260: ${at260} / 720: ${await dump(page)}`).toHaveAccessibleName("Mode: Plan");
+  await expect(mode).toHaveAccessibleName("Mode: Plan");
   await expect(toolbar.getByRole("combobox", { name: "Speed: Standard" })).toBeVisible();
 });
 
@@ -177,26 +175,6 @@ async function dragPanel(page: Page, dx: number) {
 }
 
 /** The words a toolbar picker shows beside its glyph: "" when the glyph stands alone. */
-// TEMPORARY diagnostic for the Linux-only failure below: what each block shows, and the widths.
-const dump = (page: Page) =>
-  page.getByTestId("composer-toolbar").evaluate((el) => {
-    const words = [...el.querySelectorAll<HTMLElement>("[data-toolbar-block]")].map((b) => {
-      const shown = [
-        ...b.querySelectorAll<HTMLElement>(
-          "[data-toolbar-label],[data-toolbar-compact],[data-toolbar-value]",
-        ),
-      ]
-        .filter((s) => !s.classList.contains("sr-only") && s.offsetWidth > 0)
-        .map((s) => s.textContent)
-        .join("");
-      return `${b.dataset["toolbarBlock"]}=${shown || "∅"}(${b.offsetWidth})`;
-    });
-    const fixed = [...el.querySelectorAll<HTMLElement>("[data-toolbar-fixed]")].map(
-      (f) => f.offsetWidth,
-    );
-    return `${el.clientWidth} wrapped=${el.dataset["wrapped"] ?? "-"} ${words.join(" ")} fixed=${fixed.join(",")}`;
-  });
-
 const shownWords = (picker: Locator) =>
   picker.evaluate((el) =>
     [
