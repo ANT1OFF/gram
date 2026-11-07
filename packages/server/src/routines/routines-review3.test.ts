@@ -533,3 +533,175 @@ describe.skipIf(!hasGit)("routines and worker memory: fourth review", () => {
     SLOW,
   );
 });
+
+/** A due run of `routine` waiting on the held-release lock while `meanwhile` changes it; released after. */
+const whileRunWaits = <A, E, R>(workspaceId: WorkspaceId, meanwhile: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const orchestration = yield* Orchestration;
+    const gate = yield* Deferred.make<void>();
+    const holding = yield* orchestration
+      .withHeldReleases(workspaceId, Deferred.await(gate))
+      .pipe(Effect.forkScoped);
+    yield* settle;
+    yield* TestClock.adjust("1 hour");
+    yield* settle;
+    const result = yield* meanwhile;
+    yield* Deferred.succeed(gate, undefined);
+    yield* Fiber.join(holding);
+    yield* settle;
+    return result;
+  });
+
+describe.skipIf(!hasGit)("routines and worker memory: fifth review", () => {
+  it.effect(
+    "[20] doesn't resume a recovered claim for a routine turned off and on while its run waited",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const { project, workspaceId } = yield* openOrchestrator(world);
+            const routine = yield* workerRoutine(workspaceId, project.id);
+            const slot = routine.nextRunAt!;
+            // A claim a restart cut short before its spawn: pending, for this very slot.
+            yield* stageState(routine.id, {
+              ...stateOf(routine),
+              claim: { requestId: `routine:${routine.id}:${slot}`, slot },
+            });
+            yield* whileRunWaits(
+              workspaceId,
+              Effect.gen(function* () {
+                yield* editRoutine(routine.id, (each) => ({ ...each, off: true }));
+                yield* editRoutine(routine.id, (each) => {
+                  const { off: _off, ...rest } = each;
+                  return rest;
+                });
+              }),
+            );
+            expect(yield* workersOf(routine.id)).toHaveLength(0);
+            expect((yield* routineNow(routine.id)).lastRun).toBeUndefined();
+          }),
+        );
+      }),
+    SLOW,
+  );
+
+  it.effect("[21] doesn't launch a run whose routine was removed while it waited", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const orchestration = yield* Orchestration;
+          const { project, workspaceId } = yield* openOrchestrator(world);
+          const routine = yield* workerRoutine(workspaceId, project.id);
+          yield* whileRunWaits(
+            workspaceId,
+            editRoutines(workspaceId, () => []),
+          );
+          expect(yield* workersOf(routine.id)).toHaveLength(0);
+          expect((yield* orchestration.routineStates(workspaceId))[routine.id]).toBeUndefined();
+        }),
+      );
+    }),
+  );
+
+  it.effect("[22] keeps memory with private front matter commented out from a worker", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      yield* withServer(
+        world,
+        Effect.gen(function* () {
+          const { session } = yield* openOrchestrator(world);
+          const worker = yield* spawn(session, { feature: "reader" });
+          yield* completeTurn(worker.session);
+          const files: Record<string, string> = {
+            "commented.md": "<!--\n---\nprivate: true\n---\n-->\nNot for workers.",
+            "inline.md": "<!-- private: true -->\nNot for workers.",
+            "yaml-comment.md": "---\ntitle: Plans\n# private: true\n---\nNot for workers.",
+            "toml.md": '+++\nprivate = "yes"\n+++\nNot for workers.',
+            "bare.md": "---\nprivate\n---\nNot for workers.",
+            "public.md": "---\nprivate: false\n---\nFor everyone.",
+          };
+          for (const [path, content] of Object.entries(files)) {
+            yield* session.callTool("memory_write", { path, content });
+          }
+          const seen = listed(yield* worker.session.callTool("memory_list", {}));
+          expect(seen).toContain("public.md");
+          for (const path of Object.keys(files).filter((each) => each !== "public.md")) {
+            expect(seen, path).not.toContain(path);
+            const refused = yield* worker.session
+              .callTool("memory_read", { path })
+              .pipe(Effect.flip);
+            expect(refused.message, path).toContain("No memory file");
+          }
+        }),
+      );
+    }),
+  );
+
+  it.effect(
+    "[23] launches a run that waited through an edit with the routine's current brief",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const { project, workspaceId } = yield* openOrchestrator(world);
+            const routine = yield* workerRoutine(workspaceId, project.id);
+            yield* whileRunWaits(
+              workspaceId,
+              editRoutine(routine.id, (each) => ({ ...each, brief: "The brief as edited." })),
+            );
+            const ran = yield* ranAfter(routine.id, 0);
+            expect(ran.lastRun?.outcome).toBe("started");
+            const fake = yield* FakeAgentControl;
+            const brief = yield* waitReal(
+              "the worker's brief",
+              Effect.sync(
+                () =>
+                  fake.sessions.find((each) => each.options.threadId === ran.lastRun?.threadId)
+                    ?.sent[0],
+              ),
+            );
+            expect(brief.text).toContain("The brief as edited.");
+            expect(brief.text).not.toContain("Look at main's failing jobs");
+          }),
+        );
+      }),
+  );
+
+  it.effect(
+    "[24] doesn't recreate the state of a routine toggled and then removed while its run waited",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const orchestration = yield* Orchestration;
+            const { project, workspaceId } = yield* openOrchestrator(world);
+            const routine = yield* workerRoutine(workspaceId, project.id);
+            yield* whileRunWaits(
+              workspaceId,
+              Effect.gen(function* () {
+                yield* editRoutine(routine.id, (each) => ({ ...each, off: true }));
+                yield* editRoutine(routine.id, (each) => {
+                  const { off: _off, ...rest } = each;
+                  return rest;
+                });
+                yield* editRoutines(workspaceId, () => []);
+              }),
+            );
+            yield* TestClock.adjust("2 hours");
+            yield* settle;
+            expect(yield* workersOf(routine.id)).toHaveLength(0);
+            expect((yield* orchestration.routineStates(workspaceId))[routine.id]).toBeUndefined();
+          }),
+        );
+      }),
+    SLOW,
+  );
+});

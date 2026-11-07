@@ -811,11 +811,61 @@ export const workerMayRead = (path: string, text?: string): boolean => {
     return false;
   }
   if (text === undefined) return true;
-  // Front matter: a first `---` block that says `private: true`.
-  const front = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1];
-  if (front !== undefined && /^private:\s*(?:true|yes)\s*$/im.test(front)) return false;
+  if (privateHeader(text)) return false;
   return !credentialShaped(text);
 };
+
+/**
+ * A file's header as the private marker is looked for in it: everything before its body, however it
+ * is written. That is a byte-order mark and blank lines, any number of leading HTML comments (whose
+ * insides count, a front matter block commented out included), and a `---` YAML or `+++` TOML front
+ * matter block, closed or not (an unclosed one is the whole file, so it errs to private).
+ */
+const headerOf = (text: string): string => {
+  let rest = text.replace(/^\uFEFF/, "");
+  const parts: Array<string> = [];
+  for (;;) {
+    rest = rest.replace(/^\s+/, "");
+    if (rest.startsWith("<!--")) {
+      const end = rest.indexOf("-->");
+      parts.push(end === -1 ? rest : rest.slice(4, end));
+      if (end === -1) return parts.join("\n");
+      rest = rest.slice(end + 3);
+      continue;
+    }
+    const fence = /^(---|\+\+\+)[ \t]*\r?\n/.exec(rest);
+    if (fence !== null) {
+      const body = rest.slice(fence[0].length);
+      const close = new RegExp(
+        `^${fence[1] === "---" ? "(?:---|\\.\\.\\.)" : "\\+\\+\\+"}[ \\t]*$`,
+        "m",
+      ).exec(body);
+      parts.push(close === null ? body : body.slice(0, close.index));
+    }
+    return parts.join("\n");
+  }
+};
+
+/**
+ * Whether a file's header (`headerOf`) carries a private marker anywhere: a `private` key, written
+ * as YAML, TOML or JSON, commented out with `#`, `//` or a nested comment or not, whose value isn't
+ * plainly false. A marker that can't be read as false is taken as private.
+ */
+const privateHeader = (text: string): boolean =>
+  headerOf(text)
+    .split(/\r?\n/)
+    .some((line) => {
+      const marker =
+        /^\s*(?:#+|\/\/|<!--)?\s*["']?private["']?\s*(?:[:=]\s*(.*?))?\s*(?:-->)?\s*,?\s*$/i.exec(
+          line,
+        );
+      if (marker === null) return false;
+      const value = (marker[1] ?? "")
+        .replace(/^["']|["']$/g, "")
+        .trim()
+        .toLowerCase();
+      return !["false", "no", "off", "0"].includes(value);
+    });
 
 const make = (root: string): OrchestrationMemoryShape => {
   const locks = makeKeyedLock<string>();

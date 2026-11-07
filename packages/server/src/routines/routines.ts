@@ -364,11 +364,21 @@ export const RoutinesLive = Layer.effect(
      * removed meanwhile.
      */
     const write = (routine: Routine, create = false) =>
-      orchestration
-        .updateRoutineState(routine.workspaceId, routine.id, (current) =>
+      Effect.gen(function* () {
+        yield* orchestration.updateRoutineState(routine.workspaceId, routine.id, (current) =>
           current === undefined && !create ? undefined : stateOf(routine),
-        )
-        .pipe(Effect.asVoid);
+        );
+        if (!create) return;
+        // A create is idempotent against a removal: the charter's prune runs after its own commit,
+        // so whichever lands second, a state for a routine the charter no longer has is dropped.
+        const still = yield* store.getWorkspace(routine.workspaceId).pipe(
+          Effect.map((each) => charterRoutines(each).some((r) => r.id === routine.id)),
+          Effect.orElseSucceed(() => false),
+        );
+        if (!still) {
+          yield* orchestration.updateRoutineState(routine.workspaceId, routine.id, () => undefined);
+        }
+      });
 
     /** Runs the routine once `after` has passed, or at its `nextRunAt`; nothing while it is off. */
     const arm = (routine: Routine, after?: Duration.Duration): Effect.Effect<void> =>
@@ -610,7 +620,37 @@ export const RoutinesLive = Layer.effect(
       claim: RoutineClaim,
       manual: boolean,
     ) =>
-      Effect.gen(function* () {
+      Effect.gen(function* (): Effect.fn.Return<
+        | { readonly routine: Routine; readonly ran: RoutineRun }
+        | { readonly routine: Routine; readonly stale: true }
+      > {
+        // The one place a run launches (a new occurrence, a resumed claim, a half-made worker
+        // finished), so the one place it is checked: immediately before, under the held-release
+        // lock, the routine as the charter has it now. Removed: nothing launches. A scheduled run
+        // also doesn't launch for a routine off, toggled or rescheduled since the run was decided.
+        // Otherwise it launches with what the routine is now: its brief, name, target, project and
+        // model, never the ones it had when the run was decided.
+        const live = yield* store.getWorkspace(routine.workspaceId).pipe(
+          Effect.map((each) => ({
+            each,
+            found: charterRoutines(each).find((r) => r.id === routine.id),
+          })),
+          Effect.option,
+          Effect.map(Option.getOrUndefined),
+        );
+        const current = live?.found;
+        if (live === undefined || current === undefined) return { routine, stale: true as const };
+        const fresh = routineOf(routine.workspaceId, current, stateOf(routine));
+        if (
+          !manual &&
+          (!fresh.enabled ||
+            fresh.charterGeneration !== routine.charterGeneration ||
+            scheduleKeyOf(fresh.schedule) !== scheduleKeyOf(routine.schedule))
+        ) {
+          return { routine, stale: true as const };
+        }
+        routine = fresh;
+        state = live.each;
         yield* write({ ...routine, claim });
         const ran = yield* execute(routine, state, now, claim);
         const reached: RoutineClaim = {
@@ -717,7 +757,14 @@ export const RoutinesLive = Layer.effect(
           const phase = yield* phaseOf(stored, last, yield* ledgerRows(stored.workspaceId));
           if (phase.phase === "spawning") {
             // Recorded as the run it was: a scheduled one moves the schedule on past its slot.
-            return yield* runClaim(stored, state, now, last, last.manual === true);
+            const finished = yield* runClaim(stored, state, now, last, last.manual === true);
+            if ("stale" in finished) {
+              // Removed, off, or changed: the worker is the orchestrator's now; the claim goes.
+              yield* write(withoutClaim(stored));
+              yield* changed(stored.workspaceId);
+              return undefined;
+            }
+            return finished;
           }
           const done =
             phase.phase === "settled" ||
@@ -782,7 +829,9 @@ export const RoutinesLive = Layer.effect(
             const outcome = yield* runOnce(stored, state, now, false);
             if ("stale" in outcome) {
               // Changed under it: the engine's look at the charter change reckons it again.
-              const fresh = yield* load(state, id);
+              // Read again: the workspace read before the run is the one that went stale.
+              const latest = yield* workspaceOf(workspaceId);
+              const fresh = latest === undefined ? undefined : yield* load(latest, id);
               if (fresh === undefined || !fresh.enabled)
                 return yield* disarm(timerKey(workspaceId, id));
               const next = reckoned(fresh, now);

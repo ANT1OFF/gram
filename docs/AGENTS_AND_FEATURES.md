@@ -208,7 +208,11 @@ under the routine's id:
   spawn's, so a run a restart cut short finds its worker again and finishes one a crash left
   without its brief. The claim stays until the occurrence settles: while its brief is held, being
   released, or its worker is live, a due run is skipped and recorded so. Its phase is read from
-  durable facts under the lock every release of a held brief takes.
+  durable facts under the lock every release of a held brief takes. Every launch (a new run, a
+  resumed claim, a half-made worker finished) reads the routine again under that lock just before
+  it starts anything: one removed launches nothing; a scheduled run launches nothing for a routine
+  off, toggled or rescheduled since it was decided; otherwise it launches with the routine's brief,
+  target, project and model as they are now.
 - A routine new, turned on again or given a new schedule is reckoned from then, never run for a time
   it missed. The charter's write path counts each turn off or on as a new generation, so a run that
   waited while the routine went off and on again reckons from then instead of running. Turned off,
@@ -600,7 +604,8 @@ orchestrator holds the workspace, and can't change it: the orchestrator stays it
 A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
 another workspace. A worker neither lists nor reads what is marked private (a `private` folder, a
-`*.private.md` name, or `private: true` in a file's front matter), a file named like a credential
+`*.private.md` name, or a `private` marker anywhere in a file's header: YAML or TOML front matter, an
+HTML comment, a commented-out line or block), a file named like a credential
 (a key, a secret, a token, an auth or `.env` file, a key or certificate file), or one whose text
 holds one (a PEM block, a provider token, what the log scrubber would redact); the orchestrator
 sees it all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
