@@ -208,11 +208,15 @@ under the routine's id:
   spawn's, so a run a restart cut short finds its worker again and finishes one a crash left
   without its brief. The claim stays until the occurrence settles: while its brief is held, being
   released, or its worker is live, a due run is skipped and recorded so. Its phase is read from
-  durable facts under the lock every release of a held brief takes. Every launch (a new run, a
-  resumed claim, a half-made worker finished) reads the routine again under that lock just before
-  it starts anything: one removed launches nothing; a scheduled run launches nothing for a routine
-  off, toggled or rescheduled since it was decided; otherwise it launches with the routine's brief,
-  target, project and model as they are now.
+  durable facts under the lock every release of a held brief takes.
+- Every launch of a routine's worker goes through one admission, called while the spawn lock is
+  held: a scheduled run, Run now, a held brief's release (by a reset, a probe or the user, after a
+  restart too) and a half-made worker's recovery. It reads the routine as the charter has it then.
+  One removed launches nothing; a scheduled run or a held brief launches nothing for a routine off,
+  toggled or rescheduled since its run was decided; otherwise the worker starts with exactly the
+  routine's brief, name, project and model then. A held brief it refuses is let go, not kept. A
+  half-made worker is finished only in the project it was made in: one whose routine moved since is
+  closed, and the next run starts a fresh one.
 - A routine new, turned on again or given a new schedule is reckoned from then, never run for a time
   it missed. The charter's write path counts each turn off or on as a new generation, so a run that
   waited while the routine went off and on again reckons from then instead of running. Turned off,
@@ -604,8 +608,9 @@ orchestrator holds the workspace, and can't change it: the orchestrator stays it
 A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
 another workspace. A worker neither lists nor reads what is marked private (a `private` folder, a
-`*.private.md` name, or a `private` marker anywhere in a file's header: YAML or TOML front matter, an
-HTML comment, a commented-out line or block), a file named like a credential
+`*.private.md` name, or a truthy `private` anywhere in a file's header: its front matter parsed as
+YAML, block or flow style and at any depth, including what is commented out or inside a leading HTML
+comment, or TOML; a header that doesn't parse counts as private), a file named like a credential
 (a key, a secret, a token, an auth or `.env` file, a key or certificate file), or one whose text
 holds one (a PEM block, a provider token, what the log scrubber would redact); the orchestrator
 sees it all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the

@@ -999,8 +999,12 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       const spawned = yield* spawnHeld(workspaceId, claimed).pipe(
         Effect.catch((error) =>
           // Put back as it was, so a refusal loses nothing: it still starts at the reset, and
-          // one whose reset has passed is looked at again now.
-          putBackHeld(workspaceId, claimed).pipe(
+          // one whose reset has passed is looked at again now. A routine's brief its routine no
+          // longer admits (removed, off, changed) is let go instead: it would never start.
+          (error.message.startsWith("routine_changed: ")
+            ? Effect.void
+            : putBackHeld(workspaceId, claimed)
+          ).pipe(
             Effect.andThen(armLimitResume(workspaceId)),
             Effect.andThen(orchestrationChanged(workspaceId)),
             Effect.andThen(

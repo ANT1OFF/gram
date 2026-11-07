@@ -664,6 +664,7 @@ export type RefusalCode =
   | "limit_unanswered"
   | "unattended"
   | "unattended_cap"
+  | "routine_changed"
   | "feature_paused"
   | "unknown_question"
   | "closed"

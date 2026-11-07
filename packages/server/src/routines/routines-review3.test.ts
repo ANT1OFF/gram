@@ -705,3 +705,46 @@ describe.skipIf(!hasGit)("routines and worker memory: fifth review", () => {
     SLOW,
   );
 });
+
+describe.skipIf(!hasGit)("routines and worker memory: sixth review", () => {
+  it.effect(
+    "[25] reads front matter as YAML: flow style, nesting, comments, and a header that won't parse fail closed",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const { session } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "reader" });
+            yield* completeTurn(worker.session);
+            const hidden: Record<string, string> = {
+              "flow.md": "---\n{private: true}\n---\nNot for workers.",
+              "flow-quoted.md": '---\n{"title": "Plans", "Private": "yes"}\n---\nNot for workers.',
+              "nested.md": "---\nmeta:\n  visibility:\n    private: true\n---\nNot for workers.",
+              "list.md": "---\ntags: [a, {private: on}]\n---\nNot for workers.",
+              "commented-flow.md": "---\ntitle: Plans\n# {private: true}\n---\nNot for workers.",
+              "broken.md": "---\ntitle: [unclosed\n---\nNot for workers.",
+            };
+            const shown: Record<string, string> = {
+              "plain.md": "No header at all.",
+              "public.md": "---\n{private: false, title: Public}\n---\nFor everyone.",
+            };
+            for (const [path, content] of Object.entries({ ...hidden, ...shown })) {
+              yield* session.callTool("memory_write", { path, content });
+            }
+            const seen = listed(yield* worker.session.callTool("memory_list", {}));
+            for (const path of Object.keys(shown)) expect(seen, path).toContain(path);
+            for (const path of Object.keys(hidden)) {
+              expect(seen, path).not.toContain(path);
+              const refused = yield* worker.session
+                .callTool("memory_read", { path })
+                .pipe(Effect.flip);
+              expect(refused.message, path).toContain("No memory file");
+            }
+          }),
+        );
+      }),
+    SLOW,
+  );
+});

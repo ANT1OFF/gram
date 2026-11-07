@@ -13,6 +13,7 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
@@ -41,6 +42,7 @@ import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import {
   addRoutine,
   editRoutine,
+  editRoutines,
   ranAfter,
   routineNow,
   runNow,
@@ -643,6 +645,179 @@ describe.skipIf(!hasGit)("routines: second review, the run lifecycle", () => {
             yield* TestClock.adjust("5 minutes");
             yield* settle;
             expect(digests()).toHaveLength(1);
+          }),
+        );
+      }),
+    SLOW,
+  );
+});
+
+describe.skipIf(!hasGit)("routines: sixth review, one admission under the spawn lock", () => {
+  it.effect(
+    "[26] releases no held brief of a routine removed, or turned off, since it was held",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const orchestration = yield* Orchestration;
+            const opened = yield* openOrchestrator(world);
+            const { project, workspaceId } = opened;
+            const session = yield* atAutonomy(opened.thread, "full", {
+              maxConcurrentWorkers: 8,
+              workerModels: [{ agent: "claude", model: "fake-opus", default: true }],
+            });
+            const healthy = yield* spawn(session, { feature: "healthy" });
+            yield* output(healthy.session, "early");
+            const removed = yield* workerRoutine(workspaceId, project.id, undefined, "Removed one");
+            const off = yield* workerRoutine(workspaceId, project.id, undefined, "Off one");
+            // The model fails five minutes before they come due, so both are held inside the
+            // breaker's ten-minute window, before any recovery probe.
+            yield* TestClock.adjust("55 minutes");
+            const failed = yield* spawn(session, { feature: "failed" });
+            yield* failBeforeOutput(failed.session, failed.thread.id);
+            yield* TestClock.adjust("5 minutes");
+            const heldRemoved = yield* ranAfter(removed.id, 0);
+            const heldOff = yield* ranAfter(off.id, 0);
+            expect([heldRemoved.lastRun?.outcome, heldOff.lastRun?.outcome]).toEqual([
+              "held",
+              "held",
+            ]);
+            yield* editRoutines(workspaceId, (routines) =>
+              routines.flatMap((each) =>
+                each.id === removed.id
+                  ? []
+                  : each.id === off.id
+                    ? [{ ...each, off: true as const }]
+                    : [each],
+              ),
+            );
+            // The user starts the turned-off one's brief by hand: refused, and let go, not put back.
+            const refused = yield* orchestration
+              .releaseHeldBrief(workspaceId, heldOff.lastRun!.heldId!)
+              .pipe(Effect.flip);
+            expect(refused.message).toContain("is off");
+            // The model recovers: the automatic release of the removed one's brief starts nothing.
+            yield* output(healthy.session, "later");
+            yield* settle;
+            yield* waitReal(
+              "the held briefs let go",
+              outboxOf(workspaceId).pipe(
+                Effect.map((outbox) => (outbox.heldBriefs ?? []).length === 0),
+              ),
+            );
+            expect(yield* workersOf(removed.id)).toHaveLength(0);
+            expect(yield* workersOf(off.id)).toHaveLength(0);
+          }),
+        );
+      }),
+    SLOW,
+  );
+
+  it.effect(
+    "[27] admits a run under the spawn lock, so a removal while it waits for that lock wins",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const { project, workspaceId, session } = yield* openOrchestrator(world);
+            const routine = yield* workerRoutine(workspaceId, project.id);
+            // The orchestrator's own spawn holds the spawn lock: its worker's first event is held
+            // until the test lets it go, deterministically, whatever the machine's load.
+            const gate = yield* Deferred.make<void>();
+            const entered = yield* Deferred.make<void>();
+            world.onPublish = (event) =>
+              event.type === "thread.upsert" && event.thread.title === "Racing spawn"
+                ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(gate)))
+                : Effect.void;
+            const racing = yield* session
+              .callTool("spawn_worker", {
+                project: "shop",
+                feature: "racing",
+                title: "Racing spawn",
+                brief: "Do the racing work.",
+              })
+              .pipe(Effect.forkScoped);
+            yield* Deferred.await(entered);
+            // The routine comes due, passes the look before the lock and claims its run, then waits.
+            yield* TestClock.adjust("1 hour");
+            yield* waitReal(
+              "the run to claim its slot",
+              routineNow(routine.id).pipe(Effect.map((each) => each.claim !== undefined)),
+            );
+            yield* settle;
+            yield* editRoutines(workspaceId, () => []);
+            world.onPublish = undefined;
+            yield* Deferred.succeed(gate, undefined);
+            yield* Fiber.join(racing);
+            yield* settle;
+            expect(yield* workersOf(routine.id)).toHaveLength(0);
+          }),
+        );
+      }),
+    SLOW,
+  );
+
+  it.effect(
+    "[28] closes a half-made worker whose routine moved to another project before a restart, instead of briefing it there",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const made = yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const {
+              project,
+              other,
+              workspaceId,
+              thread: orchestrator,
+            } = yield* openOrchestratorAcross(world);
+            const routine = yield* workerRoutine(workspaceId, project.id);
+            const slot = routine.nextRunAt!;
+            const requestId = `routine:${routine.id}:${slot}`;
+            const threadId = workerThreadId(workspaceId, requestId);
+            yield* stageState(routine.id, { ...stateOf(routine), claim: { requestId, slot } });
+            const runtimes = yield* ThreadRuntimes;
+            yield* runtimes.create({
+              id: threadId,
+              projectRoot: world.repo,
+              checkout: { kind: "main", path: world.repo },
+              title: routine.name,
+              workspaceId,
+              spawnedBy: {
+                threadId: orchestrator.id,
+                feature: "routine-ci-triage",
+                routine: { id: routine.id, name: routine.name },
+              },
+              deferOpen: true,
+            });
+            // The user moves the routine to the other repo, with a new brief.
+            yield* editRoutine(routine.id, (each) => ({
+              ...each,
+              project: other.id,
+              brief: "Triage the warehouse instead.",
+            }));
+            return { id: routine.id, threadId };
+          }),
+        );
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            yield* settle;
+            yield* TestClock.adjust("1 minute");
+            yield* settle;
+            const store = yield* ThreadStore;
+            const fake = yield* FakeAgentControl;
+            // Never briefed in the old project with the new brief: closed instead.
+            const briefed = fake.sessions
+              .filter((each) => each.options.threadId === made.threadId)
+              .flatMap((each) => each.sent);
+            expect(briefed).toEqual([]);
+            const open = (yield* store.listThreads).map((each) => each.id);
+            expect(open).not.toContain(made.threadId);
           }),
         );
       }),

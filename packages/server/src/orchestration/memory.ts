@@ -25,6 +25,7 @@
  * for the hashes, the dream's out-of-folder manifest for the text).
  */
 import { FsError, InvalidState, NotFound, SECRET_KEY, type MemoryWrite } from "@gram/contracts";
+import { parse as parseYaml } from "yaml";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -815,57 +816,116 @@ export const workerMayRead = (path: string, text?: string): boolean => {
   return !credentialShaped(text);
 };
 
+/** A region's lines without its fence lines (`---`, `...`, `+++`). */
+const unfenced = (body: string) =>
+  body
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(?:---|\.\.\.|\+\+\+)\s*$/.test(line))
+    .join("\n");
+
 /**
- * A file's header as the private marker is looked for in it: everything before its body, however it
- * is written. That is a byte-order mark and blank lines, any number of leading HTML comments (whose
- * insides count, a front matter block commented out included), and a `---` YAML or `+++` TOML front
- * matter block, closed or not (an unclosed one is the whole file, so it errs to private).
+ * A file's header, as the regions the private marker is looked for in: what comes before its body,
+ * however written. Leading HTML comments count (their insides, front matter commented out
+ * included), then a `---` YAML or `+++` TOML front matter block, closed or not (an unclosed one
+ * runs to the end, so it errs to private). Fence lines inside a region are left out.
  */
-const headerOf = (text: string): string => {
+const headerRegions = (
+  text: string,
+): ReadonlyArray<{ readonly body: string; readonly toml: boolean }> => {
   let rest = text.replace(/^\uFEFF/, "");
-  const parts: Array<string> = [];
+  const regions: Array<{ body: string; toml: boolean }> = [];
+
   for (;;) {
     rest = rest.replace(/^\s+/, "");
     if (rest.startsWith("<!--")) {
       const end = rest.indexOf("-->");
-      parts.push(end === -1 ? rest : rest.slice(4, end));
-      if (end === -1) return parts.join("\n");
+      const inner = end === -1 ? rest.slice(4) : rest.slice(4, end);
+      regions.push({ body: unfenced(inner), toml: /^\s*\+\+\+\s*$/m.test(inner) });
+      if (end === -1) return regions;
       rest = rest.slice(end + 3);
       continue;
     }
     const fence = /^(---|\+\+\+)[ \t]*\r?\n/.exec(rest);
     if (fence !== null) {
       const body = rest.slice(fence[0].length);
-      const close = new RegExp(
-        `^${fence[1] === "---" ? "(?:---|\\.\\.\\.)" : "\\+\\+\\+"}[ \\t]*$`,
-        "m",
-      ).exec(body);
-      parts.push(close === null ? body : body.slice(0, close.index));
+      const close = (fence[1] === "---" ? /^(?:---|\.\.\.)[ \t]*$/m : /^\+\+\+[ \t]*$/m).exec(body);
+      regions.push({
+        body: close === null ? body : body.slice(0, close.index),
+        toml: fence[1] === "+++",
+      });
     }
-    return parts.join("\n");
+    return regions;
   }
 };
 
+/** Whether a parsed `private` value says private: anything but a plain false. */
+const truthy = (value: unknown): boolean =>
+  value === null ||
+  value === undefined ||
+  value === true ||
+  (typeof value === "number" && value !== 0) ||
+  (typeof value === "string" &&
+    !["false", "no", "off", "0", ""].includes(value.trim().toLowerCase())) ||
+  (typeof value === "object" && value !== null);
+
+/** Whether a parsed YAML value carries a truthy `private` key, or a bare `private`, at any depth. */
+const hasPrivate = (value: unknown, depth = 0): boolean => {
+  // A bare `private` (a scalar, or an item of a list) is a marker with no value: private.
+  if (typeof value === "string") return value.trim().toLowerCase() === "private";
+  if (depth > 8 || value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((each) => hasPrivate(each, depth + 1));
+  return Object.entries(value).some(
+    ([key, each]) =>
+      (key.trim().toLowerCase() === "private" && truthy(each)) || hasPrivate(each, depth + 1),
+  );
+};
+
+/** One region's lines with a leading `#`, `//` or `;` comment marker taken off: what was commented out. */
+const uncommented = (body: string) =>
+  body
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^(\s*)(?:#+|\/\/|;)\s?/, "$1"))
+    .join("\n");
+
+/** A `private` key on a line of TOML, or of text that doesn't parse: `private`, `private = …`. */
+const privateLine = (body: string) =>
+  body.split(/\r?\n/).some((line) => {
+    const marker = /^\s*(?:#+|\/\/|;)?\s*["']?private["']?\s*(?:[:=]\s*(.*?))?\s*,?\s*$/i.exec(
+      line,
+    );
+    return marker !== null && truthy(marker[1]?.replace(/^["']|["']$/g, "") ?? null);
+  });
+
 /**
- * Whether a file's header (`headerOf`) carries a private marker anywhere: a `private` key, written
- * as YAML, TOML or JSON, commented out with `#`, `//` or a nested comment or not, whose value isn't
- * plainly false. A marker that can't be read as false is taken as private.
+ * Whether a file's header marks it private: a truthy `private` key anywhere in it, in YAML front
+ * matter (block or flow style, at any depth), commented out or not, or in TOML. Fails closed: a
+ * YAML region that doesn't parse is private.
  */
 const privateHeader = (text: string): boolean =>
-  headerOf(text)
-    .split(/\r?\n/)
-    .some((line) => {
-      const marker =
-        /^\s*(?:#+|\/\/|<!--)?\s*["']?private["']?\s*(?:[:=]\s*(.*?))?\s*(?:-->)?\s*,?\s*$/i.exec(
-          line,
-        );
-      if (marker === null) return false;
-      const value = (marker[1] ?? "")
-        .replace(/^["']|["']$/g, "")
-        .trim()
-        .toLowerCase();
-      return !["false", "no", "off", "0"].includes(value);
-    });
+  headerRegions(text).some((region) => {
+    if (region.toml) return privateLine(region.body) || privateLine(uncommented(region.body));
+    let parsed: unknown;
+    try {
+      parsed = parseYaml(region.body);
+    } catch {
+      return true;
+    }
+    if (hasPrivate(parsed)) return true;
+    // What was commented out counts too: the commented lines as one document, then each alone,
+    // and a line look for what was never YAML.
+    const commented = region.body
+      .split(/\r?\n/)
+      .filter((line) => /^\s*(?:#+|\/\/|;)/.test(line))
+      .map((line) => uncommented(line));
+    const marked = (body: string) => {
+      try {
+        return hasPrivate(parseYaml(body));
+      } catch {
+        return privateLine(body);
+      }
+    };
+    return marked(commented.join("\n")) || commented.some(marked);
+  });
 
 const make = (root: string): OrchestrationMemoryShape => {
   const locks = makeKeyedLock<string>();

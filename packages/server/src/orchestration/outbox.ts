@@ -337,7 +337,15 @@ export const StoredHeldBrief = Schema.Struct({
     identities: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
     plan: Schema.optionalKey(Schema.Array(Schema.String)),
     /** The routine whose run it is, which the worker carries once it starts. */
-    routine: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
+    routine: Schema.optionalKey(
+      Schema.Struct({
+        id: Schema.String,
+        name: Schema.String,
+        manual: Schema.optionalKey(Schema.Literal(true)),
+        generation: Schema.optionalKey(Schema.Number),
+        scheduleKey: Schema.optionalKey(Schema.String),
+      }),
+    ),
     /**
      * A routine's brief, which nobody approves: kept, so its release (a reset, a probe, the user's
      * click) is admitted against the cap under the spawn lock like the run that held it.

@@ -52,6 +52,30 @@ export interface Authority {
   readonly state: WorkspaceState;
 }
 
+/**
+ * Which routine a spawn is a run of, as the run decided it: by id and its name then, whether it is
+ * the user's Run now, and the generation and schedule a scheduled run was decided on. Kept on a
+ * held brief, so its release is admitted against the routine as it is then.
+ */
+export interface RoutineRef {
+  readonly id: string;
+  readonly name: string;
+  readonly manual?: true | undefined;
+  readonly generation?: number | undefined;
+  readonly scheduleKey?: string | undefined;
+}
+
+/**
+ * The routines engine's admission of a run's spawn (`routines/routines.ts`), called by `spawnFor`
+ * with the spawn lock held, for every launch of a routine's worker: a scheduled run, Run now, a
+ * held brief's release, a half-made worker's recovery. The routine as the charter has it now: the
+ * spawn input rewritten with exactly its values, or why it doesn't launch.
+ */
+export type RoutineAdmission = (
+  state: WorkspaceState,
+  input: SpawnWorkerInput,
+) => Effect.Effect<SpawnWorkerInput | { readonly refuse: string }>;
+
 /** `spawn_worker`'s input once the tool has decoded it. */
 export interface SpawnWorkerInput {
   readonly project: string;
@@ -87,7 +111,7 @@ export interface SpawnWorkerInput {
    * The routine whose due run this is (`routines/routines.ts`), kept on the worker's `spawnedBy`;
    * set by the routines engine alone, never by the agent's tool.
    */
-  readonly routine?: { readonly id: string; readonly name: string } | undefined;
+  readonly routine?: RoutineRef | undefined;
   /**
    * Nobody is there to answer a card: a routine's run. Whatever would ask the user (one worker past
    * the charter's cap, a repo outside the workspace, the limit threshold's question) refuses
@@ -511,6 +535,8 @@ export interface OrchestrationShape {
   >;
 
   // -- Routines' seam (`routines/routines.ts`) ----------------------------------------------
+  /** Installs the routines engine's admission (`RoutineAdmission`); a routine spawn refuses without it. */
+  setRoutineAdmission(admit: RoutineAdmission): Effect.Effect<void>;
   /** How each of the workspace's routines' runs stand, by routine id, as its outbox keeps them. */
   routineStates(workspaceId: WorkspaceId): Effect.Effect<Readonly<Record<string, RoutineState>>>;
   /** Changes one routine's run state in the outbox, `undefined` dropping it; what was stored. */

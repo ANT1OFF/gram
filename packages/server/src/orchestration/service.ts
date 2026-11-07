@@ -433,6 +433,7 @@ export const OrchestrationLive = Layer.effect(
       spawnWorker,
       briefFooter,
       startWorker,
+      setRoutineAdmission,
     } = makeSpawning(kit, {
       outsideWorkspace,
       survey,
@@ -751,6 +752,7 @@ export const OrchestrationLive = Layer.effect(
           return [Object.keys(runs).length === 0 ? rest : { ...rest, routineRuns: runs }, after];
         }),
       editCharter,
+      setRoutineAdmission,
       listWorkspaces: store.listWorkspaces,
       saveWorkspace,
       commitWorkspace,

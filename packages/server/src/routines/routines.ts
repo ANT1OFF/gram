@@ -54,6 +54,7 @@ import {
   InvalidState,
   NotFound,
   ROUTINE_RUN_DETAIL_MAX,
+  briefFooterOf,
   routineScheduleText,
   routineSlug,
   type ModelRef,
@@ -549,7 +550,14 @@ export const RoutinesLive = Layer.effect(
           // The claim's, kept before this call: a retry after a restart gets the same worker back.
           clientRequestId: claim.requestId,
           atLimit: "stay" as const,
-          routine: { id: routine.id, name: routine.name },
+          // What this run was decided on: the admission under the spawn lock holds the launch to it.
+          routine: {
+            id: routine.id,
+            name: routine.name,
+            ...(claim.manual === true ? { manual: true as const } : {}),
+            generation: routine.charterGeneration,
+            scheduleKey: scheduleKeyOf(routine.schedule),
+          },
           // Nobody answers a card for a schedule: what would ask is refused, under the spawn lock.
           unattended: true as const,
         };
@@ -1025,6 +1033,63 @@ export const RoutinesLive = Layer.effect(
         ),
         Effect.forkScoped,
       );
+
+    /**
+     * The one admission of a routine's worker (`RoutineAdmission`), which `spawnFor` calls with the
+     * spawn lock held for every launch: a scheduled run, Run now, a held brief's release (by a reset,
+     * a probe or the user, after a restart too), a half-made worker's recovery. The routine as the
+     * charter has it now: removed, it doesn't launch; for a scheduled run, nor off, toggled or
+     * rescheduled since the run was decided; nor one that now goes to the orchestrator or whose
+     * project left the workspace. Otherwise the spawn is rewritten with exactly its values now:
+     * brief, name, project and model.
+     */
+    yield* orchestration.setRoutineAdmission((state, input) =>
+      Effect.sync(() => {
+        const ref = input.routine!;
+        const current = charterRoutines(state).find((each) => each.id === ref.id);
+        if (current === undefined) {
+          return { refuse: `The routine "${ref.name}" was removed, so no worker started.` };
+        }
+        if (ref.manual !== true) {
+          if (current.off === true) {
+            return { refuse: `The routine "${current.name}" is off, so no worker started.` };
+          }
+          if ((current.generation ?? 0) !== (ref.generation ?? 0)) {
+            return {
+              refuse: `The routine "${current.name}" was turned off and on since this run was decided, so no worker started; its next run is reckoned from then.`,
+            };
+          }
+          if (
+            ref.scheduleKey !== undefined &&
+            scheduleKeyOf(current.schedule) !== ref.scheduleKey
+          ) {
+            return {
+              refuse: `The routine "${current.name}" was rescheduled since this run was decided, so no worker started.`,
+            };
+          }
+        }
+        if (current.target === "orchestrator") {
+          return {
+            refuse: `The routine "${current.name}" now briefs the orchestrator, so no worker started.`,
+          };
+        }
+        const project = current.project ?? state.workspace.homeProjectId;
+        if (!state.workspace.projectIds.includes(project)) {
+          return {
+            refuse: `The routine "${current.name}"'s project is no longer one of the workspace's.`,
+          };
+        }
+        const { model: _model, ...rest } = input;
+        return {
+          ...rest,
+          project,
+          title: current.name,
+          brief: withBriefFooter(routineBrief(current), briefFooterOf(state.charter)),
+          ...(current.model === undefined ? {} : { model: workerModelLabel(current.model) }),
+          routine: { ...ref, name: current.name },
+        };
+      }),
+    );
 
     const start: RoutinesShape["start"] = Effect.gen(function* () {
       if (started) return;

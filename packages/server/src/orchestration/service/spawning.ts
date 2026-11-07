@@ -54,6 +54,7 @@ import {
   underKeysOf,
 } from "./kit.ts";
 import {
+  type RoutineAdmission,
   type SpawnWorkerInput,
   type HeldSpawn,
   type WorkerWorktree,
@@ -231,9 +232,16 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
    * the runtime titles it from its first line. A pause or a rate limit is the orchestrator's to
    * wait out, not the user's.
    */
+  /** The routines engine's admission, once it has started (`setRoutineAdmission`). */
+  let routineAdmission: RoutineAdmission | undefined;
+  const setRoutineAdmission = (admit: RoutineAdmission) =>
+    Effect.sync(() => {
+      routineAdmission = admit;
+    });
+
   const spawnFor = (
     callerId: ThreadId,
-    input: SpawnWorkerInput,
+    given: SpawnWorkerInput,
     byUser?: {
       readonly id: ThreadId;
       readonly input: UserInput;
@@ -243,6 +251,8 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     },
   ): Effect.Effect<SpawnedWorker, AppToolError> => {
     let recorded: { key: string; id: ThreadId; workspaceId: WorkspaceId } | undefined;
+    // A routine's run is admitted below, under the spawn lock, and spawned as admitted.
+    let input = given;
     return underKeysOf(
       spawnLock,
       authorityKeys(callerId),
@@ -259,6 +269,21 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 `Orchestration is paused (${state.paused.reason}), so no worker is spawned. Only the user can resume it; end your turn.`,
               ),
             );
+          }
+          // Every launch of a routine's worker, whichever way it came, is admitted here with the spawn
+          // lock held: the routine as it is now, its values exactly, or no launch.
+          if (input.routine !== undefined) {
+            if (routineAdmission === undefined) {
+              return yield* toolError(
+                tool,
+                refusal("routine_changed", "Routines haven't started yet, so no worker started."),
+              );
+            }
+            const admitted = yield* routineAdmission(state, input);
+            if ("refuse" in admitted) {
+              return yield* toolError(tool, refusal("routine_changed", admitted.refuse));
+            }
+            input = admitted;
           }
           const projects = new Map((yield* store.listProjects).map((p) => [p.id, p]));
           // A retry, or a call the last run crashed in, finds the worker by the id its request
@@ -294,6 +319,18 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 event.kind === "spawn" &&
                 (event.data as { readonly threadId?: unknown } | null)?.threadId === existing.id,
             );
+            // A routine's half-made worker is finished only as it was made: in the project it was made
+            // in. One whose routine moved since is closed instead, and the next run admits a fresh one.
+            if (!finished && input.routine !== undefined && existing.projectId !== input.project) {
+              yield* runtimes.close(existing.id).pipe(Effect.ignore);
+              return yield* toolError(
+                tool,
+                refusal(
+                  "routine_changed",
+                  `The routine "${input.routine.name}" moved to another project since its half-made worker “${existing.title}” was made, so that worker was closed and none started; the next run starts a fresh one.`,
+                ),
+              );
+            }
             workerWorkspaces.set(existing.id, workspaceId);
             if (existing.parked) parkedWorkers.add(existing.id);
             if (!finished) {
@@ -835,6 +872,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     });
 
   return {
+    setRoutineAdmission,
     spawnNeedsApproval,
     describeSpawn,
     checkWorkerModel,
