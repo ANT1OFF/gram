@@ -13,6 +13,9 @@ import {
   planText,
 } from "@gram/contracts";
 
+import type { RowStatus } from "@/sidebar/status";
+
+import { briefTitle, type NeedsYouItem } from "./needs-you-items";
 import { ANSWERED, calmTone, workerTone, type RailTone } from "./rail-model";
 import { OVER_STATES, workerShown } from "./worker-shown";
 import type { WorkspaceStatus } from "./tree-model";
@@ -509,3 +512,31 @@ export const foldByKey = (
  */
 export const tileWorking = (state: OverviewState, working: number): boolean =>
   state === "working" || (state === "idle" && working > 0);
+
+/**
+ * A solo row's status with what the Inbox lists it for (`threadNeed`): a thread at rest that needs
+ * you says so in the item's words and tone (red for a failure, amber otherwise) instead of
+ * "Stopped", so the row, the pill and the Inbox agree. A row already saying it needs you, or at
+ * work, keeps its own words.
+ */
+export const soloDisplay = (
+  display: RowStatus,
+  need: Pick<NeedsYouItem, "kind" | "title"> | undefined,
+): RowStatus => {
+  if (
+    need === undefined ||
+    display.working ||
+    display.running !== undefined ||
+    display.tone === "text-status-needs" ||
+    display.tone === "text-destructive"
+  ) {
+    return display;
+  }
+  const label = briefTitle(need);
+  return {
+    ...display,
+    tone: need.kind === "failure" ? "text-destructive" : "text-status-needs",
+    label,
+    title: label,
+  };
+};

@@ -370,5 +370,8 @@ export const workerActivity = (
   }
   if (armed)
     return { activity: "automation", reason: localCheck ? "local check" : "monitor armed" };
+  // Spawned, its first turn not begun (`workerStarting`), with nothing armed to wait on: busy
+  // starting, never at rest.
+  if (state === "briefed") return { activity: "working", reason: "starting" };
   return { activity: "idle" };
 };

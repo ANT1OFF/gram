@@ -348,18 +348,58 @@ export interface NeedsYouCounts {
 }
 
 /**
- * The one source of every needs-you count: the pill's total and each workspace's badge are the
- * Needs you list's items and its groups' items, so a count always equals the list it opens and a
- * workspace's badge is its share of the total. The threads outside any workspace keep the rest.
+ * Where a needs-you count is taken: everywhere (the pill, the Inbox, the window title, the dock
+ * badge), one workspace (its badge, its Workers panel), or the threads outside any workspace.
+ */
+export type NeedsYouScope = "all" | "solo" | { readonly workspaceId: WorkspaceId };
+
+/**
+ * The one "needs you" selector: the items of the Needs you list in `scope`. What counts is what the
+ * list holds (every ask, standing failure and Waiting on you item, less what is answered, dismissed
+ * or put away for Later); every badge, heading and count that says how much needs you is the length
+ * of this, so a count taken in one scope is always a share of the one taken in "all".
+ */
+export const needsYouIn = (
+  groups: readonly NeedsYouGroup[],
+  scope: NeedsYouScope,
+): readonly NeedsYouItem[] => {
+  if (scope === "all") return groups.flatMap((group) => group.items);
+  if (scope === "solo") return groups.find((group) => group.key === THREADS_GROUP)?.items ?? [];
+  return groups.find((group) => group.workspaceId === scope.workspaceId)?.items ?? [];
+};
+
+/** The threads `items` are on: what a list of threads or workers marks as needing you. */
+export const needsYouThreads = (items: readonly NeedsYouItem[]): ReadonlySet<ThreadId> =>
+  new Set(items.flatMap((item) => (item.threadId === undefined ? [] : [item.threadId])));
+
+/**
+ * What a thread's row says it needs you for, when the list has an item on it: the first of its
+ * items in the list's order (`needsYouSections`: errors, then approvals, then questions...), so a
+ * row never reads "Stopped" while the Inbox lists it.
+ */
+export const threadNeed = (
+  groups: readonly NeedsYouGroup[],
+  threadId: ThreadId,
+): NeedsYouItem | undefined =>
+  needsYouSections(groups)
+    .flatMap((section) => section.items)
+    .find((item) => item.threadId === threadId);
+
+/**
+ * Every needs-you count the window shows, by `needsYouIn`: the pill's total and each workspace's
+ * badge are the Needs you list's items in their scope, so a count always equals the list it opens
+ * and a workspace's badge is its share of the total. The threads outside any workspace keep the rest.
  */
 export const needsYouCounts = (groups: readonly NeedsYouGroup[]): NeedsYouCounts => {
   const byWorkspace = new Map<string, number>();
-  let total = 0;
   for (const group of groups) {
-    total += group.items.length;
-    if (group.workspaceId !== undefined) byWorkspace.set(group.workspaceId, group.items.length);
+    if (group.workspaceId === undefined) continue;
+    byWorkspace.set(
+      group.workspaceId,
+      needsYouIn(groups, { workspaceId: group.workspaceId }).length,
+    );
   }
-  return { total, byWorkspace };
+  return { total: needsYouIn(groups, "all").length, byWorkspace };
 };
 
 /** The category Needs you shows: every section, or one of them. */
@@ -393,8 +433,11 @@ export const stepItem = (
   return items[(((at + by) % items.length) + items.length) % items.length];
 };
 
-/** Whether the item asks the user something, rather than reporting an error: what a count opens on. */
-const asks = (item: Pick<NeedsYouItem, "kind">) =>
+/**
+ * Whether the item asks the user something, rather than reporting an error: what a count opens on,
+ * and what Quiet's deck can answer in place.
+ */
+export const isAsk = (item: Pick<NeedsYouItem, "kind">) =>
   item.kind === "approval" || item.kind === "question" || item.kind === "plan";
 
 /**
@@ -404,8 +447,8 @@ const asks = (item: Pick<NeedsYouItem, "kind">) =>
  */
 export const newestAsk = (items: readonly NeedsYouItem[]): NeedsYouItem | undefined => {
   const tiers = [
-    items.filter(asks),
-    items.filter((item) => !asks(item) && item.kind !== "failure"),
+    items.filter(isAsk),
+    items.filter((item) => !isAsk(item) && item.kind !== "failure"),
     items,
   ];
   const tier = tiers.find((each) => each.length > 0);

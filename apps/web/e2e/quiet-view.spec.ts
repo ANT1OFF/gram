@@ -79,7 +79,7 @@ test("one card at a time: 1, the thread card's key, answers it everywhere, and u
   const made = await start(page);
   const before = await total(page);
   expect(before).toBeGreaterThan(2);
-  await expect(position(page)).toHaveText(`1 of ${before}`);
+  await expect(position(page)).toHaveText(`1 of ${before} to answer`);
   // Only one card on screen, whatever the deck holds.
   await expect(quiet(page).getByTestId("quiet-card")).toHaveCount(1);
 
@@ -92,7 +92,7 @@ test("one card at a time: 1, the thread card's key, answers it everywhere, and u
   await expect(card(page).getByTestId("quiet-option").first()).toContainText("1");
   await page.keyboard.press("1");
   await expect(quiet(page).getByTestId("quiet-undo-line")).toContainText("Allowed 3");
-  await expect(position(page)).toHaveText(`1 of ${before - 1}`);
+  await expect(position(page)).toHaveText(`1 of ${before - 1} to answer`);
 
   // ⌘Z takes it back while it waits, and it is in the deck again.
   await settle(page);

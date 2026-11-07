@@ -272,12 +272,13 @@ test("a worker's menu goes to its orchestrator, removing makes it a plain thread
   more = await openMore(page, detached);
   await more.getByRole("option", { name: "Add to workspace…" }).click();
   await more.getByRole("option", { name, exact: true }).click();
-  // A worker of the workspace again, live under it, briefed afresh.
+  // A worker of the workspace again, live under it, briefed afresh: starting, not stopped, until
+  // its first turn as a worker begins.
   await expect(
     workspaceRow(page, made.workspaceId).locator(
       `[data-testid="overview-worker"][data-thread-id="${made.workerThreadId}"]`,
     ),
-  ).toHaveAccessibleName(/^Return rate-limit headers, briefed, /);
+  ).toHaveAccessibleName(/^Return rate-limit headers, Starting…, /);
   await expect(detached).toHaveCount(0);
 });
 

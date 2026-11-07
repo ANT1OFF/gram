@@ -24,6 +24,12 @@ export const STATUS_WORDS: Readonly<Record<DotState, string>> = {
   held: "Waiting",
 };
 
+/**
+ * What a worker says between its spawn and its first turn: its brief not yet picked up (`briefed`)
+ * or its session opening. Never "Stopped": nothing has run yet to stop. Its tone is working's.
+ */
+export const STARTING = "Starting…";
+
 /** What a worker's status says in a line: what it waits on while it waits, else its tone's word. */
 export const workerStatusWord = (
   state: DotState,

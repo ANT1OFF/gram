@@ -17,11 +17,13 @@ import { useDerivedAsks } from "./needs-you-store";
 import {
   kindParts,
   needsYouCounts,
+  needsYouIn,
   scopeLines,
   stepItem,
   type NeedsYouGroup,
   type NeedsYouCounts,
   type NeedsYouItem,
+  type NeedsYouScope,
   type NeedsYouSection,
 } from "./needs-you-items";
 import { useOpenQuestionsOf } from "./use-board-actions";
@@ -164,6 +166,34 @@ export const stepNeedsYou = (by: 1 | -1) => stepper?.(by);
 export function useNeedsYouCounts(): NeedsYouCounts {
   const { groups } = useNeedsYouList();
   return useMemo(() => needsYouCounts(groups), [groups]);
+}
+
+/**
+ * What needs you in `scope` (`needsYouIn`), and what needs you everywhere else: a surface that shows
+ * one workspace's share says how much more waits outside it, so its count never reads as the
+ * whole. `elsewhere` is `all` less `here`.
+ */
+export function useNeedsYouIn(scope: NeedsYouScope): {
+  readonly here: readonly NeedsYouItem[];
+  readonly elsewhere: readonly NeedsYouItem[];
+} {
+  const { groups } = useNeedsYouList();
+  // A new object for the same workspace is the same scope.
+  const kind = typeof scope === "string" ? scope : "workspace";
+  const workspaceId = typeof scope === "string" ? undefined : scope.workspaceId;
+  return useMemo(() => {
+    const here = needsYouIn(
+      groups,
+      kind === "workspace" && workspaceId !== undefined
+        ? { workspaceId }
+        : (kind as "all" | "solo"),
+    );
+    const mine = new Set(here.map((item) => item.key));
+    return {
+      here,
+      elsewhere: needsYouIn(groups, "all").filter((item) => !mine.has(item.key)),
+    };
+  }, [groups, kind, workspaceId]);
 }
 
 /**

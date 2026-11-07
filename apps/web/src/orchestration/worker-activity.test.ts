@@ -144,11 +144,19 @@ describe("the busy selector", () => {
     expect(activity(worker("working", {}, "needsApproval")).activity).toBe("attention");
   });
 
+  it("says a worker spawned and not begun is starting, which is busy, never idle", () => {
+    expect(activity(worker("briefed"))).toEqual({ activity: "working", reason: "starting" });
+    expect(activity(worker("briefed", {}, "cold"))).toEqual({
+      activity: "working",
+      reason: "starting",
+    });
+    expect(isBusy(activity(worker("briefed")).activity)).toBe(true);
+  });
+
   it("says finished work is done and work with nothing going on is idle", () => {
     expect(activity(worker("merged", { pr: pr({ state: "merged" }) })).activity).toBe("done");
     expect(activity(worker("delivered")).activity).toBe("done");
     expect(activity(worker("done")).activity).toBe("done");
-    expect(activity(worker("briefed")).activity).toBe("idle");
     // Held by the user (a message, a paused feature): theirs by choice, not stalled.
     expect(activity(worker("working", { userIntervened: true }))).toEqual({
       activity: "idle",
@@ -187,7 +195,9 @@ describe("Quiet, the Board and the sidebar", () => {
       busy: false,
     },
     { name: "question", entry: worker("question"), busy: false },
-    { name: "idle", entry: worker("briefed"), busy: false },
+    { name: "idle", entry: worker("working", { userIntervened: true }), busy: false },
+    // Spawned, its first turn not begun: starting, never at rest (the round-11 "Stopped" bug).
+    { name: "starting", entry: worker("briefed"), busy: true },
   ];
 
   it.each(cases)("agree whether a worker is busy: $name", ({ entry, busy }) => {

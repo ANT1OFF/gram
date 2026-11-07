@@ -60,7 +60,8 @@ import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 import { useBeforeSetup } from "@/welcome/welcome";
 
-import { useAnsweredWorkers } from "./needs-you-store";
+import { threadNeed } from "./needs-you-items";
+import { useAnsweredWorkers, useDerivedAsks } from "./needs-you-store";
 import { askKeysByThread } from "./ask-model";
 import { NewEntryMenu } from "./new-entry-menu";
 import { OverviewEmptyHint } from "./overview-empty-hint";
@@ -91,6 +92,7 @@ import {
   plainRunning,
   rowTone,
   rowWaiting,
+  soloDisplay,
   stateWordShown,
   steplessLine,
   workLineText,
@@ -112,9 +114,9 @@ import {
 } from "./overview-section";
 import { shownPrNumbers, useChipsFit, useWorkerPrChips, WorkerPrChips } from "./overview-pr-chips";
 import { peek } from "./peek-store";
-import { nowBesidePrs, TONE_DOT, type RailTone } from "./rail-model";
+import { nowBesidePrs, TONE_DOT, workerStarting, type RailTone } from "./rail-model";
 import { StatusDot } from "./status-dot";
-import { STATUS_WORDS } from "./status-words";
+import { STARTING, STATUS_WORDS } from "./status-words";
 import { orchestratorOf, threadWorking, workingWorkerThreads } from "./tree-model";
 import { useFeatureCards } from "./use-feature-cards";
 import { NeedsYouEntry } from "./needs-you-entry";
@@ -790,8 +792,10 @@ export function WorkerRow({
     pause === undefined &&
     lastActivity !== undefined &&
     now - lastActivity >= SETTLED_AFTER_MS;
-  // Its session is opening: nothing has run yet, so neither "Working" nor "Idle" is true.
-  const starting = status === "starting" && !asking && !row.failed;
+  // Spawned and not begun, or its session opening: nothing has run yet, so neither "Working" nor
+  // "Stopped" is true. The rule ⌘J's rows, the Workers panel and the worker's header read too.
+  const starting =
+    tone === "working" && workerStarting({ asking, state: row.state, failed: row.failed, status });
   const facts = [
     row.title,
     ...(unread ? ["unread"] : []),
@@ -993,7 +997,6 @@ const NO_PRS: readonly { readonly number: number }[] = [];
 const UNREAD_TITLE = "font-semibold text-foreground";
 
 /** A worker's line while its agent session opens, before its first turn runs. */
-const STARTING = "Starting…";
 
 /** A row's 8 px dot, centred on its title's first line however many lines the title takes. */
 const DOT_ON_FIRST_LINE = "size-2 self-start justify-self-center mt-[calc((1lh-0.5rem)/2)]";
@@ -1481,7 +1484,10 @@ export function SoloRow({
   const now = useNow(true, undefined, 60_000);
   const { thread } = summary;
   const detail = useThreadsStore((s) => s.statusDetail[thread.id]);
-  const display = threadStatusOf(summary, detail);
+  // What the Inbox lists it for, if anything: a row at rest says that, never "Stopped", so the
+  // row, the pill and the Inbox agree on the same thread.
+  const need = useDerivedAsks((s) => threadNeed(s.needsYou.groups, thread.id));
+  const display = soloDisplay(threadStatusOf(summary, detail), need);
   const title = threadDisplayTitle(thread);
   const lastActive = display.working ? `Last activity ${formatStamp(thread.lastActivityAt)}` : "";
   const faded = settled || settledRow(summary.status, display, thread.lastActivityAt, now);

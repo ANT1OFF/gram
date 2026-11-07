@@ -309,6 +309,14 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
   const intervened = new Set<ThreadId>();
   /** Workers started from New for their orchestrator, until their brief, the user's words, is sent. */
   const briefed = new Set<ThreadId>();
+  /**
+   * Threads that have run a turn, as the server's memo records it (`hasStartedTurn`): a worker reads
+   * `briefed` until one has, and `working` after, however soon that turn ends.
+   */
+  const started = new Set<ThreadId>();
+  host.onEvent((event) => {
+    if (event.type === "thread.status" && event.status === "running") started.add(event.threadId);
+  });
   const closedWorkers = new Map<ThreadId, FinishedWorkerDetail>();
   /** The other repos of a worker that spans several. */
   const alsoIn = new Map<ThreadId, readonly WorkerRepo[]>();
@@ -426,6 +434,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
                 host.projects().find((p) => p.id === t.projectId)?.name ?? t.projectId,
                 {
                   lastReport: reports.get(t.id),
+                  started: started.has(t.id),
                   askedAt,
                   overlapsWith: (overlaps.get(t.id) ?? []).filter((other) =>
                     host.threads().some((open) => open.id === other),

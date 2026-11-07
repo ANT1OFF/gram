@@ -14,6 +14,7 @@ import { create } from "zustand";
 import { useParams } from "@tanstack/react-router";
 
 import { EmptyState } from "@/components/empty-state";
+import { showInbox } from "@/inbox/inbox-store";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/lib/use-now";
@@ -29,7 +30,9 @@ import { ROW_MARK } from "./overview-section";
 import { StatusDot } from "./status-dot";
 import { useMessageOrchestrator } from "./message-orchestrator";
 import { useFinishedWorkerPages } from "./use-finished-workers";
-import { useOrchestratorLedgers } from "./use-orchestration";
+import { needsYouThreads } from "./needs-you-items";
+import { useNeedsYouIn } from "./use-needs-you";
+import { useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 import { WorkersDocs } from "./workers-docs";
 import { workersByTab } from "./workers-model";
 import {
@@ -41,13 +44,16 @@ import {
   statusGroups,
   type PanelRow,
   type StatusGroup,
+  elsewhereLine,
   type StatusGroupId,
 } from "./workers-panel-model";
 
-// The panel's Workers tab: an orchestrator's workers by where they stand, Needs you first and Done
-// folded, each group's count quiet beside its name. Calm by space, not lines: no card edges, no
-// rules, a dot, a title and an age per row. Its rows are ⌘J's, so every count agrees with the
-// sidebar, the Board and the Inbox.
+// The panel's Workers tab: one workspace's workers by where they stand, named in its heading,
+// Needs you first and Done folded, each group's count quiet beside its name. Calm by space, not
+// lines: no card edges, no rules, a dot, a title and an age per row. Its rows are ⌘J's, and its
+// Needs you is the needs-you selector's in this workspace (`needsYouIn`), so every count agrees
+// with the sidebar, the Board and the Inbox; what needs you elsewhere is said apart, never folded
+// into this workspace's count.
 
 export const WORKERS_PANEL_TEST_ID = "workers-panel";
 
@@ -127,13 +133,17 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
     [asks, workspaceId],
   );
   const answered = useAnsweredWorkers();
+  const name = useWorkspaces().find((state) => state.workspace.id === workspaceId)?.workspace.name;
+  // What needs you here, by the one selector the workspace's badge counts by, and elsewhere.
+  const needs = useNeedsYouIn({ workspaceId });
+  const needing = useMemo(() => needsYouThreads(needs.here), [needs.here]);
   const tabs = useMemo(
     () => workersByTab(ledger, { byId, statusDetail, now, asking, answered }, finished),
     [ledger, byId, statusDetail, now, asking, answered, finished],
   );
   const [query, setQuery] = useState<string | undefined>(undefined);
   const shown = useWorkersPanelStore((s) => s.shown);
-  const all = statusGroups(tabs, byId, now, query ?? "");
+  const all = statusGroups(tabs, byId, now, needing, query ?? "");
   const groups = filteredGroups(all, shown);
   const searching = query !== undefined && query.trim() !== "";
   const matches = groups.some((group) => group.rows.length > 0);
@@ -145,10 +155,10 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
     <div
       data-testid={WORKERS_PANEL_TEST_ID}
       className="flex min-h-0 flex-1 flex-col"
-      aria-label="Workers"
+      aria-label={name === undefined ? "Workers" : `Workers in ${name}`}
       role="region"
     >
-      <Header query={query} onQuery={setQuery} />
+      <Header query={query} onQuery={setQuery} workspace={name} />
       <div className="flex min-h-0 flex-1 flex-col gap-section overflow-y-auto px-section pt-inset pb-section">
         <WorkersDocs workspaceId={workspaceId} />
         {none ? (
@@ -171,20 +181,33 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
           groups
             // A search lists only where it found something; otherwise every group says what it holds.
             .filter((group) => !searching || group.rows.length > 0)
-            .map((group) => <Group key={group.id} group={group} open={searching} />)
+            .map((group) => (
+              <Group
+                key={group.id}
+                group={group}
+                open={searching}
+                elsewhere={group.id === "needs" && !searching ? needs.elsewhere.length : 0}
+                here={name}
+              />
+            ))
         )}
       </div>
     </div>
   );
 }
 
-/** "Workers", then search and the filter: two glyphs, each named on hover. */
+/**
+ * "Workers in <workspace>", then search and the filter: two glyphs, each named on hover. The
+ * workspace is named so every count under it reads as this workspace's, not the window's.
+ */
 function Header({
   query,
   onQuery,
+  workspace,
 }: {
   query: string | undefined;
   onQuery: (query: string | undefined) => void;
+  workspace: string | undefined;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const close = () => onQuery(undefined);
@@ -197,7 +220,16 @@ function Header({
   return (
     <div className="flex shrink-0 flex-col gap-inset px-section pt-list">
       <div className="flex items-center gap-tight">
-        <h2 className="min-w-0 flex-1 truncate text-body-strong text-foreground">Workers</h2>
+        <h2
+          data-testid="workers-panel-title"
+          title={workspace === undefined ? undefined : `Workers in ${workspace}`}
+          className="min-w-0 flex-1 truncate text-body-strong text-foreground"
+        >
+          Workers
+          {workspace !== undefined && (
+            <span className="font-normal text-muted-foreground"> in {workspace}</span>
+          )}
+        </h2>
         <Hint
           label={query === undefined ? "Search workers" : "Close search"}
           side="bottom"
@@ -328,9 +360,21 @@ function Check() {
 
 /**
  * One group: its name and quiet count, a chevron that folds it, and its rows or the one line that
- * says what would be there. `open` unfolds it whatever its fold, as a search does.
+ * says what would be there. `open` unfolds it whatever its fold, as a search does. `elsewhere` is
+ * how much needs you outside this workspace (`here`), said under Needs you so its count reads as
+ * this workspace's share, with the way to the Inbox that lists it all.
  */
-function Group({ group, open }: { group: StatusGroup; open: boolean }) {
+function Group({
+  group,
+  open,
+  elsewhere = 0,
+  here,
+}: {
+  group: StatusGroup;
+  open: boolean;
+  elsewhere?: number;
+  here?: string | undefined;
+}) {
   const isFolded = useWorkersPanelStore((s) => !open && folded(s.toggled, group.id));
   const toggle = useWorkersPanelStore((s) => s.toggle);
   const doneAll = useWorkersPanelStore((s) => s.doneAll);
@@ -383,7 +427,11 @@ function Group({ group, open }: { group: StatusGroup; open: boolean }) {
             data-testid="workers-group-empty"
             className={cn(ROW_GRID, "text-meta text-muted-foreground")}
           >
-            <span className="col-start-2">{group.empty}</span>
+            <span className="col-start-2">
+              {group.id === "needs" && here !== undefined
+                ? `Nothing in ${here} needs you`
+                : group.empty}
+            </span>
           </p>
         ) : (
           <>
@@ -404,6 +452,19 @@ function Group({ group, open }: { group: StatusGroup; open: boolean }) {
               </button>
             )}
           </>
+        )}
+        {elsewhere > 0 && (
+          <button
+            type="button"
+            data-testid="workers-needs-elsewhere"
+            onClick={() => showInbox({ ask: true })}
+            className={cn(
+              ROW_GRID,
+              "rounded-xs py-1 text-left text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:focus-ring",
+            )}
+          >
+            <span className="col-start-2">{elsewhereLine(elsewhere, count)} · Open Inbox</span>
+          </button>
         )}
       </div>
     </section>

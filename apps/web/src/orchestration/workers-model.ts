@@ -20,7 +20,7 @@ import { threadDisplayTitle } from "@/thread/thread-title";
 
 import { liveWorkerEntry, workerTitle } from "./board-model";
 import { dayLabel } from "./outputs-model";
-import { ANSWERED, calmTone, workerTone, type RailTone } from "./rail-model";
+import { ANSWERED, calmTone, workerStarting, workerTone, type RailTone } from "./rail-model";
 import { threadWorking } from "./tree-model";
 import { OVER_STATES, workerShown } from "./worker-shown";
 import { workerActivity, workerWait, type WorkerActivity, type WorkerBusy } from "./wait-model";
@@ -68,6 +68,8 @@ export interface WorkerRow {
   readonly now: string;
   /** What it waits on at rest (`workerWaitingOn`), the sidebar's and the Board's words too. */
   readonly waiting?: WaitingOn | undefined;
+  /** Spawned and not begun, or its session opening (`workerStarting`): it says `STARTING`. */
+  readonly starting?: true | undefined;
   /** Epoch ms its work ended, for the done tabs; absent while it goes on. */
   readonly finishedAt?: number | undefined;
   /** The user holds it (`userIntervened`). */
@@ -375,6 +377,18 @@ export const workerRow = (
   const running = live.status === "running" || live.status === "starting";
   const activity = running ? (statusDetail[worker.threadId] ?? live.activity) : undefined;
   const report = live.lastReport;
+  // Spawned and not begun, or its session opening with nothing to say yet: starting, the word the
+  // sidebar, the panel and the header say alike.
+  const starting =
+    !done &&
+    tone === "working" &&
+    activity === undefined &&
+    workerStarting({
+      asking: asking?.has(worker.threadId) === true,
+      state: live.state,
+      failed: live.state === "error",
+      status: live.status,
+    });
 
   const base = {
     threadId: worker.threadId,
@@ -388,7 +402,8 @@ export const workerRow = (
     activity: busy.activity,
     tone,
     ...(at === undefined ? {} : { finishedAt: at }),
-    ...(waiting === undefined ? {} : { waiting }),
+    ...(waiting === undefined || starting ? {} : { waiting }),
+    ...(starting ? { starting: true as const } : {}),
   };
   // The glyph is the tone's, as every other view's dot is; a finished worker's says how it ended.
   const row = (finished: WorkerGlyph | undefined, line: string): WorkerRow => ({
@@ -414,7 +429,7 @@ export const workerRow = (
     if (live.state === "archived") return row("archived", `archived${when}`);
     return row(FINISHED_GLYPH[live.state] ?? "delivered", `done${when}`);
   }
-  if (live.status === "starting" && activity === undefined) return row(undefined, "starting…");
+  if (starting) return row(undefined, "starting…");
   if (running) return row(undefined, activity === undefined ? "working" : activityGist(activity));
   if (live.state === "question" || (live.reportStands === true && report?.state === "question")) {
     return row(undefined, "asked a question");
@@ -427,7 +442,6 @@ export const workerRow = (
   if (busy.activity === "working") return row(undefined, busy.reason ?? "compacting");
   if (busy.activity === "automation") return row(undefined, busy.reason ?? "waits on checks");
   if (busy.activity === "attention") return row(undefined, busy.reason ?? "needs attention");
-  if (live.state === "briefed") return row(undefined, "briefed");
   if (report !== undefined) {
     if (report.state === "done") return row(undefined, "reported done");
     return row(undefined, reportGist(report.summary));
