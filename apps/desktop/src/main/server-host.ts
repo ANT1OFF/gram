@@ -612,6 +612,11 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
   return {
     start,
     async stop(why) {
+      // Capture ownership before posting shutdown: the server may fork and orphan a child as
+      // soon as it receives that message. A later baseline would mistake it for a preexisting orphan.
+      const root = current?.child.pid;
+      const watch =
+        why === "update" && root !== undefined ? options.treeCheck?.watch(root) : undefined;
       const stopping = detach(why, "ask");
       if (stopping === null) {
         if (state !== "idle") state = "stopped";
@@ -628,11 +633,6 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
         start().catch(() => {});
       });
       let outcome: StopOutcome = "exited";
-      // From the request on, so a process the server starts and orphans while it stops stays known.
-      const watch =
-        why === "update" && stopping.child.pid !== undefined
-          ? options.treeCheck?.watch(stopping.child.pid)
-          : undefined;
       // Only an update's server seals its essentials, so only an update stops waiting for that.
       const attested =
         why === "update"

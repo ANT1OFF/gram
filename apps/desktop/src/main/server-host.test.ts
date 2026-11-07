@@ -472,6 +472,27 @@ describe("createServerHost", () => {
       ]);
     });
 
+    it("captures tree ownership before the server receives its shutdown request", async () => {
+      const { check } = tree(1);
+      let postedAtWatch: ReadonlyArray<unknown> | undefined;
+      const { host, children, booted } = setup({
+        treeCheck: {
+          watch: (pid) => {
+            postedAtWatch = [...children[0]!.posted];
+            return check.watch(pid);
+          },
+        },
+      });
+      await booted();
+      const stop = host.stop("update");
+      expect(children[0]!.posted).toEqual([UPDATE_SHUTDOWN_REQUEST]);
+      children[0]!.send(SEALED);
+      await flush();
+      children[0]!.exit(137);
+      expect(await stop).toBe("survived");
+      expect(postedAtWatch).toEqual([]);
+    });
+
     it("takes a seal that came before the bound ran out even when the exit didn't", async () => {
       const { host, children, live, forceKilled, booted } = setup({ treeCheck: tree(0).check });
       await booted();
