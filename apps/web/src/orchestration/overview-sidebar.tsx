@@ -674,15 +674,6 @@ function WorkspaceBody({ workspaceId, empty }: { workspaceId: WorkspaceId; empty
   return <WorkspaceFeatures workspaceId={workspaceId} features={features} empty={empty} />;
 }
 
-/** The agent the workspace's orchestrator runs, which its workers' rows leave out when they share it. */
-export const useOrchestratorAgent = (workspaceId: WorkspaceId): string | undefined => {
-  const workspace = useWorkspaces().find((state) => state.workspace.id === workspaceId)?.workspace;
-  return useThreadsStore(
-    (s) =>
-      orchestratorOf(Object.values(s.byId), workspace ?? { id: workspaceId })?.thread.model?.agent,
-  );
-};
-
 /**
  * An open workspace: its live workers straight under its orchestrator, most urgent first
  * (`overviewItems`), then its briefs held for a limit. A worker's feature and stage are on its hover.
@@ -697,7 +688,6 @@ function WorkspaceFeatures({
   /** Its line already says "idle": nothing more under it. */
   empty: boolean;
 }) {
-  const orchestratorAgent = useOrchestratorAgent(workspaceId);
   // A snoozed worker is out of the list until its snooze ends; the Board still shows it.
   const snoozed = useThreadsStore(
     useShallow((s) =>
@@ -729,12 +719,7 @@ function WorkspaceFeatures({
         {items.map((item) =>
           item.kind === "worker" ? (
             <PresenceItem key={item.row.threadId}>
-              <WorkerRow
-                row={item.row}
-                feature={item.feature}
-                updatedAt={item.updatedAt}
-                orchestratorAgent={orchestratorAgent}
-              />
+              <WorkerRow row={item.row} feature={item.feature} updatedAt={item.updatedAt} />
             </PresenceItem>
           ) : (
             <PresenceItem key={item.held.id}>
@@ -750,21 +735,19 @@ function WorkspaceFeatures({
 /**
  * A live worker: a click opens it, where any ask it has shows, ⌥-click peeks and ⌘/Ctrl-click keeps
  * it beside; a right-click (or Shift+F10) opens its menu, and it drags onto a grid pane. Its agent's
- * glyph shows only when it isn't its orchestrator's, and a second line only for an ask, a failure or
- * real activity; its name and hover card keep the rest. In the compact rail's flyout it has no hover
+ * mark always shows, Claude's as Codex's, and a second line only for an ask, a failure or real
+ * activity; its name and hover card keep the rest. In the compact rail's flyout it has no hover
  * card of its own (`card={false}`), the flyout being one.
  */
 export function WorkerRow({
   row,
   feature,
   updatedAt,
-  orchestratorAgent,
   card = true,
 }: {
   row: OverviewWorkerRow;
   feature: string;
   updatedAt: number;
-  orchestratorAgent: string | undefined;
   card?: boolean;
 }) {
   const openThread = useOpenThread();
@@ -846,8 +829,7 @@ export function WorkerRow({
         data-tone={tone}
         className={DOT_ON_FIRST_LINE}
       />
-      {/* Its title on one line beside the trailing marks, which are rare (a pause, another
-          agent), cut at its end; the hover card, or the flyout's tooltip, says the whole. */}
+      {/* Its title on one line beside the trailing marks (a pause, its agent), cut at its end; the hover card, or the flyout's tooltip, says the whole. */}
       <span
         data-testid="overview-worker-title"
         className={cn(ROW_TITLE, "col-span-1 text-foreground", unread && UNREAD_TITLE)}
@@ -856,7 +838,7 @@ export function WorkerRow({
       </span>
       <span className="flex h-lh items-center gap-1.5 text-muted-foreground">
         {pause !== undefined && <WorkerPauseMark pause={pause} />}
-        {agent !== undefined && agent !== orchestratorAgent && (
+        {agent !== undefined && (
           <span data-testid="overview-worker-agent" className="flex">
             <AgentIcon agent={agent} className="size-icon-row" />
           </span>

@@ -216,14 +216,19 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   );
 });
 
-test("a worker's agent shows only when it isn't its orchestrator's, and always in its name and card", async ({
+test("a worker's agent mark shows for Claude and Codex alike, beside its name and card", async ({
   page,
 }) => {
   const made = await start(page);
-  // The agent's glyph, not the hourglass of what the row waits on or its PR chips' marks.
+  // The agent's glyph, not the hourglass of what the row waits on or its PR chips' marks. It is
+  // decorative: the row's name says the agent.
   const glyph = worker(page, made.inReview).getByTestId("overview-worker-agent");
+  const drawing = () => glyph.locator("svg").innerHTML();
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
-  await expect(glyph).toHaveCount(0);
+  // Its orchestrator runs Claude Code too, and the mark still shows.
+  await expect(glyph).toHaveCount(1);
+  await expect(glyph.locator("svg")).toHaveAttribute("aria-hidden", "true");
+  const claude = await drawing();
   await worker(page, made.inReview).hover();
   await expect(page.getByTestId("overview-worker-card-feature")).toContainText("Claude Code");
   await page.mouse.move(1200, 400);
@@ -233,8 +238,11 @@ test("a worker's agent shows only when it isn't its orchestrator's, and always i
     const { thread } = mock.world.summary(id as never);
     mock.world.replaceThread({ ...thread, model: { agent: "codex", model: "gpt-5-codex" } });
   }, made.inReview);
-  await expect(glyph).toHaveCount(1);
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Codex, /);
+  await expect(glyph).toHaveCount(1);
+  await expect(glyph.locator("svg")).toHaveAttribute("aria-hidden", "true");
+  // The same slot and size, another drawing.
+  expect(await drawing()).not.toBe(claude);
 });
 
 test("an idle row fades after a day and comes back on hover; one needing you never does", async ({

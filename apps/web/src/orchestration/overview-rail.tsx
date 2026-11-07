@@ -56,7 +56,6 @@ import {
   SoloRow,
   switchOverview,
   OrchestratorAtWork,
-  useOrchestratorAgent,
   useOverviewFeatures,
   WorkerRow,
 } from "./overview-sidebar";
@@ -544,7 +543,6 @@ const Empty = ({ children }: { children: ReactNode }) => (
 /** The workspace the window is on: its live workers, most urgent first, as the open overview has them. */
 function CurrentWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
   const features = useOverviewFeatures(workspaceId);
-  const orchestratorAgent = useOrchestratorAgent(workspaceId);
   const items = useMemo(() => overviewItems(features), [features]);
   const workers = items.flatMap((item) => (item.kind === "worker" ? [item] : []));
   if (workers.length === 0) {
@@ -560,7 +558,6 @@ function CurrentWorkers({ workspaceId }: { workspaceId: WorkspaceId }) {
       row={item.row}
       feature={item.feature}
       updatedAt={item.updatedAt}
-      orchestratorAgent={orchestratorAgent}
       card={false}
     />
   ));
