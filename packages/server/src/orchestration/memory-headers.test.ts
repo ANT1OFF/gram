@@ -90,3 +90,75 @@ describe("workerMayRead, by header", () => {
     }
   });
 });
+
+// Synthetic credential shapes, joined from parts so no credential-shaped literal sits in the source.
+const GH = ["ghp", "abcdefghijklmnopqrstuvwxyz0123456789AB"].join("_");
+const PEM_BEGIN = ["-----BEGIN", "OPENSSH PRIVATE KEY-----"].join(" ");
+const PEM_END = ["-----END", "OPENSSH PRIVATE KEY-----"].join(" ");
+const SLACK = ["xoxb", "123456789012", "abcdefghijkl"].join("-");
+const escaped = [...GH]
+  .map((char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`)
+  .join("");
+const percent = [...GH].map((char) => `%${char.charCodeAt(0).toString(16)}`).join("");
+const html = [...GH].map((char) => `&#${char.charCodeAt(0)};`).join("");
+const base64 = Buffer.from(`token=${GH}`).toString("base64");
+
+/**
+ * Every case from the reviews of #198, rounds 3 to 8, as one table: the path and text a worker would
+ * read, and whether it may. A file a worker may not read is dropped whole: nothing in it is shown.
+ */
+const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, allowed: boolean]> =
+  [
+    // Allowed: no header, an empty one, a flat plain one; ordinary prose.
+    ["no header", "a.md", "Tabs, not spaces.", true],
+    ["empty header", "a.md", "---\n---\nBody.", true],
+    ["flat plain header", "a.md", "---\ntitle: Plans\nupdated: 2026-11-07\n---\nBody.", true],
+    // Round 3: private names and folders, credential-shaped names, private front matter.
+    ["private folder", "private/plans.md", "Body.", false],
+    ["*.private.md", "people.private.md", "Body.", false],
+    ["token-named", "deploy-token.md", "Body.", false],
+    ["api-keys-named", "api-keys.md", "Body.", false],
+    ["private: true", "a.md", "---\nprivate: true\n---\nBody.", false],
+    // Round 4: more credential names, credential text.
+    ["key-named", "deploy-key.md", "Body.", false],
+    ["auth dotfile", ".npmrc", "Body.", false],
+    ["auth-named", "github-auth.md", "Body.", false],
+    ["PEM block", "a.md", `${PEM_BEGIN}\nb3Blbg==\n${PEM_END}`, false],
+    ["Slack token", "a.md", `Webhook ${SLACK}`, false],
+    // Round 5: private front matter inside a comment, or in another form.
+    ["commented front matter", "a.md", "<!--\n---\nprivate: true\n---\n-->\nBody.", false],
+    ["inline comment", "a.md", "<!-- private: true -->\nBody.", false],
+    ["YAML comment", "a.md", "---\ntitle: Plans\n# private: true\n---\nBody.", false],
+    ["TOML", "a.md", '+++\nprivate = "yes"\n+++\nBody.', false],
+    ["bare private", "a.md", "---\nprivate\n---\nBody.", false],
+    // Round 6: flow style, nesting, broken YAML.
+    ["flow map", "a.md", "---\n{private: true}\n---\nBody.", false],
+    ["nested", "a.md", "---\nmeta:\n  private: true\n---\nBody.", false],
+    ["broken", "a.md", "---\ntitle: [unclosed\n---\nBody.", false],
+    ["private: false", "a.md", "---\nprivate: false\n---\nBody.", false],
+    // Round 7: tags and deep nesting.
+    ["!!omap", "a.md", "---\n!!omap\n- private: true\n---\nBody.", false],
+    ["!!set", "a.md", "---\n!!set\n? private\n---\nBody.", false],
+    ["explicit key", "a.md", "---\n? title\n: Plans\n---\nBody.", false],
+    // Round 8: a `...` close, auth headers and cookies, escaped and encoded tokens.
+    ["... close hides private", "a.md", "---\ntitle: Plans\n...\nprivate: true\n---\nBody.", false],
+    ["... close alone", "a.md", "---\ntitle: Plans\n...\nBody.", false],
+    ["authorization header", "a.md", "authorization: bearer abc", false],
+    ["Authorization in prose", "a.md", "Send Authorization: Basic with the build.", false],
+    ["cookie", "a.md", "cookie: session=abc123", false],
+    ["set-cookie", "a.md", "Set-Cookie: id=1", false],
+    ["unicode-escaped token", "a.md", `"${escaped}"`, false],
+    ["percent-encoded token", "a.md", `see ${percent}`, false],
+    ["HTML-encoded token", "a.md", `see ${html}`, false],
+    ["base64-encoded token", "a.md", `blob ${base64}`, false],
+    // Round 8: delimiters left open, behind which a credential could hide.
+    ["truncated PEM", "a.md", `${PEM_BEGIN}\nb3Blbg==`, false],
+    ["unclosed code fence", "a.md", "```\nsomething\n", false],
+    ["unbalanced quote around a run", "a.md", `value: "${"A".repeat(24)}`, false],
+  ];
+
+describe("workerMayRead, every review's cases", () => {
+  it.each(CASES)("%s", (_label, path, text, allowed) => {
+    expect(workerMayRead(path, text)).toBe(allowed);
+  });
+});

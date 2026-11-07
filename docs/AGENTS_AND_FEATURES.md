@@ -609,8 +609,11 @@ orchestrator holds the workspace, and can't change it: the orchestrator stays it
 A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
 another workspace. A worker neither lists nor reads a file named like a credential (a key, a secret, a token, an
-auth or `.env` file, a key or certificate file), one whose text holds a credential (a PEM block, a
-provider token, what the log scrubber would redact), or one marked private, and what counts as
+auth or `.env` file, a key or certificate file), one that carries anything credential-like in any
+reading of it (raw, unescaped, percent, HTML or base64 decoded: an auth header or cookie, a bearer
+token, a secret, token or password word, a PEM block, a provider token, what the log scrubber
+would redact, or a PEM block, code fence or quoted token left open), dropped whole with nothing in
+it shown, or one marked private, and what counts as
 not private is narrow: a worker reads a file only when it has no header, or its header is one
 closed `---` block that is a flat map of plain or quoted scalars, one `key: value` per line, with
 no tags, anchors, aliases, nesting, flow style or block scalars, and no `private` anywhere in it,

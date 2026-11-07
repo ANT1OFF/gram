@@ -797,9 +797,72 @@ const CREDENTIAL_TEXT = [
   /\bAIza[\w-]{35}\b/,
 ];
 
-/** Whether `text` holds anything credential-shaped: what the scrubber would change, or the rest. */
+/**
+ * Words that name a credential or carry one, anywhere in an entry: an auth header or a cookie, a
+ * bearer or basic token, and the scrubber's secret names. Broad on purpose: an entry that mentions
+ * one is dropped whole, not redacted.
+ */
+const CREDENTIAL_WORDS =
+  /\b(?:authorization|proxy-authorization|cookie|set-cookie|bearer|basic\s+[\w+/=]{8,}|x-api-key|api[-_ ]?keys?|access[-_ ]?keys?|secret|token|password|passphrase|passwd|credentials?|private[-_ ]?keys?)\b/i;
+
+/** `text` as its escapes and encodings read: JSON and C escapes, percent and HTML encoding, base64 runs. */
+const decodings = (text: string): ReadonlyArray<string> => {
+  const unescaped = text
+    .replace(/\\u\{?([0-9a-fA-F]{2,6})\}?/g, (_, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    )
+    .replace(/\\([\\/"'nrt])/g, (_, char: string) =>
+      char === "n" ? "\n" : char === "r" ? "\r" : char === "t" ? "\t" : char,
+    );
+  const percent = text.replace(/(?:%[0-9a-fA-F]{2})+/g, (run) => {
+    try {
+      return decodeURIComponent(run);
+    } catch {
+      return run;
+    }
+  });
+  const html = text
+    .replace(/&#x([0-9a-fA-F]+);?/g, (_, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replace(/&#(\d+);?/g, (_, dec: string) => String.fromCodePoint(Number(dec)))
+    .replace(
+      /&(?:quot|apos|amp|lt|gt);/g,
+      (entity) =>
+        ({ "&quot;": '"', "&apos;": "'", "&amp;": "&", "&lt;": "<", "&gt;": ">" })[entity] ??
+        entity,
+    );
+  const base64 = (text.match(/[A-Za-z0-9+/_-]{20,}={0,2}/g) ?? []).map((run) =>
+    Buffer.from(run.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("latin1"),
+  );
+  return [text, unescaped, percent, html, ...base64];
+};
+
+/** Delimiters a credential could hide behind, left open: a PEM block, a code fence, a quoted token. */
+const unbalanced = (text: string): boolean =>
+  (text.match(/-----BEGIN /g) ?? []).length !== (text.match(/-----END /g) ?? []).length ||
+  (text.match(/^\s*(?:```|~~~)/gm) ?? []).length % 2 !== 0 ||
+  text
+    .split(/\r?\n/)
+    .some((line) => (line.match(/"/g) ?? []).length % 2 !== 0 && /[\w+/=-]{20,}/.test(line));
+
+/**
+ * Whether a worker must not see an entry for what it carries, failing closed: anything that names
+ * or holds a credential in any reading of it (`decodings`: raw, unescaped, percent, HTML or base64
+ * decoded), what the scrubber would change, a known token shape, or a delimiter left open that one
+ * could hide behind. Such an entry is dropped whole; nothing in it is redacted or partly shown.
+ */
 const credentialShaped = (text: string): boolean =>
-  redactText(text) !== text || CREDENTIAL_TEXT.some((pattern) => pattern.test(text));
+  unbalanced(text) ||
+  decodings(text).some(
+    (each) =>
+      CREDENTIAL_WORDS.test(each) ||
+      redactText(each) !== each ||
+      CREDENTIAL_TEXT.some((pattern) => pattern.test(each)),
+  );
 
 /**
  * Whether a worker may see the memory file at `path`: not by a private or credential-shaped name,
@@ -840,7 +903,8 @@ const plainHeader = (text: string): boolean => {
   const fence = /^---[ \t]*\r?\n/.exec(rest);
   if (fence === null) return !rest.startsWith("---");
   const body = rest.slice(fence[0].length);
-  const close = /^(?:---|\.\.\.)[ \t]*$/m.exec(body);
+  // Only `---` closes it: a `...` end-of-document line is no close, and fails the line check below.
+  const close = /^---[ \t]*$/m.exec(body);
   if (close === null) return false;
   const header = body.slice(0, close.index);
   if (/private/i.test(header)) return false;
