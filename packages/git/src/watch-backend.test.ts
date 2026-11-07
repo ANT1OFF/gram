@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as Effect from "effect/Effect";
 import { Proc, ProcLive } from "./proc.ts";
 import { removeDir, tempDir, write } from "./test-utils.ts";
@@ -13,6 +13,15 @@ import {
   subscribeRoot,
   type RootIgnore,
 } from "./watch.ts";
+
+// Only the lifecycle regression replaces this implementation. The native smoke cases below
+// call the original API, as do the separate real Git-state/edit/commit integration tests.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof fs>();
+  return { ...actual, watch: vi.fn(actual.watch) };
+});
+
+const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
 
 const topIgnore: RootIgnore = { topLevel: [".git"], anyDepth: ["node_modules"] };
 
@@ -34,7 +43,11 @@ const hasParcel = await import("@parcel/watcher").then(
 
 describe("watch backends", () => {
   const dirs: Array<string> = [];
-  afterEach(() => {
+  afterEach(async () => {
+    if (vi.isFakeTimers()) await vi.runOnlyPendingTimersAsync();
+    Object.defineProperty(process, "platform", platform);
+    vi.mocked(fs.watch).mockReset();
+    vi.useRealTimers();
     for (const dir of dirs.splice(0)) removeDir(dir);
   });
 
@@ -125,36 +138,98 @@ describe("watch backends", () => {
   );
 
   it("survives rapid subscribe, write and release rounds, then still reports edits", async () => {
+    // Run before native cases so a real restart timer cannot cross into this test's fake clock.
+    // Native closes alone took 24.4 s under CPU load, and FSEvents can drop/coalesce edits.
+    // Drive the native callback boundary directly: all 50 lifecycles and every filter assertion
+    // remain, with no repeated writes, polling or dependence on the OS's scheduling latency.
+    vi.useFakeTimers();
+    Object.defineProperty(process, "platform", { value: "darwin" });
     const dir = tempDir();
     dirs.push(dir);
+    const watches: Array<{ close: ReturnType<typeof vi.fn>; emit: fs.WatchListener<string> }> = [];
+    vi.mocked(fs.watch).mockImplementation((...args: Array<unknown>) => {
+      const close = vi.fn();
+      watches.push({ close, emit: args[2] as fs.WatchListener<string> });
+      return { close, on: vi.fn().mockReturnThis() } as unknown as fs.FSWatcher;
+    });
+    const releasedListeners: Array<ReturnType<typeof vi.fn>> = [];
     for (let round = 0; round < 50; round++) {
-      const release = await subscribeRoot("node", dir, topIgnore, dropEvents);
-      write(nodePath.join(dir, `churn-${round % 4}.txt`), String(round));
-      await release();
+      const listener = vi.fn();
+      const release = await subscribeRoot("node", dir, topIgnore, listener);
+      try {
+        expect(fs.watch).toHaveBeenLastCalledWith(
+          dir,
+          { recursive: true, persistent: false },
+          expect.any(Function),
+        );
+        const relative = `churn-${round % 4}.txt`;
+        write(nodePath.join(dir, relative), String(round));
+        watches.at(-1)!.emit("change", relative);
+        expect(listener).toHaveBeenCalledExactlyOnceWith([nodePath.join(dir, relative)]);
+      } finally {
+        await release();
+      }
+      releasedListeners.push(listener);
     }
 
     const seen: Array<string> = [];
     const release = await subscribeRoot("node", dir, topIgnore, (paths) => {
       if (paths) seen.push(...paths);
     });
-    const sawEdit = () => seen.some((p) => nodePath.basename(p) === "edit.txt");
-    // `fs.watch` returns before libuv has restarted its FSEvents stream, and the new stream starts
-    // from "now": a write that beats the restart is never delivered, however long the wait. A loaded
-    // macos-14 runner lost that race with a single write, so every poll writes again, ignored paths
-    // first so they are as deliverable as the edit that ends the loop.
-    let attempt = 0;
-    await until(() => {
-      if (sawEdit()) return true;
-      attempt++;
-      write(nodePath.join(dir, ".git", "index"), `ignored ${attempt}`);
-      write(nodePath.join(dir, "node_modules", "dep.js"), `ignored ${attempt}`);
-      write(nodePath.join(dir, "src", "edit.txt"), `seen ${attempt}`);
-      return false;
-    }, 20_000);
-    await release();
-    expect(sawEdit()).toBe(true);
-    expect(seen.filter((p) => /[\\/](\.git|node_modules)([\\/]|$)/.test(p))).toEqual([]);
+    try {
+      for (const relative of [
+        nodePath.join(".git", "index"),
+        nodePath.join("node_modules", "dep.js"),
+        nodePath.join("src", "edit.txt"),
+      ]) {
+        write(nodePath.join(dir, relative), "edit");
+        watches.at(-1)!.emit("change", relative);
+      }
+      await vi.advanceTimersByTimeAsync(FSEVENTS_RESTART_SETTLE_MS);
+      const sawEdit = () => seen.some((p) => nodePath.basename(p) === "edit.txt");
+      expect(sawEdit()).toBe(true);
+      expect(seen.filter((p) => /[\\/](\.git|node_modules)([\\/]|$)/.test(p))).toEqual([]);
+      expect(seen).toEqual([nodePath.join(dir, "src", "edit.txt")]);
+      // A restart notice must never reach any of the 50 listeners whose scope already ended.
+      for (const listener of releasedListeners) expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      await release();
+    }
+    expect(fs.watch).toHaveBeenCalledTimes(51);
+    for (const { close } of watches) expect(close).toHaveBeenCalledTimes(1);
+    await vi.runAllTimersAsync();
+    expect(vi.getTimerCount()).toBe(0);
   });
+
+  // Keep native admission/write/release coverage here, without timing 50 synchronous FSEvents
+  // closes in one test. A raw native subscription promises no readiness or delivery fence;
+  // watchGitState's real edit/commit tests cover the observable state, including reconciliation.
+  for (const backend of process.platform === "win32"
+    ? ["node" as const]
+    : (["node", "parcel"] as const))
+    it(`subscribes, writes and releases three native rounds (${backend})`, async () => {
+      const dir = tempDir();
+      dirs.push(dir);
+      for (let round = 0; round < 3; round++) {
+        const release = await subscribeRoot(backend, dir, topIgnore, dropEvents);
+        // Subscribe before release: the real Node handle announces closure on the next tick.
+        const closed =
+          backend === "node"
+            ? new Promise<void>((resolve) =>
+                vi.mocked(fs.watch).mock.results.at(-1)!.value.once("close", resolve),
+              )
+            : undefined;
+        try {
+          const path = nodePath.join(dir, `native-${round}.txt`);
+          write(path, String(round));
+          expect(fs.readFileSync(path, "utf8")).toBe(String(round));
+        } finally {
+          await release();
+          await closed;
+        }
+      }
+      if (backend === "node") expect(fs.watch).toHaveBeenCalledTimes(3);
+    });
 
   it.skipIf(process.platform !== "darwin")(
     "tells live fs.watch listeners events may be lost after another watch starts or closes",
