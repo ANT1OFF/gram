@@ -65,6 +65,15 @@ const armedWorkspace = (world: World) =>
     yield* completeTurn(release.session);
     yield* atAutonomy(opened.thread, "full");
     world.prHeads.set(12, { headRefName: impl.thread.checkout.branch! });
+    // The synthetic merge applies on GitHub, so the gate's authoritative outcome read can
+    // reconcile its durable fence. The published badge may still lag that mutation.
+    world.mergeLaunch = Effect.sync(() => {
+      world.prHeads.set(12, {
+        ...world.prHeads.get(12)!,
+        state: "MERGED",
+        headRefOid: "h1",
+      });
+    });
     world.defaultBranches.set("acme/app", "main");
     world.originRepos.set(world.repo, "acme/app");
     // The release worker's own PR, with GitHub's auto-merge armed on it.
@@ -299,7 +308,21 @@ describe.skipIf(!hasGit)("merge freezes", () => {
               "the allowed PR's merge",
               Effect.sync(() => merges().length === 1),
             );
+            yield* waitReal(
+              "the applied merge is reconciled",
+              Effect.map(waiting, (why) => why === undefined),
+            );
             expect(yield* waiting).toBeUndefined();
+            expect(world.ghCalls).toContainEqual([
+              "gh",
+              "pr",
+              "view",
+              "12",
+              "--repo",
+              "acme/app",
+              "--json",
+              "state,headRefOid",
+            ]);
 
             // Lifted: #13's auto-merge is armed again, with its method.
             yield* release.session.callTool("merge_freeze", { repo: "acme/app", lift: true });
