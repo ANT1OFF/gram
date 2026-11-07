@@ -814,14 +814,14 @@ test("finished work is in History, and a merged worker offers its cleanup", asyn
   );
   await page.keyboard.press("Escape");
 
-  // A worker of a finished group is found by search, and its thread offers the cleanup.
+  // A worker of a finished group is found by search: History is its home, so the palette hands
+  // the search there, and its thread offers the cleanup.
   const openMerged = async () => {
     await page.keyboard.press("ControlOrMeta+k");
     await page.getByLabel("Go to, or > for commands").fill("Refresh tokens before expiry");
-    await page
-      .getByRole("option", { name: /Refresh tokens before expiry/ })
-      .first()
-      .click();
+    await page.getByRole("option", { name: /finished in History/ }).click();
+    await expect(page.getByTestId("history-search")).toHaveValue("Refresh tokens before expiry");
+    await historyRow(page, merged!).click();
     await expect(page).toHaveURL(new RegExp(`/t/${merged}$`));
   };
   await openMerged();
