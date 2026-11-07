@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { InboxButton } from "@/inbox/inbox-button";
 import { LaunchIssuesChip } from "@/launch-checks/banner";
+import { TitlebarOpenBeside } from "@/orchestration/worker-header";
 import { cn } from "@/lib/utils";
 import { TitlebarPause } from "@/orchestration/workspace-pause-button";
 import { FakeAgentBadge } from "@/shell/fake-agent-badge";
@@ -63,7 +64,8 @@ export function ShellTitlebar({
   const togglePanel = useLayoutStore((s) => s.togglePanel);
   const beforeSetup = useBeforeSetup();
   // One bar: a thread alone in Chat puts its header here, and Board its controls.
-  const barThread = useTitlebarThread() !== undefined;
+  const barThreadId = useTitlebarThread();
+  const barThread = barThreadId !== undefined;
   const board = useViewStore((s) => s.view === "board");
   const carried = barThread || board;
   // A solo thread's bar leaves out what acts on the workspace's orchestration.
@@ -186,8 +188,18 @@ export function ShellTitlebar({
         className={cn("flex shrink-0 items-center gap-0.5", CLUSTER_GAP)}
       >
         {/* The thread's menu, the workspace's controls and the window's, and what a narrow bar
-            folds: a worker's own actions and Board's layout. */}
+            folds: a worker's Take over and Board's layout. */}
         <TitlebarOverflow orchestration={!soloBar} className="[-webkit-app-region:no-drag]" />
+      </div>
+      {/* What goes in the right panel, together at the bar's end: a worker's Open beside, then the
+          panel's own toggle, each drawn apart, its words and key on hover. */}
+      <div
+        role="group"
+        aria-label="Panels"
+        data-testid="titlebar-panels"
+        className="ml-1 flex shrink-0 items-center gap-0.5"
+      >
+        {!settings && <TitlebarOpenBeside threadId={barThreadId} />}
         <ShellToggle
           icon={
             panelShown

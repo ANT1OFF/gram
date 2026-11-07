@@ -10,6 +10,8 @@ import {
   paceText,
   paceWarns,
   windowHistorySummary,
+  stepWords,
+  windowPointNotes,
 } from "./limit-history-model";
 
 const MINUTE = 60_000;
@@ -106,5 +108,48 @@ describe("day ticks", () => {
       expect(tick).toBeGreaterThanOrEqual(T);
     }
     expect(dayTicks(T, T + 30 * DAY, 7).length).toBeLessThanOrEqual(5);
+  });
+});
+
+const percent = (share: number) => Math.round(share * 100);
+
+describe("the charts' legend and hover words", () => {
+  it("says a period's step in words", () => {
+    expect(stepWords(15 * 60_000)).toBe("quarter hour");
+    expect(stepWords(3_600_000)).toBe("hour");
+    expect(stepWords(3 * 3_600_000)).toBe("3 hours");
+    expect(stepWords(86_400_000)).toBe("day");
+    expect(stepWords(5 * 60_000)).toBe("5 minutes");
+  });
+
+  it("dates a point's reading, names a higher peak, and says its window's reset", () => {
+    const now = Date.UTC(2026, 5, 14, 12, 0);
+    const hour = 3_600_000;
+    // Two days back, its window long since reset, with a peak above the last reading.
+    expect(
+      windowPointNotes(
+        { at: now - 2 * 24 * hour - hour, utilization: 0.4, peak: 0.64, resetsAt: now - 24 * hour },
+        hour,
+        now,
+        percent,
+      ),
+    ).toEqual([
+      "Read 2d ago",
+      "Peak 64% within the hour",
+      expect.stringMatching(/^Reset \d{1,2} Jun /),
+    ]);
+    // The bucket in progress: read now, its window still to reset, no peak above it.
+    expect(
+      windowPointNotes(
+        { at: now - 10 * 60_000, utilization: 0.5, peak: 0.5, resetsAt: now + 2 * hour },
+        hour,
+        now,
+        percent,
+      ),
+    ).toEqual(["Read just now", expect.stringMatching(/^Resets \d{2}:\d{2}$/)]);
+    // No reset given: only its age.
+    expect(
+      windowPointNotes({ at: now - hour, utilization: 0.1, peak: 0.1 }, hour, now, percent),
+    ).toEqual(["Read just now"]);
   });
 });

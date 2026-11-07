@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Settings at the window's top left in the Orchestrator layout: in the overview's header while it is
-// shown, in the title bar while it is hidden, never both. Usage has one way in, the title bar's
+// Settings once in the window in the Orchestrator layout: at the overview's foot beside History
+// while it is shown, clear of the header's two sidebar toggles; at the title bar's left while it is
+// hidden, never both. Usage has one way in, the title bar's
 // meter: an icon until an agent reports a limit. Limits are the mock's invented readings, never a
 // live account's.
 
@@ -27,11 +28,27 @@ const start = async (page: Page, flags: Record<string, string> = {}) => {
 const overview = (page: Page) => page.getByTestId("overview-sidebar");
 const titlebar = (page: Page) => page.getByTestId("shell-titlebar");
 
-test("Settings sits at the top left, in the overview or the title bar", async ({ page }) => {
+test("Settings sits beside History in the overview, or at the title bar's left", async ({
+  page,
+}) => {
   await start(page);
   await expect(overview(page)).toBeVisible();
   await expect(page.getByTestId("top-left-nav")).toHaveCount(1);
   const nav = overview(page).getByTestId("top-left-nav");
+  // On History's line at the foot, so the header's icons are the sidebar's own two, drawn apart.
+  const history = (await overview(page).getByTestId("overview-history").boundingBox())!;
+  const settings = (await nav.boundingBox())!;
+  expect(
+    Math.abs(settings.y + settings.height / 2 - (history.y + history.height / 2)),
+  ).toBeLessThan(4);
+  expect(settings.x).toBeGreaterThan(history.x);
+  const hide = (await overview(page).getByTestId("overview-hide").boundingBox())!;
+  const compact = (await overview(page).getByTestId("overview-compact").boundingBox())!;
+  expect(compact.x).toBeGreaterThan(hide.x);
+  await overview(page).getByTestId("overview-compact").hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText(
+    "Compact overview: workspaces as tiles",
+  );
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
   await expect(nav.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
   await expect(titlebar(page).getByTestId("inbox-button")).toHaveCount(0);

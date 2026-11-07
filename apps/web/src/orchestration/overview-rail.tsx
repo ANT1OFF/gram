@@ -6,7 +6,7 @@ import {
   type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, UnfoldHorizontal } from "lucide-react";
 import {
   useMemo,
   useRef,
@@ -138,7 +138,7 @@ export function OverviewRail() {
             />
           }
         >
-          <PanelLeftOpen />
+          <UnfoldHorizontal />
         </Hint>
         <RailNeedsYou />
         <Separator />

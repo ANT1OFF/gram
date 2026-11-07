@@ -9,7 +9,7 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { useParams } from "@tanstack/react-router";
-import { ChevronDown, Hourglass, PanelLeftClose, PanelLeftDashed } from "lucide-react";
+import { ChevronDown, FoldHorizontal, Hourglass, PanelLeftClose } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -38,7 +38,7 @@ import { CARD_SURFACE } from "@/reviews/pr-display";
 import { focusLost } from "@/lib/use-return-focus";
 import { focusSidebar, overviewStops } from "@/shell/focus-regions";
 import { useOpenThread } from "@/shell/thread-switcher";
-import { TopLeftNav } from "@/shell/top-left-nav";
+import { UpdatePill } from "@/updates/update-pill";
 import { useSwitchWorkspace } from "@/shell/workspace-switcher";
 import { activityLine, settledRow, SETTLED_AFTER_MS, threadStatusOf } from "@/sidebar/status";
 import { overviewFoldKey, useLayoutStore, type ShellFit } from "@/stores/layout";
@@ -328,9 +328,10 @@ export function OverviewSidebar() {
         >
           <PanelLeftClose />
         </Hint>
-        <TopLeftNav />
+        {/* The sidebar's own two, side by side and drawn apart: Hide folds it away, Compact
+            narrows it to tiles. Settings is at the foot, beside History. */}
         <Hint
-          label="Compact overview"
+          label="Compact overview: workspaces as tiles"
           side="bottom"
           render={
             <Button
@@ -343,8 +344,9 @@ export function OverviewSidebar() {
             />
           }
         >
-          <PanelLeftDashed />
+          <FoldHorizontal />
         </Hint>
+        <UpdatePill size="xs" />
         <NewEntryMenu />
       </div>
       <div
@@ -362,7 +364,8 @@ export function OverviewSidebar() {
         {!beforeSetup && !hidden.includes("pullRequests") && <OverviewPullRequests />}
         {!hidden.includes("doneToday") && <OverviewDone />}
       </div>
-      {!hidden.includes("doneToday") && <OverviewHistory />}
+      {/* History and Settings share the foot: the places you go to rather than work in. */}
+      <OverviewHistory showHistory={!hidden.includes("doneToday")} />
       {!beforeSetup && !hidden.includes("usage") && <OverviewFoot />}
     </aside>
   );

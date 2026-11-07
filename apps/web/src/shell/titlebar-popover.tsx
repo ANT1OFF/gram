@@ -17,6 +17,7 @@ export function TitlebarPopover({
   className,
   onShown,
   align = "end",
+  anchor,
   keepClearBelow = 0,
   open: openProp,
   onOpenChange,
@@ -33,6 +34,11 @@ export function TitlebarPopover({
   onShown?: (popup: HTMLElement) => void;
   /** Which edge of the trigger it lines up with: `start` for a control at the title bar's left. */
   align?: "start" | "end";
+  /**
+   * What it hangs from in place of the trigger: a point clear of what it must not cover, say.
+   * Its edge `align` names is the one the popup lines up with.
+   */
+  anchor?: Popover.Positioner.Props["anchor"];
   /**
    * CSS px at the window's foot it stays out of, scrolling instead: such as the conversation's
    * composer and the approval card above it.
@@ -66,6 +72,7 @@ export function TitlebarPopover({
         <Popover.Positioner
           side="bottom"
           align={align}
+          anchor={anchor}
           sideOffset={6}
           collisionPadding={{ top: 5, right: 5, left: 5, bottom: Math.max(5, keepClearBelow) }}
           className="isolate z-50"

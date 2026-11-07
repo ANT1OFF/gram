@@ -1,4 +1,4 @@
-import { useState, type PointerEvent } from "react";
+import { useState, type PointerEvent, type ReactNode } from "react";
 
 import { formatDay, formatStamp } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -11,12 +11,15 @@ const H = 96;
 export interface ChartPoint {
   readonly at: number;
   readonly value: number;
+  /** Lines under the value in its hover: the reading's age, its window's reset, its peak. */
+  readonly notes?: readonly string[];
 }
 
 /**
  * One series over a period, drawn once and never animated: a 2px line in the series' colour over
  * a faint fill, broken wherever nobody read it, under recessive 0, half and top gridlines and an
- * optional guide (the 90% warning mark). Hovering shows a crosshair and the reading nearest it.
+ * optional guide (the 90% warning mark). `ChartLegend` names each of these once for the page.
+ * Hovering shows a crosshair and the reading nearest it: when, the value, and the point's notes.
  */
 export function HistoryChart({
   points,
@@ -173,13 +176,20 @@ export function HistoryChart({
               role="status"
               data-testid="usage-history-hover"
               className={cn(
-                "pointer-events-none absolute -top-1 z-10 -translate-y-full rounded-sm border border-border bg-popover px-2 py-1 text-meta whitespace-nowrap text-popover-foreground shadow-raised tabular-nums",
+                "pointer-events-none absolute -top-1 z-10 flex -translate-y-full flex-col rounded-sm border border-border bg-popover px-2 py-1 text-meta whitespace-nowrap text-popover-foreground shadow-raised tabular-nums",
                 x(hover.at) > W / 2 ? "-translate-x-full" : "",
               )}
               style={{ left: `${(x(hover.at) / W) * 100}%` }}
             >
-              <span className="text-muted-foreground">{formatStamp(hover.at, to)}</span>{" "}
-              <span className="font-medium">{formatValue(hover.value)}</span>
+              <span>
+                <span className="text-muted-foreground">{formatStamp(hover.at, to)}</span>{" "}
+                <span className="font-medium">{formatValue(hover.value)}</span>
+              </span>
+              {hover.notes?.map((note) => (
+                <span key={note} data-testid="usage-history-note" className="text-muted-foreground">
+                  {note}
+                </span>
+              ))}
             </span>
           </>
         )}
@@ -206,5 +216,103 @@ export function HistoryChart({
         })}
       </div>
     </div>
+  );
+}
+
+/** A legend swatch's box: as tall as a line of meta text, the width of a short stroke. */
+const SWATCH = "h-3 w-5 shrink-0 overflow-visible";
+
+/**
+ * What the history charts draw, named once above them: the line is the share used, sampled once
+ * a `step`; a break in it is a stretch nobody read; a fall to the floor is a window resetting; the
+ * dashed line is the 90% warning; and the mark on each card's bar is where an even pace would be
+ * now. Swatches in the muted colour, the warning's in its own, so they read as keys, not data.
+ */
+export function ChartLegend({ step, className }: { step: string; className?: string }) {
+  const items: readonly { key: string; swatch: ReactNode; text: string }[] = [
+    {
+      key: "line",
+      swatch: (
+        <svg aria-hidden viewBox="0 0 20 12" className={SWATCH}>
+          <path
+            d="M1,9 L7,6 L13,4 L19,2"
+            className="fill-none stroke-muted-foreground"
+            strokeWidth={2}
+            strokeLinecap="round"
+          />
+        </svg>
+      ),
+      text: `Share used, the last reading each ${step}`,
+    },
+    {
+      key: "gap",
+      swatch: (
+        <svg aria-hidden viewBox="0 0 20 12" className={SWATCH}>
+          <path
+            d="M1,8 L6,6 M14,4 L19,2"
+            className="fill-none stroke-muted-foreground"
+            strokeWidth={2}
+            strokeLinecap="round"
+          />
+        </svg>
+      ),
+      text: "Break: no reading (Gram closed, or the agent quiet)",
+    },
+    {
+      key: "reset",
+      swatch: (
+        <svg aria-hidden viewBox="0 0 20 12" className={SWATCH}>
+          <path
+            d="M1,6 L10,2 L10,11 L19,9"
+            className="fill-none stroke-muted-foreground"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ),
+      text: "Drop to the floor: the window reset",
+    },
+    {
+      key: "guide",
+      swatch: (
+        <svg aria-hidden viewBox="0 0 20 12" className={SWATCH}>
+          <line
+            x1={0}
+            x2={20}
+            y1={6}
+            y2={6}
+            className="stroke-warning"
+            strokeWidth={1.5}
+            strokeDasharray="3 3"
+          />
+        </svg>
+      ),
+      text: "90%: where the meter warns",
+    },
+    {
+      key: "pace",
+      swatch: (
+        <svg aria-hidden viewBox="0 0 20 12" className={SWATCH}>
+          <rect x={0} y={5} width={20} height={2} rx={1} className="fill-foreground/15" />
+          <rect x={9} y={2} width={2} height={8} rx={1} className="fill-foreground/60" />
+        </svg>
+      ),
+      text: "Mark on a bar: an even pace through the window",
+    },
+  ];
+  return (
+    <ul
+      aria-label="How to read the charts"
+      data-testid="usage-history-legend"
+      className={cn("flex flex-wrap gap-x-4 gap-y-1 text-meta text-muted-foreground", className)}
+    >
+      {items.map((item) => (
+        <li key={item.key} data-legend={item.key} className="flex items-center gap-1.5">
+          {item.swatch}
+          {item.text}
+        </li>
+      ))}
+    </ul>
   );
 }

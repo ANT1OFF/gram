@@ -43,7 +43,7 @@ import {
   windowWord,
 } from "@/usage/limit-format";
 
-import { HistoryChart } from "./limit-history-chart";
+import { ChartLegend, HistoryChart } from "./limit-history-chart";
 import {
   addedText,
   atLimitText,
@@ -55,7 +55,9 @@ import {
   paceDetail,
   paceText,
   paceWarns,
+  stepWords,
   windowHistorySummary,
+  windowPointNotes,
   windowSeries,
 } from "./limit-history-model";
 import { PROVIDER_COLOR } from "./usage-model";
@@ -121,6 +123,11 @@ export function UsageSettingsPage() {
         </p>
       ) : (
         <div className={cn("flex flex-col gap-8", query.isPlaceholderData && "opacity-60")}>
+          {/* Once for every chart below: what the line, its breaks and drops, the dashed line and
+              the bars' marks mean. */}
+          {history !== undefined && (
+            <ChartLegend step={stepWords(history.step)} className="-mt-4" />
+          )}
           {providers.map((provider) => (
             <ProviderUsage
               key={provider}
@@ -231,6 +238,7 @@ function ProviderUsage({
             points={credits}
             history={history}
             days={days}
+            now={now}
           />
         ) : null}
       </div>
@@ -369,7 +377,11 @@ function WindowCard({
         ) : (
           <HistoryChart
             testId="usage-window-history"
-            points={points.map((p) => ({ at: p.at, value: p.utilization }))}
+            points={points.map((p) => ({
+              at: p.at,
+              value: p.utilization,
+              notes: windowPointNotes(p, history.step, now, limitPercent),
+            }))}
             from={history.from}
             to={history.to}
             step={history.step}
@@ -402,12 +414,14 @@ function CreditsCard({
   points,
   history,
   days,
+  now,
 }: {
   provider: LimitProvider;
   limit: UsageLimit | undefined;
   points: readonly CreditHistoryPoint[];
   history: UsageLimitHistory | undefined;
   days: LimitHistoryDays;
+  now: number;
 }) {
   const balance = creditBalanceNumber(limit?.creditsBalance) ?? points.at(-1)?.balance;
   const burn = creditBurn(points);
@@ -451,7 +465,11 @@ function CreditsCard({
           <HistoryChart
             testId="usage-credits-history"
             area={false}
-            points={points.map((p) => ({ at: p.at, value: p.balance }))}
+            points={points.map((p) => ({
+              at: p.at,
+              value: p.balance,
+              notes: [`Read ${agoText(Math.min(p.at + history.step, now), now)}`],
+            }))}
             from={history.from}
             to={history.to}
             step={history.step}

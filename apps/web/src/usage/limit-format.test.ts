@@ -11,6 +11,7 @@ import {
   limitPercent,
   limitShareText,
   meterHint,
+  meterSource,
   meterLabel,
   creditsText,
   forecastText,
@@ -93,16 +94,21 @@ describe("limit formatting", () => {
     };
     expect(meterText(tightest)).toBe("Claude 42% used");
     expect(meterText({ ...tightest, provider: "codex" })).toBe("Codex 42% used");
+    // The hover names whose number it is first, then what a click opens.
     expect(meterHint({ ...tightest, provider: "codex" })).toBe(
-      "Highest usage: Codex 5-hour limit, 42%",
+      "Highest: Codex 5-hour 42%\nClick for every agent's limits",
+    );
+    expect(meterSource({ ...tightest, provider: "codex", window: "weekly" })).toBe(
+      "Highest: Codex weekly 42%",
     );
     expect(meterLabel({ ...tightest, window: "weekly" })).toBe(
       "Highest subscription usage: Claude Code weekly limit 42% used",
     );
     // On a thread, the meter is that thread's agent's, and says so.
     expect(meterHint({ ...tightest, why: "agent" })).toBe(
-      "This thread's agent: Claude Code 5-hour limit, 42%",
+      "This thread: Claude Code 5-hour 42%\nClick for every agent's limits",
     );
+    expect(meterSource({ ...tightest, why: "agent" })).toBe("This thread: Claude Code 5-hour 42%");
     expect(meterLabel({ ...tightest, why: "agent" })).toBe(
       "This thread's agent's subscription usage: Claude Code 5-hour limit 42% used",
     );

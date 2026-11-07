@@ -57,11 +57,16 @@ test("the popover forecasts a window that is filling, and dates a reading gone q
 
   // Claude's readings are 40 minutes old, and too slow to forecast.
   const claude = popover.getByRole("region", { name: "Claude Code" });
-  await expect(claude.getByTestId("usage-limit-age")).toHaveText("Updated 40m ago");
+  // An old reading says so in its age's own muted words, on its name's row and in the Resets
+  // column, never as a mark that reads as a button, and keeps its figures at full strength.
+  await expect(claude.getByTestId("usage-limit-age")).toHaveText("Old reading · 40m ago");
   await expect(claude.getByTestId("usage-limit-age")).toHaveAttribute("data-stale", "true");
-  // An old reading says so beside its age and keeps its figures at full strength, not dimmed.
-  await expect(claude.getByTestId("usage-limit-stale")).toHaveText("Old reading");
-  await expect(codex.getByTestId("usage-limit-stale")).toHaveCount(0);
+  // The provider's name and its age each keep one line.
+  for (const part of [claude.getByRole("heading"), claude.getByTestId("usage-limit-age")]) {
+    const box = (await part.boundingBox())!;
+    // One line is 20 to 24 px; a wrapped second line would make it 40 or more.
+    expect(box.height).toBeLessThan(32);
+  }
   const rowOpacity = await claude
     .getByTestId("usage-limit-row")
     .first()
@@ -73,23 +78,30 @@ test("the popover forecasts a window that is filling, and dates a reading gone q
   const ages = popover.getByTestId("usage-limit-age");
   const colours = await ages.evaluateAll((all) => all.map((el) => getComputedStyle(el).color));
   expect(new Set(colours).size).toBe(1);
-  // The window the title bar shows is marked, and named at the foot: on this Claude thread,
-  // Claude's closest, though Codex's is higher.
+  // The window the title bar shows is marked, and named at the head: on this Claude thread,
+  // Claude's closest, though Codex's is higher. The thread's agent's block says so, and the foot
+  // says the one rule the meter follows everywhere.
   await expect(claude.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveAttribute(
     "data-window",
     "weekly",
   );
   await expect(codex.locator('[data-testid="usage-limit-row"][data-shown]')).toHaveCount(0);
-  await expect(popover.getByTestId("usage-limits-foot")).toContainText(
-    "The title bar shows this thread's agent: Claude Code weekly.",
+  await expect(popover.getByTestId("usage-limits-source")).toHaveText(
+    "In the title bar: This thread: Claude Code weekly 61%",
   );
-  // Off a thread, it is the highest of all, and says so.
+  await expect(claude.getByTestId("usage-limit-this-thread")).toHaveText("This thread");
+  await expect(codex.getByTestId("usage-limit-this-thread")).toHaveCount(0);
+  await expect(popover.getByTestId("usage-limits-foot")).toContainText(
+    "On a thread, the title bar shows its agent's closest limit",
+  );
+  // Off a thread, it is the highest of all, and says so, by the same rule.
   await page.keyboard.press("Escape");
   await page.goto("/usage");
   await page.getByTestId("usage-meter").click();
-  await expect(popover.getByTestId("usage-limits-foot")).toContainText(
-    "The title bar shows the highest: Codex 5-hour.",
+  await expect(popover.getByTestId("usage-limits-source")).toHaveText(
+    "In the title bar: Highest: Codex 5-hour 85%",
   );
+  await expect(popover.getByTestId("usage-limit-this-thread")).toHaveCount(0);
 });
 
 test("the popover says each row's use and reset, and shows the credits an agent reports", async ({

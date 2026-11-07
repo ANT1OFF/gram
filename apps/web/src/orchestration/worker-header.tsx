@@ -1,7 +1,7 @@
 import { USER_HOLD_IDLE_MS, type Thread, type ThreadId } from "@gram/contracts";
 import { Menu } from "@base-ui/react/menu";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, HandGrab, PanelRight } from "lucide-react";
+import { ChevronRight, HandGrab, SquareSplitHorizontal } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { Term } from "@/components/term";
@@ -76,12 +76,12 @@ const CRUMB =
   "min-w-0 truncate rounded-sm px-0.5 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /** A worker's ledger row and its live now line, while workspaces are on and the ledger is in. */
-function useWorkerFacts(thread: Thread) {
-  const { data: ledger } = useOrchestratorLedger(thread.workspaceId);
+function useWorkerFacts(thread: Thread | undefined) {
+  const { data: ledger } = useOrchestratorLedger(thread?.workspaceId);
   const byId = useThreadsStore((s) => s.byId);
   const statusDetail = useThreadsStore((s) => s.statusDetail);
   const now = useNow(true, undefined, 60_000);
-  const entry = workerEntryOf(ledger?.features, thread.id);
+  const entry = thread === undefined ? undefined : workerEntryOf(ledger?.features, thread.id);
   return {
     entry,
     row: entry === undefined ? undefined : workerRow(entry, { byId, statusDetail, now }),
@@ -197,15 +197,46 @@ export function WorkerCrumbs({
 }
 
 /**
+ * Where a worker's PR stands while its turn is over and it waits on that PR ("waiting on checks"),
+ * with the hover that lists every wait in full, from its ledger row; `undefined` while it runs, or
+ * waits on anything else.
+ */
+export function useWorkerPrWait(
+  thread: Thread | undefined,
+): { words: string; hint: string | undefined } | undefined {
+  const { row } = useWorkerFacts(thread);
+  const words = prWaitOf(thread, row);
+  return words === undefined ? undefined : { words, hint: row?.waiting?.hint };
+}
+
+const prWaitOf = (
+  thread: Thread | undefined,
+  row: ReturnType<typeof useWorkerFacts>["row"],
+): string | undefined => {
+  if (thread?.spawnedBy === undefined || row === undefined) return undefined;
+  const turnOver = row.status !== "running" && row.status !== "starting";
+  return turnOver && row.waiting !== undefined ? prWaitWords(row.waiting.kind) : undefined;
+};
+
+/**
  * The worker's now line beside its crumbs, the compact status ⌘J's rows show too. A worker whose
  * turn ended while its PR still waits says the two apart, "Turn: finished · PR: waiting on checks",
- * so a reply that says "Done." never reads against a header that says it is still waiting.
+ * so a reply that says "Done." never reads against a header that says it is still waiting. While
+ * the PR strip over the composer shows that PR (`prOnStrip`), the strip's row says where it stands
+ * instead ("Waiting on checks") and this says nothing: the header, the title bar's most of all,
+ * keeps to the worker's name and actions.
  */
-export function WorkerNowChip({ thread }: { thread: Thread }) {
+export function WorkerNowChip({
+  thread,
+  prOnStrip = false,
+}: {
+  thread: Thread;
+  prOnStrip?: boolean;
+}) {
   const { row } = useWorkerFacts(thread);
+  const pr = prWaitOf(thread, row);
   if (thread.spawnedBy === undefined || row === undefined) return null;
-  const turnOver = row.status !== "running" && row.status !== "starting";
-  const pr = turnOver && row.waiting !== undefined ? prWaitWords(row.waiting.kind) : undefined;
+  if (pr !== undefined && prOnStrip) return null;
   if (pr !== undefined) {
     return (
       <span
@@ -296,8 +327,8 @@ const HEADER_BUTTON =
   "inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-meta text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
- * In the title bar a worker's actions keep its other controls' shape: Open beside an icon button of
- * the chrome's size (28 px, its glyph 16 px), Take over a worded button as tall.
+ * In the title bar a worker's controls keep its other controls' shape: Open beside an icon button
+ * of the chrome's size (28 px) in the panels' group, Take over a worded button as tall.
  */
 const TITLEBAR_ICON =
   "inline-flex size-7 shrink-0 items-center justify-center rounded-(--radius-sm) text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
@@ -330,18 +361,19 @@ function useWorkerActions(thread: Thread) {
 
 /**
  * A worker's own actions at the end of its header: Open beside shows it in the right panel next
- * to its orchestrator's chat (⌘\), and Take over holds it for you, by the same path a message you
+ * to its orchestrator's chat (⌘\; in the title bar it is the panels' group's, `TitlebarOpenBeside`),
+ * and Take over holds it for you, by the same path a message you
  * type into it takes, until you hand it back. While you hold it, the hold chip and its Hand back
  * stand in Take over's place. Watching it, here or beside the chat, never holds it; sending to it
- * from beside the chat is typing into it. In a title bar folded all the way, Open beside and Take
- * over are the bar's "…" items (`WorkerMenuItems`) and the hold chip is a glyph and its Hand back.
+ * from beside the chat is typing into it. In a title bar folded all the way, Take over is the bar's
+ * "…" item (`WorkerMenuItems`) and the hold chip is a glyph and its Hand back.
  */
 export function WorkerActions({
   thread,
   inTitlebar = false,
 }: {
   thread: Thread;
-  /** In the title bar, where Open beside is its glyph, its words in the tooltip. */
+  /** In the title bar, where Open beside is the panels' group's rather than this. */
   inTitlebar?: boolean;
 }) {
   const actions = useWorkerActions(thread);
@@ -349,7 +381,8 @@ export function WorkerActions({
   if (!actions.worker) return null;
   const all = (ghost: boolean) => (
     <>
-      {actions.keepBeside !== undefined && (
+      {/* In the title bar Open beside is the panels' group's, beside the panel's toggle. */}
+      {!inTitlebar && actions.keepBeside !== undefined && (
         <Hint
           label={keyLabel("Open beside the chat (⌘\\)")}
           side="bottom"
@@ -357,13 +390,13 @@ export function WorkerActions({
             <button
               type="button"
               data-testid="worker-keep-beside"
-              className={inTitlebar ? TITLEBAR_ICON : HEADER_BUTTON}
+              className={HEADER_BUTTON}
               onClick={actions.keepBeside}
             />
           }
         >
-          <PanelRight aria-hidden className={inTitlebar ? "size-icon-bar" : "size-icon-row"} />
-          <span className={inTitlebar ? "sr-only" : "@max-md:sr-only"}>Open beside</span>
+          <SquareSplitHorizontal aria-hidden className="size-icon-row" />
+          <span className="@max-md:sr-only">Open beside</span>
         </Hint>
       )}
       {actions.held ? (
@@ -403,7 +436,10 @@ export function WorkerActions({
   );
 }
 
-/** Open beside and Take over as the title bar's "…" items, while a narrow bar folds them. */
+/**
+ * Take over as the title bar's "…" item, while a narrow bar folds it. Open beside never folds: it is
+ * the panels' group's (`TitlebarOpenBeside`).
+ */
 export function WorkerMenuItems({
   thread,
   itemClassName,
@@ -412,19 +448,9 @@ export function WorkerMenuItems({
   itemClassName: string;
 }) {
   const actions = useWorkerActions(thread);
-  if (actions.keepBeside === undefined && actions.takeOver === undefined) return null;
+  if (actions.takeOver === undefined) return null;
   return (
     <>
-      {actions.keepBeside !== undefined && (
-        <Menu.Item
-          data-testid="menu-keep-beside"
-          className={itemClassName}
-          onClick={actions.keepBeside}
-        >
-          <PanelRight aria-hidden className="size-icon-row" />
-          Open beside
-        </Menu.Item>
-      )}
       {actions.takeOver !== undefined && (
         <Menu.Item
           data-testid="menu-take-over"
@@ -443,5 +469,40 @@ export function WorkerMenuItems({
       )}
       <div role="separator" className="-mx-1 my-1 h-px bg-border" />
     </>
+  );
+}
+
+/**
+ * A worker's Open beside in the title bar: an icon beside the right panel's toggle, the two controls
+ * that put something in that panel, grouped at the bar's end. Its words and key are on hover.
+ * Nothing on a thread that isn't a worker, or one already beside its orchestrator.
+ */
+export function TitlebarOpenBeside({ threadId }: { threadId: ThreadId | undefined }) {
+  const thread = useThreadsStore((s) =>
+    threadId === undefined ? undefined : s.byId[threadId]?.thread,
+  );
+  if (thread?.spawnedBy === undefined) return null;
+  return <OpenBesideIcon thread={thread} />;
+}
+
+function OpenBesideIcon({ thread }: { thread: Thread }) {
+  const open = useWorkerActions(thread).keepBeside;
+  if (open === undefined) return null;
+  return (
+    <Hint
+      label={keyLabel("Open beside the chat (⌘\\)")}
+      side="bottom"
+      render={
+        <button
+          type="button"
+          aria-label="Open beside the chat"
+          data-testid="worker-keep-beside"
+          className={cn(TITLEBAR_ICON, "[-webkit-app-region:no-drag]")}
+          onClick={open}
+        />
+      }
+    >
+      <SquareSplitHorizontal aria-hidden className="size-icon-bar" />
+    </Hint>
   );
 }

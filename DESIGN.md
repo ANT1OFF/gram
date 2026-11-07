@@ -162,8 +162,12 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   pointer, and opens on the side away from what sits next to it (a panel's tabs above, over the
   panel's empty top, not over the notice under them).
 - **The title bar is icon-only and few:** the workspace, Chat · Board and the thread's title, then
-  what wants you (a setup problem folded from its banner, a paused workspace, usage, the bell), one "…" with everything else in words and
-  shortcuts, and the panel. A new control goes in the "…" unless it is needed at a glance. A
+  what wants you (a setup problem folded from its banner, its glyph with a count, a paused workspace, usage, the bell), one "…" with everything else in words and
+  shortcuts, and the panels' group at the end (a worker's Open beside, then the panel's toggle). The usage meter
+  follows one rule (on a thread its agent's closest limit, unless another's passes 90%; elsewhere the highest),
+  and its hover and popover name which ("This thread: …", "Highest: …"). A popover from the bar drops clear of a
+  card that asks for a decision. The overview's header holds its own two toggles; Settings sits beside History at
+  its foot. A new control goes in the "…" unless it is needed at a glance. A
   thread's title comes before its secondary buttons: the bar folds a worker's actions into "…"
   before it cuts the title (up to a cap). Settings is a place of its own: Back and its name in place
   of the workspace and its views, and no overview beside it.
