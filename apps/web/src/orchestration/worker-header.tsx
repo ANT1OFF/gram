@@ -14,7 +14,7 @@ import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
 import { seeTerm } from "@/lib/first-use";
 import { cn } from "@/lib/utils";
-import { GlideText, Swap } from "@/motion";
+import { Swap } from "@/motion";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { WORKER_TAKE_OVER_LINE } from "@/thread/orchestration-model";
@@ -30,7 +30,7 @@ import { orchestratorRowTitle } from "./tree-model";
 import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { prWaitWords } from "./waiting-on";
 import { FINISHED_WORKER, goToThread, useTakeOverLine } from "./worker-banner";
-import { workerGlideId, useWorkersListStore } from "./workers-list";
+import { showWorkersTab } from "./workers-tab";
 import { workerEntryOf, workerRow } from "./workers-model";
 
 /**
@@ -112,7 +112,6 @@ export function WorkerCrumbs({
   inTitlebar?: boolean;
 }) {
   const workspaces = useWorkspaces();
-  const gliding = useWorkersListStore((s) => s.gliding === thread.id);
   const spawnedBy = thread.spawnedBy;
   const orchestrator = useThreadsStore((s) =>
     spawnedBy === undefined ? undefined : s.byId[spawnedBy.threadId]?.thread,
@@ -185,13 +184,11 @@ export function WorkerCrumbs({
               data-titlebar-title=""
               // In the title bar the worker's name keeps a few letters, however short of room.
               className={cn(CRUMB, "text-foreground", inTitlebar && "min-w-12")}
-              onClick={() => useWorkersListStore.getState().toggle()}
+              onClick={showWorkersTab}
             />
           }
         >
-          <GlideText glideId={gliding ? workerGlideId(thread.id) : undefined}>
-            {thread.title}
-          </GlideText>
+          {thread.title}
         </Hint>
       </nav>
     </h1>

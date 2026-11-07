@@ -13,7 +13,7 @@ const SETTLED_MS = 350;
 const url = (threadId: string) => new RegExp(`/t/${threadId}$`);
 
 /**
- * The workers scenario, opened on one worker from ⌘J's Workers list, its orchestrator one step
+ * The workers scenario, opened on one worker from ⌘J's Workers tab, its orchestrator one step
  * before.
  */
 const openWorker = async (page: Page) => {
@@ -22,9 +22,11 @@ const openWorker = async (page: Page) => {
   const made = await page.evaluate(() => window.gramMock!.simulateWorkers());
   await openOrchestrator(page, made.orchestratorThreadId);
   await page.keyboard.press("ControlOrMeta+KeyJ");
-  const list = page.getByTestId("workers-list");
+  const list = page.getByTestId("workers-panel");
   await expect(list).toBeVisible();
-  await list.locator(`[data-testid="worker-row"][data-thread-id="${made.asking}"]`).click();
+  await list
+    .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.asking}"]`)
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(page).toHaveURL(url(made.asking));
   await expect(page.getByTestId("worker-crumbs")).toBeVisible();
   return made;

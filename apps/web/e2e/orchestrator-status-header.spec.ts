@@ -44,9 +44,7 @@ test("the header counts what runs, waits, is in review and merged, and opens eac
   await expect(hinted).toHaveCount(made.running.length);
   await expect(hinted.first()).toContainText(" · ");
   await running.click();
-  await expect(page.getByTestId("workers-list")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("workers-list")).toHaveCount(0);
+  await expect(page.getByTestId("workers-panel")).toBeVisible();
 
   // Nothing in Gram waits on the user: the ask is billing-api's and the error a solo thread's.
   // The header doesn't repeat it: the sidebar's pill is the one count across every workspace,

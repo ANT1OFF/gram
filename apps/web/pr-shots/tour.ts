@@ -144,8 +144,8 @@ const workersList = async (page: Page) => {
   await page.getByTestId("overview-hide").click();
   await expect(page.getByTestId("overview-sidebar")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+KeyJ");
-  await page.getByTestId("workers-list").waitFor();
-  await page.getByTestId("worker-row").first().waitFor();
+  await page.getByTestId("workers-panel").waitFor();
+  await page.getByTestId("workers-panel-row").first().waitFor();
 };
 
 /** The worker "Search in Settings", its first turn's edits and files card in view. */

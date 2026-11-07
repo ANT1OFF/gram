@@ -168,6 +168,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **The Inbox docks beside the chat only where the chat keeps its reading column** (760 px) beside
   it; in a narrower window (under about 1,600 px with the overview open) it opens over the work as
   a dialog, the same list and keys, rather than squeeze the chat to a strip.
+- **One worker list:** the right panel's Workers tab, by state, each row its dot, title, age and
+  one status line without the state its heading says. ⌘J, Workers in the title bar's "…", the
+  palette and the status strip's count open it with the keys on its rows; ⌘J again puts the panel
+  back as it was. There is no second list in a dialog.
 - **An explanation shows once, then folds to a mark.** What Take over changes is a line under a
   worker's header the first time it is offered; after, it is an ⓘ beside Take over that says it on
   hover or focus, so the line never stacks over every worker view.
@@ -248,7 +252,7 @@ firmer `border-edge-action`. A plain divider stays `border-border`. `shadow-rais
 floats (a menu, a popover, a toast), `shadow-modal` for a modal dialog over the scrim (History, a
 confirm), `shadow-composer` for the composer slab. The scrim (`scrim`) dims toward the chrome surface,
 82% in light and 78% in dark, and blurs the page a little (`--scrim-blur`), so the transcript
-behind History, Workers or the palette reads as a backdrop and never competes with the list in
+behind History or the palette reads as a backdrop and never competes with the list in
 front. More contrast and forced colours turn the shadows and the blur off and the edges to
 `border-strong`.
 

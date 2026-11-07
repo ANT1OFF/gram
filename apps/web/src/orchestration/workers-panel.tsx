@@ -108,7 +108,7 @@ const folded = (toggled: ReadonlySet<StatusGroupId>, id: StatusGroupId): boolean
  * one that opens in the main view only (`mainOnly`), or any with ⌘/Ctrl, in the main view. The one
  * place that choice is made.
  */
-function useOpenWorker(): (row: PanelRow, event: MouseEvent) => void {
+function useOpenWorker(): (row: PanelRow, event: Pick<MouseEvent, "metaKey" | "ctrlKey">) => void {
   const openThread = useOpenThread();
   return (row, event) => {
     const full = row.mainOnly || event.metaKey || event.ctrlKey;
@@ -160,7 +160,10 @@ export function WorkersPanel({ workspaceId }: { workspaceId: WorkspaceId }) {
       role="region"
     >
       <Header query={query} onQuery={setQuery} workspace={name} />
-      <div className="flex min-h-0 flex-1 flex-col gap-section overflow-y-auto px-section pt-inset pb-section">
+      <div
+        onKeyDown={rowKeys}
+        className="flex min-h-0 flex-1 flex-col gap-section overflow-y-auto px-section pt-inset pb-section"
+      >
         <WorkersDocs workspaceId={workspaceId} />
         {none ? (
           <EmptyState
@@ -495,6 +498,12 @@ function Row({ row }: { row: PanelRow }) {
         aria-current={current ? "page" : undefined}
         title={`${row.title}\n${row.status}`}
         onClick={(event) => openWorker(row, event)}
+        onKeyDown={(event) => {
+          // ⌘⏎ opens it in the main view, as ⌘-click does; ⏎ alone is the row's click.
+          if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+          event.preventDefault();
+          openWorker(row, event);
+        }}
         className={cn(
           ROW_GRID,
           "items-start rounded-xs py-1.5 text-left text-body outline-none hover:bg-accent focus-visible:focus-ring aria-current:choice-selected",
@@ -549,6 +558,34 @@ function Row({ row }: { row: PanelRow }) {
 
 /** The panel's rows have no feature card: their chips come from the thread and the ledger. */
 const NO_CARD_PRS: readonly FeatureCardPr[] = [];
+
+/**
+ * ↑↓, Home and End move between the rows shown, as in every list; ⏎ opens the one focused. Off a
+ * row (in the search box, on a heading) only ↑↓ from a row count, so typing keeps its keys.
+ */
+function rowKeys(event: KeyboardEvent<HTMLElement>) {
+  const from = (event.target as HTMLElement).closest<HTMLElement>(
+    '[data-testid="workers-panel-row"]',
+  );
+  if (from === null) return;
+  const rows = [
+    ...event.currentTarget.querySelectorAll<HTMLElement>('[data-testid="workers-panel-row"]'),
+  ].filter((row) => row.closest("[hidden]") === null);
+  const at = rows.indexOf(from);
+  const next =
+    event.key === "ArrowDown"
+      ? Math.min(at + 1, rows.length - 1)
+      : event.key === "ArrowUp"
+        ? Math.max(at - 1, 0)
+        : event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? rows.length - 1
+            : undefined;
+  if (next === undefined) return;
+  event.preventDefault();
+  rows[next]?.focus();
+}
 
 /**
  * Whether `threadId` is open in the main view, which its row marks as the current place. Only this

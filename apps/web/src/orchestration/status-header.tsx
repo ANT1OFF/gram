@@ -14,7 +14,7 @@ import { useOpenBoard } from "./open-board";
 import { SinceYouLeft } from "./since-you-left";
 import { statusHeaderCounts, type HeaderWorker } from "./status-header-model";
 import { useOrchestratorLedgers } from "./use-orchestration";
-import { useWorkersListStore } from "./workers-list";
+import { showWorkersTab } from "./workers-tab";
 import { workersByTab } from "./workers-model";
 
 /** Every item's shape: a quiet button that opens the view behind its count. */
@@ -163,7 +163,7 @@ function StatusStrip({
           testId="status-running"
           label={`${running} running, open Workers`}
           hint={<WorkersHint title="Running" workers={counts.running} />}
-          onClick={() => useWorkersListStore.getState().show("now")}
+          onClick={showWorkersTab}
         >
           <Count n={running} word="running" />
         </Item>

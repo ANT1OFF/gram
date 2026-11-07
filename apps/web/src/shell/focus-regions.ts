@@ -19,7 +19,10 @@ export const overviewStops = (root: ParentNode): HTMLElement[] =>
   );
 
 /** Focuses what `find` returns once it has rendered, trying for a few frames. */
-async function focusWhenRendered(find: () => HTMLElement | null, frames = 10): Promise<boolean> {
+export async function focusWhenRendered(
+  find: () => HTMLElement | null,
+  frames = 10,
+): Promise<boolean> {
   for (let frame = 0; frame < frames; frame++) {
     const target = find();
     if (target) {
