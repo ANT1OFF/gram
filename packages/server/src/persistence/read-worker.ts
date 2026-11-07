@@ -22,6 +22,7 @@ import * as Option from "effect/Option";
 import { Worker } from "node:worker_threads";
 import { UnknownError } from "effect/sql/SqlError";
 import { SqlClient, SqlError } from "../platform/unstable.ts";
+import * as UpdateSeal from "./update-seal.ts";
 
 /** How long the worker's statement waits on a lock (a checkpoint's) before it fails. */
 const BUSY_TIMEOUT_MS = 1_000;
@@ -97,82 +98,117 @@ export class ReadWorker extends Context.Service<ReadWorker, ReadWorkerShape>()(
   "@gram/server/ReadWorker",
 ) {}
 
-/** A read worker over `filename`, stopped with its scope. */
+/** A request waiting for the worker, or the one it is running. */
+interface Request {
+  readonly id: number;
+  readonly sql: string;
+  readonly params: ReadonlyArray<unknown>;
+  readonly settle: (
+    reply: Exclude<Reply, { readonly kind: "ready" | "failed" }> | undefined,
+  ) => void;
+}
+
+/**
+ * A read worker over `filename`, stopped with its scope, or before an update seals the database
+ * (`update-seal.ts`), whose checkpoint must find no other reader on the file.
+ */
 export const layer = (filename: string): Layer.Layer<ReadWorker> =>
   Layer.effect(
     ReadWorker,
     Effect.gen(function* () {
       let usable = true;
       let sequence = 0;
-      const pending = new Map<
-        number,
-        (reply: Exclude<Reply, { readonly kind: "ready" | "failed" }> | undefined) => void
-      >();
+      /**
+       * One statement runs at a time, sent only when the one before it has answered: a read
+       * interrupted while it waits (a search typed over) is dropped before the worker sees it.
+       */
+      const queue: Array<Request> = [];
+      let running: Request | undefined;
+      const spawned = new Worker(WORKER_SOURCE, {
+        eval: true,
+        workerData: { filename, busyTimeoutMs: BUSY_TIMEOUT_MS, statementCache: STATEMENT_CACHE },
+      });
+      // A read worker never keeps the server alive.
+      spawned.unref();
+      // Listened for from the start: a worker that can't open the file exits before any stop.
+      const exited = Promise.withResolvers<void>();
       const settleAll = () => {
         usable = false;
-        for (const resolve of pending.values()) resolve(undefined);
-        pending.clear();
+        running?.settle(undefined);
+        running = undefined;
+        for (const request of queue.splice(0)) request.settle(undefined);
       };
-      const worker = yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          const spawned = new Worker(WORKER_SOURCE, {
-            eval: true,
-            workerData: {
-              filename,
-              busyTimeoutMs: BUSY_TIMEOUT_MS,
-              statementCache: STATEMENT_CACHE,
-            },
-          });
-          // A read worker never keeps the server alive.
-          spawned.unref();
-          return spawned;
-        }),
-        (spawned) =>
-          Effect.promise(async () => {
-            settleAll();
-            const exited = new Promise<void>((done) => spawned.once("exit", () => done()));
-            // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker_threads has no origin argument.
-            spawned.postMessage("stop");
-            const timer = setTimeout(() => void spawned.terminate(), STOP_TIMEOUT_MS);
-            await exited;
-            clearTimeout(timer);
-          }),
-      );
-      worker.on("message", (reply: Reply) => {
+      const next = () => {
+        if (running !== undefined || !usable) return;
+        running = queue.shift();
+        if (running === undefined) return;
+        const { id, sql, params } = running;
+        // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker_threads has no origin argument.
+        spawned.postMessage({ id, sql, params });
+      };
+      spawned.on("message", (reply: Reply) => {
         if (reply.kind === "failed") return settleAll();
         if (reply.kind === "ready") return;
-        const resolve = pending.get(reply.id);
-        pending.delete(reply.id);
-        resolve?.(reply);
+        if (running?.id === reply.id) {
+          const done = running;
+          running = undefined;
+          done.settle(reply);
+        }
+        next();
       });
-      worker.on("error", settleAll);
-      worker.on("exit", settleAll);
+      spawned.on("error", settleAll);
+      spawned.on("exit", () => {
+        settleAll();
+        exited.resolve();
+      });
+      let stopping: Promise<void> | undefined;
+      /** Lets the running statement finish, closes the connection and ends the thread, once. */
+      const stop = () =>
+        (stopping ??= (async () => {
+          // Reads from here on go to the main connection.
+          usable = false;
+          for (const request of queue.splice(0)) request.settle(undefined);
+          // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker_threads has no origin argument.
+          spawned.postMessage("stop");
+          const timer = setTimeout(() => void spawned.terminate(), STOP_TIMEOUT_MS);
+          await exited.promise;
+          clearTimeout(timer);
+        })());
+      const unregister = UpdateSeal.beforeSeal(filename, Effect.promise(stop));
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(stop).pipe(Effect.ensuring(Effect.sync(unregister))),
+      );
       return ReadWorker.of({
         all: (sql, params) =>
           Effect.callback<Option.Option<ReadonlyArray<unknown>>, SqlError>((resume) => {
             if (!usable) return resume(Effect.succeed(Option.none()));
-            const id = sequence++;
-            pending.set(id, (reply) => {
-              if (reply === undefined) resume(Effect.succeed(Option.none()));
-              else if (reply.kind === "rows") resume(Effect.succeed(Option.some(reply.rows)));
-              else
-                resume(
-                  Effect.fail(
-                    new SqlError({
-                      reason: new UnknownError({
-                        cause: undefined,
-                        message: reply.message,
-                        operation: "read worker",
+            const request: Request = {
+              id: sequence++,
+              sql,
+              params,
+              settle: (reply) => {
+                if (reply === undefined) resume(Effect.succeed(Option.none()));
+                else if (reply.kind === "rows") resume(Effect.succeed(Option.some(reply.rows)));
+                else
+                  resume(
+                    Effect.fail(
+                      new SqlError({
+                        reason: new UnknownError({
+                          cause: undefined,
+                          message: reply.message,
+                          operation: "read worker",
+                        }),
                       }),
-                    }),
-                  ),
-                );
-            });
-            // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node worker_threads has no origin argument.
-            worker.postMessage({ id, sql, params });
-            // An interrupted read lets its answer go; the worker finishes the statement anyway.
+                    ),
+                  );
+              },
+            };
+            queue.push(request);
+            next();
+            // Waiting, it is dropped; running, the worker finishes it and its answer goes unread.
             return Effect.sync(() => {
-              pending.delete(id);
+              const at = queue.indexOf(request);
+              if (at >= 0) queue.splice(at, 1);
             });
           }),
       });

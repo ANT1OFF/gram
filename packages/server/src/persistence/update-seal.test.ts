@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqlClient } from "../platform/unstable.ts";
+import { readOffLoop } from "./read-worker.ts";
 import { ThreadStore } from "./thread-store.ts";
 import { SEAL_TIMEOUT_MS, sealForUpdate } from "./update-seal.ts";
 
@@ -66,6 +67,36 @@ describe("update database seal", () => {
         expect(yield* Fiber.await(late).pipe(Effect.timeoutOption(300))).toEqual(Option.none());
         expect(yield* sealForUpdate).toBe(true);
         yield* Fiber.interrupt(late);
+        const closed = yield* Scope.close(scope, Exit.void).pipe(Effect.timeoutOption(10_000));
+        expect(Option.isSome(closed)).toBe(true);
+      }),
+    ),
+  );
+
+  it.live("stops the read worker, letting its statement finish, before it checkpoints", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const file = databaseFile();
+        const scope = yield* Scope.make();
+        const context = yield* Layer.buildWithScope(
+          ThreadStore.layerSqlite(file, { checkpointOffLoop: true }),
+          scope,
+        );
+        const sql = yield* SqlClient.SqlClient.pipe(Effect.provideContext(context));
+        yield* sql`CREATE TABLE IF NOT EXISTS seal_probe (id INTEGER PRIMARY KEY, data TEXT)`;
+        yield* insert(sql, 200);
+        // Long enough on the worker's own connection (about 0.7 s) to outlast the seal's lock wait.
+        const read = yield* Effect.forkScoped(
+          readOffLoop<{ n: number }>(
+            `SELECT count(*) AS n FROM seal_probe a, seal_probe b, seal_probe c,
+              (${Array.from({ length: 10 }, (_, i) => `SELECT ${i}`).join(" UNION ALL ")})`,
+            [],
+          ).pipe(Effect.provideContext(context)),
+        );
+        yield* Effect.sleep("50 millis");
+        expect(yield* sealForUpdate).toBe(true);
+        expect(walBytes(file)).toBe(0);
+        expect(yield* Fiber.join(read)).toEqual([{ n: 10 * 200 ** 3 }]);
         const closed = yield* Scope.close(scope, Exit.void).pipe(Effect.timeoutOption(10_000));
         expect(Option.isSome(closed)).toBe(true);
       }),
