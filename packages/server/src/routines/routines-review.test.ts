@@ -897,4 +897,78 @@ describe.skipIf(!hasGit)("routines: seventh review, recovery as admitted", () =>
       }),
     SLOW,
   );
+  it.effect(
+    "[31] switches a half-made worker to its routine's effort as admitted, though its model is the same",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        const made = yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const orchestration = yield* Orchestration;
+            const { project, workspaceId, thread: orchestrator } = yield* openOrchestrator(world);
+            yield* orchestration.editCharter(workspaceId, (charter) => ({
+              ...charter,
+              // One entry per agent:model: fake-opus, at high effort.
+              workerModels: [
+                { agent: "claude", model: "fake-opus", variant: "high", default: true },
+              ],
+            }));
+            const routine = yield* workerRoutine(workspaceId, project.id);
+            const slot = routine.nextRunAt!;
+            const requestId = `routine:${routine.id}:${slot}`;
+            const threadId = workerThreadId(workspaceId, requestId);
+            yield* stageState(routine.id, { ...stateOf(routine), claim: { requestId, slot } });
+            const runtimes = yield* ThreadRuntimes;
+            yield* runtimes.create({
+              id: threadId,
+              projectRoot: world.repo,
+              checkout: { kind: "main", path: world.repo },
+              title: routine.name,
+              model: { agent: "claude", model: "fake-opus" },
+              workspaceId,
+              spawnedBy: {
+                threadId: orchestrator.id,
+                feature: "routine-ci-triage",
+                routine: { id: routine.id, name: routine.name },
+              },
+              deferOpen: true,
+            });
+            // Renamed and moved to the other model before the restart; its project stays.
+            // The routine names the same model, which the roster now runs at high effort.
+            yield* editRoutine(routine.id, (each) => ({
+              ...each,
+              model: { agent: "claude", model: "fake-opus" },
+            }));
+            return { id: routine.id, threadId };
+          }),
+        );
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            yield* settle;
+            yield* TestClock.adjust("1 minute");
+            const ran = yield* ranAfter(made.id, 0);
+            expect(ran.lastRun).toMatchObject({ outcome: "started", threadId: made.threadId });
+            const store = yield* ThreadStore;
+            const worker = yield* store.getThread(made.threadId);
+            expect(worker.model).toMatchObject({
+              agent: "claude",
+              model: "fake-opus",
+              variant: "high",
+            });
+            const fake = yield* FakeAgentControl;
+            const brief = yield* waitReal(
+              "the recovered worker's brief",
+              Effect.sync(
+                () =>
+                  fake.sessions.find((each) => each.options.threadId === made.threadId)?.sent[0],
+              ),
+            );
+            expect(brief.text).toContain('routine "CI triage"');
+          }),
+        );
+      }),
+    SLOW,
+  );
 });

@@ -344,13 +344,16 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   ? undefined
                   : yield* rosterHere(state.charter.workerModels, state.charter),
               );
-              const sameModel =
+              // Every field of the model as admitted, effort (`variant`) and speed included.
+              const fields = (model: ModelRef) =>
                 JSON.stringify([
-                  existing.model.agent,
-                  existing.model.model,
-                  existing.model.profileId,
-                ]) ===
-                JSON.stringify([picked.model.agent, picked.model.model, picked.model.profileId]);
+                  model.agent,
+                  model.model,
+                  model.profileId,
+                  model.variant,
+                  model.speed,
+                ]);
+              const sameModel = fields(existing.model) === fields(picked.model);
               if (!sameModel) {
                 const switched = yield* runtimes.setModel(existing.id, picked.model).pipe(
                   Effect.as(true),
