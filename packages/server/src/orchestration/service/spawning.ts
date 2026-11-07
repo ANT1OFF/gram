@@ -112,6 +112,10 @@ export interface SpawningDeps {
 }
 
 /** Spawning workers. */
+/** A model's every field, effort (`variant`) and speed included, for telling two apart. */
+const modelFields = (model: ModelRef) =>
+  JSON.stringify([model.agent, model.model, model.profileId, model.variant, model.speed]);
+
 export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
   const {
     authorityOf,
@@ -345,15 +349,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                   : yield* rosterHere(state.charter.workerModels, state.charter),
               );
               // Every field of the model as admitted, effort (`variant`) and speed included.
-              const fields = (model: ModelRef) =>
-                JSON.stringify([
-                  model.agent,
-                  model.model,
-                  model.profileId,
-                  model.variant,
-                  model.speed,
-                ]);
-              const sameModel = fields(existing.model) === fields(picked.model);
+              const sameModel = modelFields(existing.model) === modelFields(picked.model);
               if (!sameModel) {
                 const switched = yield* runtimes.setModel(existing.id, picked.model).pipe(
                   Effect.as(true),
