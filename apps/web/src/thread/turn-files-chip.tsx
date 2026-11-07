@@ -1,6 +1,6 @@
 import type { ThreadId, TurnId, TurnUndoData } from "@gram/contracts";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FileDiff, Undo2 } from "lucide-react";
+import { FileDiff } from "lucide-react";
 import { useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -88,7 +88,6 @@ export function TurnFilesChip({
               data-testid="turn-undone"
               className="inline-flex items-center gap-1 px-2 text-meta text-muted-foreground"
             >
-              <Undo2 aria-hidden className="size-icon-row" />
               {undone.failed === undefined ? "Undone" : "Undo failed"} at {formatStamp(undone.at)}
             </span>
           ) : confirming ? (
@@ -125,7 +124,6 @@ export function TurnFilesChip({
               }}
             >
               Undo
-              <Undo2 aria-hidden data-icon="inline-end" />
             </Button>
           )}
           {!confirming && (

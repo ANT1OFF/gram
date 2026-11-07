@@ -9,9 +9,10 @@ import {
   RECENT_DONE,
   recentDone,
   recentWhen,
+  type HistoryOutcome,
   type RecentDone,
 } from "@/history/history-model";
-import { OUTCOME_GLYPH, useHistoryStore } from "@/history/history-view";
+import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { openExternalUrl } from "@/api/open-external";
 import { PrMarkIcon } from "@/components/pr-marks";
@@ -47,6 +48,7 @@ import {
   Section,
   STOP,
 } from "./overview-section";
+import { StatusDot, type DotState } from "./status-dot";
 import { useFinishedWorkerPages } from "./use-finished-workers";
 import { useOrchestratorLedger, useOrchestratorLedgers, useWorkspaces } from "./use-orchestration";
 
@@ -217,10 +219,8 @@ export function OverviewDone() {
           onClick={() => useHistoryStore.getState().show("done")}
           className="flex h-6 w-full items-center gap-2 rounded-(--radius-sm) px-1.5 text-left text-meta text-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {/* In the rows' mark column, so the words start where their titles do. */}
-          <span aria-hidden className="flex w-2.5 justify-center">
-            <History className="size-icon-chip" />
-          </span>
+          {/* An empty mark column, so the words start where the rows' titles do. */}
+          <span aria-hidden className="w-2.5 shrink-0" />
           {more} more in History
         </button>
       )}
@@ -230,14 +230,22 @@ export function OverviewDone() {
 
 const NO_PROJECTS: readonly never[] = [];
 
-/** A finished chat: its outcome's glyph, its title and when, its outcome and place; muted until hovered. */
+/** Each outcome's dot: the merged colour for work that landed, red for a failure, grey for a stop. */
+const OUTCOME_DOT: Readonly<Record<HistoryOutcome, DotState>> = {
+  merged: "merged",
+  delivered: "done",
+  stopped: "idle",
+  failed: "error",
+  archived: "archived",
+  idle: "idle",
+};
+
+/** A finished chat: its outcome's dot, its title and when, its outcome and place; muted until hovered. */
 function DoneRow({ row, now }: { row: RecentDone; now: number }) {
   const openThread = useOpenThread();
   const viewed = useParams({ strict: false }).threadId === row.threadId;
-  const glyph = row.outcome === undefined ? undefined : OUTCOME_GLYPH[row.outcome];
   const word = row.outcome === undefined ? "finished" : OUTCOME_LABEL[row.outcome];
   const when = recentWhen(row.finishedAt, now);
-  const Icon = glyph?.icon;
   return (
     <RowMenu menu={<RowMenuItems threadId={row.threadId} />}>
       <button
@@ -259,8 +267,9 @@ function DoneRow({ row, now }: { row: RecentDone; now: number }) {
           CURRENT_ROW,
         )}
       >
+        {/* Its state's dot, as a worker's row has: one mark family down the column. */}
         <span aria-hidden className={ROW_MARK}>
-          {Icon !== undefined && <Icon className="size-icon-row" />}
+          <StatusDot state={row.outcome === undefined ? "done" : OUTCOME_DOT[row.outcome]} />
         </span>
         <span className={ROW_TITLE}>{row.title}</span>
         <span data-testid="overview-done-status" className={ROW_STATUS}>

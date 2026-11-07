@@ -1,6 +1,6 @@
 import type { DocId, WorkspaceId } from "@gram/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronLeft, Copy, Pencil } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useRef, useState, type ComponentProps } from "react";
 
 import { useApi } from "@/api/context";
@@ -8,6 +8,7 @@ import { errorMessage, isNotFound } from "@/api/errors";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { PanelMessage } from "@/panels/panel-message";
@@ -33,6 +34,26 @@ const HEADINGS = {
     <h6 className="mt-3 mb-1.5 text-reading font-medium first:mt-0">{children}</h6>
   ),
 };
+
+/**
+ * The doc's Markdown without a leading `# Title` that only repeats the title its header shows, so
+ * the reader says its title once.
+ */
+export function withoutRepeatedTitle(content: string, title: string): string {
+  const match = /^\s*#[ \t]+(.+?)[ \t#]*(?:\r?\n|$)/.exec(content);
+  if (match === null) return content;
+  return sameWords(match[1]!) === sameWords(title)
+    ? content.slice(match[0].length).trimStart()
+    : content;
+}
+
+const sameWords = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * Its tables read in the page's own scroll at their full height, with no box of their own to
+ * scroll and no toolbar: Copy Markdown already copies the doc, tables and all.
+ */
+const DOC_TABLES = { table: false } as const;
 
 /**
  * One doc in the Docs tab: its title, who wrote it and when (24-hour, `formatStamp`), and its
@@ -146,7 +167,6 @@ export function DocView({
               );
             }}
           >
-            <Pencil data-icon="inline-start" />
             {draft === undefined ? "Edit" : "Editing"}
           </Button>
           <Button
@@ -161,7 +181,6 @@ export function DocView({
               });
             }}
           >
-            {copied ? <Check data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
             {copied ? "Copied" : "Copy Markdown"}
           </Button>
         </div>
@@ -169,12 +188,24 @@ export function DocView({
       {draft === undefined ? (
         // Styled by the transcript's own rules (`data-transcript`): the reading size and measure
         // set in Settings → Appearance → Reading, and its scale of headings, code and tables.
-        <div data-transcript="" data-testid="doc-body" className="min-w-0">
+        // Without its toolbar a table's frame is a box around a box: only the table's own edge
+        // stays, and its cells pad by a list's step so a narrow panel wraps them less.
+        <div
+          data-transcript=""
+          data-testid="doc-body"
+          className={cn(
+            "min-w-0",
+            "[&_[data-streamdown=table-wrapper]]:border-0 [&_[data-streamdown=table-wrapper]]:bg-transparent [&_[data-streamdown=table-wrapper]]:p-0",
+            "[&_[data-streamdown=table-cell]]:px-list [&_[data-streamdown=table-header-cell]]:px-list",
+          )}
+        >
           <div
             data-slot="message-content"
             className="text-reading [&_ol]:list-decimal [&_ol]:ps-5 [&_ul]:list-disc [&_ul]:ps-5"
           >
-            <MessageResponse components={HEADINGS}>{data.content}</MessageResponse>
+            <MessageResponse components={HEADINGS} controls={DOC_TABLES} tableMaxHeight={0}>
+              {withoutRepeatedTitle(data.content, data.title)}
+            </MessageResponse>
           </div>
         </div>
       ) : (

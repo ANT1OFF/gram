@@ -46,8 +46,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   small marks (a key cap, a bar, a swatch) take 4 px (`radius-2xs`).
 - **Rows:** 36 px by default (`--row-comfortable`), 30 px in compact density (`--row-compact`).
   Lists, menus and the sidebar share one row shape. Every sidebar row, whatever it lists (a
-  workspace, a worker, a solo thread, a PR, a Done item), is its mark and title (`ROW`,
-  `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
+  workspace, a worker, a solo thread, a PR, a Done item), is its mark (a Done item's is its
+  state's dot, as a worker's is) and title (`ROW`, `ROW_TITLE`), then one muted status line (`ROW_STATUS`) with what trails it at the right edge: a
   time, or its badges (a worker's PR chips) only while they fit beside the words: the status wins,
   and the row's hover names the PR. The title has the row's whole width on one line, cut at its
   end (never its middle) with the whole of it on hover, so every row is the same 48 px (two 20 px
@@ -92,9 +92,13 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   The sidebar keeps the width the user gives it, and its edge shows a grip while the pointer is
   over the column.
 - **Icons: Lucide** at one optical stroke, never as decoration and never emoji. `--icon-stroke`
-  (1.75) is the stroke at 16 px; each size token takes the stroke that draws the same line
-  (about 1.2 px) at its size (globals.css), so a 14 px chip glyph is no thinner than an 18 px
-  toolbar one. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
+  (2) is the stroke at 16 px; each size token takes the stroke that draws the same line
+  (about 1.33 px, as heavy as Inter's stems beside it) at its size (globals.css), so a 14 px chip
+  glyph is no thinner than an 18 px toolbar one. A glyph stands in for a word, never beside the
+  word it repeats: a button that says "Edit" or "Restore defaults", the status strip's counts and
+  a picker that shows its words take no glyph, and a picker's glyph draws only once its words
+  give way. A mark that says something its words don't (the model picker's agent, a row's state
+  dot) stays. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
   sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
   menus, docks, buttons, the panel's tabs and its action, which give way to glyphs by width), and `size-icon-chip` 14 px beside meta text (a chip,
   a badge, a status line). An empty state's or a panel message's lead glyph is `size-icon-empty`
