@@ -113,7 +113,12 @@ test("the popover drops clear of the approval card it would cover", async ({ pag
 test("the title bar's meter is an icon button on an orchestrator, a worker and a narrow bar", async ({
   page,
 }) => {
-  await seed(page, { "gram.mock.orchestration": "board" });
+  // The right panel closed: narrow, a worker's Diff too cramped to read beside the chat takes the
+  // window as Focus review, over the chat and its title bar, which is the review's to do.
+  await seed(page, {
+    "gram.mock.orchestration": "board",
+    "gram.mock.settings": JSON.stringify({ panel: { open: false } }),
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   // A launch with a workspace lands on its orchestrator.
@@ -185,6 +190,7 @@ test("the title bar's meter is an icon button on an orchestrator, a worker and a
   await readsAsButton();
   // A narrow bar keeps the button.
   await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.getByTestId("app-shell")).toHaveAttribute("data-review-focus", "false");
   await readsAsButton();
 });
 
