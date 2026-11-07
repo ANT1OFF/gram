@@ -7,12 +7,13 @@ import { ChatAuthorityLine, TaskAuthorityLine, chatAuthority, taskSummary } from
 afterEach(cleanup);
 
 describe("taskSummary", () => {
-  it("says where it runs, which orchestrator supervises it and whether it may merge", () => {
+  it("says where it runs and whom it reports to, and apart from that who approves a merge", () => {
     expect(
       taskSummary({ way: "direct", workspace: "billing-api", autonomy: "publish", hold: false }),
     ).toEqual({
       where: "Runs in billing-api",
-      who: "Supervised by the billing-api orchestrator",
+      who: "Reports to the billing-api orchestrator",
+      approval: "Asks you",
       merge: "Opens its pull request; merging waits for you",
     });
     expect(
@@ -20,6 +21,7 @@ describe("taskSummary", () => {
     ).toEqual({
       where: "Runs in billing-api",
       who: "You direct it until you hand it to the billing-api orchestrator",
+      approval: "Automatic",
       merge: "Merges its pull request without asking you",
     });
     expect(
@@ -27,8 +29,17 @@ describe("taskSummary", () => {
     ).toEqual({
       where: "Runs in api",
       who: "Planned by the api orchestrator",
-      merge: "Asks you before a push, a pull request or a merge",
+      approval: "Asks you",
+      merge: "Asks before a push, a pull request or a merge",
     });
+  });
+
+  it("never says supervision and merging in one breath", () => {
+    for (const autonomy of ["supervised", "publish", "full"]) {
+      const { who } = taskSummary({ way: "direct", workspace: "api", autonomy, hold: false });
+      expect(who).toBe("Reports to the api orchestrator");
+      expect(who).not.toMatch(/supervis|merge/i);
+    }
   });
 
   it("names the workspace a start makes, and holds only a direct worker", () => {
@@ -41,36 +52,46 @@ describe("taskSummary", () => {
     });
     expect(made.where).toBe("Runs in a new api workspace");
     expect(made.who).toBe("Planned by the api orchestrator");
+    expect(made.approval).toBe("Automatic");
     expect(made.merge).toBe("Merges pull requests without asking you");
   });
 
   it("falls back to the level's own words for a level this build doesn't know", () => {
-    expect(
-      taskSummary({ way: "direct", workspace: "api", autonomy: "someday", hold: false }).merge,
-    ).toBe("This version of Gram doesn't know this level");
+    const unknown = taskSummary({
+      way: "direct",
+      workspace: "api",
+      autonomy: "someday",
+      hold: false,
+    });
+    expect(unknown.merge).toBe("This version of Gram doesn't know this level");
   });
 });
 
 describe("TaskAuthorityLine", () => {
-  it("is one line, the merge part amber at Full", () => {
+  it("puts ownership and merge approval on separate lines, the approval amber at Full", () => {
     render(<TaskAuthorityLine way="direct" workspace="api" autonomy="full" hold={false} />);
-    const line = screen.getByTestId("task-authority");
-    expect(line.textContent).toBe(
-      "Runs in api · Supervised by the api orchestrator · Merges its pull request without asking you.",
+    expect(screen.getByTestId("task-owner").textContent).toBe(
+      "Runs in api · Reports to the api orchestrator",
     );
-    expect(line.querySelector("span.text-warning")?.textContent).toBe(
-      "Merges its pull request without asking you",
+    const merge = screen.getByTestId("task-merge-approval");
+    expect(merge.textContent).toBe(
+      "Merge approval Automatic · Merges its pull request without asking you.",
     );
+    expect(merge.querySelector("span.text-warning")?.textContent).toBe("Automatic");
   });
 
   it("is calm below Full", () => {
     render(<TaskAuthorityLine way="plan" workspace="api" autonomy="publish" hold={false} />);
-    const line = screen.getByTestId("task-authority");
-    expect(line.textContent).toMatch(/^Runs in api · Planned by the api orchestrator · /);
-    expect(line.querySelector(".text-warning")).toBeNull();
+    expect(screen.getByTestId("task-owner").textContent).toBe(
+      "Runs in api · Planned by the api orchestrator",
+    );
+    expect(screen.getByTestId("task-merge-approval").textContent).toMatch(
+      /^Merge approval Asks you · /,
+    );
+    expect(screen.getByTestId("task-authority").querySelector(".text-warning")).toBeNull();
   });
 
-  it("opens the controls that change it from its merge part", () => {
+  it("opens the controls that change it from the approval's value", () => {
     const onChange = vi.fn();
     render(
       <TaskAuthorityLine
@@ -81,7 +102,7 @@ describe("TaskAuthorityLine", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /merging waits for you/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Merge approval: Asks you. Change" }));
     expect(onChange).toHaveBeenCalledOnce();
   });
 });

@@ -36,13 +36,21 @@ import {
 } from "@/theme/theme";
 import { switchTheme, type Point } from "@/theme/transition";
 
-import { LONG_COPY, SEGMENT, SEGMENT_ROOMY, SEGMENT_SLAB, SEGMENT_TRACK } from "./fields";
+import {
+  LONG_COPY,
+  OPTION_GROUP,
+  SEGMENT,
+  SEGMENT_ROOMY,
+  SEGMENT_SLAB,
+  SettingRow,
+} from "./fields";
 import { FontsSection } from "./fonts-section";
 import { PaletteEditor } from "./palette-editor";
 import { paletteChoices, type PaletteChoice } from "./palette-choices";
 import { ReadingSection } from "./reading-section";
 import { SearchScope, useSettingSearch } from "./search-scope";
-import { SETTINGS_STACK, SettingsGroup } from "./settings-group";
+import { SettingDescription } from "./help-tip";
+import { GROUP_TITLE, SETTINGS_STACK, SettingsGroup } from "./settings-group";
 
 /** The click point, or the control's centre when activated from the keyboard. */
 function originOf(event: MouseEvent<HTMLElement>): Point {
@@ -70,9 +78,10 @@ function useThemeAttributes() {
 }
 
 /**
- * Settings → Appearance: the theme controls beside a live preview, then reading and fonts. Glass is the only
- * look, so the controls are Mode, Palette, Density, Contrast and Motion; the palette editor opens
- * from the palette picker.
+ * Settings → Appearance: the theme's choices as rows (Mode, Density, Contrast, Motion), then
+ * Reading, then the palette grid beside a live preview, then fonts. The rows and Reading come
+ * first, so the settings changed most sit above the fold rather than under the palette grid. Glass
+ * is the only look; the palette editor opens from the palette grid.
  */
 export function AppearanceSettings() {
   return <AppearancePage preview />;
@@ -90,12 +99,21 @@ function AppearancePage({ preview }: { preview: boolean }) {
     setEditing(true);
     requestAnimationFrame(() => editor.current?.scrollIntoView({ block: "nearest" }));
   };
-  const controls = <AppearanceControls onEditColours={editColours} />;
+  const palette = <PaletteControls onEditColours={editColours} />;
   return (
     <div className={cn("@container", SETTINGS_STACK)}>
+      <ThemeRows />
+      <SettingsGroup
+        label="Reading"
+        description="The size and width of the conversation in threads."
+        keywords={READING_KEYWORDS}
+        testId="reading-settings"
+      >
+        <ReadingSection />
+      </SettingsGroup>
       {preview ? (
         <div className="grid gap-6 @3xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-          {controls}
+          {palette}
           <SearchScope
             label="Preview"
             className="grid content-start gap-4 @xl:grid-cols-[14rem_minmax(0,1fr)]"
@@ -105,7 +123,7 @@ function AppearancePage({ preview }: { preview: boolean }) {
           </SearchScope>
         </div>
       ) : (
-        controls
+        palette
       )}
       {editing && (
         <div ref={editor} className="flex flex-col gap-2">
@@ -123,14 +141,6 @@ function AppearancePage({ preview }: { preview: boolean }) {
         </div>
       )}
       <SettingsGroup
-        label="Reading"
-        description="The size and width of the conversation in threads."
-        keywords={READING_KEYWORDS}
-        testId="reading-settings"
-      >
-        <ReadingSection />
-      </SettingsGroup>
-      <SettingsGroup
         label="Fonts"
         description="The typefaces and sizes for text and code."
         keywords={FONT_KEYWORDS}
@@ -142,26 +152,65 @@ function AppearancePage({ preview }: { preview: boolean }) {
   );
 }
 
-const PALETTE_HINT = "Each palette has a light and a dark version; Mode picks which one shows.";
+const PALETTE_HINT = "Each has a light and a dark version; Mode picks which one shows.";
 const FONT_KEYWORDS = ["typeface", "family", "monospace"];
 const READING_KEYWORDS = ["transcript", "conversation", "text size", "line width"];
 const PALETTE_EDITOR_KEYWORDS = ["custom palette", "edit palette", "colour", "color", "seed"];
 
-function AppearanceControls({ onEditColours }: { onEditColours: () => void }) {
-  const { prefs, attrs, palettes } = useThemeAttributes();
-  const customPalettes = useThemeStore((s) => s.customPalettes);
-  const choices = paletteChoices(prefs.palette, customPalettes);
-  const shownMode = attrs["data-mode"];
+/** Mode, Density, Contrast and Motion: one row each, as every other Settings page's rows. */
+function ThemeRows() {
+  const prefs = useThemePrefs();
   return (
-    <SearchScope label="Theme" className="flex flex-col gap-5">
+    <SettingsGroup
+      label="Theme"
+      description="Light or dark, and how much room and motion the app uses."
+      keywords={["appearance"]}
+      testId="theme-settings"
+    >
       <Segmented
         label="Mode"
+        description="Follow the system, or stay light or dark."
         keywords={["dark", "light", "theme"]}
         value={prefs.mode}
         options={MODE_PREFS}
         onSelect={(mode, event) => switchTheme({ mode }, originOf(event))}
       />
+      <Segmented
+        label="Density"
+        description="How much room rows and controls take."
+        keywords={["compact", "comfortable", "spacing"]}
+        value={prefs.density}
+        options={DENSITY_PREFS}
+        onSelect={(density) => switchTheme({ density })}
+      />
+      <Segmented
+        label="Contrast"
+        description="System uses more contrast when the OS asks for it."
+        keywords={["accessibility"]}
+        value={prefs.contrast}
+        options={CONTRAST_PREFS}
+        onSelect={(contrast, event) => switchTheme({ contrast }, originOf(event))}
+      />
+      <Segmented
+        label="Motion"
+        description="System is full motion unless the OS asks for less."
+        keywords={["animation", "reduced", "transitions"]}
+        value={prefs.motion}
+        options={MOTION_PREFS}
+        onSelect={(motion) => switchTheme({ motion })}
+      />
+    </SettingsGroup>
+  );
+}
 
+/** The palette grid with its editor's door, and the desktop app's icon under it. */
+function PaletteControls({ onEditColours }: { onEditColours: () => void }) {
+  const { prefs, attrs, palettes } = useThemeAttributes();
+  const customPalettes = useThemeStore((s) => s.customPalettes);
+  const choices = paletteChoices(prefs.palette, customPalettes);
+  const shownMode = attrs["data-mode"];
+  return (
+    <SearchScope label="Palette" className="flex flex-col gap-5">
       <Control
         label="Palette"
         keywords={["theme", "colour", "color", "custom palette", "edit palette"]}
@@ -189,30 +238,6 @@ function AppearanceControls({ onEditColours }: { onEditColours: () => void }) {
       </Control>
 
       <AppIconControl />
-
-      <Segmented
-        label="Density"
-        keywords={["compact", "comfortable", "spacing"]}
-        value={prefs.density}
-        options={DENSITY_PREFS}
-        onSelect={(density) => switchTheme({ density })}
-      />
-      <Segmented
-        label="Contrast"
-        keywords={["accessibility"]}
-        value={prefs.contrast}
-        options={CONTRAST_PREFS}
-        hint="System uses more contrast when the OS asks for it."
-        onSelect={(contrast, event) => switchTheme({ contrast }, originOf(event))}
-      />
-      <Segmented
-        label="Motion"
-        keywords={["animation", "reduced", "transitions"]}
-        value={prefs.motion}
-        options={MOTION_PREFS}
-        hint="System is full motion unless the OS asks for less."
-        onSelect={(motion) => switchTheme({ motion })}
-      />
     </SearchScope>
   );
 }
@@ -417,40 +442,40 @@ function Control({
   const search = useSettingSearch({ label, description: hint, keywords });
   return (
     <section {...search} className="flex flex-col gap-2">
-      <h3 className="text-meta font-medium text-muted-foreground">{label}</h3>
-      {hintFirst && hint && <p className="text-body text-pretty text-description">{hint}</p>}
+      <h3 className={GROUP_TITLE}>{label}</h3>
+      {hintFirst && hint && <SettingDescription>{hint}</SettingDescription>}
       {children}
-      {!hintFirst && hint && <p className="text-body text-pretty text-description">{hint}</p>}
+      {!hintFirst && hint && <SettingDescription>{hint}</SettingDescription>}
     </section>
   );
 }
 
 function Segmented<T extends string>({
   label,
+  description,
   value,
   options,
-  hint,
   keywords,
   onSelect,
 }: {
   label: string;
+  description: string;
   value: T;
   options: readonly T[];
-  hint?: string;
   keywords?: readonly string[];
   onSelect: (value: T, event: MouseEvent<HTMLElement>) => void;
 }) {
   const slab = useId();
   return (
-    <Control label={label} {...(hint ? { hint } : {})} {...(keywords ? { keywords } : {})}>
-      <div role="group" aria-label={label} className={SEGMENT_TRACK}>
+    <SettingRow label={label} description={description} {...(keywords ? { keywords } : {})}>
+      <div role="group" aria-label={label} className={OPTION_GROUP}>
         {options.map((option) => (
           <Button
             key={option}
             size="sm"
             variant="ghost"
             aria-pressed={option === value}
-            className={cn(SEGMENT, SEGMENT_ROOMY, "flex-1 capitalize")}
+            className={cn(SEGMENT, SEGMENT_ROOMY, "capitalize")}
             onClick={(event) => onSelect(option, event)}
           >
             {option === value && <SegmentSlab group={slab} className={SEGMENT_SLAB} />}
@@ -458,7 +483,7 @@ function Segmented<T extends string>({
           </Button>
         ))}
       </div>
-    </Control>
+    </SettingRow>
   );
 }
 
