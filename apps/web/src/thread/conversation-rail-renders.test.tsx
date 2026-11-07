@@ -32,10 +32,10 @@ const chapters: Chapter[] = Array.from({ length: 200 }, (_, i) => ({
   index: i * 2,
 }));
 
-const rail = (onJump: (id: string) => void) => (
+const rail = (onJump: (id: string) => void, currentId = "c199") => (
   <ConversationRail
     chapters={chapters}
-    currentId="c199"
+    currentId={currentId}
     onJump={onJump}
     earlier={false}
     onLoadEarlier={() => {}}
@@ -44,6 +44,7 @@ const rail = (onJump: (id: string) => void) => (
 
 describe("ConversationRail while a reply streams", () => {
   it("renders no chapter tooltip again when only the transcript's callbacks change", () => {
+    hints.renders = 0;
     const view = render(rail(() => {}));
     expect(hints.renders).toBe(200);
     // A streamed frame each: the transcript hands down new callbacks, the chapters stay.
@@ -54,6 +55,21 @@ describe("ConversationRail while a reply streams", () => {
     view.rerender(rail(latest));
     fireEvent.click(screen.getByRole("button", { name: "Prompt 7" }));
     expect(latest).toHaveBeenCalledWith("u7");
+  });
+
+  it("renders only the marks leaving and taking the current chapter as the transcript scrolls", () => {
+    hints.renders = 0;
+    const view = render(rail(() => {}));
+    expect(hints.renders).toBe(200);
+    // Scrolling up through ten prompts, one current chapter after another.
+    for (let i = 198; i >= 189; i--) view.rerender(rail(() => {}, `c${i}`));
+    expect(hints.renders).toBe(200 + 10 * 2);
+    expect(screen.getByRole("button", { name: "Prompt 189" }).getAttribute("aria-current")).toBe(
+      "location",
+    );
+    expect(screen.getByRole("button", { name: "Prompt 190" }).hasAttribute("aria-current")).toBe(
+      false,
+    );
   });
 
   it("keeps a rebuilt chapter list's identity while it says the same", () => {
