@@ -12,7 +12,13 @@ import { useViewStore } from "@/views/view-store";
 
 import { Foldable } from "./foldable";
 import { TitlebarOverflow } from "./titlebar-fold";
-import { nextFold, titleRoomNeed, useTitlebarSlot } from "./titlebar-slot";
+import {
+  nextFold,
+  titleRoomNeed,
+  unfoldWidths,
+  useTitlebarSlot,
+  type TitlebarFold,
+} from "./titlebar-slot";
 import { ThreadGrid } from "./thread-grid";
 
 const route = vi.hoisted(() => ({ threadId: "t-flaky" as string | undefined }));
@@ -216,6 +222,9 @@ describe("a folded part of the bar", () => {
   });
 });
 
+/** The title's room in that worker's bar at each fold: folded, the actions' and the switcher's. */
+const roomAt1140 = (fold: TitlebarFold) => (fold === 0 ? 430 : 430 + 114 + 35);
+
 describe("when the title bar folds", () => {
   // The lesser buttons are 120 wide with their gaps, Workers 48.
   const wide = { fold: 0, barWidth: 900, spare: 40, overflow: false, widths: [120, 48] } as const;
@@ -249,6 +258,59 @@ describe("when the title bar folds", () => {
     expect(nextFold({ ...lesser, spare: 136 })).toBe(0);
     // With room for both steps, both come back at once.
     expect(nextFold({ ...workers, spare: 200 })).toBe(0);
+  });
+
+  it("remembers the width each step folded at, measured unfolded, and the slack it needs back", () => {
+    // 12 px short at 1140: back unfolded it needs 1140 + 12 + the slack.
+    const short = {
+      fold: 0,
+      barWidth: 1140,
+      spare: -12,
+      overflow: false,
+      widths: [0, 114],
+    } as const;
+    expect(nextFold(short)).toBe(2);
+    // Each step it folded, with the room the ones before it gave: none from the empty first.
+    expect(unfoldWidths(short, 2)).toEqual([1168, 1168]);
+    // Folding for what spilled has no room to go by: wider than now by the slack.
+    expect(unfoldWidths({ ...short, spare: 40, overflow: true }, 1)).toEqual([1156]);
+    // Unfolding forgets the steps it gave back, and keeps the rest.
+    const held = { ...short, fold: 2, spare: 400, unfoldAt: [1200, 1168] } as const;
+    expect(nextFold({ ...held, barWidth: 1168 })).toBe(1);
+    expect(unfoldWidths({ ...held, barWidth: 1168 }, 1)).toEqual([1200]);
+    expect(nextFold({ ...held, barWidth: 1200 })).toBe(0);
+    // Narrow, the width alone folds and unfolds it.
+    expect(unfoldWidths({ ...short, barWidth: 500 }, 2)).toEqual([]);
+  });
+
+  it("stays folded while the room it measures folded is only the room folding made", () => {
+    // A worker's bar at 1140, as a 1200 px window lays it out: folded, the workspace's switcher
+    // narrows (`max-w-20`) and the room grows by the actions' 114 px and the 35 px it gave.
+    const least = 442;
+    const measure = (fold: TitlebarFold, unfoldAt: readonly number[] | undefined) => ({
+      fold,
+      barWidth: 1140,
+      spare: roomAt1140(fold) - least,
+      overflow: false,
+      widths: [0, 114],
+      unfoldAt,
+    });
+    let fold: TitlebarFold = 0;
+    let unfoldAt: readonly number[] | undefined;
+    const seen: TitlebarFold[] = [];
+    for (let frame = 0; frame < 8; frame++) {
+      const at = measure(fold, unfoldAt);
+      const next = nextFold(at);
+      unfoldAt = unfoldWidths(at, next);
+      fold = next;
+      seen.push(fold);
+    }
+    expect(seen).toEqual([2, 2, 2, 2, 2, 2, 2, 2]);
+    // What the bar did before, by its folded room alone: back and forth every frame.
+    expect(nextFold(measure(2, undefined))).toBe(0);
+    // Wider by what it was short and the slack, the actions come back.
+    expect(nextFold({ ...measure(2, unfoldAt), barWidth: 1168 })).toBe(0);
+    expect(nextFold({ ...measure(2, unfoldAt), barWidth: 1167 })).toBe(2);
   });
 });
 

@@ -62,13 +62,8 @@ export function titleRoomNeed(least: number, title: TitleInRoom | undefined): nu
   return Math.max(least, Math.ceil(rest + Math.min(title.whole, TITLE_WANTS_PX)));
 }
 
-/**
- * How far the bar folds, from what it has now. Narrow, it folds all; with anything spilling out of
- * the place, a step further. Else it folds as far as its title needs to keep its least room, and
- * unfolds a step only once that step's buttons fit back with the title still above its least: from
- * a width that just folded them, they would take the room back and fold again.
- */
-export function nextFold(at: {
+/** What the bar measured as it folded, unfolded: see `nextFold`. */
+export interface TitlebarFoldAt {
   readonly fold: TitlebarFold;
   readonly barWidth: number;
   /** The title's room over its least, or `Infinity` with no header to ask. */
@@ -76,7 +71,23 @@ export function nextFold(at: {
   readonly overflow: boolean;
   /** Each fold's buttons' width and the gaps before them, the first fold's first. */
   readonly widths: readonly number[];
-}): TitlebarFold {
+  /**
+   * The bar's width each fold step needs to come back (the first fold's first), from the measure
+   * that folded it: see `unfoldWidths`. A step without one comes back by its spare alone.
+   */
+  readonly unfoldAt?: readonly number[] | undefined;
+}
+
+/**
+ * How far the bar folds, from what it has now. Narrow, it folds all; with anything spilling out of
+ * the place, a step further. Else it folds as far as its title needs to keep its least room, and
+ * unfolds a step only once that step's buttons fit back with the title still above its least: from
+ * a width that just folded them, they would take the room back and fold again. Nor before the bar
+ * is as wide as that step needed when it folded (`unfoldAt`): folded, the bar is laid out apart
+ * (the workspace's switcher narrows, a hold chip goes to its glyph, a crumb comes back), so the room
+ * it measures then isn't the room the step would have back.
+ */
+export function nextFold(at: TitlebarFoldAt): TitlebarFold {
   const width = (fold: number) => at.widths[fold - 1] ?? 0;
   if (at.barWidth < TITLEBAR_FOLD_PX) return FOLD_ALL;
   if (at.overflow) return Math.min(at.fold + 1, FOLD_ALL) as TitlebarFold;
@@ -88,12 +99,40 @@ export function nextFold(at: {
     spare += width(fold);
   }
   if (fold !== at.fold) return fold as TitlebarFold;
-  // Room to spare: unfold while each step's buttons fit back with some over.
-  while (fold > 0 && spare - width(fold) >= UNFOLD_SLACK_PX) {
+  // Room to spare: unfold while each step's buttons fit back with some over, and the bar is as
+  // wide as the step needed when it folded.
+  while (
+    fold > 0 &&
+    spare - width(fold) >= UNFOLD_SLACK_PX &&
+    at.barWidth >= (at.unfoldAt?.[fold - 1] ?? 0)
+  ) {
     spare -= width(fold);
     fold -= 1;
   }
   return fold as TitlebarFold;
+}
+
+/**
+ * The bar's width each fold step needs to come back, once `nextFold` has gone from `at.fold` to
+ * `next`. A step that folds for the title is measured as it folds, with the bar still unfolded: it
+ * needs the bar to grow by the room the title was short, and the slack. One that folds for what
+ * spilled, with no room to go by, needs the bar wider than now by the slack. One that unfolds
+ * forgets its width, and the steps the bar keeps keep theirs. Narrow, the bar's width alone decides,
+ * so its steps need none.
+ */
+export function unfoldWidths(at: TitlebarFoldAt, next: TitlebarFold): readonly number[] {
+  const kept = (at.unfoldAt ?? []).slice(0, next);
+  if (next <= at.fold || at.barWidth < TITLEBAR_FOLD_PX) return kept;
+  const widths = [...kept];
+  let spare = at.spare;
+  for (let step = at.fold + 1; step <= next; step++) {
+    // Unfolded back to the step before, the title would be `spare` over its least.
+    widths[step - 1] = at.overflow
+      ? at.barWidth + UNFOLD_SLACK_PX
+      : Math.ceil(at.barWidth - spare + UNFOLD_SLACK_PX);
+    spare += at.widths[step - 1] ?? 0;
+  }
+  return widths;
 }
 
 interface TitlebarSlotState {
@@ -144,6 +183,16 @@ export function useRouteAgent(): string | undefined {
   );
 }
 
+/** Each header the bar has carried, by a number of its own: a fold's widths are its header's. */
+let headerSeq = 0;
+const headerIds = new WeakMap<Element, number>();
+function headerId(header: Element | null): number | "" {
+  if (header === null) return "";
+  let id = headerIds.get(header);
+  if (id === undefined) headerIds.set(header, (id = ++headerSeq));
+  return id;
+}
+
 /** From `room`'s start to the far edge of its furthest child. */
 function contentWidth(room: Element): number {
   const start = room.getBoundingClientRect().left;
@@ -163,6 +212,13 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
     const { setFold } = useTitlebarSlot.getState();
     let room: Element | null = null;
     let frame = 0;
+    // The widths the bar's folded steps need to come back, and what they were measured from: the
+    // header, the title's whole width, the room's least and each fold's parts. A change there (the
+    // next thread's header, a renamed title) measures afresh.
+    let held: { readonly of: string; readonly unfoldAt: readonly number[] } = {
+      of: "",
+      unfoldAt: [],
+    };
     const fit = () => {
       const { fold, slot } = useTitlebarSlot.getState();
       const next = slot?.querySelector(`[${TITLEBAR_ROOM}]`) ?? null;
@@ -195,15 +251,23 @@ export function useTitlebarFold(bar: HTMLElement | null): void {
       );
       // The header itself: what rings it, a needs-you pulse say, may stand past it on purpose.
       const header = slot?.querySelector("header") ?? null;
-      setFold(
-        nextFold({
-          fold,
-          barWidth: bar.getBoundingClientRect().width,
-          spare: room === null ? Infinity : room.getBoundingClientRect().width - least,
-          overflow: header !== null && header.scrollWidth > header.clientWidth + 1,
-          widths,
-        }),
-      );
+      const of = [
+        headerId(header),
+        title?.scrollWidth ?? "",
+        room?.getAttribute(TITLEBAR_ROOM) ?? "",
+        ...widths.map(Math.round),
+      ].join(" ");
+      const at: TitlebarFoldAt = {
+        fold,
+        barWidth: bar.getBoundingClientRect().width,
+        spare: room === null ? Infinity : room.getBoundingClientRect().width - least,
+        overflow: header !== null && header.scrollWidth > header.clientWidth + 1,
+        widths,
+        unfoldAt: held.of === of ? held.unfoldAt : undefined,
+      };
+      const folds = nextFold(at);
+      held = { of, unfoldAt: unfoldWidths(at, folds) };
+      setFold(folds);
     };
     const later = () => {
       cancelAnimationFrame(frame);
