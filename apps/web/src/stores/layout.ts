@@ -571,10 +571,11 @@ export function sanitizeSidePanels(raw: unknown): Partial<SidePanels> {
 export type OverviewSection = "orchestrators" | "solo" | "pullRequests" | "doneToday";
 
 /**
- * The sections that start folded: the things you check now and then. Done starts open: it lists
- * only the last few finished chats.
+ * The sections that start folded: the things you check now and then. Done folds to one row, "8
+ * done · History": the Board shows what finished today and History keeps it all, so the sidebar
+ * leaves them to those.
  */
-export const OVERVIEW_FOLDED_BY_DEFAULT: readonly OverviewSection[] = ["pullRequests"];
+export const OVERVIEW_FOLDED_BY_DEFAULT: readonly OverviewSection[] = ["pullRequests", "doneToday"];
 
 /** The overview sidebar as it was left: which sections are folded, and which show at all. */
 export interface OverviewView {

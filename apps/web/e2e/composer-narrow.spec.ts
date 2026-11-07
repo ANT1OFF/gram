@@ -24,9 +24,10 @@ const rowSpread = (page: Page) =>
     return Math.round(Math.max(...centres) - Math.min(...centres));
   });
 
-// In a narrow pane the toolbar used to clip Stop and Send past the pane's edge, and later dropped
-// every value for a glyph. Now each value goes compact first ("Opus", "Effort"), then the pickers
-// take a row of their own with their words, and only at the narrowest do glyphs and "…" stand in.
+// In a narrow pane the toolbar used to clip Stop and Send past the pane's edge, later dropped every
+// value for a glyph, and then kept a bare "Effort" and "Speed". Now each goes compact first
+// ("Opus", "Effort: Default"), then to its value beside its glyph ("Default"), then the pickers take
+// a row of their own, and only at the narrowest do glyphs and "…" stand in.
 test("the toolbar keeps its values as it narrows, before glyphs and …", async ({ page }) => {
   // Held running, so Stop and Steer stay offered: the script's later approval takes Steer away.
   await page.addInitScript(() => {
@@ -72,40 +73,46 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   const gauge = page.getByTestId("usage-ring");
   await expect(gauge).toHaveText(/^Context \d+%$/, { useInnerText: true });
 
-  // Short of room, the model's name goes compact first; the others keep their words. Measured at
-  // 540 px: Linux names Stop's key "Ctrl+.", some 26 px wider than "⌘.", so at 520 px there the
-  // pickers may already have their own row instead (still in words, checked below).
+  // Short of room, each picker gives up its chevron, then its dimension's word, from the right,
+  // and keeps its value beside its glyph: one row while the values fit, never a dimension alone
+  // ("Effort", "Speed": the narrow composer used to say just that). Linux names Stop's key
+  // "Ctrl+.", some 26 px wider than "⌘.", so the exact step at a width differs by platform; what
+  // holds everywhere is that every picker says its value.
   const model = toolbar.getByRole("combobox", { name: /^Model/ });
+  const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
+  const says = async () => {
+    await expect.poll(() => shownWords(effort)).toMatch(/^(Effort: )?Default$/);
+    await expect.poll(() => shownWords(mode)).toMatch(/^(Mode: )?Ask$/);
+    await expect.poll(() => shownWords(speed)).toMatch(/^(Speed: )?Default$/);
+    await expect.poll(() => shownWords(model)).toMatch(/^(Claude )?Opus$/);
+  };
+  // One row, or wrapped onto a row of their own above Send and Stop: never under or beside them.
+  const placed = async () => {
+    if ((await toolbar.getAttribute("data-wrapped")) === "true") {
+      const modeBox = await mode.boundingBox();
+      const stopBox = await stop.boundingBox();
+      expect(stopBox!.y).toBeGreaterThanOrEqual(modeBox!.y + modeBox!.height);
+    } else {
+      expect(await rowSpread(page)).toBeLessThanOrEqual(1);
+    }
+  };
   await squeeze(page, 540);
-  const compact = model.locator("[data-toolbar-compact]");
-  await expect(compact).not.toHaveClass(/\bsr-only\b/);
-  await expect(compact).toHaveText("Opus");
-  await expect(model.locator("[data-toolbar-label]")).toHaveClass(/\bsr-only\b/);
-  await expect(model).toHaveAccessibleName("Model: Claude Opus");
-  await expect(mode).toHaveText(/^Mode: Ask/);
-  expect(await rowSpread(page)).toBeLessThanOrEqual(1);
+  await says();
+  await placed();
+  await expect(model).toHaveAccessibleName(/^Model(: Claude Opus)?$/);
   // Under 36 rem the gauge keeps the ring's 32 px, its number alone: the steps below are measured
   // against what that slot leaves, and a wider gauge folded the pickers a step early.
   await expect(gauge).toHaveText(/^\d+%$/, { useInnerText: true });
   expect((await gauge.boundingBox())!.width).toBeLessThanOrEqual(32);
 
-  // At 520 px, on one row in short words or on their own row in full ones, effort and mode still
-  // say their values: never a glyph alone.
-  await squeeze(page, 520);
-  const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
-  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort|Effort: Default)$/);
-  await expect.poll(() => shownWords(mode)).toBe("Mode: Ask");
-
-  // Narrower, the pickers take a row of their own, words and all, above Send and Stop: still so
-  // at 340 px. Short, each says its word without its glyph ("Effort", "Mode: Ask", "Speed"), which
-  // holds the words to some 310 px; naming the dimension costs the 40 px below that the bare
-  // values ("Ask", the bolt alone) held.
-  await squeeze(page, 340);
-  await expect(toolbar).toHaveAttribute("data-wrapped", "true");
-  await expect(mode).toHaveText(/^Mode: Ask/);
-  const modeBox = await mode.boundingBox();
-  const stopBox = await stop.boundingBox();
-  expect(stopBox!.y).toBeGreaterThanOrEqual(modeBox!.y + modeBox!.height);
+  // Narrower, values alone beside their glyphs, on one row or, short of that, on a row of their
+  // own above Send and Stop: still every value at 370 px. (The bare "Effort" and "Speed" held words
+  // some 30 px further; a value costs that.)
+  for (const width of [480, 400, 370]) {
+    await squeeze(page, width);
+    await says();
+    await placed();
+  }
 
   // Only at the narrowest do glyphs stand in, on one row, and the pickers fold into "…".
   await squeeze(page, 260);
@@ -170,7 +177,11 @@ async function dragPanel(page: Page, dx: number) {
 /** The words a toolbar picker shows beside its glyph: "" when the glyph stands alone. */
 const shownWords = (picker: Locator) =>
   picker.evaluate((el) =>
-    [...el.querySelectorAll<HTMLElement>("[data-toolbar-label], [data-toolbar-compact]")]
+    [
+      ...el.querySelectorAll<HTMLElement>(
+        "[data-toolbar-label], [data-toolbar-compact], [data-toolbar-value]",
+      ),
+    ]
       .filter((words) => !words.classList.contains("sr-only") && words.offsetWidth > 0)
       .map((words) => words.textContent ?? "")
       .join("")
@@ -201,7 +212,7 @@ test("beside a review in a 1024 px window, effort keeps a short word", async ({ 
   await expect(mode).toHaveText(/^Mode: Ask/);
   // A readable value of three letters or more, the compact one or the whole: never the gauge alone.
   // Short, it says its own name, "Effort", not "Model", which beside the model picker read as a second.
-  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort|Effort: Default)$/);
+  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort: )?Default$/);
   // Speed too keeps its name, never the bolt alone.
   await expect
     .poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Speed: / })))

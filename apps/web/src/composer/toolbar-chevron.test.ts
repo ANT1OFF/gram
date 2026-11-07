@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { expect, it } from "vitest";
 
+import { cn } from "@/lib/utils";
+
 import { CHEVRON, GLYPH } from "./use-toolbar-layout";
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -33,4 +35,12 @@ it("draws the toolbar pickers' glyphs at the size the layout counts", () => {
     expect(drawn.length, file).toBeGreaterThan(0);
     for (const each of drawn) expect(each, file).toBe("size-icon-bar");
   }
+});
+
+// The effort gauge carries a size of its own (`size-3.5`) under the toolbar's `size-icon-bar`; kept
+// side by side, the cascade picked its width, a few px off what the layout expected, and the row
+// flipped between two layouts until React stopped it. The token replaces the size it overrides.
+it("lets an icon size token replace a glyph's own size", () => {
+  expect(cn("lucide size-3.5", "size-icon-bar")).toBe("lucide size-icon-bar");
+  expect(cn("size-4", "size-icon-chip")).toBe("size-icon-chip");
 });

@@ -22,9 +22,12 @@ const LABEL_GAP = 6;
 export const CHEVRON = 20;
 const SEPARATOR = 9;
 /**
- * What a picker's glyph takes (18 px, `size-icon-bar`, and the gap after it), drawn only alone,
- * once its words give way: in full and short the words stand in its place (`PickerTrigger`).
- * Constant for the same reason as `CHEVRON`: the measure can't see it while it isn't drawn.
+ * What a picker's glyph is expected to take (18 px, `size-icon-bar`, and the gap after it). It is
+ * measured: in full and short words the glyph is still laid out, invisible and out of the flow
+ * (`PickerTrigger`), so its real width counts. An assumed width that differed from the drawn one
+ * by even 2 px (the effort gauge's) let the value-alone step and a row of their own flip between
+ * each other until React stopped it ("Maximum update depth exceeded"). This is only the fallback
+ * for a glyph not laid out at all.
  */
 export const GLYPH = 24;
 /** Slack for rounding and the gaps between groups, so a fit is never a pixel short. */
@@ -40,7 +43,8 @@ const UNMEASURED: ToolbarLayout = { sizes: new Map(), folded: [], wrapped: false
 
 /**
  * Fits the toolbar `ref` points at. Every `[data-toolbar-block]` in it is a block, measured with
- * its full `[data-toolbar-label]`, its `[data-toolbar-compact]` one and neither; every
+ * its full `[data-toolbar-label]`, its `[data-toolbar-compact]` one, its `[data-toolbar-value]`
+ * alone and none; every
  * `[data-toolbar-fixed]` is space the blocks can't have on their row, and every
  * `[data-toolbar-lead]` space before them that stays on their row when it wraps. `blocks` lists the blocks in
  * toolbar order, folded ones too, whose widths are remembered from when they last showed; keep the
@@ -52,7 +56,9 @@ export function useToolbarLayout<T extends HTMLElement = HTMLDivElement>(
   blocks: readonly { id: string; foldable: boolean; glyph?: boolean }[],
 ) {
   const ref = useRef<T>(null);
-  const widths = useRef(new Map<string, { full: number; short: number; icon: number }>());
+  const widths = useRef(
+    new Map<string, { full: number; short: number; value: number; icon: number }>(),
+  );
   const observer = useRef<ResizeObserver | undefined>(undefined);
   const [tick, setTick] = useState(0);
   const [layout, setLayout] = useState<ToolbarLayout>(UNMEASURED);
@@ -84,7 +90,7 @@ export function useToolbarLayout<T extends HTMLElement = HTMLDivElement>(
       const rule = blocks[0]?.id === id ? 0 : SEPARATOR;
       if (glyph) {
         const bare = shown - (size === "full" ? rule : 0);
-        widths.current.set(id, { full: bare + rule, short: bare, icon: bare });
+        widths.current.set(id, { full: bare + rule, short: bare, value: bare, icon: bare });
         continue;
       }
       const words = (selector: string) => {
@@ -93,15 +99,27 @@ export function useToolbarLayout<T extends HTMLElement = HTMLDivElement>(
       };
       const full = words("[data-toolbar-label]") ?? 0;
       const short = words("[data-toolbar-compact]") ?? full;
+      // The value alone, beside its glyph; a picker with no dimension says its compact words.
+      const value = words("[data-toolbar-value]") ?? short;
       const decor = rule + (node.querySelector('[role="combobox"]') === null ? 0 : CHEVRON);
-      // A picker whose glyph draws only alone is that much narrower with its words.
-      const glyphless = node.querySelector("[data-toolbar-glyph]") === null ? 0 : GLYPH;
+      // A picker whose glyph draws only beside its value alone, or alone, is that much narrower
+      // with its words: by the glyph's own width, measured whether it shows or not, and its gap.
+      const glyphNode = node.querySelector<HTMLElement>("[data-toolbar-glyph]");
+      const glyphWidth = glyphNode?.getBoundingClientRect().width ?? 0;
+      const glyphless = glyphNode === null ? 0 : glyphWidth > 0 ? glyphWidth + LABEL_GAP : GLYPH;
       const bare =
         shown -
-        (size === "full" ? full + decor - glyphless : size === "short" ? short - glyphless : 0);
+        (size === "full"
+          ? full + decor - glyphless
+          : size === "short"
+            ? short - glyphless
+            : size === "value"
+              ? value
+              : 0);
       widths.current.set(id, {
         full: bare + full + decor - glyphless,
         short: bare + short - glyphless,
+        value: bare + value,
         icon: bare,
       });
     }
@@ -136,7 +154,7 @@ export function useToolbarLayout<T extends HTMLElement = HTMLDivElement>(
 
   return {
     ref,
-    /** How `id` shows its value: in full, compact, or its glyph alone. */
+    /** How `id` shows its value: in full, compact, its value beside its glyph, or its glyph alone. */
     size: (id: string): LabelSize => layout.sizes.get(id) ?? "full",
     folded: layout.folded,
     wrapped: layout.wrapped,

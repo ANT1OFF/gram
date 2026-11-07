@@ -13,7 +13,18 @@ export const cn: CnFunction = createCn({
       text: [...TYPE_STEPS, "code"],
       radius: ["2xs"],
       shadow: ["raised", "overlay", "composer"],
-      spacing: ["tight", "inset", "list", "section"],
+      // The icon sizes are spacing steps too (`--spacing-icon-*`): `cn("size-3.5",
+      // "size-icon-bar")` keeps the token alone, rather than both and whichever the cascade picks.
+      spacing: [
+        "tight",
+        "inset",
+        "list",
+        "section",
+        "icon-chip",
+        "icon-row",
+        "icon-bar",
+        "icon-empty",
+      ],
     },
   },
 });

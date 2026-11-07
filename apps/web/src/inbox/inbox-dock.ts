@@ -2,7 +2,6 @@ import { useRouterState } from "@tanstack/react-router";
 
 import { useWindowWidth } from "@/shell/side-resize";
 import {
-  CHAT_MIN_WIDTH,
   clampWidth,
   fitShell,
   shellPage,
@@ -22,8 +21,9 @@ import {
 } from "./inbox-store";
 
 // Where the Inbox opens: docked in the side panel's column, beside the thread it answers for, or,
-// where that column has no room for its list and detail side by side (a narrow window) or the
-// window is covered (Quiet), over everything as a dialog. One Inbox either way: the same list,
+// where that column has no room for its list and detail side by side with the chat still at its
+// reading width (a window under about 1,600 px) or the window is covered (Quiet), over everything
+// as a dialog. One Inbox either way: the same list,
 // selection and keys. No React but the hook at the end.
 
 /** The inputs the dock reads: the overview's, which it sits beside, and the window's width. */
@@ -44,11 +44,12 @@ export interface InboxDockFit {
 
 /**
  * The docked Inbox in a window laid out as `input`, at the dragged `width`: it takes the panel's
- * column, which the panel gives up while it shows, and leaves the chat `INBOX_CHAT_MIN_WIDTH` where
- * the window has it, never less than `CHAT_MIN_WIDTH`. Not dragged (`width` undefined), it takes
- * what a wide window has past the chat's comfortable reading column, up to `INBOX_DOCK_AUTO_MAX`.
- * Undefined where it can't sit at `INBOX_DOCK_WIDTH.min` beside the chat: the Inbox is then a
- * dialog.
+ * column, which the panel gives up while it shows. It docks only where the chat keeps its
+ * comfortable reading column (`INBOX_CHAT_COMFORT_WIDTH`) beside it at `INBOX_DOCK_WIDTH.min`, so
+ * the chat is never squeezed to a strip beside it; in a narrower window (under about 1,600 px with
+ * the overview open) it is a dialog over the work instead, undefined here. Dragged, it may leave the
+ * chat `INBOX_CHAT_MIN_WIDTH`. Not dragged (`width` undefined), it takes what a wide window has past
+ * the chat's reading column, up to `INBOX_DOCK_AUTO_MAX`.
  */
 export function inboxDockFit(
   input: InboxDockInput,
@@ -67,11 +68,12 @@ export function inboxDockFit(
     reviewRequestsPlacement: "hidden",
     openPrsPlacement: "hidden",
   });
-  const room = Math.floor(input.windowWidth - fit.sidebarWidth - CHAT_MIN_WIDTH);
+  // Docked, the chat keeps its reading column; short of that the Inbox opens over the work.
+  const room = Math.floor(input.windowWidth - fit.sidebarWidth - INBOX_CHAT_COMFORT_WIDTH);
   if (room < INBOX_DOCK_WIDTH.min) return undefined;
   // Dragged wider, it stops where the transcript beside it is still readable.
   const readable = Math.floor(input.windowWidth - fit.sidebarWidth - INBOX_CHAT_MIN_WIDTH);
-  const max = Math.min(room, Math.max(INBOX_DOCK_WIDTH.min, readable));
+  const max = Math.max(INBOX_DOCK_WIDTH.min, readable);
   const bounds = { ...INBOX_DOCK_WIDTH, max };
   const fitted = Math.min(
     INBOX_DOCK_AUTO_MAX,

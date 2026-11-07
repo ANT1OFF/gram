@@ -40,11 +40,12 @@ export const STOP_PILL =
 
 /**
  * Stop while the turn only waits on the user, at an approval or a question: the answer on its card
- * is the step to take, so Stop steps back to an outline in the quiet text colour, with no turning
- * ring, as nothing runs. The same size and place as `STOP_PILL`; danger only under the pointer.
+ * is the step to take, so Stop steps back from the solid pill, with no turning ring, as nothing
+ * runs. It keeps a tint of its own, the danger tint a destructive button takes, so it still reads
+ * as Stop at a glance and never as a faint outline. The same size and place as `STOP_PILL`.
  */
 export const STOP_QUIET =
-  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-(--composer-button-radius) border border-border bg-transparent pr-3 pl-2.5 text-meta font-medium text-muted-foreground outline-none transition-colors hover:border-destructive/50 hover:text-destructive focus-visible:focus-ring";
+  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-(--composer-button-radius) bg-destructive-tint pr-3 pl-2.5 text-meta font-medium text-destructive outline-none transition-colors hover:bg-destructive-tint-hover focus-visible:focus-ring";
 
 /**
  * Send's fill: the accent with a faint gloss, flat while pressed. With nothing to send it takes the

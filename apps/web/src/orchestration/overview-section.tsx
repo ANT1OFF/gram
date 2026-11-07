@@ -16,14 +16,18 @@ export const STOP = OVERVIEW_STOP;
 /**
  * Every row's shape, whatever it lists: a 10 px mark column, then its title (`ROW_TITLE`), and under
  * it one compact status line (`ROW_STATUS`) with what trails it (a time, its badges) at the right
- * edge. Every row is the same two lines high, so a list of them reads as even rows: a title too long
- * for its line is cut at its end, never its middle, and its hover says the whole of it.
+ * edge. A title too long for its line wraps to a second before it is cut, at its end and never mid
+ * word where a word break fits, and its hover says the whole of it; the status line stays under it.
  */
 export const ROW =
   "grid w-full cursor-default grid-cols-[0.625rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-(--radius-sm) px-1.5 py-1 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring";
 
-/** A row's title: the row's full width, one line, cut at its end with an ellipsis. */
-export const ROW_TITLE = "col-span-2 min-w-0 truncate";
+/**
+ * A row's title: the row's full width, up to two lines, then cut at its end with an ellipsis. A
+ * long title reads whole at a sidebar's usual width rather than stopping mid-word ("Inline
+ * comments in the …").
+ */
+export const ROW_TITLE = "col-span-2 min-w-0 line-clamp-2 break-words";
 
 /** A row's status line, under its title: muted words, and its time or badges at the right edge. */
 export const ROW_STATUS =
@@ -45,13 +49,15 @@ export const SETTLED =
 /**
  * A section with a title that folds it, its fold kept in the layout store. Only folded does it say
  * its count; open, its rows do, and the title's name and hover keep the number. `action`, a control
- * of the section's own, sits at the title's end while it is open.
+ * of the section's own, sits at the title's end while it is open; `folded`, while it is folded,
+ * puts its own words in the title's place ("8 done") and a control after them.
  */
 export function Section({
   id,
   title,
   count,
   action,
+  folded: foldedLine,
   hint,
   term,
   children,
@@ -60,6 +66,8 @@ export function Section({
   title: string;
   count: number;
   action?: ReactNode;
+  /** Folded, the title's words and a control after them, in place of its name and count. */
+  folded?: { words: string; action: ReactNode } | undefined;
   /** What the section's name means, on its hover and to a screen reader. */
   hint?: string;
   /** The Gram word the name is, marked as one until its `hint` has been seen. */
@@ -72,7 +80,8 @@ export function Section({
   return (
     <section aria-label={title} data-testid={`overview-section-${id}`} className="flex flex-col">
       <div className="flex items-center gap-1">
-        <h2 className="min-w-0 flex-1">
+        {/* Folded to its own words, the control after them follows them, not the row's end. */}
+        <h2 className={cn("min-w-0", !(folded && foldedLine !== undefined) && "flex-1")}>
           <button
             type="button"
             {...{ [STOP]: "" }}
@@ -95,13 +104,22 @@ export function Section({
                 folded && "-rotate-90",
               )}
             />
-            <span className="flex-1">
-              {term === undefined ? title : <Term term={term}>{title}</Term>}
-            </span>
-            {folded && count > 0 && <span className="tracking-normal tabular-nums">{count}</span>}
+            {folded && foldedLine !== undefined ? (
+              <span data-testid={`overview-section-${id}-folded`} className="tabular-nums">
+                {foldedLine.words}
+              </span>
+            ) : (
+              <span className="flex-1">
+                {term === undefined ? title : <Term term={term}>{title}</Term>}
+              </span>
+            )}
+            {folded && foldedLine === undefined && count > 0 && (
+              <span className="tracking-normal tabular-nums">{count}</span>
+            )}
           </button>
         </h2>
         {!folded && action}
+        {folded && foldedLine?.action}
       </div>
       <div id={body} hidden={folded} className="flex flex-col gap-px">
         {children}

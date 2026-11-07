@@ -755,11 +755,11 @@ describe("side panels", () => {
     expect(sanitizeOverviewView({ overviewBeforeHide: "hidden" })).toEqual({});
   });
 
-  it("starts Pull requests folded and Done open, and remembers them", () => {
+  it("starts Pull requests and Done folded, and remembers them", () => {
     const folded = (section: OverviewSection) => overviewSectionFolded(s(), section);
-    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["pullRequests"]);
+    expect(OVERVIEW_FOLDED_BY_DEFAULT).toEqual(["pullRequests", "doneToday"]);
     expect(folded("pullRequests")).toBe(true);
-    expect(folded("doneToday")).toBe(false);
+    expect(folded("doneToday")).toBe(true);
     expect(folded("solo")).toBe(false);
     s().toggleOverviewSection("pullRequests");
     expect(folded("pullRequests")).toBe(false);
@@ -775,11 +775,17 @@ describe("side panels", () => {
     expect(folded("orchestrators")).toBe(false);
     s().unfoldOverviewSection("orchestrators");
     expect(folded("orchestrators")).toBe(false);
+    s().toggleOverviewSection("solo");
+    expect(folded("solo")).toBe(true);
+    expect(s().overviewFolded).toEqual(["solo"]);
+    s().unfoldOverviewSection("solo");
+    expect(folded("solo")).toBe(false);
+    // Done opens from its one row, and folds back to it.
+    s().toggleOverviewSection("doneToday");
+    expect(folded("doneToday")).toBe(false);
+    expect(s().overviewUnfolded).toEqual(["doneToday"]);
     s().toggleOverviewSection("doneToday");
     expect(folded("doneToday")).toBe(true);
-    expect(s().overviewFolded).toEqual(["doneToday"]);
-    s().unfoldOverviewSection("doneToday");
-    expect(folded("doneToday")).toBe(false);
 
     // A default-folded section is never kept among the folded ones, nor the reverse.
     expect(
@@ -787,7 +793,7 @@ describe("side panels", () => {
         overviewFolded: ["pullRequests", "solo"],
         overviewUnfolded: ["solo", "pullRequests", "doneToday", "x"],
       }),
-    ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["pullRequests"] });
+    ).toEqual({ overviewFolded: ["solo"], overviewUnfolded: ["pullRequests", "doneToday"] });
   });
 
   it("keeps the sections Settings turns off in the column's order", () => {

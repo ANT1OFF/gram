@@ -87,7 +87,7 @@ test("the toolbar's targets are as tall as Send, and ring on keyboard focus", as
   await expect(effort).toHaveCSS("outline-style", "solid");
 });
 
-test("Stop says Stop beside its square, says its key while you're in the composer, and keeps the reply", async ({
+test("Stop says Stop beside its square, shows its key inside it, and keeps the reply", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -99,17 +99,16 @@ test("Stop says Stop beside its square, says its key while you're in the compose
   // A filled pill with the word, not Send's accent and not a bare glyph.
   const fill = await stop.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(fill).not.toBe("rgba(0, 0, 0, 0)");
-  await expect(stop).toHaveText("Stop");
+  // Its word, and its key in a key cap inside it: visible, not only on focus or in a tooltip.
+  await expect(stop).toHaveText(/^Stop(⌘|Ctrl\+)\.$/);
   await expect(page.getByTestId("stop-ring")).toBeVisible();
   // Where Send sits: the right edges line up, so the spot doesn't move as the turn starts and ends.
   const send = page.getByRole("button", { name: "Send", exact: true });
   const stopRight = await stop.evaluate((el) => el.getBoundingClientRect().right);
 
-  const key = page.getByTestId("stop-key");
+  const key = stop.getByTestId("stop-key");
   await page.locator("body").click({ position: { x: 5, y: 300 } });
-  await expect(key).toHaveCSS("opacity", "0");
-  await page.getByLabel("Message", { exact: true }).focus();
-  await expect(key).toHaveCSS("opacity", "1");
+  await expect(key).toBeVisible();
   await expect(key).toHaveText(/^(⌘|Ctrl\+)\.$/);
 
   // What the turn had written when stopped stays in the thread.

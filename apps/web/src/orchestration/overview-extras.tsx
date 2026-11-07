@@ -206,6 +206,26 @@ export function OverviewDone() {
       title="Done"
       count={rows.length}
       hint="Finished and settled chats, latest first. History has them all."
+      // Folded, as it starts: one row, "8 done · History", the Board and History having the rest.
+      folded={{
+        words: `${rows.length} done`,
+        action: (
+          <span className="flex h-6 shrink-0 items-center gap-1 text-meta text-muted-foreground">
+            <span aria-hidden>·</span>
+            <button
+              type="button"
+              {...{ [STOP]: "" }}
+              data-testid="overview-done-history"
+              aria-haspopup="dialog"
+              title="Open History on Done"
+              onClick={() => useHistoryStore.getState().show("done")}
+              className="rounded-(--radius-sm) px-1 outline-none hover:bg-sidebar-row-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              History
+            </button>
+          </span>
+        ),
+      }}
     >
       {shown.map((row) => (
         <DoneRow key={row.threadId} row={row} now={now} />

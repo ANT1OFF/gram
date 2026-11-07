@@ -349,12 +349,14 @@ export function OverviewSidebar() {
         <UpdatePill size="xs" />
         <NewEntryMenu />
       </div>
+      {/* The spacing scale's named steps: sections a list's step apart (12 px), as a list's
+          headings are, so the column reads as one even list rather than blocks with gaps. */}
       <div
         onKeyDown={overviewKeys}
-        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-2 pt-1 pb-3 text-body"
+        className="flex min-h-0 flex-1 flex-col gap-list overflow-y-auto overscroll-contain px-inset pt-tight pb-list text-body"
       >
         {/* What needs you, and the way to find anything else, as one block at the top. */}
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-tight">
           <NeedsYou />
           <OverviewSearch />
         </div>
@@ -815,8 +817,8 @@ export function WorkerRow({
     onClick,
     onKeyDown: rowMenuKeys,
     ...threadDragProps(row.threadId),
-    // Two lines like every row: its title, cut short with the whole of it on hover, and its status
-    // with its PR chips at the line's right edge. The dot sits on the title's line.
+    // Like every row: its title, on up to two lines with the whole of it on hover, and its status
+    // with its PR chips at the line's right edge. The dot sits on the title's first line.
     className: cn(ROW, "items-start", CURRENT_ROW, settled && SETTLED),
   };
   const prChips = useWorkerPrChips(row.threadId, row.prs);
@@ -832,7 +834,7 @@ export function WorkerRow({
         data-tone={tone}
         className={DOT_ON_FIRST_LINE}
       />
-      {/* Its title on one line beside the trailing marks (a pause, its agent), cut at its end; the hover card, or the flyout's tooltip, says the whole. */}
+      {/* Its title beside the trailing marks (a pause, its agent), on up to two lines and then cut at its end; the hover card, or the flyout's tooltip, says the whole. */}
       <span
         data-testid="overview-worker-title"
         className={cn(ROW_TITLE, "col-span-1 text-foreground", unread && UNREAD_TITLE)}
@@ -1209,8 +1211,9 @@ function HeldRow({ held }: { held: FeatureCardHeld }) {
 }
 
 /**
- * A solo row's height (two 20 px lines, the title's and its status's, and 4 px above and below),
- * and the space between rows (the section's `gap-px`).
+ * A solo row's usual height (two 20 px lines, the title's and its status's, and 4 px above and
+ * below), the virtual list's estimate until it measures a row with a two-line title, and the space
+ * between rows (the section's `gap-px`).
  */
 const SOLO_ROW = 48;
 const SOLO_GAP = 1;
@@ -1505,9 +1508,9 @@ export function SoloRow({
             display.working && "gram-working",
           )}
         />
-        {/* Like every row: its title on one line, cut at its end with the whole on hover, and
-            its status under it with its last activity at the edge. Every row is the same height,
-            so the virtual list's measured rows keep the rows under them anchored. */}
+        {/* Like every row: its title on up to two lines, cut at its end with the whole on hover,
+            and its status under it with its last activity at the edge. The virtual list measures
+            each drawn row, so a two-line title keeps the rows under it anchored. */}
         <span className={cn(ROW_TITLE, thread.unread && UNREAD_TITLE)}>{title}</span>
         <span data-testid="overview-solo-status" className={ROW_STATUS}>
           <span

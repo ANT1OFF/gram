@@ -62,7 +62,10 @@ test("next and previous thread follow the sidebar, and ⌘D shows and hides the 
           ...document.querySelectorAll<HTMLElement>(
             '[data-testid="overview-sidebar"] :is([data-testid="overview-workspace-row"], [data-testid="overview-worker"], [data-testid="overview-solo"], [data-testid="overview-done"])',
           ),
-        ].map((row) => row.dataset.threadId ?? "");
+        ]
+          // Visible rows only, as the step does: a folded section's (Done's) rows are skipped.
+          .filter((row) => row.checkVisibility())
+          .map((row) => row.dataset.threadId ?? "");
         const current = location.pathname.split("/").at(-1)!;
         const expected = rows[rows.indexOf(current) + step];
         const [key, code] = onMac

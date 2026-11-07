@@ -203,12 +203,28 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   await expect(page.getByTestId("worker-banner-take-over")).toContainText(
     "the orchestrator stops messaging it until you hand it back",
   );
+  // Shown as the line, it isn't a mark beside Take over too.
+  await expect(page.getByTestId("worker-take-over-info")).toHaveCount(0);
+  // Where the message is written, the composer says a message takes it over.
+  await expect(composerOf(page, made.asking)).toHaveAttribute(
+    "placeholder",
+    /^(Message worker|Queue a message) — takes control…/,
+  );
+  await composerOf(page, made.asking).fill("Draft only");
+  await expect(page.getByRole("button", { name: /^(Send|Queue) — takes control$/ })).toBeVisible();
+  await expect(page.getByText("Sending takes control from the orchestrator")).toBeVisible();
+  await composerOf(page, made.asking).fill("");
 
   await page.getByTestId("worker-take-over").click();
   await expect(page.getByTestId("worker-hold")).toContainText("Under your control");
   await expect(page.getByTestId("worker-take-over")).toHaveCount(0);
   await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
   expect(await isHeld(page, made, made.asking)).toBe(true);
+  // Held, a message no longer takes anything: the composer says plain Message again.
+  await expect(composerOf(page, made.asking)).toHaveAttribute(
+    "placeholder",
+    /^(Message|Queue a message)… /,
+  );
   // Nothing was sent to it: its composer is untouched and no message of the user's appeared.
   await expect(composerOf(page, made.asking)).toHaveValue("");
 
@@ -221,6 +237,13 @@ test("Take over holds a worker without a message, and Hand back returns it", asy
   await openWorker(page, made.live);
   await expect(page.getByTestId("worker-take-over")).toBeVisible();
   await expect(page.getByTestId("worker-banner-take-over")).toHaveCount(0);
+  // It folds to an ⓘ beside Take over, which says it on hover.
+  const info = page.getByTestId("worker-take-over-info");
+  await expect(info).toBeVisible();
+  await info.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+    "the orchestrator stops messaging it until you hand it back",
+  );
   expect(await page.evaluate(() => window.gramMock!.getSettings())).toMatchObject({
     onboarding: { takeOverHintSeen: true },
   });

@@ -32,7 +32,11 @@ interface Seeded {
  * t-flaky's approval up: a thread outside any workspace counts its asks too, so a count read before
  * it arrives would be one short.
  */
-const start = async (page: Page): Promise<Seeded> => {
+/** A window wide enough to dock the Inbox beside a chat at its reading width (`inboxDockFit`). */
+const WIDE = { width: 1728, height: 1000 };
+
+const start = async (page: Page, size = WIDE): Promise<Seeded> => {
+  await page.setViewportSize(size);
   await page.goto("/t/t-flaky");
   await expect(page.getByLabel("Message", { exact: true })).toBeVisible();
   await expect(page.getByTestId("approval-card")).toBeVisible();
@@ -216,9 +220,13 @@ test("a window too narrow to dock it, and Quiet, open the Inbox as a dialog", as
   await expect(page.getByRole("dialog", { name: "Inbox" })).toBeVisible();
   await expect(inbox(page)).not.toHaveAttribute("data-docked");
   await expect(inbox(page).getByTestId("inbox-list")).toBeFocused();
+  // A laptop's 1440 still opens it over the work, where docking would squeeze the chat.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole("dialog", { name: "Inbox" })).toBeVisible();
+  await expect(inbox(page)).not.toHaveAttribute("data-docked");
   // Widened, the same Inbox docks, where it was.
   const shown = await detail(page).getAttribute("data-key");
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setViewportSize(WIDE);
   await expect(page.getByRole("dialog", { name: "Inbox" })).toHaveCount(0);
   await expect(inbox(page)).toHaveAttribute("data-docked", "");
   await expect(detail(page)).toHaveAttribute("data-key", shown!);
@@ -569,8 +577,7 @@ test("narrow: the rail's pill opens an Inbox that fits, and with no pill ⌘⌥3
 }) => {
   // Below the open overview's width, the compact rail carries the pill, the one way in: the title
   // bar has no Inbox button beside it.
-  await page.setViewportSize({ width: 1000, height: 800 });
-  await start(page);
+  await start(page, { width: 1000, height: 800 });
   await expect(page.getByTestId("inbox-button")).toHaveCount(0);
   await page.getByTestId("overview-rail-needs-you").click();
   await expect(inbox(page)).toBeVisible();
