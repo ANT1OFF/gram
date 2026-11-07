@@ -18,9 +18,7 @@ test("Open at launch at Last thread opens the thread shown last", async ({ page 
   await page.goto("/");
   // The home page shows its own content only once the launch has decided to stay.
   await expect(
-    page
-      .getByRole("region", { name: "Pick a repository to start" })
-      .or(page.getByText("Select a thread, or start a new one.")),
+    page.getByRole("region", { name: "Open a repository" }).or(page.getByTestId("home-empty")),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/$/);
 

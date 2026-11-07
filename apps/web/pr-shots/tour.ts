@@ -436,6 +436,23 @@ const scenes: readonly Shot[] = [
       await expect(item.getByTestId("ask-option").first()).toBeVisible();
     },
   },
+  // First run in each readiness case past the tour's Codex-only frame, then each empty state a
+  // fresh account meets. At the end, so the frames before keep their numbers.
+  ...[
+    "first-run-claude-only",
+    "first-run-no-cli",
+    "first-run-no-gh",
+    "empty-home",
+    "empty-board",
+    "empty-workers-panel",
+    "empty-docs",
+    "empty-history",
+    "empty-inbox",
+  ].map((name) => ({
+    name,
+    title: SHOTS.find((shot) => shot.name === name)?.title ?? name,
+    open: existing(name),
+  })),
 ];
 
 /** Ordered whole-window frames, always both modes and `SET_SIZE` regardless of source shot. */

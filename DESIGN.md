@@ -247,6 +247,10 @@ the check fails `bun run lint` on any new use; an allowlist entry is for a delib
   ("Always allow this rule…", "More…"), and a placeholder ("Message…").
 - A short empty state is a fragment without a full stop ("No files yet", "Nothing needs you"); one
   that goes on to say what to do is sentences, with full stops.
+- An empty view is `EmptyState` (`components/empty-state.tsx`) on every surface: its glyph, that
+  fragment as its title, one sentence on what goes there, and at most one action, an outline
+  button ("Message the orchestrator", "Open a repository"). Never a row of empty groups where one
+  line would say it.
 - Say what happened and what the user can do; no blame, no exclamation marks.
 - Times are 24-hour only, from `formatStamp` in `apps/web/src/lib/time.ts`: `HH:MM` today
   (`09:42`, `00:00`), else `D Mon HH:MM` (`14 Jun 08:00`), with the year only when it isn't this

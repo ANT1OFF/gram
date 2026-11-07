@@ -16,6 +16,7 @@ import { Fragment, useEffect, useMemo, useState, type KeyboardEvent } from "reac
 import { create } from "zustand";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
+import { EmptyState } from "@/components/empty-state";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { useAvailableAgents } from "@/composer/agent-fields";
@@ -28,6 +29,7 @@ import { DoneGroupingMenu } from "@/orchestration/done-grouping-menu";
 import { DONE_PAGE, doneWhenLong, doneWindow } from "@/orchestration/done-model";
 import { useFinishedWorkerPages } from "@/orchestration/use-finished-workers";
 import { useOrchestratorLedgers, useWorkspaces } from "@/orchestration/use-orchestration";
+import { PanelMessage } from "@/panels/panel-message";
 import {
   listResumableSessions,
   resumeSession,
@@ -96,13 +98,29 @@ export const OUTCOME_GLYPH: Readonly<Record<HistoryOutcome, { icon: LucideIcon; 
 };
 const IMPORTED_GLYPH = { icon: History, tone: "text-muted-foreground" };
 
-const EMPTY: Readonly<Record<HistoryFilter, string>> = {
-  all: "Nothing finished yet",
-  done: "Nothing done yet",
-  workers: "No finished workers yet",
-  threads: "No finished or archived threads yet",
-  archived: "Nothing archived",
-  imported: "No past CLI sessions to resume",
+/** What each filter says while it lists nothing: a title, and what goes there. */
+const EMPTY: Readonly<Record<HistoryFilter, { title: string; line: string }>> = {
+  all: {
+    title: "Nothing finished yet",
+    line: "Finished workers, done and archived threads and past CLI sessions land here.",
+  },
+  done: {
+    title: "Nothing done yet",
+    line: "Finished workers and threads land here until you archive them.",
+  },
+  workers: {
+    title: "No finished workers yet",
+    line: "A worker lands here once its work is merged or it stops.",
+  },
+  threads: {
+    title: "No finished or archived threads yet",
+    line: "Solo threads land here once they are done or archived.",
+  },
+  archived: { title: "Nothing archived", line: "Threads you archive land here." },
+  imported: {
+    title: "No past CLI sessions to resume",
+    line: "Sessions you started with Claude Code or Codex in a terminal show here.",
+  },
 };
 
 /**
@@ -339,18 +357,30 @@ function HistoryBody({ onPicked }: { onPicked: () => void }) {
           aria-activedescendant={activeIndex < 0 ? undefined : `history-row-${activeIndex}`}
           className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1 outline-none"
         >
-          {rows.length === 0 && (
-            <p
-              data-testid="history-empty"
-              className="px-3 py-8 text-center text-reading text-muted-foreground"
-            >
-              {query.trim() !== ""
-                ? "No matches"
-                : filter === "imported" && past.loading
-                  ? "Looking for past sessions…"
-                  : EMPTY[filter]}
-            </p>
-          )}
+          {rows.length === 0 &&
+            (query.trim() !== "" ? (
+              <EmptyState
+                testId="history-empty"
+                icon={Search}
+                title="No matches"
+                action={{ label: "Clear search", onClick: () => setQuery("") }}
+              />
+            ) : filter === "imported" && past.loading ? (
+              <PanelMessage loading>Looking for past sessions…</PanelMessage>
+            ) : (
+              <EmptyState
+                testId="history-empty"
+                icon={History}
+                title={EMPTY[filter].title}
+                line={EMPTY[filter].line}
+                action={
+                  filter === "all"
+                    ? // On a fresh account, what was done before Gram is the one thing to find here.
+                      { label: "Find past CLI sessions", onClick: () => changeFilter("imported") }
+                    : { label: "Show everything", onClick: () => changeFilter("all") }
+                }
+              />
+            ))}
           {shown.groups.map((group) => (
             <Fragment key={group.key}>
               <h3

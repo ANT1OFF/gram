@@ -152,7 +152,7 @@ test("a launch with no workspace stays home with the welcome", async ({ page }) 
   // The overview lists the new workspace.
   await expect(page.getByTestId("overview-workspace").first()).toBeVisible();
   await expect(page.getByTestId("welcome")).toHaveCount(0);
-  await expect(page.getByText("Select a thread, or start a new one.")).toBeVisible();
+  await expect(page.getByTestId("home-empty")).toBeVisible();
   await expect(page).toHaveURL(/\/$/);
 });
 
