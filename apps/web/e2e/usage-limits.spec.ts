@@ -31,11 +31,11 @@ test("the meter shows the kept readings again after a reload", async ({ page }) 
       resetsAt: Date.now() + 2 * 3_600_000,
     }),
   );
-  await expect(meter).toHaveText("Claude 64% used");
+  await expect(meter).toHaveAccessibleName(/Claude Code 5-hour 64%$/);
 
   await page.reload();
   // No agent has reported since: the meter comes from the replay alone.
-  await expect(meter).toHaveText("Claude 64% used");
+  await expect(meter).toHaveAccessibleName(/Claude Code 5-hour 64%$/);
 });
 
 test("the popover forecasts a window that is filling, and dates a reading gone quiet", async ({

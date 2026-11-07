@@ -124,11 +124,11 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   await expect(header.getByTestId("branch-chip")).toHaveCount(0);
   await expect(header).not.toContainText("Claude Code");
   await expect(header).not.toContainText("Orchestrator of");
-  // Its board is in the bar, beside it, and its memory in the bar's "…", with nothing on a line of
-  // their own.
+  // Its board is in the bar, beside it, and its memory a glyph beside its title as well as in the
+  // bar's "…", with nothing on a line of their own.
   await expect(bar.getByRole("radio", { name: /^Board\b/ })).toBeVisible();
   await expect(header.getByRole("button", { name: "Open board" })).toHaveCount(0);
-  await expect(header.getByRole("link", { name: "Memory" })).toHaveCount(0);
+  await expect(header.getByRole("link", { name: "Memory", exact: true })).toBeVisible();
   await bar.getByTestId("titlebar-overflow").click();
   await page.getByTestId("menu-workspace").click();
   await expect(page.getByTestId("menu-memory")).toBeVisible();

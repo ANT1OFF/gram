@@ -20,12 +20,13 @@ test("the meter shows the thread's agent's limit and opens onto both providers",
   await page.goto("/t/t-flaky");
   const meter = page.getByTestId("usage-meter");
   // A Claude thread shows Claude's closest window (weekly, 61%), not Codex's higher 85%: the meter
-  // names the agent the composer names. Short of the warning, the title bar's only amber stays
-  // what needs you.
-  await expect(meter).toHaveText("Claude 61% used");
+  // names the agent the composer names. Icon-only, the reading is its name's and its hover's; short
+  // of the warning it has no dot, so the title bar's only amber stays what needs you.
+  await expect(meter).toHaveText("");
   await expect(meter).not.toHaveAttribute("data-warn");
+  await expect(meter.getByTestId("usage-meter-dot")).toHaveCount(0);
   await expect(meter).toHaveAccessibleName(
-    "This thread's agent's subscription usage: Claude Code weekly limit 61% used",
+    "Subscription usage. This thread: Claude Code weekly 61%",
   );
   // Open, the popover gives way to the approval card: let the thread's opening turn raise it.
   await flakyAsked(page);
@@ -109,7 +110,115 @@ test("the popover drops clear of the approval card it would cover", async ({ pag
   expect(hit).toBe(true);
 });
 
-test("the meter waits for a limit, warns from 90% once, and ignores gateways", async ({ page }) => {
+test("the title bar's meter is an icon button on an orchestrator, a worker and a narrow bar", async ({
+  page,
+}) => {
+  // The right panel closed: narrow, a worker's Diff too cramped to read beside the chat takes the
+  // window as Focus review, over the chat and its title bar, which is the review's to do.
+  await seed(page, {
+    "gram.mock.orchestration": "board",
+    "gram.mock.settings": JSON.stringify({ panel: { open: false } }),
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  // A launch with a workspace lands on its orchestrator.
+  await expect(page).toHaveURL(/\/t\/t-mock-\d+$/);
+  await page.waitForFunction(() => window.gramMock !== undefined);
+  // Codex's 5-hour window spent, carried on credits: past the warning, so the meter shows it.
+  await page.evaluate(() =>
+    window.gramMock!.simulateUsageLimit({
+      agent: "codex",
+      window: "five_hour",
+      utilization: 1,
+      resetsAt: Date.now() + 3_600_000,
+      credits: true,
+      creditsAvailable: true,
+      creditsBalance: "100",
+    }),
+  );
+  const bar = page.getByTestId("shell-titlebar");
+  const meter = bar.getByTestId("usage-meter");
+  const hint = page.locator('[data-slot="tooltip-content"][data-open]');
+
+  // A hint opens only for a pointer that moved onto its trigger, never for a trigger that moved under
+  // a resting one (DESIGN.md). After a navigation or a resize the bar lays out again (its fold, the
+  // grid's width transition), so the button is hovered once it has stopped moving, as a person's
+  // pointer would reach it.
+  const settled = () =>
+    expect
+      .poll(
+        async () => {
+          const before = await meter.boundingBox();
+          await page.waitForTimeout(150);
+          const after = await meter.boundingBox();
+          return before !== null && after !== null && before.x === after.x && before.y === after.y;
+        },
+        { message: "the usage button stops moving" },
+      )
+      .toBe(true);
+
+  const readsAsButton = async () => {
+    await expect(meter).toBeVisible();
+    await settled();
+    // Usage's glyph alone, a toolbar icon button's 28 px square like the bar's others, with no bar
+    // and no words: the reading is its hover's and its name's, the state a dot on its corner.
+    await expect(meter.locator("svg.lucide-chart-no-axes-combined")).toBeVisible();
+    await expect(meter).toHaveText("");
+    await expect(meter.getByTestId("usage-meter-fill")).toHaveCount(0);
+    const box = (await meter.boundingBox())!;
+    expect(Math.round(box.width)).toBe(28);
+    expect(Math.round(box.height)).toBe(28);
+    await expect(meter).toHaveAttribute("data-state", "credits");
+    await expect(meter.getByTestId("usage-meter-dot")).toBeVisible();
+    await expect(meter).toHaveAccessibleName(
+      "Subscription usage, limit reached, continuing on credits. Highest: Codex 5-hour 100% · on credits",
+    );
+    await meter.hover();
+    await expect(hint).toContainText("Codex 5-hour 100% · on credits");
+    // And it is a button: a click opens every provider's limits.
+    await meter.click();
+    const popover = page.getByRole("dialog", { name: "Subscription usage" });
+    await expect(popover).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(popover).toBeHidden();
+    await page.mouse.move(0, 450);
+  };
+
+  await readsAsButton();
+  // A worker's bar.
+  await page.goto("/t/t-flaky");
+  await readsAsButton();
+  // A narrow bar keeps the button.
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.getByTestId("app-shell")).toHaveAttribute("data-review-focus", "false");
+  await readsAsButton();
+});
+
+test("an orchestrator's title bar has Memory beside Chat · Board", async ({ page }) => {
+  await seed(page, { "gram.mock.orchestration": "board" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/t\/t-mock-\d+$/);
+  const workspaceId = await page.evaluate(
+    async () => (await window.gramMock!.listWorkspaces())[0]!.workspace.id,
+  );
+  const bar = page.getByTestId("shell-titlebar");
+  await expect(bar.getByTestId("pane-role")).toBeVisible();
+  // An icon with its name on hover, like the bar's other icons.
+  const memory = bar.getByRole("link", { name: "Memory", exact: true });
+  await expect(memory).toBeVisible();
+  await expect(memory).toHaveText("");
+  // To the right of the views and the orchestrator's glyph.
+  const views = (await bar.getByTestId("view-switcher").boundingBox())!;
+  const box = (await memory.boundingBox())!;
+  expect(box.x).toBeGreaterThan(views.x + views.width);
+  await memory.hover();
+  await expect(page.locator('[data-slot="tooltip-content"][data-open]')).toHaveText("Memory");
+  await memory.click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceId}/memory$`));
+});
+
+test("the meter waits for a limit, hints from 90% once, and ignores gateways", async ({ page }) => {
   await seed(page, { "gram.mock.limits": "none" });
   await page.goto("/t/t-flaky");
   await expect(page.getByTestId("shell-titlebar")).toBeVisible();
@@ -128,35 +237,53 @@ test("the meter waits for a limit, warns from 90% once, and ignores gateways", a
       { utilization, ...extra },
     );
 
+  const dot = meter.getByTestId("usage-meter-dot");
+  const named = (state: string, reading: string) =>
+    expect(meter).toHaveAccessibleName(`Subscription usage${state}. This thread: ${reading}`);
+
   await report(0.5);
-  await expect(meter).toHaveText("Claude 50% used");
+  await named("", "Claude Code 5-hour 50%");
   await expect(meter).not.toHaveAttribute("data-warn");
-  const fill = meter.getByTestId("usage-meter-fill");
-  await expect(fill).toHaveAttribute("style", /width: 50%/);
+  await expect(dot).toHaveCount(0);
   await expect(page.getByTestId("pulse-once")).toHaveCount(0);
 
-  // 85% is close, not yet a warning: the meter stays neutral.
+  // 85% is close, not yet a warning: the button stays plain.
   await report(0.85);
-  await expect(meter).toHaveText("Claude 85% used");
-  await expect(meter).not.toHaveAttribute("data-warn");
+  await named("", "Claude Code 5-hour 85%");
+  await expect(dot).toHaveCount(0);
   await expect(page.getByTestId("pulse-once")).toHaveCount(0);
 
-  // Crossing 90% turns it warning-coloured, with one pulse.
+  // Crossing 90%, a warning ring on its corner, with one pulse, and its name says so. The ring sits
+  // over the glyph, so the button keeps its size.
+  const size = (await meter.boundingBox())!;
   await report(0.92, { status: "warning" });
-  await expect(meter).toHaveText("Claude 92% used");
+  await named(", near the limit", "Claude Code 5-hour 92%");
   await expect(meter).toHaveAttribute("data-warn", "true");
-  await expect(fill).toHaveAttribute("style", /width: 92%/);
+  await expect(meter).toHaveAttribute("data-state", "approaching");
+  await expect(dot).toBeVisible();
   await expect(page.getByTestId("pulse-once")).toHaveCount(1);
+  const after = (await meter.boundingBox())!;
+  expect([after.width, after.height]).toEqual([size.width, size.height]);
 
   // A gateway's limit is its own quota, not the subscription's.
   await report(0.99, { gateway: true });
-  await expect(meter).toHaveText("Claude 92% used");
+  await named(", near the limit", "Claude Code 5-hour 92%");
 
   // Codex hasn't reported, so the popover has Claude alone.
   await meter.click();
   const popover = page.getByRole("dialog", { name: "Subscription usage" });
   await expect(popover.getByRole("region", { name: "Claude Code" })).toBeVisible();
   await expect(popover.getByRole("region", { name: "Codex" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(popover).toBeHidden();
+
+  // Past the window on credits, the dot fills; spent with nothing behind it, it turns red.
+  await report(1, { credits: true });
+  await expect(meter).toHaveAttribute("data-state", "credits");
+  await named(", limit reached, continuing on credits", "Claude Code 5-hour 100% · on credits");
+  await report(1, { status: "rejected" });
+  await expect(meter).toHaveAttribute("data-state", "spent");
+  await named(", limit reached", "Claude Code 5-hour 100%");
 });
 
 test("a launch with a workspace lands on its orchestrator, without the welcome", async ({

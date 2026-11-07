@@ -3529,6 +3529,54 @@ export const SHOTS: readonly Shot[] = [
     },
     element: (page) => page.getByTestId("shell-titlebar"),
   },
+  ...(
+    [
+      ["normal", "under 90% of every window", undefined],
+      ["approaching", "Claude's 5-hour window at 93%", { agent: "claude", utilization: 0.93 }],
+      [
+        "credits",
+        "Codex's 5-hour window spent, carried on credits",
+        { agent: "codex", utilization: 1, credits: true },
+      ],
+    ] as const
+  ).flatMap(([state, what, reading]) => {
+    const open = async (page: Page) => {
+      await openOverviewHome(page, 1440, { panel: false });
+      if (reading !== undefined) {
+        await page.evaluate(
+          (input) =>
+            window.gramMock!.simulateUsageLimit({
+              window: "five_hour",
+              resetsAt: Date.now() + 60 * 60_000,
+              creditsAvailable: true,
+              creditsBalance: "100",
+              ...input,
+            }),
+          reading,
+        );
+      }
+      await page.getByTestId("usage-meter").waitFor();
+      await page.waitForTimeout(400);
+    };
+    return [
+      {
+        name: `titlebar-usage-${state}`,
+        title: `The orchestrator's title bar with ${what}: the usage button and Memory beside Chat · Board`,
+        open,
+        element: (page: Page) => page.getByTestId("shell-titlebar"),
+      },
+      {
+        name: `titlebar-usage-${state}-hover`,
+        title: `The usage button's hover with ${what}`,
+        open: async (page: Page) => {
+          await open(page);
+          await page.getByTestId("usage-meter").hover();
+          await page.locator('[data-slot="tooltip-content"][data-open]').waitFor();
+          await page.waitForTimeout(400);
+        },
+      },
+    ];
+  }),
   {
     name: "titlebar-menu",
     title:

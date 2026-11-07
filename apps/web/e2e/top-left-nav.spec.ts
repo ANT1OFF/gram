@@ -119,7 +119,9 @@ test("usage has one way in: an icon before any reading, then the meter, which wa
   );
   // A reading in: the meter takes the icon's place, short of the warning.
   const meter = page.getByTestId("usage-meter");
-  await expect(meter).toHaveText("Claude 86% used");
+  await expect(meter).toHaveAccessibleName(
+    "Subscription usage. This thread: Claude Code 5-hour 86%",
+  );
   await expect(link).toHaveCount(0);
   await expect(meter).not.toHaveAttribute("data-warn");
   expect((await meter.boundingBox())!.height).toBeGreaterThanOrEqual(28);
