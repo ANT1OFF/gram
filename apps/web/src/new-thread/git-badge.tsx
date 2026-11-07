@@ -7,7 +7,7 @@ export function GitBadge({ branch }: { branch?: string | undefined }) {
   return (
     <Badge
       variant="outline"
-      className="h-4 shrink-0 gap-0.5 px-1.5 text-caption font-normal text-muted-foreground"
+      className="h-5 shrink-0 gap-0.5 px-1.5 text-meta font-normal text-muted-foreground"
     >
       <GitBranch aria-hidden />
       {branch ?? "git"}

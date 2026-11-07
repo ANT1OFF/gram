@@ -24,7 +24,7 @@ export function HelpTip({ label, help }: { label: string; help: ReactNode }) {
               aria-describedby={id}
               data-help-for={label}
               data-testid="setting-help"
-              className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded-full text-subtle outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           }
         >

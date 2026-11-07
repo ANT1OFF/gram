@@ -201,8 +201,10 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
   const accent = deriveAccent(s, surfaces, target);
   const onAccent = pickOnAccent(accent, s, target.text) ?? "#000000";
   const warning = ui(s.yellow);
-  // A shade toward the text, so hints and glyphs read at a glance rather than only at the floor.
-  const fgSubtle = ui(mix(s.muted, s.text, 0.15));
+  // The third text level (hints, a step's evidence, a pending line): a shade toward the text, and
+  // text-grade, so what it says reads at the text floor wherever it sits. It replaces fading the
+  // muted text with opacity, which left it near 3:1 on a light page.
+  const fgSubtle = text(mix(s.muted, s.text, 0.15));
   const diffAddBg = mix(surface2, s.green, 0.13);
   const diffDelBg = mix(surface2, s.red, 0.13);
   // Hunk rows show page text and line numbers on the add/remove tints; the text shifts to hold its
@@ -259,8 +261,9 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
     // larger step to look as far apart: firm enough to read at a glance, far enough to be secondary.
     "fg-muted": onDiff(text(mix(s.text, s.muted, contrast === "more" ? 0.2 : dark ? 0.45 : 0.6))),
     "fg-subtle": fgSubtle,
-    // Card and control edges: visible against the page in both modes, still a hairline.
-    "border-subtle": mix(surface2, s.text, 0.14),
+    // Card and control edges: visible against the page in both modes, still a hairline. Light takes
+    // a step more, where a pale edge on a near-white page all but vanished.
+    "border-subtle": mix(surface2, s.text, dark ? 0.14 : 0.2),
     "border-strong": ui(mix(surface2, s.muted, 0.7)),
     accent,
     "accent-hover": shiftLightness(accent, dark ? 0.05 : -0.05),

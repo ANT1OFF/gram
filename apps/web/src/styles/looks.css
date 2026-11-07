@@ -26,6 +26,12 @@
   );
 }
 
+/* Light keeps the wash fainter: on a near-white page the accent and info tints read as two
+   coloured corners rather than a glow, and drift the neutral surfaces toward blue and cyan. */
+[data-look="glass"][data-mode="light"] {
+  --wash-strength: 0.07;
+}
+
 [data-look="glass"] body {
   background:
     radial-gradient(70rem 48rem at 0% 0%, var(--backdrop-wash), transparent 72%),

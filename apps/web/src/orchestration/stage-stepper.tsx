@@ -179,7 +179,7 @@ export function StageStepper({
                       ? "font-medium text-foreground"
                       : step.status === "done"
                         ? "text-foreground/70"
-                        : "text-muted-foreground/80",
+                        : "text-subtle",
                   )}
                 >
                   {step.status === "current" && (

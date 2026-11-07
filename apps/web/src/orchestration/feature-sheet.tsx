@@ -712,7 +712,7 @@ function SheetContent({
             <b
               className={cn(
                 "text-reading font-medium tabular-nums",
-                sheet.counts[station] === 0 && "text-muted-foreground/60",
+                sheet.counts[station] === 0 && "text-subtle",
               )}
             >
               {sheet.counts[station]}

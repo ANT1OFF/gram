@@ -430,7 +430,7 @@ function QuietCard({
           </pre>
         )}
         {ask.extras.length > 0 && (
-          <p className="font-mono text-caption break-all text-muted-foreground">
+          <p className="font-mono text-meta break-all text-muted-foreground">
             {ask.extras.map((field, at) => (
               <span key={field.label}>
                 {at > 0 && " · "}

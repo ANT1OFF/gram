@@ -28,6 +28,14 @@ describe("design-token drift check", () => {
     ).toEqual([]);
   });
 
+  it("flags secondary text faded with opacity, not the text-grade subtle token", () => {
+    expect(
+      tokens(
+        `"text-muted-foreground/70 hover:text-subtle/80 text-subtle text-muted-foreground bg-muted-foreground/50 decoration-muted-foreground/60"`,
+      ),
+    ).toEqual(["faded-text text-muted-foreground/70", "faded-text text-subtle/80"]);
+  });
+
   it("flags raw arbitrary spacing but not values built from tokens", () => {
     expect(
       tokens(

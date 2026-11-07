@@ -195,7 +195,7 @@ function StageLine({ card }: { card: FeatureCard }) {
                   ? "font-medium text-foreground"
                   : state === "past"
                     ? "text-muted-foreground"
-                    : "text-muted-foreground/60",
+                    : "text-subtle",
               )}
             >
               {state === "current" ? (

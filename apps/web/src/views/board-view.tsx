@@ -434,7 +434,7 @@ function LaneHeads({ counts }: { counts: Readonly<Record<FeatureStation, number>
           data-empty={counts[station] === 0 || undefined}
           className={cn(
             "min-w-0 truncate",
-            counts[station] === 0 ? "text-muted-foreground/70" : "font-medium text-foreground/80",
+            counts[station] === 0 ? "text-subtle" : "font-medium text-foreground/80",
           )}
         >
           {STATION_LABELS[station]}

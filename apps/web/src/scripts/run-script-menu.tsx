@@ -67,7 +67,7 @@ export function RunScriptMenu({
             }
             data-testid="run-script-menu"
             className={cn(
-              "shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:text-foreground aria-expanded:text-foreground",
+              "shrink-0 text-subtle hover:text-foreground focus-visible:text-foreground aria-expanded:text-foreground",
               // As wide as the header's status glyph: every chip keeps its room.
               size === "glyph" && "size-4 rounded-sm",
               className,

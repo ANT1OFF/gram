@@ -1083,7 +1083,7 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
             <div ref={mirrorRef} aria-hidden data-composer-mirror className={GHOST_MIRROR}>
               <span data-testid="composer-ghost">
                 <span className="text-transparent">{text}</span>
-                <span className="text-muted-foreground/70">{ghost.rest}</span>
+                <span className="text-subtle">{ghost.rest}</span>
               </span>
               {/* Right after the reply rather than in the toolbar, which a narrow pane leaves no
                   room in: there the keys were cut to a sliver, and the reply read as a draft. */}

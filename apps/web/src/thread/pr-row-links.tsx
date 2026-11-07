@@ -250,7 +250,7 @@ export function BranchLink({ threadId, place }: { threadId: ThreadId; place: PrR
     <LinkMenu
       testId="pr-row-branch"
       label={`Branch ${branch}`}
-      className="min-w-0 truncate text-muted-foreground/80"
+      className="min-w-0 truncate text-subtle"
       trigger={branch}
     >
       <Menu.Item className={ITEM} onClick={() => void copyText(branch).catch(() => undefined)}>

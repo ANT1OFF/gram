@@ -6,7 +6,11 @@ test("the thread's PR sits above the composer with its diff and checks", async (
   await expect(row).toContainText("#412");
   await expect(row).toContainText("api");
   await expect(row.getByTestId("pr-row-branch")).toHaveText("fix/flaky-retry");
-  await expect(row.getByRole("img", { name: "Checks failing" })).toBeVisible();
+  // Failing checks lead in words with a red dot, not a ⊗ that reads as a close beside the hide button.
+  const failing = row.getByRole("img", { name: "Checks failing" });
+  await expect(failing).toBeVisible();
+  await expect(failing).toHaveText("Checks failing");
+  await expect(failing.locator("svg")).toHaveCount(0);
   await expect(row.getByTestId("pr-row-diff")).toHaveText("+2−1");
 
   await row.getByTestId("pr-row-ci").click();
