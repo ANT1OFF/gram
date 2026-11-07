@@ -2717,6 +2717,7 @@ export const SHOTS: readonly Shot[] = [
     title: "A clean tree's Diff panel: the branch it shows is the scope selected",
     open: async (page) => {
       await followColorScheme(page);
+      await seedMockSettings(page, { panel: { open: true, tab: "diff" } });
       await page.goto("/t/t-docs");
       await page.getByTestId("diff-panel").getByTestId("diff-file").first().waitFor();
       await page.waitForLoadState("networkidle");
