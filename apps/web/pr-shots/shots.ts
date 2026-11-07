@@ -1089,8 +1089,8 @@ const openEmptyWorkspace = async (page: Page, panel: boolean) => {
   });
   await page.addInitScript(() => sessionStorage.setItem("gram.mock.fresh", "1"));
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/settings/general");
-  await page.getByTestId("app-shell").waitFor();
+  await page.goto("/");
+  await page.getByTestId("overview-sidebar").waitFor();
   const orchestrator = await page.evaluate(async () => {
     const mock = window.gramMock!;
     const home = mock.world.projects()[0]!;
@@ -1101,7 +1101,8 @@ const openEmptyWorkspace = async (page: Page, panel: boolean) => {
     });
     return (await mock.openOrchestrator({ workspaceId: state.workspace.id })).id;
   });
-  await page.goto(`/t/${orchestrator}`);
+  // From the sidebar, not a reload: the mock keeps what it made in this page only.
+  await openOrchestrator(page, orchestrator);
   await page.getByLabel("Message", { exact: true }).waitFor();
 };
 
@@ -1156,10 +1157,12 @@ const EMPTY_STATE_SHOTS: readonly Shot[] = [
   },
   {
     name: "empty-history",
-    title: "History on a fresh account, with nothing finished yet",
+    title: "History's Workers on a fresh account, with no worker finished yet",
     open: async (page) => {
       await openEmptyWorkspace(page, false);
       await page.getByTestId("overview-history").click();
+      // All lists the mock's past CLI sessions; no worker has finished yet.
+      await page.locator('[data-testid="history-filter"][data-history-filter="workers"]').click();
       await page.getByTestId("history-empty").waitFor();
       await page.waitForTimeout(400);
     },
