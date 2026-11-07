@@ -156,9 +156,15 @@ describe("LaunchChecksBanner", () => {
       expect(screen.queryByTestId("launch-issues-chip")).toBeNull();
       cleanup();
 
-      // Off the first-run screen, the banner says them again.
+      // Seen on the card, they count as seen: off the first-run screen they are the title bar's
+      // chip, which opens the banner, rather than a banner arriving fresh on the next page.
+      expect(useBannerFold.getState().folded).toEqual([
+        "0.4.0:claude-signed-out",
+        "0.4.0:gh-missing",
+      ]);
       useWelcome.setState({ onScreen: false });
       renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
+      fireEvent.click(await screen.findByTestId("launch-issues-chip"));
       const banner = await screen.findByTestId("launch-checks-banner");
       expect(banner.textContent).toContain("Claude Code isn't signed in");
     } finally {

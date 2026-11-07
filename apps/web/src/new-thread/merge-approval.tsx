@@ -1,4 +1,4 @@
-import { autonomyOf, type Autonomy, type WorkspaceState } from "@gram/contracts";
+import { autonomyOf, type Autonomy, type WorkspaceId, type WorkspaceState } from "@gram/contracts";
 import { TriangleAlert } from "lucide-react";
 import { useId, useState } from "react";
 
@@ -92,32 +92,51 @@ export const mergeApprovalSaved = (workspace: string, next: Autonomy): string =>
  * A workspace's merge approval, changed where a task starts. It is the workspace's setting, not
  * this task's: the line names the workspace and says so on hover, the pick saves the workspace's
  * autonomy as Settings does, with an Undo that names the workspace, and Automatic (Full) is
- * confirmed first, since nothing asks after it. The confirmation and any error show on a line of their own under it (`below`).
+ * confirmed first, since nothing asks after it. The confirmation and any error show on a line of
+ * their own under it (`below`). Both belong to the workspace they were raised for: the draft
+ * moving to another workspace clears them, so a confirm opened for one can never turn on Full for
+ * another.
  */
 export function useWorkspaceMergeApproval(state: WorkspaceState | undefined, fallback: Autonomy) {
   const changes = useWorkspaceChanges(state);
-  const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string>();
+  const id = state?.workspace.id;
+  // The workspace a pending confirm, or a save's error, was raised for.
+  const [confirmFor, setConfirmFor] = useState<WorkspaceId>();
+  const [failure, setFailure] = useState<{ for: WorkspaceId | undefined; message: string }>();
+  const [shownFor, setShownFor] = useState(id);
+  if (shownFor !== id) {
+    // Another workspace: what was pending for the last one goes, and stays gone on coming back.
+    setShownFor(id);
+    setConfirmFor(undefined);
+    setFailure(undefined);
+  }
+  const confirming = id !== undefined && confirmFor === id;
+  const error = failure !== undefined && failure.for === id ? failure.message : undefined;
   const charter = changes.charter ?? state?.charter;
   const autonomy = charter === undefined ? fallback : autonomyOf(charter);
   const name = state?.workspace.name ?? "this workspace";
 
   const save = (next: Autonomy) => {
     if (charter === undefined) return;
-    setConfirming(false);
-    setError(undefined);
+    setConfirmFor(undefined);
+    setFailure(undefined);
+    const savedFor = id;
     void changes.saveCharter(
       { ...charter, autonomy: next },
       mergeApprovalSaved(name, next),
-      setError,
+      (message) => setFailure({ for: savedFor, message }),
     );
   };
   const pick = (approval: MergeApproval) => {
     if (charter === undefined) return;
     const next = autonomyForApproval(autonomy as Autonomy, approval);
     if (next === autonomy) return;
-    if (autonomyNeedsConfirm(autonomy as Autonomy, next)) setConfirming(true);
+    if (autonomyNeedsConfirm(autonomy as Autonomy, next)) setConfirmFor(id);
     else save(next);
+  };
+  // Only the workspace the confirm was opened for: never another the draft has moved to since.
+  const confirmFull = () => {
+    if (confirming) save("full");
   };
 
   const below =
@@ -134,10 +153,15 @@ export function useWorkspaceMergeApproval(state: WorkspaceState | undefined, fal
             <span className="text-foreground">
               Merge without asking? Every agent in {name} may then merge its pull requests.
             </span>
-            <Button type="button" size="xs" variant="destructive" onClick={() => save("full")}>
+            <Button type="button" size="xs" variant="destructive" onClick={confirmFull}>
               Merge automatically
             </Button>
-            <Button type="button" size="xs" variant="ghost" onClick={() => setConfirming(false)}>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => setConfirmFor(undefined)}
+            >
               Keep asking
             </Button>
           </span>

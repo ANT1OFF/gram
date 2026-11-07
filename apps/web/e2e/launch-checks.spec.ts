@@ -420,8 +420,11 @@ test("first run with no agent warns once and leads with installing one", async (
   await expect(open).not.toHaveClass(/bg-primary/);
   await expect(welcome.getByTestId("welcome-next")).toContainText("once an agent is ready");
 
-  // Off the first run, the banner names the problem again.
+  // Seen on the card, it counts as seen: off the first run it is the title bar's setup chip,
+  // which opens the banner on it.
   await page.goto("/settings");
+  await expect(page.getByTestId("launch-checks-banner")).toHaveCount(0);
+  await page.getByTestId("launch-issues-chip").click();
   await expect(page.getByTestId("launch-checks-banner")).toContainText(
     "Neither Claude Code nor Codex is installed",
   );

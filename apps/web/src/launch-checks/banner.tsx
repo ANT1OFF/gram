@@ -66,6 +66,11 @@ export function useLaunchBanner() {
   const shownKeys = welcome
     ? issues.shownKeys.filter((_, index) => !firstRunCovers(issues.shown[index]!))
     : issues.shownKeys;
+  // Those the card is showing count as seen: off it, they are the title bar's chip, not a banner
+  // that arrives fresh on the next page.
+  const covered = welcome
+    ? issues.shownKeys.filter((_, index) => firstRunCovers(issues.shown[index]!))
+    : [];
   const dismiss = () => issues.dismiss(shown);
   const folded = useBannerFold((s) => s.folded);
   const open = useBannerFold((s) => s.open);
@@ -76,6 +81,7 @@ export function useLaunchBanner() {
     dismiss,
     cleared,
     dropCleared,
+    covered,
     expanded: shown.length > 0 && (open ?? fresh),
   };
 }
@@ -144,10 +150,26 @@ const cliUpdate = lazyPart(() => import("./cli-update"));
 
 export function LaunchChecksBanner() {
   const { recheck } = useLaunchChecks();
-  const { shown: issues, shownKeys, dismiss, expanded, cleared, dropCleared } = useLaunchBanner();
+  const {
+    shown: issues,
+    shownKeys,
+    dismiss,
+    expanded,
+    cleared,
+    dropCleared,
+    covered,
+  } = useLaunchBanner();
   const [checking, setChecking] = useState(false);
   const cliUpdates = useFeature("cliUpdates", { settled: true });
   useFoldAfterShowing(expanded, shownKeys);
+  // What the first-run card shows has been seen, as a banner shown once has: folded from here on.
+  const coveredKeys = covered.join("\n");
+  useEffect(() => {
+    if (coveredKeys === "") return;
+    const keys = coveredKeys.split("\n");
+    const { folded, fold } = useBannerFold.getState();
+    if (keys.some((key) => !folded.includes(key))) fold(keys);
+  }, [coveredKeys]);
   // Once per change, from the one banner the shell mounts rather than every reader of the issues.
   useEffect(() => {
     if (cleared) dropCleared();
