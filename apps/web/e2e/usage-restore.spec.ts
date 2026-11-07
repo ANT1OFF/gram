@@ -5,12 +5,14 @@ test("an idle thread's usage ring shows its last turn's usage, and stays after a
 }) => {
   await page.goto("/t/t-flaky");
   const ring = page.getByTestId("usage-ring");
-  await expect(ring).toHaveAccessibleName(/% of the context window$/);
+  await expect(ring).toHaveAccessibleName(/^Context: \d+% of the window used$/);
   await ring.click();
   const usage = page.getByTestId("usage");
   await expect(usage.getByRole("meter", { name: "Context used" })).toBeVisible();
   await expect(usage).toContainText(/\d+% · [\d.]+K \/ 200K tokens/);
 
   await page.reload();
-  await expect(page.getByTestId("usage-ring")).toHaveAccessibleName(/% of the context window$/);
+  await expect(page.getByTestId("usage-ring")).toHaveAccessibleName(
+    /^Context: \d+% of the window used$/,
+  );
 });

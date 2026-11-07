@@ -6,6 +6,7 @@ import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 
+import { aboveComposer } from "./above-composer";
 import { ModelCombobox } from "./model-picker";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { GHOST_TRIGGER } from "./styles";
@@ -16,6 +17,11 @@ export interface PickerOption<V extends string> {
   label: string;
   /** The value on the toolbar's trigger and in its tooltip, when shorter than `label`. */
   short?: string | undefined;
+  /**
+   * The value's words on the trigger, when even shorter than `short`, which its name and tooltip
+   * keep: "Effort: Default" on the chip, "Effort: Model default" on hover.
+   */
+  word?: string | undefined;
   /**
    * The value in three to six letters, for a toolbar short of room for `short`: "High", "Ask",
    * "Opus". The tooltip and name still say `short`.
@@ -100,6 +106,7 @@ export function Picker<V extends string>({
   search,
 }: PickerProps<V>) {
   const [open, setOpenState] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const setOpen = (next: boolean) => {
     if (next) onOpen?.();
     setOpenState(next);
@@ -170,9 +177,11 @@ export function Picker<V extends string>({
       }}
     >
       <PickerTrigger
+        ref={trigger}
         size="sm"
         label={label}
         value={shown}
+        words={chosen?.word}
         compact={chosen?.compact}
         labelled={labelled}
         field={field}
@@ -184,7 +193,8 @@ export function Picker<V extends string>({
         data-warning={warning ? "true" : undefined}
         className={cn(GHOST_TRIGGER, warning && "text-warning hover:text-warning")}
       />
-      <SelectContent side="top">
+      {/* Above the whole composer, so the list never covers the draft. */}
+      <SelectContent side="top" anchor={() => aboveComposer(trigger.current)}>
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} description={option.description}>
             {option.label}

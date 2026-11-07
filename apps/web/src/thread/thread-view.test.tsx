@@ -56,14 +56,14 @@ describe("ThreadView usage ring", () => {
     });
     renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
     expect((await screen.findByTestId("usage-ring")).getAttribute("aria-label")).toBe(
-      "Usage: 22% of the context window",
+      "Context: 22% of the window used",
     );
     cleanup();
 
     // A remount subscribes to the feed again, which starts over from the stored messages.
     renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
     expect((await screen.findByTestId("usage-ring")).getAttribute("aria-label")).toBe(
-      "Usage: 22% of the context window",
+      "Context: 22% of the window used",
     );
   });
 
@@ -82,10 +82,10 @@ describe("ThreadView usage ring", () => {
     apply(20_000);
     renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
     const ring = await screen.findByTestId("usage-ring");
-    expect(ring.getAttribute("aria-label")).toBe("Usage: 10% of the context window");
+    expect(ring.getAttribute("aria-label")).toBe("Context: 10% of the window used");
 
     act(() => apply(120_000));
-    expect(ring.getAttribute("aria-label")).toBe("Usage: 60% of the context window");
+    expect(ring.getAttribute("aria-label")).toBe("Context: 60% of the window used");
   });
 });
 
@@ -308,7 +308,10 @@ describe("ThreadView header", () => {
     expect(header.textContent).not.toContain("Codex");
     const picker = screen.getByRole("combobox", { name: "Model" });
     expect(picker.getAttribute("aria-description")).toBe("Codex");
-    expect(picker.getAttribute("title")).toMatch(/^Codex · Model/);
+    // Its instant tooltip says it, as every toolbar picker's does.
+    fireEvent.focus(picker);
+    const tip = await screen.findByText(/^Codex · Model/);
+    expect(tip.closest('[data-slot="tooltip-content"]')).not.toBeNull();
   });
 
   it("titles an orchestrator by its workspace even with workspaces off, with no branch in its header", async () => {

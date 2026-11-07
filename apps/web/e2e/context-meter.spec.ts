@@ -20,9 +20,13 @@ test("the thread ring opens the usage meter, with a gapless percent", async ({ p
   await page.goto("/t/t-flaky");
   // The thread's bar opens from the ring beside Send.
   const ring = page.getByTestId("thread-view").getByTestId("usage-ring");
-  await expect(ring).toHaveAccessibleName("Usage: 31% of the context window");
+  // Labelled on its face: a bare "31%" beside Send said nothing about what was 31% full.
+  await expect(ring).toHaveAccessibleName("Context: 31% of the window used");
+  await expect(ring).toHaveText("Context 31%");
   await ring.click();
   const thread = page.locator('[data-slot="usage-meter"]');
+  // Its popover says what the number measures.
+  await expect(page.getByText(/^How much of the model's context window/)).toBeVisible();
   await expect(thread.getByRole("meter", { name: "Context used" })).toHaveAttribute(
     "aria-valuenow",
     "31",

@@ -52,6 +52,7 @@ import { inOpenFence } from "./mention";
 import { enterSends } from "./send-key";
 import { AgentFields, choiceModel, gatewayReady } from "./agent-fields";
 import { useToolbarLayout } from "./use-toolbar-layout";
+import { aboveComposer } from "./above-composer";
 import { PickerTrigger, usePickConfirm } from "./picker-trigger";
 import { useModels } from "./models";
 import { AttachmentChips } from "./attachment-chips";
@@ -359,6 +360,7 @@ function ConfiguredNewThreadDraft() {
   const createLabel = stage === "failed" ? "Retry" : "Create thread";
   const ModeIcon = MODE_ICONS[mode];
   const modeConfirm = usePickConfirm(mode);
+  const modeTrigger = useRef<HTMLButtonElement>(null);
   const modeLabel = MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
   const modeWarned = modeWarning(mode);
   // The composer's order and words: model · effort · mode · speed, each saying its value as the
@@ -379,6 +381,7 @@ function ConfiguredNewThreadDraft() {
       }}
     >
       <PickerTrigger
+        ref={modeTrigger}
         size="sm"
         label="Mode"
         value={modeLabel}
@@ -395,7 +398,7 @@ function ConfiguredNewThreadDraft() {
         data-warning={modeWarned ? "true" : undefined}
         className={cn(GHOST_TRIGGER, modeWarned && "text-warning hover:text-warning")}
       />
-      <SelectContent>
+      <SelectContent anchor={() => aboveComposer(modeTrigger.current)}>
         {MODE_OPTIONS.map((o) => (
           <SelectItem key={o.value} value={o.value} description={o.description}>
             {o.label}

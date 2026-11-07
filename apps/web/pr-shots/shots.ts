@@ -956,8 +956,8 @@ const openNewPrompt = (width: number) => async (page: Page) => {
   await page.waitForTimeout(400);
 };
 
-/** Each composer toolbar at a real window's width and at 1024 px. */
-const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1024].flatMap((width): Shot[] => [
+/** Each composer toolbar at a real window's width, at 1440 px and at 1024 px. */
+const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1440, 1024].flatMap((width): Shot[] => [
   {
     name: `composer-orchestrator-${width}`,
     title: `The orchestrator's composer at ${width} px: model · effort · mode · speed`,
@@ -991,6 +991,20 @@ const COMPOSER_TOOLBAR_SHOTS: readonly Shot[] = [1728, 1024].flatMap((width): Sh
 export const SHOTS: readonly Shot[] = [
   ...PANEL_TAB_SHOTS,
   ...COMPOSER_TOOLBAR_SHOTS,
+  {
+    name: "composer-model-open",
+    title:
+      "A solo thread at 1440 px, a draft typed, the model list open: it should not cover the draft",
+    open: async (page) => {
+      await openSoloComposer(1440)(page);
+      await page
+        .getByTestId("composer-toolbar")
+        .getByRole("combobox", { name: /^Model/ })
+        .click();
+      await page.getByTestId("model-picker").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
   {
     name: "composer-diff-1024",
     title: "A solo thread at 1024 px beside a wide diff: the narrow composer keeps short values",

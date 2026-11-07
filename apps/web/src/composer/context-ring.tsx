@@ -19,14 +19,20 @@ export const barShare = (percent: number): number => Math.min(100, Math.max(0, p
 
 /** The trigger's name: the context filled when there is a window to fill, else just "Usage". */
 export const ringLabel = (percent: number | undefined): string =>
-  percent === undefined ? "Usage" : `Usage: ${percent}% of the context window`;
+  percent === undefined ? "Usage" : `Context: ${percent}% of the window used`;
+
+/** What the number is, said once in its popover: a bare percentage beside Send read as anything. */
+export const CONTEXT_HINT =
+  "How much of the model's context window this thread has used. Near full, the agent compacts older turns to make room.";
 
 /**
- * The thread's usage beside Send: how full the context window is, its number over a thin bar in
- * the title bar's usage meter's colours, in the 32 px the ring had, opening onto the usage bar (tokens, context, and cost on a
- * gateway). Never a ring: a partly drawn circle beside Send read as a spinner on a thread with
- * nothing running. Without a window to measure it says "Usage". Subscribed on its own, so a usage
- * report renders only this.
+ * The thread's usage beside Send: how full the context window is, "Context 36%" over a thin bar in
+ * the title bar's usage meter's colours, opening onto the usage bar (tokens, context, and cost on a
+ * gateway) and a line on what it measures. In a composer under 36 rem the word goes and the number
+ * keeps the ring's 32 px, as the toolbar measures this slot to decide when its pickers go compact
+ * (`useToolbarLayout`). Never a ring: a partly drawn circle beside Send read as a spinner on a
+ * thread with nothing running. Without a window to measure it says "Usage". Subscribed on its own,
+ * so a usage report renders only this.
  */
 export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp: boolean }) {
   const usage = useThreadsStore((s) => s.usage[threadId]);
@@ -43,21 +49,22 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
         data-testid="usage-ring"
         data-level={level}
         aria-label={ringLabel(percent)}
-        // The ring's 32 px, no wider: the toolbar measures this slot to decide when its pickers go
-        // compact (`useToolbarLayout`), so a wider gauge would fold them a step early.
-        className="flex size-8 shrink-0 flex-col items-center justify-center gap-0.5 rounded-(--radius-sm) text-caption leading-none text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring"
+        className="flex h-8 min-w-8 shrink-0 flex-col items-center justify-center gap-0.5 rounded-(--radius-sm) px-1 text-caption leading-none text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:focus-ring @max-[36rem]/composer:px-0"
       >
         {percent === undefined ? (
           <span>Usage</span>
         ) : (
           <>
-            <span aria-hidden className="tabular-nums">
+            <span aria-hidden className="tabular-nums whitespace-nowrap">
+              <span data-testid="usage-ring-word" className="@max-[36rem]/composer:hidden">
+                Context{" "}
+              </span>
               {percent}%
             </span>
             <span
               aria-hidden
               data-testid="usage-ring-bar"
-              className="block h-0.5 w-5 shrink-0 overflow-hidden rounded-full bg-foreground/15"
+              className="block h-0.5 w-full max-w-5 shrink-0 overflow-hidden rounded-full bg-foreground/15 @min-[36rem]/composer:max-w-none"
             >
               <span
                 className={cn(
@@ -78,6 +85,9 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
             className="origin-(--transform-origin) rounded-md border border-edge bg-popover px-3 py-1 text-popover-foreground shadow-overlay outline-none transition-[opacity,scale] duration-(--dur-fast) data-[ending-style]:scale-98 data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0"
           >
             <UsageBar usage={usage} countUp={countUp} showCost={showCost} />
+            {percent !== undefined && (
+              <p className="max-w-64 pb-1 text-meta text-muted-foreground">{CONTEXT_HINT}</p>
+            )}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
