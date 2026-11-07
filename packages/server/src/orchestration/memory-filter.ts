@@ -17,18 +17,31 @@ const STRONG =
 
 /**
  * Words that are credential labels only in a credential's shape, and ordinary words in prose
- * ("keeps authentication in the CLI", "the tests pass"): they drop an entry when their clause has
- * an assignment or a value-like word in it.
+ * ("keeps authentication in the CLI", "the tests pass"): they drop an entry when a value follows
+ * them (`weakShaped`), or when they lead a bare directive line (`directiveLine`).
  */
-const WEAK = "pass|auth|authn|authz|authorization|authentication|sessions?|private|env";
+const WEAK = "pass|auth|authn|authz|authorization|authentication|sessions?|private|env|acl";
+
+/**
+ * Credential stems that drop an entry inside any word, compounds that don't split included:
+ * `PGPASSWORD`, `requirepass`, `masterauth`, `MYAPIKEY`.
+ */
+const STEM = /passw(?:or)?d|passphrase|apikey|requirepass|masterauth|masteruser|credential|secret/i;
 
 /** `alternatives` as whole words: anything but a letter or digit is a boundary (`_`, `-`, `.`). */
 const asWords = (alternatives: string, flags = "i") =>
   new RegExp(`(?:^|[^a-z0-9])(?:${alternatives})(?=$|[^a-z0-9])`, flags);
 
 const STRONG_WORD = asWords(STRONG);
-const WEAK_WORD = asWords(WEAK);
+const WEAK_WORD = asWords(WEAK, "gi");
 const ANY_WORD = asWords(`${STRONG}|${WEAK}`);
+
+/** Names of files that hold credentials, as a word in a memory name: `pgpass.md`, `netrc.md`. */
+const CREDENTIAL_FILE = asWords("pgpass|netrc|htpasswd|npmrc|pypirc|dockercfg|kubeconfig");
+
+/** Whether `text` has a credential word or stem: what a name, or any clause, may not carry. */
+const credentialWord = (text: string): boolean =>
+  ANY_WORD.test(splitCompounds(text)) || STEM.test(text);
 
 /**
  * `text` with its compound words split: camelCase and PascalCase humps (`accessKey`, `APIKey`), and
@@ -36,11 +49,13 @@ const ANY_WORD = asWords(`${STRONG}|${WEAK}`);
  * `snake_case` and `kebab-case` already split, `_` and `-` being boundaries.
  */
 const splitCompounds = (text: string): string =>
-  text
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+  splitHumps(text)
     .replace(/([A-Za-z])(\d)/g, "$1 $2")
     .replace(/(\d)([A-Za-z])/g, "$1 $2");
+
+/** `text` with camelCase and PascalCase humps split, and nothing else. */
+const splitHumps = (text: string): string =>
+  text.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
 
 /** An assignment's shape: `=`, `=>`, or a `:` after a key (not a date's or a time's, not `://`). */
 const ASSIGNMENT = /=|(?<!\d):(?!\/\/)/;
@@ -48,23 +63,66 @@ const ASSIGNMENT = /=|(?<!\d):(?!\/\/)/;
 /** A word that looks like a value: letters with digits, letters joined by punctuation, or quoted. */
 const valueLike = (word: string): boolean =>
   /^["'`]/.test(word) ||
-  (/[A-Za-z]/.test(word) && (/\d/.test(word) || /[A-Za-z0-9][-_@+=/:.~][A-Za-z0-9]/.test(word)));
+  (/[A-Za-z]/.test(word) && (/\d/.test(word) || /[A-Za-z0-9][-_@+=/:.~>][A-Za-z0-9]/.test(word)));
 
-/** The clauses of `text`: split at `;`, `,`, a line break, `!`, `?`, or a sentence's full stop. */
-const clauses = (text: string): Array<string> => text.split(/[;,\n!?]|\.(?=\s|$)/);
+/** Words a value may follow a label through: `the session is orchard-willow`. */
+const LINKING = /^(?:is|was|are|be|to|as|of|set|now|=|:|-|=>)$/i;
 
-/** Whether `clause` holds an assignment or a value-like word: a credential's shape. */
-const valueShaped = (clause: string): boolean =>
-  ASSIGNMENT.test(clause) ||
-  clause
-    .split(/\s+/)
-    .map((word) => word.replace(/[).\]}]+$/, ""))
-    .some(valueLike);
+/**
+ * Whether a weak credential word is followed by a value: an assignment right after it
+ * (`auth: x`, `session=x`), or a value-like word among the next two (`session orchard-willow`,
+ * `env is staging-2`), linking words skipped. A value elsewhere in the clause (`retry=false`, a path,
+ * `owner/repo#198`) is not the weak word's.
+ */
+const weakShaped = (text: string): boolean => {
+  const humped = splitHumps(text);
+  for (const match of humped.matchAll(WEAK_WORD)) {
+    const rest = humped.slice((match.index ?? 0) + match[0].length);
+    if (/^["'`]?\s*(?:=>?|:(?!\/\/))/.test(rest)) return true;
+    const next = rest
+      .split(/[;,\n!?]|\.(?=\s|$)/)[0]!
+      .split(/\s+/)
+      .filter((word) => word !== "" && !LINKING.test(word))
+      .slice(0, 2)
+      .map((word) => word.replace(/[).\]}]+$/, ""));
+    if (next.some(valueLike)) return true;
+  }
+  return false;
+};
 
-/** Whether `text` has a credential word: a strong one anywhere, a weak one in a value's shape. */
+/**
+ * A bare directive line: a credential word (or stem) followed by one or two bare words and nothing
+ * else, as config files and commands write them (`AUTH orchard`, `AUTH amy orchard`,
+ * `requirepass orchard`, `pass orchard`).
+ */
+const directiveLine = (text: string): boolean =>
+  text.split(/\r?\n/).some((line) => {
+    const words = line
+      .trim()
+      .replace(/^[-*+>]\s+/, "")
+      .split(/\s+/);
+    return words.length >= 2 && words.length <= 3 && credentialWord(words[0]!);
+  });
+
+/**
+ * A Redis ACL rule or a password on a client's command line: `user amy on >orchard ~* +@all`,
+ * `ACL SETUSER amy >orchard`, `redis-cli -a orchard`, `mysql -porchard`.
+ */
+const COMMAND_CREDENTIAL =
+  /(?:^|\n)\s*(?:acl\s+setuser|user)\s+\S+[^\n]*?\s[>#<!]\S|\bredis-cli\b[^\n]*\s(?:-a|--user|--askpass)\b|\bmysql\b[^\n]*\s-p\S/i;
+
+/**
+ * A positional credential record: four or more `:`-separated fields with no spaces, as a password
+ * file holds them (`.pgpass`'s `host:port:db:user:password`, and the like).
+ */
+const COLON_RECORD = /(?:^|\s)[^\s:]*(?::[^\s:]*){3,}(?=\s|$)/;
+
+/** Whether `text` has a credential word: a strong one or a stem anywhere, a weak one with a value. */
 const credentialWords = (text: string): boolean =>
   STRONG_WORD.test(splitCompounds(text)) ||
-  clauses(text).some((clause) => WEAK_WORD.test(splitCompounds(clause)) && valueShaped(clause));
+  STEM.test(text) ||
+  weakShaped(text) ||
+  directiveLine(text);
 
 // Characters ----------------------------------------------------------------------------------
 
@@ -252,9 +310,7 @@ const withoutShas = (text: string): string =>
   text.replace(CITED_SHA, (sha, offset: number) => {
     const clause = clauseAround(text, offset, offset + sha.length);
     const cited =
-      !ASSIGNMENT.test(clause) &&
-      !ANY_WORD.test(splitCompounds(clause)) &&
-      printableRun(hexBytes(sha)) < 8;
+      !ASSIGNMENT.test(clause) && !credentialWord(clause) && printableRun(hexBytes(sha)) < 8;
     return cited ? " " : sha;
   });
 
@@ -321,7 +377,9 @@ const withoutPaths = (text: string): string =>
 const plainProse = (text: string): boolean => {
   if (openDelimiter(text) || !PLAIN_CHARS.test(text) || ENCODED.test(text)) return false;
   const ascii = folded(text);
-  if (USERINFO.test(ascii) || CONNECTION_STRING.test(ascii) || credentialWords(ascii)) return false;
+  if (USERINFO.test(ascii) || CONNECTION_STRING.test(ascii) || COLON_RECORD.test(ascii))
+    return false;
+  if (COMMAND_CREDENTIAL.test(ascii) || credentialWords(ascii)) return false;
   const runs = withoutPaths(withoutShas(ascii));
   return !splitEncoding(runs) && !tokenRun(runs);
 };
@@ -332,9 +390,13 @@ const PLAIN_NAME = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\.md$/;
 /** A folder a worker's `memory_list` goes into: lowercase words joined by `-`, nested. */
 const PLAIN_FOLDER = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;
 
+/** Whether a name carries a credential word or stem, a credential file's name, or a token. */
+const nameCarries = (path: string): boolean =>
+  credentialWord(path) || CREDENTIAL_FILE.test(path) || tokenInName(path);
+
 /** Whether a worker's listing goes into the folder at `path`: plain words, no credential or token. */
 export const workerMayEnter = (path: string): boolean =>
-  PLAIN_FOLDER.test(path) && !ANY_WORD.test(path) && !tokenInName(path);
+  PLAIN_FOLDER.test(path) && !nameCarries(path);
 
 /**
  * Whether a worker may see the memory file at `path`, and, given its text, read it. Its name must be
@@ -343,7 +405,7 @@ export const workerMayEnter = (path: string): boolean =>
  * listed nor read.
  */
 export const workerMayRead = (path: string, text?: string): boolean => {
-  if (!PLAIN_NAME.test(path) || ANY_WORD.test(path) || tokenInName(path)) return false;
+  if (!PLAIN_NAME.test(path) || nameCarries(path)) return false;
   if (text === undefined) return true;
   return plainHeader(text) && plainProse(text);
 };

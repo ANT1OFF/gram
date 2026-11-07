@@ -615,10 +615,12 @@ known token prefix like `xoxb`, long digit runs, letter-and-digit alternation, r
 base64 of text), so not the `MEMORY.md` index. It reads a file only when the file is plainly safe
 prose: printable ASCII, typographic punctuation and Latin-1 letters (folded to ASCII before any
 check); no escape or encoding syntax (`\u`, `\x`, `%XX`, `&#`, `&name;`) or delimiter left open;
-no URL or network-path userinfo (`//…@`, `user:pass@`) and no connection string (`Key=value;`
-fields); no strong credential word anywhere (secret, token, key, password, pwd, cookie, credential,
-bearer, dsn and the like), nor a weak one (auth, session, pass, env, private) in a clause with an
-assignment or a value-like word, camelCase and snake_case split first; no base64 or hex that
+no URL or network-path userinfo (`//…@`, `user:pass@`), connection string (`Key=value;` fields),
+password-file record (four or more `:`-separated fields, as in `.pgpass`), Redis ACL rule or
+client password flag; no strong credential word or stem anywhere (secret, token, key, password,
+pwd, cookie, credential, bearer, dsn, `requirepass`, `masterauth` and the like), nor a weak one
+(auth, session, pass, env, private, acl) with a value right after it or leading a bare directive
+line (`AUTH amy orchard`), camelCase and snake_case split first; no base64 or hex that
 decodes to text, however it is split (spaces, lines, commas, list markers, quotes); and no
 token-like run once cited commit SHAs (a pure hex run after `at`, `head`, `commit` or `sha`, or
 before `…`, in a clause with no assignment or credential word) and plain paths are taken out. A

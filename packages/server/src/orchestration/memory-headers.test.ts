@@ -133,7 +133,7 @@ const WRAPPED_BASE64 = (
 ).join("\n");
 
 /**
- * Every case from the reviews of #198, rounds 3 to 11, as one table: the path and text a worker would
+ * Every case from the reviews of #198, rounds 3 to 12, as one table: the path and text a worker would
  * read, and whether it may. A file a worker may not read is dropped whole: nothing in it is shown.
  */
 const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, allowed: boolean]> =
@@ -272,6 +272,25 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ],
     ["11.4: a DSN", "odbc.md", "The dsn is orchard-willow.", false],
     ["11.7: hex with a NUL before text", "a.md", `at 00${HEX_TEXT}`, false],
+    // Round 12, the reviewer's exact payloads (findings 1 and 2), and their class.
+    ["12.1: requirepass", "redis.md", "requirepass orchard", false],
+    ["12.1: masterauth", "replica.md", "masterauth orchard", false],
+    ["12.1: AUTH user password", "command.md", "AUTH amy orchard", false],
+    ["12.1: AUTH password", "command.md", "AUTH orchard", false],
+    ["12.1: ACL rule", "acl.md", "user amy on >orchard ~* +@all", false],
+    ["12.1: ACL SETUSER", "acl.md", "ACL SETUSER amy on >orchard", false],
+    ["12.1: requirepass as JSON", "redis.md", '{"requirepass":"orchard"}', false],
+    ["12.1: requirepass as YAML", "redis.md", "requirepass: orchard", false],
+    ["12.1: redis-cli -a", "redis.md", "Connect with redis-cli -a orchard.", false],
+    ["12.1: a stem in a compound", "a.md", "PGPASSWORD=orchard", false],
+    ["12.1: a directive in a list", "a.md", "- pass orchard", false],
+    ["12.2: pgpass record", "database.md", "db.example.test:5432:app:amy:orchard", false],
+    ["12.2: pgpass with wildcards", "database.md", "*:*:*:amy:orchard", false],
+    ["12.2: a record in prose", "database.md", "The line is db:5432:app:amy:orchard here.", false],
+    ["12.2: a pgpass name", "pgpass.md", "Ordinary prose.", false],
+    ["12.2: a netrc name", "netrc.md", "Ordinary prose.", false],
+    ["12.2: a dotted pgpass name", ".pgpass", "Ordinary prose.", false],
+    ["12.2: a dotted netrc name", ".netrc", "Ordinary prose.", false],
     ["accented credential word", "a.md", "P\u00e4ssw\u00f6rd: orchard", false],
     ["a weak word with a value", "a.md", "The session is orchard-willow.", false],
     ["a weak word in an assignment", "a.md", "env: staging", false],
@@ -318,6 +337,28 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["11.6: a long topic folder", "internationalization/notes.md", "Ordinary prose.", true],
     ["11.7 (accepted): an uncited-looking SHA", "a.md", `Use the value at ${SHA}.`, true],
     ["a short alternation in a name", "e2e-notes.md", "Ordinary prose.", true],
+    [
+      "12.3: provenance beside a weak word",
+      "dated.md",
+      "2026-11-07: owner/repo#198 keeps authentication in the CLI.",
+      true,
+    ],
+    [
+      "12.3: a flag beside a weak word",
+      "notes.md",
+      "Use retry=false in the CLI authentication flow.",
+      true,
+    ],
+    ["12.3: a weak word alone", "notes.md", "Authentication stays in the CLI.", true],
+    ["12.3: a flag", "flags.md", "Use maxWorkers=4 for the daily schedule.", true],
+    [
+      "12.3: provenance with a SHA",
+      "dated.md",
+      "2026-11-07: PR owner/repo#198 landed at 0123456789abcdef0123456789abcdef01234567.",
+      true,
+    ],
+    ["times are no record", "schedule.md", "It ran 07:49:20 and again at 09:00.", true],
+    ["a user in prose", "people.md", "The user amy owns the release checklist.", true],
     ["a weak word as a verb", "ci.md", "The tests pass on main.", true],
     ["a private repo", "repos.md", "The site repo is private and lives under the team.", true],
     [
