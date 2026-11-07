@@ -1378,7 +1378,74 @@ const NAVIGATION_SHOTS: readonly Shot[] = [
   },
 ];
 
+/** The realistic morning with the right panel open on Gram's orchestrator; what it made. */
+const openRealisticPanel = async (page: Page) => {
+  await page.addInitScript(() => sessionStorage.setItem("gram.mock.orchestration", "realistic"));
+  await seedMockSettings(page, { panel: { open: true } });
+  await page.setViewportSize({ width: 1728, height: 1095 });
+  await page.goto("/");
+  await page.getByTestId("app-shell").waitFor();
+  const made = await page.evaluate(async () => {
+    const started = await window.gramMock!.startedRealistic();
+    if (started === undefined) throw new Error("the mock did not start the realistic scenario");
+    return started;
+  });
+  await openOrchestrator(page, made.orchestratorThreadId);
+  await page.getByTestId("status-header").waitFor();
+  return made;
+};
+
+// One moment, every count (round 11: "Needs you 0" beside "2 need you" beside Quiet's "1 of 1"), and
+// a worker that has just started reading "Stopped".
+const STATE_TRUTH_SHOTS: readonly Shot[] = [
+  {
+    name: "state-workers-panel",
+    title:
+      'Gram\'s Workers panel beside the sidebar\'s pill: the panel names its workspace and says what needs you elsewhere (before: a bare "Needs you 0" beside "2 need you")',
+    open: async (page) => {
+      await openRealisticPanel(page);
+      await openPanelTab(page.getByTestId("right-panel"), "Workers");
+      await page.getByTestId("workers-panel-row").first().waitFor();
+      await page.mouse.move(1700, 1080);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "state-quiet",
+    title:
+      'Quiet at the same moment: "1 of 1 to answer" and the error that waits in the Inbox, adding up to the pill\'s 2 (before: "1 of 1" alone)',
+    open: async (page) => {
+      await openRealisticPanel(page);
+      await page.getByTestId("titlebar-overflow").click();
+      await page.getByTestId("menu-view").click();
+      await page.getByTestId("folded-quiet").click();
+      await page.getByTestId("quiet-card").waitFor();
+      await page.mouse.move(1700, 600);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    name: "state-starting-worker",
+    title:
+      "The board scenario's worker spawned and not begun: Starting in the sidebar and under Running in the Workers panel (before: Stopped)",
+    open: async (page) => {
+      await seedMockSettings(page, { panel: { open: true } });
+      await page.setViewportSize({ width: 1728, height: 1095 });
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      const made = await page.evaluate(() => window.gramMock!.simulateOrchestration("board"));
+      await openOrchestrator(page, made.orchestratorThreadId);
+      await threadRow(page, made.briefed).waitFor();
+      await openPanelTab(page.getByTestId("right-panel"), "Workers");
+      await page.getByTestId("workers-panel-row").first().waitFor();
+      await page.mouse.move(1700, 1080);
+      await page.waitForTimeout(400);
+    },
+  },
+];
+
 export const SHOTS: readonly Shot[] = [
+  ...STATE_TRUTH_SHOTS,
   ...SNOOZE_SHOTS,
   ...PANEL_TAB_SHOTS,
   ...COMPOSER_TOOLBAR_SHOTS,
