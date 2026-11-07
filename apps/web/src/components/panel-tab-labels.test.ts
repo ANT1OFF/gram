@@ -61,14 +61,32 @@ describe("tabLabelFit with More", () => {
     expect(fit(73)).toEqual({ tabs: "none", action: false, folds: 3 });
   });
 
-  it("keeps an action's words while tabs fold, and gives them up before a name", () => {
+  it("keeps an action's words while only the rarer tabs fold, then gives them up before a primary tab folds", () => {
     // 50 px of words beside every name: 377 px.
     expect(fit(377, 50)).toEqual({ tabs: "all", action: true, folds: 0 });
+    // The rare two folded, the words kept: 234 + 50 px.
     expect(fit(376, 50)).toEqual({ tabs: "all", action: true, folds: 1 });
-    expect(fit(153, 50)).toEqual({ tabs: "all", action: true, folds: 3 });
-    // Short of the open name, More and the words, the words go and the name stays.
-    expect(fit(152, 50)).toEqual({ tabs: "all", action: false, folds: 3 });
+    expect(fit(285, 50)).toEqual({ tabs: "all", action: true, folds: 1 });
+    // Short of that, the words go before a primary tab folds.
+    expect(fit(284, 50)).toEqual({ tabs: "all", action: false, folds: 1 });
+    expect(fit(234, 50)).toEqual({ tabs: "all", action: false, folds: 2 });
     expect(fit(103, 50)).toEqual({ tabs: "all", action: false, folds: 3 });
+  });
+
+  it("holds no more tabs in More than its cap, naming only the open tab past it", () => {
+    // A cap of two takes the rare pair and no more.
+    expect(tabLabelFit(235, 4, tabs, 0, 40, 2)).toEqual({ tabs: "all", action: false, folds: 1 });
+    expect(tabLabelFit(234, 4, tabs, 0, 40, 2)).toEqual({
+      tabs: "active",
+      action: false,
+      folds: 0,
+    });
+    // A cap of one can't take the pair: nothing folds.
+    expect(tabLabelFit(326, 4, tabs, 0, 40, 1)).toEqual({
+      tabs: "active",
+      action: false,
+      folds: 0,
+    });
   });
 
   it("counts the open tab's own name, not the longest", () => {

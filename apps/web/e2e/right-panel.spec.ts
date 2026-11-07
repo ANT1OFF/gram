@@ -9,7 +9,8 @@ import { openOrchestrator, threadRow } from "./thread-row";
 // or one with a count, so every tab left in the strip keeps its name. Only a panel too narrow for
 // the open tab's name beside More falls back to icons. All of it is measured from the row rather
 // than guessed from a breakpoint. Every state keeps each tab's accessible name and tooltip, and its
-// count. On a review, Focus review sits beside the tabs in words, which go before any name does.
+// count. On a review, Focus review sits beside the tabs in words, which go before a primary tab
+// folds. More holds at most seven tabs (the menu cap).
 
 const open = async (page: Page, width: number, tab = "files") => {
   await page.addInitScript(
@@ -196,8 +197,8 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   );
   expect(gap).toBeLessThan(24);
 
-  // Narrower, tabs fold into More and those left keep their names, Diff's included, while Focus
-  // review keeps its words.
+  // Narrower, tabs fold into More and those left keep their names, Diff's included; Focus review's
+  // words give way to its glyph before a primary tab folds.
   await page.setViewportSize({ width: 1180, height: 1000 });
   await expect.poll(() => named(page)).toContain("diff");
   await everyNameShows(page);

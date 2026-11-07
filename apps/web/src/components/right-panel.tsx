@@ -471,8 +471,8 @@ function ExpandToggle() {
 
 /**
  * Beside a review's tabs, puts the review in focus, leaving a strip of the chat, and gives the chat
- * back. Its words fold away, leaving the icon, only once the row has no room for them, after every
- * tab's name. Its shortcut is in its tooltip, so the words stay short. The words live in a
+ * back. Its words fold away, leaving the icon, once keeping them would fold a primary tab into
+ * More (`panel-tab-labels.ts`). Its shortcut is in its tooltip, so the words stay short. The words live in a
  * `[data-action-label]` that collapses rather than unmounts, so they can be measured.
  */
 function ReviewFocusAction({ focused, words }: { focused: boolean; words: boolean }) {

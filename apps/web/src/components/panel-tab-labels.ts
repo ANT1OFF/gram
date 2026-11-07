@@ -1,5 +1,7 @@
 import { useLayoutEffect, useState, type RefObject } from "react";
 
+import { MENU_CAP } from "@/palette/menu-caps";
+
 /**
  * Which of the tabs left in the strip show their names: all of them; only the open one; or none.
  * Short of room the strip folds tabs into More before it gives up a name, so bare icons are the
@@ -53,11 +55,12 @@ export const tabNamed = (fit: TabLabelFit, active: boolean): boolean =>
 
 /**
  * The most names that fit `available` px, with `gap` px between tabs, `action` px for the words of
- * an action beside them (0 for none) and `more` px for a More menu tabs fold into (0 for none).
- * Every tab in the strip keeps its name for as long as folding tabs into More makes room: the
- * rarer tabs first, then the primary ones from the strip's end, never the open or a pinned one. The
- * action's words outlast every tab left in the strip but not the names. Only once the open tab
- * and More don't fit named do the names go: all but the open one's, then that too. The strip
+ * an action beside them (0 for none), `more` px for a More menu tabs fold into (0 for none) and at
+ * most `held` tabs in that menu. Every tab in the strip keeps its name for as long as folding tabs
+ * into More makes room: the rarer tabs first, then the primary ones from the strip's end, never the
+ * open or a pinned one. The action keeps its words while only the rarer tabs fold; before a primary
+ * tab folds they give way to its glyph. Only once the open tab and More don't fit named, or More
+ * would hold more than `held`, do the names go: all but the open one's, then that too. The strip
  * scrolls only once even the bare icons don't fit.
  */
 export function tabLabelFit(
@@ -66,8 +69,17 @@ export function tabLabelFit(
   tabs: readonly TabWidths[],
   action = 0,
   more = 0,
+  held = Number.POSITIVE_INFINITY,
 ): LabelFit {
-  const steps = more > 0 ? foldOrder(tabs).length : 0;
+  const order = more > 0 ? foldOrder(tabs) : [];
+  // The steps More may take: as many as keep it to `held` tabs.
+  let steps = 0;
+  for (let count = 0; steps < order.length; steps++) {
+    count += order[steps]!.length;
+    if (count > held) break;
+  }
+  // The rarer tabs, folded together, are the first step when there are any.
+  const rare = order.length > 0 && order[0]!.some((i) => !tabs[i]!.primary) ? 1 : 0;
   const width = (fit: TabLabelFit, words: boolean, folds: number) => {
     const folded = foldedTabs(tabs, folds);
     const shown = tabs.filter((_, i) => !folded[i]);
@@ -80,17 +92,15 @@ export function tabLabelFit(
       (folds > 0 ? more : 0)
     );
   };
-  const tiers: readonly { tabs: TabLabelFit; action: boolean }[] = [
-    { tabs: "all", action: true },
-    { tabs: "all", action: false },
-    { tabs: "active", action: true },
-    { tabs: "none", action: true },
-    { tabs: "active", action: false },
-    { tabs: "none", action: false },
+  const tiers: readonly { tabs: TabLabelFit; action: boolean; folds: number }[] = [
+    { tabs: "all", action: true, folds: Math.min(rare, steps) },
+    { tabs: "all", action: false, folds: steps },
+    { tabs: "active", action: false, folds: steps },
+    { tabs: "none", action: false, folds: steps },
   ];
   for (const tier of tiers) {
     if (tier.action && action === 0) continue;
-    for (let folds = 0; folds <= steps; folds++) {
+    for (let folds = 0; folds <= tier.folds; folds++) {
       // A pixel spare absorbs rounding, so a strip that just fits never scrolls.
       if (width(tier.tabs, tier.action, folds) + 1 <= available) {
         return { tabs: tier.tabs, action: tier.action, folds };
@@ -166,6 +176,7 @@ export function useTabLabelFit(list: RefObject<HTMLElement | null>, active: stri
         widths,
         action?.scrollWidth ?? 0,
         more,
+        MENU_CAP,
       );
       const same = (a: LabelFit) =>
         a.tabs === next.tabs && a.action === next.action && a.folds === next.folds;
