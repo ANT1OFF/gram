@@ -231,7 +231,7 @@ function FileEditor({
         onChange={(event) => setDraft(event.target.value)}
       />
       {movedUnder && (
-        <p role="status" className="text-meta text-muted-foreground">
+        <p role="status" className="text-meta text-warning">
           This file changed in memory since you started editing. Saving overwrites what is there
           now; Revert shows it.
         </p>

@@ -30,7 +30,7 @@ command palette (⌘K).
 
 Per direction:
 
-- The entry point in the real sidebar header (Hide sidebar, Usage, Settings, Compact overview,
+- The entry point in the real sidebar header (Hide sidebar, Usage, Settings, Compact sidebar,
   then the new control), with hover text on every icon.
 - All four flows: the entry point opened, and the first screen each one lands on.
 - The sidebar as it is: the "Nothing needs you" row, "Orchestrators" with Gram (open, three

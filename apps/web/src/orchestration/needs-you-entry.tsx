@@ -3,7 +3,7 @@ import type { ComponentProps } from "react";
 import { withHint } from "@/keyboard/use-shortcut-hint";
 import { cn } from "@/lib/utils";
 
-import { isErrorPart } from "./needs-you-items";
+import { asksAmong, isErrorPart } from "./needs-you-items";
 import { useNeedsYouPill } from "./use-needs-you";
 
 // What needs you has one way in and one wording, an amber dot before it, wherever it shows: its
@@ -62,7 +62,7 @@ export function NeedsYouEntry({
   const words = needsYouPillWords(count, parts, KINDS_SHOWN[variant]);
   // One alarm per failure: an error's is its card and its thread's red dot, so only what asks
   // tints. Errors alone leave the entry neutral; beside an ask, their words stay muted.
-  const asks = count > 0 && (parts.length === 0 || parts.some((part) => !isErrorPart(part)));
+  const asks = asksAmong(count, parts);
   const byKind = count > 0 && words === parts.join(" · ") && parts.length > 0;
   return (
     <button

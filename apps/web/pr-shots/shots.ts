@@ -62,8 +62,10 @@ export const seedMockSettings = (page: Page, patch: Record<string, unknown>) =>
  * the next move, so a shot that navigated after load may find the chip instead.
  */
 const dismissLaunchBanner = async (page: Page) => {
-  const dismiss = page.getByTestId("launch-checks-banner").getByRole("button", { name: "Dismiss" });
-  if (await dismiss.isVisible()) await dismiss.click();
+  const banner = page.getByTestId("launch-checks-banner");
+  // One of the two shows once the checks are in: wait for it before deciding.
+  await banner.or(page.getByTestId("launch-issues-chip")).first().waitFor();
+  if (await banner.isVisible()) await banner.getByRole("button", { name: "Dismiss" }).click();
 };
 
 const openThread = async (page: Page) => {
@@ -2880,7 +2882,6 @@ export const SHOTS: readonly Shot[] = [
         sessionStorage.setItem("gram.mock.orchestration", "realistic"),
       );
       await page.goto("/settings/usage");
-      await dismissLaunchBanner(page);
       await expect(page.getByTestId("usage-window-history").first()).toBeVisible();
       await expect(page.getByTestId("usage-history-legend")).toBeVisible();
     },

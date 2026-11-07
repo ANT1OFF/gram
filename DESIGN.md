@@ -48,11 +48,13 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     tinted). The needs-you entry counts errors among what needs you but never tints them: its
     amber dot and words are for what asks ("1 question" amber, "· 1 error" muted), errors alone
     leave it neutral, and in the title bar the chip itself is neutral, its dot and the asks' words
-    the bar's one amber mark. A retry that ran through says what was done and how it went ("Retried at 14:11 ·
-    succeeded"), its failure folded under Details.
+    the bar's one amber mark; the compact rail's count and the Board's waiting chip turn amber
+    only while something asks too. A retry that ran through says what was done and how it went
+    ("Retried at 14:11 · succeeded"), its failure folded under Details.
   - `warning` is for a caution on a setting the user chose: Bypass (amber with its lock, on
     purpose), Full autonomy, a key clash, and the usage meter from 90% of a limit (red once
-    spent with no credits).
+    spent with no credits); and for a caution that saving would overwrite work (a file changed
+    under an open edit).
 - **Radii are soft:** 8 to 16 px (`radius-xs` to `radius-xl`); the composer is rounder (22 px);
   small marks (a key cap, a bar, a swatch) take 4 px (`radius-2xs`).
 - **A dialog fits the window:** it opens a fifth of the way down and is never taller than the

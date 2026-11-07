@@ -13,7 +13,10 @@ import { describe, expect, it } from "vitest";
 import { askOf, memoryAskOf, workerAskOf } from "./ask-model";
 import type { FailureItem } from "./needs-you-model";
 import {
+  asksAmong,
   briefTitle,
+  isErrorItem,
+  isErrorPart,
   kindsText,
   needsYouGroups,
   needsYouSections,
@@ -409,5 +412,25 @@ describe("briefTitle", () => {
     expect(briefTitle({ title, kind: "wait" })).toBe(
       "Review the release notes for 0.9: wording, order and the…",
     );
+  });
+});
+
+describe("what may take amber", () => {
+  // Round 16 review: the compact rail's count and the Board's waiting chip turned amber for errors
+  // alone, a second alarm beside the error's card and red dot.
+  it("tells errors from what asks, by kind word and by item", () => {
+    expect(isErrorPart("1 error")).toBe(true);
+    expect(isErrorPart("3 errors")).toBe(true);
+    expect(isErrorPart("1 question")).toBe(false);
+    expect(isErrorItem({ kind: "failure", wait: undefined })).toBe(true);
+    expect(isErrorItem({ kind: "approval", wait: undefined })).toBe(false);
+  });
+
+  it("takes amber only while something asks", () => {
+    expect(asksAmong(2, ["1 question", "1 error"])).toBe(true);
+    expect(asksAmong(2, ["2 errors"])).toBe(false);
+    expect(asksAmong(0, [])).toBe(false);
+    // A count with no kinds to read is taken to ask.
+    expect(asksAmong(3, [])).toBe(true);
   });
 });

@@ -63,6 +63,7 @@ import { ROW } from "./overview-section";
 import { peek } from "./peek-store";
 import { workingWorkerThreads } from "./tree-model";
 import { needsYouScope, needsYouSpoken } from "./needs-you-entry";
+import { asksAmong } from "./needs-you-items";
 import { useNeedsYouCounts, useNeedsYouPill } from "./use-needs-you";
 import { ledgerSlotsText } from "./overview-extras-model";
 import { useWorkerTally, useWorkspaceStatuses } from "./use-workspace-statuses";
@@ -161,6 +162,7 @@ function RailNeedsYou() {
   // The sidebar's words, which a number alone stands for here: the rail has room for no more.
   const label = needsYouSpoken(count, parts);
   const scope = needsYouScope(count, where);
+  const asks = asksAmong(count, parts);
   // Nothing waiting, it stays as a quiet grey pill, so the tiles don't jump.
   return (
     <button
@@ -168,12 +170,14 @@ function RailNeedsYou() {
       {...STOP}
       data-testid="overview-rail-needs-you"
       data-count={count}
+      data-asks={asks || undefined}
       aria-label={label}
       title={`${withHint(action, hint)}\n${scope}`}
       onClick={openAsks}
       className={cn(
         "h-5 min-w-7 shrink-0 rounded-full px-1.5 text-caption leading-5 font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        count > 0
+        // Amber only while something asks: errors alone keep the quiet pill (one alarm each).
+        asks
           ? "bg-status-needs text-background hover:bg-status-needs/85"
           : "bg-sidebar-block text-muted-foreground hover:bg-sidebar-row-hover",
       )}

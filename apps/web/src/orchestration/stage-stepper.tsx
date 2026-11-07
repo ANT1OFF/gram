@@ -213,7 +213,7 @@ export function StageStepper({
               ? "Set more than a day ago, so it may no longer be where things stand"
               : undefined
           }
-          className={cn("flex min-w-0 items-start gap-1 text-meta", "text-muted-foreground")}
+          className="flex min-w-0 items-start gap-1 text-meta text-muted-foreground"
         >
           {model.stale && <Clock aria-hidden className="mt-0.5 size-icon-row shrink-0" />}
           <span className="min-w-0 break-words">{model.attribution}</span>

@@ -108,7 +108,7 @@ export function StationSteps({ station }: { station: FeatureStation }) {
               index < at
                 ? "bg-muted-foreground"
                 : index === at
-                  ? "h-2.5 rounded-full bg-status-working"
+                  ? "h-2.5 rounded-full bg-primary"
                   : "bg-border-strong",
             )}
           />

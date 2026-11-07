@@ -381,7 +381,7 @@ function PrPeekView({
                 )
               }
             >
-              GitHub
+              Open on GitHub
             </Button>
           )}
         </div>

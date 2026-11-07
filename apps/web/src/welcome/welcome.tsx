@@ -673,7 +673,7 @@ function Readiness({ lead = false }: { lead?: boolean }) {
         <span
           data-testid="welcome-runs-with"
           data-ready={ready}
-          className={cn("flex min-w-0 items-center gap-1.5 font-medium", "text-foreground")}
+          className="flex min-w-0 items-center gap-1.5 font-medium text-foreground"
         >
           {ready ? (
             agents.map((agent) => <AgentIcon key={agent} agent={agent} className="size-icon-row" />)
