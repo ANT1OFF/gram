@@ -23,8 +23,9 @@ test("effort says its value, checks it in the list, and confirms a pick in words
   const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
   // No effort chosen: the model's own default, said as such.
   await expect(effort).toHaveAccessibleName("Effort: Model default");
-  // Its words name what it picks, so "Model default" never reads as the model picker's.
-  await expect(effort).toHaveText(/^Effort: Model default/);
+  // Its words name what it picks, so the default never reads as the model picker's; its name and
+  // tooltip say whose default it is.
+  await expect(effort).toHaveText(/^Effort: Default/);
 
   await effort.hover();
   await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(

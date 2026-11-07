@@ -346,7 +346,8 @@ describe("AgentFields speed", () => {
     renderSpeed({ agent: "claude", model: "m" }, ["standard", "fast"], true);
     const decides = await screen.findByRole("combobox", { name: "Speed: CLI default" });
     expect(decides.querySelector("[data-toolbar-label]")?.className).not.toContain("sr-only");
-    expect(decides.textContent).toContain("CLI default");
+    // The chip says "Speed: Default"; its name, above, says whose.
+    expect(decides.querySelector("[data-toolbar-label]")?.textContent).toBe("Speed: Default");
     cleanup();
     // Standard is all the model offers.
     renderSpeed({ agent: "claude", model: "m", speed: "standard" }, ["standard"], true);

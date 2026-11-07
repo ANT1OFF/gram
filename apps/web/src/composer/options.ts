@@ -104,11 +104,13 @@ export const DEFAULT_EFFORT = "default";
 export const DEFAULT_EFFORT_OPTION = {
   value: DEFAULT_EFFORT,
   label: "Default effort",
-  // Says whose default it is, not just that it is one: the model picks its own level. The toolbar
-  // puts the dimension first, "Effort: Model default"; short of room it keeps the dimension alone,
-  // "Effort" (never "Model", which beside the model picker read as a second one), its value on
-  // hover.
+  // Says whose default it is, not just that it is one: the model picks its own level. Its name and
+  // tooltip say "Effort: Model default"; the chip, "Effort: Default", as the dimension before it
+  // already says what the default is of and "Model default" in full pushed Speed off the row at a
+  // real window's width. Short of room it keeps the dimension alone, "Effort" (never "Model",
+  // which beside the model picker read as a second one).
   short: "Model default",
+  word: "Default",
   compact: "Effort",
   description: "Whatever level the model uses on its own.",
 } as const satisfies PickerOption<typeof DEFAULT_EFFORT>;

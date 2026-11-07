@@ -18,6 +18,11 @@ export interface PickerOption<V extends string> {
   /** The value on the toolbar's trigger and in its tooltip, when shorter than `label`. */
   short?: string | undefined;
   /**
+   * The value's words on the trigger, when even shorter than `short`, which its name and tooltip
+   * keep: "Effort: Default" on the chip, "Effort: Model default" on hover.
+   */
+  word?: string | undefined;
+  /**
    * The value in three to six letters, for a toolbar short of room for `short`: "High", "Ask",
    * "Opus". The tooltip and name still say `short`.
    */
@@ -176,6 +181,7 @@ export function Picker<V extends string>({
         size="sm"
         label={label}
         value={shown}
+        words={chosen?.word}
         compact={chosen?.compact}
         labelled={labelled}
         field={field}

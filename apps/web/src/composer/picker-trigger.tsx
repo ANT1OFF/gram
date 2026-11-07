@@ -99,6 +99,7 @@ export function usePickConfirm(value: string | undefined) {
 export function PickerTrigger({
   label,
   value,
+  words,
   compact,
   labelled,
   field = false,
@@ -112,6 +113,8 @@ export function PickerTrigger({
   label: string;
   /** The chosen value in short: the toolbar's text, and named after `label`. */
   value: string;
+  /** The value's words on the trigger when they differ from `value`, which names it: "Default". */
+  words?: string | undefined;
   /** The value in three to six letters, for a row short of room: "X-high", "Edits". */
   compact?: string | undefined;
   /**
@@ -169,7 +172,7 @@ export function PickerTrigger({
         </span>
       )}
       {/* Measured by `useToolbarLayout`, hidden or not, to know what showing it would take. */}
-      <ValueWords value={value} compact={compact} labelled={labelled} dimension={label} />
+      <ValueWords value={words ?? value} compact={compact} labelled={labelled} dimension={label} />
     </Hint>
   );
 }

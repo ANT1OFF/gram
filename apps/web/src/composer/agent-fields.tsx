@@ -331,6 +331,7 @@ export function AgentFields({
                     ref={effortTrigger}
                     label="Effort"
                     value={effortShown?.short ?? effortShown?.label ?? DEFAULT_EFFORT_OPTION.short}
+                    words={effortShown?.word}
                     compact={effortShown?.compact}
                     labelled={sized("effort")}
                     field={!ghost}

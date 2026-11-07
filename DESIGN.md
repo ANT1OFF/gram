@@ -142,8 +142,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   what each costs, and a pick is confirmed in words for a moment. Every target on the row is 32 px
   tall, and words keep 48 px clear of Send and Stop. Stop is a solid pill reading "Stop" beside
   its square, the square inside the running ring, right-aligned where Send sits; its key shows
-  beside it while the composer has focus. A default says whose it is ("Effort: Model default",
-  "Speed: CLI default"), never a bare "Default". Beside Send the context meter says "Context 36%"
+  beside it while the composer has focus. A default says whose it is in its name and tooltip
+  ("Effort: Model default", "Speed: CLI default"); the chip, after its dimension, says "Default"
+  ("Effort: Default"), never a bare "Default" with nothing before it. Beside Send the context meter says "Context 36%"
   over its bar, the number alone in a composer under 36 rem, and its popover says what it
   measures. A picker's list opens above the whole composer, never over the draft.
 - **Icon-only chrome names itself on hover:** the title bar's and the overview header's icons use

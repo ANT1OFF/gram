@@ -127,6 +127,8 @@ export function SpeedField({
           ref={trigger}
           label="Speed"
           value={toolbarValue}
+          // "Speed: Default" on the chip; its name and tooltip say whose, "Speed: CLI default".
+          words={ghost && value === undefined ? "Default" : undefined}
           compact={ghost ? speedCompactWord(value) : undefined}
           labelled={labelled}
           field={!ghost}
