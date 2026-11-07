@@ -134,8 +134,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   doesn't apply keeps its slot, greyed, with why on hover, so the rest never move up. Each names
   what it picks before its value, in a lighter weight, so a value never reads as another
   control's: "Claude Opus", "Effort: Extra high", "Mode: Plan", "Speed: Standard". Short of room the
-  value takes three to six letters ("Opus", "Effort: X-high", "Mode: Edits"), and a default keeps
-  the dimension alone ("Effort", "Speed"); still short, the pickers take a row of their own above
+  value takes three to six letters ("Opus", "Effort: X-high", "Mode: Edits"), a default keeps
+  the dimension alone ("Effort", "Speed"), and the words keep the room their glyph took; still short, the pickers take a row of their own above
   Send and Stop, words kept. Only when even that row can't hold the short words do they
   give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
   shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current value with a line on

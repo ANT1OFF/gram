@@ -91,8 +91,8 @@ export function usePickConfirm(value: string | undefined) {
  * A select's trigger. On a toolbar (the thread's composer and the new-thread prompt box) it is its
  * glyph, then what it picks and the chosen value when `labelled`: "Effort: Extra high", "Mode:
  * Plan", so a value never reads as another control's. Short of room it says the value in `compact`
- * form ("Effort: X-high", or "Effort" alone for a default), and only at the narrowest gives way to
- * the glyph alone (`useToolbarLayout`); either way the trigger's name and its tooltip say both,
+ * form ("Effort: X-high", or "Effort" alone for a default) without its glyph, and only at the
+ * narrowest gives way to the glyph alone (`useToolbarLayout`); either way the trigger's name and its tooltip say both,
  * "Effort: Extra high", with the shortcut. As a form's `field` it names what it picks and shows the
  * value in full.
  */
@@ -146,8 +146,9 @@ export function PickerTrigger({
       </SelectTrigger>
     );
   const named = `${label}: ${value}`;
+  const size = labelSize(labelled);
   // Short of room its chevron goes, leaving the space to the words (`useToolbarLayout`).
-  const bare = labelSize(labelled) !== "full";
+  const bare = size !== "full";
   return (
     // A native title would wait a second before saying what the glyph means.
     <Hint
@@ -160,7 +161,13 @@ export function PickerTrigger({
         />
       }
     >
-      {glyph}
+      {/* Short of room the words keep the space and the glyph goes: "Effort" says what a gauge
+          only hints at. `useToolbarLayout` counts it as `GLYPH` while it isn't drawn. */}
+      {glyph && (
+        <span data-toolbar-glyph className={size === "short" ? "hidden" : "contents"}>
+          {glyph}
+        </span>
+      )}
       {/* Measured by `useToolbarLayout`, hidden or not, to know what showing it would take. */}
       <ValueWords value={value} compact={compact} labelled={labelled} dimension={label} />
     </Hint>

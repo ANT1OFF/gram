@@ -25,8 +25,8 @@ const rowSpread = (page: Page) =>
   });
 
 // In a narrow pane the toolbar used to clip Stop and Send past the pane's edge, and later dropped
-// every value for a glyph. Now each value goes compact first ("Opus"), then the pickers take a row
-// of their own with their words, and only at the narrowest do glyphs and "…" stand in.
+// every value for a glyph. Now each value goes compact first ("Opus", "Effort"), then the pickers
+// take a row of their own with their words, and only at the narrowest do glyphs and "…" stand in.
 test("the toolbar keeps its values as it narrows, before glyphs and …", async ({ page }) => {
   // Held running, so Stop and Steer stay offered: the script's later approval takes Steer away.
   await page.addInitScript(() => {
@@ -70,7 +70,7 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
 
   // With room the context gauge beside Send says what it measures, "Context 31%".
   const gauge = page.getByTestId("usage-ring");
-  await expect(gauge).toHaveText(/^Context \d+%$/);
+  await expect(gauge).toHaveText(/^Context \d+%$/, { useInnerText: true });
 
   // Short of room, the model's name goes compact first; the others keep their words. Measured at
   // 540 px: Linux names Stop's key "Ctrl+.", some 26 px wider than "⌘.", so at 520 px there the
@@ -86,7 +86,7 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   expect(await rowSpread(page)).toBeLessThanOrEqual(1);
   // Under 36 rem the gauge keeps the ring's 32 px, its number alone: the steps below are measured
   // against what that slot leaves, and a wider gauge folded the pickers a step early.
-  await expect(gauge).toHaveText(/^\d+%$/);
+  await expect(gauge).toHaveText(/^\d+%$/, { useInnerText: true });
   expect((await gauge.boundingBox())!.width).toBeLessThanOrEqual(32);
 
   // At 520 px, on one row in short words or on their own row in full ones, effort and mode still
@@ -97,16 +97,17 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   await expect.poll(() => shownWords(mode)).toBe("Mode: Ask");
 
   // Narrower, the pickers take a row of their own, words and all, above Send and Stop: still so
-  // at 300 px, a narrow pane beside a wide diff in a 1024 px window.
-  await squeeze(page, 300);
+  // at 340 px. Short, each says its word without its glyph ("Effort", "Mode: Ask", "Speed"), which
+  // holds the words to some 310 px; naming the dimension costs the 40 px below that the bare
+  // values ("Ask", the bolt alone) held.
+  await squeeze(page, 340);
   await expect(toolbar).toHaveAttribute("data-wrapped", "true");
   await expect(mode).toHaveText(/^Mode: Ask/);
   const modeBox = await mode.boundingBox();
   const stopBox = await stop.boundingBox();
   expect(stopBox!.y).toBeGreaterThanOrEqual(modeBox!.y + modeBox!.height);
 
-  // Only at the narrowest do glyphs stand in, on one row, and the pickers fold into "…". Effort's
-  // default, like Speed's, gives up its word first, so the words hold on to 270 px.
+  // Only at the narrowest do glyphs stand in, on one row, and the pickers fold into "…".
   await squeeze(page, 260);
   await expect(toolbar).not.toHaveAttribute("data-wrapped");
   await expect(mode).toHaveCount(0);
