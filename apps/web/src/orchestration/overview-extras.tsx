@@ -318,7 +318,7 @@ export function OverviewHistory({ showHistory = true }: { showHistory?: boolean 
         <span className="flex-1" />
       )}
       {/* Settings beside History, the sidebar's places to go, clear of its header's toggles. */}
-      <TopLeftNav update={false} className="shrink-0" />
+      <TopLeftNav update={false} hintSide="top" className="shrink-0" />
     </div>
   );
 }

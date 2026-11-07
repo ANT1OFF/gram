@@ -23,8 +23,11 @@ const NAV =
 export function TopLeftNav({
   className,
   update = true,
+  hintSide = "bottom",
 }: {
   className?: string;
+  /** Where its hint opens: up from the overview's foot, so it stays on screen. */
+  hintSide?: "top" | "bottom";
   /** The update pill before Settings; off where the caller shows it itself. */
   update?: boolean;
 }) {
@@ -44,7 +47,7 @@ export function TopLeftNav({
       {update && <UpdatePill size="xs" />}
       <Hint
         label={settingsLabel}
-        side="bottom"
+        side={hintSide}
         render={
           <Button
             variant="ghost"

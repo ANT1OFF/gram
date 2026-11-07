@@ -71,7 +71,15 @@ test("the meter's Open Usage opens Settings → Usage, with pace, credits and hi
   const box = (await chart.boundingBox())!;
   // Near the right edge of the plot, past the axis column: the latest readings.
   await chart.hover({ position: { x: box.width - 8, y: 30 } });
-  await expect(fiveHour.getByTestId("usage-history-hover")).toHaveText(/\d+%$/);
+  // When, the share, then the reading's age and its window's reset on lines of their own.
+  const hover = fiveHour.getByTestId("usage-history-hover");
+  await expect(hover).toHaveText(/^\d{2}:\d{2} \d+%Read /);
+  await expect(hover.getByTestId("usage-history-note").first()).toHaveText(
+    /^Read (just now|\d+[mhd] ago)$/,
+  );
+  await expect(hover).toContainText(/Resets? (\d+ [A-Z][a-z]{2} )?\d{2}:\d{2}/);
+  // One legend names the charts' marks once, above them.
+  await expect(usage.getByTestId("usage-history-legend").locator("li")).toHaveCount(5);
 
   // A month: the same windows, by the hour, with the burn over the longer span.
   await page
