@@ -49,7 +49,7 @@ export function FolderMissing({ threadId, problem }: { threadId: ThreadId; probl
       data-testid="folder-missing"
       className="flex flex-col items-center gap-2 p-6 text-center text-reading text-muted-foreground"
     >
-      <FolderX aria-hidden className="size-5" />
+      <FolderX aria-hidden className="size-icon-empty" />
       <p>{problem}</p>
       <div className="flex flex-wrap items-center justify-center gap-2">
         {worktree && <RestoreWorktreeActions threadId={threadId} />}

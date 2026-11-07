@@ -144,7 +144,7 @@ function Thumb({ output, seen }: { output: WorkspaceOutput; seen: boolean }) {
   const Icon = KIND_ICONS[output.kind];
   return src === undefined ? (
     <span className="flex size-full items-center justify-center text-muted-foreground">
-      <Icon aria-hidden strokeWidth={1.5} className="size-7 opacity-70" />
+      <Icon aria-hidden className="size-7" />
     </span>
   ) : (
     <img src={src} alt="" className="size-full object-cover object-top" draggable={false} />
@@ -399,7 +399,7 @@ export function OutputsView({ workspaceId }: { workspaceId: WorkspaceId }) {
             data-testid="outputs-empty"
             className="flex flex-col items-center gap-1 p-10 text-center text-reading text-muted-foreground"
           >
-            <Images aria-hidden strokeWidth={1.5} className="mb-1 size-6 opacity-70" />
+            <Images aria-hidden className="mb-1 size-icon-empty" />
             <p className="text-foreground">No files yet</p>
           </div>
         ) : (

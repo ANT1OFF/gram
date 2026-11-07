@@ -80,6 +80,10 @@
   --spacing-icon-chip: calc(var(--spacing) * 3.5);
   --spacing-icon-row: calc(var(--spacing) * 4);
   --spacing-icon-bar: calc(var(--spacing) * 4.5);
+  /* An empty state's or a message's lead glyph over its line of text (no workspace, no
+     notifications, a panel with nothing to show): one size wherever it stands, in place of 20, 24
+     and 28 px glyphs drawn at a heavier stroke than the rest. */
+  --spacing-icon-empty: calc(var(--spacing) * 6);
 
   /* Elevation: a raised card, a floating overlay (menu, popover, dialog) and the composer slab. */
   --shadow-raised: var(--elevation-raised);
@@ -266,7 +270,7 @@
   .lucide:where(.size-5) {
     stroke-width: calc(var(--icon-stroke) * 16 / 20);
   }
-  .lucide:where(.size-6) {
+  .lucide:where(.size-icon-empty, .size-6) {
     stroke-width: calc(var(--icon-stroke) * 16 / 24);
   }
   .lucide:where(.size-7) {

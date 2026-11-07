@@ -15,6 +15,7 @@ import {
   MessageResponse,
   type MessageResponseProps,
 } from "@/components/ai-elements/message";
+import { DocCard } from "@/docs/doc-card";
 import { useOrchestratorStreamContext } from "@/orchestration/stream-context";
 import { checkoutRelative } from "@/panels/files/files-store";
 import { formatMessageTime } from "@/lib/time";
@@ -361,10 +362,12 @@ export const MessageBlock = memo(function MessageBlock({
           onToggle={() => useTurnFolds.getState().toggle(threadId, fold.turn)}
         />
       )}
+      {/* A reply's parts (a tool row, its prose, a diff card) 12 px apart, a list's rhythm, so its
+          blocks read as separate steps by space rather than run together at 8 px. */}
       <MessageContent
         data-testid="message-time"
         title={actions ? undefined : sentAt}
-        className="w-full"
+        className="w-full gap-3"
       >
         <ToolImagesContext value={toolImages}>
           {message.parts.map((part, i) => {
@@ -455,6 +458,8 @@ export const MessageBlock = memo(function MessageBlock({
                 return <WorkerQuestionCard key={key} question={part.data} threadId={threadId} />;
               case "data-mock":
                 return <MockCard key={key} threadId={threadId} mock={part.data} />;
+              case "data-doc":
+                return <DocCard key={key} card={part.data} />;
               case "data-dream-report":
                 return <DreamReportCard key={key} report={part.data} threadId={threadId} />;
               default:

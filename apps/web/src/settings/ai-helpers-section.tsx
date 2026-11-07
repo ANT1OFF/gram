@@ -46,7 +46,7 @@ import { DraftActions, dropUndo, offerUndo, SaveHint } from "./save-hint";
 import { HelperHarnessPicker, LocalHelperSettings } from "./local-helper-settings";
 import { AI_HELPERS_DEFAULTS, resetFor } from "./defaults";
 import { inputCls, LONG_COPY, SettingRow, Toggle } from "./fields";
-import { SettingsGroup } from "./settings-group";
+import { SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
 type HelpersKey = keyof NonNullable<SettingsPatch["helpers"]>;
@@ -208,7 +208,7 @@ export function AiHelpersSection() {
   const pause = status === undefined ? undefined : pauseLine(status);
 
   return (
-    <div className="flex flex-col gap-6" data-testid="ai-helper-settings">
+    <div className={SETTINGS_STACK} data-testid="ai-helper-settings">
       <SettingsGroup
         label="Helper model"
         description="A small model for background jobs, such as naming threads."

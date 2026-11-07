@@ -35,7 +35,7 @@ import { DialogShell } from "@/thread/dialog-shell";
 
 import { DictateKeyRow } from "./dictate-key-row";
 import { OptionGroup, SettingRow, Toggle } from "./fields";
-import { SETTINGS_CARD, SettingsGroup } from "./settings-group";
+import { SETTINGS_CARD, SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 import { VoiceCleanupRows } from "./voice-cleanup-rows";
 import { VoiceVocabularyField } from "./voice-vocabulary-field";
@@ -232,7 +232,7 @@ export function VoiceInputSection() {
   };
 
   return (
-    <div className="flex flex-col gap-5 text-reading" data-testid="voice-input-settings">
+    <div className={cn(SETTINGS_STACK, "text-reading")} data-testid="voice-input-settings">
       <div className={SETTINGS_CARD}>
         <VoiceInputSwitch
           label="Voice input"

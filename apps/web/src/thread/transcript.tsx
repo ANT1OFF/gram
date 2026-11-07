@@ -27,6 +27,7 @@ import { isFoldOpen, useTurnFolds } from "@/stores/turn-folds";
 import { AwaitingToolsProvider } from "./awaiting-tools";
 import { CompactingLine } from "./compaction-marker";
 import { StartingProgress } from "./starting-progress";
+import { StopReceiptLine, useStopReceipt } from "./stop-receipt";
 import { startingSteps } from "./starting-progress-model";
 import { EmptyThread } from "./empty-thread";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
@@ -260,8 +261,12 @@ export function Transcript({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  // One line under the last row at a time: a compaction under way, else a fresh thread's start.
-  const tailLine = compaction !== undefined || startSteps !== undefined;
+  // A stopped turn's receipt follows the last thing it said, not the composer far below it.
+  const stopReceipt = useStopReceipt(threadId);
+  // One line under the last row at a time: a compaction under way, else a fresh thread's start,
+  // else where a stopped turn ended.
+  const tailLine =
+    compaction !== undefined || startSteps !== undefined || stopReceipt !== undefined;
   const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
   // An orchestrator's stream is its own digest of the thread, with no turns to fold.
   const orchestrated = useOrchestratorStreamContext() !== undefined;
@@ -910,9 +915,11 @@ export function Transcript({
                     >
                       {compaction !== undefined ? (
                         <CompactingLine compaction={compaction} />
+                      ) : startSteps !== undefined ? (
+                        <StartingProgress threadId={threadId} steps={startSteps} />
                       ) : (
-                        startSteps !== undefined && (
-                          <StartingProgress threadId={threadId} steps={startSteps} />
+                        stopReceipt !== undefined && (
+                          <StopReceiptLine threadId={threadId} receipt={stopReceipt} />
                         )
                       )}
                     </div>

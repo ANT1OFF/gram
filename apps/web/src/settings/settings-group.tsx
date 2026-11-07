@@ -7,13 +7,21 @@ import { SearchScope } from "./search-scope";
 
 /**
  * The card `SettingRow`s sit in, which pads them, with a hairline between rows. Between visible ones: a search hides
- * rows, and the first one it leaves shouldn't carry a line above it. A row takes 16 px above and
- * below, so a name, its description and a control beside them read as one block apart from the next.
+ * rows, and the first one it leaves shouldn't carry a line above it. A row takes 12 px above and
+ * below, a list's rhythm (DESIGN.md, Spacing): the hairline already parts one row from the next,
+ * and 16 px made every row of a page a line taller than it reads, pushing ordinary settings below
+ * the fold. 16 px stays at the card's sides, its pane edge.
  * The card is the raised surface, its fill the step off the page; only light, where that step is
  * faint, outlines it (`border-edge-group`).
  */
 export const SETTINGS_CARD =
-  "flex flex-col rounded-lg border border-edge-group bg-card [&>:not([hidden])~:not([hidden])]:border-t [&>*]:border-border/60 [&>*]:px-4 [&>*]:py-4";
+  "flex flex-col rounded-lg border border-edge-group bg-card [&>:not([hidden])~:not([hidden])]:border-t [&>*]:border-border/60 [&>*]:px-4 [&>*]:py-3";
+
+/**
+ * A page's groups, one above the next: 24 px apart on every page, so General, Appearance, Voice
+ * and a workspace's page keep one rhythm (they were 20, 24 and 32 px apart).
+ */
+export const SETTINGS_STACK = "flex flex-col gap-6";
 
 /** A group's title: clearly above a row's name, which is the body size at medium weight. */
 export const GROUP_TITLE = "font-heading text-title text-foreground";
@@ -60,7 +68,8 @@ export function SettingsGroup({
       {...(anchor === undefined ? {} : { id: anchor })}
       className="flex scroll-mt-4 flex-col gap-2"
     >
-      <div className="flex items-start gap-3 px-1">
+      {/* Flush with the page's title and the card's edge: one left edge for every heading. */}
+      <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-h-6 items-center gap-1">
             <h3 id={titleId} className={GROUP_TITLE}>

@@ -55,7 +55,10 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   shows five rows before the rest fold behind "N more". Marks centre on one column and titles
   start on one edge, the pill, Search, section titles and Open History included.
 - **Spacing is on a 4 px step:** 4 or 8 px inside a row or card, 8 px between cards, 12 px
-  around a list's rows and headings, 16 px between sections and at a pane's edges.
+  around a list's rows and headings and between a reply's blocks, 16 px between sections and at a
+  pane's edges. A settings row takes 12 px above and below, and a page's groups sit 24 px apart
+  (`SETTINGS_STACK`) on every page. A table stops at its columns' width, so its rules don't run
+  on into empty space.
 - **Separate by surface and space before lines.** A group of rows is a raised card whose fill is
   the step off the page; in dark it takes no outline (`border-edge-group` is transparent there),
   and light, whose raised step is faint, keeps a hairline. Inside it a hairline between rows is
@@ -89,7 +92,8 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   toolbar one. Don't set `strokeWidth` on a Lucide icon. One size per context, from the tokens: `size-icon-bar` 18 px in a toolbar (the title bar, the
   sidebar's header and the composer's toolbar), `size-icon-row` 16 px beside UI text (rows, cards,
   menus, docks, buttons, the panel's tabs and its action, which give way to glyphs by width), and `size-icon-chip` 14 px beside meta text (a chip,
-  a badge, a status line). A disclosure chevron is 14 px (`size-icon-chip`) wherever it sits:
+  a badge, a status line). An empty state's or a panel message's lead glyph is `size-icon-empty`
+  24 px, at the same stroke, in the muted colour. A disclosure chevron is 14 px (`size-icon-chip`) wherever it sits:
   the composer's toolbar counts it at that width while it isn't drawn. A glyph beside a line of
   text is centred on that line (`h-lh` on its box, or `mt-*` to its first line when the text
   wraps), never on the block.

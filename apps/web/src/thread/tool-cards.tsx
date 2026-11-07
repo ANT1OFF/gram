@@ -42,13 +42,17 @@ export interface ToolCardProps {
   renderSubagent: (message: GramUIMessage) => ReactNode;
 }
 
-/** A tool call's row, with its approval card right under it while the call waits on one. */
+/**
+ * A tool call's row, with its approval card right under it while the call waits on one. The two
+ * are one block, 8 px apart: the reply's wider gap between its blocks (message-block.tsx) would
+ * set the card off from the row it decides.
+ */
 export function ToolCard(props: ToolCardProps) {
   return (
-    <>
+    <div className="flex min-w-0 flex-col gap-2">
       <ToolCardRow {...props} />
       <ApprovalSlot toolCallId={props.part.toolCallId} />
-    </>
+    </div>
   );
 }
 

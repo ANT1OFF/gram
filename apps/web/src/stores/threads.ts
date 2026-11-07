@@ -390,6 +390,7 @@ export const createThreadsSlice = (
       case "dreams.changed":
       case "routines.changed":
       case "outputs.changed":
+      case "docs.changed":
         // Only query caches hold these, and `useServerEvents` invalidates them; it also pulls the
         // settings again on `settings.changed`.
         return;

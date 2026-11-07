@@ -2153,6 +2153,12 @@ describe("prompts", () => {
     );
   });
 
+  it("points a worker's write-ups to publish_doc rather than a file in the repo", () => {
+    for (const agent of ["claude", "codex"] as const) {
+      expect(workerOn(agent)).toContain("goes to `publish_doc`, not a file in the repo");
+    }
+  });
+
   it("names wrap_up to a plain Codex thread only, whose tool search hides it", () => {
     expect(plainPrompt({ agent: "codex" })).toContain("`wrap_up`, on the MCP server named `gram`");
     expect(plainPrompt({ agent: "claude" })).toBeUndefined();
@@ -2176,7 +2182,7 @@ describe("prompts", () => {
 
   it("names a Codex thread's tools, which it would otherwise have to search for", () => {
     expect(workerOn("codex")).toContain(
-      "Your Gram tools are on the MCP server named `gram`: `report`, `ask_question`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`, `run_monitor`, `merge_when_ready`, `local_check`, `schedule_wake`, `depends_on`, `message_orchestrator`, `memory_list`, `memory_read`, `wrap_up`. Search for them by those names if they aren't listed.",
+      "Your Gram tools are on the MCP server named `gram`: `report`, `ask_question`, `mark_completed`, `pr_bind`, `set_title`, `pr_status`, `pr_review_monitor`, `run_monitor`, `merge_when_ready`, `local_check`, `schedule_wake`, `depends_on`, `message_orchestrator`, `memory_list`, `memory_read`, `wrap_up`, `publish_doc`. Search for them by those names if they aren't listed.",
     );
     expect(roleOn("codex")).toContain(
       "Your Gram tools are on the MCP server named `gram`: `spawn_worker`, `adopt_thread`, `list_workers`, `send_message`, `broadcast_message`, `archive_thread`, `set_stage`, `set_group`, `memory_read`, `memory_append`, `memory_edit`, `memory_write`, `ask_user`, `close_question`, `forward_question`, `answer_worker`, `wait_on_user`, `notify_user`, `schedule_wake`, `depends_on`. Search for them",

@@ -29,6 +29,7 @@ import { speechRpc } from "./speech/rpc";
 import { terminalRpc } from "./terminal/rpc";
 import { threadsRpc } from "./threads/rpc";
 import { waitsRpc } from "./waits/rpc";
+import { docsRpc } from "./docs/rpc";
 import { worktreesRpc } from "./worktrees/rpc";
 import { createConnectionMonitor, withSessionProbe } from "./connection";
 import { type RpcContext } from "./rpc-client";
@@ -81,6 +82,7 @@ export async function createRpcApi(url: string): Promise<Api> {
     ...branchesRpc(domain),
     ...composerRpc(domain),
     ...connectorsRpc(domain),
+    ...docsRpc(domain),
     ...dreamsRpc(domain),
     ...filesRpc(domain),
     ...keybindingsRpc(domain),

@@ -89,7 +89,7 @@ test("the toolbar keeps its values as it narrows, before glyphs and …", async 
   // say their values: never a glyph alone.
   await squeeze(page, 520);
   const effort = toolbar.getByRole("combobox", { name: /^Effort: / });
-  await expect.poll(() => shownWords(effort)).toMatch(/^(Model|Model default)$/);
+  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort|Model default)$/);
   await expect.poll(() => shownWords(mode)).toBe("Ask");
 
   // Narrower, the pickers take a row of their own, words and all, above Send and Stop: still so
@@ -195,7 +195,8 @@ test("beside a review in a 1024 px window, effort keeps a short word", async ({ 
   const mode = toolbar.getByRole("combobox", { name: /^Mode: / });
   await expect(mode).toHaveText(/^Ask/);
   // A readable value of three letters or more, the compact one or the whole: never the gauge alone.
-  await expect.poll(() => shownWords(effort)).toMatch(/^(Model|Model default)$/);
+  // Short, it says its own name, "Effort", not "Model", which beside the model picker read as a second.
+  await expect.poll(() => shownWords(effort)).toMatch(/^(Effort|Model default)$/);
   await expect
     .poll(() => shownWords(toolbar.getByRole("combobox", { name: /^Model/ })))
     .toMatch(/^(Opus|Claude Opus)$/);

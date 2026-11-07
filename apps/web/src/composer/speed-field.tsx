@@ -50,7 +50,8 @@ export const speedValueWord = (value: SpeedMode | undefined, state?: SpeedState)
 
 /**
  * The same, short of room: "Fast" keeps its word, as it is news; the default and Standard give
- * theirs up first, leaving the bolt, still named "Speed: Standard" and saying so on hover.
+ * theirs up first, leaving the bolt, still named "Speed: Standard" and saying so on hover. A word
+ * here too ("Speed") cost the row enough that the model gave up its name at 540 px instead.
  */
 export const speedCompactWord = (value: SpeedMode | undefined): string =>
   value === "fast" ? "Fast" : "";

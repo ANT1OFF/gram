@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } 
 import { createPortal } from "react-dom";
 
 import { useApi } from "@/api/context";
+import { PinnedDocChip } from "@/docs/doc-chip";
 import { errorMessage } from "@/api/errors";
 import { needsYou } from "@/sidebar/grouping";
 import { activityLine, statusHint, threadStatusOf } from "@/sidebar/status";
@@ -76,7 +77,6 @@ import { ApprovalSlotsProvider } from "./approval-slots";
 import { RequestCards } from "./request-cards";
 import { RoleGlyph, useThreadRole } from "./role-chip";
 import { activeStreamingIds } from "./streaming";
-import { StopReceiptLine } from "./stop-receipt";
 import { SubagentStrip } from "./subagent-strip";
 import {
   nextJump,
@@ -625,7 +625,6 @@ export function ThreadView({
         <div className="w-full thread-column shrink-0 px-6">
           {/* A worker opens on its catch-up instead, whose words send nothing to it. */}
           {thread.role === "orchestrator" && <BriefingPlaceholder thread={thread} />}
-          <StopReceiptLine threadId={threadId} />
           {thread.spawnedBy === undefined && <RecapCard threadId={threadId} focused={focused} />}
           <RequestCards
             threadId={threadId}
@@ -641,6 +640,7 @@ export function ThreadView({
       <MergedCleanupNotice threadId={threadId} />
       <LapsedConnectorsNotice threadId={threadId} />
       <EditBanner threadId={threadId} />
+      <PinnedDocChip threadId={threadId} />
       <PrStrip threadId={threadId} focused={focused} />
       <SubagentStrip rows={stripLines} onJump={jumpToSubagent} onStop={stopTask} />
       {thread.role === "orchestrator" && <UndoLine />}
@@ -780,7 +780,7 @@ function ThreadGoneNotice({ threadId }: { threadId: ThreadId }) {
       data-testid="thread-gone"
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-reading text-muted-foreground"
     >
-      <MessageSquareOff aria-hidden className="size-6" />
+      <MessageSquareOff aria-hidden className="size-icon-empty" />
       <p>This thread no longer exists.</p>
       <Button variant="outline" size="sm" onClick={close}>
         <X data-icon="inline-start" />

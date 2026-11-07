@@ -110,7 +110,7 @@ export function NotificationsPanel() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {entries.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-10 text-center text-muted-foreground">
-            <Bell aria-hidden className="size-5" />
+            <Bell aria-hidden className="size-icon-empty" />
             <p className="text-reading">No notifications yet</p>
             <p className="text-meta">Notices stay here after their toasts close.</p>
           </div>

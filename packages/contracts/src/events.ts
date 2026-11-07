@@ -200,6 +200,8 @@ export const ServerEvent = Schema.Union([
   Schema.Struct({ type: Schema.Literal("dreams.changed"), workspaceId: WorkspaceId }),
   /** A thread of the workspace produced a file (`outputs.ts`); clients refetch `workspace.outputs`. */
   Schema.Struct({ type: Schema.Literal("outputs.changed"), workspaceId: WorkspaceId }),
+  /** A doc of the workspace was published, updated or edited (`docs.ts`); clients refetch `docs.*`. */
+  Schema.Struct({ type: Schema.Literal("docs.changed"), workspaceId: WorkspaceId }),
 ]);
 export type ServerEvent = typeof ServerEvent.Type;
 

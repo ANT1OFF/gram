@@ -690,7 +690,7 @@ export function MemoryView({
         data-testid="memory-missing"
         className="flex flex-col items-center gap-2 p-8 text-center text-reading text-muted-foreground"
       >
-        <BookOpenText aria-hidden className="size-5" />
+        <BookOpenText aria-hidden className="size-icon-empty" />
         <p>No such workspace.</p>
         <p className="max-w-sm text-meta">
           It may have been removed. Workspaces are in{" "}

@@ -39,6 +39,7 @@ import { ThreadRuntimes } from "../../runtime/thread-runtimes.ts";
 import { filesWrittenBy, PreviewFiles } from "../../preview/files.ts";
 import { logDefects, type Handlers } from "./common.ts";
 import { editorHandlers } from "./editor.ts";
+import { docHandlers } from "./docs.ts";
 import { outputHandlers } from "./outputs.ts";
 
 /**
@@ -336,13 +337,17 @@ export const fsHandlers = Effect.gen(function* () {
   } satisfies Partial<Handlers>;
 });
 
-/** The files group's handler layer: these, `editor.open` / `fs.reveal` and `workspace.outputs`. */
+/**
+ * The files group's handler layer: these, `editor.open` / `fs.reveal`, `workspace.outputs` and the
+ * workspace docs (`docs.*`).
+ */
 export const FileHandlersLive = FileRpcs.toLayer(
   Effect.gen(function* () {
     const handlers = {
       ...(yield* fsHandlers),
       ...(yield* editorHandlers),
       ...(yield* outputHandlers),
+      ...(yield* docHandlers),
     };
     return FileRpcs.of(logDefects(FileRpcs, handlers));
   }),

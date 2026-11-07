@@ -23,18 +23,29 @@ export const stopLabel = (
 /** What Continue sends: the agent picks up where it stopped. */
 const CONTINUE = "Continue";
 
-/**
- * Where a stopped turn ended, at the foot of the transcript until anything follows it: who stopped
- * it and when, and Continue, which sends "Continue" so the agent picks up where it stopped.
- */
-export function StopReceiptLine({ threadId }: { threadId: ThreadId }) {
-  const api = useApi();
+/** The thread's stop receipt while nothing has followed the stop and no turn runs, else undefined. */
+export function useStopReceipt(threadId: ThreadId): StopReceipt | undefined {
   const status = useThreadsStore((s) => s.byId[threadId]?.status);
   const stoppedAt = useStopStore((s) => s.stoppedAt[threadId]);
   const messages = useThreadFeed(threadId, (state) => state.messages);
   const receipt = useMemo(() => stopOf(messages, stoppedAt), [messages, stoppedAt]);
+  return receipt === undefined || inTurn(status) ? undefined : receipt;
+}
+
+/**
+ * Where a stopped turn ended, the transcript's last line until anything follows it, right under
+ * what the turn had said rather than down by the composer: who stopped it and when, and Continue,
+ * which sends "Continue" so the agent picks up where it stopped.
+ */
+export function StopReceiptLine({
+  threadId,
+  receipt,
+}: {
+  threadId: ThreadId;
+  receipt: StopReceipt;
+}) {
+  const api = useApi();
   const [sending, setSending] = useState(false);
-  if (receipt === undefined || inTurn(status)) return null;
   const go = async () => {
     setSending(true);
     try {

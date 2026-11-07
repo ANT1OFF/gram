@@ -66,6 +66,8 @@ const GRAM_TOOLS: Readonly<Record<string, Verbs>> = {
   show_widget: ["Drawing a widget", "Drew a widget"],
   show_panel: ["Opening a panel", "Opened a panel"],
   show_mock: ["Showing a mock", "Showed a mock"],
+  publish_doc: ["Publishing a doc", "Published a doc"],
+  read_doc: ["Reading docs", "Read docs"],
   send_file: ["Sending a file", "Sent a file"],
   read_terminal: ["Reading a terminal", "Read a terminal"],
   read_app_logs: ["Reading app logs", "Read app logs"],
