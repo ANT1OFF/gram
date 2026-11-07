@@ -58,7 +58,7 @@ import {
 import { parkedSoloThreads, snoozedSoloThreads, soloThreads } from "@/views/solo-threads";
 import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
-import { useBeforeSetup } from "@/welcome/welcome";
+import { useBeforeSetup } from "@/welcome/welcome-state";
 
 import { useAnsweredWorkers } from "./needs-you-store";
 import { askKeysByThread } from "./ask-model";
@@ -68,7 +68,7 @@ import { useWorkspaceAsks } from "./ask-stack";
 import { PAUSE_WORD, useWorkerPause, WorkerPauseMark, type WorkerPauseState } from "./worker-pause";
 import { keepBeside } from "./beside-store";
 import { PrChip } from "./feature-card";
-import { RAIL_TONES } from "./feature-sheet";
+import { RAIL_TONES } from "./rail-tones";
 import {
   OverviewDone,
   OverviewFoot,

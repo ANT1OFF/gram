@@ -25,15 +25,27 @@ declare module "@tanstack/react-router" {
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("#root element missing");
 
-const api = await createApi();
-installKeyboard();
+/**
+ * Renders once the API client is in hand. Not a top-level `await`: the client's chunk imports the
+ * one this module is bundled in (see `vite.config.ts`), and a module awaiting a chunk that imports
+ * it back while it still runs never finishes.
+ */
+async function start(root: HTMLElement) {
+  const api = await createApi();
+  installKeyboard();
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <ApiProvider api={api}>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </ApiProvider>
-  </StrictMode>,
-);
+  createRoot(root).render(
+    <StrictMode>
+      <ApiProvider api={api}>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </ApiProvider>
+    </StrictMode>,
+  );
+}
+
+start(rootElement).catch((error: unknown) => {
+  console.error("gram: start", error);
+  throw error;
+});

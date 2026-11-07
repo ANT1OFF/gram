@@ -3,25 +3,16 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 import { useShortcut } from "@/keyboard/registry";
-import { RemoveWorkspaceDialog } from "@/orchestration/remove-workspace";
-import { AddRepoDialog } from "@/orchestration/workspace-repos";
-import { ProjectScriptsDialog } from "@/scripts/project-scripts-dialog";
+import { lazyPart } from "@/lib/lazy-part";
 import { ScriptShortcuts } from "@/scripts/script-shortcuts";
 import { focusPaneComposer } from "@/shell/pane-focus";
 import { useLayoutStore } from "@/stores/layout";
-import { WorktreesDialog } from "@/worktrees/worktrees-dialog";
 
-import { BindPrDialog } from "./bind-pr-dialog";
-import { CheckoutPrDialog } from "./checkout-pr-dialog";
-import { CloseAllThreadsDialog } from "./close-all-dialog";
-import { CloseThreadDialog } from "./close-thread-dialog";
 import { Dialog, DialogShell } from "./dialog-shell";
-import { ForkDialog } from "./fork-dialog";
-import { LabelsDialog } from "./labels-dialog";
-import { RenameThreadDialog } from "./rename-dialog";
-import { RestartSessionDialog } from "./restart-session-dialog";
-import { SnoozeDialog } from "./snooze-dialog";
 import { useThreadDialogs } from "./thread-dialogs-store";
+
+/** The dialogs themselves: rename, close, fork, worktrees, scripts and the rest. */
+export const threadDialogBodies = lazyPart(() => import("./thread-dialog-bodies"));
 
 const focusedThread = (): ThreadId | undefined => {
   const { grid } = useLayoutStore.getState();
@@ -39,6 +30,8 @@ export function ThreadDialogs() {
   const open = useThreadDialogs((s) => s.open);
   const dismiss = useThreadDialogs((s) => s.dismiss);
   const clearError = useThreadDialogs((s) => s.clearError);
+  // A dialog asked for before its code is in hand opens once it is.
+  const bodies = threadDialogBodies.useModule(dialog !== undefined);
 
   useShortcut({
     id: "thread.close",
@@ -85,51 +78,8 @@ export function ThreadDialogs() {
 
   return (
     <>
-      {dialog?.kind === "rename" && (
-        <RenameThreadDialog threadId={dialog.threadId} onClose={dismiss} />
-      )}
-      {dialog?.kind === "snooze" && <SnoozeDialog threadId={dialog.threadId} onClose={dismiss} />}
-      {dialog?.kind === "close" && (
-        <CloseThreadDialog
-          threadId={dialog.threadId}
-          onClose={dismiss}
-          {...(dialog.preset === undefined ? {} : { preset: dialog.preset })}
-        />
-      )}
-      {dialog?.kind === "closeAll" && <CloseAllThreadsDialog onClose={dismiss} />}
-      {dialog?.kind === "labels" && <LabelsDialog onClose={dismiss} />}
-      {dialog?.kind === "worktrees" && (
-        <WorktreesDialog repoPath={dialog.repoPath} onClose={dismiss} />
-      )}
-      {dialog?.kind === "bindPr" && <BindPrDialog threadId={dialog.threadId} onClose={dismiss} />}
-      {dialog?.kind === "checkoutPr" && (
-        <CheckoutPrDialog
-          {...(dialog.projectRoot === undefined ? {} : { projectRoot: dialog.projectRoot })}
-          {...(dialog.prRef === undefined ? {} : { prRef: dialog.prRef })}
-          onClose={dismiss}
-        />
-      )}
-      {dialog?.kind === "fork" && (
-        <ForkDialog
-          threadId={dialog.threadId}
-          notice={dialog.notice}
-          open
-          onOpenChange={(next) => {
-            if (!next) dismiss();
-          }}
-        />
-      )}
-      {dialog?.kind === "restartSession" && (
-        <RestartSessionDialog threadId={dialog.threadId} onClose={dismiss} />
-      )}
-      {dialog?.kind === "addRepo" && (
-        <AddRepoDialog workspaceId={dialog.workspaceId} onClose={dismiss} />
-      )}
-      {dialog?.kind === "removeWorkspace" && (
-        <RemoveWorkspaceDialog workspaceId={dialog.workspaceId} onClose={dismiss} />
-      )}
-      {dialog?.kind === "projectScripts" && (
-        <ProjectScriptsDialog projectId={dialog.projectId} onClose={dismiss} />
+      {dialog !== undefined && bodies !== undefined && (
+        <bodies.ThreadDialogBody dialog={dialog} dismiss={dismiss} />
       )}
       <ScriptShortcuts />
       {error !== undefined && (

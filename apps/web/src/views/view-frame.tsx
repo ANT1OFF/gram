@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useShortcut } from "@/keyboard/registry";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { radioGroupKeyDown } from "@/lib/list-keys";
+import { lazyPart } from "@/lib/lazy-part";
 import { cn } from "@/lib/utils";
 import { SegmentSlab, Swap } from "@/motion";
 import {
@@ -17,8 +18,7 @@ import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { nextNeedsYou } from "@/sidebar/grouping";
 import { useThreadsStore } from "@/stores/threads";
 
-import { BoardView } from "./board-view";
-import { QuietView, useQuietMode } from "./quiet-view";
+import { useQuietMode } from "./quiet-mode";
 import {
   APP_VIEWS,
   chatRoute,
@@ -30,7 +30,11 @@ import {
 import { useViewWorkspace } from "./view-workspace";
 
 // The frame Chat, Board and Quiet share: the title bar's switcher and Quiet toggle, the
-// main area each view mounts in, and their keys. A view itself lives in its own file.
+// main area each view mounts in, and their keys. A view itself lives in its own file, loaded apart
+// from the shell; a view picked before its code is in hand shows once it is.
+
+const boardView = lazyPart(() => import("./board-view"));
+const quietView = lazyPart(() => import("./quiet-view"));
 
 /** Board needs a workspace to show; Chat is always there. */
 const viewAvailable = (view: AppView, hasWorkspace: boolean) => view !== "board" || hasWorkspace;
@@ -52,10 +56,13 @@ export function ViewOutlet({ children }: { children: ReactNode }) {
     if (!viewAvailable(view, workspace !== undefined)) useViewStore.getState().setView("chat");
   }, [view, workspace]);
 
-  const over = view !== "chat";
+  const board = boardView.useModule(view !== "chat");
+  // Chat stays in view until the picked view can draw.
+  const shown = board === undefined ? "chat" : view;
+  const over = shown !== "chat";
   const workspaceId = workspace?.workspace.id;
   return (
-    <div data-view={view} className="relative flex min-h-0 flex-1 flex-col">
+    <div data-view={shown} className="relative flex min-h-0 flex-1 flex-col">
       <div
         inert={over}
         aria-hidden={over || undefined}
@@ -64,12 +71,12 @@ export function ViewOutlet({ children }: { children: ReactNode }) {
         {children}
       </div>
       <Swap
-        swapKey={over ? view : undefined}
+        swapKey={over ? shown : undefined}
         as="div"
         className="absolute inset-0 flex min-h-0 flex-col bg-thread"
       >
-        <div data-testid={`view-${view}`} className="flex min-h-0 flex-1 flex-col">
-          <BoardView workspaceId={workspaceId} />
+        <div data-testid={`view-${shown}`} className="flex min-h-0 flex-1 flex-col">
+          {board && <board.BoardView workspaceId={workspaceId} />}
         </div>
       </Swap>
     </div>
@@ -85,9 +92,10 @@ export function QuietLayer() {
   const workspace = useViewWorkspace();
   useQuietMode();
   const hint = useShortcutHint("quiet.leave");
+  const screen = quietView.useModule(quiet);
   return (
     <Swap
-      swapKey={quiet ? "quiet" : undefined}
+      swapKey={quiet && screen !== undefined ? "quiet" : undefined}
       as="div"
       className="fixed inset-0 z-40 flex flex-col bg-thread"
     >
@@ -105,7 +113,7 @@ export function QuietLayer() {
           {hint && <kbd className="font-sans text-caption opacity-70">{hint}</kbd>}
         </Button>
       </div>
-      <QuietView workspaceId={workspace?.workspace.id} />
+      {screen && <screen.QuietView workspaceId={workspace?.workspace.id} />}
     </Swap>
   );
 }

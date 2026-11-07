@@ -10,7 +10,8 @@ import { renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { canStart, runsWith, toolRows } from "./tools";
-import { useWelcome, Welcome } from "./welcome";
+import { Welcome } from "./welcome";
+import { useWelcome } from "./welcome-state";
 
 const navigate = vi.fn(async (_to: unknown) => {});
 

@@ -22,8 +22,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
-import { create } from "zustand";
+import { useCallback, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AgentIcon } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
@@ -42,43 +41,12 @@ import { OutboundLink } from "@/panels/outbound-link";
 import { AddRepository } from "@/new-thread/add-repository";
 import { tildify } from "@/new-thread/path";
 import { useHome } from "@/new-thread/use-folder";
-import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { ResumeSessions } from "@/resume/resume-sessions";
 import { useSaveSettings } from "@/settings/use-save-settings";
-import { useServerSettings } from "@/settings-sync/store";
-import { useThreadsStore } from "@/stores/threads";
 
 import { matchRepos, RECENT_LIMIT } from "./repo-search";
 import { runsWith, toolRows, type ToolRow, type ToolState } from "./tools";
-
-/**
- * Whether this app session shows the first-run screen; decided once, when settings first load, so
- * picking a repository that happens to mark it seen can't close it under the user.
- */
-export const useWelcome = create<{ open: boolean | undefined }>()(() => ({ open: undefined }));
-
-/** Whether the first-run screen shows: a first run, while no workspace exists. */
-export function useFirstRun(): boolean {
-  const settings = useServerSettings((s) => s.settings);
-  const open = useWelcome((s) => s.open);
-  const { workspaces, settled } = useWorkspacesQuery();
-  useEffect(() => {
-    if (!settings || useWelcome.getState().open !== undefined) return;
-    useWelcome.setState({ open: !settings.onboarding.welcomeSeen });
-  }, [settings]);
-  return open === true && settled && workspaces.length === 0;
-}
-
-/**
- * Before any setup: the first run, with no thread yet. What only means something once there is
- * work (pull requests, usage, what needs you) stays away, so the welcome is the one thing to look
- * at.
- */
-export function useBeforeSetup(): boolean {
-  const firstRun = useFirstRun();
-  const empty = useThreadsStore((s) => Object.keys(s.byId).length === 0);
-  return firstRun && empty;
-}
+import { useFirstRun, useWelcome } from "./welcome-state";
 
 /**
  * First run, on one screen: a repository to start on, whether Claude Code and Codex are installed

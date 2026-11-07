@@ -4,7 +4,7 @@ import { useDiagnostics } from "@/settings/use-diagnostics";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { WHATS_NEW, whatsNewAudience } from "./index";
+import { loadWhatsNew, whatsNewAudience } from "./index";
 import { whatsNewOnLaunch } from "./launch";
 import { useWhatsNewDialog } from "./whats-new-dialog";
 
@@ -21,17 +21,25 @@ export function useWhatsNewOnLaunch() {
   useEffect(() => {
     if (decided.current || !settings || !info) return;
     decided.current = true;
-    const decision = whatsNewOnLaunch(
-      WHATS_NEW,
-      settings.onboarding.lastSeenVersion,
-      info.version,
-      whatsNewAudience(window.gram),
-    );
-    useWhatsNewDialog.setState({ launch: decision.kind === "show" ? "shown" : "quiet" });
-    if (decision.kind === "none") return;
-    if (decision.kind === "show") useWhatsNewDialog.getState().show(decision.releases);
-    save({ onboarding: { lastSeenVersion: info.version } }).catch((error: unknown) =>
-      console.error("what's new: record the version", error),
-    );
+    const lastSeen = settings.onboarding.lastSeenVersion;
+    loadWhatsNew()
+      .then((releases) => {
+        const decision = whatsNewOnLaunch(
+          releases,
+          lastSeen,
+          info.version,
+          whatsNewAudience(window.gram),
+        );
+        useWhatsNewDialog.setState({ launch: decision.kind === "show" ? "shown" : "quiet" });
+        if (decision.kind === "none") return;
+        if (decision.kind === "show") useWhatsNewDialog.getState().show(decision.releases);
+        return save({ onboarding: { lastSeenVersion: info.version } }).catch((error: unknown) =>
+          console.error("what's new: record the version", error),
+        );
+      })
+      .catch((error: unknown) => {
+        useWhatsNewDialog.setState({ launch: "quiet" });
+        console.error("what's new: load the highlights", error);
+      });
   }, [settings, info, save]);
 }

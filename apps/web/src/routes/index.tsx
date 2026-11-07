@@ -6,7 +6,8 @@ import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { useLandOnOrchestrator } from "@/orchestration/home";
 import { useWorkspacesQuery } from "@/orchestration/use-orchestration";
 import { useThreadsStore } from "@/stores/threads";
-import { useFirstRun, Welcome } from "@/welcome/welcome";
+import { Welcome } from "@/welcome/welcome";
+import { useFirstRun } from "@/welcome/welcome-state";
 
 export const Route = createFileRoute("/")({
   component: HomePage,

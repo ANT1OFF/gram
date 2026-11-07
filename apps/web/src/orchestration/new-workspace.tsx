@@ -34,7 +34,7 @@ import { useSaveSettings } from "@/settings/use-save-settings";
 import { projectNameOf, withAutonomy } from "@/settings/workspace-settings-model";
 import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
-import { useWelcome } from "@/welcome/welcome";
+import { useWelcome } from "@/welcome/welcome-state";
 
 import {
   charterOf,

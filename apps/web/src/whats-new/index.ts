@@ -89,6 +89,9 @@ export const whatsNewAudience = (
   shell: bridge === undefined ? undefined : "desktop",
 });
 
-export const WHATS_NEW: readonly WhatsNewRelease[] = assembleReleases(
-  import.meta.glob<{ default: WhatsNewItem }>("./*/*.ts", { eager: true }),
-);
+/**
+ * Every release's highlights (`notes.ts`), loaded when they're needed: at launch to decide whether
+ * to show them, and when asked for. They're the app's longest text and the first screen has none.
+ */
+export const loadWhatsNew = (): Promise<readonly WhatsNewRelease[]> =>
+  import("./notes").then((notes) => notes.WHATS_NEW);

@@ -10,7 +10,7 @@ import { useOpenThread, useWorkspaceAsks } from "@/orchestration/ask-stack";
 import { allWorkspacesPaused, setAllWorkspacesPaused } from "@/orchestration/pause-workspace";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useThreadsStore } from "@/stores/threads";
-import { useQuietStrip } from "@/views/quiet-view";
+import { useQuietStrip } from "@/views/quiet-mode";
 import { useViewStore } from "@/views/view-store";
 
 import { shownIn, trayMenuOf, type BuiltTrayMenu } from "./menu-bar-model";

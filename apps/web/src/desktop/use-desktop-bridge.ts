@@ -9,7 +9,7 @@ import { useBindingsStore } from "@/keyboard/bindings-store";
 import { isMac } from "@/keyboard/registry";
 import { copyText } from "@/settings/copy-text";
 import { useServerSettings } from "@/settings-sync/store";
-import { WHATS_NEW } from "@/whats-new";
+import { loadWhatsNew } from "@/whats-new";
 import { useWhatsNewDialog } from "@/whats-new/whats-new-dialog";
 import { needsYouCount, useDerivedAsks } from "@/orchestration/needs-you-store";
 import { ownsCiFailure } from "@/sidebar/attention";
@@ -84,7 +84,9 @@ export function useDesktopBridge() {
           useThreadDialogs.getState().open({ kind: "closeAll" });
           return;
         case "whatsNew":
-          useWhatsNewDialog.getState().show(WHATS_NEW);
+          loadWhatsNew()
+            .then((releases) => useWhatsNewDialog.getState().show(releases))
+            .catch((error: unknown) => console.error("what's new: load the highlights", error));
           return;
         case "shortcuts":
           useLayoutStore.getState().setOverlayOpen(true);
