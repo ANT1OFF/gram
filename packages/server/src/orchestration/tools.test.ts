@@ -664,10 +664,9 @@ describe.skipIf(!hasGit)("orchestrator tools", () => {
         const listed = (yield* worker.session.callTool("memory_list", {})) as {
           readonly files: ReadonlyArray<{ readonly path: string }>;
         };
-        expect(listed.files.map((file) => file.path).toSorted()).toEqual([
-          "MEMORY.md",
-          "repos/shop.md",
-        ]);
+        // Only plain lowercase names are shown to a worker, so the `MEMORY.md` index is not; a plain
+        // folder is gone into.
+        expect(listed.files.map((file) => file.path).toSorted()).toEqual(["repos/shop.md"]);
         expect(yield* worker.session.callTool("memory_read", { file: "repos/shop.md" })).toEqual({
           path: "repos/shop.md",
           content: "2026-11-05: uses pnpm, not npm (from the brief).\n",

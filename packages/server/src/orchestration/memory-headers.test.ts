@@ -2,7 +2,7 @@
 // closed `---` block that is a flat map of plain scalars with no `private` anywhere. Every unusual
 // YAML feature, alone or mixed into otherwise plain headers, must be denied; plain ones allowed.
 import { describe, expect, it } from "vitest";
-import { workerMayRead } from "./memory.ts";
+import { workerMayEnter, workerMayRead } from "./memory.ts";
 
 /** A small seeded PRNG (mulberry32), so a failure names a seed that reproduces it. */
 const prng = (seed: number) => () => {
@@ -102,9 +102,29 @@ const escaped = [...GH]
 const percent = [...GH].map((char) => `%${char.charCodeAt(0).toString(16)}`).join("");
 const html = [...GH].map((char) => `&#${char.charCodeAt(0)};`).join("");
 const base64 = Buffer.from(`token=${GH}`).toString("base64");
+const AWS_ASSIGNMENT = `${["AWS", "SECRET", "ACCESS", "KEY"].join("_")}=${"abcdefghijklmnopqrstuv"}0123456789ABCDxyz`;
+const SLACK_LONG = ["xoxb", "123456789012", "123456789012", "abcdefghijklmnopqrstuvwx"].join("-");
+const USERINFO = ["amy", "orchard-willow"].join(":");
+const HEX_TEXT = Buffer.from(["pass", "word=abcdefgh"].join("")).toString("hex");
+const SPACED_BASE64 = (
+  Buffer.from(GH)
+    .toString("base64")
+    .match(/.{1,3}/g) ?? []
+).join(" ");
+const WRAPPED_BY_4 = (
+  Buffer.from(GH)
+    .toString("base64")
+    .match(/.{1,4}/g) ?? []
+).join("\n");
+/** `GH` in base64, wrapped every 12 characters as the reviewer sent it. */
+const WRAPPED_BASE64 = (
+  Buffer.from(GH)
+    .toString("base64")
+    .match(/.{1,12}/g) ?? []
+).join("\n");
 
 /**
- * Every case from the reviews of #198, rounds 3 to 8, as one table: the path and text a worker would
+ * Every case from the reviews of #198, rounds 3 to 9, as one table: the path and text a worker would
  * read, and whether it may. A file a worker may not read is dropped whole: nothing in it is shown.
  */
 const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, allowed: boolean]> =
@@ -163,7 +183,7 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["short padded base64", "a.md", "blob dG9rZW4=", false],
     ["wrapped base64", "a.md", "Z2hwX2FiY2RlZmdo\naWprbG1ub3BxcnN0", false],
     ["mixed run of 16", "a.md", "id a1b2c3d4e5f6g7h8", false],
-    ["hex run of 20", "a.md", "sha 0123456789abcdef0123", false],
+    ["uncited hex run of 20", "a.md", "id 0123456789abcdef0123", false],
     ["nested encoding", "a.md", "see %5Cu0067hp", false],
     ["greedy unicode escape", "a.md", "see \\u{67}hp", false],
     ["bad percent before a good one", "a.md", "see %zz%67hp", false],
@@ -176,7 +196,56 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["underscore name", "notes_v2.md", "Body.", false],
     ["keyword in a name", "aws-secret.md", "Body.", false],
     ["keyword in a folder", "session/notes.md", "Body.", false],
+    // Round 9, the reviewer's exact payloads (findings 1 to 8).
+    ["1: AWS key assignment", "a.md", AWS_ASSIGNMENT, false],
+    ["2: token as a filename", `${GH}.md`, "Ordinary prose.", false],
+    ["3: nested percent", "a.md", "%2563ookie: sid=abc123", false],
+    ["3: mixed percent and HTML", "a.md", "author%69zat&#105;on: abc123", false],
+    ["4: short base64", "a.md", "cGFzc3dvcmQ9YWJj", false],
+    ["4: short Basic", "a.md", "Basic YTpi", false],
+    ["5: four-digit escape", "a.md", "\\u0062earer abcdefghijklmnop", false],
+    ["6: bad percent shields a good one", "a.md", "%FF%63ookie: sid=abc123", false],
+    ["7: uppercase HTML hex", "a.md", "&#X63;ookie: sid=abc123", false],
+    ["8: fullwidth label", "a.md", "\uFF43\uFF4F\uFF4F\uFF4B\uFF49\uFF45: sid=abc123", false],
+    ["8: zero-width label", "a.md", `coo${String.fromCharCode(0x200b)}kie: sid=abc123`, false],
+    ["letters-only base64 of text", "a.md", "see YWJjZGVm", false],
+    // Round 10, the reviewer's exact payloads (findings 1 to 5), and their class.
+    ["10.1: wrapped base64, as sent", "a.md", WRAPPED_BASE64, false],
+    ["10.1: base64 split by spaces", "a.md", `blob ${SPACED_BASE64} done`, false],
+    ["10.1: base64 split every 4 over lines", "a.md", WRAPPED_BY_4, false],
+    ["10.2: Slack token as a name", `${SLACK}.md`, "Ordinary prose.", false],
+    ["10.2: longer Slack token as a name", `${SLACK_LONG}.md`, "Ordinary prose.", false],
+    ["10.2: token in a folder name", `${SLACK}/notes.md`, "Ordinary prose.", false],
+    ["10.3: URL userinfo", "url.md", `https://${USERINFO}@example.test/`, false],
+    ["10.3: connection string", "url.md", `postgresql://${USERINFO}@db.example.test/app`, false],
+    [
+      "10.4: 40 mixed past hex, after at",
+      "a.md",
+      `Landed at ${"0123456789abcdefghij".repeat(2)}.`,
+      false,
+    ],
+    ["10.4: hex-encoded text, after at", "a.md", `Landed at ${HEX_TEXT}.`, false],
     // Plain prose a worker still reads: not over-blocked.
+    ["a word on each line", "days.md", "Mondays\nTuesdays\nWednesdays\nrelease-notes", true],
+    [
+      "10.4: a decision with its commit",
+      "decisions.md",
+      "2026-11-07: PR #198 landed at 0123456789abcdef0123456789abcdef01234567.",
+      true,
+    ],
+    ["10.4: a short head", "decisions.md", "Reviewed at head e0d0a61, then fixed.", true],
+    ["10.4: a SHA with an ellipsis", "decisions.md", "Merged as 3b64ac47\u2026 on Friday.", true],
+    ["10.4: commit and sha", "decisions.md", "See commit 720331533d7451d6 and sha: abc1234.", true],
+    [
+      "10.5: a file in a folder",
+      "repos/api.md",
+      "2026-11-07: PR #198 uses the daily schedule.",
+      true,
+    ],
+    ["10.5: a nested folder", "repos/gram/notes.md", "Ordinary prose.", true],
+    ["plain names with numbers", "release-notes-2026-11-07.md", "Ordinary prose.", true],
+    ["a word that starts like a prefix", "github-actions.md", "Ordinary prose.", true],
+    ["a URL with no userinfo", "links.md", "Docs live at https://example.test/docs/start.", true],
     ["tabs, not spaces", "conventions.md", "Use tabs, not spaces.", true],
     [
       "typographic punctuation",
@@ -197,5 +266,16 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
 describe("workerMayRead, every review's cases", () => {
   it.each(CASES)("%s", (_label, path, text, allowed) => {
     expect(workerMayRead(path, text)).toBe(allowed);
+  });
+});
+
+describe("workerMayEnter", () => {
+  it("goes into plain folders only, none named for a credential", () => {
+    for (const path of ["repos", "repos/shop", "release-notes"]) {
+      expect(workerMayEnter(path), path).toBe(true);
+    }
+    for (const path of [".git", "Repos", "private", "session", "repos/api_keys", "a b", "ok.md"]) {
+      expect(workerMayEnter(path), path).toBe(false);
+    }
   });
 });

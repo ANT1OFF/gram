@@ -789,6 +789,30 @@ const CREDENTIAL_WORD =
 /** What a worker's `memory_list` shows: lowercase words joined by `-`, in folders, ending `.md`. */
 const PLAIN_NAME = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\.md$/;
 
+/** A folder a worker's `memory_list` goes into: lowercase words joined by `-`, nested. */
+const PLAIN_FOLDER = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;
+
+/** The first word of a known token shape: Slack `xoxb-`, GitHub `ghp_`, GitLab `glpat-`, AWS `akia`. */
+const TOKEN_PREFIX = /^(?:xox[a-z]|gh[pousr]|glpat|akia|asia|sk|pk|rk|hf|shpat|shpss)$/;
+
+/**
+ * Whether a plain name or folder carries a token in its words (split at `/` and `-`): a known token
+ * prefix, a word of 20 or more characters, six or more digits, eight or more mixing letters and
+ * digits, or base64 that decodes to text. A plain alphabet alone does not make a name safe.
+ */
+const tokenInName = (path: string): boolean =>
+  path
+    .replace(/\.md$/, "")
+    .split(/[/-]/)
+    .some(
+      (word) =>
+        TOKEN_PREFIX.test(word) ||
+        word.length >= 20 ||
+        /\d{6,}/.test(word) ||
+        (word.length >= 8 && /\d/.test(word) && /[a-z]/.test(word)) ||
+        (word.length >= 8 && decodesToText(word)),
+    );
+
 /** Characters plain prose is made of: printable ASCII, tab and newlines, and typographic punctuation. */
 const PLAIN_CHARS = /^[\t\n\r\x20-\x7E\u2013\u2014\u2018\u2019\u201C\u201D\u2026\u2022\u00B7]*$/;
 
@@ -806,6 +830,100 @@ const LONG_RUN =
 const mixedRun = (text: string): boolean =>
   (text.match(/[A-Za-z0-9]{16,}/g) ?? []).some((run) => /\d/.test(run) && /[A-Za-z]/.test(run));
 
+/**
+ * Whether a base64 or base64url token, 8 characters or more, decodes to printable text: encoded
+ * text a worker could read by decoding it. Prose words almost never do.
+ */
+const decodesToText = (token: string): boolean => {
+  const bytes = Buffer.from(token.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  return bytes.length >= 4 && bytes.every((byte) => byte >= 0x20 && byte <= 0x7e);
+};
+
+const BASE64_TOKEN = /[A-Za-z0-9+/_-]{8,}={0,2}/g;
+const TOKEN_LINE = /^[A-Za-z0-9+/=_-]+$/;
+
+/**
+ * The text's lines with every run of consecutive token-only lines (a wrapped base64 blob) joined
+ * into one, so a token split across short lines is checked whole.
+ */
+const unwrapped = (text: string): Array<string> => {
+  const runs: Array<string> = [];
+  let run = "";
+  for (const line of text.split(/\r?\n/).map((item) => item.trim())) {
+    if (TOKEN_LINE.test(line)) {
+      run += line;
+      continue;
+    }
+    if (run !== "") runs.push(run);
+    run = "";
+    runs.push(line);
+  }
+  if (run !== "") runs.push(run);
+  return runs;
+};
+
+/** The longest run of printable ASCII bytes `token` decodes to as base64 or base64url. */
+const printableSpan = (token: string): number => {
+  let best = 0;
+  let run = 0;
+  for (const byte of Buffer.from(token.replace(/-/g, "+").replace(/_/g, "/"), "base64")) {
+    run = byte >= 0x20 && byte <= 0x7e ? run + 1 : 0;
+    best = Math.max(best, run);
+  }
+  return best;
+};
+
+const BASE64_WORD = /^[A-Za-z0-9+/_-]+={0,2}$/;
+
+/**
+ * Whether base64 split at any whitespace, across spaces or lines and at any width, decodes to 12 or
+ * more printable characters when its pieces are joined from some word on (up to 64 words).
+ */
+const spacedBase64 = (text: string): boolean => {
+  const words = text.split(/\s+/);
+  for (let start = 0; start < words.length; start++) {
+    if (!BASE64_WORD.test(words[start]!)) continue;
+    let joined = "";
+    for (let end = start; end < words.length && end < start + 64; end++) {
+      if (!BASE64_WORD.test(words[end]!)) break;
+      joined += words[end];
+    }
+    if (joined.length >= 16 && printableSpan(joined) >= 12) return true;
+  }
+  return false;
+};
+
+/** Whether any token, wrapped or not, mixes letters and digits for 16 or more, or decodes to text. */
+const encodedRun = (text: string): boolean =>
+  spacedBase64(text) ||
+  unwrapped(text).some(
+    (line) => mixedRun(line) || (line.match(BASE64_TOKEN) ?? []).some(decodesToText),
+  );
+
+/** A URL with userinfo (`scheme://user:pass@host`): a credential in the open. */
+const URL_USERINFO = /[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/?#@]*@/;
+
+/**
+ * A commit SHA as prose cites it: 7 to 40 lowercase hex characters after `head`, `commit`, `at`,
+ * `sha` or `rev`, or followed by an ellipsis (`abc1234…`).
+ */
+const CITED_SHA =
+  /(?<=\b(?:head|commits?|at|sha1?|rev|revision)\b[\s:`'"(#]{1,3})[0-9a-f]{7,40}(?![0-9A-Za-z])|\b[0-9a-f]{7,40}(?=\u2026|\.\.\.)/gi;
+
+const hexIsText = (hex: string): boolean =>
+  Buffer.from(hex.slice(0, hex.length - (hex.length % 2)), "hex").every(
+    (byte) => byte >= 0x20 && byte <= 0x7e,
+  );
+
+/**
+ * `text` with each cited SHA taken out, so a dated decision can name its commit. Hex that decodes
+ * to text (8 bytes or more) is kept in, and checked like any other run.
+ */
+const withoutShas = (text: string): string =>
+  text.replace(CITED_SHA, (sha) =>
+    /[A-F]/.test(sha) || (sha.length >= 16 && hexIsText(sha)) ? sha : "SHA",
+  );
+
 /** A delimiter left open that something could hide behind: a PEM block, a code fence, a quote. */
 const openDelimiter = (text: string): boolean =>
   (text.match(/-----BEGIN /g) ?? []).length !== (text.match(/-----END /g) ?? []).length ||
@@ -816,17 +934,22 @@ const openDelimiter = (text: string): boolean =>
  * Whether an entry is plainly safe prose a worker may read: an allow-list, failing closed. It is
  * shown only when every character is printable ASCII or common typographic punctuation (no other
  * Unicode, so no lookalike or zero-width character), there is no escape or encoding syntax, no
- * token-like run (20 or more base64, base64url or hex characters, or 16 or more mixing letters and
- * digits), and no credential word anywhere, `KEY=value` and `Header: value` lines included.
- * Anything else is dropped whole: nothing in it is redacted or partly shown.
+ * token-like run (20 or more base64, base64url or hex characters, 16 or more mixing letters and
+ * digits, or base64 that decodes to text, split over spaces or lines or not), no URL userinfo, and
+ * no credential word anywhere, `KEY=value` and `Header: value` lines included.
+ * A commit SHA cited as prose cites it (`at 0123abc`, `0123abc…`) is not a run. Anything else is
+ * dropped whole: nothing in it is redacted or partly shown.
  */
-const plainProse = (text: string): boolean =>
-  !openDelimiter(text) &&
-  PLAIN_CHARS.test(text) &&
-  !ENCODED.test(text) &&
-  !LONG_RUN.test(text) &&
-  !mixedRun(text) &&
-  !CREDENTIAL_WORD.test(text);
+const plainProse = (text: string): boolean => {
+  if (openDelimiter(text) || !PLAIN_CHARS.test(text) || ENCODED.test(text)) return false;
+  if (URL_USERINFO.test(text) || CREDENTIAL_WORD.test(text)) return false;
+  const runs = withoutShas(text);
+  return !LONG_RUN.test(runs) && !encodedRun(runs);
+};
+
+/** Whether a worker's listing goes into the folder at `path`: a plain name, no credential word. */
+export const workerMayEnter = (path: string): boolean =>
+  PLAIN_FOLDER.test(path) && !CREDENTIAL_WORD.test(path) && !tokenInName(path);
 
 /**
  * Whether a worker may see the memory file at `path`, and, given its text, read it. Its name must be
@@ -834,7 +957,7 @@ const plainProse = (text: string): boolean =>
  * plain header or none (`plainHeader`). A file it may not see is neither listed nor read.
  */
 export const workerMayRead = (path: string, text?: string): boolean => {
-  if (!PLAIN_NAME.test(path) || CREDENTIAL_WORD.test(path)) return false;
+  if (!PLAIN_NAME.test(path) || CREDENTIAL_WORD.test(path) || tokenInName(path)) return false;
   if (text === undefined) return true;
   return plainHeader(text) && plainProse(text);
 };
@@ -1010,7 +1133,8 @@ const make = (root: string): OrchestrationMemoryShape => {
           );
           for (const entry of entries ?? []) {
             const path = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
-            if (!workerMayRead(path)) continue;
+            // A folder is entered only when its name is plain; a file listed only when it may be read.
+            if (entry.kind === "dir" ? !workerMayEnter(path) : !workerMayRead(path)) continue;
             // `other` (a symlink included) is neither entered nor listed.
             if (entry.kind === "dir") {
               if (!entry.name.startsWith(".") && depth < MEMORY_MAX_DEPTH) {

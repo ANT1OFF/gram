@@ -609,14 +609,18 @@ orchestrator holds the workspace, and can't change it: the orchestrator stays it
 A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
 another workspace. What a worker reads of memory is an allow-list that fails closed. It lists only names of lowercase
-words joined by `-`, in folders, ending `.md`, with no credential word in them. It reads a file only
+words joined by `-`, in folders named the same way, ending `.md`, with no credential word or token shape in them
+(a known token prefix, a long word, six digits, a letter-and-digit mix, base64 of text), so not
+the `MEMORY.md` index. It reads a file only
 when the file is plainly safe prose: printable ASCII and common typographic punctuation only, no
 escape or encoding syntax (`\u`, `\x`, `%XX`, `&#`, `&name;`), no token-like run (20 or more
 base64, base64url or hex characters, 16 or more mixing letters and digits, padded base64, a
-`Basic` token), no delimiter left open, and no credential word anywhere (secret, token, key, pass,
+`Basic` token, base64 that decodes to text, split over spaces or lines or not), no URL userinfo
+(`scheme://user:pass@host`), no delimiter left open, and no credential word anywhere (secret, token, key, pass,
 auth, cookie, credential, session and the like, with `_`, `-` and `.` as word boundaries); and
 under no header, or one closed `---` block that is a flat map of plain scalars with no `private`
-in it. Anything else is dropped whole, never redacted or partly shown; the orchestrator sees it
+in it. A commit SHA cited the way prose cites one (`at 0123abc`, `head 0123abc`, `0123abc…`) is not
+counted as a run. Anything else is dropped whole, never redacted or partly shown; the orchestrator sees it
 all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
 digest shows it to the orchestrator, which records it only when it holds for later work. Solo
 threads have no workspace memory.
