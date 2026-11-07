@@ -3,7 +3,6 @@ import { useId, type ReactNode } from "react";
 
 import { ChoiceCheck } from "@/components/choice-check";
 import { Hint } from "@/components/hint";
-import { Button } from "@/components/ui/button";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { CHOICE_CARD } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -142,63 +141,13 @@ export function WhereFact({
 }
 
 /**
- * Who does it and where it runs, folded to one line for a repeat start: the work type, then each
- * place in words ("Gram · gram · New worktree, new branch"), and Change, which unfolds the full
- * choice. The words are what the unfolded form would show, so nothing is decided out of sight.
- */
-function NewFormSummary({
-  who,
-  places,
-  onExpand,
-  disabled,
-}: {
-  who: Who;
-  places: readonly string[];
-  onExpand: () => void;
-  disabled: boolean;
-}) {
-  const choice = WHO_CHOICES.find((each) => each.value === who)!;
-  const Icon = choice.icon;
-  return (
-    <div
-      role="group"
-      aria-label="Who does it and where it runs"
-      data-testid="new-summary"
-      className="flex min-w-0 items-center gap-2 rounded-md border border-edge bg-card py-1 pr-1 pl-2.5 text-meta"
-    >
-      <Icon aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-      <span className="shrink-0 font-medium text-foreground">
-        <span aria-hidden={choice.spoken === undefined ? undefined : true}>{choice.label}</span>
-        {choice.spoken !== undefined && <span className="sr-only">{choice.spoken}</span>}
-      </span>
-      <span className="min-w-0 truncate text-muted-foreground" data-testid="new-summary-where">
-        {places.map((place) => ` · ${place}`).join("")}
-      </span>
-      <Button
-        type="button"
-        size="xs"
-        variant="ghost"
-        className="ml-auto shrink-0"
-        data-testid="new-summary-change"
-        aria-label="Change who does it or where it runs"
-        aria-expanded={false}
-        disabled={disabled}
-        onClick={onExpand}
-      >
-        Change
-      </Button>
-    </div>
-  );
-}
-
-/**
  * The top of the one New form, the same whoever does it, in the order a start is thought through:
  * the title, the goal (`goal`, the brief), where it runs (`where`: the workspace, the repository and
  * the checkout, or the folder, each named before submit), then Who does it, each choice with its
  * outcome in a line. `line`, when given, says one more thing about where it runs.
  *
- * With `summary`, a repeat start to the remembered place, where it runs and who does it fold to
- * one line naming the same choices, which Change unfolds; the brief stays first.
+ * `folded`, a repeat start to the remembered place, leaves out where it runs and who does it: the
+ * line beside Start names both, and its Change unfolds them; the brief stays first.
  */
 export function NewFormHeader({
   who,
@@ -206,7 +155,7 @@ export function NewFormHeader({
   goal,
   where,
   line,
-  summary,
+  folded = false,
   disabled = false,
 }: {
   who: Who;
@@ -215,8 +164,8 @@ export function NewFormHeader({
   goal?: ReactNode;
   where: ReactNode;
   line?: ReactNode;
-  /** The places in words and how to unfold them; present only while the form is folded. */
-  summary?: { readonly places: readonly string[]; readonly onExpand: () => void } | undefined;
+  /** A repeat start: where it runs and who does it stay out until the line beside Start unfolds them. */
+  folded?: boolean | undefined;
   /** While a file is still uploading, which the other kind of draft couldn't take with it. */
   disabled?: boolean;
 }) {
@@ -225,20 +174,14 @@ export function NewFormHeader({
   const whereId = useId();
   const title = (
     <header>
-      <h1 className="font-heading text-title">New</h1>
+      <h1 className="font-heading text-title">New task</h1>
     </header>
   );
-  if (summary !== undefined) {
+  if (folded) {
     return (
       <div className="flex flex-col gap-4">
         {title}
         {goal}
-        <NewFormSummary
-          who={who}
-          places={summary.places}
-          onExpand={summary.onExpand}
-          disabled={disabled}
-        />
       </div>
     );
   }

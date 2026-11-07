@@ -13,7 +13,7 @@ test("a folder the system won't let Gram read shows the recovery card", async ({
   await expect(card.getByRole("alert")).toHaveText("Gram can't read this folder");
   await expect(card).toContainText("/Users/dev/Documents/Private");
   await expect(card).toContainText("Privacy & Security → Files & Folders");
-  await expect(page.getByRole("button", { name: /Create thread/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Start chat/ })).toBeDisabled();
   // The browser dev build has no desktop bridge: no Privacy Settings shortcut, no native dialog.
   await expect(card.getByRole("button", { name: "Open Privacy Settings" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Choose folder…" })).toHaveCount(0);

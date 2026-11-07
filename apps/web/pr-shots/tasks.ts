@@ -21,7 +21,7 @@ export const TASKS: readonly Task[] = [
     run: async (p, r) => {
       await r.key("ControlOrMeta+Alt+n");
       await r.text(p.getByLabel("What needs doing"), "Add retry coverage for the queue consumer.");
-      await r.click(p.getByRole("button", { name: /Start (workspace and )?worker/ }));
+      await r.click(p.getByRole("button", { name: /Start (workspace and )?task/ }));
       await expect(p).toHaveURL(/\/t\//);
       await expect(p.getByLabel("Message", { exact: true })).toBeVisible();
       await expect(

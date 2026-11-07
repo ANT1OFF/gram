@@ -292,6 +292,46 @@ describe("first run", () => {
     }
   });
 
+  it("with no agent ready, leads with installing one and calls opening a repository setup", async () => {
+    const { render } = load(withOnboarding({}), {
+      ...ALL_READY,
+      tools: ALL_READY.tools.filter((tool) => tool.tool !== "claude" && tool.tool !== "codex"),
+      claudeSignIn: "unknown",
+      codexSignIn: "notSignedIn",
+    });
+    render();
+    const welcome = within(await screen.findByTestId("welcome"));
+    await welcome.findByRole("list", { name: "Tools to set up" });
+    const agents = welcome.getByTestId("welcome-agents");
+    const open = welcome.getByTestId("welcome-open");
+    expect(open.getAttribute("data-setup")).toBe("true");
+    // The repository action only sets it up, and is no longer the filled primary.
+    expect(open.textContent).toMatch(/^Set up api/);
+    expect(open.className).not.toContain("bg-primary");
+    // The first install is the one filled action, and the card leads the actions.
+    const installs = within(agents).getAllByRole("link", { name: /^Install/ });
+    expect(installs.map((link) => link.className.includes("bg-primary"))).toEqual([true, false]);
+    expect(
+      agents.compareDocumentPosition(welcome.getByTestId("welcome-actions")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(welcome.getByTestId("welcome-next").textContent).toContain("once an agent is ready");
+  });
+
+  it("with only a sign-in left, makes Check again the next step", async () => {
+    const { render } = load(withOnboarding({}), {
+      ...ALL_READY,
+      tools: ALL_READY.tools.filter((tool) => tool.tool !== "codex"),
+      claudeSignIn: "notSignedIn",
+    });
+    render();
+    const welcome = within(await screen.findByTestId("welcome"));
+    await waitFor(() =>
+      expect(welcome.getByTestId("welcome-open").getAttribute("data-setup")).toBe("true"),
+    );
+    expect(welcome.getByRole("button", { name: "Check again" }).className).toContain("bg-primary");
+  });
+
   it("says what the GitHub CLI is for while it is missing, without blocking the start", async () => {
     const { render } = load(withOnboarding({}), {
       ...ALL_READY,

@@ -137,11 +137,16 @@ import {
 } from "./tree-model";
 import {
   defaultTaskTarget,
+  startingTaskTarget,
   reposWithoutWorkspace,
   settledTaskTarget,
   taskRepos,
 } from "./task-model";
 import { prWait, reviewerName, workerWait, type WaitInput } from "./wait-model";
+
+/** Why a draft starts on its target. */
+const targetFrom = (input: Parameters<typeof startingTaskTarget>[0]) =>
+  startingTaskTarget(input)?.from;
 
 const ws = "w-1" as WorkspaceId;
 const orchestratorId = "t-orch" as ThreadId;
@@ -2263,6 +2268,24 @@ describe("New task's target", () => {
         last: { kind: "workspace", workspaceId: "w-gone" as WorkspaceId },
       }),
     ).toEqual({ kind: "workspace", workspaceId: "w-docs" });
+  });
+
+  it("says why it starts there, so only a remembered target is marked as one", () => {
+    const last = { kind: "workspace", workspaceId: across.workspace.id } as const;
+    expect(
+      targetFrom({ here: docsOnly.workspace.id, workspaces: [across, docsOnly], projects, last }),
+    ).toBe("page");
+    expect(
+      targetFrom({
+        current: inThread({ projectId: docs.id }),
+        workspaces: [across, docsOnly],
+        projects,
+        last,
+      }),
+    ).toBe("thread");
+    expect(targetFrom({ workspaces: [across, docsOnly], projects, last })).toBe("last");
+    expect(targetFrom({ workspaces: [docsOnly], projects })).toBe("only");
+    expect(targetFrom({ workspaces: [], projects })).toBe("first");
   });
 
   it("names a repo to make a workspace for when none fits, and nothing without a repo", () => {

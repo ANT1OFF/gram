@@ -352,12 +352,12 @@ function ConfiguredNewThreadDraft() {
   useShortcut({
     id: "draft.create",
     keys: "mod+enter",
-    label: "Create thread",
+    label: "Start chat",
     group: "Composer",
     run: () => void create(),
   });
 
-  const createLabel = stage === "failed" ? "Retry" : "Create thread";
+  const createLabel = stage === "failed" ? "Retry" : "Start chat";
   const ModeIcon = MODE_ICONS[mode];
   const modeConfirm = usePickConfirm(mode);
   const modeTrigger = useRef<HTMLButtonElement>(null);

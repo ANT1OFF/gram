@@ -9,7 +9,7 @@ test("a single agent chat opens on the prompt-first controls, not scrolled down 
   await expect(page.getByTestId("pane-header")).toContainText("Fix flaky retry test");
   await page.keyboard.press("ControlOrMeta+KeyT");
   await expect(page).toHaveURL(/\/new$/);
-  await expect(page.getByRole("heading", { name: "New", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
   await expect(page.getByRole("radio", { name: "Chat", exact: true })).toBeChecked();
   await expect(page.getByRole("button", { name: "Folder", exact: true })).toBeInViewport();
   await expect(page.getByLabel("First prompt")).toBeInViewport();
@@ -30,10 +30,10 @@ test("the in chip holds bookmarks and recents, Checkout is the one worktree cont
   await expect(form.getByRole("combobox", { name: "Start from" })).toHaveCount(0);
   // Bookmarks and Recent are in the folder menu, not on the page.
   await expect(form.getByRole("region", { name: "Recent" })).toHaveCount(0);
-  // Create thread is the form's last control, after where it runs.
-  const create = form.getByRole("button", { name: "Create thread" });
+  // Start chat is the form's last control, after where it runs.
+  const create = form.getByRole("button", { name: "Start chat" });
   const last = form.locator("button, input, textarea, [role=combobox]").last();
-  await expect(last).toHaveAccessibleName("Create thread");
+  await expect(last).toHaveAccessibleName("Start chat");
   expect((await create.boundingBox())!.y).toBeGreaterThan(
     (await form.getByRole("radio", { name: "New worktree" }).boundingBox())!.y,
   );
@@ -93,62 +93,75 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page).toHaveURL(/\/new-task$/);
   await expect(page.getByTestId("task-target")).toHaveText("api");
   await expect(page.getByTestId("task-autonomy")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Send to orchestrator/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Send to team/ })).toBeVisible();
   await page.getByRole("radio", { name: "Task", exact: true }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
   await expect(page.getByTestId("task-target")).toHaveText("api");
-  // Beside Start: where it runs and whom it reports to, then, on a line of its own, whether its
-  // merge waits for you.
+  // Beside Start, a line each: where it runs (the workspace, repository and checkout, with
+  // Change), whom it reports to, and whether its merge waits for you, as a choice.
   const authority = page.getByTestId("task-authority");
-  await expect(authority.getByTestId("task-owner")).toHaveText(
-    "Runs in api · Reports to the api orchestrator",
+  await expect(authority.getByTestId("task-destination")).toContainText(
+    "Runs in api · api · New worktree, new branch",
   );
-  await expect(authority.getByTestId("task-merge-approval")).toHaveText(
-    "Merge approval Automatic · Merges its pull request without asking you.",
+  // Opened from the orchestrator's own thread: where it runs is read off it, not remembered.
+  await expect(authority.getByTestId("task-destination-remembered")).toHaveCount(0);
+  await expect(authority.getByTestId("task-owner")).toHaveText("Reports to the api orchestrator");
+  const approval = authority.getByRole("radiogroup", {
+    name: "Merge approval for every task in api",
+  });
+  await expect(approval.getByRole("radio", { name: "Automatic" })).toBeChecked();
+  await expect(authority.getByTestId("task-merge-approval")).toContainText(
+    "Merges its pull request without asking you.",
   );
   // Where it runs is named before submit: the workspace, the repository and a new worktree.
   const where = page.getByRole("group", { name: "Where it runs" });
   await expect(where.getByTestId("task-target")).toHaveText("api");
   await expect(where.getByTestId("task-repo")).toHaveText("api");
   await expect(where.getByTestId("task-checkout")).toHaveText("New worktree, new branch");
-  // The workspace's autonomy, in words, with what it allows and a way to change it, under
-  // Control and approvals.
+  // Change beside Start opens the workspace's menu in one click, and ⌘⇧L does from the keyboard.
+  await authority.getByRole("button", { name: /^Change where it runs/ }).click();
+  const targets = page.getByTestId("task-target-menu");
+  await expect(targets).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(targets).toBeHidden();
+  await page.getByLabel("What needs doing").focus();
+  await page.keyboard.press("ControlOrMeta+Shift+KeyL");
+  await expect(targets).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(targets).toBeHidden();
+  // The workspace's autonomy, in words, under Control and approvals.
   await expect(page.getByTestId("workspace-autonomy")).toHaveCount(0);
-  // The merge approval's value opens them, at the control that changes it.
-  await authority.getByTestId("task-authority-change").click();
+  await page.getByRole("button", { name: "Control and approvals" }).click();
   const autonomy = page.getByTestId("workspace-autonomy");
-  await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toBeFocused();
   await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
     "Workspace: full autonomy",
   );
-  await expect(autonomy.getByTestId("workspace-autonomy-summary")).toHaveText(
-    "Pushes, opens and merges pull requests without asking.",
-  );
-  await autonomy.getByTestId("workspace-autonomy-trigger").click();
-  const levels = page.getByTestId("workspace-autonomy-menu");
-  await expect(levels.getByRole("radio", { name: "Full" })).toBeChecked();
-  await levels.getByRole("radio", { name: "Publish" }).click();
+  // Ask, beside Start: the workspace steps down to Publish, which still opens pull requests.
+  await approval.getByRole("radio", { name: "Ask" }).click();
+  await expect(approval.getByRole("radio", { name: "Ask" })).toBeChecked();
   await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
     "Workspace: publish autonomy",
   );
-  await expect(authority.getByTestId("task-merge-approval")).toHaveText(
-    "Merge approval Asks you · Opens its pull request; merging waits for you.",
+  await expect(authority.getByTestId("task-merge-approval")).toContainText(
+    "Opens its pull request; merging waits for you.",
   );
-  // Back up to Full asks first, since nothing asks after it.
-  await levels.getByRole("radio", { name: "Full" }).click();
-  await levels.getByRole("button", { name: "Turn on Full" }).click();
+  // Back to Automatic asks first, since nothing asks after it.
+  await approval.getByRole("radio", { name: "Automatic" }).click();
+  const confirm = page.getByTestId("merge-approval-confirm");
+  await expect(approval.getByRole("radio", { name: "Ask" })).toBeChecked();
+  await confirm.getByRole("button", { name: "Merge automatically" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(approval.getByRole("radio", { name: "Automatic" })).toBeChecked();
   await expect(autonomy.getByTestId("workspace-autonomy-trigger")).toHaveText(
     "Workspace: full autonomy",
   );
-  await page.keyboard.press("Escape");
-  await expect(levels).toBeHidden();
 
   // Started from here, the worker is the orchestrator's and running, not held as yours.
   await expect(authority).toContainText("Reports to the api orchestrator");
   const hold = page.getByRole("switch", { name: "Start under my control" });
   await expect(hold).not.toBeChecked();
   await page.getByLabel("What needs doing").fill("Fix the retry test on Windows. It times out.");
-  await page.getByRole("button", { name: /Start worker/ }).click();
+  await page.getByRole("button", { name: /Start task/ }).click();
   // Titled from the first sentence, without its full stop.
   await expect(page.getByTestId("pane-header")).toContainText("Fix the retry test on Windows");
   await expect(page.getByTestId("pane-header")).not.toContainText("It times out");
@@ -172,12 +185,13 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
     .click();
   await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
-  // A repeat start to the same workspace folds who and where to one line; typing starts in the
-  // brief, and who the worker answers to is said beside Start.
-  const summary = page.getByRole("group", { name: "Who does it and where it runs" });
-  await expect(summary).toContainText("Task");
-  await expect(page.getByTestId("new-summary-where")).toContainText("New worktree, new branch");
+  // A repeat start to the same workspace folds who and where away: the line beside Start says
+  // both, and typing starts in the brief.
   await expect(page.getByRole("radiogroup", { name: "Who does it" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Where it runs" })).toHaveCount(0);
+  await expect(page.getByTestId("task-destination")).toContainText(
+    "Runs in api · api · New worktree, new branch",
+  );
   await expect(page.getByLabel("What needs doing")).toBeFocused();
   await expect(page.getByTestId("task-authority")).toContainText("Reports to the api orchestrator");
   await page.getByRole("button", { name: "Control and approvals" }).click();
@@ -185,12 +199,14 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await expect(page.getByTestId("task-authority")).toContainText(
     "You direct it until you hand it to the api orchestrator",
   );
-  // Change unfolds the full choice; the line beside Start still says who directs it.
-  await summary.getByRole("button", { name: /^Change/ }).click();
-  await expect(page.getByRole("radio", { name: "Task", exact: true })).toBeFocused();
+  // Change unfolds the full choice with the workspace's menu open; the line still says who directs.
+  await page.getByTestId("task-destination-change").click();
+  await expect(page.getByTestId("task-target-menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("radio", { name: "Task", exact: true })).toBeChecked();
   await expect(page.getByTestId("task-authority")).toContainText("You direct it");
   await page.getByLabel("What needs doing").fill("Rename the queue consumer");
-  await page.getByRole("button", { name: /Start worker/ }).click();
+  await page.getByRole("button", { name: /Start task/ }).click();
   await expect(page.getByTestId("pane-header")).toContainText("Rename the queue consumer");
   await expect(page.getByTestId("worker-banner-held")).toContainText("Under your control");
   await expect(page.getByTestId("worker-banner-held")).not.toContainText("Paused");
@@ -200,10 +216,8 @@ test("⌘N starts a task: a repo's workspace on send, its orchestrator, or a wor
   await add.click();
   await page.getByTestId("new-entry-menu").getByRole("menuitem", { name: /^Task/ }).click();
   await expect(page).toHaveURL(/\/new-task\?way=direct$/);
-  await page
-    .getByRole("group", { name: "Who does it and where it runs" })
-    .getByRole("button", { name: /^Change/ })
-    .click();
+  await page.getByTestId("task-destination-change").click();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("radio", { name: "Task", exact: true })).toBeChecked();
 });
 
@@ -223,7 +237,7 @@ test("Who does it turns a task into a one-off thread and back, keeping what was 
   await expect(page).toHaveURL(/\/new$/);
   await expect(page.getByRole("radio", { name: "Chat", exact: true })).toBeChecked();
   await expect(page.getByLabel("First prompt")).toHaveValue("Just a quick question");
-  await expect(page.getByRole("button", { name: /Create thread/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Start chat/ })).toBeVisible();
 
   // Back to the orchestrator, the folder goes along as the repo to make a workspace for.
   await page.getByRole("radio", { name: "Team", exact: true }).click();

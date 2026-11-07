@@ -136,7 +136,7 @@ test("phone pairs without leaking a navigation secret, reads, sends and reconnec
     await local.getByRole("combobox", { name: "Project path" }).fill(h.repo);
     await expect(local.getByTestId("folder-status")).toBeVisible();
     await local.getByRole("combobox", { name: "First prompt" }).fill("mobile seed");
-    await local.getByRole("button", { name: "Create thread" }).click();
+    await local.getByRole("button", { name: "Start chat" }).click();
     await expect(local).toHaveURL(/\/t\/[^/]+$/, { timeout: 30_000 });
     await expect(local.getByText("echo: mobile seed")).toBeVisible();
     const threadPath = new URL(local.url()).pathname;

@@ -134,7 +134,7 @@ describe("new-task authoritative preflight", () => {
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
     expect(start).not.toHaveBeenCalled();
     expect(
-      (screen.getByRole("button", { name: /Start workspace and worker/ }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: /Start workspace and task/ }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
   });
@@ -161,7 +161,7 @@ describe("worker entry intent", () => {
     );
     await waitFor(() =>
       expect(
-        (screen.getByRole("button", { name: /Start workspace and worker/ }) as HTMLButtonElement)
+        (screen.getByRole("button", { name: /Start workspace and task/ }) as HTMLButtonElement)
           .disabled,
       ).toBe(false),
     );
@@ -182,7 +182,7 @@ describe("worker entry intent", () => {
     expect(start).not.toHaveBeenCalled();
     // Start says what it waits on, on the button itself, keeping its action as its name.
     const button = screen.getByRole("button", {
-      name: "Start workspace and worker, Checking agents…",
+      name: "Start workspace and task, Checking agents…",
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.textContent).toBe("Checking agents…");
@@ -205,7 +205,7 @@ describe("worker entry intent", () => {
       const button = screen.getByTestId("task-submit") as HTMLButtonElement;
       expect(button.disabled).toBe(false);
       expect(button.hasAttribute("data-checking")).toBe(false);
-      expect(button.textContent).toMatch(/^Start workspace and worker/);
+      expect(button.textContent).toMatch(/^Start workspace and task/);
     });
   });
 });

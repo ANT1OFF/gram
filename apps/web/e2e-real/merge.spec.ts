@@ -34,7 +34,7 @@ test("reruns failed checks, squash-merges from the PR panel, and the thread sett
     .click();
   await page.getByRole("textbox", { name: "Branch name" }).fill(BRANCH_NAME);
   await page.getByRole("combobox", { name: "First prompt" }).fill("Ship the banner");
-  await page.getByRole("button", { name: "Create thread" }).click();
+  await page.getByRole("button", { name: "Start chat" }).click();
   await expect(page).toHaveURL(/\/t\/[^/]+$/, { timeout: 30_000 });
 
   const worktree = h.worktreeOnBranch(BRANCH_NAME);

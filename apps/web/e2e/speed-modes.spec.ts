@@ -77,7 +77,7 @@ for (const agent of ["claude", "codex"] as const)
     await expect(form.getByRole("combobox", { name: "Effort: High" })).toBeVisible();
     await page.getByRole("combobox", { name: "Project path" }).fill("~/Documents/code/sandbox");
     await form.getByLabel("First prompt").fill("Synthetic speed preference test.");
-    await form.getByRole("button", { name: /Create thread/ }).click();
+    await form.getByRole("button", { name: /Start chat/ }).click();
     await expect(page).toHaveURL(/\/t\/t-/);
     expect(
       await page.evaluate(() => JSON.parse(sessionStorage.getItem("gram.speed-created")!)),

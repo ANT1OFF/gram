@@ -120,7 +120,7 @@ test("seed threads with finished turns, one with a PR", async () => {
       .click();
     await page.getByRole("textbox", { name: "Branch name" }).fill(`perf-${t}`);
     await page.getByRole("combobox", { name: "First prompt" }).fill(`thread ${t} turn 0`);
-    await page.getByRole("button", { name: "Create thread" }).click();
+    await page.getByRole("button", { name: "Start chat" }).click();
     await expect(page).toHaveURL(/\/t\/[^/]+$/, { timeout: 30_000 });
     threads.push(new URL(page.url()).pathname.split("/").at(-1)!);
     await expect(page.getByText(`echo: thread ${t} turn 0`)).toBeVisible({ timeout: 30_000 });

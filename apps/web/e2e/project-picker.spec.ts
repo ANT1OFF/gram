@@ -37,7 +37,7 @@ for (const { mode, motion, resolved } of [
     await expect(page.getByTestId("folder-status")).toContainText("git");
 
     await page.getByLabel("First prompt").fill("hello from the picker");
-    await page.getByRole("button", { name: /Create thread/ }).click();
+    await page.getByRole("button", { name: /Start chat/ }).click();
     await expect(page).toHaveURL(/\/t\/t-mock-/);
     // By now the server's settings have loaded; they must not have replaced the seed.
     await expect(page.locator("html")).toHaveAttribute("data-mode", mode);
@@ -52,5 +52,5 @@ test("blocks Create until the path is a real folder", async ({ page }) => {
   await expect(page.getByTestId("folder-problem")).toHaveText(
     "Folder not found: /Users/dev/Documents/nope",
   );
-  await expect(page.getByRole("button", { name: /Create thread/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Start chat/ })).toBeDisabled();
 });

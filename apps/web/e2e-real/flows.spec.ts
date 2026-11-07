@@ -49,7 +49,7 @@ test("/new in a new worktree streams the echo, and Files finds a seeded file", a
     .click();
   await page.getByRole("textbox", { name: "Branch name" }).fill(BRANCH_NAME);
   await page.getByRole("combobox", { name: "First prompt" }).fill(PROMPT);
-  await page.getByRole("button", { name: "Create thread" }).click();
+  await page.getByRole("button", { name: "Start chat" }).click();
 
   await expect(page).toHaveURL(/\/t\/[^/]+$/, { timeout: 30_000 });
   threadId = new URL(page.url()).pathname.split("/").at(-1)!;
@@ -214,7 +214,7 @@ test("⌘N's New task makes the repo's workspace, hands its orchestrator the tas
     await expect(control).not.toBeChecked();
     if (hold) await control.click();
     await page.getByLabel("What needs doing").fill(text);
-    await page.getByRole("button", { name: /Start worker/ }).click();
+    await page.getByRole("button", { name: /Start task/ }).click();
     await expect(page.getByTestId("pane-header")).toContainText(text, { timeout: 30_000 });
     await expect(transcript.getByText(`echo: ${text}`)).toBeVisible();
   };

@@ -40,7 +40,7 @@ const SEND_KEYS = [
 
 /**
  * What "Send with" says. The shortcut is named by its effective keys, not as ⌘Enter: Send and
- * Create thread are separate, rebindable entries in Settings → Keyboard, and promising a fixed
+ * Start chat are separate, rebindable entries in Settings → Keyboard, and promising a fixed
  * chord would be wrong for anyone who moved or turned off either.
  */
 export const sendWithDescription = (send: string, create: string): string => {

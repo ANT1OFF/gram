@@ -11,7 +11,7 @@ test("synthetic CLI readiness permits an echo turn without an installed account"
     await page.getByRole("combobox", { name: "Project path" }).fill(h.repo);
     await expect(page.getByTestId("folder-status")).toBeVisible();
     await page.getByRole("combobox", { name: "First prompt" }).fill("Readiness fixture marker");
-    const create = page.getByRole("button", { name: "Create thread" });
+    const create = page.getByRole("button", { name: "Start chat" });
     await expect(create).toBeEnabled();
     await create.click();
     await expect(page).toHaveURL(/\/t\/[^/]+$/);
@@ -41,7 +41,7 @@ for (const agent of ["Claude Code", "Codex"]) {
           { exact: true },
         ),
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Create thread" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Start chat" })).toBeDisabled();
       await expect(page).toHaveURL(/\/new$/);
     } finally {
       await h.stop();

@@ -14,6 +14,6 @@ test("a folder without git runs in place, with worktree options disabled", async
   await expect(form.getByRole("radio", { name: "Existing worktree" })).toBeDisabled();
 
   await form.getByLabel("First prompt").fill("notes, please");
-  await form.getByRole("button", { name: /Create thread/ }).click();
+  await form.getByRole("button", { name: /Start chat/ }).click();
   await expect(page).toHaveURL(/\/t\/t-/);
 });

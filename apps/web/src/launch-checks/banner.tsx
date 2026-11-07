@@ -12,9 +12,10 @@ import { cn } from "@/lib/utils";
 import { useDiagnostics, useFeature } from "@/settings/use-diagnostics";
 import { useSaveSettings } from "@/settings/use-save-settings";
 import { useServerSettings } from "@/settings-sync/store";
+import { useWelcomeShowing } from "@/welcome/welcome-state";
 
 import { CommandText } from "./command-text";
-import { launchIssues, type LaunchIssue } from "./issues";
+import { firstRunCovers, launchIssues, type LaunchIssue } from "./issues";
 import { useLaunchChecks } from "./use-launch-checks";
 
 /** A dismissal as `onboarding.dismissedLaunchIssues` stores it. */
@@ -57,7 +58,15 @@ export const useBannerFold = create<BannerFoldState>()(
  * title bar's chip, with the keys that fold it.
  */
 export function useLaunchBanner() {
-  const { shown, shownKeys, dismiss, cleared, dropCleared } = useLaunchIssues();
+  const issues = useLaunchIssues();
+  // The first-run screen's readiness card says these with their remedies: one warning, not two.
+  const welcome = useWelcomeShowing();
+  const { cleared, dropCleared } = issues;
+  const shown = welcome ? issues.shown.filter((issue) => !firstRunCovers(issue)) : issues.shown;
+  const shownKeys = welcome
+    ? issues.shownKeys.filter((_, index) => !firstRunCovers(issues.shown[index]!))
+    : issues.shownKeys;
+  const dismiss = () => issues.dismiss(shown);
   const folded = useBannerFold((s) => s.folded);
   const open = useBannerFold((s) => s.open);
   const fresh = shownKeys.some((key) => !folded.includes(key));
@@ -84,7 +93,8 @@ export function useLaunchIssues(): {
   /** The shown problems' keys, per app version (`dismissalKey`). */
   shownKeys: readonly string[];
   dismissed: readonly LaunchIssue[];
-  dismiss: () => void;
+  /** Dismisses `only`, else every shown problem. */
+  dismiss: (only?: readonly LaunchIssue[]) => void;
   /** Whether a saved dismissal's problem has cleared, so `dropCleared` should forget it. */
   cleared: boolean;
   dropCleared: () => void;
@@ -112,8 +122,8 @@ export function useLaunchIssues(): {
     save({ onboarding: { dismissedLaunchIssues: kept } }).catch((error: unknown) =>
       console.error("launch checks: drop cleared dismissals", error),
     );
-  const dismiss = () => {
-    const keys = shown.map((issue) => dismissalKey(version, issue.id));
+  const dismiss = (only: readonly LaunchIssue[] = shown) => {
+    const keys = only.map((issue) => dismissalKey(version, issue.id));
     setDismissedHere(new Set([...dismissedHere, ...keys]));
     save({ onboarding: { dismissedLaunchIssues: [...new Set([...kept, ...keys])] } }).catch(
       (error: unknown) => console.error("launch checks: save dismissal", error),

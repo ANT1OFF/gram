@@ -45,26 +45,34 @@ const inWorkspace = (state: WorkspaceState): TaskTarget => ({
 });
 
 /**
- * Which target the draft starts on: where it was opened from. A workspace's own page (`here`) is
- * that workspace. From a thread, its repo decides: the thread's own workspace (an orchestrator's or
- * a worker's), else the workspace that is only that repo, else one it is part of, else that repo,
- * to make a workspace for on send. Only from neither do the last one used, the only workspace, and
- * then the most useful repo come in. `undefined` when Gram knows no project at all.
+ * Why the draft starts on its target: the workspace page it was opened from (`page`), the thread it
+ * was opened from (`thread`, through that thread's repo), the last task's target (`last`), the only
+ * workspace there is (`only`), or the most useful repo or the first workspace (`first`). Only `last`
+ * is remembered rather than read off where the user is, so only it is marked as such.
  */
-export function defaultTaskTarget(input: {
+export type TaskTargetFrom = "page" | "thread" | "last" | "only" | "first";
+
+/**
+ * Which target the draft starts on, and why (`from`): where it was opened from. A workspace's own
+ * page (`here`) is that workspace. From a thread, its repo decides: the thread's own workspace (an
+ * orchestrator's or a worker's), else the workspace that is only that repo, else one it is part of,
+ * else that repo, to make a workspace for on send. Only from neither do the last one used, the only
+ * workspace, and then the most useful repo come in. `undefined` when Gram knows no project at all.
+ */
+export function startingTaskTarget(input: {
   readonly current?: Thread | undefined;
   readonly here?: WorkspaceId | undefined;
   readonly workspaces: readonly WorkspaceState[];
   readonly projects: readonly Project[];
   readonly last?: TaskTarget | undefined;
-}): TaskTarget | undefined {
+}): { readonly target: TaskTarget; readonly from: TaskTargetFrom } | undefined {
   const { current, here, workspaces, projects, last } = input;
   const repos = reposWithoutWorkspace(workspaces, projects);
   const page = workspaces.find((state) => here !== undefined && state.workspace.id === here);
-  if (page !== undefined) return inWorkspace(page);
+  if (page !== undefined) return { target: inWorkspace(page), from: "page" };
   if (current !== undefined) {
     const own = workspaces.find((state) => state.workspace.id === current.workspaceId);
-    if (own !== undefined) return inWorkspace(own);
+    if (own !== undefined) return { target: inWorkspace(own), from: "thread" };
     const having = workspaces.filter((state) =>
       state.workspace.projectIds.includes(current.projectId),
     );
@@ -73,13 +81,25 @@ export function defaultTaskTarget(input: {
       having.find((state) => state.workspace.homeProjectId === current.projectId) ??
       having[0];
     // Also before the projects list has it, which would otherwise fall through to another target.
-    return mine === undefined ? { kind: "repo", projectId: current.projectId } : inWorkspace(mine);
+    return {
+      target:
+        mine === undefined ? { kind: "repo", projectId: current.projectId } : inWorkspace(mine),
+      from: "thread",
+    };
   }
-  if (last !== undefined && offered(last, workspaces, repos)) return last;
-  if (workspaces.length === 1) return inWorkspace(workspaces[0]!);
-  if (repos[0] !== undefined) return { kind: "repo", projectId: repos[0].id };
-  return workspaces[0] === undefined ? undefined : inWorkspace(workspaces[0]);
+  if (last !== undefined && offered(last, workspaces, repos)) return { target: last, from: "last" };
+  if (workspaces.length === 1) return { target: inWorkspace(workspaces[0]!), from: "only" };
+  if (repos[0] !== undefined)
+    return { target: { kind: "repo", projectId: repos[0].id }, from: "first" };
+  return workspaces[0] === undefined
+    ? undefined
+    : { target: inWorkspace(workspaces[0]), from: "first" };
 }
+
+/** The target `startingTaskTarget` picks, without why. */
+export const defaultTaskTarget = (
+  input: Parameters<typeof startingTaskTarget>[0],
+): TaskTarget | undefined => startingTaskTarget(input)?.target;
 
 /**
  * `target`, with a repo that has its own one-project workspace by now as that workspace: the server

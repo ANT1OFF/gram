@@ -37,7 +37,7 @@ test("By workspace names a live workspace, beside Solo threads, in every period 
   await page.getByRole("combobox", { name: "Project path" }).fill(h.repo);
   await expect(page.getByTestId("folder-status")).toBeVisible();
   await page.getByRole("combobox", { name: "First prompt" }).fill(solo);
-  await page.getByRole("button", { name: "Create thread" }).click();
+  await page.getByRole("button", { name: "Start chat" }).click();
   await expect(page).toHaveURL(/\/t\/[^/]+$/, { timeout: 30_000 });
   await expect(page.getByText(`echo: ${solo}`)).toBeVisible();
 

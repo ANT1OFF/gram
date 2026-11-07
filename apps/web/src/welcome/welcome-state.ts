@@ -12,7 +12,14 @@ import { useThreadsStore } from "@/stores/threads";
  * Whether this app session shows the first-run screen; decided once, when settings first load, so
  * picking a repository that happens to mark it seen can't close it under the user.
  */
-export const useWelcome = create<{ open: boolean | undefined }>()(() => ({ open: undefined }));
+export const useWelcome = create<{
+  open: boolean | undefined;
+  /** Whether the first-run screen is drawn now, which says the launch problems it covers. */
+  onScreen: boolean;
+}>()(() => ({ open: undefined, onScreen: false }));
+
+/** Whether the first-run screen is on screen now, so the banner leaves it what it already says. */
+export const useWelcomeShowing = (): boolean => useWelcome((s) => s.onScreen);
 
 /** Whether the first-run screen shows: a first run, while no workspace exists. */
 export function useFirstRun(): boolean {

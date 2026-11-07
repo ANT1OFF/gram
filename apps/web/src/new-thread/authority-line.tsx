@@ -1,7 +1,9 @@
 import type { Autonomy, PermissionMode } from "@gram/contracts";
-import { Shield } from "lucide-react";
+import { Network, Shield } from "lucide-react";
 import { createElement } from "react";
 
+import { Hint } from "@/components/hint";
+import { Button } from "@/components/ui/button";
 import { MODE_ICONS, MODE_OPTIONS } from "@/composer/options";
 import { FOCUS_RING } from "@/lib/selection";
 import { cn } from "@/lib/utils";
@@ -10,10 +12,12 @@ import { presentAutonomy } from "@/settings/workspace-settings-model";
 import { modeWarning } from "@/thread/mode-warning";
 import { known } from "@/thread/orchestration-model";
 
+import { MergeApprovalSegments, mergeApprovalOf, type MergeApproval } from "./merge-approval";
+
 /** Whether a merge waits for the user at each level: the merge approval line's value. */
 const MERGE_APPROVAL: Readonly<Record<Autonomy, string>> = {
-  supervised: "Asks you",
-  publish: "Asks you",
+  supervised: "Ask",
+  publish: "Ask",
   full: "Automatic",
 };
 
@@ -40,7 +44,7 @@ export interface TaskSummary {
    * while a direct worker is held. Ownership only; it says nothing of merging.
    */
   readonly who: string;
-  /** Whether a merge waits for the user: "Automatic" or "Asks you", the workspace's autonomy. */
+  /** Whether a merge waits for the user: "Automatic" or "Ask", the workspace's autonomy. */
   readonly approval: string;
   /** What that approval means for this start, in a few words. */
   readonly merge: string;
@@ -84,74 +88,124 @@ export function taskSummary({
 }
 
 /**
- * The New form's summary beside Start, on two lines: where the task runs and whom it reports to,
- * then "Merge approval", labelled on its own line, with whether a merge waits for the user (amber
- * when it doesn't, as everywhere Full shows). The value opens the controls that change it
- * (`onChange`); neither line is ever folded away.
+ * The New form's summary beside Start, one fact a line on one text edge, each line's mark in a
+ * column of its own: where the task runs (`Runs in billing-api · api · New worktree, new branch`,
+ * the places as the form names them), marked Remembered when it is the last task's target rather
+ * than where the user is, with Change (`onChangeWhere`) to pick another; then whom it reports to;
+ * then Merge approval, Ask or Automatic, with what that means for this start (amber at Automatic,
+ * as everywhere Full shows). `approval` makes the merge approval a choice; none of it is folded.
  */
 export function TaskAuthorityLine({
   way,
   workspace,
+  places = [],
   makesOne,
   autonomy,
   hold,
-  onChange,
+  remembered = false,
+  onChangeWhere,
+  changeWhereHint,
+  approval,
 }: {
   way: "plan" | "direct";
   workspace: string;
+  /** The repository and checkout after the workspace, as the form names them. */
+  places?: readonly string[] | undefined;
   makesOne?: boolean | undefined;
   autonomy: string;
   hold: boolean;
-  /** Opens the autonomy and hold controls; the merge approval's value is then a button. */
-  onChange?: (() => void) | undefined;
+  /** Whether the target is the last task's, kept from before rather than read off this place. */
+  remembered?: boolean | undefined;
+  /** Opens where it runs to change it. */
+  onChangeWhere?: (() => void) | undefined;
+  /** Change's tooltip, with its shortcut. */
+  changeWhereHint?: string | undefined;
+  /** The merge approval as a choice: what it applies to, and the pick. */
+  approval?:
+    | {
+        readonly label: string;
+        readonly onPick: (approval: MergeApproval) => void;
+        readonly disabled?: boolean | undefined;
+      }
+    | undefined;
 }) {
   const level = presentAutonomy(autonomy);
   const icon = known(AUTONOMY_ICON, autonomy as Autonomy) ?? Shield;
   const summary = taskSummary({ way, workspace, makesOne, autonomy, hold });
-  const value = (
-    <span className={cn("font-medium", level.warn ? "text-warning" : "text-foreground")}>
-      {summary.approval}
-    </span>
-  );
-  // Two rows on one text edge: the merge line's mark sits in a column of its own, so the owner
-  // line above starts where the merge line's words do.
   return (
     <span
       data-testid="task-authority"
       data-autonomy={autonomy}
       data-hold={hold ? "true" : undefined}
-      className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 gap-y-0.5 text-reading text-muted-foreground"
+      className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-1.5 gap-y-1 text-reading text-muted-foreground"
     >
+      <Network aria-hidden className="col-start-1 mt-1 size-icon-row shrink-0" />
+      <span
+        data-testid="task-destination"
+        data-remembered={remembered ? "true" : undefined}
+        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+      >
+        <span className="min-w-0 text-foreground">{[summary.where, ...places].join(" · ")}</span>
+        {remembered && (
+          <Hint
+            label="Where your last task went. Change picks another."
+            render={
+              <span
+                tabIndex={0}
+                data-testid="task-destination-remembered"
+                className={cn(
+                  "rounded-xs border border-border px-1.5 text-meta text-muted-foreground",
+                  FOCUS_RING,
+                )}
+              />
+            }
+          >
+            Remembered
+          </Hint>
+        )}
+        {onChangeWhere !== undefined && (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            data-testid="task-destination-change"
+            aria-label={`Change where it runs${changeWhereHint === undefined ? "" : ` (${changeWhereHint})`}`}
+            title={
+              changeWhereHint === undefined
+                ? undefined
+                : `Change where it runs (${changeWhereHint})`
+            }
+            onClick={onChangeWhere}
+          >
+            Change
+          </Button>
+        )}
+      </span>
       <span data-testid="task-owner" className="col-start-2">
-        <span className="text-foreground">{summary.where}</span>
-        {" · "}
         {summary.who}
       </span>
       {createElement(icon, {
         "aria-hidden": true,
-        className: cn("col-start-1 mt-1 size-icon-row shrink-0", level.warn && "text-warning"),
+        className: cn("col-start-1 mt-1.5 size-icon-row shrink-0", level.warn && "text-warning"),
       })}
-      <span data-testid="task-merge-approval">
-        Merge approval{" "}
-        {onChange === undefined ? (
-          value
+      <span
+        data-testid="task-merge-approval"
+        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+      >
+        <span>Merge approval</span>
+        {approval === undefined ? (
+          <span className={cn("font-medium", level.warn ? "text-warning" : "text-foreground")}>
+            {summary.approval}
+          </span>
         ) : (
-          <button
-            type="button"
-            data-testid="task-authority-change"
-            aria-label={`Merge approval: ${summary.approval}. Change`}
-            title={`${level.label} autonomy. Change it under Control and approvals`}
-            onClick={onChange}
-            className={cn(
-              "rounded-sm underline decoration-dotted underline-offset-2 hover:decoration-solid",
-              FOCUS_RING,
-            )}
-          >
-            {value}
-          </button>
+          <MergeApprovalSegments
+            value={mergeApprovalOf(autonomy)}
+            label={approval.label}
+            onPick={approval.onPick}
+            disabled={approval.disabled}
+          />
         )}
-        {" · "}
-        {summary.merge}.
+        <span className="min-w-0">{summary.merge}.</span>
       </span>
     </span>
   );

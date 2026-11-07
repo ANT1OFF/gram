@@ -62,7 +62,7 @@ async function threadWithPr() {
     .click();
   await page.getByRole("textbox", { name: "Branch name" }).fill(BRANCH_NAME);
   await page.getByRole("combobox", { name: "First prompt" }).fill("Greet the reviewers");
-  await page.getByRole("button", { name: "Create thread" }).click();
+  await page.getByRole("button", { name: "Start chat" }).click();
   await expect(page).toHaveURL(/\/t\/[^/]+$/, { timeout: 30_000 });
   threadId = new URL(page.url()).pathname.split("/").at(-1)!;
 

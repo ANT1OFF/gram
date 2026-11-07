@@ -17,7 +17,7 @@ test("/new warns when the current checkout already has a thread, with ways forwa
   await expect(notice).toContainText("“Rewrite the README” is already open in this checkout");
 
   // Create is held back until the warning is answered.
-  await form.getByRole("button", { name: /Create thread/ }).click();
+  await form.getByRole("button", { name: /Start chat/ }).click();
   await expect(page).toHaveURL(/\/new$/);
 
   await notice.getByRole("button", { name: "Use a new worktree instead" }).click();

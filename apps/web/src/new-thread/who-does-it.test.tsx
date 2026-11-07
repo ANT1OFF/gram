@@ -22,7 +22,7 @@ describe("NewFormHeader", () => {
         />
       </TooltipProvider>,
     );
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("New");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("New task");
     const who = screen.getByRole("radiogroup", { name: "Who does it" });
     const radios = within(who).getAllByRole("radio");
     expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual([
@@ -59,28 +59,24 @@ describe("NewFormHeader", () => {
     expect(onWho).toHaveBeenCalledTimes(1);
   });
 
-  it("folds a repeat start to one line naming the same choices, which Change unfolds", () => {
-    const onExpand = vi.fn();
+  it("leaves out who does it and where it runs for a repeat start, the brief still first", () => {
     render(
       <TooltipProvider>
         <NewFormHeader
           who="worker"
           onWho={vi.fn()}
+          goal={<textarea aria-label="What needs doing" />}
           where={<span>Synthetic workspace</span>}
           line="Synthetic line"
-          summary={{ places: ["Alpha", "alpha-repo", "New worktree, new branch"], onExpand }}
+          folded
         />
       </TooltipProvider>,
     );
-    // No choice cards and no Where it runs row while folded: one line says them.
+    // The line beside Start names both while folded, with its Change.
+    expect(screen.getByRole("heading", { name: "New task" })).toBeTruthy();
+    expect(screen.getByLabelText("What needs doing")).toBeTruthy();
     expect(screen.queryByRole("radiogroup", { name: "Who does it" })).toBeNull();
     expect(screen.queryByRole("group", { name: "Where it runs" })).toBeNull();
-    const summary = screen.getByRole("group", { name: "Who does it and where it runs" });
-    expect(summary.textContent).toContain("Task");
-    expect(screen.getByTestId("new-summary-where").textContent).toBe(
-      " · Alpha · alpha-repo · New worktree, new branch",
-    );
-    fireEvent.click(within(summary).getByRole("button", { name: /^Change/ }));
-    expect(onExpand).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Synthetic workspace")).toBeNull();
   });
 });

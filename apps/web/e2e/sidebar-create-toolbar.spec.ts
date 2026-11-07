@@ -34,7 +34,7 @@ test("New is one form: Who does it, an in chip with New workspace, and the short
   await newMenu.getByRole("menuitem", { name: /^Team/ }).click();
   await expect(page).toHaveURL(/\/new-task$/);
   const draft = page.getByRole("form", { name: "New task" });
-  await expect(draft.getByRole("heading", { name: "New", exact: true })).toBeVisible();
+  await expect(draft.getByRole("heading", { name: "New task", exact: true })).toBeVisible();
   const who = draft.getByRole("radiogroup", { name: "Who does it" });
   // Each choice is named plainly and says what comes of it in one sentence.
   for (const [index, name] of ["Task", "Team", "Chat"].entries())
@@ -132,7 +132,7 @@ test("worker draft keeps the selected unavailable provider blocked without creat
   await expect(
     draft.getByText("Synthetic provider is signed out; log in explicitly.").first(),
   ).toBeVisible();
-  await expect(draft.getByRole("button", { name: /Start.*worker/ })).toBeDisabled();
+  await expect(draft.getByRole("button", { name: /Start (workspace and )?task/ })).toBeDisabled();
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(page).toHaveURL(/\/new-task\?way=direct/);
   expect(await page.evaluate(() => window.gramMock!.world.threads().length)).toBe(before);

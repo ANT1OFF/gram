@@ -22,7 +22,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AgentIcon } from "@/agents/agent-display";
 import { useApi } from "@/api/context";
@@ -85,6 +85,11 @@ const STEPS: readonly { icon: LucideIcon; short: string; line: ReactNode }[] = [
 
 function FirstRun() {
   const api = useApi();
+  // On screen, it says the launch problems it covers, so the banner leaves them out.
+  useEffect(() => {
+    useWelcome.setState({ onScreen: true });
+    return () => useWelcome.setState({ onScreen: false });
+  }, []);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const save = useSaveSettings();
@@ -118,6 +123,10 @@ function FirstRun() {
   };
 
   const { projects, all } = useFirstRunRepos();
+  // With no agent ready, installing or signing in one is the next step, and opening a repository
+  // only sets it up: nothing can start on it yet.
+  const { checks } = useLaunchChecks();
+  const noAgent = checks !== undefined && runsWith(toolRows(checks)).agents.length === 0;
   const home = useHome();
   // Past a screenful of repositories, a search finds one; it has the focus, so typing starts it.
   const [query, setQuery] = useState("");
@@ -204,12 +213,16 @@ function FirstRun() {
         </Expand>
       </div>
       <div className="flex flex-col gap-3">
+        {/* With no agent ready, setting one up leads: its install or sign-in is the primary. */}
+        {noAgent && <Readiness lead />}
         {/* The one primary action with Skip beside it as the secondary one, the agents under them. */}
         <div data-testid="welcome-actions" className="flex flex-wrap items-center gap-2">
           {picked !== undefined ? (
             <Button
               type="button"
               data-testid="welcome-open"
+              data-setup={noAgent ? "true" : undefined}
+              variant={noAgent ? "outline" : "default"}
               disabled={pending !== undefined}
               onClick={() => openRepo(picked)}
             >
@@ -218,8 +231,8 @@ function FirstRun() {
               ) : (
                 <FolderGit2 data-icon="inline-start" />
               )}
-              Open {picked.name}
-              <ArrowRight data-icon="inline-end" />
+              {noAgent ? `Set up ${picked.name}` : `Open ${picked.name}`}
+              {!noAgent && <ArrowRight data-icon="inline-end" />}
             </Button>
           ) : (
             // Nothing to pick: a folder on disk is the way in, a clone the other.
@@ -227,6 +240,7 @@ function FirstRun() {
               <Button
                 type="button"
                 data-testid="welcome-open-folder"
+                variant={noAgent ? "outline" : "default"}
                 disabled={pending !== undefined}
                 onClick={() => void chooseFolder()}
               >
@@ -247,7 +261,7 @@ function FirstRun() {
           )}
           <Button
             type="button"
-            variant={picked === undefined ? "ghost" : "outline"}
+            variant={picked === undefined || noAgent ? "ghost" : "outline"}
             data-testid="welcome-skip"
             onClick={skip}
           >
@@ -259,14 +273,21 @@ function FirstRun() {
             {error}
           </p>
         )}
-        <Readiness />
-        {picked !== undefined && (
-          // What Open leads to, so the first click holds no surprise, and that the survey comes next.
-          <p data-testid="welcome-next" className="text-meta text-muted-foreground">
-            Next: choose how much it may do on its own. Its orchestrator then surveys {picked.name}{" "}
-            and suggests first tasks; nothing starts until you pick one.
-          </p>
-        )}
+        {!noAgent && <Readiness />}
+        {picked !== undefined &&
+          (noAgent ? (
+            // What setting up does before an agent is ready, so it isn't taken for a start.
+            <p data-testid="welcome-next" className="text-meta text-muted-foreground">
+              Set up makes {picked.name} a workspace now. Its orchestrator surveys it and suggests
+              first tasks once an agent is ready; nothing starts until you pick one.
+            </p>
+          ) : (
+            // What Open leads to, so the first click holds no surprise, and that the survey comes next.
+            <p data-testid="welcome-next" className="text-meta text-muted-foreground">
+              Next: choose how much it may do on its own. Its orchestrator then surveys{" "}
+              {picked.name} and suggests first tasks; nothing starts until you pick one.
+            </p>
+          ))}
       </div>
       <MoreAboutGram />
     </section>
@@ -611,11 +632,12 @@ const GH_FOR = "For pull requests and their checks";
 
 /**
  * Under Open, what its work runs on: "Runs with Codex" when an agent is ready, else the one thing
- * to do first. Under that line, each tool that isn't ready yet: an agent no other covers says how
+ * to do first, above Open (`lead`), whose first install (or, with only sign-ins left, Check again)
+ * is then the card's primary action. Under that line, each tool that isn't ready yet: an agent no other covers says how
  * to install or sign in to it, with its install docs; one another agent covers, the GitHub CLI and
  * git when missing stay one quiet row each. Check again runs the checks once more. Only reads them.
  */
-function Readiness() {
+function Readiness({ lead = false }: { lead?: boolean }) {
   const { checks, recheck } = useLaunchChecks();
   const [checking, setChecking] = useState(false);
   if (checks === undefined) {
@@ -631,6 +653,14 @@ function Readiness() {
   const rows = all
     .filter((row) => row.state !== "ready")
     .toSorted((a, b) => Number(a.state === "optional") - Number(b.state === "optional"));
+  // Leading the card, its first install is the primary action; with an agent installed and only
+  // its sign-in to do (the line says "Sign in to …"), which happens in a terminal, Check again is.
+  const signIn = rows.some(
+    (row) => (row.tool === "claude" || row.tool === "codex") && row.state === "attention",
+  );
+  const primary =
+    lead && !signIn ? rows.find((row) => row.installUrl !== undefined)?.tool : undefined;
+  const checkLeads = lead && primary === undefined;
   const again = () => {
     setChecking(true);
     recheck()
@@ -660,7 +690,13 @@ function Readiness() {
           {words}
         </span>
         {rows.length > 0 && (
-          <Button size="xs" variant="ghost" className="ml-auto" disabled={checking} onClick={again}>
+          <Button
+            size="xs"
+            variant={checkLeads ? "default" : "ghost"}
+            className="ml-auto"
+            disabled={checking}
+            onClick={again}
+          >
             {checking ? "Checking…" : "Check again"}
           </Button>
         )}
@@ -668,7 +704,7 @@ function Readiness() {
       {rows.length > 0 && (
         <ul aria-label="Tools to set up" className="flex flex-col">
           {rows.map((row) => (
-            <ToolLine key={row.tool} row={row} />
+            <ToolLine key={row.tool} row={row} primary={row.tool === primary} />
           ))}
         </ul>
       )}
@@ -681,7 +717,7 @@ function Readiness() {
  * under it, the command marked, with its install docs beside. Optional: one quiet row, the remedy
  * on its hover.
  */
-function ToolLine({ row }: { row: ToolRow }) {
+function ToolLine({ row, primary = false }: { row: ToolRow; primary?: boolean }) {
   const state = STATE[row.state];
   const Icon = state.icon;
   const needed = row.state === "missing" || row.state === "attention";
@@ -723,7 +759,7 @@ function ToolLine({ row }: { row: ToolRow }) {
           // Optional, with another agent ready: a quiet link, not a second start.
           className={buttonVariants({
             size: "xs",
-            variant: needed ? "outline" : "ghost",
+            variant: primary ? "default" : needed ? "outline" : "ghost",
             className: cn("ml-auto", !needed && "text-muted-foreground"),
           })}
         >

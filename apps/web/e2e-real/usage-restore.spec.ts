@@ -21,7 +21,7 @@ test("a thread's usage comes back after a server restart and a reload", async ()
   await page.getByRole("combobox", { name: "Project path" }).fill(h.repo);
   await expect(page.getByTestId("folder-status")).toBeVisible();
   await page.getByRole("combobox", { name: "First prompt" }).fill(prompt);
-  await page.getByRole("button", { name: "Create thread" }).click();
+  await page.getByRole("button", { name: "Start chat" }).click();
 
   await expect(page).toHaveURL(/\/t\/[^/]+$/, { timeout: 30_000 });
   const threadPath = new URL(page.url()).pathname;

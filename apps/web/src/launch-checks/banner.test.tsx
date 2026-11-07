@@ -19,7 +19,9 @@ import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
 import { useServerSettings } from "@/settings-sync/store";
 
-import { LaunchChecksBanner, LaunchIssuesChip, useBannerFold } from "./banner";
+import { useWelcome } from "@/welcome/welcome-state";
+
+import { LaunchChecksBanner, LaunchIssuesChip, useBannerFold, useLaunchIssues } from "./banner";
 import { AgentChecks, ToolChecks } from "./tool-checks";
 
 /** The page the window shows, which the banner folds on leaving. */
@@ -98,6 +100,12 @@ const seedDismissed = (keys: string[]) =>
     },
   });
 
+/** How many problems the checks found, banner or not, once they are in. */
+function IssueCount() {
+  const { shown } = useLaunchIssues();
+  return shown.length === 0 ? null : <span data-testid="issue-count">{shown.length}</span>;
+}
+
 /** The title bar's chip beside the banner, as the shell mounts them. */
 const shell = () => (
   <>
@@ -130,6 +138,34 @@ afterEach(async () => {
 });
 
 describe("LaunchChecksBanner", () => {
+  it("leaves the first-run screen what its readiness card already says, warning once", async () => {
+    useWelcome.setState({ onScreen: true });
+    try {
+      const launchChecks = vi.fn(async () => SIGNED_OUT);
+      renderWith(
+        { launchChecks, ...appAt("0.4.0") },
+        <>
+          {shell()}
+          <IssueCount />
+        </>,
+      );
+      // Once the problems are known: signed out and gh missing are on the card, with their
+      // remedies, so there is no banner and no chip.
+      expect((await screen.findByTestId("issue-count")).textContent).toBe("2");
+      expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
+      expect(screen.queryByTestId("launch-issues-chip")).toBeNull();
+      cleanup();
+
+      // Off the first-run screen, the banner says them again.
+      useWelcome.setState({ onScreen: false });
+      renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
+      const banner = await screen.findByTestId("launch-checks-banner");
+      expect(banner.textContent).toContain("Claude Code isn't signed in");
+    } finally {
+      useWelcome.setState({ onScreen: false });
+    }
+  });
+
   it("folds to the title bar's chip once seen and left, stays folded after a restart, and opens again from it", async () => {
     route.pathname = "/t/t-1";
     const launchChecks = vi.fn(async () => SIGNED_OUT);
