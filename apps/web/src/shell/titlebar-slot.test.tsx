@@ -284,7 +284,7 @@ describe("when the title bar folds", () => {
   });
 
   it("stays folded while the room it measures folded is only the room folding made", () => {
-    // A worker's bar at 1140, as a 1200 px window lays it out: folded, the workspace's switcher
+    // A worker's bar 1140 px wide, as measured frame by frame: folded, the workspace's switcher
     // narrows (`max-w-20`) and the room grows by the actions' 114 px and the 35 px it gave.
     const least = 442;
     const measure = (fold: TitlebarFold, unfoldAt: readonly number[] | undefined) => ({

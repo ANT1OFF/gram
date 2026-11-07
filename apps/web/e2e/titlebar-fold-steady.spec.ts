@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 // A worker's title bar holds its fold while nothing changes. Folded, the bar is laid out apart: the
 // workspace's switcher narrows, so the room the title has then is more than unfolding would leave
 // it. Measured folded alone, Take over came back, cut the title short, folded again and so on,
-// about 20 times a second at every width between about 980 and 1420 px with these long names.
+// about 20 times a second, from the width it first folds at to some 60 px under it (on macOS, with
+// these long names, about 1030 to 1100 px). The fonts set that width, so the spec finds it.
 // Mock state lives in memory, so every step after the seed stays in the app.
 
 const MOCK_SETTINGS_KEY = "gram.mock.settings";
@@ -53,6 +54,15 @@ const routeTo = (page: Page, path: string) =>
     dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
   }, path);
 
+/** Two frames: the bar folds a frame after it resizes. */
+const twoFrames = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+
 /** How often the bar's fold changes over `ms`, with nothing resized or changed meanwhile. */
 const foldChangesOver = (page: Page, ms: number) =>
   page.getByTestId("shell-titlebar").evaluate(
@@ -82,9 +92,21 @@ test("a worker's title bar holds its fold at a width where folding frees the roo
   await expect(bar.getByTestId("worker-take-over-info")).toBeVisible();
   await expect(bar).not.toHaveAttribute("data-fold");
 
-  // Narrower, the worker's title is short of room: Take over folds into "…", and stays there.
-  await page.setViewportSize({ width: 1200, height: 720 });
-  await expect(bar).toHaveAttribute("data-fold", "2");
+  // Narrower, 4 px at a time, until the worker's title is short of room and Take over folds into
+  // "…". Just under that width folding frees the most room the folded bar then measures. From under
+  // 1280 px, where the sidebar is the compact rail at every width, so it never widens the bar.
+  let width = 1279;
+  await page.setViewportSize({ width, height: 720 });
+  await expect(bar).not.toHaveAttribute("data-fold");
+  while ((await bar.getAttribute("data-fold")) !== "2") {
+    width -= 4;
+    expect(width, "the bar folds before the window is this narrow").toBeGreaterThan(700);
+    await page.setViewportSize({ width, height: 720 });
+    await twoFrames(page);
+  }
+  // A little further in, settled, it stays folded.
+  await page.setViewportSize({ width: width - 8, height: 720 });
+  await page.waitForTimeout(500);
   expect(await foldChangesOver(page, 1_000)).toBe(0);
   await expect(bar).toHaveAttribute("data-fold", "2");
   await expect(bar.getByTestId("worker-take-over")).toBeHidden();
