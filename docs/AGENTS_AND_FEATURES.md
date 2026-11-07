@@ -608,17 +608,16 @@ Workers can read their orchestrator's memory with `memory_list` and `memory_read
 orchestrator holds the workspace, and can't change it: the orchestrator stays its one curator.
 A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
-another workspace. A worker neither lists nor reads a file named like a credential (a key, a secret, a token, an
-auth or `.env` file, a key or certificate file), one that carries anything credential-like in any
-reading of it (raw, unescaped, percent, HTML or base64 decoded: an auth header or cookie, a bearer
-token, a secret, token or password word, a PEM block, a provider token, what the log scrubber
-would redact, or a PEM block, code fence or quoted token left open), dropped whole with nothing in
-it shown, or one marked private, and what counts as
-not private is narrow: a worker reads a file only when it has no header, or its header is one
-closed `---` block that is a flat map of plain or quoted scalars, one `key: value` per line, with
-no tags, anchors, aliases, nesting, flow style or block scalars, and no `private` anywhere in it,
-comments included. Any other header (a leading HTML comment, TOML, an unclosed block, YAML that
-doesn't parse) is private to workers; the orchestrator sees it all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
+another workspace. What a worker reads of memory is an allow-list that fails closed. It lists only names of lowercase
+words joined by `-`, in folders, ending `.md`, with no credential word in them. It reads a file only
+when the file is plainly safe prose: printable ASCII and common typographic punctuation only, no
+escape or encoding syntax (`\u`, `\x`, `%XX`, `&#`, `&name;`), no token-like run (20 or more
+base64, base64url or hex characters, 16 or more mixing letters and digits, padded base64, a
+`Basic` token), no delimiter left open, and no credential word anywhere (secret, token, key, pass,
+auth, cookie, credential, session and the like, with `_`, `-` and `.` as word boundaries); and
+under no header, or one closed `---` block that is a flat map of plain scalars with no `private`
+in it. Anything else is dropped whole, never redacted or partly shown; the orchestrator sees it
+all. A worker offers a lasting fact for memory with `learned` on `report` (up to 500 characters); the
 digest shows it to the orchestrator, which records it only when it holds for later work. Solo
 threads have no workspace memory.
 

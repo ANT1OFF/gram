@@ -24,7 +24,7 @@
  * a dream started from: whoever needs that baseline later has to keep its own copy (`snapshot`
  * for the hashes, the dream's out-of-folder manifest for the text).
  */
-import { FsError, InvalidState, NotFound, SECRET_KEY, type MemoryWrite } from "@gram/contracts";
+import { FsError, InvalidState, NotFound, type MemoryWrite } from "@gram/contracts";
 import { isMap, isScalar, parseDocument } from "yaml";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -779,104 +779,64 @@ const guarded = <A, E = never>(
   });
 
 /**
- * What a worker never sees of memory, by name: a file or folder marked private (a `private`
- * segment, or a `*.private.md` name), and one named like a credential: a secret-named word as the
- * scrubber knows them (`SECRET_KEY`: token, secret, password, credential, an API or private key), a
- * `key` or `keys` word, an auth or env dotfile, an SSH key, or a key or certificate file. The
- * orchestrator, memory's one curator, sees them all.
+ * Credential words, matched with anything but a letter or digit as a boundary (so `_`, `-` and `.`
+ * separate words: `AWS_SECRET_ACCESS_KEY` holds `SECRET`, `KEY`). A name or an entry with one is
+ * not shown to a worker.
  */
-const WORKER_HIDDEN_SEGMENT =
-  /^(?:private|.*\.private\.md|\.(?:env|npmrc|netrc|pgpass|pypirc|htpasswd|git-credentials)(?:\..*)?|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|.*\.(?:pem|key|p12|pfx|jks|keystore|kdbx|asc|gpg)|(?:.*[-_. ])?(?:keys?|auth|passwd|creds?)(?:[-_. ].*)?)$/i;
+const CREDENTIAL_WORD =
+  /(?:^|[^a-z0-9])(?:secrets?|tokens?|keys?|apikeys?|pass|passwords?|passwd|passphrases?|auth|authn|authz|authorization|authentication|cookies?|credentials?|creds?|sessions?|bearer|private|env)(?=$|[^a-z0-9])/i;
 
-/** Text shaped like a credential, beside what the scrubber already finds (`redactText`). */
-const CREDENTIAL_TEXT = [
-  /-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE|PGP PRIVATE KEY BLOCK)-----/,
-  /\bxox[abprs]-[\w-]{10,}/,
-  /\beyJ[\w-]{10,}\.eyJ[\w-]{10,}\.[\w-]{10,}/,
-  /\b(?:sk|rk|pk)_(?:live|test)_\w{16,}/,
-  /\bAIza[\w-]{35}\b/,
-];
+/** What a worker's `memory_list` shows: lowercase words joined by `-`, in folders, ending `.md`. */
+const PLAIN_NAME = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*\.md$/;
+
+/** Characters plain prose is made of: printable ASCII, tab and newlines, and typographic punctuation. */
+const PLAIN_CHARS = /^[\t\n\r\x20-\x7E\u2013\u2014\u2018\u2019\u201C\u201D\u2026\u2022\u00B7]*$/;
+
+/** Escape or encoding syntax of any kind: `\u`, `\x`, `%XX`, `&#`, `&name;`. */
+const ENCODED = /\\[uUxX]|%[0-9a-fA-F]{2}|&#|&[A-Za-z][A-Za-z0-9]*;/;
 
 /**
- * Words that name a credential or carry one, anywhere in an entry: an auth header or a cookie, a
- * bearer or basic token, and the scrubber's secret names. Broad on purpose: an entry that mentions
- * one is dropped whole, not redacted.
+ * A token-like run: 20 or more base64, base64url or hex characters; a short one padded as base64
+ * (`dG9rZW4=`); or a `Basic` scheme followed by a token of any length.
  */
-const CREDENTIAL_WORDS =
-  /\b(?:authorization|proxy-authorization|cookie|set-cookie|bearer|basic\s+[\w+/=]{8,}|x-api-key|api[-_ ]?keys?|access[-_ ]?keys?|secret|token|password|passphrase|passwd|credentials?|private[-_ ]?keys?)\b/i;
+const LONG_RUN =
+  /[A-Za-z0-9+/=_-]{20,}|[A-Za-z0-9+/_-]{4,}={1,2}(?![A-Za-z0-9])|\bbasic\s+[A-Za-z0-9+/=._-]{4,}/i;
 
-/** `text` as its escapes and encodings read: JSON and C escapes, percent and HTML encoding, base64 runs. */
-const decodings = (text: string): ReadonlyArray<string> => {
-  const unescaped = text
-    .replace(/\\u\{?([0-9a-fA-F]{2,6})\}?/g, (_, hex: string) =>
-      String.fromCodePoint(Number.parseInt(hex, 16)),
-    )
-    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex: string) =>
-      String.fromCharCode(Number.parseInt(hex, 16)),
-    )
-    .replace(/\\([\\/"'nrt])/g, (_, char: string) =>
-      char === "n" ? "\n" : char === "r" ? "\r" : char === "t" ? "\t" : char,
-    );
-  const percent = text.replace(/(?:%[0-9a-fA-F]{2})+/g, (run) => {
-    try {
-      return decodeURIComponent(run);
-    } catch {
-      return run;
-    }
-  });
-  const html = text
-    .replace(/&#x([0-9a-fA-F]+);?/g, (_, hex: string) =>
-      String.fromCodePoint(Number.parseInt(hex, 16)),
-    )
-    .replace(/&#(\d+);?/g, (_, dec: string) => String.fromCodePoint(Number(dec)))
-    .replace(
-      /&(?:quot|apos|amp|lt|gt);/g,
-      (entity) =>
-        ({ "&quot;": '"', "&apos;": "'", "&amp;": "&", "&lt;": "<", "&gt;": ">" })[entity] ??
-        entity,
-    );
-  const base64 = (text.match(/[A-Za-z0-9+/_-]{20,}={0,2}/g) ?? []).map((run) =>
-    Buffer.from(run.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("latin1"),
-  );
-  return [text, unescaped, percent, html, ...base64];
-};
+/** Whether `text` has a run of 16 or more letters and digits that mixes the two. */
+const mixedRun = (text: string): boolean =>
+  (text.match(/[A-Za-z0-9]{16,}/g) ?? []).some((run) => /\d/.test(run) && /[A-Za-z]/.test(run));
 
-/** Delimiters a credential could hide behind, left open: a PEM block, a code fence, a quoted token. */
-const unbalanced = (text: string): boolean =>
+/** A delimiter left open that something could hide behind: a PEM block, a code fence, a quote. */
+const openDelimiter = (text: string): boolean =>
   (text.match(/-----BEGIN /g) ?? []).length !== (text.match(/-----END /g) ?? []).length ||
   (text.match(/^\s*(?:```|~~~)/gm) ?? []).length % 2 !== 0 ||
-  text
-    .split(/\r?\n/)
-    .some((line) => (line.match(/"/g) ?? []).length % 2 !== 0 && /[\w+/=-]{20,}/.test(line));
+  text.split(/\r?\n/).some((line) => (line.match(/"/g) ?? []).length % 2 !== 0);
 
 /**
- * Whether a worker must not see an entry for what it carries, failing closed: anything that names
- * or holds a credential in any reading of it (`decodings`: raw, unescaped, percent, HTML or base64
- * decoded), what the scrubber would change, a known token shape, or a delimiter left open that one
- * could hide behind. Such an entry is dropped whole; nothing in it is redacted or partly shown.
+ * Whether an entry is plainly safe prose a worker may read: an allow-list, failing closed. It is
+ * shown only when every character is printable ASCII or common typographic punctuation (no other
+ * Unicode, so no lookalike or zero-width character), there is no escape or encoding syntax, no
+ * token-like run (20 or more base64, base64url or hex characters, or 16 or more mixing letters and
+ * digits), and no credential word anywhere, `KEY=value` and `Header: value` lines included.
+ * Anything else is dropped whole: nothing in it is redacted or partly shown.
  */
-const credentialShaped = (text: string): boolean =>
-  unbalanced(text) ||
-  decodings(text).some(
-    (each) =>
-      CREDENTIAL_WORDS.test(each) ||
-      redactText(each) !== each ||
-      CREDENTIAL_TEXT.some((pattern) => pattern.test(each)),
-  );
+const plainProse = (text: string): boolean =>
+  !openDelimiter(text) &&
+  PLAIN_CHARS.test(text) &&
+  !ENCODED.test(text) &&
+  !LONG_RUN.test(text) &&
+  !mixedRun(text) &&
+  !CREDENTIAL_WORD.test(text);
 
 /**
- * Whether a worker may see the memory file at `path`: not by a private or credential-shaped name,
- * and, given its text, with a plain header or none (`plainHeader`) and nothing credential-shaped in
- * it. A file it may not see is neither listed nor read.
+ * Whether a worker may see the memory file at `path`, and, given its text, read it. Its name must be
+ * plain (`PLAIN_NAME`) with no credential word in it; its text plain prose (`plainProse`) under a
+ * plain header or none (`plainHeader`). A file it may not see is neither listed nor read.
  */
 export const workerMayRead = (path: string, text?: string): boolean => {
-  const segments = path.split("/");
-  if (segments.some((segment) => WORKER_HIDDEN_SEGMENT.test(segment) || SECRET_KEY.test(segment))) {
-    return false;
-  }
+  if (!PLAIN_NAME.test(path) || CREDENTIAL_WORD.test(path)) return false;
   if (text === undefined) return true;
-  if (!plainHeader(text)) return false;
-  return !credentialShaped(text);
+  return plainHeader(text) && plainProse(text);
 };
 
 /** A YAML node that is a plain or quoted scalar with no tag or anchor: what a plain header holds. */
