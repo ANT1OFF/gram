@@ -413,7 +413,7 @@ function Group({ group, open }: { group: StatusGroup; open: boolean }) {
 /** A worker: its dot, its title (two lines before it is cut) and its age. Opens it. */
 function Row({ row }: { row: PanelRow }) {
   const openWorker = useOpenWorker();
-  const current = useCurrentThread() === row.threadId;
+  const current = useIsCurrentThread(row.threadId);
   return (
     <button
       type="button"
@@ -446,7 +446,10 @@ function Row({ row }: { row: PanelRow }) {
   );
 }
 
-/** The thread open in the main view, which its row marks as the current place. */
-function useCurrentThread(): ThreadId | undefined {
-  return useParams({ strict: false }).threadId as ThreadId | undefined;
+/**
+ * Whether `threadId` is open in the main view, which its row marks as the current place. Only this
+ * row's answer: a move to another thread re-renders the two rows it changes, not all.
+ */
+function useIsCurrentThread(threadId: ThreadId): boolean {
+  return useParams({ strict: false, select: (params) => params.threadId === threadId });
 }
