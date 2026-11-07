@@ -23,8 +23,10 @@ const COUNT_TONE: Record<string, string> = {
 
 /**
  * The background events a run of digests brought, as one update in the orchestrator's stream: a
- * single light rule line, "09:19 · Update · 2 merged · 1 report ───", its time first, muted and with
- * no box and no glyph but its fold's chevron (History's clock means History), so it reads as a marker between the orchestrator's answers rather than one of them. It opens in place on every line it gathered and on the digests behind
+ * single light line, "09:19 · Update · 2 merged · 1 report · More", its time first, muted and with
+ * no box, no rule and no glyph but its fold's chevron (History's clock means History): the space
+ * round it, a reply's 12 px block step, sets it apart, so it reads as a marker between the
+ * orchestrator's answers rather than one of them. It opens in place on every line it gathered and on the digests behind
  * them, so nothing is hidden, only folded; an update with a line that needs the user or failed
  * starts open. A run that spoke no line is its digest line alone, in the same box.
  *
@@ -51,8 +53,8 @@ export function UpdateBlock({
   const [everOpened, setOpened] = useState(false);
   const opened = everOpened || open;
   const bodyId = useId();
-  // A rule line, not a card: the answers around it carry the weight.
-  const box = "w-full py-0.5";
+  // A line, not a card: the answers around it carry the weight.
+  const box = "w-full py-1";
   if (quiet) {
     return (
       <QuietUpdate lines={lines} digests={digests} replies={replies} renderReply={renderReply} />
@@ -100,7 +102,6 @@ export function UpdateBlock({
           {words.digest.count !== undefined && <span> · {words.digest.count}</span>}
         </span>
         <FoldWord open={open} />
-        <Rule />
       </button>
       <Expand open={open} id={bodyId}>
         {opened && (
@@ -152,7 +153,7 @@ function QuietUpdate({
       data-digests={digests.length}
       data-replies={replies.length}
       data-open={open}
-      className="w-full py-0.5"
+      className="w-full py-1"
     >
       <button
         type="button"
@@ -191,7 +192,6 @@ function QuietUpdate({
           )}
         </span>
         <FoldWord open={open} />
-        <Rule />
       </button>
       <Expand open={open} id={bodyId}>
         {(everOpened || open) && (
@@ -237,9 +237,4 @@ function FoldWord({ open }: { open: boolean }) {
       {open ? "Less" : "More"}
     </span>
   );
-}
-
-/** The hairline that carries an update's line to the column's edge. */
-function Rule() {
-  return <span aria-hidden className="h-px min-w-6 flex-1 bg-border" />;
 }

@@ -33,6 +33,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     the merged colour is done, and red failed. The row beside a dot says its state in words, with
     the reason for a wait ("Waiting · checks"), and the dot's hover says what its colour or fill
     means ("Hollow: waiting on checks, a review, a wake or a limit"), so the dots need no legend.
+    A PR's pending checks, queued or running, and a review bot's round under way take the same
+    hollow ring as a glyph (`PendingRing`), still in every motion setting, wherever they show:
+    a wait can last an hour, and only a turn under way turns (`Spinner`, Stop's ring).
   - **One amber in each mode.** The needs-you text, its dots, its count's ring and the pill's
     border are one hue (`status-needs` is `status-needs-mark` darkened to the text floor, never a
     different colour); the light palettes of the Neutral family seed a true amber, not an orange.
@@ -127,7 +130,7 @@ The theme stylesheet is the source of truth; this page explains it and the habit
     `ChartNoAxesCombined`, Board `Columns3`, the orchestrator `Network`, a worker `Workflow`,
     Dreams `MoonStar`, Quiet `Moon`, Terminal `SquareTerminal`, History `History`, a wait
     `Hourglass`. A row a chevron already folds needs no second glyph (an orchestrator's update is
-    its chevron and time).
+    its chevron and time, and no rule: a reply's 12 px block step sets it apart).
   - A control that acts on a choice names it: a sound's preview is one "Preview Chime" button
     beside the choice, never a row of bare play glyphs.
 - **A list row's trailing slot is its status, never an action:** History says what happened
@@ -192,6 +195,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   of the workspace and its views, and no overview beside it.
 - **A status strip keeps its words:** short of room it drops whole items from its end, never their
   words, so a count never stands alone and no two read the same.
+- **One band above the transcript, one below.** The orchestrator's chat has one quiet muted line
+  over it, with no rule under it: the counts, then "Since you left" as a fold (its Dismiss inside,
+  no ×), then Show all activity at its end; "New" is the transcript's own line, over the first
+  message you haven't seen. A worker's PR and CI are the strip above its composer, and Take over
+  stays the title bar's (the strip adds no second one).
 - **Motion is short and springy:** 220 to 320 ms with the theme's ease-out, springs for presses
   and arrivals, and none under reduced motion.
 

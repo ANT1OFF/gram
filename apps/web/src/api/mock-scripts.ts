@@ -1091,6 +1091,22 @@ export const orchestratorScript: Script = (input, ids) => {
   return [...(running === undefined ? [] : [running]), gate("orchestrator-turn"), ...rest];
 };
 
+/** How long a new worker's first turn works on its brief before it ends: a real one takes minutes. */
+export const WORKER_BRIEF_WORK_MS = 10 * 60_000;
+
+/**
+ * A new worker's first turn on its brief: the echo's acknowledgement, then it keeps working
+ * (`WORKER_BRIEF_WORK_MS`) before the turn ends, as a real brief does, so a worker just started
+ * from New reads Running, never Stopped a second after it began. The work is a second's waits, so
+ * Stop or a steer still lands within a second.
+ */
+export const workerBriefScript: Script = (input, ids) => {
+  const steps = echoScript(input, ids);
+  const end = steps.length - finish("").length;
+  const working = Array.from({ length: WORKER_BRIEF_WORK_MS / 1000 }, () => wait(1000));
+  return [...steps.slice(0, end), ...working, ...steps.slice(end)];
+};
+
 /** The model a `/model <id>` line asks for, as Claude's own slash command reads it. */
 export const modelCommand = (input: string): string | undefined =>
   /^\/model\s+(\S+)\s*$/.exec(input)?.[1];
