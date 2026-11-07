@@ -3682,10 +3682,8 @@ export const SHOTS: readonly Shot[] = [
     open: async (page) => {
       await seedMockSettings(page, { panel: { open: true } });
       await openWaitingOn(page, true);
-      // The base has no Workers tab: its panel shows as it was, for the before.
-      const tab = page.getByTestId("right-panel").getByRole("tab", { name: "Workers" });
-      if ((await tab.count()) === 0) return;
-      await tab.click();
+      // From the strip or from More, where a short strip folds it.
+      await openPanelTab(page.getByTestId("right-panel"), "Workers");
       await page.getByTestId("workers-panel-row").first().waitFor();
       await page.mouse.move(1430, 890);
       await page.waitForTimeout(400);
