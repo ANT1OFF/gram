@@ -147,11 +147,11 @@ The theme stylesheet is the source of truth; this page explains it and the habit
   what it picks before its value, in a lighter weight, so a value never reads as another
   control's: "Claude Opus", "Effort: Extra high", "Mode: Plan", "Speed: Standard". Short of room the
   value takes three to six letters ("Opus", "Effort: X-high", "Mode: Edits", "Speed: Std",
-  "Effort: Default"), and the words keep the room their glyph took; still short, the pickers take
-  a row of their own above Send and Stop, words kept, and tighter still each keeps its value alone
-  beside its glyph ("X-high", "Std"), the glyph standing in for the dimension's word. A picker
-  never shows its dimension without its value, running or not. Only when even values alone can't
-  fit do they give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
+  "Effort: Default"), and the words keep the room their glyph took; tighter, each keeps its value
+  alone beside its glyph ("X-high", "Std"), the glyph standing in for the dimension's word, so the
+  composer keeps one row; still short, the pickers take a row of their own above Send and Stop,
+  values kept. A picker never shows its dimension without its value, running or not. Only when
+  even values alone can't fit do they give way to glyphs, then fold into "…". Each trigger's tooltip and name say the value and its
   shortcut ("Effort: Extra high (⌘⇧E)"), its open list checks the current value with a line on
   what each costs, and a pick is confirmed in words for a moment. Every target on the row is 32 px
   tall, and words keep 48 px clear of Send and Stop. Stop is a solid pill reading "Stop" beside

@@ -1,6 +1,12 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { openSettingsPage } from "./settings-nav";
+
+/**
+ * The prompt box's model picker: named "Model" while it says its name in full, "Model: GPT-5.5"
+ * once the toolbar is short of room and it drops its chevron.
+ */
+const modelPicker = (form: Locator) => form.getByRole("combobox", { name: /^Model(: |$)/ });
 
 const MOCK_AGENTS_KEY = "gram.mock.agents";
 
@@ -97,7 +103,7 @@ test("Claude Code and Codex use a gateway only after explicit selection, offered
     await form.getByLabel("Gateway profile").click();
     await page.getByRole("option", { name: "Team Gateway", exact: true }).click();
     await expect(form.getByLabel("Gateway profile")).toContainText("Team Gateway");
-    await expect(form.getByLabel("Model", { exact: true })).toContainText("GPT-5.5");
+    await expect(modelPicker(form)).toContainText("GPT-5.5");
     await expect(form.getByRole("link", { name: "Add your gateway key" })).toHaveCount(0);
   }
 
@@ -110,7 +116,7 @@ test("Claude Code and Codex use a gateway only after explicit selection, offered
 
   await openNewThread(page);
   await pickAgent(page, "Claude Code");
-  await expect(form.getByLabel("Model", { exact: true })).toBeVisible();
+  await expect(modelPicker(form)).toBeVisible();
   await expect(form.getByLabel("Gateway profile")).toHaveCount(0);
 
   await page.goBack();
@@ -159,7 +165,7 @@ test("a long gateway list is searched in the draft's model picker", async ({ pag
   const form = page.getByRole("form", { name: "New thread" });
   await form.getByLabel("Gateway profile").click();
   await page.getByRole("option", { name: "Personal Gateway", exact: true }).click();
-  await form.getByRole("combobox", { name: "Model", exact: true }).click();
+  await modelPicker(form).click();
   const search = page.getByRole("combobox", { name: "Search models" });
   await search.fill("model 27");
   const picker = page
@@ -167,7 +173,5 @@ test("a long gateway list is searched in the draft's model picker", async ({ pag
     .and(page.locator(`[id="${await search.getAttribute("aria-controls")}"]`));
   await expect(picker.getByRole("option")).toHaveCount(1);
   await picker.getByRole("option", { name: /Team model 27/ }).click();
-  await expect(form.getByRole("combobox", { name: "Model", exact: true })).toContainText(
-    "Team model 27",
-  );
+  await expect(modelPicker(form)).toContainText("Team model 27");
 });

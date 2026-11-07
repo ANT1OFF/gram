@@ -1,11 +1,11 @@
 /**
  * How the composer's toolbar fits its width. Each control says its value in full ("Claude Opus",
  * "Effort: Extra high") while the row has room; short of it, each takes its compact form ("Opus",
- * "Effort: X-high", "Speed: Std"), from the right. Still short, the pickers move up to a row of
- * their own above Send and Stop, in full or compact words, rather than lose their values; tighter
- * still, each keeps its value alone beside its glyph ("X-high", "Std"), which names the dimension
- * the words gave up. Only when even that can't fit do they drop to glyphs on one row, from the
- * right, and then fold into a "…" menu, also from the right. So a picker never shows its dimension
+ * "Effort: X-high", "Speed: Std"), from the right, and tighter, each keeps its value alone beside
+ * its glyph ("X-high", "Std"), which names the dimension the words gave up. Still short, the
+ * pickers move up to a row of their own above Send and Stop, in full, compact or value-alone
+ * words, rather than lose their values. Only when even that can't fit do they drop to glyphs on
+ * one row, from the right, and then fold into a "…" menu, also from the right. So a picker never shows its dimension
  * without its value. Pure, so the arithmetic is tested without a browser;
  * `use-toolbar-layout.ts` measures and `composer.tsx` renders it.
  */
@@ -102,17 +102,15 @@ export function toolbarLayout(
     }
     return false;
   };
-  // Compact words, from the right, on the one row.
-  if (step("short", oneRow)) return result();
+  // Compact words, then values alone beside their glyphs, from the right, on the one row: the
+  // composer keeps one row while every value still shows.
+  if (step("short", oneRow) || step("value", oneRow)) return result();
 
   // A row of their own, in full words, then compact ones, then values alone.
   if (row !== undefined) {
     for (const block of blocks) sizes.set(block.id, "full");
     const ownRow = () => fits(row, blocks, sizes, folded, overflow, 0);
     if (ownRow() || step("short", ownRow) || step("value", ownRow)) return result(true);
-  } else if (step("value", oneRow)) {
-    // Values alone on the one row.
-    return result();
   }
 
   // Glyphs, from the right, the blocks left of them keeping their values alone; then the "…" menu.

@@ -115,6 +115,14 @@ describe("toolbarLayout", () => {
       expect(fit(205).sizes).toEqual(["short", "value", "icon", "icon"]);
     });
 
+    it("keeps one row with values alone before taking a row of their own", () => {
+      // Compact words take 232; mode's value alone fits 230 on the one row.
+      expect(fit(230, 0, 400)).toEqual({
+        sizes: ["short", "short", "value", "short"],
+        wrapped: false,
+      });
+    });
+
     it("keeps values alone on a row of their own before dropping to glyphs on one", () => {
       expect(fit(200, 20, 232)).toEqual({ sizes: SHORT, wrapped: true });
       expect(fit(200, 20, 231)).toEqual({
