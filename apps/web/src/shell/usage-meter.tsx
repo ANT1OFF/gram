@@ -1,7 +1,7 @@
 import { limitForecast } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import { ChartNoAxesCombined, TrendingUp } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { agentLabel } from "@/agents/agent-label";
 import { Hint } from "@/components/hint";
@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { agoText } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
-import { useNeedsYouCounts } from "@/orchestration/use-needs-you";
 import {
   currentLimit,
   LIMIT_PROVIDERS,
@@ -73,8 +72,8 @@ export function useMinuteNow(): number {
  * name say. Neutral until 90%, so amber in the title bar means what needs you. Until an agent
  * reports a limit, an icon that opens the Usage page.
  *
- * Open, it gives way to what needs you: it closes when focus moves outside it, onto an approval
- * card's buttons say, and when a new ask arrives, so it never sits over the card that asks.
+ * Open, it gives way to the conversation: it closes when focus moves outside it, onto an approval
+ * card's buttons say, so it never stays over the card that asks.
  */
 export function UsageMeter({
   agent,
@@ -152,22 +151,19 @@ export function UsageMeter({
 }
 
 /**
- * Closes the open popover once something else wants the user: focus moving outside it (a click or
- * Tab onto an approval card, the composer, anything) and a new ask arriving. Its trigger is no
- * "outside": a click there toggles it as before.
+ * Closes the open popover once focus moves outside it: a click or Tab onto an approval card's
+ * buttons, the composer, anything in the conversation, which a ringed card's own focus does too.
+ * Its trigger is no "outside": a click there toggles it as before. An ask arriving elsewhere leaves
+ * it be: the user may be reading it.
  */
 function useGiveWay(open: boolean, setOpen: (open: boolean) => void) {
-  const asks = useNeedsYouCounts().total;
-  const seen = useRef(asks);
-  useEffect(() => {
-    if (open && asks > seen.current) setOpen(false);
-    seen.current = asks;
-  }, [open, asks, setOpen]);
   useEffect(() => {
     if (!open) return;
     const away = (event: FocusEvent) => {
       const target = event.target;
-      if (!(target instanceof Element)) return;
+      // The window taking focus back (from a tab a middle-click opened, say) lands on the body:
+      // nothing else asked for the user.
+      if (!(target instanceof Element) || target === document.body) return;
       if (target.closest('[data-testid="usage-limits"], [data-testid="usage-meter"]')) return;
       setOpen(false);
     };

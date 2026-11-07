@@ -27,7 +27,7 @@ test("the meter shows the thread's agent's limit and opens onto both providers",
   await expect(meter).toHaveAccessibleName(
     "This thread's agent's subscription usage: Claude Code weekly limit 61% used",
   );
-  // Open, the popover gives way to a new ask: let the thread's opening turn raise its approval first.
+  // Open, the popover gives way to the approval card: let the thread's opening turn raise it.
   await flakyAsked(page);
 
   await meter.click();
@@ -66,15 +66,12 @@ test("the meter shows the thread's agent's limit and opens onto both providers",
   await expect(popover).toBeVisible();
   await page.getByLabel("Message", { exact: true }).focus();
   await expect(popover).toBeHidden();
-  // And once something new asks for the user.
   await meter.click();
   await expect(popover).toBeVisible();
-  await page.evaluate(() =>
-    window.gramMock!.simulateWaitOnUser("t-flaky" as never, {
-      kind: "action",
-      title: "Rotate the staging token",
-    }),
-  );
+  await page
+    .getByRole("button", { name: /^Allow once/ })
+    .first()
+    .focus();
   await expect(popover).toBeHidden();
 });
 

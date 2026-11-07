@@ -60,9 +60,10 @@ test("an idle thread shows its background subagent running under it, then the ag
   ).toHaveCount(1);
   await expect(page.getByTestId("message-assistant").last()).toContainText("DONE");
   await expect(stripRow).toHaveCount(0);
-  await header.getByTestId("pane-status").hover();
-  await expect(hint.last()).toBeVisible();
-  await expect(hint.last()).not.toContainText("Explore");
+  // At rest, nothing runs under it: the glyph keeps out of the title bar, its words for screen
+  // readers no longer naming the subagent.
+  await expect(header.getByTestId("pane-status")).toHaveAttribute("data-quiet", "true");
+  await expect(header.getByTestId("pane-status")).not.toContainText("Explore");
   await expect(header.getByTestId("status-icon")).toHaveAttribute("data-working", "false");
   await expect(header.getByTestId("status-icon")).not.toHaveAttribute("data-running");
 });

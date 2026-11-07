@@ -111,8 +111,9 @@ test("reconnect snapshots replace old activity while subsequent live events stil
   await expect(icon).toHaveAttribute("data-working", "true");
   await reconnect({ status: "idle" });
   await expect(icon).toHaveAttribute("data-working", "false");
-  await showHint();
-  await expect(hint).toHaveText("Stopped");
+  // At rest the glyph keeps out of the title bar; its words stay for screen readers.
+  await expect(status).toHaveAttribute("data-quiet", "true");
+  await expect(status).toHaveText("Stopped");
 
   // An explicit empty live line overrides a snapshot only until the next snapshot arrives.
   await page.evaluate(() => window.gramMock!.simulateStatus("t-deps" as never, "idle"));
@@ -122,7 +123,8 @@ test("reconnect snapshots replace old activity while subsequent live events stil
   await expect(hint).toHaveText("Running: Subagent: resumed checks");
   await page.evaluate(() => window.gramMock!.simulateStatus("t-deps" as never, "idle"));
   await expect(icon).toHaveAttribute("data-working", "false");
-  await showHint();
-  await expect(hint).toHaveText("Stopped");
+  // At rest the glyph keeps out of the title bar; its words stay for screen readers.
+  await expect(status).toHaveAttribute("data-quiet", "true");
+  await expect(status).toHaveText("Stopped");
   expect(errors).toEqual([]);
 });
