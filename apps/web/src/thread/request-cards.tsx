@@ -1281,7 +1281,7 @@ export function QuestionCard({
               aria-current={i === page ? "step" : undefined}
               onClick={() => setIndex(i)}
               className={cn(
-                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-caption text-muted-foreground",
+                "flex items-center gap-1 rounded-sm border border-transparent bg-muted px-1.5 py-0.5 text-meta text-muted-foreground",
                 i === page && "border-primary bg-primary/10 text-foreground",
               )}
             >
@@ -1300,7 +1300,7 @@ export function QuestionCard({
         <fieldset key={q.question} className="space-y-1.5">
           <legend className="mb-1">
             {count === 1 && (
-              <span className="mr-2 rounded-sm bg-muted px-1 text-caption text-muted-foreground">
+              <span className="mr-2 rounded-sm bg-muted px-1 text-meta text-muted-foreground">
                 {q.header}
               </span>
             )}

@@ -76,10 +76,7 @@ function useWorkerFacts(thread: Thread) {
 
 /** The › between crumbs, dropped with the crumb before it. */
 const crumbSeparator = (drop?: string) => (
-  <ChevronRight
-    aria-hidden
-    className={cn("size-icon-chip shrink-0 text-muted-foreground/60", drop)}
-  />
+  <ChevronRight aria-hidden className={cn("size-icon-chip shrink-0 text-subtle", drop)} />
 );
 
 /**

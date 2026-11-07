@@ -267,7 +267,7 @@ function ExtraRow({ threadId, row }: { threadId: ThreadId; row: ExtraPrRow }) {
         />
         <RepoLink threadId={threadId} place={row} />
         {row.branch === undefined ? (
-          row.title && <span className="truncate px-1 text-muted-foreground/80">{row.title}</span>
+          row.title && <span className="truncate px-1 text-subtle">{row.title}</span>
         ) : (
           <BranchLink threadId={threadId} place={row} />
         )}
@@ -350,7 +350,11 @@ function ReviewChip({
   );
 }
 
-/** The row's one glyph (`prGlyphOf`), the sidebar's for the same PR; grey until the badge lands. */
+/**
+ * The row's one glyph (`prGlyphOf`), the sidebar's for the same PR; grey until the badge lands.
+ * Failing checks lead with a red dot and their words instead of the ⊗, which at the start of a row
+ * that ends in a hide button read as a close.
+ */
 function StateIcon({ facts }: { facts: PrFacts | undefined }) {
   if (!facts) {
     return (
@@ -358,6 +362,21 @@ function StateIcon({ facts }: { facts: PrFacts | undefined }) {
     );
   }
   const glyph = prGlyphOf(facts);
+  if (glyph.kind === "failing") {
+    return (
+      <span
+        role="img"
+        aria-label={prGlyphWords(facts)}
+        data-kind={glyph.kind}
+        className="mr-1.5 flex shrink-0 items-center gap-1.5 text-meta font-medium text-destructive"
+      >
+        <span aria-hidden className="size-2 rounded-full bg-current" />
+        <span aria-hidden className="@max-lg:hidden">
+          {glyph.word}
+        </span>
+      </span>
+    );
+  }
   const display = PR_GLYPH_DISPLAY[glyph.kind];
   return (
     <display.icon

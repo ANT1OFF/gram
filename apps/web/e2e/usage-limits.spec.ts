@@ -59,6 +59,14 @@ test("the popover forecasts a window that is filling, and dates a reading gone q
   const claude = popover.getByRole("region", { name: "Claude Code" });
   await expect(claude.getByTestId("usage-limit-age")).toHaveText("Updated 40m ago");
   await expect(claude.getByTestId("usage-limit-age")).toHaveAttribute("data-stale", "true");
+  // An old reading says so beside its age and keeps its figures at full strength, not dimmed.
+  await expect(claude.getByTestId("usage-limit-stale")).toHaveText("Old reading");
+  await expect(codex.getByTestId("usage-limit-stale")).toHaveCount(0);
+  const rowOpacity = await claude
+    .getByTestId("usage-limit-row")
+    .first()
+    .evaluate((el) => getComputedStyle(el).opacity);
+  expect(rowOpacity).toBe("1");
   await expect(claude.getByTestId("usage-limit-forecast")).toHaveCount(0);
 
   // Each provider dates its reading the same way, in muted words: an old one is no amber alarm.

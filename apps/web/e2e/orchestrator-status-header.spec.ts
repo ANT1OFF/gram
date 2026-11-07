@@ -102,8 +102,13 @@ test("digests that changed nothing fold into one update; a merge stands; the tog
   // The merge, and the orchestrator's reply to it, stand in the chat.
   await expect(transcript.getByText("Search in Settings is on main.")).toBeVisible();
 
+  // A cut preview ends in words that say the line opens, and they turn to "Less" once it has.
+  await expect(last.getByTestId("update-block-fold")).toHaveText("More");
+  await expect(last.getByTestId("update-block-fold")).toBeVisible();
+
   // Opened, the update shows every reply it folded.
   await last.getByTestId("update-block-toggle").click();
+  await expect(last.getByTestId("update-block-fold")).toHaveText("Less");
   await expect(last.getByTestId("update-block-reply")).toHaveCount(5);
   await expect(
     last

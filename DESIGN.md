@@ -73,7 +73,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **Titles and metadata:** a title at 14 to 15 px in `fg` (`text-body-strong` or `text-reading`),
   its metadata (where it is from, its state, a time, a chip's word) at 13 px in `fg-muted`
   (`text-meta`), never smaller. `text-caption` is only for what is never read for meaning: a key
-  cap, a count badge, a footer's key legend. A title wraps to two lines before it is cut short at
+  cap, a count badge, a footer's key legend. A third, quieter level (a hint, a step's evidence, a
+  pending line) is `text-subtle` (`fg-subtle`), which holds the text floor like `fg-muted`; never
+  fade muted text with opacity (`text-muted-foreground/70`), which the drift check flags. A title wraps to two lines before it is cut short at
   its end, the sidebar's included, and its hover says the whole of it. Metadata a heading or the whole list already says is left out: no repo on each
   row when every row has the same one, no workspace under its own heading.
 - **Key hints** inside a button are a key cap in the button's own text colour (`KEY_CAP`,

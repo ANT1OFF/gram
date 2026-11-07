@@ -60,7 +60,7 @@ export function TableOfContents({
         render={
           <Menu.Trigger
             render={<Button size="icon-sm" variant="ghost" aria-label="Contents" />}
-            className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:text-foreground aria-expanded:text-foreground"
+            className="shrink-0 text-subtle hover:text-foreground focus-visible:text-foreground aria-expanded:text-foreground"
           />
         }
       >
@@ -246,7 +246,7 @@ export function ConversationRail({
                   }}
                   className={cn(
                     targetClass,
-                    "text-muted-foreground/60 hover:text-foreground disabled:opacity-40",
+                    "text-subtle hover:text-foreground disabled:opacity-40",
                   )}
                 />
               }

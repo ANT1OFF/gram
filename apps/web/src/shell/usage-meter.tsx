@@ -121,10 +121,10 @@ export function UsageMeter({
             className={cn(
               "flex h-7 items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted",
               TONE_TEXT[tone],
-              stale && "opacity-70",
             )}
           >
-            <LimitBar limit={tightest.limit} className="w-9" />
+            {/* An old reading dims its bar only, so the words keep the text floor. */}
+            <LimitBar limit={tightest.limit} className={cn("w-9", stale && "opacity-50")} />
             <span className={textClassName}>{meterText(tightest)}</span>
             {/* Drawn from its attribute, so the meter's words stay the one reading it has. */}
             <span
@@ -274,6 +274,16 @@ function ProviderLimits({
         >
           Updated {agoText(newest.at ?? now, now)}
         </span>
+        {/* An old reading keeps its figures readable and says its age instead: a neutral outlined
+            mark beside the time, not a dimmed block that looks disabled. */}
+        {stale && (
+          <span
+            data-testid="usage-limit-stale"
+            className="rounded-sm border border-border-strong px-1 text-meta text-muted-foreground"
+          >
+            Old reading
+          </span>
+        )}
       </div>
       {credits !== undefined && (
         <p data-testid="usage-provider-credits" className="-mt-1 text-meta text-muted-foreground">
@@ -303,7 +313,6 @@ function ProviderLimits({
                 "text-muted-foreground tabular-nums",
                 shown === window && "text-foreground",
                 limit !== undefined && TONE_TEXT[limitTone(limit)],
-                stale && "opacity-70",
               )}
             >
               <span>{WINDOW_LABEL[window]}</span>

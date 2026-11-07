@@ -61,9 +61,7 @@ export function FinishedWorkerView({ detail }: { detail: FinishedWorkerDetail })
     () => splitSubagents(detail.messages),
     [detail.messages],
   );
-  const separator = (
-    <ChevronRight aria-hidden className="size-icon-chip shrink-0 text-muted-foreground/60" />
-  );
+  const separator = <ChevronRight aria-hidden className="size-icon-chip shrink-0 text-subtle" />;
 
   return (
     <div

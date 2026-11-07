@@ -232,7 +232,7 @@
    @gram/themes mirrors the strengths. */
 [data-mode="light"] {
   --scrim-strength: 0.82;
-  --edge-group: color-mix(in srgb, var(--border-subtle) 60%, transparent);
+  --edge-group: var(--border-subtle);
   /* On pale chrome a 14% accent and a surface-3 fill barely show: the open thread's row, its
      workspace's line and the sidebar's group lines take a step more, still restrained. */
   --selected-bg: color-mix(in oklab, var(--accent) 20%, var(--surface-3));
