@@ -10,6 +10,7 @@
 // so a restart keeps it. Every `gh` goes through `Proc`, bounded like any other.
 
 import {
+  AppToolError,
   currentBaseOf,
   samePr,
   mergePolicyReady,
@@ -30,6 +31,7 @@ import {
 } from "@gram/contracts";
 import { gh, gitFailMsg, invalidatePrBadges, Pr, Proc } from "@gram/git";
 import {
+  userMergeApproverIsOrchestrator,
   userMergeAuthorizationMatches,
   userMergeDelegationIsLive,
 } from "./user-merge-authorization.ts";
@@ -200,14 +202,36 @@ const localCheckPassedText = (bound: BoundPr, check: LocalCheck) =>
 const waitingText = (bound: Pick<BoundPr, "repo" | "number">, why: string) =>
   `merge_when_ready hasn't merged ${prName(bound)} yet and keeps checking: ${why}.`;
 
+const fenceRefusal = (message: string) =>
+  new AppToolError({ tool: "resolve_merge_fence", message });
+
 const uncertaintyText = (pending: PendingMerge) =>
-  `merge outcome for ${prName(pending.pr)} at ${pending.head.slice(0, 7)} isn't known; its base is fenced across restarts. Inspect the PR on GitHub. Gram clears this only after observing it merged at that head, or still open at that head after a confirmed provider rejection`;
+  `merge outcome for ${prName(pending.pr)} at ${pending.head.slice(0, 7)} isn't known; its base is fenced across restarts. Inspect the PR on GitHub. Automatic reconciliation requires that head merged, or a confirmed rejection with it still open. For a terminal PR at another head, the user or owning orchestrator must explicitly call resolve_merge_fence with pr=${prName(pending.pr)}; Gram re-reads GitHub, retires old passes and verifies the base`;
 
 /** What the thread is told when GitHub refused the merge; it is tried again on a new head. */
 const refusedText = (bound: BoundPr, head: string, why: string) =>
   `merge_when_ready couldn't merge ${prName(bound)} at ${head.slice(0, 7)}: ${why.split("\n")[0]!.slice(0, 300)}. It tries again once the head moves; call merge_when_ready again to retry this head.`;
 
 export interface MergeWhenReadyShape {
+  /** Explicit, approved reconciliation only; Github terminal state is always read by Gram. */
+  readonly resolveFence: (
+    caller: ThreadId,
+    input: {
+      readonly repo: string;
+      readonly number: number;
+      readonly head: string;
+      readonly at?: number;
+      readonly userApproved: boolean;
+    },
+  ) => Effect.Effect<
+    {
+      readonly resolved: true;
+      readonly terminal: string;
+      readonly observedHead: string;
+      readonly base: string;
+    },
+    AppToolError
+  >;
   /**
    * Looks at `threadId`'s PR now, as a new state would, so an intent set on a ready PR merges it and
    * one waiting on `after` asks again at once.
@@ -289,7 +313,13 @@ export const MergeWhenReadyLive = Layer.effect(
           currentBaseOf(badge),
           thread.projectId,
         );
-        return found?.status === "passed" ? found : undefined;
+        const cutoff =
+          thread.boundPr === undefined
+            ? undefined
+            : verificationAfter.get(baseKey(thread.boundPr.repo, badge.baseRef));
+        return found?.status === "passed" && (cutoff === undefined || found.startedAt > cutoff)
+          ? found
+          : undefined;
       });
 
     const policyFor = (thread: Thread, repo: string) =>
@@ -379,10 +409,12 @@ export const MergeWhenReadyLive = Layer.effect(
      * after GitHub applied it reads like a refusal) or was cut off. It fences the base as an answered
      * merge does, for longer: nothing launches onto that base until `settle` says how it ended.
      */
+    const verificationAfter = new Map<string, number>();
     const restored = yield* store.listMergeFences;
     const unsettled = new Map<string, PendingMerge>();
     for (const record of restored) {
       movedBases.set(record.key, [...record.moved]);
+      if (record.verifyAfter !== undefined) verificationAfter.set(record.key, record.verifyAfter);
       if (record.pending !== undefined) unsettled.set(record.key, record.pending);
     }
     /**
@@ -406,11 +438,34 @@ export const MergeWhenReadyLive = Layer.effect(
     const run = (cwd: string, args: ReadonlyArray<string>) =>
       gh(cwd, args).pipe(Effect.provideService(Proc, proc));
 
+    /** Explicit reconciliation and every later launch verify the branch independently of PR lag. */
+    const readBase = (cwd: string, repo: string, branch: string) =>
+      run(cwd, ["api", `repos/${repo}/branches/${encodeURIComponent(branch)}`]).pipe(
+        Effect.flatMap((out) =>
+          Effect.try({
+            try: () =>
+              out.status === 0 && !out.truncated
+                ? Schema.decodeUnknownSync(
+                    Schema.Struct({ commit: Schema.Struct({ sha: Schema.NonEmptyString }) }),
+                  )(JSON.parse(out.stdout)).commit.sha
+                : undefined,
+            catch: () => undefined,
+          }),
+        ),
+        Effect.orElseSucceed(() => undefined),
+      );
+
     /** Commit first; a crash or interruption must never leave memory ahead of disk. */
     const writeFence = (key: string, pending?: PendingMerge, moved = movedBases.get(key) ?? []) =>
       Effect.uninterruptible(
         Effect.gen(function* () {
-          const record: MergeFence = { key, moved, ...(pending === undefined ? {} : { pending }) };
+          const cutoff = verificationAfter.get(key);
+          const record: MergeFence = {
+            key,
+            moved,
+            ...(cutoff === undefined ? {} : { verifyAfter: cutoff }),
+            ...(pending === undefined ? {} : { pending }),
+          };
           yield* store.putMergeFence(record);
           movedBases.set(key, [...moved]);
           if (pending === undefined) unsettled.delete(key);
@@ -784,6 +839,14 @@ export const MergeWhenReadyLive = Layer.effect(
                     const settled = yield* settle(key, ghCwd);
                     if (settled === "merged") foundMerged = true;
                     else if (settled !== undefined) return { unsettled: settled.pr } as const;
+                    if (verificationAfter.has(key)) {
+                      if (fresh.baseRef === undefined) return { unread: true } as const;
+                      const verified = yield* readBase(ghCwd, bound.repo, fresh.baseRef);
+                      // CI policy was verified for the provider's tip. A divergent branch read
+                      // cannot reuse that evidence or a local pass on an intermediate stale tip.
+                      if (verified === undefined || currentBaseOf(fresh) !== verified)
+                        return { unread: true } as const;
+                    }
                     const tip = currentBaseOf(fresh);
                     // A merge by Gram moved this base, and GitHub's read hasn't caught up yet.
                     if (tip !== undefined && movedBases.get(key)?.includes(tip))
@@ -1232,6 +1295,8 @@ export const MergeWhenReadyLive = Layer.effect(
         const listener = `${thread.id}\u0000${head}\u0000${base}`;
         if (listening.has(listener)) return undefined;
         const key = baseKey(bound.repo, badge.baseRef);
+        if (movedBases.get(key)?.includes(base))
+          return `GitHub still reads ${base.slice(0, 7)} as a base Gram moved on from`;
         // Read before the turn is taken, so nothing stands between taking it and the check that
         // hands it on.
         const dir = yield* repoDirOf(thread);
@@ -1242,6 +1307,7 @@ export const MergeWhenReadyLive = Layer.effect(
           .ensure(dir, head, base, {
             projectId: thread.projectId,
             since: intent.setAt,
+            ...(verificationAfter.has(key) ? { after: verificationAfter.get(key)! } : {}),
             // However it ended, the merge looks again: a pass may launch it, and after a failure,
             // a time-out or an interruption, CI that went green on this head meanwhile still can.
             onDone: (done) =>
@@ -1467,6 +1533,9 @@ export const MergeWhenReadyLive = Layer.effect(
         const found = yield* localChecks.ensure(cwd, head, base, {
           projectId: thread.value.projectId,
           since: requestedAt,
+          ...(verificationAfter.has(baseKey(bound.repo, badge.baseRef))
+            ? { after: verificationAfter.get(baseKey(bound.repo, badge.baseRef))! }
+            : {}),
           onDone: (done) =>
             Effect.gen(function* () {
               const latest = yield* store.getThread(threadId).pipe(Effect.option);
@@ -1491,6 +1560,139 @@ export const MergeWhenReadyLive = Layer.effect(
         return { check: found, reused: before?.status === "passed" };
       });
 
+    const resolveFence: MergeWhenReadyShape["resolveFence"] = (caller, input) =>
+      Effect.gen(function* () {
+        const refuse = fenceRefusal;
+        const entry = [...unsettled].find(
+          ([, pending]) =>
+            samePr(pending.pr, input) &&
+            pending.head === input.head &&
+            (input.at === undefined || input.at === pending.at),
+        );
+        if (entry === undefined)
+          return yield* refuse(
+            "That exact pending merge fence no longer exists; inspect its current state.",
+          );
+        const [key, pending] = entry;
+        const authority = yield* store
+          .getThreadWithAuthority(pending.threadId, caller)
+          .pipe(Effect.option);
+        if (
+          !input.userApproved &&
+          (Option.isNone(authority) ||
+            !userMergeApproverIsOrchestrator(
+              caller,
+              authority.value.thread,
+              authority.value.context,
+            ))
+        )
+          return yield* refuse(
+            "Only the user or the owning orchestrator may explicitly resolve this fence.",
+          );
+        const actor = yield* store
+          .getThread(caller)
+          .pipe(Effect.mapError(() => refuse("The caller no longer exists.")));
+        const owner = Option.isSome(authority) ? authority.value.thread : actor;
+        const cwd = yield* repoDirOf(owner);
+        const result = yield* baseLocks.withLock(
+          key,
+          Effect.gen(function* () {
+            if (unsettled.get(key) !== pending)
+              return yield* refuse("The fence changed during the call; inspect it again.");
+            const observed = yield* run(cwd, [
+              "pr",
+              "view",
+              String(pending.pr.number),
+              "--repo",
+              pending.pr.repo,
+              "--json",
+              "state,headRefOid",
+            ]).pipe(
+              Effect.flatMap((out) =>
+                Effect.try({
+                  try: () =>
+                    out.status === 0
+                      ? Schema.decodeUnknownSync(observedMerge)(JSON.parse(out.stdout))
+                      : undefined,
+                  catch: () => undefined,
+                }),
+              ),
+              Effect.orElseSucceed(() => undefined),
+            );
+            if (
+              observed === undefined ||
+              (observed.state !== "MERGED" && observed.state !== "CLOSED") ||
+              observed.headRefOid === ""
+            )
+              return yield* refuse(
+                "GitHub must confirm that the fenced PR is merged or closed, with its terminal head. OPEN or unreadable cannot resolve it.",
+              );
+            const branch = key.slice(key.indexOf("\u0000") + 1);
+            if (branch === "")
+              return yield* refuse(
+                "The original base branch is unknown; its state cannot be verified.",
+              );
+            const freshBase = yield* readBase(cwd, pending.pr.repo, branch);
+            if (freshBase === undefined)
+              return yield* refuse(
+                "GitHub's current base branch cannot be verified; the fence remains.",
+              );
+            // Explicit terminal evidence may describe a cancelled queue or a manually reset
+            // branch. Its freshly observed tip replaces that stale moved-tip barrier, while
+            // the durable cutoff still forbids every old pass and later launches re-read it.
+            const prior = (movedBases.get(key) ?? []).filter((tip) => tip !== freshBase);
+            const moved =
+              observed.state === "MERGED" && pending.tip !== undefined && pending.tip !== freshBase
+                ? [...prior.filter((tip) => tip !== pending.tip), pending.tip].slice(
+                    -MOVED_BASES_KEPT,
+                  )
+                : prior;
+            const cutoff = yield* Clock.currentTimeMillis;
+            const record: MergeFence = { key, moved, verifyAfter: cutoff };
+            return yield* Effect.uninterruptible(
+              Effect.gen(function* () {
+                const committed = yield* store.reconcileMergeFence(
+                  record,
+                  pending,
+                  caller,
+                  (thread, context) =>
+                    input.userApproved ||
+                    (thread !== undefined &&
+                      userMergeApproverIsOrchestrator(caller, thread, context)),
+                );
+                if (!committed)
+                  return yield* refuse(
+                    "The owning authority or pending fence changed; inspect it again.",
+                  );
+                unsettled.delete(key);
+                movedBases.set(key, [...moved]);
+                verificationAfter.set(key, cutoff);
+                turns.delete(key);
+                yield* clearFenceWait(pending);
+                yield* tell(
+                  owner,
+                  pending.pr,
+                  `Merge fence resolved explicitly: GitHub reports ${observed.state.toLowerCase()} at ${observed.headRefOid}. ${branch} was freshly read at ${freshBase}. Older local passes are retired; later merges require fresh verification.`,
+                  "merge-fence-resolved",
+                );
+                return {
+                  resolved: true as const,
+                  terminal: observed.state,
+                  observedHead: observed.headRefOid,
+                  base: freshBase,
+                };
+              }),
+            );
+          }),
+        );
+        yield* FiberMap.run(
+          aftermath,
+          `resolved:${key}:${pending.at}`,
+          afterMerge(pending.threadId, pending.pr),
+        );
+        return result;
+      });
+
     const mutate: MergeWhenReadyShape["mutate"] = (threadId, change) =>
       // Looked at again however `change` ends: the attempt it stopped is restarted even when the
       // change itself failed or was interrupted.
@@ -1498,6 +1700,6 @@ export const MergeWhenReadyLive = Layer.effect(
         Effect.ensuring(check(threadId)),
       );
 
-    return MergeWhenReady.of({ check, mutate, runLocalCheck });
+    return MergeWhenReady.of({ check, mutate, runLocalCheck, resolveFence });
   }),
 );

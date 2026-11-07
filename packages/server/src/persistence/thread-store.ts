@@ -66,6 +66,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { createHash, randomUUID } from "node:crypto";
@@ -89,7 +90,7 @@ import {
 } from "./stored.ts";
 import { durableCommit, durableSqliteLayer } from "./durable-commit.ts";
 import { makeMessageReceipts } from "./message-receipts.ts";
-import { MergeFence } from "./merge-fence.ts";
+import { MergeFence, type PendingMerge } from "./merge-fence.ts";
 import { DAY_MS } from "../zone-time.ts";
 
 /**
@@ -344,6 +345,13 @@ export interface ThreadStoreShape {
   >;
   listMergeFences: Effect.Effect<ReadonlyArray<MergeFence>>;
   putMergeFence(fence: MergeFence): Effect.Effect<void>;
+  /** Re-check authority and exact pending attempt atomically with its FULL commit. */
+  reconcileMergeFence(
+    fence: MergeFence,
+    expected: PendingMerge,
+    caller: ThreadId,
+    authorized: (thread: Thread | undefined, context: ThreadUpdateContext | undefined) => boolean,
+  ): Effect.Effect<boolean>;
   listThreads: Effect.Effect<ReadonlyArray<Thread>>;
   updateThread(
     id: ThreadId,
@@ -935,6 +943,13 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const tx = <A, E, R>(effect: Effect.Effect<A, E, R>) => run(sql.withTransaction(effect));
       const commitReservation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         durableCommit(sql, effect);
+
+      const durableFence = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        run(durableCommit(sql, effect));
+      const writeMergeFence = (fence: MergeFence) =>
+        sql`INSERT INTO merge_fences (key, data)
+        VALUES (${fence.key}, ${toJson(MergeFence, fence)})
+        ON CONFLICT (key) DO UPDATE SET data = excluded.data`.pipe(Effect.asVoid);
 
       /** A settings-by-chat audit row, and a workspace's own `settings` event; inside a `tx`. */
       const insertSettingsAudit = (entry: SettingsAuditEntry) =>
@@ -1867,11 +1882,26 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             ),
           ),
         ),
-        putMergeFence: (fence) =>
-          run(
-            sql`INSERT INTO merge_fences (key, data)
-          VALUES (${fence.key}, ${toJson(MergeFence, fence)})
-          ON CONFLICT (key) DO UPDATE SET data = excluded.data`.pipe(Effect.asVoid),
+        putMergeFence: (fence) => durableFence(writeMergeFence(fence)),
+        reconcileMergeFence: (fence, expected, caller, authorized) =>
+          durableFence(
+            Effect.gen(function* () {
+              const rows = yield* sql<{
+                data: string;
+              }>`SELECT data FROM merge_fences WHERE key = ${fence.key}`;
+              const current =
+                rows[0] === undefined
+                  ? undefined
+                  : Schema.decodeUnknownSync(MergeFence)(JSON.parse(rows[0].data));
+              if (JSON.stringify(current?.pending) !== JSON.stringify(expected)) return false;
+              const owner = yield* readThread(expected.threadId).pipe(Effect.option);
+              const thread = Option.getOrUndefined(owner);
+              const context =
+                thread === undefined ? undefined : yield* readThreadAuthority(thread, caller);
+              if (!authorized(thread, context)) return false;
+              yield* writeMergeFence(fence);
+              return true;
+            }),
           ),
         listThreads: run(
           Effect.gen(function* () {

@@ -17,6 +17,8 @@ export type PendingMerge = typeof PendingMerge.Type;
 export const MergeFence = Schema.Struct({
   key: Schema.String,
   moved: Schema.Array(Schema.String),
+  /** Checks started at or before this explicit reconciliation cannot authorize another merge. */
+  verifyAfter: Schema.optionalKey(Schema.Number),
   pending: Schema.optionalKey(PendingMerge),
 });
 export type MergeFence = typeof MergeFence.Type;
