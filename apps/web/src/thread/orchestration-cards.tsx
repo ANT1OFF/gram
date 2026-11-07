@@ -40,6 +40,7 @@ import { useState, type ReactNode } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
+import { useBesideLink } from "@/orchestration/beside-link";
 import { sectionsOf } from "@/orchestration/board-model";
 import {
   dreamFailureText,
@@ -149,10 +150,12 @@ function Disclosure({
 }
 
 function ThreadLink({ threadId, children }: { threadId: ThreadId; children: ReactNode }) {
+  const beside = useBesideLink(threadId);
   return (
     <Link
       to="/t/$threadId"
       params={{ threadId }}
+      onClick={beside}
       className="min-w-0 truncate font-medium text-foreground underline-offset-4 hover:underline"
     >
       {children}

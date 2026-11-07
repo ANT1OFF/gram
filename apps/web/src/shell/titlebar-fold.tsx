@@ -534,7 +534,7 @@ function RunScriptSubmenu({ threadId, projectId }: { threadId: ThreadId; project
 }
 
 /**
- * The carried thread's own: a folded worker's Keep beside and Take over, its menu's verbs in a
+ * The carried thread's own: a folded worker's Open beside and Take over, its menu's verbs in a
  * submenu, and its scripts.
  */
 function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode }) {

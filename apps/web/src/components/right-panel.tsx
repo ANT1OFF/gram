@@ -14,6 +14,7 @@ import {
   Minimize2,
   Plug,
   SquareTerminal,
+  MessagesSquare,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -33,13 +34,17 @@ import { useFeature } from "@/settings/use-diagnostics";
 import { useToastDock } from "@/shell/toast-dock";
 import { isReviewTab, reviewsTabShown, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
+import { besideShown, useBesideStore } from "@/orchestration/beside-store";
 
 import { tabFolds, tabNamed, useTabLabelFit } from "./panel-tab-labels";
 import { ReviewRoomOffer, useKeepReadingPlace } from "./review-room";
 import type * as PanelTabs from "./right-panel-tabs";
 
+/** A tab of the strip: the stored ones, and the worker open beside the chat, kept per window. */
+type ShownTab = RightPanelTab | "thread";
+
 interface PanelTab {
-  value: RightPanelTab;
+  value: ShownTab;
   label: string;
   icon: LucideIcon;
   primary?: true;
@@ -62,6 +67,14 @@ const TABS: PanelTab[] = [
   { value: "reviews", label: "Reviews", icon: Eye },
   { value: "notifications", label: "Notifications", icon: Bell },
 ];
+
+/** First while a worker is open beside the chat (`beside-store`), and only then. */
+const THREAD_TAB: PanelTab = {
+  value: "thread",
+  label: "Thread",
+  icon: MessagesSquare,
+  primary: true,
+};
 
 let tabsLoad: Promise<typeof PanelTabs> | undefined;
 
@@ -119,16 +132,25 @@ export function RightPanel() {
   // The tab is synced between machines and the list's placement is not, so the stored tab can name
   // a Reviews tab this window doesn't have, or a Preview tab where the shell has no preview. Needs
   // you was a tab before the Inbox took its place.
-  const tab =
+  const panelTab =
     (storedTab === "reviews" && !reviewsHere) ||
     (storedTab === "preview" && !previewHere) ||
     (storedTab === "workers" && !workersHere) ||
     storedTab === "needsYou"
       ? "diff"
       : storedTab;
-  const setTab = useLayoutStore((s) => s.setPanelTab);
+  // A worker open beside the chat has the Thread tab, picked over the stored one while it shows.
+  const besideWorker = useBesideStore((s) => (s.restored ? undefined : s.worker));
+  const besideOn = useBesideStore((s) => besideShown(s) !== undefined);
+  const setBesideShown = useBesideStore((s) => s.setShown);
+  const tab: ShownTab = besideOn ? "thread" : panelTab;
+  const setPanelTab = useLayoutStore((s) => s.setPanelTab);
+  const setTab = (value: ShownTab) => {
+    setBesideShown(value === "thread");
+    if (value !== "thread") setPanelTab(value);
+  };
   const tabList = useRef<HTMLDivElement>(null);
-  const shownTabs = TABS.filter(
+  const shownTabs = [...(besideWorker === undefined ? [] : [THREAD_TAB]), ...TABS].filter(
     (t) =>
       (t.value !== "reviews" || reviewsHere) &&
       (t.value !== "preview" || previewHere) &&
@@ -137,7 +159,7 @@ export function RightPanel() {
   const expanded = useLayoutStore((s) => s.panelExpanded);
   const focused = useLayoutStore((s) => s.reviewFocus);
   // On a review the action beside the tabs is Focus review, in words; elsewhere an icon at the end.
-  const reviewAction = isReviewTab(tab) && !expanded;
+  const reviewAction = tab !== "thread" && isReviewTab(tab) && !expanded;
   const labelFit = useTabLabelFit(tabList, tab);
   const aside = useRef<HTMLElement>(null);
   useKeepReadingPlace(aside);
@@ -199,7 +221,7 @@ export function RightPanel() {
       <PreviewSuggestionNotice threadId={threadId} />
       <Tabs
         value={tab}
-        onValueChange={(value: RightPanelTab) => setTab(value)}
+        onValueChange={(value: ShownTab) => setTab(value)}
         className="min-h-0 flex-1"
       >
         <div className="relative flex items-center border-b border-border pr-2">
@@ -275,6 +297,7 @@ export function RightPanel() {
           <RightPanelTabs
             threadId={threadId}
             workspaceId={workspaceId}
+            besideWorker={besideWorker}
             previewHere={previewHere}
             reviewsHere={reviewsHere}
             requestsHere={requestsHere}
@@ -368,7 +391,7 @@ function MoreTabs({
   onPick,
 }: {
   faces: readonly TabFaceProps[];
-  onPick: (tab: RightPanelTab) => void;
+  onPick: (tab: ShownTab) => void;
 }) {
   return (
     <Menu.Root>

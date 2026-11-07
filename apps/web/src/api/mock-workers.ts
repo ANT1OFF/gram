@@ -123,6 +123,29 @@ export async function simulateWorkersList(
       metadata: { createdAt: at },
       parts: [{ type: "text", text, ...(role === "assistant" ? { state: "done" as const } : {}) }],
     } as GramUIMessage);
+  /** The orchestrator's brief, as Gram delivers one: the user's role, under the orchestrator. */
+  const brief = (threadId: ThreadId, text: string, at: number) => {
+    const id = host.ids();
+    const orchestrator = host.threads().find((thread) => thread.id === orchestratorThreadId);
+    host.putMessage(threadId, {
+      id,
+      role: "user",
+      metadata: { createdAt: at },
+      parts: [
+        { type: "text", text },
+        {
+          type: "data-thread-origin",
+          id,
+          data: {
+            threadId: orchestratorThreadId,
+            title: orchestrator?.title ?? "Orchestrator",
+            depth: 1,
+            role: "orchestrator",
+          },
+        },
+      ],
+    } as GramUIMessage);
+  };
   /** A tool call of its own: finished, or still running. */
   const tool = (threadId: ThreadId, name: string, input: unknown, at: number, running = false) =>
     host.putMessage(threadId, {
@@ -170,11 +193,12 @@ export async function simulateWorkersList(
     host.replace({ ...worker, completedAt: at, completedReason: "prMerged", lastActivityAt: at });
   };
 
-  // Live: running the suite, with a transcript taller than any pane and a report you haven't seen.
+  // Live: running the suite, with a transcript taller than any pane and a report you haven't seen,
+  // last looked at partway through it.
   const live = await spawn("mail-retry-policy", "Retry with backoff", "mail-retry-policy", {
-    lastViewedAt: now - 3 * 60 * MINUTE,
+    lastViewedAt: now - 25 * MINUTE,
   });
-  say(live.id, "Retry on 5xx with backoff; dead-letter after 5 tries.", now - 50 * MINUTE, "user");
+  brief(live.id, "Retry on 5xx with backoff; dead-letter after 5 tries.", now - 50 * MINUTE);
   STEPS.forEach((step, i) => {
     const at = now - (45 - i * 3) * MINUTE;
     say(live.id, step, at);
@@ -197,7 +221,7 @@ export async function simulateWorkersList(
   const asking = await spawn("rate-headers", "Rate limit headers", "rate-headers", {
     lastViewedAt: now - 2 * 60 * MINUTE,
   });
-  say(asking.id, "Add X-RateLimit-* headers to every API response.", now - 70 * MINUTE, "user");
+  brief(asking.id, "Add X-RateLimit-* headers to every API response.", now - 70 * MINUTE);
   say(
     asking.id,
     "The limiter already knows the window; the headers need its reset time.",

@@ -144,7 +144,16 @@ const waitingThreads = new Set<string>();
 /** Shown while a send waits for the connection to come back. */
 const RECONNECT_HINT = "Waiting for the connection — sends once it's back";
 
-export function Composer({ threadId, focused }: { threadId: ThreadId; focused: boolean }) {
+export function Composer({
+  threadId,
+  focused,
+  placeholder,
+}: {
+  threadId: ThreadId;
+  focused: boolean;
+  /** In place of "Message…", e.g. beside the chat, where it steers a worker. */
+  placeholder?: string | undefined;
+}) {
   const api = useApi();
   const typing = useTypingPresence();
   const navigate = useNavigate();
@@ -1116,9 +1125,10 @@ export function Composer({ threadId, focused }: { threadId: ThreadId; focused: b
             placeholder={
               ghost !== undefined || dictation.active
                 ? ""
-                : running
-                  ? "Queue a message… (/ for commands, @ for files)"
-                  : "Message… (/ for commands, @ for files)"
+                : (placeholder ??
+                  (running
+                    ? "Queue a message… (/ for commands, @ for files)"
+                    : "Message… (/ for commands, @ for files)"))
             }
             className={cn(SLAB_TEXTAREA, "relative")}
             onFocus={(event) => {

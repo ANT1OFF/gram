@@ -168,6 +168,7 @@ export function Transcript({
   earlierFailed = false,
   onLoadEarlier,
   live = false,
+  unreadFrom,
 }: {
   threadId: ThreadId;
   loading: boolean;
@@ -200,6 +201,8 @@ export function Transcript({
    * and scrolling up turns it into "Jump to live".
    */
   live?: boolean | undefined;
+  /** The first message the user hasn't seen, which a "New" line goes over; see `firstUnseen`. */
+  unreadFrom?: string | undefined;
 }) {
   // The virtualizer is a mutable instance; the compiler must not memoize around it.
   "use no memo";
@@ -889,6 +892,7 @@ export function Transcript({
                         )}
                         style={{ transform: `translateY(${item.start}px)` }}
                       >
+                        {id === unreadFrom && <UnreadDivider />}
                         {!retried && (
                           <Row
                             threadId={threadId}
@@ -938,6 +942,24 @@ export function Transcript({
  * A transcript row. Only rows with a subagent card, or streaming themselves, see the live subagent
  * map and streaming set; the rest get constants, so a streamed chunk doesn't re-render them.
  */
+/**
+ * "New", over the first message the user hasn't seen: a hairline in the accent, which marks where
+ * they are, with the word at its start. Inside the row, so the list measures it with the message.
+ */
+function UnreadDivider() {
+  return (
+    <div
+      role="separator"
+      aria-label="New since you last looked"
+      data-testid="unread-divider"
+      className="flex items-center gap-2 pb-2 text-meta font-medium text-primary"
+    >
+      New
+      <span aria-hidden className="h-px flex-1 bg-primary/50" />
+    </div>
+  );
+}
+
 /** A message counts as just sent for this long, which is when it animates in. */
 const ARRIVAL_MS = 3000;
 

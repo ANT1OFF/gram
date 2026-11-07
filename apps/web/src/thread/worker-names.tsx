@@ -2,6 +2,8 @@ import type { ThreadId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { useBesideLink } from "@/orchestration/beside-link";
+
 // Worker names in an orchestrator's messages as links to the worker views ("From a message",
 // buildout "Reaching workers"). A rehype pass after the PR references: it marks each whole-word
 // occurrence of a worker's title, longest first, outside code, links and headings.
@@ -117,10 +119,17 @@ function WorkerRef({
   children?: ReactNode;
 }) {
   if (id === undefined) return <>{children}</>;
+  return <WorkerRefLink threadId={id as ThreadId}>{children}</WorkerRefLink>;
+}
+
+/** A worker's name as a link: beside its orchestrator's chat on a plain click, its view otherwise. */
+function WorkerRefLink({ threadId, children }: { threadId: ThreadId; children?: ReactNode }) {
+  const beside = useBesideLink(threadId);
   return (
     <Link
       to="/t/$threadId"
-      params={{ threadId: id as ThreadId }}
+      params={{ threadId }}
+      onClick={beside}
       data-testid="worker-name-link"
       className="font-medium text-primary underline underline-offset-2"
     >

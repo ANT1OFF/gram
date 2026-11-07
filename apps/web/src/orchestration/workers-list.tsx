@@ -342,7 +342,7 @@ function WorkersBody() {
           <kbd className="font-sans">{keyLabel("⏎")}</kbd> open
         </span>
         <span>
-          <kbd className="font-sans">{keyLabel("⌘⏎")}</kbd> keep beside
+          <kbd className="font-sans">{keyLabel("⌘⏎")}</kbd> open beside
         </span>
         <button
           type="button"
