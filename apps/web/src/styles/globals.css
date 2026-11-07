@@ -254,7 +254,7 @@
   }
   /* One optical stroke for every icon: Lucide draws on a 24-unit grid, so a fixed stroke would thin
      a 14 px chip glyph and thicken an 18 px toolbar one. Each size token takes the stroke that draws
-     the same line as --icon-stroke does at 16 px (about 1.17 px), so a chip, a row and the title
+     the same line as --icon-stroke does at 16 px (about 1.33 px), so a chip, a row and the title
      bar's glyphs carry one weight. */
   .lucide {
     stroke-width: var(--icon-stroke);

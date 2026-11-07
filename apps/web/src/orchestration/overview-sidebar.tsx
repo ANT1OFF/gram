@@ -1140,8 +1140,9 @@ function WorkerCard({
 }
 
 /**
- * What a worker or an orchestrator at rest waits on, as a row's second line: an hourglass and the
- * short label, muted, as calm as an idle row. The whole list is on the row's hover.
+ * What a worker or an orchestrator at rest waits on, as a row's second line: the short label,
+ * muted, as calm as an idle row, beside the row's hollow dot that already says it waits. The whole
+ * list is on the row's hover.
  */
 function WaitingLine({
   waiting,
@@ -1160,7 +1161,6 @@ function WaitingLine({
         data-kind={waiting.kind}
         className="flex min-w-0 items-center gap-1"
       >
-        <Hourglass aria-hidden className="size-icon-chip shrink-0" />
         <span className="truncate">{nowBesidePrs(waiting.label, prs)}</span>
       </span>
     </Swap>

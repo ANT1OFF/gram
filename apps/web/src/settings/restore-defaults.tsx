@@ -1,5 +1,4 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Undo2 } from "lucide-react";
 import { useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -66,7 +65,6 @@ export function useRestoreDefaults(defaults: readonly DefaultSetting[] | undefin
         aria-expanded={confirming}
         onClick={() => setConfirming((open) => !open)}
       >
-        <Undo2 data-icon="inline-start" />
         Restore defaults
       </Button>
     </WhyDisabled>

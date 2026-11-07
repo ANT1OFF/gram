@@ -5,7 +5,7 @@ import {
   type StreamLine,
   type Thread,
 } from "@gram/contracts";
-import { History, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import { formatClockTime, formatStamp } from "@/lib/time";
@@ -101,9 +101,8 @@ export function SinceYouLeft({
         <Popover.Trigger
           data-testid="since-you-left-open"
           aria-label={`Since you left: ${words}. Show what happened`}
-          className="flex h-7 items-center gap-1.5 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-7 items-center gap-1 rounded-sm px-1.5 text-meta text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <History aria-hidden className="size-icon-row shrink-0" />
           {/* Always said: without it, "2 merged" would read like the strip's "merged today". */}
           <span className="shrink-0">Since you left</span>
           {merged > 0 && (

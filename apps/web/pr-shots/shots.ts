@@ -3232,6 +3232,63 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("worker-report"),
   },
   {
+    name: "doc-reader",
+    title: "A published report read in the Docs tab: its title once, and a table at full height",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      const made = await page.evaluate(async () => {
+        const scenario = await window.gramMock?.simulateOrchestration("report");
+        if (!scenario) throw new Error("the mock API isn't on this page");
+        return scenario;
+      });
+      // In the app rather than by URL: a reload would drop the mock's simulated workspace.
+      await openOrchestrator(page, made.orchestratorThreadId);
+      // The worker's name on its feature card opens its own view with the modifier.
+      await page
+        .getByRole("link", { name: "Return rate-limit headers" })
+        .first()
+        .click({ modifiers: ["ControlOrMeta"] });
+      await page.waitForURL(new RegExp(`/t/${made.workerThreadId}$`));
+      const title = "Rate-limit headers: implementation report";
+      await page.evaluate(
+        ({ thread, doc }) => window.gramMock!.simulatePublishDoc(thread as never, doc as never),
+        {
+          thread: made.workerThreadId,
+          doc: {
+            title,
+            content: [
+              `# ${title}`,
+              "",
+              "Every limited route now returns its limit, what is left and when it resets.",
+              "",
+              "## Findings",
+              "",
+              "| Area | Result | Next step |",
+              "| --- | --- | --- |",
+              "| Headers | Sent on every limited route | Document them |",
+              "| Retries | Clients wait for the reset | Check the CLI's backoff |",
+              "| Errors | 429 says when to retry | Add a regression test |",
+              "| Metrics | Hits counted per route | Chart them on the dashboard |",
+              "",
+              "## Verification",
+              "",
+              "Synthetic checks passed for each route. Live provider behaviour was not exercised.",
+            ].join("\n"),
+          },
+        },
+      );
+      await page
+        .getByTestId("doc-card")
+        .getByRole("button", { name: `Open ${title}` })
+        .click();
+      await page.getByTestId("doc-view").getByRole("table").waitFor();
+      await page.mouse.move(700, 120);
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "worker-view-held",
     title: "A worker you hold: its header, and how it says so",
     open: async (page) => {

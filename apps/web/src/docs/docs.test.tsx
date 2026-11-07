@@ -22,6 +22,7 @@ import { PinnedDocChip, pinnedDocOf } from "./doc-chip";
 import { useDocPane } from "./doc-pane-store";
 import { DocsPanel } from "./docs-panel";
 import { DocsStrip } from "./docs-strip";
+import { withoutRepeatedTitle } from "./doc-view";
 import { WorkersDocs } from "@/orchestration/workers-docs";
 
 const WS = "ws-docs" as WorkspaceId;
@@ -189,10 +190,14 @@ describe("DocsPanel", () => {
     expect(stamps).toMatch(/^By cp-artifacts · \d{2}:\d{2} · updated \d{2}:\d{2}$/);
     const body = screen.getByTestId("doc-body");
     expect(body.hasAttribute("data-transcript")).toBe(true);
-    await waitFor(() =>
-      expect(within(body).getByRole("heading", { name: "Gap analysis" })).toBeTruthy(),
-    );
-    expect(within(body).getByRole("table")).toBeTruthy();
+    // The title is said once, by the header: the doc's own leading `# Gap analysis` is left out.
+    await waitFor(() => expect(within(body).getByRole("table")).toBeTruthy());
+    expect(within(body).queryByRole("heading", { name: "Gap analysis" })).toBeNull();
+    expect(body.textContent).toContain("What Gram lacks.");
+    // Its table reads in the panel's own scroll, with no box of its own and no toolbar.
+    const table = within(body).getByRole("table");
+    expect((table.parentElement as HTMLElement).style.maxHeight).toBe("");
+    expect(within(body).queryByTitle(/copy table|download table|fullscreen/i)).toBeNull();
     expect(body.textContent).toContain("const x = 1;");
     fireEvent.click(screen.getByTestId("doc-back"));
     expect(await screen.findAllByTestId("doc-row")).toHaveLength(2);
@@ -267,5 +272,23 @@ describe("PinnedDocChip", () => {
     await waitFor(() => expect(api.listDocs).toHaveBeenCalled());
     expect(screen.queryByTestId("pinned-doc")).toBeNull();
     expect(pinnedDocOf(undefined, WORKER)).toBeUndefined();
+  });
+});
+
+describe("withoutRepeatedTitle", () => {
+  it("leaves out a leading heading that repeats the title, whatever its case or spacing", () => {
+    expect(withoutRepeatedTitle("# Gap analysis\n\nBody.", "Gap analysis")).toBe("Body.");
+    expect(withoutRepeatedTitle("\n#  gap  Analysis ##\r\nBody.", "Gap analysis")).toBe("Body.");
+    expect(withoutRepeatedTitle("# Gap analysis", "Gap analysis")).toBe("");
+  });
+
+  it("keeps a heading that says something else, a lower heading and a doc without one", () => {
+    expect(withoutRepeatedTitle("# Findings\n\nBody.", "Gap analysis")).toBe("# Findings\n\nBody.");
+    expect(withoutRepeatedTitle("## Gap analysis\nBody.", "Gap analysis")).toBe(
+      "## Gap analysis\nBody.",
+    );
+    expect(withoutRepeatedTitle("Body.\n# Gap analysis", "Gap analysis")).toBe(
+      "Body.\n# Gap analysis",
+    );
   });
 });
