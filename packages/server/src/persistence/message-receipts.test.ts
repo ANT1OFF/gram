@@ -334,7 +334,7 @@ describe("durable message receipts", () => {
               }>`SELECT level FROM receipt_sync_probe`;
               expect(Number(committed!.level)).toBe(2);
               return { queued: false };
-            }),
+            }).pipe(Effect.orDie),
           );
         }).pipe(Effect.provide(ThreadStore.layerSqlite(join(dir, "sync.db"))));
       }),
