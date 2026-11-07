@@ -354,10 +354,11 @@ function SheetForm({
       <Field
         label="What should it work on?"
         htmlFor={taskId}
-        // The survey Start sends anyway, so the field reads as optional, not as the only way to begin.
-        hint={
-          <span data-testid="new-workspace-discover">
-            Either way, it first surveys the repositories and asks which starter tasks to run.
+        // The survey Start sends anyway, so the field reads as optional, not as the only way to
+        // begin. On the label's line, so the sheet is no taller for it.
+        action={
+          <span data-testid="new-workspace-discover" className="text-meta text-muted-foreground">
+            It surveys the repositories first either way
           </span>
         }
       >
