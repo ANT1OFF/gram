@@ -3908,6 +3908,24 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("command-palette"),
   },
   {
+    name: "report-issue-short",
+    title: "Report an issue at 1280×640, diagnostics open: Cancel and Submit stay in the window",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1280, height: 640 });
+      await page.goto("/t/t-flaky");
+      await threadRow(page, "t-flaky").waitFor();
+      await page.keyboard.press("ControlOrMeta+k");
+      const palette = page.getByTestId("command-palette");
+      await palette.getByRole("combobox").fill(">report");
+      await palette.getByText("Report an issue…", { exact: true }).click();
+      const dialog = page.getByTestId("report-issue-dialog");
+      await dialog.getByRole("textbox", { name: "Title" }).fill("Pin threads");
+      await dialog.getByTestId("report-issue-diagnostics").click();
+      await dialog.getByTestId("report-issue-diagnostics-body").waitFor();
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     name: "palette-in-words",
     title: "Go to in words: workers waiting on me",
     open: async (page) => {

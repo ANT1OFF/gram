@@ -37,6 +37,38 @@ test("files a feature request with diagnostics and links the new issue", async (
   await expect(dialog).toBeHidden();
 });
 
+test("fits a short window: the fields scroll and the actions stay in view", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 640 });
+  const dialog = await openForm(page);
+  await dialog.getByRole("textbox", { name: "Title" }).fill("Pin threads");
+  await dialog.getByTestId("report-issue-diagnostics").click();
+  const footer = dialog.getByTestId("report-issue-diagnostics-body");
+  await expect(footer).toContainText("- Filed from Gram by the user");
+
+  // The whole dialog is inside the window, and its fields scroll rather than push it past the edge.
+  const box = await dialog.boundingBox();
+  expect(box!.y + box!.height).toBeLessThanOrEqual(640);
+  const fields = dialog.getByTestId("report-issue-fields");
+  expect(await fields.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeInViewport({ ratio: 1 });
+  await expect(dialog.getByRole("button", { name: "Submit" })).toBeInViewport({ ratio: 1 });
+
+  // A failure's message and its way out sit with the buttons, so they show without scrolling.
+  await page.evaluate(() => {
+    window.gramMock!.issueFailure.message = "HTTP 403: Resource protected by IP allow list";
+  });
+  await dialog.getByRole("button", { name: "Submit" }).click();
+  await expect(dialog.getByRole("alert")).toBeInViewport({ ratio: 1 });
+  await expect(dialog.getByTestId("report-issue-open-github")).toBeInViewport({ ratio: 1 });
+  await expect(dialog.getByRole("button", { name: "Submit" })).toBeInViewport({ ratio: 1 });
+
+  await page.evaluate(() => {
+    window.gramMock!.issueFailure.message = undefined;
+  });
+  await dialog.getByRole("button", { name: "Submit" }).click();
+  await expect(dialog.getByTestId("report-issue-filed")).toContainText("#161");
+});
+
 test("shows gh's error and offers the prefilled GitHub page instead", async ({ page }) => {
   const dialog = await openForm(page);
   await page.evaluate(() => {
