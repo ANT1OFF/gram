@@ -1,8 +1,9 @@
 # Server SQLite benchmark
 
 This investigation measures the shipped storage and orchestration paths before changing them.
-The results and ranked recommendations will follow the five large-fixture repeats. No runtime,
-schema or dependency change is part of the harness.
+The [initial findings](server-sqlite-findings.md) are provisional because the first large run
+overlapped a release test suite. A quiet rerun is required. No runtime, schema or dependency
+change is part of the harness.
 
 ## Threading today
 
@@ -14,7 +15,8 @@ another OS thread. Those operations compete with agent event processing and feed
 The server has one application database connection. WAL checkpoints use a separate connection
 in a worker thread, with a bounded fallback to SQLite's automatic checkpoints on the application
 thread. The existing page cache, mmap and NORMAL-sync settings already apply. The in-flight
-durable-commit work in PRs #202 and #204 remains outside this investigation's edits.
+durable-commit implementation remains outside this investigation's edits. The initial large run
+includes the connection owner landed in PR #204; PR #202 was still open when it ran.
 
 See [storage](../../packages/server/src/persistence/thread-store.ts),
 [checkpointing](../../packages/server/src/persistence/wal-checkpointer.ts), and
