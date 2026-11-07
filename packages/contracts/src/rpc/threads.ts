@@ -263,6 +263,16 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound),
   }),
   /**
+   * Snoozes the thread until `until` (epoch ms), out of the active lists until then, or with `null`
+   * brings it back now. It comes back unread at that time, or sooner when it asks something or
+   * fails. Refused for a time already past or more than `SNOOZE_AHEAD_MAX_DAYS` ahead.
+   */
+  Rpc.make("thread.snooze", {
+    payload: { ...threadRef, until: Schema.NullOr(Schema.Number) },
+    success: Thread,
+    error: errors(ThreadNotFound, InvalidState),
+  }),
+  /**
    * The user's edit of the thread's plan: every step it lists, in order. A step whose text, status
    * or PR changed, and a new one, become the user's and are locked against the helper. An edit with
    * no goal and no steps removes the plan, and answers `null`.

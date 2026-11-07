@@ -55,7 +55,7 @@ import {
   OVERVIEW_ROOT,
   toggleOverviewSidebar,
 } from "@/views/shell-layout";
-import { parkedSoloThreads, soloThreads } from "@/views/solo-threads";
+import { parkedSoloThreads, snoozedSoloThreads, soloThreads } from "@/views/solo-threads";
 import { useSettleRule } from "@/views/use-settle-rule";
 import { useViewSolo, useViewWorkspace } from "@/views/view-workspace";
 import { useBeforeSetup } from "@/welcome/welcome";
@@ -695,7 +695,20 @@ function WorkspaceFeatures({
   empty: boolean;
 }) {
   const orchestratorAgent = useOrchestratorAgent(workspaceId);
-  const items = useMemo(() => overviewItems(features), [features]);
+  // A snoozed worker is out of the list until its snooze ends; the Board still shows it.
+  const snoozed = useThreadsStore(
+    useShallow((s) =>
+      Object.values(s.byId)
+        .filter((each) => each.thread.snoozedUntil !== undefined)
+        .map((each) => each.thread.id),
+    ),
+  );
+  const items = useMemo(() => {
+    const away = new Set<string>(snoozed);
+    return overviewItems(features).filter(
+      (item) => item.kind !== "worker" || !away.has(item.row.threadId),
+    );
+  }, [features, snoozed]);
   if (items.length === 0) {
     if (empty) return null;
     return (
@@ -1225,11 +1238,15 @@ function SoloThreads() {
   const settle = useSettleRule();
   const solo = useThreadsStore(useShallow((s) => soloThreads(Object.values(s.byId), ids, settle)));
   const parked = useThreadsStore(useShallow((s) => parkedSoloThreads(Object.values(s.byId), ids)));
+  const snoozed = useThreadsStore(
+    useShallow((s) => snoozedSoloThreads(Object.values(s.byId), ids)),
+  );
   const viewed = useParams({ strict: false }).threadId;
-  if (solo.length + parked.length === 0) return null;
+  if (solo.length + parked.length + snoozed.length === 0) return null;
   return (
     <Section id="solo" title="Solo threads" count={solo.length} hint={EXPLAIN.solo} term="solo">
       {solo.length > 0 && <SoloList threads={solo} viewed={viewed} />}
+      {snoozed.length > 0 && <FoldedThreads kind="snoozed" threads={snoozed} viewed={viewed} />}
       {parked.length > 0 && <FoldedThreads kind="parked" threads={parked} viewed={viewed} />}
     </Section>
   );
@@ -1258,11 +1275,15 @@ function SoloList({
 
 const FOLDED = {
   parked: { label: "Archived", hint: undefined as string | undefined },
+  snoozed: {
+    label: "Snoozed",
+    hint: "Each comes back unread at its time, or sooner if it needs you." as string | undefined,
+  },
 } as const;
 
 /**
- * The parked solo threads behind one line, folded until opened: out of the way, still a click
- * away. (The done ones had a line of their own until Done took them in.)
+ * The parked solo threads, or the snoozed ones, behind one line, folded until opened: out of the
+ * way, still a click away. (The done ones had a line of their own until Done took them in.)
  */
 function FoldedThreads({
   kind,

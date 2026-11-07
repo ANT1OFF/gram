@@ -321,13 +321,19 @@ test("Mark unread on a solo thread's row keeps it unread until it is opened", as
   const solo = page
     .getByTestId("overview-sidebar")
     .locator('[data-testid="overview-solo"][data-thread-id="t-flaky"]');
+  // Mark unread shares the row's "Come back later" submenu with Snooze.
   await solo.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Come back later" }).hover();
   await page.getByRole("menuitem", { name: "Mark unread" }).click();
   await expect(solo).toHaveAttribute("data-unread", "true");
   await expect(solo).toHaveAccessibleName(/, unread,/);
   await solo.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Come back later" }).hover();
   await expect(page.getByRole("menuitem", { name: "Mark read" })).toBeVisible();
+  // Escape closes the submenu, then the row menu.
   await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
   await solo.click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
   await expect(solo).not.toHaveAttribute("data-unread");

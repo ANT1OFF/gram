@@ -91,6 +91,7 @@ import { ThreadMenu } from "./thread-menu";
 import { Transcript, type JumpRequest } from "./transcript";
 import { turnUndos } from "./turn-undo-marker";
 import { useUnseenFrom } from "./unread";
+import { SnoozeChip } from "./snooze-chip";
 import { HeaderWakeChip } from "./wake-chip";
 
 const FLASH_MS = 1600;
@@ -546,7 +547,9 @@ export function ThreadView({
             <FakeAgentBadge className={hideSm} />
           </div>
         </div>
-        {/* Outside the chips that drop when short of room: Hand back must always be there. */}
+        {/* Outside the chips that drop when short of room: Hand back must always be there, and so
+            must a snooze's Unsnooze, the one sign of why the lists leave the thread out. */}
+        <SnoozeChip threadId={threadId} />
         <WorkerActions thread={thread} inTitlebar={inTitlebar} />
         {/* In the title bar the glyph shows only while the thread works: at rest it is the bar's
             default, and what needs you (an approval, a question, an error) is the needs-you pill's
@@ -627,7 +630,7 @@ export function ThreadView({
         <StatusHeader thread={thread} digests={stream?.plan.digests} />
         <WaitingTray threadId={threadId} />
         <PlanStrip threadId={threadId} />
-        <WorkerBanner thread={thread} />
+        <WorkerBanner thread={thread} inTitlebar={inTitlebar} />
         <CatchUpCard thread={thread} />
         <StuckCard thread={thread} />
         <OrchestratorBanner thread={thread} loaded={phase !== "loading"} />

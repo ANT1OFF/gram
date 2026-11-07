@@ -229,7 +229,6 @@ test("⌘N's New task makes the repo's workspace, hands its orchestrator the tas
   const hold = page.getByTestId("worker-hold");
   await expect(hold).toContainText("Under your control");
   await expect(hold.getByTestId("worker-hand-back")).toBeVisible();
-  await expect(page.getByTestId("worker-banner-held")).toContainText("Under your control");
   expect(worktreeOnBranch("feat/write-the-needle-notes")).not.toBe("");
   expect(worktreeOnBranch("feat/check-the-needle-notes")).not.toBe("");
 });

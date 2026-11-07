@@ -675,6 +675,12 @@ export const Thread = Schema.Struct({
   ),
   /** Raised by the user or the `set_unread` app tool; cleared when the thread is viewed. */
   unread: Schema.Boolean,
+  /**
+   * Epoch ms the user snoozed it until (`thread.snooze`). While set it is out of the active lists;
+   * the server's wakes clear it at that time, or sooner when the thread asks something or fails,
+   * and raise `unread` then. Absent while not snoozed.
+   */
+  snoozedUntil: Schema.optionalKey(Schema.Number),
   /** Epoch ms the work was marked done and ready for review. */
   completedAt: Schema.optionalKey(Schema.Number),
   /** Who or what marked it completed; present only while `completedAt` is set. */
@@ -738,6 +744,13 @@ export const Thread = Schema.Struct({
   lastViewedAt: Schema.optionalKey(Schema.Number),
 });
 export type Thread = typeof Thread.Type;
+
+/** The furthest ahead `thread.snooze` takes, in calendar days. */
+export const SNOOZE_AHEAD_MAX_DAYS = 90;
+
+/** Whether the user snoozed the thread and it hasn't come back yet. */
+export const isSnoozed = (thread: Pick<Thread, "snoozedUntil">): boolean =>
+  thread.snoozedUntil !== undefined;
 
 /**
  * Why a PR tool or action refuses an orchestrator's own thread. It drives many PRs through its

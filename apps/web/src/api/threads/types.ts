@@ -110,6 +110,11 @@ export interface ThreadsApi {
   label(threadId: ThreadId, labels: ThreadLabels): Promise<void>;
   markUnread(threadId: ThreadId, unread: boolean): Promise<void>;
   /**
+   * Snoozes the thread until `until` (epoch ms), or with `null` brings it back now. It comes back
+   * unread at that time, or sooner when it asks something or fails. Resolves to the thread.
+   */
+  snooze(threadId: ThreadId, until: number | null): Promise<Thread>;
+  /**
    * Babysit mode on the thread's PR. Enabling binds the branch's PR if needed, turns on its review
    * monitor and resets the counters; the change arrives as `thread.upsert`.
    */

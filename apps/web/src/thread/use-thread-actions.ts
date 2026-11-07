@@ -65,6 +65,19 @@ export function useThreadActions(threadId: ThreadId) {
         api.markUnread(threadId, !thread.unread),
       );
     },
+    /**
+     * Snoozes it until `at` (epoch ms), out of the active lists until then; `undefined` brings it
+     * back now. Workspaces' orchestrators aren't snoozed: their line is the workspace's own.
+     */
+    snooze:
+      thread === undefined || thread.role === "orchestrator"
+        ? undefined
+        : (at: number | undefined) =>
+            attempt(at === undefined ? "unsnooze the thread" : "snooze the thread", async () => {
+              await api.snooze(threadId, at ?? null);
+            }),
+    /** Asks for a date and a 24-hour time to snooze it until. */
+    snoozeCustom: () => open({ kind: "snooze", threadId }),
     togglePark: () => {
       if (!thread) return;
       attempt(thread.parked ? "unpark the thread" : "park the thread", () =>
