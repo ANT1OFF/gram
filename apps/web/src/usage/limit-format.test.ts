@@ -12,7 +12,9 @@ import {
   limitShareText,
   meterHint,
   meterSource,
+  meterButtonLabel,
   meterLabel,
+  meterState,
   creditsText,
   forecastText,
   meterText,
@@ -25,6 +27,13 @@ import {
 const UTC = { locale: "en-GB", timeZone: "UTC" } as const;
 // Thursday 15 October 2026, 14:39 UTC.
 const NOW = Date.parse("2026-10-15T14:39:00Z");
+
+/** Codex's 5-hour window at `utilization`, current for an hour. */
+const at = (utilization: number, extra: Partial<TightestLimit["limit"]> = {}): TightestLimit => ({
+  provider: "codex",
+  window: "fiveHour",
+  limit: { utilization, status: "allowed", expiresAt: NOW + 3_600_000, ...extra },
+});
 
 describe("limit formatting", () => {
   it("says when a held brief starts, on a 24-hour clock, and why it waits", () => {
@@ -121,8 +130,28 @@ describe("limit formatting", () => {
       limit: { utilization: 1, status: "allowed", credits: true, expiresAt: NOW + 3_600_000 },
     };
     expect(meterText(tightest)).toBe("Claude 100% used · credits");
+    // The title bar shows the share alone, so its hover says the credits.
+    expect(meterSource(tightest)).toBe("Highest: Claude Code 5-hour 100% · on credits");
     expect(meterLabel(tightest)).toBe(
       "Highest subscription usage: Claude Code 5-hour limit 100% used, continuing on credits",
+    );
+  });
+
+  it("hints the title bar's button by the meter's thresholds and names its state", () => {
+    expect(meterState(at(0.89).limit)).toBeUndefined();
+    expect(meterState(at(0.9).limit)).toBe("approaching");
+    expect(meterState(at(1, { credits: true }).limit)).toBe("credits");
+    expect(meterState(at(1).limit)).toBe("spent");
+    expect(meterState(at(0.4, { status: "rejected" }).limit)).toBe("spent");
+    expect(meterButtonLabel(at(0.61))).toBe("Subscription usage. Highest: Codex 5-hour 61%");
+    expect(meterButtonLabel({ ...at(0.92), why: "agent" })).toBe(
+      "Subscription usage, near the limit. This thread: Codex 5-hour 92%",
+    );
+    expect(meterButtonLabel(at(1, { credits: true }))).toBe(
+      "Subscription usage, limit reached, continuing on credits. Highest: Codex 5-hour 100% · on credits",
+    );
+    expect(meterButtonLabel(at(1))).toBe(
+      "Subscription usage, limit reached. Highest: Codex 5-hour 100%",
     );
   });
 

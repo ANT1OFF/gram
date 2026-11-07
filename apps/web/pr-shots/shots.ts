@@ -316,7 +316,7 @@ const README_PARKED = ["t-flaky", "t-question", "t-plan", "t-background", "t-edi
 /**
  * The README's scene (`simulateReadme`): `storefront`'s orchestrator in the default look, the right
  * panel closed and no usage limits reported, at `width` × `height`. The README's images in
- * `docs/assets/` are `readme-hero`, `readme-board` and `readme-quiet` (`openReadmeQuiet`), resized
+ * `docs/assets/` are `readme-hero`, `readme-board`, `readme-inbox` and `readme-quiet` (`openReadmeQuiet`), resized
  * to 1600 px wide and palette-quantised.
  */
 const openReadme = async (page: Page, width: number, height: number) => {
@@ -1262,6 +1262,30 @@ const SNOOZE_SHOTS: readonly Shot[] = [
       await page.getByTestId("overview-snoozed").getByRole("button").click();
       await page.getByTestId("overview-snoozed").scrollIntoViewIfNeeded();
       await page.mouse.move(900, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "sidebar-realistic",
+    title:
+      "The realistic morning's sidebar at 1440 px: one-line titles, no agent mark where every worker runs one agent, Done folded to one row, History at the foot",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.getByTestId("overview-sidebar").waitFor();
+      await page.mouse.move(1100, 500);
+      await page.waitForTimeout(600);
+    },
+  },
+  {
+    name: "sidebar-realistic-900",
+    title:
+      "The realistic morning at 900 px, where the overview is its compact rail: a glyph per workspace and for the solo threads, never letters cut from a name",
+    open: async (page) => {
+      await openRealisticMorning(page);
+      await page.setViewportSize({ width: 900, height: 900 });
+      await page.getByTestId("overview-rail").waitFor();
+      await page.mouse.move(700, 500);
       await page.waitForTimeout(600);
     },
   },
@@ -2312,10 +2336,29 @@ export const SHOTS: readonly Shot[] = [
     modes: ["dark"],
     open: async (page) => {
       // Narrow and without the sidebar, which the hero shows, so the rows read at README width.
-      await openReadme(page, 1120, 660);
+      await openReadme(page, 1120, 540);
       await page.getByRole("button", { name: "Hide sidebar" }).click();
       await openBoardView(page);
+      await page.getByTestId("board-layout-option").filter({ hasText: "Lanes" }).click();
+      // The merged workers too, so the lanes run from briefed to merged.
+      await page.getByTestId("rail-show-archived").click();
       await page.getByTestId("rail-worker").first().waitFor();
+      await page.mouse.move(1116, 536);
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "readme-inbox",
+    title: "README: the Inbox docked beside `storefront`'s orchestrator, on its one question",
+    modes: ["dark"],
+    open: async (page) => {
+      // Without the sidebar, which the hero shows, so the Inbox docks beside the chat.
+      await openReadme(page, 1520, 900);
+      await page.getByRole("button", { name: "Hide sidebar" }).click();
+      await page.keyboard.press("ControlOrMeta+Shift+I");
+      await page.locator('[data-testid="inbox"][data-docked]').waitFor();
+      await page.getByTestId("inbox-item").first().click();
+      await page.mouse.move(1516, 896);
       await page.waitForTimeout(800);
     },
   },
@@ -3547,6 +3590,54 @@ export const SHOTS: readonly Shot[] = [
     },
     element: (page) => page.getByTestId("shell-titlebar"),
   },
+  ...(
+    [
+      ["normal", "under 90% of every window", undefined],
+      ["approaching", "Claude's 5-hour window at 93%", { agent: "claude", utilization: 0.93 }],
+      [
+        "credits",
+        "Codex's 5-hour window spent, carried on credits",
+        { agent: "codex", utilization: 1, credits: true },
+      ],
+    ] as const
+  ).flatMap(([state, what, reading]) => {
+    const open = async (page: Page) => {
+      await openOverviewHome(page, 1440, { panel: false });
+      if (reading !== undefined) {
+        await page.evaluate(
+          (input) =>
+            window.gramMock!.simulateUsageLimit({
+              window: "five_hour",
+              resetsAt: Date.now() + 60 * 60_000,
+              creditsAvailable: true,
+              creditsBalance: "100",
+              ...input,
+            }),
+          reading,
+        );
+      }
+      await page.getByTestId("usage-meter").waitFor();
+      await page.waitForTimeout(400);
+    };
+    return [
+      {
+        name: `titlebar-usage-${state}`,
+        title: `The orchestrator's title bar with ${what}: the usage button and Memory beside Chat · Board`,
+        open,
+        element: (page: Page) => page.getByTestId("shell-titlebar"),
+      },
+      {
+        name: `titlebar-usage-${state}-hover`,
+        title: `The usage button's hover with ${what}`,
+        open: async (page: Page) => {
+          await open(page);
+          await page.getByTestId("usage-meter").hover();
+          await page.locator('[data-slot="tooltip-content"][data-open]').waitFor();
+          await page.waitForTimeout(400);
+        },
+      },
+    ];
+  }),
   {
     name: "titlebar-menu",
     title:

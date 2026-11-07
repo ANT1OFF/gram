@@ -307,7 +307,7 @@ function PrDetailView({ threadId, detail }: { threadId: ThreadId; detail: PrDeta
   const wrapLines = useLayoutStore((s) => s.diffWrap);
   const panel = useRef<HTMLDivElement>(null);
   const now = useNow(
-    detail.checkRuns.some((run) => checkState(run).spin === true),
+    detail.checkRuns.some((run) => checkState(run).running === true),
     panel,
   );
   const flashes = useFailureFlashes(detail.url, detail.checkRuns, useInSight(panel));

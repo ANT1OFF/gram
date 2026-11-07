@@ -47,7 +47,7 @@ function spinningIcon(icon: LucideIcon, name: string): LucideIcon {
 export const Spinner: LucideIcon = spinningIcon(Arc, "Spinner");
 
 /*
- * A thin ring with a faint track and one quarter arc, for a PR's checks or review bot running. Its
+ * A thin ring with a faint track and one quarter arc, for a turn under way (Stop's ring). Its
  * strokes are 1.5 CSS px whatever size the glyph is drawn at, so it reads as thin at `size-3` as it
  * would at 24.
  */
@@ -75,12 +75,29 @@ const ThinRing = forwardRef<SVGSVGElement, LucideProps>((props, ref) => (
 ));
 ThinRing.displayName = "ThinRing";
 
-/** The same ring, still: for a PR check that is queued and not yet running. */
-export const RingGlyph: LucideIcon = ThinRing;
-
 /**
- * The one PR-running glyph: a faint ring with one arc, turning on the shared clock while it is
- * mounted and standing still under Reduced or Off motion. Every PR state that is pending or running
- * draws it, so they all read alike.
+ * The running ring: a faint ring with one arc, turning on the shared clock while it is mounted and
+ * standing still under Reduced or Off motion. Only for a turn under way (the ring round Stop), never
+ * for a wait: a PR can wait on CI for an hour, and a turning mark keeps the renderer drawing.
  */
 export const RingSpinner: LucideIcon = spinningIcon(ThinRing, "RingSpinner");
+
+const Hollow = createLucideIcon({
+  name: "pending-ring",
+  size: 24,
+  node: [
+    ["circle", { cx: "12", cy: "12", r: "9", vectorEffect: "non-scaling-stroke", key: "ring" }],
+  ],
+});
+
+/**
+ * The one pending mark for a PR: checks queued or running, a review bot's round under way. A still
+ * hollow ring, the glyph-sized twin of `StatusDot`'s waiting dot (DESIGN.md: a hollow accent ring
+ * waits on something outside it), at the running ring's thin stroke. It never moves, so a PR
+ * waiting on CI costs the renderer nothing; the words beside it say queued or running.
+ */
+const PendingRingIcon = forwardRef<SVGSVGElement, LucideProps>((props, ref) => (
+  <Hollow ref={ref} strokeWidth={1.5} {...props} />
+));
+PendingRingIcon.displayName = "PendingRing";
+export const PendingRing: LucideIcon = PendingRingIcon;

@@ -280,39 +280,70 @@ const RailChapters = memo(function RailChapters({
   return (
     <>
       {chapters.map((chapter) => (
-        <Hint
+        <RailMark
           key={chapter.id}
-          label={chapter.title}
-          side="right"
-          render={
-            <button
-              type="button"
-              aria-label={chapter.title}
-              data-outline-anchor={chapter.messageId}
-              aria-current={chapter.id === currentId ? "location" : undefined}
-              onClick={() => onJump(chapter.messageId)}
-              onFocus={(event) => {
-                const rail = railRef.current;
-                if (rail) keepInRail(rail, event.currentTarget);
-              }}
-              className={targetClass}
-            />
-          }
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "h-0.5 w-6 origin-left rounded-full transition-[transform,background-color] duration-(--dur-fast) group-hover/turn:scale-x-100 group-hover/turn:bg-foreground/80 group-focus-visible/turn:scale-x-100 group-focus-visible/turn:bg-foreground/80",
-              chapter.id === currentId
-                ? "scale-x-[0.667] bg-foreground/75"
-                : cn(
-                    "bg-muted-foreground/70",
-                    chapter.kind === "chapter" ? "scale-x-[0.5]" : "scale-x-[0.333]",
-                  ),
-            )}
-          />
-        </Hint>
+          title={chapter.title}
+          messageId={chapter.messageId}
+          kind={chapter.kind}
+          current={chapter.id === currentId}
+          onJump={onJump}
+          railRef={railRef}
+        />
       ))}
     </>
+  );
+});
+
+/**
+ * One chapter's mark. Memoized on its own: the current chapter moves as the transcript scrolls, and
+ * only the mark that leaves it and the one that takes it render again, not every tooltip on the rail.
+ */
+const RailMark = memo(function RailMark({
+  title,
+  messageId,
+  kind,
+  current,
+  onJump,
+  railRef,
+}: {
+  title: string;
+  messageId: string;
+  kind: Chapter["kind"];
+  current: boolean;
+  onJump: (messageId: string) => void;
+  railRef: RefObject<HTMLElement | null>;
+}) {
+  return (
+    <Hint
+      label={title}
+      side="right"
+      render={
+        <button
+          type="button"
+          aria-label={title}
+          data-outline-anchor={messageId}
+          aria-current={current ? "location" : undefined}
+          onClick={() => onJump(messageId)}
+          onFocus={(event) => {
+            const rail = railRef.current;
+            if (rail) keepInRail(rail, event.currentTarget);
+          }}
+          className={targetClass}
+        />
+      }
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "h-0.5 w-6 origin-left rounded-full transition-[transform,background-color] duration-(--dur-fast) group-hover/turn:scale-x-100 group-hover/turn:bg-foreground/80 group-focus-visible/turn:scale-x-100 group-focus-visible/turn:bg-foreground/80",
+          current
+            ? "scale-x-[0.667] bg-foreground/75"
+            : cn(
+                "bg-muted-foreground/70",
+                kind === "chapter" ? "scale-x-[0.5]" : "scale-x-[0.333]",
+              ),
+        )}
+      />
+    </Hint>
   );
 });

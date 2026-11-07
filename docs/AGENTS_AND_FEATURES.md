@@ -978,7 +978,7 @@ word, and "literal" before one keeps it as spoken.
 Committed text then spells names the way the code does: with Use this project's names on (the
 default), "use dictation dot ts" becomes `use-dictation.ts`, from the thread's tracked file and
 folder names, exported symbols, branches and thread titles, read from git on this computer, capped
-at 3,000 and read again when the commit or index changes. Settings → Voice input → Your words adds
+at 3,000 and read again when the commit or index changes. Settings → Voice → Your words adds
 the user's own terms with "sounds like" spellings. Names made only of everyday words, and single
 common words, are never replaced unless listed as a spelling.
 Native loading does not prove

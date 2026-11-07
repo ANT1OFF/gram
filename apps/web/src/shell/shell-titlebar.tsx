@@ -170,14 +170,14 @@ export function ShellTitlebar({
             glyph here. */}
         <LaunchIssuesChip className="[-webkit-app-region:no-drag]" />
         {!soloBar && !settings && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
-        {/* Before any setup there is no work of Gram's to meter. Narrow, the title needs the room
-            more than the meter needs its words: it keeps its share ("85%"), its hover the rest. */}
+        {/* Before any setup there is no work of Gram's to meter. Icon-only like the rest of the
+            bar: usage's glyph, with a dot on it once a limit is near or reached; the reading is its
+            hover's and its name's. */}
         {!beforeSetup && (
           <UsageMeter
             agent={settings ? undefined : agent}
             className="[-webkit-app-region:no-drag]"
-            textClassName="@max-2xl/titlebar:hidden"
-            shortTextClassName="hidden @max-2xl/titlebar:inline"
+            iconOnly
           />
         )}
       </div>

@@ -291,7 +291,7 @@ function PrPeekView({
   const pr = prPeekOf(ledgerPrOf(entry, target), detail);
   const url = pr.url ?? target.url;
   const openFull = useOpenFull();
-  const now = useNow(pr.runs.some((run) => checkState(run).spin === true));
+  const now = useNow(pr.runs.some((run) => checkState(run).running === true));
   const merged = pr.state === "merged";
   // GitHub's shape for its state, and its colour only once merged.
   const Icon = PR_STATE_DISPLAY[pr.state ?? "open"].icon;

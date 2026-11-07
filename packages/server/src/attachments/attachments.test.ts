@@ -455,7 +455,11 @@ describe("attachmentHandlers", () => {
         ServerConfig.layer({ ...TEST_CONFIG, dataDir }),
         Layer.succeed(ThreadStore, {
           getThread: () => Effect.void,
-          listMessages: () => Effect.succeed([]),
+          messagesWithParts: (_: ThreadId, types: ReadonlyArray<string>) => {
+            // Every part kind `referencedAttachments` reads, so no stored attachment goes unread.
+            expect(types.toSorted()).toEqual(["data-tool-image", "file"]);
+            return Effect.succeed([]);
+          },
         } as never),
         Layer.succeed(ThreadRuntimes, { liveMessages: () => Effect.succeed(live) } as never),
       );

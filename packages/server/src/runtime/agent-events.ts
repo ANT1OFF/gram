@@ -484,7 +484,8 @@ export const makeAgentEvents = ({
                 rt.turn === turn && rt.open.get(event.messageId) === lane && !lane.finished;
               const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
               const messages = [
-                ...(yield* store.listMessages(rt.threadId)),
+                // Only `file` and stored tool-image parts name attachments.
+                ...(yield* store.messagesWithParts(rt.threadId, ["file", "data-tool-image"])),
                 ...[...rt.open.values()].map((reply) => reply.accumulator.snapshot()),
               ];
               const stored = yield* captureToolImageSource(

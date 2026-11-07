@@ -17,7 +17,7 @@ import { SegmentSlab } from "./segment-slab";
 import { SharedSlab } from "./shared-slab";
 import { SlotPresence, slotMotion } from "./slot-presence";
 import { clockPhase, spin, spinAngle } from "./spin";
-import { RingSpinner, Spinner } from "./spinner";
+import { PendingRing, RingSpinner, Spinner } from "./spinner";
 import { isMarkPhase } from "./status-mark";
 import { Swap, useChangeCount } from "./swap";
 import { playTurnCompleteSheen, TurnCompleteSheen } from "./turn-complete-sheen";
@@ -371,6 +371,34 @@ describe("spin", () => {
       root.setAttribute("data-motion", "reduced");
       await Promise.resolve();
       expect(vi.getTimerCount()).toBe(0);
+      expect(icon.style.rotate).toBe("");
+      unmount();
+    } finally {
+      hidden.mockRestore();
+      root.removeAttribute("data-motion");
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("draws a PendingRing as one still hollow ring, on no clock even under Full motion", () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    vi.useFakeTimers();
+    const root = document.documentElement;
+    root.setAttribute("data-motion", "full");
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    try {
+      const { unmount } = render(
+        <PendingRing data-testid="p" role="img" aria-label="Checks running" />,
+      );
+      const icon = screen.getByTestId("p");
+      expect(icon.getAttribute("stroke-width")).toBe("1.5");
+      expect(icon.querySelectorAll("circle")).toHaveLength(1);
+      expect(icon.querySelector("circle")?.getAttribute("opacity")).toBeNull();
+      expect(icon.querySelector("path")).toBeNull();
+      // A wait can last an hour: nothing redraws it.
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(1000);
       expect(icon.style.rotate).toBe("");
       unmount();
     } finally {

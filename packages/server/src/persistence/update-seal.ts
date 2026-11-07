@@ -36,6 +36,24 @@ interface Tracked {
 
 let tracked: Tracked | undefined;
 
+/** Other connections on a file, stopped before its seal: each `beforeSeal` registered. */
+const readers = new Map<string, Set<Effect.Effect<void>>>();
+
+/**
+ * Registers `stop` to run before `filename` is sealed: a connection of its own (the read worker)
+ * that a reader's snapshot would otherwise keep the seal's checkpoint from finishing. Returns the
+ * unregistration.
+ */
+export const beforeSeal = (filename: string, stop: Effect.Effect<void>): (() => void) => {
+  const set = readers.get(filename) ?? new Set();
+  readers.set(filename, set);
+  set.add(stop);
+  return () => {
+    set.delete(stop);
+    if (set.size === 0 && readers.get(filename) === set) readers.delete(filename);
+  };
+};
+
 /**
  * Tracks `filename`'s client: `under` goes beneath the client, so its finalizer runs after the
  * client's close; `over` goes above it, to reach the client while it is open.
@@ -113,6 +131,10 @@ export const sealForUpdate: Effect.Effect<boolean> = Effect.suspend(() => {
   const sql = entry.sql;
   if (sql === undefined) return Effect.succeed(false);
   return Effect.gen(function* () {
+    // Its other readers first; their reads go to the client, which the seal is about to take.
+    yield* Effect.forEach([...(readers.get(entry.filename) ?? [])], (stop) => stop, {
+      discard: true,
+    });
     // Never closed once sealed: the connection stays taken until the process ends.
     const scope = yield* Scope.make();
     const sealed = yield* seal(sql).pipe(Scope.provide(scope));

@@ -242,8 +242,8 @@ export function OrchestratorChips({
 }: {
   thread: Thread;
   /**
-   * In the title bar, beside Chat · Board: no board button of its own, and Memory and the
-   * workspace's settings are in the bar's "…".
+   * In the title bar, beside Chat · Board: no board button of its own, Memory at the toolbar's
+   * glyph size, and the workspace's settings in the bar's "…".
    */
   inTitlebar?: boolean;
 }) {
@@ -280,23 +280,26 @@ export function OrchestratorChips({
           <Columns3 aria-hidden className="size-icon-row" />
         </Hint>
       )}
-      {/* In the title bar, Memory and the workspace's settings are the bar's "…". */}
+      {/* Memory is the orchestrator's own, so it stays a glyph beside its title in the title bar
+          too, a toolbar's size there; the bar's "…" lists it as well, in words. */}
+      <Hint
+        label="Memory"
+        side="bottom"
+        render={
+          <Link
+            to="/w/$workspaceId/memory"
+            params={{ workspaceId }}
+            aria-label="Memory"
+            data-testid="orchestrator-memory"
+            className={HEADER_LINK}
+          />
+        }
+      >
+        <Brain aria-hidden className={inTitlebar ? "size-icon-bar" : "size-icon-row"} />
+      </Hint>
+      {/* In the title bar, the workspace's settings are the bar's "…". */}
       {!inTitlebar && (
         <>
-          <Hint
-            label="Memory"
-            side="bottom"
-            render={
-              <Link
-                to="/w/$workspaceId/memory"
-                params={{ workspaceId }}
-                aria-label="Memory"
-                className={HEADER_LINK}
-              />
-            }
-          >
-            <Brain aria-hidden className="size-icon-row" />
-          </Hint>
           <Hint
             label="Workspace settings"
             side="bottom"

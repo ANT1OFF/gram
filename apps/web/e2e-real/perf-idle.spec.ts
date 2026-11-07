@@ -171,7 +171,10 @@ test("seed worktree threads with finished turns, some with PRs", async () => {
     await expect(panel.getByTestId("push-button")).toBeHidden();
     await panel.getByTestId("create-pr-button").click();
     await page.getByTestId("create-pr-dialog").getByRole("button", { name: "Create PR" }).click();
-    await expect(page.getByTestId("pane-pr-badge")).toContainText(`#${t + 1}`);
+    // The thread's own PR sits on its strip, not the title bar's badge.
+    await expect(
+      page.getByTestId("pane").getByRole("button", { name: `#${t + 1}`, exact: true }),
+    ).toBeVisible();
   }
   // Half the PRs wait on CI, so their watches stay hot; the rest have settled green.
   for (const pr of h.prs()) h.setChecks(pr.number, pr.number % 2 === 0 ? "passing" : "pending");

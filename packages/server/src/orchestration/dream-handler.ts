@@ -210,10 +210,8 @@ export const dreamHandlers = Effect.gen(function* () {
                 item.input.text.includes(tag),
               );
               if (queued === true) return true;
-              return (yield* store.listMessages(orchestrator)).some(
-                (message) =>
-                  message.role === "user" &&
-                  message.parts.some((part) => part.type === "text" && part.text.includes(tag)),
+              return (yield* store.listUserMessages(orchestrator)).some((message) =>
+                message.parts.some((part) => part.type === "text" && part.text.includes(tag)),
               );
             }),
         };

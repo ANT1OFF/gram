@@ -120,8 +120,9 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   ]) {
     await expect(bar.getByTestId(testId)).toBeVisible();
   }
-  // Few controls: Workers, Tidy up, Pause, Memory, the workspace's settings, Contents and the
-  // thread's menu are the one "…"'s, as are Quiet, the layout and focus mode.
+  // Few controls: Workers, Tidy up, Pause, the workspace's settings, Contents and the thread's menu
+  // are the one "…"'s, as are Quiet, the layout and focus mode. Memory, the orchestrator's own, is
+  // a glyph beside its title as well as in the "…".
   for (const testId of [
     "workers-button",
     "titlebar-tidy",
@@ -130,7 +131,8 @@ test("an orchestrator, a worker, Board and a solo thread each have one bar with 
   ]) {
     await expect(bar.getByTestId(testId)).toHaveCount(0);
   }
-  for (const name of ["Memory", "Contents", "Thread menu", "Workspace settings"]) {
+  await expect(header.getByRole("link", { name: "Memory", exact: true })).toBeVisible();
+  for (const name of ["Contents", "Thread menu", "Workspace settings"]) {
     await expect(bar.getByRole("button", { name, exact: true })).toHaveCount(0);
     await expect(bar.getByRole("link", { name, exact: true })).toHaveCount(0);
   }

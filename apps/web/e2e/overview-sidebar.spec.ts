@@ -216,33 +216,40 @@ test("lists the workspaces in the switcher's order, the current one opened into 
   );
 });
 
-test("a worker's agent mark shows for Claude and Codex alike, beside its name and card", async ({
+test("a worker's agent mark shows only where its workspace's workers mix agents", async ({
   page,
 }) => {
   const made = await start(page);
-  // The agent's glyph, not the hourglass of what the row waits on or its PR chips' marks. It is
-  // decorative: the row's name says the agent.
-  const glyph = worker(page, made.inReview).getByTestId("overview-worker-agent");
-  const drawing = () => glyph.locator("svg").innerHTML();
+  // Every worker runs Claude Code: the state dot alone marks each row, and its name and card say
+  // the agent.
+  const marks = overview(page).getByTestId("overview-worker-agent");
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Claude Code, /);
-  // Its orchestrator runs Claude Code too, and the mark still shows.
-  await expect(glyph).toHaveCount(1);
-  await expect(glyph.locator("svg")).toHaveAttribute("aria-hidden", "true");
-  const claude = await drawing();
+  await expect(worker(page, made.inReview).getByTestId("overview-worker-dot")).toBeVisible();
+  await expect(marks).toHaveCount(0);
   await worker(page, made.inReview).hover();
   await expect(page.getByTestId("overview-worker-card-feature")).toContainText("Claude Code");
   await page.mouse.move(1200, 400);
 
+  // One worker on Codex: the list mixes agents, so every row with a known agent says which.
   await page.evaluate((id) => {
     const mock = window.gramMock!;
     const { thread } = mock.world.summary(id as never);
     mock.world.replaceThread({ ...thread, model: { agent: "codex", model: "gpt-5-codex" } });
   }, made.inReview);
   await expect(worker(page, made.inReview)).toHaveAttribute("aria-label", /, Codex, /);
+  const glyph = worker(page, made.inReview).getByTestId("overview-worker-agent");
   await expect(glyph).toHaveCount(1);
+  // It is decorative: the row's name says the agent.
   await expect(glyph.locator("svg")).toHaveAttribute("aria-hidden", "true");
+  const claudeRow = overview(page)
+    .locator(`[data-testid="overview-worker"]:not([data-thread-id="${made.inReview}"])`)
+    .filter({ has: page.getByTestId("overview-worker-agent") })
+    .first();
+  await expect(claudeRow).toHaveAttribute("aria-label", /, Claude Code, /);
   // The same slot and size, another drawing.
-  expect(await drawing()).not.toBe(claude);
+  expect(await glyph.locator("svg").innerHTML()).not.toBe(
+    await claudeRow.getByTestId("overview-worker-agent").locator("svg").innerHTML(),
+  );
 });
 
 test("an idle row fades after a day and comes back on hover; one needing you never does", async ({
@@ -473,17 +480,18 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
     overview(page).getByTestId(`overview-section-${id}`).getByRole("button", { name });
   const orchestrators = head("orchestrators", /Orchestrators/);
   const soloHead = head("solo", /Solo threads/);
-  // Pull requests comes after Solo threads, folded by default, then Done, folded to one row and
-  // its History; Open History is at the column's foot, out of the list.
+  // Pull requests comes after Solo threads, folded by default, then Done, folded to one row that
+  // only unfolds; History is at the column's foot, out of the list, its one way into History.
   const prsHead = head("pullRequests", /Pull requests/);
   const doneHead = head("doneToday", /Done/);
   await expect(prsHead).toHaveAttribute("aria-expanded", "false");
   await expect(doneHead).toHaveAttribute("aria-expanded", "false");
-  await expect(overview(page).getByTestId("overview-history")).toHaveText(/Open History/);
-  // End reaches Done's History while it is folded, and its line into History once open.
+  await expect(overview(page).getByTestId("overview-history")).toHaveText("History");
+  await expect(overview(page).getByTestId("overview-done-history")).toHaveCount(0);
+  // End reaches Done's own row while it is folded, and its line into History once open.
   await doneHead.focus();
   await page.keyboard.press("End");
-  await expect(overview(page).getByTestId("overview-done-history")).toBeFocused();
+  await expect(doneHead).toBeFocused();
   await doneHead.click();
   await expect(doneHead).toHaveAttribute("aria-expanded", "true");
   await expect(overview(page).getByTestId("overview-done")).toHaveCount(3);
@@ -499,10 +507,8 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   await expect(orchestrators).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(soloHead).toBeFocused();
-  // Folded, Done's last stop is its History, then its own title.
+  // Folded, Done's last stop is its own row.
   await page.keyboard.press("End");
-  await expect(overview(page).getByTestId("overview-done-history")).toBeFocused();
-  await page.keyboard.press("ArrowUp");
   await expect(doneHead).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(prsHead).toBeFocused();
@@ -515,10 +521,8 @@ test("arrows and End skip a folded section's rows", async ({ page }) => {
   // Folded, Solo threads' rows are passed over the same way.
   await page.keyboard.press("Home");
   await soloHead.click();
-  // Folded, Done's last stop is its History, then its own title.
+  // Folded, Done's last stop is its own row.
   await page.keyboard.press("End");
-  await expect(overview(page).getByTestId("overview-done-history")).toBeFocused();
-  await page.keyboard.press("ArrowUp");
   await expect(doneHead).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await expect(prsHead).toBeFocused();

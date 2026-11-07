@@ -20,7 +20,7 @@ export { SegmentSlab } from "./segment-slab";
 export { SharedSlab, type SlabOrigin } from "./shared-slab";
 export { Shimmer } from "./shimmer";
 export { spin } from "./spin";
-export { RingGlyph, RingSpinner, Spinner } from "./spinner";
+export { PendingRing, RingSpinner, Spinner } from "./spinner";
 export { isMarkPhase, StatusMark, type MarkPhase } from "./status-mark";
 export { Swap, useChangeCount } from "./swap";
 export { nextSegments, StreamingText, type StreamSegments } from "./streaming-text";

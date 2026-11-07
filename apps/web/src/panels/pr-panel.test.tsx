@@ -387,8 +387,8 @@ describe("PrPanel", () => {
     expect(checkState({ ...run, status: "pending", phase: "queued" }).label).toBe("Queued");
     expect(checkState({ ...run, status: "pending", phase: "running" }).label).toBe("Running");
     expect(checkState({ ...run, status: "pending" }).label).toBe("Pending");
-    expect(checkState({ ...run, status: "pending", phase: "running" }).spin).toBe(true);
-    expect(checkState({ ...run, status: "pending", phase: "queued" }).spin).toBeUndefined();
+    expect(checkState({ ...run, status: "pending", phase: "running" }).running).toBe(true);
+    expect(checkState({ ...run, status: "pending", phase: "queued" }).running).toBeUndefined();
     expect(checkState({ ...run, status: "neutral", conclusion: "CANCELLED" }).label).toBe(
       "Cancelled",
     );

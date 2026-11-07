@@ -4,21 +4,23 @@
 [![CI](https://github.com/ANT1OFF/gram/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/ANT1OFF/gram/actions/workflows/check.yml)
 [![License: MIT](https://img.shields.io/github/license/ANT1OFF/gram)](LICENSE)
 
-A macOS app where an orchestrator agent runs a team of Claude Code and Codex workers for you, each
-in its own git worktree, from task to merged pull request.
+A desktop app for macOS and Linux where an orchestrator agent runs a team of Claude Code and Codex
+workers for you, each in its own git worktree, from task to merged pull request.
 
-![Gram on a workspace's orchestrator. The sidebar lists its workers and their state: one asks you, one is editing code, one has a pull request in review and one is waiting on checks, then a few solo threads. In the middle, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged. At the bottom, the one question waiting on you, with the orchestrator's note and a recommended answer.](docs/assets/gram-orchestrator.png)
+![Gram on a workspace's orchestrator. The sidebar has a 1 question pill, then the workspace and its four workers: one asks you, one is editing code, one waits on review and one on checks, then a few solo threads. The title bar holds Chat and Board, the orchestrator's mark and its Memory, with the usage button on the right. Above the chat, 1 running, 2 in review and 2 merged today. In the chat, the task given to the orchestrator, its reply that it started six workers, and a card per feature with each worker's state and pull request, two of them merged.](docs/assets/gram-orchestrator.png)
 
 - **An orchestrator per workspace.** You give it tasks; it writes a brief for each, starts a
   worker on it and answers what it can, passing the rest to you.
 - **Isolated workers.** Each worker is a normal Claude Code or Codex thread in its own worktree
-  and branch, so your checkout stays as it was. Open any of them to read, steer or answer it.
+  and branch, so your checkout stays as it was. Open any of them beside the orchestrator's chat
+  to read, steer or answer it.
 - **Woken by events, not polling.** The thread that cares wakes when CI settles, a review lands,
   a pull request merges or a time it set comes round.
-- **Autonomy you choose.** Supervised asks before anything leaves your machine, Publish pushes
-  and opens pull requests, and Full also merges on its own.
+- **Autonomy you choose.** Supervised asks before anything leaves your machine, Publish (the
+  default) pushes and opens pull requests, and Full also merges on its own. New task shows the
+  workspace's merge approval beside Start, Ask or Automatic, so you can change it as you start.
 - **One Inbox for what needs you.** Questions, approvals, plans, reviews and failures from every
-  workspace collect in one list, each answered beside it.
+  workspace collect in one list (⌘⇧I), docked beside your work and each answered in place.
 
 ## Requirements
 
@@ -73,15 +75,29 @@ something an agent is good at, so Gram hands it to an orchestrator agent.
 A workspace is one or more repositories with one long-lived orchestrator thread. You keep coming
 back to it rather than starting a fresh chat per task: it is where you talk through priorities,
 and where results, blockers and questions come back to you. Its memory of your decisions and
-standing rulings, and the digests it gets from workers, carry it across sessions.
+standing rulings, and the digests it gets from workers, carry it across sessions; the brain beside
+its title opens that memory to read or edit.
 
+- **Discover.** A new workspace starts by surveying its repositories, remembering what it finds
+  and suggesting a few starting tasks. Only the ones you tick start.
 - **Messaging.** Orchestrator and workers talk both ways, and workers can message each other.
 - **Models by assignment.** Each workspace lists the models its workers may use, with a note on
   what each is for: for example, implementation on Claude, independent reviews on Codex, and
   specialised work on a model you pick for it.
+- **Routines.** A brief that comes due every day, on weekdays, weekly at a time like 09:00 or
+  every few hours, and starts a worker or goes to the orchestrator. Settings → Routines lists
+  them; routines run only while Gram is open.
+- **Usage.** The title bar's usage button shows how close you are to your Claude Code and Codex
+  limits. Settings → Usage has each limit with its reset time and your pace, Codex credits, and
+  the last 7 or 30 days.
 - **The Board.** Each feature's workers and pull requests on one line, from briefed to merged.
 
-![Gram's Board view: three features as rows across the columns Briefed, Working, Checks, Review and Merged. Each worker is a card in its column: one asks you, one is working, one waits on checks, one is in review and two have merged. The one question waiting on you is docked below.](docs/assets/gram-board.png)
+![Gram's Board in its Lanes layout: three features as rows, each a lane through the stations Briefed, Working, Checks, Review and Merged. Each worker is a card at its station: one needs you, one is running, one waits on checks, one waits on review and two are done, merged. The title bar reads 1 waiting · Open Inbox and 1 question.](docs/assets/gram-board.png)
+
+The Inbox docks beside the chat when the window has room, so you can answer without leaving
+your place.
+
+![Gram's Inbox docked beside the orchestrator's chat, with the sidebar hidden. The Inbox lists one question under Questions, and its pane shows it in full: "Should the confirmation email show a delivery date?" from the Order email worker, its context, and two answers, Leave it out (Recommended) and Show the range, numbered 1 and 2, with Send answer and Write your own answer below. Its foot lists the keys: j k move, show thread, 1–9 pick, send, undo and close.](docs/assets/gram-inbox.png)
 
 Gram doesn't prescribe a way of working. The same pieces run as a swarm of workers in parallel
 that message each other, or with the orchestrator calling on one worker for one job.
@@ -92,10 +108,11 @@ that message each other, or with the orchestrator calling on one worker for one 
 Watching a wall of agents work is a constant dopamine drip: something is always moving, and it
 pulls your attention all day. Quiet hides all of that and shows only what needs you, one card at a
 time, with a dot per worker along the bottom. Get on with your own work and come back when you're
-asked. Open it from the title bar's … menu or ⌘⌥4 (Ctrl+Alt+4 on Linux), and leave with Esc;
-**Quiet when idle** in Settings → General turns it on after five idle minutes with nothing asked.
+asked. Open it from View in the title bar's … menu or with ⌘⌥4 (Ctrl+Alt+4 on Linux), and leave
+with Esc; **Quiet when idle** in Settings → Notifications turns it on after five idle minutes with
+nothing asked.
 
-![Gram's Quiet view at rest: an otherwise empty window that reads "Nothing needs you. 5 workers are busy: 2 working, 3 waiting on checks." Along the bottom, the workspace's name with a dot per worker, filled for the two working and hollow for the three waiting, and the time; Leave quiet sits in the top corner.](docs/assets/gram-quiet.png)
+![Gram's Quiet view at rest: an otherwise empty window that reads "Nothing needs you. 5 workers are busy: 2 working, 3 waiting on checks." and, under it, "Quiet shows only what needs you, one card at a time. Esc leaves it." Along the bottom, the workspace's name with a dot per worker, filled for the two working and hollow for the three waiting, then usage, the time and a … menu; Leave quiet sits in the top corner.](docs/assets/gram-quiet.png)
 
 ## Docs
 

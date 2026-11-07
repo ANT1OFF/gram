@@ -3,6 +3,8 @@ import type { HeldBrief, LimitForecast } from "@gram/contracts";
 import { agentLabel } from "@/agents/agent-label";
 import { formatStamp } from "@/lib/time";
 import {
+  limitSpent,
+  limitWarns,
   limitWindowOf,
   type LimitProvider,
   type LimitWindow,
@@ -65,10 +67,11 @@ export const meterSourceWord = (why: MeterWhy["why"]): string =>
 
 /**
  * What the meter's number is, as its hover and its popover's head say it: "This thread: Claude
- * Code weekly 61%", or off a thread "Highest: Codex 5-hour 85%".
+ * Code weekly 61%", or off a thread "Highest: Codex 5-hour 85%", and "· on credits" past a window
+ * the agent goes on from on credits, since the title bar shows the share alone.
  */
 export const meterSource = ({ provider, window, limit, why }: TightestLimit & MeterWhy): string =>
-  `${meterSourceWord(why)}: ${agentLabel(provider)} ${windowWord(window)} ${limitPercent(limit.utilization)}%`;
+  `${meterSourceWord(why)}: ${agentLabel(provider)} ${windowWord(window)} ${limitPercent(limit.utilization)}%${limit.credits === true ? " · on credits" : ""}`;
 
 /**
  * The meter's hover: its source (`meterSource`), then what a click opens, since the title bar's
@@ -114,6 +117,38 @@ export const creditsText = (
   return limit.creditsBalance === undefined
     ? "On credits"
     : `On credits · ${creditBalanceText(limit.creditsBalance)} left`;
+};
+
+/**
+ * What the title bar's usage button hints on its glyph, by the meter's own thresholds: from 90%
+ * (`limitWarns`) a window is `approaching`; past it on credits, `credits`; spent with nothing to
+ * carry on (`limitSpent`), `spent`. Below 90%, nothing.
+ */
+export type MeterState = "approaching" | "credits" | "spent";
+
+export const meterState = (limit: UsageLimit): MeterState | undefined =>
+  limitSpent(limit)
+    ? "spent"
+    : limit.credits === true
+      ? "credits"
+      : limitWarns(limit)
+        ? "approaching"
+        : undefined;
+
+/** The state as the button's name says it, after its reading. */
+const STATE_WORDS: Readonly<Record<MeterState, string>> = {
+  approaching: "near the limit",
+  credits: "limit reached, continuing on credits",
+  spent: "limit reached",
+};
+
+/**
+ * The title bar's usage button's name: what it is, its state when it has one, then its reading
+ * ("Subscription usage, near the limit. Highest: Codex 5-hour 92%"), since its glyph says neither.
+ */
+export const meterButtonLabel = (shown: TightestLimit & MeterWhy): string => {
+  const state = meterState(shown.limit);
+  return `Subscription usage${state === undefined ? "" : `, ${STATE_WORDS[state]}`}. ${meterSource(shown)}`;
 };
 
 /**

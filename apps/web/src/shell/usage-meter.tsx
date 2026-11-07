@@ -31,7 +31,10 @@ import {
   forecastText,
   limitPercent,
   meterHint,
+  meterButtonLabel,
   meterLabel,
+  meterState,
+  type MeterState,
   meterSource,
   meterText,
   METER_RULE,
@@ -68,13 +71,15 @@ export function useMinuteNow(): number {
 }
 
 /**
- * The window's one way into usage: the title bar's subscription meter, as a thin bar and a share,
- * opening onto every provider's 5-hour and weekly windows and a link to Settings → Usage. One rule
+ * The window's one way into usage: the title bar's subscription button (`iconOnly`), or elsewhere
+ * a meter as a thin bar and its words, opening onto every provider's 5-hour and weekly windows and a link to Settings → Usage. One rule
  * wherever it is (`shownLimit`): on a thread, that thread's agent's closest window, so its name
  * matches the composer's; elsewhere, or once another provider's is about to stop work, the highest
  * of all. Its hover and its popover's head name which ("This thread: …", "Highest: …"), and the
  * popover's foot says the rule. Neutral until 90%, so amber in the title bar means what needs you.
- * Until an agent reports a limit, an icon that opens the Usage page.
+ * Until an agent reports a limit, an icon that opens the Usage page. In the title bar it stays that
+ * icon once there is a reading: a dot on its corner hints a limit near (a ring), reached on credits
+ * (amber) or spent (red), and its hover and name carry the reading and the state.
  *
  * Open, it gives way to the conversation: it drops where it covers no card that asks (under the
  * meter, else at the window's right edge, `clearRightEdge`), and closes when focus moves outside
@@ -83,19 +88,16 @@ export function useMinuteNow(): number {
 export function UsageMeter({
   agent,
   className,
-  textClassName,
-  shortTextClassName = "hidden",
+  iconOnly = false,
 }: {
   /** The agent of the thread in view, whose usage the meter shows. */
   agent?: string | undefined;
   className?: string;
-  /** For the reading beside the bar, which a narrow title bar trades for its short form. */
-  textClassName?: string;
   /**
-   * For the short reading ("85%"), shown where the full one is not: a narrow title bar keeps a
-   * number beside the bar, never a bare bar. Hidden unless the caller shows it.
+   * The title bar's: usage's glyph alone, as a toolbar icon button, with the state as a dot on it
+   * and the reading in its hover and name.
    */
-  shortTextClassName?: string;
+  iconOnly?: boolean;
 }) {
   const limits = useUsageLimits((s) => s.limits);
   const now = useLimitsNow(limits);
@@ -108,6 +110,7 @@ export function UsageMeter({
   const warns = limitWarns(tightest.limit);
   const tone = limitTone(tightest.limit);
   const stale = limitStale(tightest.limit, now);
+  const state = meterState(tightest.limit);
 
   return (
     <PulseOnce
@@ -128,30 +131,50 @@ export function UsageMeter({
         open={open}
         onOpenChange={setOpen}
         trigger={
-          <button
-            ref={setTrigger}
-            type="button"
-            data-testid="usage-meter"
-            data-warn={warns || undefined}
-            data-spent={tone === "spent" || undefined}
-            data-stale={stale || undefined}
-            aria-label={meterLabel(tightest)}
-            className={cn(
-              "flex h-7 items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted",
-              TONE_TEXT[tone],
-            )}
-          >
-            {/* An old reading dims its bar only, so the words keep the text floor. */}
-            <LimitBar limit={tightest.limit} className={cn("w-9", stale && "opacity-50")} />
-            <span className={textClassName}>{meterText(tightest)}</span>
-            {/* Drawn from its attribute, so the meter's words stay the one reading it has. */}
-            <span
-              aria-hidden
-              data-testid="usage-meter-short"
-              data-short={`${limitPercent(tightest.limit.utilization)}%`}
-              className={cn("after:content-[attr(data-short)]", shortTextClassName)}
-            />
-          </button>
+          iconOnly ? (
+            <Button
+              ref={setTrigger}
+              variant="ghost"
+              size="icon-sm"
+              data-testid="usage-meter"
+              data-warn={warns || undefined}
+              data-spent={tone === "spent" || undefined}
+              data-stale={stale || undefined}
+              data-state={state}
+              aria-label={meterButtonLabel(tightest)}
+              className="relative text-muted-foreground data-popup-open:bg-accent data-popup-open:text-foreground"
+            >
+              <ChartNoAxesCombined aria-hidden />
+              {state !== undefined && (
+                <span
+                  aria-hidden
+                  data-testid="usage-meter-dot"
+                  className={cn(
+                    "absolute top-1 right-1 size-2 rounded-full ring-2 ring-thread",
+                    STATE_DOT[state],
+                  )}
+                />
+              )}
+            </Button>
+          ) : (
+            <button
+              ref={setTrigger}
+              type="button"
+              data-testid="usage-meter"
+              data-warn={warns || undefined}
+              data-spent={tone === "spent" || undefined}
+              data-stale={stale || undefined}
+              aria-label={meterLabel(tightest)}
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-(--radius-sm) px-1.5 text-meta text-muted-foreground tabular-nums outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted",
+                TONE_TEXT[tone],
+              )}
+            >
+              {/* An old reading dims its bar only, so the words keep the text floor. */}
+              <LimitBar limit={tightest.limit} className={cn("w-9", stale && "opacity-50")} />
+              <span>{meterText(tightest)}</span>
+            </button>
+          )
         }
       >
         <LimitsPopover shown={tightest} agent={agent} onLeave={() => setOpen(false)} />
@@ -451,6 +474,16 @@ function ProviderLimits({
 }
 
 /** A reading's words by its tone (`limitTone`): neutral, then amber from 90%, red once spent. */
+/**
+ * The title bar's button's dot, by state: near the limit a ring in the warning colour, its middle
+ * the bar's own ground; past it on credits filled amber; spent with nothing to carry on filled red.
+ */
+const STATE_DOT: Readonly<Record<MeterState, string>> = {
+  approaching: "border-2 border-warning bg-thread",
+  credits: "bg-warning",
+  spent: "bg-destructive",
+};
+
 const TONE_TEXT = {
   neutral: undefined,
   warning: "text-warning hover:text-warning",

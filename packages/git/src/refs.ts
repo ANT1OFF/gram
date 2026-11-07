@@ -8,6 +8,7 @@ import type { ProcError } from "./errors.ts";
 import { branchExists, git, gitFailMsg } from "./exec.ts";
 import { fromGitPath, mtimeMs } from "./paths.ts";
 import type { Proc } from "./proc.ts";
+import { cachedOriginHead, cachedOriginTips } from "./repo-facts.ts";
 
 /** Default-branch candidates, in preference order. */
 export const DEFAULT_BASES = ["master", "main"] as const;
@@ -36,12 +37,9 @@ export const baseRef = (
         if (Option.isSome(out) && out.value.status === 0) return `origin/${branch}`;
       }
     } else {
-      const head = yield* git(cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).pipe(
-        Effect.option,
-      );
-      if (Option.isSome(head) && head.value.status === 0 && head.value.stdout.trim() !== "") {
-        return head.value.stdout.trim();
-      }
+      // Kept while the ref's file is unchanged: every sweep asks it of every checkout.
+      const head = yield* cachedOriginHead(cwd).pipe(Effect.option);
+      if (Option.isSome(head) && head.value !== undefined) return head.value;
     }
     for (const branch of DEFAULT_BASES) {
       if (yield* branchExists(cwd, `origin/${branch}`)) return `origin/${branch}`;
@@ -86,7 +84,15 @@ export const originTips = (
   names: ReadonlyArray<string>,
 ): Effect.Effect<Map<string, string>, ProcError, Proc> => {
   if (names.length === 0) return Effect.succeed(new Map());
-  return git(cwd, [
+  // Kept while the refs' files are unchanged: the sweep asks this of every checkout every pass.
+  return cachedOriginTips(cwd, names, readOriginTips(cwd, names));
+};
+
+const readOriginTips = (
+  cwd: string,
+  names: ReadonlyArray<string>,
+): Effect.Effect<Map<string, string>, ProcError, Proc> =>
+  git(cwd, [
     "for-each-ref",
     "--format=%(refname:short)%09%(objectname)",
     ...names.map((name) => `refs/remotes/origin/${name}`),
@@ -100,7 +106,6 @@ export const originTips = (
       return tips;
     }),
   );
-};
 
 /** The current branch and its `origin/` upstream (such as `origin/feat`), from local config only. */
 export const currentUpstream = (

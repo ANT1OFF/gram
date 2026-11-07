@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.1](https://github.com/ANT1OFF/gram/compare/v1.11.0...v1.11.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* make the title bar's usage meter an icon-only button and put Memory beside the orchestrator's title ([#243](https://github.com/ANT1OFF/gram/issues/243)) ([1b25478](https://github.com/ANT1OFF/gram/commit/1b25478db40e2407f80b7aea19d07da8eb7c80a9))
+* stop a worker's title bar folding and unfolding Take over every few frames ([#246](https://github.com/ANT1OFF/gram/issues/246)) ([94e3f9b](https://github.com/ANT1OFF/gram/commit/94e3f9b228ef9d27509e2a638e1325538a89dd9d))
+
 ## [1.11.0](https://github.com/ANT1OFF/gram/compare/v1.10.0...v1.11.0) (2026-11-07)
 
 

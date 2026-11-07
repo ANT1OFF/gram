@@ -75,6 +75,7 @@ import { MigrationsLayer } from "./migrations.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
+import { captureReadWorker, layer as readWorkerLayer, withReadWorker } from "./read-worker.ts";
 import { readUsageOverview } from "../usage/query.ts";
 import type { UsageHistoryInput } from "../usage/history-reader.ts";
 import {
@@ -433,6 +434,20 @@ export interface ThreadStoreShape {
     threadId: ThreadId,
     needles: ReadonlyArray<string>,
   ): Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /**
+   * The thread's messages with a part of one of `types`, in order; only those messages are decoded.
+   * The stored form is `JSON.stringify`'s, so every such part reads `"type":"<type>"` in it.
+   */
+  messagesWithParts(
+    threadId: ThreadId,
+    types: ReadonlyArray<GramUIMessage["parts"][number]["type"]>,
+  ): Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /** The thread's last `count` messages, in order, reading none before them. */
+  lastMessages(threadId: ThreadId, count: number): Effect.Effect<ReadonlyArray<GramUIMessage>>;
+  /** How many messages the thread has, reading none of them. */
+  messageCount(threadId: ThreadId): Effect.Effect<number>;
+  /** Whether the thread has a message, or one in `role`, reading and decoding none of them. */
+  hasMessages(threadId: ThreadId, role?: GramUIMessage["role"]): Effect.Effect<boolean>;
   /** The text parts of `messagesWith`'s messages, in order. */
   messageTextsWith(
     threadId: ThreadId,
@@ -936,6 +951,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
     ThreadStore,
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
+      const reads = withReadWorker(yield* captureReadWorker);
       const unreadable = makeUnreadableLog();
       const receiptScope = yield* Effect.scope;
       // The data methods below use one statement or one top-level transaction; nothing nests.
@@ -1647,21 +1663,25 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           };
         });
 
+      /** The thread's messages whose stored text holds any of `needles` as written, in order. */
+      const messagesHolding = (threadId: ThreadId, needles: ReadonlyArray<string>) =>
+        needles.length === 0
+          ? Effect.succeed([])
+          : run(
+              // One pass over the thread's rows, however many needles.
+              sql<{ id: string; message: string }>`SELECT id, message FROM messages
+                WHERE thread_id = ${threadId} AND ${sql.or(
+                  [...new Set(needles)].map((needle) => sql`instr(message, ${needle}) > 0`),
+                )}
+                ORDER BY seq`.pipe(
+                Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
+              ),
+            );
       const messagesWith: ThreadStoreShape["messagesWith"] = (threadId, needles) =>
-        run(
-          Effect.forEach(
-            // As `upsertMessage` stored it: a needle's quotes and backslashes are escaped there.
-            [...new Set(needles.map((needle) => JSON.stringify(needle).slice(1, -1)))],
-            (needle) =>
-              sql<{ seq: number; id: string; message: string }>`SELECT seq, id, message
-                FROM messages WHERE thread_id = ${threadId} AND instr(message, ${needle}) > 0`,
-          ).pipe(
-            Effect.map((batches) => {
-              const bySeq = new Map(batches.flat().map((row) => [row.seq, row]));
-              return [...bySeq.values()].toSorted((a, b) => a.seq - b.seq);
-            }),
-            Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
-          ),
+        // As `upsertMessage` stored it: a needle's quotes and backslashes are escaped there.
+        messagesHolding(
+          threadId,
+          needles.map((needle) => JSON.stringify(needle).slice(1, -1)),
         );
 
       return ThreadStore.of({
@@ -1840,7 +1860,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         usageOverview: (query, history) =>
           run(
-            readUsageOverview(query, history).pipe(Effect.provideService(SqlClient.SqlClient, sql)),
+            readUsageOverview(query, history).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              reads,
+            ),
           ),
         ensureProject,
         registerProject,
@@ -2098,6 +2121,39 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             ),
           ),
         messagesWith,
+        messagesWithParts: (threadId, types) =>
+          messagesHolding(
+            threadId,
+            types.map((type) => `"type":${JSON.stringify(type)}`),
+          ).pipe(
+            // The needle can also sit inside a tool's input or output; the parts decide.
+            Effect.map((messages) =>
+              messages.filter((message) => message.parts.some((part) => types.includes(part.type))),
+            ),
+          ),
+        lastMessages: (threadId, count) =>
+          run(
+            sql<{ id: string; message: string }>`SELECT id, message FROM (
+                SELECT seq, id, message FROM messages WHERE thread_id = ${threadId}
+                ORDER BY seq DESC LIMIT ${Math.max(0, Math.floor(count))}
+              ) ORDER BY seq`.pipe(
+              Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
+            ),
+          ),
+        messageCount: (threadId) =>
+          run(
+            sql<{ count: number }>`SELECT count(*) AS count FROM messages
+              WHERE thread_id = ${threadId}`.pipe(Effect.map(([row]) => Number(row?.count ?? 0))),
+          ),
+        hasMessages: (threadId, role) =>
+          run(
+            (role === undefined
+              ? sql<{ found: number }>`SELECT EXISTS (SELECT 1 FROM messages
+                  WHERE thread_id = ${threadId}) AS found`
+              : sql<{ found: number }>`SELECT EXISTS (SELECT 1 FROM messages
+                  WHERE thread_id = ${threadId} AND role = ${role}) AS found`
+            ).pipe(Effect.map(([row]) => Number(row?.found) === 1)),
+          ),
         messageTextsWith: (threadId, needles) =>
           messagesWith(threadId, needles).pipe(
             Effect.map((messages) =>
@@ -3238,6 +3294,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const initialize = (sql: SqlClient.SqlClient) =>
         configurePageCache(sql).pipe(Effect.andThen(policy.apply(sql)));
       return ThreadStore.layerNoDeps.pipe(
+        // Above the client: its worker's connection is closed before the client's, whose close
+        // then checkpoints the whole WAL with no other reader on the file.
+        Layer.provideMerge(
+          options.checkpointOffLoop === true ? readWorkerLayer(filename) : Layer.empty,
+        ),
         Layer.provideMerge(SearchCatchUp),
         Layer.provideMerge(MigrationsLayer),
         Layer.provideMerge(

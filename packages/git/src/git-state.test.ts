@@ -13,7 +13,7 @@ import {
 } from "./git-state.ts";
 import { GitStateRuntime, GitStateRuntimeLive } from "./git-state-runtime.ts";
 import { Pr, PrLookupError } from "./pr.ts";
-import { ProcLive } from "./proc.ts";
+import { Proc, ProcLive } from "./proc.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
 
 const provide = Effect.provide(ProcLive);
@@ -277,6 +277,76 @@ describe.skipIf(!hasGit)("local git state", () => {
       expect((yield* rebase("no-such-base")).base).toBeUndefined();
     }).pipe(provide),
   );
+
+  it.live("asks git about an unmoved pair of tips once, and again once one moves", () => {
+    const asked: string[] = [];
+    // ProcLive, with every git subcommand noted.
+    const counting = Layer.effect(
+      Proc,
+      Effect.gen(function* () {
+        const proc = yield* Proc;
+        return Proc.of({
+          run: (bin, args, options) => {
+            asked.push(args.find((arg) => !arg.startsWith("-")) ?? "");
+            return proc.run(bin, args, options);
+          },
+        });
+      }),
+    ).pipe(Layer.provide(ProcLive));
+    return Effect.gen(function* () {
+      const repo = makeRepo(tmp());
+      // Commits are named by content: another test's identical ones would already be remembered.
+      write(nodePath.join(repo, "shared.txt"), `base ${Math.random()}\n`);
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "base");
+      run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+      run(repo, "checkout", "-q", "-b", "feat");
+      write(nodePath.join(repo, "shared.txt"), "feat\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "feat work");
+      run(repo, "update-ref", "refs/remotes/origin/feat", "HEAD~1");
+      run(repo, "checkout", "-q", "main");
+      write(nodePath.join(repo, "shared.txt"), "mainline\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "mainline");
+      run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+      run(repo, "checkout", "-q", "feat");
+      const state = yield* localGitState(repo);
+      const measure = () => {
+        asked.length = 0;
+        return fillRebase(repo, state, undefined);
+      };
+      const expected = {
+        base: "origin/main",
+        behindBase: 1,
+        aheadBase: 1,
+        conflicts: true,
+        upstream: "ahead",
+        aheadUpstream: 1,
+      };
+      expect(yield* measure()).toMatchObject(expected);
+      expect(asked.filter((sub) => sub === "rev-list" || sub === "merge-tree")).toEqual([
+        "rev-list",
+        "rev-list",
+        "merge-tree",
+      ]);
+      // Nothing moved: the same answer, and git is asked only for where the tips are.
+      expect(yield* measure()).toMatchObject(expected);
+      expect(asked.filter((sub) => sub === "rev-list" || sub === "merge-tree")).toEqual([]);
+      // The base moves on: counted again against the new tip.
+      run(repo, "checkout", "-q", "main");
+      write(nodePath.join(repo, "other.txt"), "more\n");
+      run(repo, "add", "-A");
+      run(repo, "commit", "-qm", "more mainline");
+      run(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+      run(repo, "checkout", "-q", "feat");
+      expect(yield* measure()).toMatchObject({ ...expected, behindBase: 2 });
+      expect(asked.filter((sub) => sub === "rev-list" || sub === "merge-tree")).toEqual([
+        "rev-list",
+        "merge-tree",
+      ]);
+    }).pipe(Effect.provide(counting));
+  });
 
   it.live("classifies the branch against its own origin counterpart", () =>
     Effect.gen(function* () {

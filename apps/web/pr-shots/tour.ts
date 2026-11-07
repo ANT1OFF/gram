@@ -41,6 +41,17 @@ export const stageRealistic = (page: Page) =>
         JSON.stringify({ version: 0, state: { folded: seen.map((id) => `1.0.0-mock:${id}`) } }),
       );
     }
+    // Likewise the once-only line under a worker's header on what Take over changes: this user
+    // has opened workers before, so it is the ⓘ beside Take over (`onboarding.takeOverHintSeen`).
+    // The first time is reaching-workers.spec.ts's to show.
+    const settingsKey = "gram.mock.settings";
+    const settings = JSON.parse(sessionStorage.getItem(settingsKey) ?? "{}") as {
+      onboarding?: Record<string, unknown>;
+    };
+    if (settings.onboarding?.["takeOverHintSeen"] === undefined) {
+      settings.onboarding = { ...settings.onboarding, takeOverHintSeen: true };
+      sessionStorage.setItem(settingsKey, JSON.stringify(settings));
+    }
     if (localStorage.getItem("gram.layout") === null) {
       localStorage.setItem(
         "gram.layout",

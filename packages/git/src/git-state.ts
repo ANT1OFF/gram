@@ -89,6 +89,70 @@ const parseCounts = (stdout: string) => {
   };
 };
 
+/** How many commit pairs `countsBetween` and `conflictsBetween` remember. */
+const PAIR_MEMO_MAX = 1024;
+
+/**
+ * Answers about two commits, by their object names. What `rev-list --left-right --count` and a
+ * trial merge say of a pair never changes, so an idle sweep asks git again only once a tip moves.
+ */
+const pairMemo = <A>() => {
+  const memo = new Map<string, A>();
+  return {
+    get: (key: string) => {
+      const hit = memo.get(key);
+      if (hit === undefined) return undefined;
+      // Refresh its place: the oldest-asked pair goes first.
+      memo.delete(key);
+      memo.set(key, hit);
+      return hit;
+    },
+    set: (key: string, value: A) => {
+      memo.set(key, value);
+      if (memo.size > PAIR_MEMO_MAX) memo.delete(memo.keys().next().value!);
+    },
+  };
+};
+const counted = pairMemo<{ readonly behind: number; readonly ahead: number }>();
+const merged = pairMemo<boolean>();
+
+/** A full object name, which names one commit for good; anything else is a ref that can move. */
+const isOid = (name: string | undefined): name is string =>
+  name !== undefined && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(name);
+
+/**
+ * Commits on `left` and not `right`, and on `right` and not `left`. Asked of git by object name and
+ * remembered, so a sweep that finds both tips where they were spawns nothing. Undefined when git
+ * can't tell (a missing object, an error); that is never remembered.
+ */
+const countsBetween = (cwd: string, left: string, right: string) =>
+  Effect.gen(function* () {
+    const key = `${left}...${right}`;
+    const known = counted.get(key);
+    if (known !== undefined) return known;
+    const out = yield* git(cwd, ["rev-list", "--left-right", "--count", key]);
+    if (out.status !== 0) return undefined;
+    const counts = parseCounts(out.stdout);
+    counted.set(key, counts);
+    return counts;
+  });
+
+/** Whether merging the two commits conflicts, from a trial `merge-tree`, remembered by name. */
+const conflictsBetween = (cwd: string, base: string, head: string) =>
+  Effect.gen(function* () {
+    const key = `${base} ${head}`;
+    const known = merged.get(key);
+    if (known !== undefined) return known;
+    const trial = yield* git(cwd, ["merge-tree", "--write-tree", base, head]).pipe(Effect.option);
+    // Exit 1 = conflicts, 0 = clean. Anything else (an old git, an error, a timeout) never
+    // false-alarms, and is asked again next time.
+    if (Option.isNone(trial) || (trial.value.status !== 0 && trial.value.status !== 1))
+      return false;
+    const conflicts = trial.value.status === 1;
+    merged.set(key, conflicts);
+    return conflicts;
+  });
+
 /**
  * HEAD vs `origin/<branch>`, deliberately not `@{upstream}`: `checkout -b feat origin/main` points that
  * at the BASE, which would misread "has commits, base advanced" as diverged. No such ref: no signal.
@@ -97,15 +161,17 @@ const upstreamState = (cwd: string, branch: string, head: string, tip: string | 
   Effect.gen(function* () {
     if (tip === undefined) return undefined;
     if (tip === head) return { upstream: "synced" as const, ahead: 0 };
-    const out = yield* git(cwd, [
-      "rev-list",
-      "--left-right",
-      "--count",
-      `refs/remotes/origin/${branch}...HEAD`,
-    ]);
-    if (out.status !== 0) return undefined;
-    const { behind, ahead } = parseCounts(out.stdout);
-    return { upstream: classifyUpstream(behind, ahead), ahead };
+    const counts =
+      isOid(tip) && isOid(head)
+        ? yield* countsBetween(cwd, tip, head)
+        : yield* git(cwd, [
+            "rev-list",
+            "--left-right",
+            "--count",
+            `refs/remotes/origin/${branch}...HEAD`,
+          ]).pipe(Effect.map((out) => (out.status === 0 ? parseCounts(out.stdout) : undefined)));
+    if (counts === undefined) return undefined;
+    return { upstream: classifyUpstream(counts.behind, counts.ahead), ahead: counts.ahead };
   });
 
 /**
@@ -113,16 +179,18 @@ const upstreamState = (cwd: string, branch: string, head: string, tip: string | 
  * fetched; we don't guess), else the repo default, skipped when the branch IS the default.
  */
 const resolveBase = (
-  cwd: string,
   branch: string,
   prBase: string | undefined,
+  localBase: string | undefined,
   tips: ReadonlyMap<string, string>,
 ) =>
   prBase !== undefined
-    ? Effect.succeed(tips.has(prBase) ? `origin/${prBase}` : undefined)
-    : localBaseRef(cwd).pipe(
-        Effect.map((base) => (base === `origin/${branch}` ? undefined : base)),
-      );
+    ? tips.has(prBase)
+      ? `origin/${prBase}`
+      : undefined
+    : localBase === `origin/${branch}`
+      ? undefined
+      : localBase;
 
 export const clearRebaseTier = (state: GitState): GitState => {
   const {
@@ -173,26 +241,44 @@ export const fillRebase = (
     const cleared: Mutable<GitState> = { ...clearRebaseTier(state) };
     const branch = state.branch;
     if (branch === undefined || state.head === "") return yield* withHeadOnRemote(cwd, cleared);
-    const tips = yield* originTips(cwd, prBase === undefined ? [branch] : [branch, prBase]);
+    // The default base is looked up first, so the one `for-each-ref` reads its tip with the branch's.
+    const localBase = prBase === undefined ? yield* localBaseRef(cwd) : undefined;
+    const baseName =
+      prBase ?? (localBase?.startsWith("origin/") ? localBase.slice("origin/".length) : undefined);
+    const tips = yield* originTips(
+      cwd,
+      baseName === undefined || baseName === branch ? [branch] : [branch, baseName],
+    );
     const upstream = yield* upstreamState(cwd, branch, state.head, tips.get(branch));
     if (upstream !== undefined) {
       cleared.upstream = upstream.upstream;
       if (upstream.ahead > 0) cleared.aheadUpstream = upstream.ahead;
     }
-    const base = yield* resolveBase(cwd, branch, prBase, tips);
+    const base = resolveBase(branch, prBase, localBase, tips);
     if (base === undefined) return yield* withHeadOnRemote(cwd, cleared);
-    const counts = yield* git(cwd, ["rev-list", "--left-right", "--count", `${base}...HEAD`]);
-    const { behind, ahead } =
-      counts.status === 0 ? parseCounts(counts.stdout) : { behind: 0, ahead: 0 };
-    const trial =
-      behind > 0 && ahead > 0
-        ? yield* git(cwd, ["merge-tree", "--write-tree", base, "HEAD"]).pipe(Effect.option)
-        : undefined;
+    // By object name when both are known, so an unmoved pair is remembered; else as refs, as before.
+    const baseTip = baseName === undefined ? undefined : tips.get(baseName);
+    const named = isOid(baseTip) && isOid(state.head);
+    const counts = named
+      ? yield* countsBetween(cwd, baseTip, state.head)
+      : yield* git(cwd, ["rev-list", "--left-right", "--count", `${base}...HEAD`]).pipe(
+          Effect.map((out) => (out.status === 0 ? parseCounts(out.stdout) : undefined)),
+        );
+    const { behind, ahead } = counts ?? { behind: 0, ahead: 0 };
     cleared.base = base;
     cleared.behindBase = behind;
     cleared.aheadBase = ahead;
-    // Exit 1 = conflicts. Anything else (an old git, an error, a timeout) never false-alarms.
-    cleared.conflicts = trial !== undefined && Option.isSome(trial) && trial.value.status === 1;
+    cleared.conflicts =
+      behind > 0 && ahead > 0
+        ? named
+          ? yield* conflictsBetween(cwd, baseTip, state.head)
+          : yield* git(cwd, ["merge-tree", "--write-tree", base, "HEAD"]).pipe(
+              Effect.option,
+              // Exit 1 = conflicts. Anything else (an old git, an error, a timeout) never
+              // false-alarms.
+              Effect.map((trial) => Option.isSome(trial) && trial.value.status === 1),
+            )
+        : false;
     return yield* withHeadOnRemote(cwd, cleared);
   });
 
