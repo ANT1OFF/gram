@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.11.0](https://github.com/ANT1OFF/gram/compare/v1.10.0...v1.11.0) (2026-11-07)
+
+
+### Features
+
+* one heavier icon line, glyphs that stand in for words, dots for Done rows and a one-page Docs reader ([#220](https://github.com/ANT1OFF/gram/issues/220)) ([e89366b](https://github.com/ANT1OFF/gram/commit/e89366bcd37f1f2b2b226ea84a85e0339bc9bced))
+* palette rows with kind icons and status dots, find in thread across undrawn rows, a filterable shortcut sheet, next/previous thread and ⌘D for the diff ([#219](https://github.com/ANT1OFF/gram/issues/219)) ([9043b7a](https://github.com/ANT1OFF/gram/commit/9043b7abb22306accc50d81701380f7ca7925101))
+* recurring routines in the workspace charter, run by a crash-safe engine, and workers that read workspace memory ([#198](https://github.com/ANT1OFF/gram/issues/198)) ([1094fce](https://github.com/ANT1OFF/gram/commit/1094fce6c2fd9dce97296f09c4ee505369974b28))
+* Settings → Usage with limit pace, Codex credits and 7/30-day history ([#217](https://github.com/ANT1OFF/gram/issues/217)) ([099c11b](https://github.com/ANT1OFF/gram/commit/099c11b3c8d4983cf4ddacf33b73caf79445ac60))
+* snooze a thread, and fold worker takeover help once seen ([#221](https://github.com/ANT1OFF/gram/issues/221)) ([6d0defd](https://github.com/ANT1OFF/gram/commit/6d0defd050c999d6f6f8b0d6bcdba15c1c697d9a))
+
+
+### Bug Fixes
+
+* keep find busy until the server has answered the typed query ([#226](https://github.com/ANT1OFF/gram/issues/226)) ([98b33f3](https://github.com/ANT1OFF/gram/commit/98b33f3c8483ceecd69da1bee9a14d79db51b886))
+* keep the report-issue dialog inside short windows ([#232](https://github.com/ANT1OFF/gram/issues/232)) ([47729cf](https://github.com/ANT1OFF/gram/commit/47729cf7fe0ead18949ce9d3b77a0cd5a7987471))
+* keep the right panel's tab names, and select Branch when nothing is uncommitted ([#223](https://github.com/ANT1OFF/gram/issues/223)) ([00201b8](https://github.com/ANT1OFF/gram/commit/00201b869ca69060d03f061e3e36ec9009f71a9a))
+* one needs-you count on every surface, and a just-started worker reads Starting ([#229](https://github.com/ANT1OFF/gram/issues/229)) ([91cc573](https://github.com/ANT1OFF/gram/commit/91cc573548ef07e5790770d9b18320f7ac7b2ded))
+* persist merge uncertainty fences across restarts ([#202](https://github.com/ANT1OFF/gram/issues/202)) ([fcd9eb1](https://github.com/ANT1OFF/gram/commit/fcd9eb11ec95c46eaf18f5b8b2480a769d424e6b))
+* remove timing dependencies from watcher and ownership tests ([#231](https://github.com/ANT1OFF/gram/issues/231)) ([93b3be1](https://github.com/ANT1OFF/gram/commit/93b3be1ba61c28333806fbdfc4bc10a64004183a))
+* signal Codex startup readiness over a fixture socket ([#214](https://github.com/ANT1OFF/gram/issues/214)) ([4c3ef4e](https://github.com/ANT1OFF/gram/commit/4c3ef4e15febed6b8d6abaa1603f8e12c7f7c129))
+* start New task where you are, label it, and return from Settings to the same place ([#224](https://github.com/ANT1OFF/gram/issues/224)) ([c187f30](https://github.com/ANT1OFF/gram/commit/c187f30adebce2a43bb93dace3c0b72b86a37584))
+
+
+### Performance Improvements
+
+* a scale fixture for the renderer, and a thread switch that re-renders only the rows it changes ([#222](https://github.com/ANT1OFF/gram/issues/222)) ([454c557](https://github.com/ANT1OFF/gram/commit/454c557c867464219dd5c835019f8801399944ec))
+* load what the first screen doesn't show after first paint, and the rest in one file ([#227](https://github.com/ANT1OFF/gram/issues/227)) ([94aac6e](https://github.com/ANT1OFF/gram/commit/94aac6e6ac0cfb65547abd691a6a7cb24bd170da))
+* measure large SQLite workloads and rank server stalls ([#215](https://github.com/ANT1OFF/gram/issues/215)) ([3ff73a3](https://github.com/ANT1OFF/gram/commit/3ff73a3509bb9e397764ccc9769c6efacfa59e28))
+* seek feed revisions and stream global search ranks ([#218](https://github.com/ANT1OFF/gram/issues/218)) ([da75e19](https://github.com/ANT1OFF/gram/commit/da75e190f12aa6995f7582c0242ccb713aa0d305))
+
 ## [1.10.0](https://github.com/ANT1OFF/gram/compare/v1.9.0...v1.10.0) (2026-11-07)
 
 
