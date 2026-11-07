@@ -68,11 +68,14 @@ const seed = (
   };
 };
 
+/** The invented Codex account's credits, as its readings carry them. */
+const CODEX_CREDITS = { creditsAvailable: true, creditsBalance: "1250" } as const;
+
 /**
  * Invented subscription readings for both providers, as the server would replay them. Claude is
  * comfortably inside its limits, read 40 minutes ago, so the popover shows the age. Codex's 5-hour
  * window is at 85%, past the meter's warning, and has risen fast enough over the last hour that
- * the popover forecasts it. Relative to `now`, so the resets stay ahead.
+ * the popover forecasts it, with 1,250 credits behind it. Relative to `now`, so the resets stay ahead.
  */
 export const mockLimitSeeds = (now: number): LimitRecord[] => [
   seed(now, { agent: "claude", window: "five_hour", resetsAt: quarter(now + 2.5 * HOUR) }, [
@@ -90,6 +93,7 @@ export const mockLimitSeeds = (now: number): LimitRecord[] => [
       window: "five_hour",
       resetsAt: quarter(now + 75 * MINUTE),
       status: "warning",
+      ...CODEX_CREDITS,
     },
     [
       [55, 0.7],
@@ -97,7 +101,11 @@ export const mockLimitSeeds = (now: number): LimitRecord[] => [
       [1, 0.85],
     ],
   ),
-  seed(now, { agent: "codex", window: "seven_day", resetsAt: quarter(now + 5 * DAY) }, [[1, 0.3]]),
+  seed(
+    now,
+    { agent: "codex", window: "seven_day", resetsAt: quarter(now + 5 * DAY), ...CODEX_CREDITS },
+    [[1, 0.3]],
+  ),
 ];
 
 const keyOf = (record: Pick<LimitRecord, "agent" | "profileId" | "window">) =>

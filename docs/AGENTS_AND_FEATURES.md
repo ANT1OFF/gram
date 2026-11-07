@@ -73,9 +73,11 @@ configured pass.
   one receipt: the Inbox's foot while it is open, above the orchestrator's composer after. The
   thread that asks keeps its own card too.
 - **Usage limits.** The title bar's meter shows the highest usage of any provider's window
-  (its hover names which), neutral until 90% so amber stays for what needs you. The Usage page
-  shows Claude and Codex five-hour and weekly limits (see
-  [accounts, models and speed](#accounts-models-and-speed)). A workspace can pause new workers
+  (its hover names which), neutral until 90% so amber stays for what needs you. Its popover's
+  Open Usage goes to Settings → Usage: Claude and Codex five-hour and weekly limits with their
+  pace against an even spread, Codex credits and what they burn, and 7- or 30-day history (see
+  [accounts, models and speed](#accounts-models-and-speed)). Tokens by day, model, workspace and
+  thread stay on the Usage page. A workspace can pause new workers
   near a limit, hold low-priority briefs until it resets and, if you turn it on,
   [offer another model](#offering-another-worker-model-at-a-limit).
 - **History.** Finished workers, done and archived threads and past CLI sessions in one
@@ -217,6 +219,10 @@ kept readings between polls. Usage cards, the title bar and overview sidebar use
 the same five-hour and weekly windows, with 24-hour reset times. A successful
 sign-out or unavailable response removes that provider's readings; temporary query
 failures retain the last observation and its age. Gateway limits stay separate.
+Gram keeps each window's share, peak and reset, and Codex's credit balance, in quarter-hour
+buckets for 35 days (served by the hour for a month), pruned as they age. It keeps only those
+numbers, never tokens, logins or account identifiers, and only for the CLI's own login.
+Limits are per account, so they are not split by workspace or thread.
 
 Standard/Fast speed is separate from reasoning effort. New choices default to
 Standard; Fast is offered only with CLI/model support. Claude Fast is separately

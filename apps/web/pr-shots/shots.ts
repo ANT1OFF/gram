@@ -2891,6 +2891,25 @@ export const SHOTS: readonly Shot[] = [
     },
   },
   {
+    name: "usage-from-meter",
+    title:
+      "The usage meter's Open Usage link followed: the limits page it opens, with pace, credits and history",
+    open: async (page) => {
+      await page.setViewportSize({ width: 1440, height: 1500 });
+      await openThread(page);
+      await page.getByTestId("usage-meter").click();
+      await page.getByTestId("usage-limits-page").click();
+      await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+      // The page's history (after) or its token totals (before) have loaded.
+      await page
+        .getByTestId("usage-window-history")
+        .or(page.getByTestId("usage-tokens"))
+        .first()
+        .waitFor();
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     name: "context-hover",
     title: "The context ring's hover beside Send: the share of the window and the tokens it is",
     open: async (page) => {

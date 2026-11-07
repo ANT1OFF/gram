@@ -1,4 +1,5 @@
 import { limitForecast, type UsageLimitObservation, type UsageProvider } from "@gram/contracts";
+import { Link } from "@tanstack/react-router";
 
 import { agentLabel } from "@/agents/agent-label";
 import { agoText } from "@/lib/time";
@@ -71,6 +72,13 @@ export function UsageLimitsSection({
         <p className="text-meta text-muted-foreground">
           As your agents last reported them · includes use outside Gram
         </p>
+        <Link
+          to="/settings/usage"
+          data-testid="usage-limits-history-link"
+          className="ml-auto rounded-sm text-meta text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Pace, credits and 30-day history
+        </Link>
       </div>
       {providers.length === 0 ? (
         <p className="text-reading text-muted-foreground" data-testid="usage-limits-none">

@@ -9,11 +9,15 @@ import type {
   WindowPlacements,
   UsageOverview,
   UsageOverviewQuery,
+  LimitHistoryQuery,
+  UsageLimitHistory,
 } from "@gram/contracts";
 
 /** The app itself: its windows, diagnostics and launch checks, and issues. */
 export interface AppApi {
   usageOverview(query: UsageOverviewQuery): Promise<UsageOverview>;
+  /** The subscription windows' and credit balances' kept history over the period. */
+  usageLimitHistory(query: LimitHistoryQuery): Promise<UsageLimitHistory>;
   /**
    * Registers this window while the iterable is open and yields every window's placement, now and on
    * each change. After a reconnect the server has forgotten the window's threads: report them again.

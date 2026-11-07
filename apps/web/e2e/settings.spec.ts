@@ -94,6 +94,7 @@ test("each tab is a page, with history, and Settings reopens on the last one", a
   await expect(nav(page).locator(":scope > ul > li > a")).toHaveText([
     "General",
     "Agents & models",
+    "Usage",
     "Workspaces & merging",
     "Appearance",
     "Notifications",

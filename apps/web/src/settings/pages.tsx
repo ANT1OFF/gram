@@ -1,6 +1,7 @@
 import {
   Bell,
   Bot,
+  Gauge,
   Info,
   Keyboard,
   Mic,
@@ -83,6 +84,7 @@ export interface SettingsPage {
 export type SettingsGroupId =
   | "general"
   | "agents"
+  | "usage"
   | "workspaces"
   | "appearance"
   | "notifications"
@@ -109,6 +111,7 @@ export const SETTINGS_GROUPS: readonly SettingsNavGroup[] = [
     sections: GENERAL_SECTIONS,
   },
   { id: "agents", label: "Agents & models", path: "/settings/agents", icon: Bot },
+  { id: "usage", label: "Usage", path: "/settings/usage", icon: Gauge },
   {
     id: "workspaces",
     label: "Workspaces & merging",
@@ -145,6 +148,7 @@ export type SettingsPath =
   | "/settings/ai-helpers"
   | "/settings/connectors"
   | "/settings/review-bots"
+  | "/settings/usage"
   | "/settings/workspaces"
   | "/settings/appearance"
   | "/settings/keyboard"
@@ -369,6 +373,29 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     ],
     search: null,
     summary: GatewaysSummary,
+  },
+  {
+    id: "usage",
+    label: "Usage",
+    path: "/settings/usage",
+    group: "usage",
+    description:
+      "Each subscription's limits, how fast they fill, Codex credits, and 7 or 30 days of history.",
+    keywords: [
+      "limits",
+      "rate limit",
+      "quota",
+      "5-hour",
+      "weekly",
+      "reset",
+      "pace",
+      "credits",
+      "history",
+      "subscription",
+      "plan",
+    ],
+    search: null,
+    wide: true,
   },
   {
     id: "workspaces",

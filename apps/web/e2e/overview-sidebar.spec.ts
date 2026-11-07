@@ -918,11 +918,13 @@ test("Settings → General's Overview sidebar row picks the mode the window lays
   // Hidden with the focus inside it on a page without a pane, the focus goes to Show sidebar.
   await page.getByTestId("usage-meter").click();
   await page.getByTestId("usage-limits-page").click();
-  await expect(page).toHaveURL(/\/usage$/);
-  // The Usage page is up, in the thread's place, and the popover gone with its focus handed back,
-  // before the focus goes into the overview.
-  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/settings\/usage$/);
   await expect(page.getByRole("dialog", { name: "Subscription usage" })).toBeHidden();
+  // On from Settings → Usage to the token Usage page, which has no pane.
+  await page.getByTestId("usage-settings-tokens").click();
+  await expect(page).toHaveURL(/\/usage$/);
+  // The Usage page is up, in the thread's place, before the focus goes into the overview.
+  await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   await overview(page).getByTestId("overview-needs-you").focus();
   await page.keyboard.press("ControlOrMeta+b");
   await expect(overview(page)).toHaveCount(0);
