@@ -6,6 +6,8 @@ import { ChevronRight, HandGrab, PanelRight } from "lucide-react";
 import { Hint } from "@/components/hint";
 import { Term } from "@/components/term";
 import { focusOtherWindow } from "@/desktop/open-thread";
+import { effectiveKeys } from "@/keyboard/bindings-store";
+import { catalogKeys } from "@/keyboard/catalog";
 import { keyLabel, useShortcut } from "@/keyboard/registry";
 import { useNow } from "@/lib/use-now";
 import { EXPLAIN } from "@/lib/explain";
@@ -30,8 +32,9 @@ import { workerEntryOf, workerRow } from "./workers-model";
 /**
  * Esc on a worker goes back to its orchestrator, one level up, as the workspace crumb does. Only
  * while nothing else has Esc: the registry already keeps a plain key from a field being typed in
- * (an empty composer too) and from a dialog, an open menu closes on its own Esc first, and an
- * approval card's Esc denies it, so a worker with one waiting keeps that.
+ * (an empty composer too) and from a dialog, and an open menu closes on its own Esc first. An
+ * approval's Deny is 3, not Esc, so a waiting approval stays waiting; only where Deny is rebound
+ * to Esc does a worker with one waiting keep Esc for it.
  */
 export function useBackToOrchestrator(threadId: ThreadId, focused: boolean): void {
   const navigate = useNavigate();
@@ -43,9 +46,12 @@ export function useBackToOrchestrator(threadId: ThreadId, focused: boolean): voi
       label: "Back to the orchestrator",
       group: "Navigation",
       when: () =>
-        !useThreadsStore
-          .getState()
-          .byId[threadId]?.pendingRequests.some((request) => request.kind === "approval"),
+        !(
+          effectiveKeys("approval.deny", catalogKeys("approval.deny") ?? "") === "escape" &&
+          useThreadsStore
+            .getState()
+            .byId[threadId]?.pendingRequests.some((request) => request.kind === "approval")
+        ),
       run: () => {
         if (orchestrator === undefined || focusOtherWindow(orchestrator)) return;
         void navigate({ to: "/t/$threadId", params: { threadId: orchestrator } });
