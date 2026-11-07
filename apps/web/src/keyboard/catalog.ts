@@ -29,6 +29,15 @@ export const paneMoveKeys = (
  */
 export const DICTATE_KEYS = isMac() ? "altright" : "mod+shift+space";
 
+/**
+ * Next and previous thread: ⌘⌥] / ⌘⌥[ on macOS. Elsewhere Ctrl+Alt with a bracket is AltGr typing
+ * the bracket on many layouts (`isAltGraphText`), so it never arrives as a shortcut: Ctrl+PgDn /
+ * Ctrl+PgUp, the next and previous tab everywhere else.
+ */
+export const THREAD_STEP_KEYS = isMac()
+  ? { next: "mod+alt+]", previous: "mod+alt+[" }
+  : { next: "mod+pagedown", previous: "mod+pageup" };
+
 const paneMove = (
   [
     ["left", "arrowleft"],
@@ -127,13 +136,13 @@ export const SHORTCUT_CATALOG: readonly ShortcutDefinition[] = [
   },
   {
     id: "thread.next",
-    keys: "mod+alt+]",
+    keys: THREAD_STEP_KEYS.next,
     label: "Next thread in the sidebar",
     group: "Navigation",
   },
   {
     id: "thread.previous",
-    keys: "mod+alt+[",
+    keys: THREAD_STEP_KEYS.previous,
     label: "Previous thread in the sidebar",
     group: "Navigation",
   },

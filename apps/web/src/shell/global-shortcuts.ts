@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { HISTORY_TEST_ID, useHistoryStore } from "@/history/history-view";
 import { inboxKey } from "@/inbox/inbox-store";
 import { INBOX_TEST_ID } from "@/inbox/inbox-view";
-import { paneMoveKeys } from "@/keyboard/catalog";
+import { paneMoveKeys, THREAD_STEP_KEYS } from "@/keyboard/catalog";
 import { keyLabel, registerShortcut, useShortcut } from "@/keyboard/registry";
 import { besideToggle, closeBeside, keepBeside } from "@/orchestration/beside-store";
 import { boardWorkspaceFor } from "@/orchestration/board-model";
@@ -323,7 +323,7 @@ export function useGlobalShortcuts() {
 
   useShortcut({
     id: "thread.next",
-    keys: "mod+alt+]",
+    keys: THREAD_STEP_KEYS.next,
     label: "Next thread in the sidebar",
     group: "Navigation",
     run: () => stepThread(1, currentId, openThread),
@@ -331,7 +331,7 @@ export function useGlobalShortcuts() {
 
   useShortcut({
     id: "thread.previous",
-    keys: "mod+alt+[",
+    keys: THREAD_STEP_KEYS.previous,
     label: "Previous thread in the sidebar",
     group: "Navigation",
     run: () => stepThread(-1, currentId, openThread),

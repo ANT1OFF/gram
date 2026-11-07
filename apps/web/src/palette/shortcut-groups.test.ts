@@ -105,7 +105,8 @@ describe("filterShortcuts", () => {
   it("matches keys as written and in words", () => {
     expect(ids("⌘K")).toContain("palette.open");
     expect(ids("cmd k")).toContain("palette.open");
-    expect(ids("option ]")).toContain("thread.next");
+    // Next thread is ⌘⌥] on macOS and Ctrl+PgDn elsewhere: either way, found by its keys in words.
+    expect([...ids("option ]"), ...ids("ctrl pagedown")]).toContain("thread.next");
   });
 
   it("drops sections left empty", () => {
