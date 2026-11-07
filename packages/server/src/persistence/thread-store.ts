@@ -3174,19 +3174,31 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
    */
   static readonly layerSqlite = (
     filename: string,
-    options: { readonly checkpointOffLoop?: boolean | undefined } = {},
+    options: {
+      readonly checkpointOffLoop?: boolean | undefined;
+      readonly checkpointer?:
+        | Omit<WalCheckpointer.CheckpointerOptions, "connectionPolicy">
+        | undefined;
+    } = {},
   ): Layer.Layer<ThreadStore | SqlClient.SqlClient, unknown> => {
     // The server's own file only: an update seals it before main kills the rest (`update-seal.ts`).
     const seal = options.checkpointOffLoop === true ? UpdateSeal.layers(filename) : undefined;
-    return ThreadStore.layerNoDeps.pipe(
-      Layer.provideMerge(SearchCatchUp),
-      Layer.provideMerge(MigrationsLayer),
-      Layer.provideMerge(
-        options.checkpointOffLoop === true ? WalCheckpointer.layer(filename) : Layer.empty,
-      ),
-      Layer.provideMerge(seal?.over ?? Layer.empty),
-      Layer.provideMerge(durableSqliteLayer({ filename }, configurePageCache)),
-      Layer.provideMerge(seal?.under ?? Layer.empty),
-    );
+    return Layer.suspend(() => {
+      const policy = WalCheckpointer.makeConnectionPolicy();
+      const initialize = (sql: SqlClient.SqlClient) =>
+        configurePageCache(sql).pipe(Effect.andThen(policy.apply(sql)));
+      return ThreadStore.layerNoDeps.pipe(
+        Layer.provideMerge(SearchCatchUp),
+        Layer.provideMerge(MigrationsLayer),
+        Layer.provideMerge(
+          options.checkpointOffLoop === true
+            ? WalCheckpointer.layer(filename, { ...options.checkpointer, connectionPolicy: policy })
+            : Layer.empty,
+        ),
+        Layer.provideMerge(seal?.over ?? Layer.empty),
+        Layer.provideMerge(durableSqliteLayer({ filename }, initialize)),
+        Layer.provideMerge(seal?.under ?? Layer.empty),
+      );
+    });
   };
 }

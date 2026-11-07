@@ -152,6 +152,7 @@ export const durableCommit = <A, E, R>(
           Effect.ensuring(
             execute("PRAGMA synchronous = NORMAL").pipe(
               Effect.tapCause(() => Effect.sync(discard)),
+              Effect.orDie,
             ),
           ),
         );
