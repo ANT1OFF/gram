@@ -5,7 +5,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { originOwnerRepo, resolvePrInputs } from "./pr.ts";
 import { Proc, ProcLive } from "./proc.ts";
-import { cachedRepoRoots } from "./repo-facts.ts";
+import { localBaseRef, originTips } from "./refs.ts";
+import { cachedOriginHead, cachedRepoRoots } from "./repo-facts.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
 
 /** Real git, with every command line it is asked to run kept in `runs`. */
@@ -82,6 +83,59 @@ describe.skipIf(!hasGit)("the sweep's per-checkout git reads", () => {
       const sub = nodePath.join(path, "sub");
       write(nodePath.join(sub, "file.txt"), "x");
       expect(yield* resolvePrInputs(sub)).toEqual(inputs);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.live("asks for origin tips again only once one of their refs moves", () => {
+    const { layer, take } = counted();
+    return Effect.gen(function* () {
+      const path = repo();
+      const first = commit(path, "a.txt");
+      run(path, "update-ref", "refs/remotes/origin/main", "HEAD");
+      run(path, "update-ref", "refs/remotes/origin/feat", "HEAD");
+      const tips = () =>
+        originTips(path, ["feat", "main"]).pipe(Effect.map((map) => Object.fromEntries(map)));
+      expect(yield* tips()).toEqual({ feat: first, main: first });
+      take();
+      // Nothing moved: no `for-each-ref`.
+      expect(yield* tips()).toEqual({ feat: first, main: first });
+      expect(take()).toEqual([]);
+      // A fetch or push moves one: read again.
+      const second = commit(path, "b.txt");
+      run(path, "update-ref", "refs/remotes/origin/feat", "HEAD");
+      expect(yield* tips()).toEqual({ feat: second, main: first });
+      expect(take().filter((line) => line.includes("for-each-ref"))).toHaveLength(1);
+      // Packed: the loose files go and `packed-refs` changes, and the answer holds.
+      run(path, "pack-refs", "--all");
+      expect(yield* tips()).toEqual({ feat: second, main: first });
+      // Moved while packed, and pruned.
+      run(path, "update-ref", "refs/remotes/origin/main", second);
+      expect(yield* tips()).toEqual({ feat: second, main: second });
+      run(path, "update-ref", "-d", "refs/remotes/origin/feat");
+      expect(yield* tips()).toEqual({ main: second });
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.live("asks for origin/HEAD again only once its ref moves", () => {
+    const { layer, take } = counted();
+    return Effect.gen(function* () {
+      const path = repo();
+      commit(path, "a.txt");
+      run(path, "update-ref", "refs/remotes/origin/main", "HEAD");
+      run(path, "update-ref", "refs/remotes/origin/develop", "HEAD");
+      run(path, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+      expect(yield* localBaseRef(path)).toBe("origin/main");
+      take();
+      // The sweep after: no `symbolic-ref`, the same answer.
+      expect(yield* localBaseRef(path)).toBe("origin/main");
+      expect(take().filter((line) => line.includes("symbolic-ref"))).toEqual([]);
+      // `git remote set-head` rewrites the ref's file: read again.
+      run(path, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop");
+      expect(yield* cachedOriginHead(path)).toBe("origin/develop");
+      // Removed: none, and the fallback to master/main answers.
+      run(path, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD");
+      expect(yield* cachedOriginHead(path)).toBeUndefined();
+      expect(yield* localBaseRef(path)).toBe("origin/main");
     }).pipe(Effect.provide(layer));
   });
 

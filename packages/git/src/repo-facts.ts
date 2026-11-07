@@ -33,6 +33,10 @@ interface Facts {
   readonly roots: Map<string, Kept<RepoRoots> & { readonly identity: string }>;
   /** With the config stamp it was read under. */
   readonly origins: Map<string, Kept<string | undefined> & { readonly stamp: string }>;
+  /** `origin/<name>` tips by name list, with the stamp of their ref files it was read under. */
+  readonly originTips: Map<string, Kept<ReadonlyMap<string, string>> & { readonly stamp: string }>;
+  /** `origin/HEAD`'s target, with the stamp of the ref file it was read under. */
+  readonly originHeads: Map<string, Kept<string | undefined> & { readonly stamp: string }>;
 }
 
 const byProc = new WeakMap<Proc["Service"], Facts>();
@@ -40,7 +44,12 @@ const byProc = new WeakMap<Proc["Service"], Facts>();
 const factsOf = (proc: Proc["Service"]): Facts => {
   const existing = byProc.get(proc);
   if (existing !== undefined) return existing;
-  const created: Facts = { roots: new Map(), origins: new Map() };
+  const created: Facts = {
+    roots: new Map(),
+    origins: new Map(),
+    originTips: new Map(),
+    originHeads: new Map(),
+  };
   byProc.set(proc, created);
   return created;
 };
@@ -156,4 +165,90 @@ export const cachedOriginUrl = (cwd: string): Effect.Effect<string | undefined, 
       facts.origins.set(cwd, { value: read.url, stamp, at });
     }
     return read.url;
+  });
+
+const readOriginHead = (cwd: string) =>
+  git(cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).pipe(
+    Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
+  );
+
+/**
+ * What `refs/remotes/origin/HEAD` points at (such as `origin/main`), `undefined` without one; kept
+ * per checkout while that ref's file is unchanged. A symbolic ref is never packed, so `git remote
+ * set-head`, a clone or its removal all show in the file's stamp. Fails as the `git` run does.
+ */
+export const cachedOriginHead = (cwd: string): Effect.Effect<string | undefined, ProcError, Proc> =>
+  Effect.gen(function* () {
+    if (!present(cwd)) return yield* readOriginHead(cwd);
+    const facts = factsOf(yield* Proc);
+    const roots = yield* cachedRepoRoots(cwd).pipe(Effect.orElseSucceed(() => undefined));
+    // Stamped before the read, so a change landing during it is seen by the next one.
+    const ref =
+      roots === undefined
+        ? undefined
+        : fileStamp(nodePath.join(roots.common, "refs", "remotes", "origin", "HEAD"));
+    const stamp = roots === undefined || ref === undefined ? undefined : `${roots.common}|${ref}`;
+    const kept = facts.originHeads.get(cwd);
+    if (
+      kept !== undefined &&
+      stamp !== undefined &&
+      kept.stamp === stamp &&
+      Date.now() - kept.at < REPO_FACTS_TTL_MS
+    ) {
+      return kept.value;
+    }
+    facts.originHeads.delete(cwd);
+    const at = Date.now();
+    const head = yield* readOriginHead(cwd);
+    if (stamp !== undefined) facts.originHeads.set(cwd, { value: head, stamp, at });
+    return head;
+  });
+
+/**
+ * Where `refs/remotes/origin/<name>` for each of `names` stands on disk: its loose file and the
+ * repo's `packed-refs`. Git writes a ref by renaming a new file over it and packs refs by rewriting
+ * `packed-refs`, so any change to a tip changes this. `undefined` for a ref store no stat follows
+ * (reftable) or a stamp that can't be read.
+ */
+const tipsStamp = (roots: RepoRoots, names: ReadonlyArray<string>): string | undefined => {
+  if (fileStamp(nodePath.join(roots.common, "reftable")) !== "-") return undefined;
+  const files = [
+    nodePath.join(roots.common, "packed-refs"),
+    ...names.map((name) => nodePath.join(roots.common, "refs", "remotes", "origin", name)),
+  ];
+  const stamps = files.map(fileStamp);
+  return stamps.includes(undefined) ? undefined : `${roots.common}|${stamps.join("|")}`;
+};
+
+/**
+ * `read`'s tips of `origin/<name>` for `names`, kept per checkout and name list while those refs'
+ * files are unchanged: the sweep asks them of every checkout on every pass, and they move only on a
+ * fetch, a push or a prune. Fails as `read` does, and a failure is never kept.
+ */
+export const cachedOriginTips = <E>(
+  cwd: string,
+  names: ReadonlyArray<string>,
+  read: Effect.Effect<Map<string, string>, E, Proc>,
+): Effect.Effect<Map<string, string>, E, Proc> =>
+  Effect.gen(function* () {
+    if (!present(cwd)) return yield* read;
+    const facts = factsOf(yield* Proc);
+    const roots = yield* cachedRepoRoots(cwd).pipe(Effect.orElseSucceed(() => undefined));
+    // Stamped before the read, so a change landing during it is seen by the next one.
+    const stamp = roots === undefined ? undefined : tipsStamp(roots, names);
+    const key = `${cwd}\0${names.join("\0")}`;
+    const kept = facts.originTips.get(key);
+    if (
+      kept !== undefined &&
+      stamp !== undefined &&
+      kept.stamp === stamp &&
+      Date.now() - kept.at < REPO_FACTS_TTL_MS
+    ) {
+      return new Map(kept.value);
+    }
+    facts.originTips.delete(key);
+    const at = Date.now();
+    const tips = yield* read;
+    if (stamp !== undefined) facts.originTips.set(key, { value: new Map(tips), stamp, at });
+    return tips;
   });
