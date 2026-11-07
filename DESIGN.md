@@ -183,7 +183,9 @@ The theme stylesheet is the source of truth; this page explains it and the habit
 - **One worker list:** the right panel's Workers tab, by state, each row its dot, title, age and
   one status line without the state its heading says. ⌘J, Workers in the title bar's "…", the
   palette and the status strip's count open it with the keys on its rows; ⌘J again puts the panel
-  back as it was. There is no second list in a dialog.
+  back as it was. There is no second list in a dialog, and while the tab is open the sidebar folds
+  its workspace's workers to its line ("7 workers · in Workers"), its chevron leading
+  to the tab.
 - **An explanation shows once, then folds to a mark.** What Take over changes is a line under a
   worker's header the first time it is offered; after, it is an ⓘ beside Take over that says it on
   hover or focus, so the line never stacks over every worker view.
