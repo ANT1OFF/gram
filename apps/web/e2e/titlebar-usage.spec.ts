@@ -135,8 +135,26 @@ test("the title bar's meter is an icon button on an orchestrator, a worker and a
   const meter = bar.getByTestId("usage-meter");
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
 
+  // A hint opens only for a pointer that moved onto its trigger, never for a trigger that moved under
+  // a resting one (DESIGN.md). After a navigation or a resize the bar lays out again (its fold, the
+  // grid's width transition), so the button is hovered once it has stopped moving, as a person's
+  // pointer would reach it.
+  const settled = () =>
+    expect
+      .poll(
+        async () => {
+          const before = await meter.boundingBox();
+          await page.waitForTimeout(150);
+          const after = await meter.boundingBox();
+          return before !== null && after !== null && before.x === after.x && before.y === after.y;
+        },
+        { message: "the usage button stops moving" },
+      )
+      .toBe(true);
+
   const readsAsButton = async () => {
     await expect(meter).toBeVisible();
+    await settled();
     // Usage's glyph alone, a toolbar icon button's 28 px square like the bar's others, with no bar
     // and no words: the reading is its hover's and its name's, the state a dot on its corner.
     await expect(meter.locator("svg.lucide-chart-no-axes-combined")).toBeVisible();
