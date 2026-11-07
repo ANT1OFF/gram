@@ -277,6 +277,62 @@ describe("the baseline", () => {
   );
 
   it.effect(
+    "upgrades the previous migration number to merge fences and preserves its data on reopen",
+    () =>
+      Effect.gen(function* () {
+        const file = join(yield* tempDir, "previous-to-fences.db");
+        const fence = {
+          key: "synthetic-base",
+          moved: [],
+          pending: {
+            pr: { repo: "example/project", number: 5 },
+            threadId: "upgrade-worker" as ThreadId,
+            head: "expected-head",
+            tip: "checked-tip",
+            at: 1,
+          },
+        };
+        const entries = Object.entries(migrations);
+        const last = entries.at(-1)!;
+        expect(last[0]).toMatch(/_merge_fences$/);
+        const previous = Object.fromEntries(entries.slice(0, -1));
+        const previousId = Number(last[0].split("_")[0]) - 1;
+        const open = (record: Parameters<typeof migratorOptions>[0]) =>
+          SqliteMigrator.layer(migratorOptions(record)).pipe(
+            Layer.provideMerge(SqliteClient.layer({ filename: file })),
+          );
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          expect((yield* applied).at(-1)?.migration_id).toBe(previousId);
+          expect((yield* tableNames).has("merge_fences")).toBe(false);
+          yield* sql`INSERT INTO projects (id, root, name) VALUES ('upgrade-project', '/invented/previous-schema', 'preserved')`;
+          yield* sql`INSERT INTO local_checks (key, data) VALUES ('older-pass', '{"synthetic":"retained"}')`;
+        }).pipe(Effect.provide(open(previous)));
+        for (let reopen = 0; reopen < 2; reopen++) {
+          yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            expect((yield* applied).map((r) => [r.migration_id, r.name])).toEqual(
+              entries.map(([key]) => {
+                const [id, ...name] = key.split("_");
+                return [Number(id), name.join("_")];
+              }),
+            );
+            expect(
+              yield* sql`SELECT root, name FROM projects WHERE id = 'upgrade-project'`,
+            ).toEqual([{ root: "/invented/previous-schema", name: "preserved" }]);
+            expect(yield* sql`SELECT data FROM local_checks WHERE key = 'older-pass'`).toEqual([
+              { data: '{"synthetic":"retained"}' },
+            ]);
+            expect((yield* tableNames).has("merge_fences")).toBe(true);
+            const store = yield* ThreadStore;
+            if (reopen === 0) yield* store.putMergeFence(fence);
+            expect(yield* store.listMergeFences).toEqual([fence]);
+          }).pipe(Effect.provide(ThreadStore.layerSqlite(file)));
+        }
+      }),
+  );
+
+  it.effect(
     "a reopened database keeps unresolved fences and moved tips independently of threads",
     () =>
       Effect.gen(function* () {
