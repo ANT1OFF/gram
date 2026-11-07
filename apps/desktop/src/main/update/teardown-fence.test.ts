@@ -19,16 +19,22 @@ import { watchTree, type TreeCheckDeps } from "./tree-check.ts";
 
 const BOOT = "http://127.0.0.1:51041/?boot=c4b154241fdbc8678cdca7eeaa9f1c5e";
 
-/** Keep orphaning, but attest only after four parents have exited and their children are adopted. */
+/**
+ * Keep orphaning, but admit one parent at a time. A timer starts more parents while previous
+ * ones are still starting; under load that growing tree can exhaust the real tree check's
+ * fail-closed budget. Still attest only after four parents have exited.
+ */
 const ORPHANING = String.raw`
 const orphaning = (ready) => {
   let adopted = 0;
-  setInterval(() => {
+  const next = () => {
     const parent = spawn(process.execPath, [process.env.FENCE_ORPHAN], { stdio: "ignore" });
     parent.once("exit", (code) => {
       if (code === 0 && ++adopted === 4) ready();
+      next();
     });
-  }, 20);
+  };
+  next();
 };
 `;
 

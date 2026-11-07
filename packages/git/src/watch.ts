@@ -41,6 +41,8 @@ export const PRUNE_DIRS: ReadonlyArray<string> = [
 export const DEBOUNCE_MS = 400;
 /** Floor on recomputes from working-tree churn per checkout; leading and trailing edge both run. */
 export const COOLDOWN_MS = 2_000;
+/** macOS FSEvents can delay or lose events, including across libuv stream restarts. */
+export const RECONCILE_MS = 10_000;
 
 /** Settles once every native watcher call so far has. */
 let nativeTail: Promise<unknown> = Promise.resolve();
@@ -325,7 +327,8 @@ const sameState = (a: GitState | undefined, b: GitState) =>
 /**
  * A stream of local git state for `paths`: each path's initial state, then a new state whenever a
  * watched event changes it. A recompute that times out keeps the last published state. Watches are
- * released when the stream ends.
+ * released when the stream ends. macOS also reconciles periodically: native subscriptions have no
+ * readiness fence and FSEvents may deliver nothing after a write, even once subscribed.
  */
 export const watchGitState = (
   paths: ReadonlyArray<string>,
@@ -431,7 +434,21 @@ export const watchGitState = (
           ),
         );
       }
-      // Publish only once subscribed, so a write right after the first emission is never missed.
+      // Subscribe before the initial read to close the ordinary setup/read race.
       for (const path of paths) yield* recompute(path);
+      if (process.platform === "darwin") {
+        yield* Effect.forkScoped(
+          Effect.forever(
+            Effect.sleep(RECONCILE_MS).pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  // Do not interrupt a slow read: it may need longer than this interval.
+                  for (const path of paths) runFork(path, recompute(path), { onlyIfMissing: true });
+                }),
+              ),
+            ),
+          ),
+        );
+      }
     }),
   );
