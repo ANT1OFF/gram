@@ -4,20 +4,34 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { InboxButton } from "@/inbox/inbox-button";
 
-import { NeedsYouEntry, needsYouScope, needsYouWords } from "./needs-you-entry";
+import {
+  NeedsYouEntry,
+  needsYouPillWords,
+  needsYouScope,
+  needsYouSpoken,
+  needsYouWords,
+} from "./needs-you-entry";
 
 // Round 8: the one way into what needs you read four ways: a "2 need you" pill, a badge on an
 // Inbox icon in the title bar, "1 ask" in Quiet and a "?2" chip in an orchestrator's header. It is
 // one control now, in one wording, wherever it shows.
 
-const state = { count: 2 };
+const state: { count: number; parts: string[] } = { count: 2, parts: [] };
 const openAsks = vi.fn();
 const open = vi.fn();
 vi.mock("./use-needs-you", () => ({
-  useNeedsYou: () => ({ count: state.count, kinds: "", open, label: "Inbox", hint: "⌘⇧I" }),
+  useNeedsYou: () => ({
+    count: state.count,
+    kinds: state.parts.join(", "),
+    parts: state.parts,
+    open,
+    label: "Inbox",
+    hint: "⌘⇧I",
+  }),
   useNeedsYouPill: () => ({
     count: state.count,
-    kinds: "",
+    kinds: state.parts.join(", "),
+    parts: state.parts,
     open,
     label: "Inbox",
     hint: "⌘⇧I",
@@ -29,6 +43,7 @@ vi.mock("./use-needs-you", () => ({
 afterEach(() => {
   cleanup();
   state.count = 2;
+  state.parts = [];
   openAsks.mockClear();
   open.mockClear();
 });
@@ -42,7 +57,38 @@ describe("needsYouWords", () => {
   });
 });
 
+describe("needsYouPillWords", () => {
+  // Round 10: the pill said "2 need you" over a Quiet card that said "1 of 1", the second item an
+  // error shown nowhere near it. Named by kind, the pill's count is the cards' count.
+  it("names the kinds, so the count agrees with the cards", () => {
+    expect(needsYouPillWords(2, ["1 question", "1 error"])).toBe("1 question · 1 error");
+    expect(needsYouPillWords(1, ["1 approval"])).toBe("1 approval");
+    expect(needsYouSpoken(2, ["1 question", "1 error"])).toBe("2 need you: 1 question, 1 error");
+  });
+
+  it("says the count alone past two kinds, or with none", () => {
+    expect(needsYouPillWords(4, ["1 error", "2 approvals", "1 question"])).toBe("4 need you");
+    expect(needsYouPillWords(0, [])).toBe("Nothing needs you");
+    expect(needsYouSpoken(0, [])).toBe("Nothing needs you");
+  });
+});
+
 describe("the attention entry", () => {
+  it("says its kinds in every place it shows", () => {
+    state.parts = ["1 question", "1 error"];
+    render(
+      <>
+        <NeedsYouEntry variant="row" data-testid="overview-needs-you" />
+        <InboxButton />
+      </>,
+    );
+    for (const id of ["overview-needs-you", "inbox-button"]) {
+      const entry = screen.getByTestId(id);
+      expect(entry.textContent).toBe("1 question · 1 error");
+      expect(entry.getAttribute("aria-label")).toBe("2 need you: 1 question, 1 error (⌘⇧I)");
+    }
+  });
+
   it("reads the same in the sidebar, the title bar and Quiet, and opens the newest ask", () => {
     render(
       <>

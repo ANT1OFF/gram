@@ -35,8 +35,9 @@ test("what the agent leaves for the user waits in the tray, counts in Needs you,
   await expect(tray.getByTestId("waiting-count")).toContainText("2 waiting on you");
   await expect(tray).toContainText("Teams message to Kari · example/api#431");
   await expect(needsYou).toHaveAttribute("data-count", "2");
-  // With ⌘⌥3's hint, which opens its popover.
-  await expect(needsYou).toHaveText(/^2 need you/);
+  // Named by kind, so the count is the items it stands for; the whole count is in its name.
+  await expect(needsYou).toHaveText("1 review · 1 draft");
+  await expect(needsYou).toHaveAccessibleName(/^2 need you: 1 review, 1 draft/);
   // Each item marks the reply it was added in.
   const chips = page.getByTestId("transcript").getByTestId("wait-chip");
   await expect(chips).toHaveCount(2);

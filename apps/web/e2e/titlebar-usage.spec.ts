@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { flakyAsked } from "./seed-asks";
+
 // The title bar's subscription meter, and a launch that lands on the orchestrator. The limits are
 // the mock's invented readings (`api/mock-limits.ts`), never a live account's.
 
@@ -12,16 +14,21 @@ const WELCOME_UNSEEN = JSON.stringify({ onboarding: { welcomeSeen: false } });
 
 const RESETS = /^(\d{1,2} [A-Z][a-z]{2}( \d{4})? )?\d{2}:\d{2}$/;
 
-test("the meter shows the tightest limit and opens onto both providers", async ({ page }) => {
+test("the meter shows the thread's agent's limit and opens onto both providers", async ({
+  page,
+}) => {
   await page.goto("/t/t-flaky");
   const meter = page.getByTestId("usage-meter");
-  // Codex's 5-hour window is at 85%: the highest, and still short of the warning, so the title
-  // bar's only amber stays what needs you.
-  await expect(meter).toHaveText("Codex 85% used");
+  // A Claude thread shows Claude's closest window (weekly, 61%), not Codex's higher 85%: the meter
+  // names the agent the composer names. Short of the warning, the title bar's only amber stays
+  // what needs you.
+  await expect(meter).toHaveText("Claude 61% used");
   await expect(meter).not.toHaveAttribute("data-warn");
   await expect(meter).toHaveAccessibleName(
-    "Highest subscription usage: Codex 5-hour limit 85% used",
+    "This thread's agent's subscription usage: Claude Code weekly limit 61% used",
   );
+  // Open, the popover gives way to a new ask: let the thread's opening turn raise its approval first.
+  await flakyAsked(page);
 
   await meter.click();
   const popover = page.getByRole("dialog", { name: "Subscription usage" });
@@ -51,6 +58,23 @@ test("the meter shows the tightest limit and opens onto both providers", async (
   }
   await expect(popover).toContainText("Includes your own use outside Gram.");
   await page.keyboard.press("Escape");
+  await expect(popover).toBeHidden();
+
+  // Open, it gives way once focus moves to the conversation (an approval card's buttons, the
+  // composer), so it never sits over the card that asks.
+  await meter.click();
+  await expect(popover).toBeVisible();
+  await page.getByLabel("Message", { exact: true }).focus();
+  await expect(popover).toBeHidden();
+  // And once something new asks for the user.
+  await meter.click();
+  await expect(popover).toBeVisible();
+  await page.evaluate(() =>
+    window.gramMock!.simulateWaitOnUser("t-flaky" as never, {
+      kind: "action",
+      title: "Rotate the staging token",
+    }),
+  );
   await expect(popover).toBeHidden();
 });
 

@@ -1,7 +1,7 @@
 import { limitForecast } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import { ChartNoAxesCombined, TrendingUp } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { agentLabel } from "@/agents/agent-label";
 import { Hint } from "@/components/hint";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { agoText } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { PulseOnce } from "@/motion";
+import { useNeedsYouCounts } from "@/orchestration/use-needs-you";
 import {
   currentLimit,
   LIMIT_PROVIDERS,
@@ -17,11 +18,11 @@ import {
   limitTone,
   limitWarns,
   nextLimitChange,
-  tightestLimit,
+  shownLimit,
   useUsageLimits,
   type LimitProvider,
   type LimitWindow,
-  type TightestLimit,
+  type ShownLimit,
   type UsageLimit,
   type UsageLimits,
 } from "@/stores/usage-limits";
@@ -65,17 +66,24 @@ export function useMinuteNow(): number {
 }
 
 /**
- * The window's one way into usage: the title bar's subscription meter, the limit closest to running
- * out (the highest usage of any provider's window, as its hover and name say), as a thin bar and a
- * share, opening onto every provider's 5-hour and weekly windows and a link to the Usage page.
- * Neutral until 90%, so amber in the title bar means what needs you. Until an agent reports a
- * limit, an icon that opens the Usage page.
+ * The window's one way into usage: the title bar's subscription meter, as a thin bar and a share,
+ * opening onto every provider's 5-hour and weekly windows and a link to the Usage page. On a thread
+ * it is that thread's agent's closest window, so its name matches the composer's; elsewhere, or
+ * once another provider's is about to stop work, the highest of all (`shownLimit`), as its hover and
+ * name say. Neutral until 90%, so amber in the title bar means what needs you. Until an agent
+ * reports a limit, an icon that opens the Usage page.
+ *
+ * Open, it gives way to what needs you: it closes when focus moves outside it, onto an approval
+ * card's buttons say, and when a new ask arrives, so it never sits over the card that asks.
  */
 export function UsageMeter({
+  agent,
   className,
   textClassName,
   shortTextClassName = "hidden",
 }: {
+  /** The agent of the thread in view, whose usage the meter shows. */
+  agent?: string | undefined;
   className?: string;
   /** For the reading beside the bar, which a narrow title bar trades for its short form. */
   textClassName?: string;
@@ -87,8 +95,9 @@ export function UsageMeter({
 }) {
   const limits = useUsageLimits((s) => s.limits);
   const now = useLimitsNow(limits);
-  const tightest = tightestLimit(limits, now);
+  const tightest = shownLimit(limits, now, agent);
   const [open, setOpen] = useState(false);
+  useGiveWay(open, setOpen);
   if (tightest === undefined) return <UsageLink className={className} />;
   const warns = limitWarns(tightest.limit);
   const tone = limitTone(tightest.limit);
@@ -143,6 +152,31 @@ export function UsageMeter({
 }
 
 /**
+ * Closes the open popover once something else wants the user: focus moving outside it (a click or
+ * Tab onto an approval card, the composer, anything) and a new ask arriving. Its trigger is no
+ * "outside": a click there toggles it as before.
+ */
+function useGiveWay(open: boolean, setOpen: (open: boolean) => void) {
+  const asks = useNeedsYouCounts().total;
+  const seen = useRef(asks);
+  useEffect(() => {
+    if (open && asks > seen.current) setOpen(false);
+    seen.current = asks;
+  }, [open, asks, setOpen]);
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: FocusEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('[data-testid="usage-limits"], [data-testid="usage-meter"]')) return;
+      setOpen(false);
+    };
+    document.addEventListener("focusin", away);
+    return () => document.removeEventListener("focusin", away);
+  }, [open, setOpen]);
+}
+
+/**
  * How much of the window's foot the popover leaves clear, in CSS px: the composer and an approval
  * or question card above it, the conversation's action area. A short window scrolls the popover
  * rather than laying it over them.
@@ -186,7 +220,7 @@ function LimitsPopover({
   shown,
   onLeave,
 }: {
-  shown: Pick<TightestLimit, "provider" | "window">;
+  shown: Pick<ShownLimit, "provider" | "window" | "why">;
   /** Closes the popover as its link leaves for the Usage page. */
   onLeave: () => void;
 }) {
@@ -212,8 +246,9 @@ function LimitsPopover({
       ))}
       <div className="grid gap-2 border-t border-border pt-2.5 text-meta text-muted-foreground">
         <p data-testid="usage-limits-foot">
-          The title bar shows the highest: {agentLabel(shown.provider)}{" "}
-          {WINDOW_LABEL[shown.window].toLowerCase()}. Includes your own use outside Gram.
+          The title bar shows {shown.why === "agent" ? "this thread's agent" : "the highest"}:{" "}
+          {agentLabel(shown.provider)} {WINDOW_LABEL[shown.window].toLowerCase()}. Includes your own
+          use outside Gram.
         </p>
         <Link
           to="/usage"

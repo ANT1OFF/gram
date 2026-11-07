@@ -11,6 +11,14 @@ const at = (type: string, x: number, y: number, stamp: number) => {
   return event;
 };
 
+/** The same, dispatched on `target`, so it bubbles up from what the pointer is over. */
+const over = (target: Element, type: string, x: number, y: number, stamp: number) => {
+  const event = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
+  Object.defineProperty(event, "timeStamp", { value: stamp });
+  target.dispatchEvent(event);
+  return event;
+};
+
 describe("pointerMovedFor", () => {
   afterEach(resetPointerMoves);
 
@@ -25,6 +33,25 @@ describe("pointerMovedFor", () => {
     expect(pointerMovedFor(at("mouseover", 140, 40, 5_000))).toBe(false);
     // Moving within the tab is pointing at it.
     expect(pointerMovedFor(at("mousemove", 142, 41, 5_400))).toBe(true);
+  });
+
+  it("doesn't count a click's own move for what the click makes appear under the pointer", () => {
+    trackPointerMoves();
+    const button = document.createElement("button");
+    const tab = document.createElement("span");
+    const glyph = document.createElement("svg");
+    tab.append(glyph);
+    document.body.append(button, tab);
+    // The pointer moves onto a button and clicks it at once, as a quick hand or a test does.
+    over(button, "pointermove", 140, 40, 1_000);
+    // A frame later the click has opened a tab under the resting pointer: still within the move's
+    // time, but the move was onto the button, not the tab.
+    expect(pointerMovedFor(over(tab, "mouseover", 140, 40, 1_016), tab)).toBe(false);
+    // Moving within the tab, onto its glyph, is pointing at it.
+    over(glyph, "pointermove", 141, 40, 1_400);
+    expect(pointerMovedFor(over(tab, "mouseover", 141, 40, 1_401), tab)).toBe(true);
+    button.remove();
+    tab.remove();
   });
 
   it("lets an event with no position through, and anything that isn't a mouse event", () => {

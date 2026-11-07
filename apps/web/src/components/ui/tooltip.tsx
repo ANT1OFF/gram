@@ -80,7 +80,8 @@ function TooltipTrigger({ onMouseMove, onMouseLeave, ...props }: TooltipPrimitiv
       // hover the gate held back, it enters again, as the user's own move.
       onMouseMove={(event) => {
         onMouseMove?.(event);
-        if (held === null || !pointerMovedFor(event.nativeEvent) || !held.take()) return;
+        if (held === null) return;
+        if (!pointerMovedFor(event.nativeEvent, event.currentTarget) || !held.take()) return;
         event.currentTarget.dispatchEvent(
           new MouseEvent("mouseenter", { clientX: event.clientX, clientY: event.clientY }),
         );

@@ -427,15 +427,16 @@ const KIND_WORDS: Readonly<Record<NeedsYouSectionKey, readonly [string, string]>
   errors: ["error", "errors"],
 };
 
-/** "1 question, 1 error": what `items` ask by kind, in the Inbox's order, so asks and errors stay apart. */
-export const kindsText = (items: readonly NeedsYouItem[]): string =>
-  SECTION_ORDER.map((key) => {
+/** ["1 question", "1 error"]: what `items` ask by kind, in the Inbox's order, so asks and errors stay apart. */
+export const kindParts = (items: readonly NeedsYouItem[]): string[] =>
+  SECTION_ORDER.flatMap((key) => {
     const n = items.filter((item) => sectionOf(item) === key).length;
     const [one, many] = KIND_WORDS[key];
-    return n === 0 ? "" : `${n} ${n === 1 ? one : many}`;
-  })
-    .filter((words) => words !== "")
-    .join(", ");
+    return n === 0 ? [] : [`${n} ${n === 1 ? one : many}`];
+  });
+
+/** "1 question, 1 error": `kindParts` in a line. */
+export const kindsText = (items: readonly NeedsYouItem[]): string => kindParts(items).join(", ");
 
 /**
  * Where the total is, from where the user is: "Here (Gram): nothing needs you", "billing-api: 1

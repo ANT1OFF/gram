@@ -136,6 +136,14 @@ export function useSoloRoute(): boolean {
   });
 }
 
+/** The agent of the route's thread ("claude", "codex"), whose usage the title bar's meter shows. */
+export function useRouteAgent(): string | undefined {
+  const route = useParams({ strict: false }).threadId as ThreadId | undefined;
+  return useThreadsStore((s) =>
+    route === undefined ? undefined : s.byId[route]?.thread.model.agent,
+  );
+}
+
 /** From `room`'s start to the far edge of its furthest child. */
 function contentWidth(room: Element): number {
   const start = room.getBoundingClientRect().left;

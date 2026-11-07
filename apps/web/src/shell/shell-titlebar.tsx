@@ -9,6 +9,7 @@ import { FakeAgentBadge } from "@/shell/fake-agent-badge";
 import { ShellToggle } from "@/shell/shell-toggle";
 import { TitlebarOverflow } from "@/shell/titlebar-fold";
 import {
+  useRouteAgent,
   useSoloRoute,
   useTitlebarFold,
   useTitlebarSlot,
@@ -32,8 +33,9 @@ const CLUSTER_GAP = "ml-3 @max-2xl/titlebar:ml-1";
 
 /**
  * The chat column's title bar, icon-only and few: the workspace and its views, the thread's header
- * or Board's controls in the slot, then what wants your attention (a setup problem folded from its
- * banner, a paused workspace, usage, and the Inbox while no sidebar shows its pill), one "…" with
+ * or Board's controls in the slot, then what wants your attention (the needs-you pill while no
+ * column to the left shows it, a setup problem folded from its banner, a paused workspace, and the
+ * thread's agent's usage), one "…" with
  * everything else in words, and the panel. Narrow, what the slot carries folds into "…" too. Each
  * destination has one entry here or in the sidebar, never both.
  */
@@ -47,7 +49,7 @@ export function ShellTitlebar({
 }: {
   /** The overview, open or compact, is to the bar's left. */
   sidebarShown: boolean;
-  /** The overview to the bar's left shows the needs-you pill. */
+  /** The column to the bar's left (the overview, or Settings' sections) shows the needs-you pill. */
   needsYouPill: boolean;
   /** Settings is open: Back and its name in place of the workspace and its views. */
   settings: boolean;
@@ -67,6 +69,8 @@ export function ShellTitlebar({
   // A solo thread's bar leaves out what acts on the workspace's orchestration.
   const soloRoute = useSoloRoute();
   const soloBar = barThread && soloRoute;
+  // The meter shows the usage of the agent the thread in view runs on.
+  const agent = useRouteAgent();
   const setTitlebarSlot = useTitlebarSlot((s) => s.setSlot);
   const fold = useTitlebarSlot((s) => s.fold);
   // Folded at all: the lesser buttons are in "…".
@@ -152,24 +156,28 @@ export function ShellTitlebar({
         data-testid="titlebar-attention"
         className="flex shrink-0 items-center gap-0.5"
       >
-        {/* A setup problem seen once in its banner, folded here until dismissed. */}
+        {/* What needs you has one place: the top of the column left of the chat, the sidebar's
+            pill, the compact rail's or Settings' own. With no column there (the sidebar hidden),
+            it is this bar's first chip, in the pill's words. Before setup the sidebar hides its
+            pill (the welcome is the one thing to look at), so the quiet Inbox icon here is the way
+            to what arrived meanwhile, startup notices say. */}
+        {(!needsYouPill || beforeSetup) && <InboxButton />}
+        {/* A setup problem seen once in its banner, folded here until dismissed: the bar's one
+            warning glyph, which says what it is on hover. The thread's own state (an approval, a
+            question, an error) is the pill's to count and the card's to show, never a second
+            glyph here. */}
         <LaunchIssuesChip className="[-webkit-app-region:no-drag]" />
         {!soloBar && !settings && <TitlebarPause className="[-webkit-app-region:no-drag]" />}
         {/* Before any setup there is no work of Gram's to meter. Narrow, the title needs the room
             more than the meter needs its words: it keeps its share ("85%"), its hover the rest. */}
         {!beforeSetup && (
           <UsageMeter
+            agent={settings ? undefined : agent}
             className="[-webkit-app-region:no-drag]"
             textClassName="@max-2xl/titlebar:hidden"
             shortTextClassName="hidden @max-2xl/titlebar:inline"
           />
         )}
-        {/* What needs you has one way in: the sidebar's pill, open or compact; with no pill on
-            screen (the sidebar hidden, or Settings' strip in its place), this button, wearing the
-            count. */}
-        {/* Before setup the sidebar hides its pill (the welcome is the one thing to look at), so
-            the quiet Inbox icon here is the way to what arrived meanwhile, startup notices say. */}
-        {(!needsYouPill || beforeSetup) && <InboxButton />}
       </div>
       <div
         role="group"
