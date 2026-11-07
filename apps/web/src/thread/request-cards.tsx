@@ -31,6 +31,7 @@ import {
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
 } from "react";
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";

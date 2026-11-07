@@ -114,6 +114,28 @@ test("one card at a time: 1, the thread card's key, answers it everywhere, and u
   await expect(page.getByTestId("inbox-item").filter({ hasText: PUSH })).toHaveCount(0);
 });
 
+test("an approval's rebound chord answers it in Quiet, modifiers and all, and its old key doesn't", async ({
+  page,
+}) => {
+  await page.clock.install();
+  // Deny rebound from 3 to ⌥3, as Settings → Keyboard would keep it in keybindings.json.
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("gram.mock.keybindings")) {
+      sessionStorage.setItem("gram.mock.keybindings", JSON.stringify({ "approval.deny": "alt+3" }));
+    }
+  });
+  await start(page);
+  await goTo(page, PUSH);
+  const deny = card(page).getByTestId("quiet-option").filter({ hasText: "Deny" });
+  await expect(deny).toContainText(/(⌥|Alt\+)3/);
+  await page.clock.runFor(1_000);
+  // The old key is no key of its: nothing answered.
+  await page.keyboard.press("3");
+  await expect(quiet(page).getByTestId("quiet-undo-line")).toHaveCount(0);
+  await page.keyboard.press("Alt+Digit3");
+  await expect(quiet(page).getByTestId("quiet-undo-line")).toContainText("Denied 3");
+});
+
 test("Later sends a card to the back, and O opens its thread out of Quiet", async ({ page }) => {
   await start(page);
   await settle(page);

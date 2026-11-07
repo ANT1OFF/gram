@@ -230,19 +230,29 @@ export function QuietView({ workspaceId }: ViewProps) {
       if (undo()) take();
       return;
     }
-    if (event.altKey || event.shiftKey || event.repeat || card === undefined) return;
+    if (card === undefined) return;
+    // An approval's verbs answer to their own keys, the thread card's, chord and all (a binding
+    // rebound to ⌥1 or ⌘⇧D included), and act on the press: matched before the modifiers below,
+    // which only Quiet's own keys go without.
+    const verb = shortcutOptionAt(card.ask.options, event);
+    if (verb >= 0) {
+      take();
+      const now = clock();
+      if (
+        event.repeat ||
+        now - answeredAt.current < SETTLE_MS ||
+        now - topSince.current < SETTLE_MS
+      )
+        return;
+      choose(card, card.ask.options[verb]!);
+      return;
+    }
+    if (event.altKey || event.shiftKey || event.repeat) return;
     const sending = mod && event.key === "Enter";
     if (mod && !sending) return;
     const key = event.key.toLowerCase();
-    // An approval's verbs answer to their own keys, the thread card's, and act on the press.
-    const verb = mod ? -1 : shortcutOptionAt(card.ask.options, event);
     const keyed = keyedByShortcut(card.ask.options);
-    const number =
-      verb >= 0
-        ? verb
-        : !mod && !keyed && /^[1-9]$/.test(event.key)
-          ? Number(event.key) - 1
-          : undefined;
+    const number = !mod && !keyed && /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : undefined;
     const toReply = !mod && event.key === "Enter" && card.ask.freeForm !== undefined;
     if (!sending && !toReply && number === undefined && key !== "o" && event.key !== "ArrowRight") {
       return;
@@ -272,7 +282,7 @@ export function QuietView({ workspaceId }: ViewProps) {
     const option = at === undefined ? undefined : card.ask.options[at];
     if (option === undefined || at === undefined) return;
     take();
-    if (sending || verb >= 0) choose(card, option);
+    if (sending) choose(card, option);
     else setPick({ key: card.ask.key, index: at });
   });
   useEffect(() => {
